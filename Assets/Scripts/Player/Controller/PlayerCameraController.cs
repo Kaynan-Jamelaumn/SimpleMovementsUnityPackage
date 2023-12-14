@@ -1,6 +1,8 @@
+using Cinemachine;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using static UnityEditor.SceneView;
 
 public class PlayerCameraController : MonoBehaviour
 {
@@ -77,5 +79,24 @@ public class PlayerCameraController : MonoBehaviour
 
         // Activate the new camera
         SetCameraActive(model.CameraList[model.CurrentIndex], true);
+    }
+
+
+    public void InterpolateFOV(float startingFOV, float playerFOV, float timeLapse, float timeToZoom)
+    {
+        float interpolatedFOV = Mathf.Lerp(startingFOV, playerFOV, timeLapse / timeToZoom);
+        SetCameraFOV(interpolatedFOV);
+    }
+
+    public void SetCameraFOV(float fov)
+    {
+        model.CameraList[model.CurrentIndex]
+            .GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView = fov;
+    }
+
+    public float GetCameraFOV()
+    {
+        return model.CameraList[model.CurrentIndex].GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView;
+
     }
 }

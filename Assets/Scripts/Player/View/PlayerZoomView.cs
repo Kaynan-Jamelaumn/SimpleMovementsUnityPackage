@@ -6,14 +6,14 @@ using UnityEngine.InputSystem;
 
 public class PlayerZoomView : MonoBehaviour
 {
-    private PlayerCameraModel cameraModel;
+    private PlayerCameraController cameraController;
     private PlayerZoomModel model;
     private PlayerZoomController controller;
     private void Awake()
     {
         controller = GetComponent<PlayerZoomController>();
         model = GetComponent<PlayerZoomModel>();
-        cameraModel = GetComponent<PlayerCameraModel>();
+        cameraController = GetComponent<PlayerCameraController>();
     }
 
     public void OnZoom(InputAction.CallbackContext value)
@@ -21,7 +21,7 @@ public class PlayerZoomView : MonoBehaviour
         if (value.started && model.ZoomRoutine == null) //checking if the zoom routine exists so the field of view does not get glitched upon zoon deactivation and activation
         {
 
-            model.DefaultFOV = cameraModel.CameraList[cameraModel.CurrentIndex].GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView;//get the current camera fov
+            model.DefaultFOV = cameraController.GetCameraFOV();//get the current camera fov
             controller.Zoom(true);
         }
         if (value.canceled)

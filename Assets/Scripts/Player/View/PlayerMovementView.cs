@@ -58,7 +58,7 @@ public class PlayerMovementView : MonoBehaviour
             {
                 // Consume stamina and set vertical velocity for jump
                 statusController.ConsumeStamina(model.AmountOfJumpStaminaCost);
-                model.VerticalVelocity = model.JumpForce;
+                model.VerticalVelocity = model.IsRunning ? model.JumpForce * 1.75f : model.JumpForce;
             }
             return;
         }
@@ -77,14 +77,14 @@ public class PlayerMovementView : MonoBehaviour
             // Start or stop stamina consumption based on button state
             if (value.started)
             {
-                model.SprintCoroutine = StartCoroutine(statusController.ConsumeStaminaRoutine(model.AmountOfSprintStaminaCost));
+                model.SprintCoroutine = StartCoroutine(statusController.ConsumeStaminaRoutine(model.AmountOfSprintStaminaCost, 0.8f));
                 statusModel.IsConsumingStamina = true;
             }
 
             if (value.canceled)
             {
                 model.IsRunning = false;
-                StopCoroutine(model.SprintCoroutine);
+                if (model.SprintCoroutine !=null ) StopCoroutine(model.SprintCoroutine);
                 statusModel.IsConsumingStamina = false;
             }
         }
@@ -105,7 +105,7 @@ public class PlayerMovementView : MonoBehaviour
             // Start or stop stamina consumption based on button state
             if (value.started)
             {
-                model.CrouchCoroutine = StartCoroutine(statusController.ConsumeStaminaRoutine(model.AmountOfCrouchStaminaCost));
+                model.CrouchCoroutine = StartCoroutine(statusController.ConsumeStaminaRoutine(model.AmountOfCrouchStaminaCost, 1f));
                 statusModel.IsConsumingStamina = true;
             }
 

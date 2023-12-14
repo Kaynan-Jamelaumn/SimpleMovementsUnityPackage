@@ -148,4 +148,10 @@ public class PlayerMovementController : MonoBehaviour
             currentDirection = Quaternion.AngleAxis(model.LastRotation, Vector3.up) * currentDirection;
         }
     }
+
+    public Vector3 PlayerForwardPosition()
+    {
+        return model.PlayerTransform.rotation * Vector3.forward;
+    }
+
 }

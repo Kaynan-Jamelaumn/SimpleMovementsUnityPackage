@@ -6,13 +6,13 @@ public class PlayerZoomController : MonoBehaviour
 {
     // Models
     private PlayerZoomModel model;
-    private PlayerCameraModel cameraModel;
+    private PlayerCameraController cameraController;
 
     private void Awake()
     {
         // Assign models
         model = GetComponent<PlayerZoomModel>();
-        cameraModel = GetComponent<PlayerCameraModel>();
+        cameraController = GetComponent<PlayerCameraController>();
     }
 
     /// <summary>
@@ -34,30 +34,19 @@ public class PlayerZoomController : MonoBehaviour
 
     private IEnumerator ZoomRoutine(bool zoomType)
     {
-        // Determine the target FOV based on zoomType
         float playerFOV = zoomType ? model.ZoomFOV : model.DefaultFOV;
-
-        // Get the starting FOV of the current camera
-        float startingFOV = cameraModel.CameraList[cameraModel.CurrentIndex].GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView;
-
-        // Interpolate FOV over time
+        float startingFOV = cameraController.GetCameraFOV();
         float timeLapse = 0;
         while (timeLapse < model.TimeToZoom)
         {
-            // Update the FOV gradually
-            cameraModel.CameraList[cameraModel.CurrentIndex].GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView = Mathf.Lerp(startingFOV, playerFOV, timeLapse / model.TimeToZoom);
-
-            // Increment timeLapse
+            cameraController.InterpolateFOV(startingFOV, playerFOV, timeLapse, model.TimeToZoom);
             timeLapse += Time.deltaTime;
-
-            // Wait for the next frame
             yield return null;
         }
 
-        // Set the final FOV to the target FOV
-        cameraModel.CameraList[cameraModel.CurrentIndex].GetComponent<CinemachineVirtualCamera>().m_Lens.FieldOfView = playerFOV;
+        cameraController.SetCameraFOV(playerFOV);
 
-        // Reset the ZoomRoutine to null
         model.ZoomRoutine = null;
     }
+
 }

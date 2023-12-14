@@ -68,6 +68,37 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             isInventoryOpened = true;
         }
     }
+    public void onUse(InputAction.CallbackContext value)
+    {
+        if (!value.started) return;
+
+        InventorySlot selectedSlot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
+
+        if (selectedSlot.heldItem != null && selectedSlot.heldItem.GetComponent<InventoryItem>() != null)
+        {
+            // Check if there is a held item in the selected hotbar slot
+            InventoryItem heldItem = selectedSlot.heldItem.GetComponent<InventoryItem>();
+
+            // Ensure heldItem is not null before accessing its properties
+            if (heldItem != null)
+            {
+                heldItem.itemScriptableObject.UseItem();
+                if (heldItem.itemScriptableObject is ConsumableSO) {
+                    Debug.Log("ta chovendo ai");
+                    heldItem.stackCurrent--;
+                    if (heldItem.stackCurrent <= 0)
+                    {
+                        selectedSlot.heldItem = null;
+                        Destroy(heldItem.gameObject);
+                    }
+                }
+                // This will call the overridden UseItem method in the ItemSO derived classes
+            }
+        }
+    }
+
+
+
     private void CheckForHotbarInput()
     {
         if (Input.GetKeyDown(KeyCode.Alpha1))
@@ -141,6 +172,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                     newItem.transform.localPosition = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.position;
                     newItem.transform.localRotation = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.rotation;
                     newItem.transform.localScale = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.scale;
+                    //UTILIZE ITEM.....                
                 }
             }
             else
@@ -248,6 +280,20 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         for (int i = 0; i < slots.Length; i++)
         {
             InventorySlot slot = slots[i].GetComponent<InventorySlot>();
+            if (slot.heldItem != null)
+            {
+
+                InventoryItem item = slot.heldItem.GetComponent<InventoryItem>();
+                if (item != null) 
+                {
+                    if (item.stackCurrent +1 <= item.stackMax) 
+                    {
+                        item.stackCurrent += 1;
+                        Destroy(pickedItem);
+                        return;
+                    }
+                }
+            }
 
             if (slot.heldItem == null)
             {
@@ -260,6 +306,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         {
             GameObject newItem = Instantiate(itemPrefab);
             newItem.GetComponent<InventoryItem>().itemScriptableObject = pickedItem.GetComponent<itemPickable>().itemScriptableObject;
+            GameObject player = GameObject.Find("Player");
+
+            newItem.GetComponent<InventoryItem>().itemScriptableObject.statusController = player.GetComponent<PlayerStatusController>();
             newItem.transform.SetParent(emptySlot.transform.parent.parent.GetChild(2));
 
             newItem.GetComponent<InventoryItem>().stackCurrent = 1;

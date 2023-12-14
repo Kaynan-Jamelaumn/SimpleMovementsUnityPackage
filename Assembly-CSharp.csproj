@@ -78,13 +78,16 @@
     <Compile Include="Assets\Scripts\Player\PlayerZoom.cs" />
     <Compile Include="Assets\Scripts\Player\Model\PlayerDashModel.cs" />
     <Compile Include="Assets\Scripts\Inventory\Storage.cs" />
+    <Compile Include="Assets\Scripts\Player\NewBehaviourScript.cs" />
     <Compile Include="Assets\Scripts\Player\View\PlayerCameraView.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerCamera.cs" />
+    <Compile Include="Assets\Scripts\Inventory\Weapon\WeaponSO.cs" />
+    <Compile Include="Assets\Scripts\Inventory\Consumable\ConsumableSO.cs" />
     <Compile Include="Assets\Scripts\Player\Model\PlayerMovementModel.cs" />
     <Compile Include="Assets\Scripts\Inventory\InventoryItem.cs" />
     <Compile Include="Assets\Scripts\Player\Controller\PlayerMovementController.cs" />
+    <Compile Include="Assets\Scripts\Inventory\Equipable\EquipableSO.cs" />
     <Compile Include="Assets\Scripts\Player\View\PlayerDashView.cs" />
-    <Compile Include="Assets\Scripts\Player\NewBehaviourScript.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />

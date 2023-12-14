@@ -42,15 +42,6 @@
                     "initialStateCheck": false
                 },
                 {
-                    "name": "ItmRotate",
-                    "type": "Button",
-                    "id": "4665b506-bb09-4472-81be-e6aa6e6b9399",
-                    "expectedControlType": "Button",
-                    "processors": "",
-                    "interactions": "",
-                    "initialStateCheck": false
-                },
-                {
                     "name": "Crouch",
                     "type": "Button",
                     "id": "9d0ad8b3-c99e-4682-a1f1-d368487cd8b7",
@@ -117,6 +108,15 @@
                     "name": "Dash",
                     "type": "Button",
                     "id": "94924ced-347a-4af3-8ff9-5044d9f0f17b",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Use",
+                    "type": "Button",
+                    "id": "5eb91dbd-3adc-4b6d-83f2-0f89288bbd84",
                     "expectedControlType": "Button",
                     "processors": "",
                     "interactions": "",
@@ -214,17 +214,6 @@
                 },
                 {
                     "name": "",
-                    "id": "a1bcfd3b-a698-4051-9797-0f5e0637afef",
-                    "path": "<Keyboard>/r",
-                    "interactions": "",
-                    "processors": "",
-                    "groups": "",
-                    "action": "ItmRotate",
-                    "isComposite": false,
-                    "isPartOfComposite": false
-                },
-                {
-                    "name": "",
                     "id": "17d65d5a-ba86-4699-b08f-674d557098ad",
                     "path": "<Keyboard>/shift",
                     "interactions": "",
@@ -308,6 +297,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "Dash",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "70bf6eac-b269-48a1-9b5c-dff540704555",
+                    "path": "<Keyboard>/r",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Use",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

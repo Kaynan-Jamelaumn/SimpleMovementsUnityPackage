@@ -8,8 +8,8 @@ public class PlayerDashController : MonoBehaviour
     // Reference to the dash model and movement model
     private PlayerDashModel model;
     private PlayerMovementModel modelMovement;
+    private PlayerMovementController controllerMovement;
 
-    private PlayerStatusModel statusModel;
     private PlayerStatusController statusController;
 
 
@@ -19,9 +19,10 @@ public class PlayerDashController : MonoBehaviour
         // Get references to dash and movement models
         model = GetComponent<PlayerDashModel>();
         modelMovement = GetComponent<PlayerMovementModel>();
+        controllerMovement = GetComponent<PlayerMovementController>();
+
         if (model.ShouldConsumeStamina)
         {
-            statusModel = GetComponent<PlayerStatusModel>();
             statusController = GetComponent<PlayerStatusController>();
         }
     }
@@ -63,7 +64,7 @@ public class PlayerDashController : MonoBehaviour
         while (Time.time - startTime < model.DashDuration)
         {
             // Get the current forward direction of the player's rotation
-            Vector3 current = modelMovement.PlayerTransform.rotation * Vector3.forward;
+            Vector3 current = controllerMovement.PlayerForwardPosition();
 
             // Move the player using the dash speed
             modelMovement.Controller.Move(current * model.DashSpeed * Time.deltaTime);
