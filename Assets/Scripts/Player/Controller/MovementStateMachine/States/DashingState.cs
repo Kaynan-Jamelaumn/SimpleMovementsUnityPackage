@@ -13,12 +13,13 @@ public class DashingState : MovementState
         startTime = Time.time;
     }
     public override void ExitState() { }
-    public override void UpdateState(){}
+    public override void UpdateState() { }
     public override
     MovementStateMachine.EMovementState GetNextState()
     {
         if (Time.time - startTime < Context.StatusController.Dashmodel.DashDuration) return StateKey;
-        if (Context.PlayerInput.Player.Jump.triggered)
+
+        if (Context.PlayerInput.Player.Jump.triggered && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfJumpStaminaCost)))
             return MovementStateMachine.EMovementState.Jumping;
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude == 0)
             return MovementStateMachine.EMovementState.Idle;
@@ -29,7 +30,11 @@ public class DashingState : MovementState
             return MovementStateMachine.EMovementState.Crouching;
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)
             return MovementStateMachine.EMovementState.Walking;
-        
+
+
+        if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
+            return MovementStateMachine.EMovementState.Rolling;
+
         if (!Context.AnimationModel.IsDashing)
             return MovementStateMachine.EMovementState.Idle;
 

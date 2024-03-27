@@ -10,7 +10,8 @@ public class JumpingState : MovementState
         Context.MovementModel.CurrentSpeed = Context.MovementModel.Speed;
     }
     public override void ExitState() { }
-    public override void UpdateState() {
+    public override void UpdateState()
+    {
         GetNextState();
     }
     public override
@@ -27,6 +28,11 @@ public class JumpingState : MovementState
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)//Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero)
             return MovementStateMachine.EMovementState.Walking;
 
+        if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
+            return MovementStateMachine.EMovementState.Dashing;
+
+        if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
+            return MovementStateMachine.EMovementState.Rolling;
         return StateKey;
     }
 

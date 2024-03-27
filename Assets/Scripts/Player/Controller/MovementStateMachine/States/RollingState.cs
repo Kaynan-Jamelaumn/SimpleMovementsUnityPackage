@@ -8,25 +8,27 @@ public class RollState : MovementState
     private float startTime;
     public override void EnterState()
     {
-       Context.AnimationModel.IsRolling = true;
-       Context.StatusController.RollController.Roll();
-       startTime = Time.time;
-        
-        
+        Context.AnimationModel.IsRolling = true;
+        Context.StatusController.RollController.Roll();
+        startTime = Time.time;
+
+
     }
-    public override void ExitState() 
+    public override void ExitState()
     {
         Context.AnimationModel.IsRolling = false;
     }
-    public override void UpdateState() {
+    public override void UpdateState()
+    {
     }
     public override
     MovementStateMachine.EMovementState GetNextState()
     {
         if (Time.time - startTime < Context.StatusController.RollModel.RollDuration) return StateKey;
 
-        if (Context.PlayerInput.Player.Jump.triggered)
+        if (Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost))
             return MovementStateMachine.EMovementState.Jumping;
+
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude == 0)
             return MovementStateMachine.EMovementState.Idle;
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Sprint.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost)))
@@ -37,8 +39,12 @@ public class RollState : MovementState
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)
             return MovementStateMachine.EMovementState.Walking;
 
+        if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
+            return MovementStateMachine.EMovementState.Dashing;
+
         if (!Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;
+
 
 
         return StateKey;

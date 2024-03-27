@@ -6512,7 +6512,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3546557981370951511}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.09913494, y: 0.56072056, z: 0.067851566, w: 0.8192441}
+  m_LocalRotation: {x: 0.3404381, y: 0.65787, z: -0.44506773, w: 0.50321335}
   m_LocalPosition: {x: 0.13300006, y: 0.0059999824, z: 0.41699982}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -7355,19 +7355,7 @@ MonoBehaviour:
     m_ActionId: 4cac9c9f-215e-439a-a9ea-941de7599c80
     m_ActionName: Player/Movement[/Keyboard/w,/Keyboard/s,/Keyboard/a,/Keyboard/d]
   - m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 8073438025949184095}
-        m_TargetAssemblyTypeName: PlayerMovementView, Assembly-CSharp
-        m_MethodName: OnJump
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
     m_ActionId: 79ec97bf-a9c6-4de5-93a5-0d0934583897
     m_ActionName: Player/Jump[/Keyboard/space]
   - m_PersistentCalls:
@@ -7403,35 +7391,11 @@ MonoBehaviour:
     m_ActionId: 3ae1c85d-b06f-4ebb-86fb-b22bcb578e8c
     m_ActionName: Player/Inventory[/Keyboard/tab]
   - m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 8073438025949184095}
-        m_TargetAssemblyTypeName: PlayerMovementView, Assembly-CSharp
-        m_MethodName: OnCrouch
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
     m_ActionId: 9d0ad8b3-c99e-4682-a1f1-d368487cd8b7
     m_ActionName: Player/Crouch[/Keyboard/ctrl]
   - m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 1403433551041116957}
-        m_TargetAssemblyTypeName: PlayerRollView, Assembly-CSharp
-        m_MethodName: OnRoll
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
     m_ActionId: 8f18f3f9-7774-4948-80fb-1d7ed19701f1
     m_ActionName: Player/Roll[/Keyboard/q]
   - m_PersistentCalls:
@@ -7467,19 +7431,7 @@ MonoBehaviour:
     m_ActionId: 370bb772-d623-42b9-924b-63ab4a582ec7
     m_ActionName: Player/Attack[/Mouse/leftButton]
   - m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 8073438025949184095}
-        m_TargetAssemblyTypeName: PlayerMovementView, Assembly-CSharp
-        m_MethodName: OnSprint
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
     m_ActionId: 7d8a6237-a231-4598-b43a-833f9fc70148
     m_ActionName: Player/Sprint[/Keyboard/ctrl]
   - m_PersistentCalls:
@@ -7515,19 +7467,7 @@ MonoBehaviour:
     m_ActionId: ee6995cd-8a63-4a57-afd5-0bdfacd84af7
     m_ActionName: Player/ZoomCamera[/Keyboard/g]
   - m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 3451259714069167331}
-        m_TargetAssemblyTypeName: PlayerDashView, Assembly-CSharp
-        m_MethodName: OnDash
-        m_Mode: 0
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
+      m_Calls: []
     m_ActionId: 94924ced-347a-4af3-8ff9-5044d9f0f17b
     m_ActionName: Player/Dash[/Keyboard/f]
   - m_PersistentCalls:
@@ -14034,7 +13974,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_RecenterTarget: 0
   m_VerticalAxis:
-    Value: -13.79938
+    Value: 68.15893
     m_SpeedMode: 0
     m_MaxSpeed: 300
     m_AccelTime: 0.1
@@ -14058,7 +13998,7 @@ MonoBehaviour:
     m_LegacyHeadingDefinition: -1
     m_LegacyVelocityFilterStrength: -1
   m_HorizontalAxis:
-    Value: 68.77833
+    Value: 105.17432
     m_SpeedMode: 0
     m_MaxSpeed: 300
     m_AccelTime: 0.1
