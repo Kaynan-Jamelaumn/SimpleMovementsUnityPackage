@@ -1,0 +1,70 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33dd5fe6b3817cc499157fef5f49a875, type: 3}
+  m_Name: TargetClickAbility
+  m_EditorClassIdentifier: 
+  name: 
+  numberOfTargets: 1
+  shouldLaunch: 0
+  speed: 1
+  lifeSpan: 1
+  isGroundFixedPosition: 0
+  duration: 3
+  coolDown: 4
+  castDuration: 2
+  finalLaunchTime: 2
+  isFixedPosition: 0
+  isPartialPermanentTargetWhileCasting: 0
+  isPermanentTarget: 0
+  shouldMarkAtCast: 0
+  effects:
+  - effectType: 0
+    effectName: morete
+    amount: -140
+    timeBuffEffect: 0
+    tickCooldown: 0
+    isProcedural: 0
+    isStackable: 1
+    enemyEffect: 1
+    randomAmount: 0
+    randomTimeBuffEffect: 0
+    randomTickCooldown: 0
+    minAmount: 0
+    maxAmount: 0
+    minTimeBuffEffect: 0
+    maxTimeBuffEffect: 0
+    minTickCooldown: 0
+    maxTickCooldown: 0
+    criticalDamageMultiplier: 0
+    probabilityToApply: 1
+    criticalChance: 0.52
+    attackCast:
+    - castType: 1
+      castSize: 4
+      boxSize: {x: 4, y: 4, z: 4}
+      customOrigin: {x: 0, y: 0, z: 0}
+      customAngle: {x: 0, y: 0, z: 0}
+      targetLayers:
+        serializedVersion: 2
+        m_Bits: 4294967295
+    maxHitTimes: 4
+  fakeInstancerApplyEffects: {fileID: 5870559098494296780, guid: 940f79140da2cb04da696fe3b324bb03, type: 3}
+  particle: {fileID: 7986504087968017091, guid: 12a56ee4630040c4eb17ae9707ed4cef, type: 3}
+  particleShouldChangeSize: 0
+  subParticleShouldChangeSize: 0
+  casterIsImune: 1
+  casterReceivesBeneffitsBuffsEvenFromFarAway: 0
+  multiAreaEffect: 0
+  canBeHitMoreThanOnce: 0
+  hasMaxHitPerCollider: 0
+  MaxRange: 0
+  isSelfTarget: {fileID: 0}

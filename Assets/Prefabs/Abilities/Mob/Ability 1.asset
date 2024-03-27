@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c00f854785aa2a40b8f6f920747276e, type: 3}
+  m_Name: Ability 1
+  m_EditorClassIdentifier: 
+  name: 
+  numberOfTargets: 1
+  shouldLaunch: 1
+  speed: 4
+  lifeSpan: 10
+  isGroundFixedPosition: 0
+  duration: 1
+  coolDown: 4
+  castDuration: 3
+  finalLaunchTime: 4
+  isFixedPosition: 0
+  isPartialPermanentTargetWhileCasting: 0
+  isPermanentTarget: 0
+  shouldMarkAtCast: 0
+  effects:
+  - effectType: 0
+    effectName: 4ssa
+    amount: -65
+    timeBuffEffect: 0
+    tickCooldown: 0
+    isProcedural: 0
+    isStackable: 1
+    enemyEffect: 1
+    randomAmount: 0
+    randomTimeBuffEffect: 0
+    randomTickCooldown: 0
+    minAmount: 0
+    maxAmount: 0
+    minTimeBuffEffect: 0
+    maxTimeBuffEffect: 0
+    minTickCooldown: 0
+    maxTickCooldown: 0
+    criticalDamageMultiplier: 0
+    probabilityToApply: 1
+    criticalChance: 0.71
+    attackCast: []
+    maxHitTimes: 0
+  fakeInstancerApplyEffects: {fileID: 0}
+  particle: {fileID: 2316544225188537692, guid: 457e10569e55c3d48b5533505b467287, type: 3}
+  particleShouldChangeSize: 0
+  subParticleShouldChangeSize: 0
+  casterIsImune: 0
+  casterReceivesBeneffitsBuffsEvenFromFarAway: 0
+  multiAreaEffect: 0
+  canBeHitMoreThanOnce: 0
+  hasMaxHitPerCollider: 0

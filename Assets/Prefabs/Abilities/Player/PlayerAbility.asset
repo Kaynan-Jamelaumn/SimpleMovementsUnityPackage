@@ -1,0 +1,70 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33dd5fe6b3817cc499157fef5f49a875, type: 3}
+  m_Name: PlayerAbility
+  m_EditorClassIdentifier: 
+  name: 
+  numberOfTargets: 1
+  shouldLaunch: 1
+  speed: 8
+  lifeSpan: 6
+  isGroundFixedPosition: 0
+  duration: 0.25
+  coolDown: 0
+  castDuration: 1
+  finalLaunchTime: 1
+  isFixedPosition: 0
+  isPartialPermanentTargetWhileCasting: 0
+  isPermanentTarget: 0
+  shouldMarkAtCast: 0
+  effects:
+  - effectType: 0
+    effectName: zzdvbsd
+    amount: -100
+    timeBuffEffect: 0
+    tickCooldown: 0
+    isProcedural: 0
+    isStackable: 1
+    enemyEffect: 1
+    randomAmount: 0
+    randomTimeBuffEffect: 0
+    randomTickCooldown: 0
+    minAmount: 0
+    maxAmount: 0
+    minTimeBuffEffect: 0
+    maxTimeBuffEffect: 0
+    minTickCooldown: 0
+    maxTickCooldown: 0
+    criticalDamageMultiplier: 0
+    probabilityToApply: 1
+    criticalChance: 0.62
+    attackCast:
+    - castType: 0
+      castSize: 3
+      boxSize: {x: 0, y: 0, z: 0}
+      customOrigin: {x: 0, y: 0, z: 0}
+      customAngle: {x: 0, y: 0, z: 0}
+      targetLayers:
+        serializedVersion: 2
+        m_Bits: 448
+    maxHitTimes: 5
+  fakeInstancerApplyEffects: {fileID: 5870559098494296780, guid: 940f79140da2cb04da696fe3b324bb03, type: 3}
+  particle: {fileID: 2316544225188537692, guid: 457e10569e55c3d48b5533505b467287, type: 3}
+  particleShouldChangeSize: 0
+  subParticleShouldChangeSize: 0
+  casterIsImune: 0
+  casterReceivesBeneffitsBuffsEvenFromFarAway: 0
+  multiAreaEffect: 0
+  canBeHitMoreThanOnce: 0
+  hasMaxHitPerCollider: 0
+  MaxRange: 14
+  isSelfTarget: {fileID: 0}
