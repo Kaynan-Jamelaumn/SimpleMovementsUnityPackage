@@ -15,8 +15,7 @@ public abstract class MovementState : BaseState<MovementStateMachine.EMovementSt
     protected bool TriggeredJump() => Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost);
     protected bool TriggeredDash() => Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost);
     protected bool TriggeredRoll() => Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost);
-    protected bool IsIdle() => Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero;
-    protected bool IsWalking() => Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude != 0;
+    protected bool IsMoving() => Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude != 0;
 
     protected bool TriggeredSprint() => Context.PlayerInput.Player.Sprint.IsPressed() && HasStaminaForAction(Context.MovementModel.AmountOfSprintStaminaCost);
     protected bool TriggeredCrouch() => Context.PlayerInput.Player.Crouch.IsPressed() && HasStaminaForAction(Context.MovementModel.AmountOfCrouchStaminaCost);

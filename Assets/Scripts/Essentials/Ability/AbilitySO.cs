@@ -5,6 +5,7 @@ using UnityEngine;
 public abstract class AbilitySO : ScriptableObject
 {
     [SerializeField] private new string name;
+    [Tooltip("if the ability  only affect the usser")][SerializeField] public bool singleTargetSelfTarget;
     [Tooltip("number of AttackCasts to go to different places/player")][SerializeField] public int numberOfTargets = 1;
     
     [Header("Launchable Ability")]

@@ -21,7 +21,11 @@ public class RunningState : MovementState
     public override void ExitState()
     {
 
-        if (Context.MovementModel.SprintCoroutine != null) Context.MovementController.StopCoroutine(Context.MovementModel.SprintCoroutine);
+        if (Context.MovementModel.SprintCoroutine != null)
+        {
+            Context.MovementModel.StopCoroutine(Context.MovementModel.SprintCoroutine);
+            Context.MovementModel.SprintCoroutine = null; // Reset coroutine reference
+        }
         Context.StatusController.StaminaManager.IsConsumingStamina = false;
 
     }
@@ -32,20 +36,24 @@ public class RunningState : MovementState
     public override
     MovementStateMachine.EMovementState GetNextState()
     {
-        if (Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost))
-            return MovementStateMachine.EMovementState.Jumping;
+        if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
+        if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
+        if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
+        if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
+        //if (Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost))
+        //    return MovementStateMachine.EMovementState.Jumping;
 
-        if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
-            return MovementStateMachine.EMovementState.Dashing;
+        //if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
+        //    return MovementStateMachine.EMovementState.Dashing;
 
-        if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
-            return MovementStateMachine.EMovementState.Rolling; ;
+        //if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
+        //    return MovementStateMachine.EMovementState.Rolling; ;
 
 
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero && !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;
         if (Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Sprint.IsPressed())
-            return MovementStateMachine.EMovementState.Walking;
+           return MovementStateMachine.EMovementState.Walking;
 
 
         return StateKey;

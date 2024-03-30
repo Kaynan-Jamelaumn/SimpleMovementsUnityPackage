@@ -1,12 +1,12 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using System.Threading.Tasks;
 public abstract class BaseAbilityController<T> : MonoBehaviour where T : AbilityHolder
 {
     [SerializeField] protected Transform targetTransform;
     protected Transform oldTransform;
-    protected virtual void SetAbilityActions(T ability, Transform abilityTargetTransform, AttackCast attackCast = null)
+    protected virtual async Task SetAbilityActions(T ability, Transform abilityTargetTransform, AttackCast attackCast = null)
     {
         Transform targetedTransform = abilityTargetTransform;
         GameObject instantiatedParticle = Instantiate(ability.particle);
@@ -15,7 +15,7 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             ability.targetTransform = GetTargetTransform(targetedTransform);
             targetTransform = ability.targetTransform;
         }
-        SetParticleDuration(instantiatedParticle, ability, attackCast);
+        await SetParticleDuration(instantiatedParticle, ability, attackCast);
         instantiatedParticle.transform.position = targetTransform.position;
 
         if (ability.abilityEffect.castDuration != 0)
@@ -37,9 +37,13 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
 
 
 
-    public virtual void SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
+    public virtual async Task SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
     {
         ParticleSystem particleSystem = instantiatedParticle.GetComponent<ParticleSystem>();
+        //if (particleSystem.isPlaying)
+        //{
+        //    particleSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        //}
         ParticleSystem.MainModule mainModule = particleSystem.main;
 
         // Set start delay and duration before starting the particle system
@@ -53,8 +57,8 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
            duration = ability.abilityEffect.castDuration + ability.abilityEffect.finalLaunchTime + ability.abilityEffect.duration;
         
         else duration = ability.abilityEffect.finalLaunchTime + ability.abilityEffect.duration;
-            //mainModule.startDelay = ability.abilityEffect.castDuration;
-        
+        //mainModule.startDelay = ability.abilityEffect.castDuration;
+
 
         mainModule.duration = duration;
         mainModule.startLifetime = duration;
@@ -74,16 +78,16 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
                 if (attackCast.castType == AttackCast.CastType.Box)
                 {
                     if (mainModuleSubParticle.startSizeX.constant < attackCast.boxSize.x && mainModuleSubParticle.startSizeZ.constant < attackCast.boxSize.z && mainModuleSubParticle.startSizeY.constant < attackCast.boxSize.y)
-                        ChangeParticleSize(mainModuleSubParticle, attackCast);
+                        await ChangeParticleSize(mainModuleSubParticle, attackCast);
                 }
                 else if (mainModuleSubParticle.startSizeX.constant < attackCast.castSize && mainModuleSubParticle.startSizeZ.constant < attackCast.castSize && mainModuleSubParticle.startSizeY.constant < attackCast.castSize)
-                    ChangeParticleSize(mainModuleSubParticle, attackCast);
+                    await ChangeParticleSize(mainModuleSubParticle, attackCast);
             }
         }
         if (ability.abilityEffect.particleShouldChangeSize) ChangeParticleSize(mainModule, attackCast);
         particleSystem.Play();
     }
-    private void ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
+    private async Task ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
     {
         if (attackCast != null)
         {
@@ -276,7 +280,7 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             if (effect.attackCast == null) effect.attackCast = new List<AttackCast> { attackCast };
             if (effect.enemyEffect == false)
             {
-                if(ability.abilityEffect.casterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
+                if(ability.abilityEffect.isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
                 else ability.abilityEffect.Use(targetTransform,effect, effect.attackCast);
 
             }

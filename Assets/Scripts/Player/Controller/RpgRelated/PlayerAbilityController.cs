@@ -43,12 +43,16 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
                 
                 else if (ability.abilityEffect.shouldLaunch)
                     SetAbilityActions(ability, transform, attackCast);
-                else if (!abilityStillInProgress)
+                else if (!abilityStillInProgress && !ability.abilityEffect.isFixedPosition)
                 {
                     abilityStillInProgress = true;
                     isWaitingForClick = true;
                     StartCoroutine(WaitForClickRoutine(ability, attackCast));
                     
+                }
+                else if (ability.abilityEffect.isFixedPosition)
+                {
+                    SetAbilityActions(ability, transform, attackCast);
                 }
             }
         }

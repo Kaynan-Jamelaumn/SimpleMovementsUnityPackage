@@ -19,21 +19,29 @@ public class DashingState : MovementState
     {
         if (Time.time - startTime < Context.StatusController.Dashmodel.DashDuration) return StateKey;
 
-        if (Context.PlayerInput.Player.Jump.triggered && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfJumpStaminaCost)))
-            return MovementStateMachine.EMovementState.Jumping;
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude == 0)
-            return MovementStateMachine.EMovementState.Idle;
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Sprint.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost)))
-            return MovementStateMachine.EMovementState.Running;
 
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Crouch.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfCrouchStaminaCost)))
-            return MovementStateMachine.EMovementState.Crouching;
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)
-            return MovementStateMachine.EMovementState.Walking;
+        if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
+        if (!IsMoving()) return MovementStateMachine.EMovementState.Idle;
+        if (IsMoving()) return MovementStateMachine.EMovementState.Walking;
+        if (TriggeredSprint()) return MovementStateMachine.EMovementState.Running;
+        if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
+        if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
+
+        //if (Context.PlayerInput.Player.Jump.triggered && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfJumpStaminaCost)))
+        //    return MovementStateMachine.EMovementState.Jumping;
+        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude == 0)
+        //    return MovementStateMachine.EMovementState.Idle;
+        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Sprint.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost)))
+        //    return MovementStateMachine.EMovementState.Running;
+
+        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Crouch.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfCrouchStaminaCost)))
+        //    return MovementStateMachine.EMovementState.Crouching;
+        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)
+        //    return MovementStateMachine.EMovementState.Walking;
 
 
-        if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
-            return MovementStateMachine.EMovementState.Rolling;
+        //if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
+        //    return MovementStateMachine.EMovementState.Rolling;
 
         if (!Context.AnimationModel.IsDashing)
             return MovementStateMachine.EMovementState.Idle;

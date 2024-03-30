@@ -6,6 +6,5 @@ using UnityEngine;
 public class PlayerAbilitySO : AbilityEffectSO
 {
     [SerializeField] public float MaxRange;
-    [SerializeField] public GameObject isSelfTarget;
 }
 

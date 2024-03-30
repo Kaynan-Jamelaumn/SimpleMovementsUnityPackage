@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections.Generic;
+using UnityEngine.EventSystems;
 
 public class UIPlayerManager : MonoBehaviour
 {
@@ -65,23 +66,39 @@ public class UIPlayerManager : MonoBehaviour
     // Method to spawn player and set class
     private void SpawnPlayer(string className, string playerName)
     {
-        GameObject newPlayer = Instantiate(playerPrefab, Vector3.zero, Quaternion.identity);
+        //GameObject newPlayer = Instantiate(playerPrefab, Vector3.zero, Quaternion.identity);
 
-        PlayerStatusController playerStatusController = newPlayer.GetComponent<PlayerStatusController>();
-        PlayerStartItemController playerStartItemController = newPlayer.GetComponent<PlayerStartItemController>();
+        //PlayerStatusController playerStatusController = newPlayer.GetComponent<PlayerStatusController>();
+        //PlayerStartItemController playerStartItemController = newPlayer.GetComponent<PlayerStartItemController>();
 
-        newPlayer.GetComponent<Player>().PlayerName = playerName;
+        //newPlayer.GetComponent<Player>().PlayerName = playerName;
 
-        playerStartItemController.SetPlayerClassItems(className);
-        playerStatusController.SelectPlayerClass(className);
+        //playerStartItemController.SetPlayerClassItems(className);
+        //playerStatusController.SelectPlayerClass(className);
+        //LoadScene("SampleScene");
 
-        DontDestroyOnLoad(newPlayer);
-        LoadScene("SampleScene");
+        //DontDestroyOnLoad(newPlayer);
+        LoadScene("SampleScene", className, playerName);
+
     }
-    public void LoadScene(string sceneName)
+    public void LoadScene(string sceneName, string className, string playerName)
     {
-        // Load the scene
+        // Carrega a cena
         SceneManager.LoadScene(sceneName);
+
+        // Quando a cena é carregada, spawna o jogador nela
+        SceneManager.sceneLoaded += (scene, mode) =>
+        {
+            if (scene.name == sceneName)
+            {
+                GameObject newPlayer = Instantiate(playerPrefab, Vector3.zero, Quaternion.identity);
+
+                // Configurações do jogador, como nome e classe
+                newPlayer.GetComponent<Player>().PlayerName = playerName;
+                newPlayer.GetComponent<PlayerStartItemController>().SetPlayerClassItems(className);
+                newPlayer.GetComponent<PlayerStatusController>().SelectPlayerClass(className);
+            }
+        };
     }
     // Method to fetch class stats based on class name (Replace this with your actual method)
     private BasePlayerClass FetchClassStats(string className)

@@ -25,7 +25,7 @@ public class WalkingState : MovementState
         if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
         if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
         if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
-        if (IsIdle()) return MovementStateMachine.EMovementState.Idle;
+        if (!IsMoving()) return MovementStateMachine.EMovementState.Idle;
         if (TriggeredSprint()) return MovementStateMachine.EMovementState.Running;
         if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
 

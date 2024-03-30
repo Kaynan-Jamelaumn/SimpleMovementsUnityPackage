@@ -13,7 +13,7 @@ public class AbilityEffectSO : AbilitySO
     [Tooltip("Particle change the size according to the AttackCast Collider")][SerializeField] public bool particleShouldChangeSize;
     [Tooltip("A Child Particle from the Particle Object change the size according to the AttackCast Collider")][SerializeField] public bool subParticleShouldChangeSize;
     [Tooltip("Caster receives damage/debuff from it's own ability")][SerializeField] public bool casterIsImune;
-    [Tooltip("Caster will receibe the buffs even outside the AttackCast Collider")][SerializeField] public bool casterReceivesBeneffitsBuffsEvenFromFarAway;
+    [Tooltip("Caster will receibe the buffs even outside the AttackCast Collider")][SerializeField] public bool isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area")][SerializeField] public bool multiAreaEffect;
     [SerializeField] public bool canBeHitMoreThanOnce;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area does it have a max amount of targets")][SerializeField] public bool hasMaxHitPerCollider;    

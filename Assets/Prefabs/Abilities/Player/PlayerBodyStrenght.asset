@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33dd5fe6b3817cc499157fef5f49a875, type: 3}
+  m_Name: PlayerBodyStrenght
+  m_EditorClassIdentifier: 
+  name: body jhonson
+  singleTargetSelfTarget: 0
+  numberOfTargets: 1
+  shouldLaunch: 0
+  speed: 1
+  lifeSpan: 1
+  isGroundFixedPosition: 0
+  duration: 0
+  coolDown: 4
+  castDuration: 2
+  finalLaunchTime: 0
+  isFixedPosition: 1
+  isPartialPermanentTargetWhileCasting: 0
+  isPermanentTarget: 1
+  shouldMarkAtCast: 0
+  effects:
+  - effectType: 0
+    effectName: bauaudusu
+    amount: -100
+    timeBuffEffect: 0
+    tickCooldown: 0
+    isProcedural: 0
+    isStackable: 0
+    enemyEffect: 0
+    randomAmount: 0
+    randomTimeBuffEffect: 0
+    randomTickCooldown: 0
+    minAmount: 0
+    maxAmount: 0
+    minTimeBuffEffect: 0
+    maxTimeBuffEffect: 0
+    minTickCooldown: 0
+    maxTickCooldown: 0
+    criticalDamageMultiplier: 0
+    probabilityToApply: 0
+    criticalChance: 0
+    attackCast:
+    - castType: 1
+      castSize: 0
+      boxSize: {x: 0.2, y: 0.2, z: 0.2}
+      customOrigin: {x: 0, y: 0, z: 0}
+      customAngle: {x: 0, y: 0, z: 0}
+      targetLayers:
+        serializedVersion: 2
+        m_Bits: 448
+    maxHitTimes: 0
+  fakeInstancerApplyEffects: {fileID: 5870559098494296780, guid: 940f79140da2cb04da696fe3b324bb03, type: 3}
+  particle: {fileID: 8846737274113074935, guid: 81a74a0aefeb7674ca32535d1a269b4a, type: 3}
+  particleShouldChangeSize: 0
+  subParticleShouldChangeSize: 0
+  casterIsImune: 0
+  casterReceivesBeneffitsBuffsEvenFromFarAway: 0
+  multiAreaEffect: 0
+  canBeHitMoreThanOnce: 0
+  hasMaxHitPerCollider: 0
+  MaxRange: 0
+  isSelfTarget: {fileID: 0}

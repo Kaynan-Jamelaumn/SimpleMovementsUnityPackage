@@ -6634,10 +6634,8 @@ GameObject:
   - component: {fileID: 3641594185906645255}
   - component: {fileID: 5151273387548462215}
   - component: {fileID: 836655592247917169}
-  - component: {fileID: 3451259714069167331}
   - component: {fileID: 5507655387895816426}
   - component: {fileID: 6426713189092946978}
-  - component: {fileID: 1403433551041116957}
   - component: {fileID: 6371505459299635134}
   - component: {fileID: 7264006234580812381}
   - component: {fileID: 4937398676102223084}
@@ -6908,19 +6906,6 @@ MonoBehaviour:
   dashCoolDown: 4
   amountOfDashStaminaCost: 40
   ShouldConsumeStamina: 1
---- !u!114 &3451259714069167331
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3553647395073543041}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8bbbe1b8742e46348a2c618ff1b11de9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  model: {fileID: 836655592247917169}
 --- !u!114 &5507655387895816426
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6945,19 +6930,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f70c0f8a85d8464592a37794b5df0d0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &1403433551041116957
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3553647395073543041}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4b985dfd0ff7d9049997e6355eb7cae4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  model: {fileID: 6371505459299635134}
 --- !u!114 &6371505459299635134
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7037,17 +7009,17 @@ MonoBehaviour:
     cooldownTime: 0
     abilityState: 0
     attackCast:
-    - castType: 3
+    - castType: 1
       castSize: 15
-      boxSize: {x: 0, y: 0, z: 0}
+      boxSize: {x: 0.2, y: 0.2, z: 0.2}
       customOrigin: {x: 0, y: 0, z: 0}
       customAngle: {x: 0, y: 0, z: 0}
       targetLayers:
         serializedVersion: 2
-        m_Bits: 0
-    particle: {fileID: 0}
+        m_Bits: 448
+    particle: {fileID: 8846737274113074935, guid: 81a74a0aefeb7674ca32535d1a269b4a, type: 3}
     targetTransform: {fileID: 0}
-    abilityEffect: {fileID: 0}
+    abilityEffect: {fileID: 11400000, guid: 4feb6a03021826f4095b70e9044cc95d, type: 2}
     abilityActionReference: {fileID: -3447309004339439150, guid: f8d50c74cf36b904993fe75db0347fd5, type: 3}
   - activeTime: 0
     cooldownTime: 0

@@ -20,9 +20,7 @@ public class IdleState : MovementState
         if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
         if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
         if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
-
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude != 0)
-            return MovementStateMachine.EMovementState.Walking;
+        if (IsMoving()) return MovementStateMachine.EMovementState.Walking;
 
         return StateKey;
 
