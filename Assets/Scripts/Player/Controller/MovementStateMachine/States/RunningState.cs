@@ -40,15 +40,6 @@ public class RunningState : MovementState
         if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
         if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
         if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
-        //if (Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost))
-        //    return MovementStateMachine.EMovementState.Jumping;
-
-        //if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
-        //    return MovementStateMachine.EMovementState.Dashing;
-
-        //if (Context.PlayerInput.Player.Roll.triggered && HasStaminaForAction(Context.StatusController.RollModel.AmountOfRollStaminaCost))
-        //    return MovementStateMachine.EMovementState.Rolling; ;
-
 
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero && !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;

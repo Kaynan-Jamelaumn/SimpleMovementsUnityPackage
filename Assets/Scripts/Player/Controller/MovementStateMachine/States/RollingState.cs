@@ -34,22 +34,6 @@ public class RollState : MovementState
         if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
         if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
 
-        //if (Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost))
-        //    return MovementStateMachine.EMovementState.Jumping;
-
-        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude == 0)
-        //    return MovementStateMachine.EMovementState.Idle;
-        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Sprint.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost)))
-        //    return MovementStateMachine.EMovementState.Running;
-
-        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0 && Context.PlayerInput.Player.Crouch.IsPressed() && (!Context.MovementModel.ShouldConsumeStamina || Context.MovementModel.ShouldConsumeStamina && Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfCrouchStaminaCost)))
-        //    return MovementStateMachine.EMovementState.Crouching;
-        //if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude > 0)
-        //    return MovementStateMachine.EMovementState.Walking;
-
-        //if (Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.Dashmodel.AmountOfDashStaminaCost))
-        //    return MovementStateMachine.EMovementState.Dashing;
-
         if (!Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;
 
