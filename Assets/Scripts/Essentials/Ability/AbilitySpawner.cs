@@ -86,19 +86,24 @@ public class AbilitySpawner : MonoBehaviour
         foreach (var abilityCase in spawnedAbilities)
         {
             if (Random.value <= abilityCase.spawnChance)
-            {
-                Vector3 spawnOffset = new Vector3(Random.Range(-1f, 1f), Random.Range(1f, 2f), Random.Range(-1f, 1f));
-                Vector3 spawnPosition = this.transform.position + spawnOffset;
+                {
+                    Vector3 spawnOffset = GetSpawnOffSet();
+                    Vector3 spawnPosition = this.transform.position + spawnOffset;
 
-                GameObject newItem = Instantiate(abilityCase.particleEffect, spawnPosition, Quaternion.identity);
-                PickableAbility pickableAbility = newItem.AddComponent<PickableAbility>();
-                pickableAbility.ability = abilityCase.ability;
-                pickableAbility.waitingTimeToAbilityBecomeAvailable = abilityCase.waitingTimeToAbilityBecomeAvailable;
-                pickableAbility.abilityLifeSpan = abilityCase.abilityLifeSpan;
-                pickableAbility.startCountDown = true;
+                    GameObject newItem = Instantiate(abilityCase.particleEffect, spawnPosition, Quaternion.identity);
+                    PickableAbility pickableAbility = newItem.AddComponent<PickableAbility>();
+                    pickableAbility.ability = abilityCase.ability;
+                    pickableAbility.waitingTimeToAbilityBecomeAvailable = abilityCase.waitingTimeToAbilityBecomeAvailable;
+                    pickableAbility.abilityLifeSpan = abilityCase.abilityLifeSpan;
+                    pickableAbility.startCountDown = true;
 
+                }
             }
-        }
+    }
+
+    private static Vector3 GetSpawnOffSet()
+    {
+        return new Vector3(Random.Range(-1f, 1f), Random.Range(1f, 2f), Random.Range(-1f, 1f));
     }
 }
 

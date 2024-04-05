@@ -3,13 +3,17 @@ using UnityEngine.SceneManagement;
 
 public class Portal : MonoBehaviour
 {
-    [SerializeField] public string sceneToLoad; // O nome da cena para carregar
-    [SerializeField] public Vector3 position;
-
+    [SerializeField] private string sceneToLoad = null; // name of the scene to load
+    [SerializeField] private Vector3 position;
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))
         {
+            if (sceneToLoad== null)
+            {
+                other.gameObject.transform.position = position;
+                return;
+            }
             // Manter o GameObject do jogador durante a transição de cena
             DontDestroyOnLoad(other.gameObject);
 

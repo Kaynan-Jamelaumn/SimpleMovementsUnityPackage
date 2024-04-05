@@ -7,11 +7,10 @@ public class RotateToGroundNormal: MonoBehaviour
     [SerializeField] private Transform modelTransform;
     private void Update()
     {
-        RaycastHit hit;
-        if (Physics.Raycast(transform.position, Vector3.down, out hit))
+        if (Physics.Raycast(transform.position, Vector3.down, out RaycastHit hit))
         {
-            Quaternion targetRotation = Quaternion.FromToRotation(transform.up, hit.normal) * transform.rotation; 
+            Quaternion targetRotation = Quaternion.FromToRotation(transform.up, hit.normal) * transform.rotation;
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
-        } 
+        }
     }
 }

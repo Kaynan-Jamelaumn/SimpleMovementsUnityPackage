@@ -100,9 +100,8 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
     private void ProcessRayCastAbility(PlayerAbilityHolder ability, AttackCast attackCast)
     {
         Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-        RaycastHit hit;
 
-        if (Physics.Raycast(ray, out hit, attackCast.castSize))
+        if (Physics.Raycast(ray, out RaycastHit hit, attackCast.castSize))
         {
             if (hit.collider != null)
                 _ = SetAbilityActions(ability, hit.collider.transform, attackCast);

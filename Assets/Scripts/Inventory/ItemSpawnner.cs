@@ -18,7 +18,7 @@ public class ItemSpawnner : MonoBehaviour
         {
             if (item.item != null && Random.value <= item.spawnChance)
             {
-                Vector3 spawnOffset = new Vector3(Random.Range(-1f, 1f), Random.Range(1f, 2f), Random.Range(-1f, 1f));
+                Vector3 spawnOffset = GetSpawnOffset();
                 Vector3 spawnPosition = position + spawnOffset;
 
                 GameObject newItem = Instantiate(item.item, spawnPosition, Quaternion.identity);
@@ -35,6 +35,11 @@ public class ItemSpawnner : MonoBehaviour
                     itemPickable.DurabilityList.Add(durability);
                 }
             }
+        }
+
+        static Vector3 GetSpawnOffset()
+        {
+            return new Vector3(Random.Range(-1f, 1f), Random.Range(1f, 2f), Random.Range(-1f, 1f));
         }
     }
 }

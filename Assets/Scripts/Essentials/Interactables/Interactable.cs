@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-
+using static GenericMethods;
 public class Interactable : MonoBehaviour
 {
     [SerializeField] private float interactionTime;
@@ -20,8 +20,8 @@ public class Interactable : MonoBehaviour
     private void Awake()
     {
         if (hasRandomInteractionTime)
-            interactionTime = Random.Range(minInteractionTime, maxInteractionTime);
-        
+            interactionTime = GenericMethods.GetRandomValue(interactionTime, true, minInteractionTime, maxInteractionTime);
+
     }
 }
 

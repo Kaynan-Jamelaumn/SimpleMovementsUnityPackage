@@ -141,10 +141,9 @@ public class Mob : MonoBehaviour
             // Generate a random direction and add it to the origin.
             Vector3 randomDirection = Random.insideUnitSphere * distance;
             randomDirection += origin;
-            NavMeshHit navMeshHit;
 
             // Check if the random position is on the NavMesh and return it if true.
-            if (NavMesh.SamplePosition(randomDirection, out navMeshHit, distance, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(randomDirection, out NavMeshHit navMeshHit, distance, NavMesh.AllAreas))
             {
                 return navMeshHit.position;
             }

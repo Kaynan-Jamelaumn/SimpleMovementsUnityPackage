@@ -1,5 +1,4 @@
-﻿using System;
-public static class GenericMethods
+﻿public static class GenericMethods
 {
     public static float GetRandomValue(float baseValue, bool useRandom, float minValue, float maxValue)
     {

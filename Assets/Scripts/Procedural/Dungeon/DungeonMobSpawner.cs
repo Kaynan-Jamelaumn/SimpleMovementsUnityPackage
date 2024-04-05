@@ -199,7 +199,8 @@ public class DungeonMobSpawner : MonoBehaviour
             if (currentMobs < maxMobs)
                 Spawn();
 
-            float spawnInterval = hasRandomSpawnTime ? UnityEngine.Random.Range(minTimeToSpawn, maxTimeToSpawn) : spawnTime;
+            
+            float spawnInterval = GenericMethods.GetRandomValue(spawnTime, hasRandomSpawnTime, minTimeToSpawn, maxTimeToSpawn);
             yield return new WaitForSeconds(spawnInterval);
         }
     }

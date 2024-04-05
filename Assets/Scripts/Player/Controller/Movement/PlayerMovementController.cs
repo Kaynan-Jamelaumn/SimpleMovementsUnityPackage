@@ -79,11 +79,10 @@ public class PlayerMovementController : MonoBehaviour
     {
         Vector3 raycastOrigin = model.PlayerShellObject.transform.position + Vector3.up * model.Controller.stepOffset;
         float raycastLength = 0.5f; // Adjust this value based on the game's scale
-        RaycastHit hit;
 
         Debug.DrawRay(raycastOrigin, Vector3.down * raycastLength, Color.red); // Visualize the ray in the scene
 
-        bool isHit = Physics.Raycast(raycastOrigin, Vector3.down, out hit, raycastLength);
+        bool isHit = Physics.Raycast(raycastOrigin, Vector3.down, out RaycastHit hit, raycastLength);
 
         return isHit;
     }

@@ -74,9 +74,9 @@ public class ConsumableSO : ItemSO
 
     private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController)
     {
-        float amount = effect.randomAmount ? Random.Range(effect.minAmount, effect.maxAmount) : effect.amount;
-        float timeBuffEffect = effect.randomTimeBuffEffect ? Random.Range(effect.minTimeBuffEffect, effect.maxTimeBuffEffect) : effect.timeBuffEffect;
-        float tickCooldown = effect.randomTickCooldown ? Random.Range(effect.minTickCooldown, effect.maxTickCooldown) : effect.tickCooldown;
+        float amount = GenericMethods.GetRandomValue(effect.amount, effect.randomAmount, effect.minAmount, effect.maxAmount);
+        float timeBuffEffect = GenericMethods.GetRandomValue(effect.timeBuffEffect, effect.randomTimeBuffEffect, effect.minTimeBuffEffect, effect.maxTimeBuffEffect);
+        float tickCooldown = GenericMethods.GetRandomValue(effect.tickCooldown, effect.randomTickCooldown, effect.minTickCooldown, effect.maxTickCooldown);
 
         switch (effect.effectType)
         {
