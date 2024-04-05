@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
-
+using System.Threading.Tasks;
 public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder>
 {
     [SerializeField] private PlayerMovementModel movementModel;
@@ -39,10 +39,10 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
             {   
                 AttackCast attackCast = ability.attackCast.First();
                 if (ability.abilityEffect.numberOfTargets > 1) // multi target abilities with  feet target spawn
-                    foreach (var eachaAttackCast in ability.attackCast) SetAbilityActions(ability, transform, eachaAttackCast);
+                    foreach (var eachaAttackCast in ability.attackCast) _ = SetAbilityActions(ability, transform, eachaAttackCast);
                 
                 else if (ability.abilityEffect.shouldLaunch)
-                    SetAbilityActions(ability, transform, attackCast);
+                    _ = SetAbilityActions(ability, transform, attackCast);
                 else if (!abilityStillInProgress && !ability.abilityEffect.isFixedPosition)
                 {
                     abilityStillInProgress = true;
@@ -52,7 +52,7 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
                 }
                 else if (ability.abilityEffect.isFixedPosition)
                 {
-                    SetAbilityActions(ability, transform, attackCast);
+                    _ = SetAbilityActions(ability, transform, attackCast);
                 }
             }
         }
@@ -105,7 +105,7 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
         if (Physics.Raycast(ray, out hit, attackCast.castSize))
         {
             if (hit.collider != null)
-                SetAbilityActions(ability, hit.collider.transform, attackCast);
+                _ = SetAbilityActions(ability, hit.collider.transform, attackCast);
         }
     }
     protected Vector3 GetMousePosition()

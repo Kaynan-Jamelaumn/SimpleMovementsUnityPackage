@@ -24,7 +24,6 @@ public abstract class ItemSO : ScriptableObject
     [SerializeField] protected bool shouldBeDestroyedOn0UsesLeft = true;
     [SerializeField] protected ItemType itemType;
     [SerializeField] protected string description; 
-    [SerializeField] protected bool isEquipped = false;
     [Tooltip("coolDown for the same item to be used again")][SerializeField] protected float cooldown = 0;
     [Header("Item Hand Position")]
     [Header("Position")]
@@ -43,11 +42,6 @@ public abstract class ItemSO : ScriptableObject
     [Header("Particles")]
     [SerializeField] protected ParticleSystem useParticles;
     [SerializeField] protected float pickUpTime;
-    public bool IsEquipped
-    {
-        get => isEquipped;
-        set => isEquipped = value;
-    } 
     public float PickUpTime
     {
         get => pickUpTime;
@@ -102,7 +96,6 @@ public abstract class ItemSO : ScriptableObject
     public int Durability
     {
         get => durability;
-        set => durability = value; 
     }
 
     

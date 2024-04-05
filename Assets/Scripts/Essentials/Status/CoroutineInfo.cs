@@ -1,8 +1,7 @@
-﻿using System;
-using UnityEditor;
+﻿
 using UnityEngine;
 
-public class CoroutineInfo : ScriptableObject
+public class CoroutineInfo 
     {
         public Coroutine coroutine;
         public string effectName;

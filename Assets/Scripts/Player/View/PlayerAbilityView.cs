@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.InputSystem;
 using UnityEngine.Assertions;
-
+using System.Threading.Tasks;
 public class PlayerAbilityView : MonoBehaviour
 {
     [SerializeField] private PlayerAbilityController playerAbilityController;
@@ -35,7 +35,7 @@ public class PlayerAbilityView : MonoBehaviour
     {
         if (!value.started) return;
         playerAbilityController.CheckAbilities(value.action);
-        
+
     }
     public void OnAbility2(InputAction.CallbackContext value)
     {
@@ -52,20 +52,24 @@ public class PlayerAbilityView : MonoBehaviour
     public void OnAbility4(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        
+        playerAbilityController.CheckAbilities(value.action);
+
     }
     public void OnAbility5(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        
+        playerAbilityController.CheckAbilities(value.action);
+
     }
     public void OnAbility6(InputAction.CallbackContext value)
     {
         if (!value.started) return;
+        playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility7(InputAction.CallbackContext value)
     {
         if (!value.started) return;
+        playerAbilityController.CheckAbilities(value.action);
     }
 }

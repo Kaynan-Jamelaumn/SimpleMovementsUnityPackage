@@ -1,10 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
 public class Interactable : MonoBehaviour
 {
-    [SerializeField] float interactionTime;
+    [SerializeField] private float interactionTime;
+
+    [SerializeField] private bool hasRandomInteractionTime;
+    [SerializeField] private float minInteractionTime;
+    [SerializeField] private float maxInteractionTime;
+
     public float InteractionTime
     {
         get => interactionTime;
@@ -13,6 +16,12 @@ public class Interactable : MonoBehaviour
 
     public virtual void Interact()
     {
+    }
+    private void Awake()
+    {
+        if (hasRandomInteractionTime)
+            interactionTime = Random.Range(minInteractionTime, maxInteractionTime);
+        
     }
 }
 

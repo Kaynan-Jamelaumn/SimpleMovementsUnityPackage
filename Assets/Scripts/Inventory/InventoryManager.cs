@@ -330,15 +330,15 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         draggedObject.transform.SetParent(slot.transform.parent.parent.GetChild(2));
 
         InventoryItem draggedItem = draggedObject.GetComponent<InventoryItem>();
-        if (slot.SlotType != SlotType.Common && slot.SlotType == (SlotType)draggedItem.itemScriptableObject.ItemType && draggedItem.itemScriptableObject.IsEquipped == false)
+        if (slot.SlotType != SlotType.Common && slot.SlotType == (SlotType)draggedItem.itemScriptableObject.ItemType && draggedItem.isEquipped == false)
         {
             draggedItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-            draggedItem.itemScriptableObject.IsEquipped = true;
+            draggedItem.isEquipped = true;
         }
-        else if (draggedItem.itemScriptableObject.IsEquipped ==true && slot.SlotType == SlotType.Common && slot.SlotType != (SlotType)draggedItem.itemScriptableObject.ItemType)
+        else if (draggedItem.isEquipped ==true && slot.SlotType == SlotType.Common && slot.SlotType != (SlotType)draggedItem.itemScriptableObject.ItemType)
         {
             draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-            draggedItem.itemScriptableObject.IsEquipped = false;
+            draggedItem.isEquipped = false;
         }
     }
 
@@ -376,16 +376,16 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             {
 
             currentInventoryItemItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-            currentInventoryItemItem.itemScriptableObject.IsEquipped = false;
+            currentInventoryItemItem.isEquipped = false;
             draggedItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-            draggedItem.itemScriptableObject.IsEquipped = true;
+            draggedItem.isEquipped = true;
             }
             else
             {
                 currentInventoryItemItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-                currentInventoryItemItem.itemScriptableObject.IsEquipped = true;
+                currentInventoryItemItem.isEquipped = true;
                 draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-                draggedItem.itemScriptableObject.IsEquipped = false;
+                draggedItem.isEquipped = false;
             }
 
         }
@@ -452,7 +452,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         if (lastSlot.SlotType != SlotType.Common)
         {
-            draggedItem.itemScriptableObject.IsEquipped = false;
+            draggedItem.isEquipped = false;
             draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
         }
 

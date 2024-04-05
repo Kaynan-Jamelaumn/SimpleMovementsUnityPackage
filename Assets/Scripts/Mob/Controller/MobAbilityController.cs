@@ -38,7 +38,7 @@ public class MobAbilityController : BaseAbilityController<AbilityHolder>
                 List<Transform> targets = mobActionController.AvailableTargets();
                 for (int i = 1; i != ability.abilityEffect.numberOfTargets; i++)
                 {
-                    SetAbilityActions(ability, targets[i], ability.attackCast[i]);
+                    _ = SetAbilityActions(ability, targets[i], ability.attackCast[i]);
                 }
                 //foreach (var attackCast in ability.attackCast) SetAbilityActions(ability, mobActionController.AvailableTarget(), attackCast);
             }
@@ -46,7 +46,7 @@ public class MobAbilityController : BaseAbilityController<AbilityHolder>
              //   StartCoroutine(LaunchAbilities(ability, mobActionController.CurrentPlayerTarget.transform));
                 
             else // single cast abilities/ one bullet launch
-                SetAbilityActions(ability, mobActionController.CurrentPlayerTarget.transform, ability.attackCast.First<AttackCast>());
+                _ = SetAbilityActions(ability, mobActionController.CurrentPlayerTarget.transform, ability.attackCast.First<AttackCast>());
         }
     }
     private void OnDrawGizmos()

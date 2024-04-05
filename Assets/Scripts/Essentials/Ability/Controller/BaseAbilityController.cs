@@ -36,13 +36,13 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
     }
 
 
-
+#pragma warning disable CS1998
     public virtual async Task SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
     {
         ParticleSystem particleSystem = instantiatedParticle.GetComponent<ParticleSystem>();
         //if (particleSystem.isPlaying)
         //{
-        //    particleSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        //    particleSystem.Stop(true);
         //}
         ParticleSystem.MainModule mainModule = particleSystem.main;
 
@@ -78,16 +78,17 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
                 if (attackCast.castType == AttackCast.CastType.Box)
                 {
                     if (mainModuleSubParticle.startSizeX.constant < attackCast.boxSize.x && mainModuleSubParticle.startSizeZ.constant < attackCast.boxSize.z && mainModuleSubParticle.startSizeY.constant < attackCast.boxSize.y)
-                        await ChangeParticleSize(mainModuleSubParticle, attackCast);
+                         ChangeParticleSize(mainModuleSubParticle, attackCast);
                 }
                 else if (mainModuleSubParticle.startSizeX.constant < attackCast.castSize && mainModuleSubParticle.startSizeZ.constant < attackCast.castSize && mainModuleSubParticle.startSizeY.constant < attackCast.castSize)
-                    await ChangeParticleSize(mainModuleSubParticle, attackCast);
+                     ChangeParticleSize(mainModuleSubParticle, attackCast);
             }
         }
-        if (ability.abilityEffect.particleShouldChangeSize) ChangeParticleSize(mainModule, attackCast);
+        if (ability.abilityEffect.particleShouldChangeSize)  ChangeParticleSize(mainModule, attackCast);
         particleSystem.Play();
     }
-    private async Task ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
+#pragma warning restore CS1998
+    private void ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
     {
         if (attackCast != null)
         {

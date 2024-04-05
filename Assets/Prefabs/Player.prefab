@@ -7017,7 +7017,7 @@ MonoBehaviour:
       targetLayers:
         serializedVersion: 2
         m_Bits: 448
-    particle: {fileID: 8846737274113074935, guid: 81a74a0aefeb7674ca32535d1a269b4a, type: 3}
+    particle: {fileID: 2316544225188537692, guid: 457e10569e55c3d48b5533505b467287, type: 3}
     targetTransform: {fileID: 0}
     abilityEffect: {fileID: 11400000, guid: 4feb6a03021826f4095b70e9044cc95d, type: 2}
     abilityActionReference: {fileID: -3447309004339439150, guid: f8d50c74cf36b904993fe75db0347fd5, type: 3}
