@@ -61,7 +61,6 @@ Shader "Custom/TerrainSplatMapShader" {
 
 
 
-
 // Shader "Custom/TerrainSxplatMapShader"
 // {
 //     Properties

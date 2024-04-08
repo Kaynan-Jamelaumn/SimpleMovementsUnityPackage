@@ -1,17 +1,18 @@
 using UnityEngine;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System;
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
-public class ProceduralTerrain : MonoBehaviour
+public class NewTerrain : MonoBehaviour
 {
-    [SerializeField] private int gridWidthSize = 300; // Number of grid cells
-    [SerializeField] private int gridDephtSize = 300; // Number of grid cells
+    [SerializeField] private int gridWidthSize = 320; // Number of grid cells
+    [SerializeField] private int gridDephtSize = 320; // Number of grid cells
     [SerializeField] private float scaleFactor = 3.0f; // Scale factor for the terrain size
-    [SerializeField] private Material terrainMaterial; // Assign a material with a texture in the editor
     [SerializeField] private float lodDistance = 50f; // Distance for LOD switching
     [SerializeField] private float persistence = 1f; // Adjust persistence to control the smoothness of terrain
     [SerializeField] private int octaves = 5; // Octaves for fractal noise
     [SerializeField] private float baseFrequency = 0.4f; // Adjust base frequency to control the scale of terrain features
+    [SerializeField] private float lacunarity = 2f; // Adjust base frequency to control the scale of terrain features
     [SerializeField] private float amplitude = 100f; // Adjust amplitude to control the height of terrain features
 
     [SerializeField] private float maxHeight;
@@ -35,15 +36,21 @@ public class ProceduralTerrain : MonoBehaviour
         public Texture2D texture;
     }
     [SerializeField] private biome[] biomes;
+
+
+    [SerializeField] private ComputeShader splatMapShader;
+    private RenderTexture splatMap;
+    private ComputeBuffer biomeThresholdBuffer;
+
     private void Start()
     {
         mesh = new Mesh
         {
             indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 // Allows for larger meshes
         };
+        mesh.MarkDynamic(); // Mark the mesh as dynamic
         GetComponent<MeshFilter>().mesh = mesh;
         GetComponent<MeshCollider>().sharedMesh = mesh;
-
         GenerateTerrainAsync();
     }
     private void UpdateMesh()
@@ -51,7 +58,6 @@ public class ProceduralTerrain : MonoBehaviour
         mesh.Clear();
         mesh.vertices = vertices;
         mesh.triangles = triangles;
-        //mesh.colors = colors; // Assign colors to the mesh
         mesh.uv = uvs;
         mesh.RecalculateNormals();
         GetComponent<MeshCollider>().sharedMesh = mesh;
@@ -60,23 +66,88 @@ public class ProceduralTerrain : MonoBehaviour
     private async void GenerateTerrainAsync()
     {
         await Task.Run(() => CreateShape());
-        Texture2D splatMap = GenerateSplatMap(heightMap); // Ensure you have a heightMap variable accessible
-        AssignMaterial(splatMap);
+        //Texture2D splatMap = GenerateSplatMap(heightMap); // Ensure you have a heightMap variable accessible
+        //AssignMaterial(splatMap);
+        GenerateSplatMapOnGPU(heightMap); // New method for GPU processing
+        AssignMaterial(splatMap); // Use RenderTexture instead of Texture2D
         UpdateMesh();
+    }
+    // void AssignMaterial(Texture2D splatMap)
+    private void AssignMaterial(RenderTexture splatMap)
+    {
+        Material mat = new Material(Shader.Find("Custom/TerrainSplatMapShader"));
+        //mat.SetTexture("_MainTex", defaultTexture);
+        mat.SetTexture("_TextureR", biomes[0].texture);
+        mat.SetTexture("_TextureG", biomes[1].texture);
+        mat.SetTexture("_TextureB", biomes[2].texture);
+        mat.SetTexture("_TextureA", biomes[3].texture);
+        mat.SetTexture("_SplatMap", splatMap);
+        GetComponent<Renderer>().sharedMaterial = mat;
+    }
+    private void AssignMaterial(Texture2D splatMap)
+    {
+        Material mat = new Material(Shader.Find("Custom/TerrainSplatMapShader"));
+        //mat.SetTexture("_MainTex", defaultTexture);
+        mat.SetTexture("_TextureR", biomes[0].texture);
+        mat.SetTexture("_TextureG", biomes[1].texture);
+        mat.SetTexture("_TextureB", biomes[2].texture);
+        mat.SetTexture("_TextureA", biomes[3].texture);
+        mat.SetTexture("_SplatMap", splatMap);
+        GetComponent<Renderer>().sharedMaterial = mat;
+    }
+    private void GenerateSplatMapOnGPU(float[,] heightMap)
+    {
+        int kernelHandle = splatMapShader.FindKernel("CSMain");
+
+        // Create a RenderTexture with the same dimensions as the height map
+        splatMap = new RenderTexture(gridWidthSize, gridDephtSize, 0, RenderTextureFormat.ARGB32);
+        splatMap.enableRandomWrite = true;
+        splatMap.Create();
+
+        // Convert heightMap to a single-dimensional array for ComputeBuffer
+        float[] heightMapArray = new float[gridWidthSize * gridDephtSize];
+        Buffer.BlockCopy(heightMap, 0, heightMapArray, 0, heightMapArray.Length * sizeof(float));
+
+        // Create ComputeBuffer for height map and biome thresholds
+        using (ComputeBuffer heightMapBuffer = new ComputeBuffer(heightMapArray.Length, sizeof(float)))
+        using (ComputeBuffer biomeThresholdBuffer = new ComputeBuffer(biomes.Length, sizeof(float) * 2))
+        {
+            // Set data for buffers
+            heightMapBuffer.SetData(heightMapArray);
+
+            // Create an array for biome thresholds and set data
+            Vector2[] biomeThresholds = new Vector2[biomes.Length];
+            for (int i = 0; i < biomes.Length; i++)
+            {
+                biomeThresholds[i] = new Vector2(biomes[i].minHeight, biomes[i].maxHeight);
+            }
+            biomeThresholdBuffer.SetData(biomeThresholds);
+
+            // Set buffers for the Compute Shader
+            splatMapShader.SetBuffer(kernelHandle, "HeightMap", heightMapBuffer);
+            splatMapShader.SetBuffer(kernelHandle, "BiomeThresholds", biomeThresholdBuffer);
+            splatMapShader.SetTexture(kernelHandle, "Result", splatMap);
+
+            // Dispatch the Compute Shader
+            splatMapShader.Dispatch(kernelHandle, gridWidthSize / 8, gridDephtSize / 8, 1); //splatMapShader.Dispatch(kernelHandle, gridWidthSize * 0.125, gridDephtSize * 0.125, 1);
+        }
+
+        // The splatMap RenderTexture can now be used as the splat map.
+        // You must update AssignMaterial to accept a RenderTexture instead of a Texture2D.
     }
 
 
     private void CreateShape()
     {
         int width = gridWidthSize;
-        int depht = gridDephtSize;
-        List<Vector3> vertexList = new List<Vector3>();
-        List<int> triangleList = new List<int>();
-        List<Vector2> uvList = new List<Vector2>();
-        heightMap = new float[width + 1, depht + 1];
+        int depth = gridDephtSize;
+        vertices = new Vector3[(width + 1) * (depth + 1)];
+        triangles = new int[width * depth * 6];
+        uvs = new Vector2[(width + 1) * (depth + 1)];
+        heightMap = new float[width + 1, depth + 1];
 
         // Generate the height map
-        for (int y = 0; y <= depht; y++)
+        for (int y = 0; y <= depth; y++)
         {
             for (int x = 0; x <= width; x++)
             {
@@ -84,42 +155,33 @@ public class ProceduralTerrain : MonoBehaviour
             }
         }
 
-        // Create the vertices based on the height map and assign UV coordinates
-        for (int y = 0; y <= depht; y++)
+        int vertexIndex = 0;
+        int triangleIndex = 0;
+
+        // Create the vertices and UVs based on the height map
+        for (int y = 0; y <= depth; y++)
         {
             for (int x = 0; x <= width; x++)
             {
-                Vector3 vertex = new Vector3(x * scaleFactor, heightMap[x, y], y * scaleFactor);
-                vertexList.Add(vertex);
+                vertices[vertexIndex] = new Vector3(x * scaleFactor, heightMap[x, y], y * scaleFactor);
+                uvs[vertexIndex] = new Vector2((float)x / width, (float)y / depth);
+                vertexIndex++;
 
-                // Determine texture for the current vertex
-                //Texture2D texture = DetermineTexture(heightMap[x, y]);
-                float u = (float)x / width;
-                float v = (float)y / depht;
-                uvList.Add(new Vector2(u, v));
+                // Skip the last row and column
+                if (x < width && y < depth)
+                {
+                    int vert = y * (width + 1) + x;
+                    triangles[triangleIndex++] = vert;
+                    triangles[triangleIndex++] = vert + width + 1;
+                    triangles[triangleIndex++] = vert + 1;
+                    triangles[triangleIndex++] = vert + 1;
+                    triangles[triangleIndex++] = vert + width + 1;
+                    triangles[triangleIndex++] = vert + width + 2;
+                }
             }
         }
-
-        // Create the triangles (two triangles per square)
-        for (int y = 0; y < depht; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int vert = y * (width + 1) + x;
-                triangleList.Add(vert);
-                triangleList.Add(vert + width + 1);
-                triangleList.Add(vert + 1);
-
-                triangleList.Add(vert + 1);
-                triangleList.Add(vert + width + 1);
-                triangleList.Add(vert + width + 2);
-            }
-        }
-
-        vertices = vertexList.ToArray();
-        triangles = triangleList.ToArray();
-        uvs = uvList.ToArray();
     }
+
 
     float CalculateHeight(int x, int y)
     {
@@ -136,43 +198,19 @@ public class ProceduralTerrain : MonoBehaviour
             height += perlinValue * amplitude;
 
             amplitude *= persistence;
-            frequency *= 2;
+            frequency *= lacunarity;
 
             // Early exit optimization
             if (amplitude < 0.001f)
                 break;
         }
-        if (height>maxHeight) maxHeight = height;
-        if (height<minHeight) minHeight = height;
+        //if (height>maxHeight) maxHeight = height;
+        //if (height<minHeight) minHeight = height;
         
 
         return height;
     }
 
-    private void AssignMaterial(Texture2D splatMap)
-    {
-        Material mat = new Material(Shader.Find("Custom/TerrainSplatMapShader"));
-        mat.SetTexture("_MainTex", defaultTexture);
-        mat.SetTexture("_TextureR", biomes[0].texture);
-        mat.SetTexture("_TextureG", biomes[1].texture);
-        mat.SetTexture("_TextureB", biomes[2].texture);
-        mat.SetTexture("_TextureA", biomes[3].texture);
-        mat.SetTexture("_SplatMap", splatMap);
-        GetComponent<Renderer>().sharedMaterial = mat;
-    }
-    void Update()
-    {
-        // Check distance for LOD
-        float distanceToPlayer = Vector3.Distance(transform.position, Camera.main.transform.position);
-        if (distanceToPlayer > lodDistance)
-        {
-            // Apply LOD adjustments here
-        }
-        else
-        {
-            // Apply regular mesh rendering here
-        }
-    }
 
     private Texture2D GenerateSplatMap(float[,] heightMap)
     {
@@ -216,6 +254,15 @@ public class ProceduralTerrain : MonoBehaviour
         // If no matching biome is found, return null
         return defaultTexture;
     }
+    void OnDestroy()
+    {
+        // Release the buffer to prevent memory leaks
+        if (biomeThresholdBuffer != null)
+        {
+            biomeThresholdBuffer.Release();
+        }
+    }
+
 }
 
 
@@ -233,3 +280,11 @@ public class ProceduralTerrain : MonoBehaviour
 //}
 
 // This example assumes you have a maximum of 4 textures, represented by RGBA channels.
+
+
+
+
+
+
+
+

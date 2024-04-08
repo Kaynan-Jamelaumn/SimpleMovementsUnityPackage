@@ -678,6 +678,7 @@ GameObject:
   - component: {fileID: 491525267}
   - component: {fileID: 491525266}
   - component: {fileID: 491525270}
+  - component: {fileID: 491525271}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -692,19 +693,19 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 491525265}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 45038cbc3bcdfe34b80bf03744a4a9d2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gridWidthSize: 300
-  gridDephtSize: 300
+  gridWidthSize: 320
+  gridDephtSize: 320
   scaleFactor: 3
-  terrainMaterial: {fileID: 2100000, guid: 5e5da772921125b499359761f5029d38, type: 2}
   lodDistance: 50
   persistence: 1
   octaves: 5
   baseFrequency: 0.4
+  lacunarity: 2
   amplitude: 100
   maxHeight: 0
   minHeight: 0
@@ -715,17 +716,18 @@ MonoBehaviour:
     maxHeight: -100
     texture: {fileID: 2800000, guid: 275844e622956564082767955338a997, type: 3}
   - name: 
-    minHeight: -100
+    minHeight: -101
     maxHeight: 30
     texture: {fileID: 2800000, guid: 49b8f8bd232e4394a9948ed155fe1516, type: 3}
   - name: 
-    minHeight: 0
+    minHeight: 31
     maxHeight: 60
     texture: {fileID: 2800000, guid: 328744a432075d64eb27996e4ff7c550, type: 3}
   - name: 
-    minHeight: 60
-    maxHeight: 88.29808
+    minHeight: 61
+    maxHeight: 7e+16
     texture: {fileID: 2800000, guid: 937e2b9ff53f9894b87e3d6d1954ccd7, type: 3}
+  splatMapShader: {fileID: 7200000, guid: f13807e8508f5af4884ebd2d74e492a6, type: 3}
 --- !u!33 &491525267
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -813,6 +815,72 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 4493585093827132993, guid: 76c7a0fae00abfc4d86724e86bfa59a8, type: 3}
+--- !u!114 &491525271
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 491525265}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gridWidthSize: 320
+  gridDepthSize: 320
+  scaleFactor: 3
+  amplitude: 100
+  baseFrequency: 0.4
+  persistence: 1
+  octaves: 5
+  lacunarity: 2
+  defaultTexture: {fileID: 2800000, guid: 00ced6628f099374ebf7475a8b513648, type: 3}
+  splatMapShader: {fileID: 7200000, guid: f13807e8508f5af4884ebd2d74e492a6, type: 3}
+  mesh: {fileID: 0}
+  heightCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 34
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 34
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  minHeight: 0
+  maxHeight: 0
+  biomes:
+  - name: a
+    minHeight: 0
+    maxHeight: 4
+    texture: {fileID: 2800000, guid: 275844e622956564082767955338a997, type: 3}
+  - name: b
+    minHeight: 4.1
+    maxHeight: 7.5
+    texture: {fileID: 2800000, guid: 49b8f8bd232e4394a9948ed155fe1516, type: 3}
+  - name: c
+    minHeight: 7.5
+    maxHeight: 8
+    texture: {fileID: 2800000, guid: 328744a432075d64eb27996e4ff7c550, type: 3}
+  - name: d
+    minHeight: 8
+    maxHeight: 10
+    texture: {fileID: 2800000, guid: 937e2b9ff53f9894b87e3d6d1954ccd7, type: 3}
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0

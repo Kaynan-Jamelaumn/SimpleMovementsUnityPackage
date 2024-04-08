@@ -120,7 +120,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                         heldItem.stackCurrent--;
                         if (heldItem.DurabilityList.Count > 0)
                         {
-                            heldItem.itemScriptableObject.Durability = heldItem.DurabilityList[heldItem.DurabilityList.Count - 1];
+                            heldItem.durability = heldItem.DurabilityList[heldItem.DurabilityList.Count - 1];
                             heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
                         }
                         player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(heldItem.itemScriptableObject.Weight);
@@ -624,7 +624,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         newItemItem.stackCurrent = pickedItemProperties.quantity;
         newItemItem.stackMax = pickedItemSO.StackMax;
 
-        newItemItem.itemScriptableObject.Durability = pickedItemProperties.DurabilityList[pickedItemProperties.DurabilityList.Count - 1];
+        newItemItem.durability = pickedItemProperties.DurabilityList[pickedItemProperties.DurabilityList.Count - 1];
         newItemItem.DurabilityList = pickedItemProperties.DurabilityList;
 
 

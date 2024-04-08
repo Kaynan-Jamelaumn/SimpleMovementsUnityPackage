@@ -2,7 +2,7 @@
 
 [RequireComponent(typeof(Terrain))]
 [RequireComponent(typeof(TerrainCollider))] // Add this line to require a Terrain Collider component
-public class TerrainGenerator : MonoBehaviour
+public class TerrainGeneratorOld : MonoBehaviour
 {
     public int width = 256;
     public int height = 256;

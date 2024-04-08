@@ -13,6 +13,8 @@ public class InventoryItem : MonoBehaviour
     public float totalWeight;
     public float timeSinceLastUse;
     public bool isEquipped;
+    public float durability;
+
     [SerializeField] private List<int> durabilityList = new List<int>();
     public List<int> DurabilityList
     {
