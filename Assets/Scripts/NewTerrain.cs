@@ -8,7 +8,7 @@ public class NewTerrain : MonoBehaviour
     [SerializeField] private int gridWidthSize = 320; // Number of grid cells
     [SerializeField] private int gridDephtSize = 320; // Number of grid cells
     [SerializeField] private float scaleFactor = 3.0f; // Scale factor for the terrain size
-    [SerializeField] private float lodDistance = 50f; // Distance for LOD switching
+    //[SerializeField] private float lodDistance = 50f; // Distance for LOD switching
     [SerializeField] private float persistence = 1f; // Adjust persistence to control the smoothness of terrain
     [SerializeField] private int octaves = 5; // Octaves for fractal noise
     [SerializeField] private float baseFrequency = 0.4f; // Adjust base frequency to control the scale of terrain features
