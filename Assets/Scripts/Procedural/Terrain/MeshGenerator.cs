@@ -19,7 +19,7 @@ public class MeshData
     {
         Mesh mesh = new Mesh
         {
-            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 // Allows for larger meshes
+            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 // Allows foSr larger meshes
         };
         mesh.MarkDynamic(); // Mark the mesh as dynamic
         mesh.Clear();

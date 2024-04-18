@@ -11,6 +11,7 @@ public class EndlessTerrain : MonoBehaviour
 
     public static Vector2 viewerPosition;
     static TerrainGenerator mapGenerator;
+    float scaleFactor = 1.0f;
     int chunkSize;
     int chunksVisibleInViewDst;
 
@@ -22,6 +23,7 @@ public class EndlessTerrain : MonoBehaviour
         mapGenerator = FindObjectOfType<TerrainGenerator>();
         chunkSize = TerrainGenerator.chunkSize - 1;
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
+        scaleFactor =  mapGenerator.ScaleFactor;
     }
 
     void Update()
@@ -77,6 +79,7 @@ public class EndlessTerrain : MonoBehaviour
         MeshCollider meshCollider;
         private TerrainGenerator terrainGenerator;
         private Texture2D splatmap;
+        Vector2 globalOffset;
 
 
         public TerrainChunk(Vector2 coord, int size, Transform parent)
@@ -84,7 +87,7 @@ public class EndlessTerrain : MonoBehaviour
             position = coord * size;
             bounds = new Bounds(position, Vector2.one * size);
             Vector3 positionV3 = new Vector3(position.x, 0, position.y);
-
+            globalOffset = new Vector2(position.x, position.y);
             meshObject = new GameObject("Terrain Chunk");
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
@@ -95,13 +98,13 @@ public class EndlessTerrain : MonoBehaviour
             meshObject.transform.parent = parent;
             SetVisible(false);
 
-            mapGenerator.RequestMapData(OnMapDataReceived);
+            mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
         }
 
 
         void OnMapDataReceived(MapData mapData)
         {
-            mapGenerator.RequestTerrainhData(mapData, OnTerrainhDataReceived);
+            mapGenerator.RequestTerrainhData(mapData, OnTerrainhDataReceived, globalOffset);
             //mapGenerator.RequestMeshData(mapData, OnMeshDataReceived);
 
         }

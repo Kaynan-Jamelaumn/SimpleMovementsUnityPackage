@@ -13,10 +13,39 @@ public class SplatMapData
 
 public static class SplatMapGenerator
 {
-    public static Texture2D GenerateSplatMap(TerrainGenerator terrainGenerator, float[,] heightMap)
-    {
 
-        Texture2D splatMap = new Texture2D(terrainGenerator.GridWidthSize, terrainGenerator.GridDepthSize);
+    public static Texture2D GenerateSplatMapOutsideMainThread(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Texture2D splatMap)
+    {
+        Color[] colorMap = new Color[terrainGenerator.GridWidthSize * terrainGenerator.GridDepthSize];
+
+        for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
+        {
+            for (int x = 0; x < terrainGenerator.GridWidthSize; x++)
+            {
+                Biome biome = biomeMap[x, y];
+                Color channelWeight = new Color(0, 0, 0, 0);
+
+                for (int i = 0; i < terrainGenerator.Biomes.Length; i++)
+                {
+                    if (terrainGenerator.Biomes[i].name == biome.name)
+                    {
+                        channelWeight[i] = 1; // Assign full weight to the corresponding channel
+                        break;
+                    }
+                }
+
+                colorMap[y * terrainGenerator.GridWidthSize + x] = channelWeight;
+            }
+        }
+
+        splatMap.SetPixels(colorMap); // Set all pixels at once
+        splatMap.Apply(); // Apply all SetPixel changes
+        return splatMap;
+    }
+    public static Texture2D GenerateSplatMapOutsideMainThread(TerrainGenerator terrainGenerator, float[,] heightMap, Texture2D splatMap)
+    {
+        Color[] colorMap = new Color[terrainGenerator.GridWidthSize * terrainGenerator.GridDepthSize];
+
         for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
         {
             for (int x = 0; x < terrainGenerator.GridWidthSize; x++)
@@ -27,7 +56,6 @@ public static class SplatMapGenerator
                 float normalizedHeight = Mathf.InverseLerp(terrainGenerator.MinHeight, terrainGenerator.MaxHeight, height);
                 // Convert normalized height to a range between 0 and 10
                 float scaledHeight = normalizedHeight * 10f;
-
 
                 // Here you would determine the blend weights for each texture
                 // based on height or other criteria, like slope, noise, etc.
@@ -41,15 +69,18 @@ public static class SplatMapGenerator
                     }
                 }
 
-                // Set the pixel values on the splat map
-                splatMap.SetPixel(x, y, channelWeight);
+                colorMap[y * terrainGenerator.GridWidthSize + x] = channelWeight;
             }
         }
+
+        splatMap.SetPixels(colorMap); // Set all pixels at once
         splatMap.Apply(); // Apply all SetPixel changes
         return splatMap;
     }
-    public static Texture2D GenerateSplatMapOutsideMainThread(TerrainGenerator terrainGenerator, float[,] heightMap, Texture2D splatMap)
+    public static Texture2D GenerateSplatMap(TerrainGenerator terrainGenerator, float[,] heightMap)
     {
+
+        Texture2D splatMap = new Texture2D(terrainGenerator.GridWidthSize, terrainGenerator.GridDepthSize);
         for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
         {
             for (int x = 0; x < terrainGenerator.GridWidthSize; x++)

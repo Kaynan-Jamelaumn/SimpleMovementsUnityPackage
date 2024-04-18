@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEngine;
 using System.Threading;
+using System.Linq;
 
 public class TerrainGenerator : MonoBehaviour
 {
@@ -11,97 +11,102 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] private int gridWidthSize = 241;
     [SerializeField] private int gridDepthSize = 241;
     [SerializeField] private float scaleFactor = 3;
-    [SerializeField] private float amplitude = 120f;
-    [SerializeField] private float baseFrequency = 0.4f;
-    [SerializeField] private float persistence = 1f;
+    //[SerializeField] private float amplitude = 120f;
+    //[SerializeField] private float baseFrequency = 0.4f;
+    //[SerializeField][Range(0, 2)] private float persistence = 1f;
     [SerializeField] private int octaves = 5;
     [SerializeField] private float lacunarity = 2f;
-    //[SerializeField] private float[,] cellMap;
     [SerializeField] private Texture2D defaultTexture;
     [SerializeField] private ComputeShader splatMapShader;
     [SerializeField] public AnimationCurve heightCurve;
     [SerializeField] private float minHeight;
     [SerializeField] private float maxHeight;
 
+    [SerializeField] private bool terrainTextureBasedOnVoronoiPoints = true;
+    [SerializeField] public int NumVoronoiPoints = 3;
+    [SerializeField] public int VoronoiSeed = 0;
+    [SerializeField] public float VoronoiScale = 1;
+
     [SerializeField][Range(0,6)]private int levelOfDetail; 
+    
     public float Lacunarity { get => lacunarity; }
     public int Octaves { get => octaves; }
-    public float Persistence { get => persistence; }
-    public float BaseFrequency { get => baseFrequency; }
-    public float Amplitude { get => amplitude; }
+    //public float Persistence { get => persistence; }
+    //public float BaseFrequency { get => baseFrequency; }
+    //public float Amplitude { get => amplitude; }
     public int GridDepthSize { get => gridDepthSize; }
     public int GridWidthSize { get => gridWidthSize; }
-    //public float[,] CellMap { get => cellMap; set => cellMap = value; }
-
 
     [SerializeField] private Biome[] biomes;
 
     Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
-    //Queue<MapThreadInfo<MeshData>> meshDataThreadInfoQueue = new Queue<MapThreadInfo<MeshData>>();
     Queue<MapThreadInfo<TerrainData>> terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
 
     public Biome[] Biomes { get => biomes; set => biomes = value; }
+    public bool TerrainTextureBasedOnVoronoiPoints { get => terrainTextureBasedOnVoronoiPoints;}
     public Texture2D DefaultTexture { get => defaultTexture; set => defaultTexture = value; }
     public ComputeShader SplatMapShader { get => splatMapShader; set => splatMapShader = value; }
     public float ScaleFactor { get => scaleFactor; set => scaleFactor = value; }
     public float MinHeight { get => minHeight; set => minHeight = value; }
     public float MaxHeight { get => maxHeight; set => maxHeight = value; }
     public int LevelOfDetail { get => levelOfDetail; set => levelOfDetail = value; }
+    public void UpdateMinMaxHeight(float height)
+    {
+        if (height > MaxHeight) MaxHeight = height;
+        if (height < MinHeight) MinHeight = height;
+    }
 
-    public TerrainGenerator(int width = 320, int depth = 320, float amplitude = 100f, float baseFrequency = 0.4f, float persistence=1f, int octaves=5, float lacunarity=2f)
+    public TerrainGenerator(int width = 320, int depth = 320, float amplitude = 100f,/* float baseFrequency = 0.4f, float persistence=1f, int octaves=5,*/ float lacunarity=2f)
     {
         gridWidthSize = width;
         gridDepthSize = depth;
-        this.amplitude = amplitude;
-        this.baseFrequency = baseFrequency;
-        this.persistence = persistence;
-        this.octaves = octaves;
+        //this.amplitude = amplitude;
+        //this.baseFrequency = baseFrequency;
+        //this.persistence = persistence;
+        //this.octaves = octaves;
         this.lacunarity = lacunarity;
         //cellMap = new float[width + 1, depth + 1];
     }
     private void Awake()
     {
-        //cellMap ??= new float[gridWidthSize + 1, gridDepthSize + 1];
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
-        //meshDataThreadInfoQueue = new Queue<MapThreadInfo<MeshData>>();
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
 
     }
-    //public void Start()
-    //{
-    //    GenerateTerrain();
-    //}
-
-    MapData GenerateTerrain()
+    MapData GenerateTerrain(Vector2 globalOffset)
     {
-        float[,] heightMap = HeightGenerator.GenerateHeightMap(this);
-        //MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, heightMap);
-
-        //Texture2D splatMap = new Texture2D(gridWidthSize, gridDepthSize);
-        //splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, heightMap, splatMap);
-
-        ////Texture2D splatMap = SplatMapGenerator.GenerateSplatMap(this, heightMap);
-
-        //GenerateTexture.AssignTexture(splatMap, this);
-        //Mesh mesh = meshData.UpdateMesh();
-        //GetComponent<MeshFilter>().mesh = mesh;
-        //GetComponent<MeshCollider>().sharedMesh = mesh;
+        float[,] heightMap = HeightGenerator.GenerateHeightMap(this, globalOffset);
 
         return new MapData(heightMap, null);
 
     }
-        public void RequestMapData(Action<MapData> callback)
+    public Biome[,] GenerateBiomeMap(Vector2 globalOffset)
+    {
+        Biome[,] biomeMap = new Biome[gridWidthSize, gridDepthSize];
+
+        for (int y = 0; y < gridDepthSize; y++)
+        {
+            for (int x = 0; x < gridWidthSize; x++)
+            {
+                Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
+                biomeMap[x, y] = Noise.Voronoi(worldPos, VoronoiSeed, VoronoiScale, (int)NumVoronoiPoints, Biomes.ToList());
+            }
+        }
+
+        return biomeMap;
+    }
+    public void RequestMapData(Action<MapData> callback, Vector2 globalOffset)
     {
         ThreadStart threadStart = delegate {
-            MapDataThread(callback);
+            MapDataThread(callback, globalOffset);
         };
 
         new Thread(threadStart).Start();
     }
 
-    void MapDataThread(Action<MapData> callback)
+    void MapDataThread(Action<MapData> callback, Vector2 globalOffset)
     {
-        MapData mapData = GenerateTerrain();
+        MapData mapData = GenerateTerrain(globalOffset);
         lock (mapDataThreadInfoQueue)
         {
             mapDataThreadInfoQueue.Enqueue(new MapThreadInfo<MapData>(callback, mapData));
@@ -109,19 +114,19 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
-    public void RequestTerrainhData(MapData mapData, Action<TerrainData> callback)
+    public void RequestTerrainhData(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset)
     {
         ThreadStart threadStart = delegate {
-            TerrainDataThread(mapData, callback);
+            TerrainDataThread(mapData, callback, globalOffset);
         };
 
         new Thread(threadStart).Start();
     }
 
-    void TerrainDataThread(MapData mapData, Action<TerrainData> callback)
+    void TerrainDataThread(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset)
     {
         MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap);
-        TerrainData terrainData = new TerrainData(meshData, null, mapData.heightMap, this);
+        TerrainData terrainData = new TerrainData(meshData, null, mapData.heightMap, this, globalOffset);
 
         lock (terrainDataThreadInfoQueue)
         {
@@ -141,28 +146,24 @@ public class TerrainGenerator : MonoBehaviour
                 threadInfo.callback(threadInfo.parameter);
             }
         }
-
-        //if (meshDataThreadInfoQueue.Count > 0)
-        //{
-        //    for (int i = 0; i < meshDataThreadInfoQueue.Count; i++)
-        //    {
-        //        MapThreadInfo<MeshData> threadInfo = meshDataThreadInfoQueue.Dequeue();
-        //        Texture2D splatMap = new Texture2D(gridWidthSize, gridDepthSize);
-        //        splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.heightMap, splatMap);
-        //        threadInfo.parameter.splatMap = splatMap;
-        //        Mesh mesh = threadInfo.parameter.UpdateMesh();
-        //        threadInfo.callback(threadInfo.parameter);
-        //    }
-        //}
         if (terrainDataThreadInfoQueue.Count > 0)
         {
             for (int i = 0; i < terrainDataThreadInfoQueue.Count; i++)
             {
                 MapThreadInfo<TerrainData> threadInfo = terrainDataThreadInfoQueue.Dequeue();
                 Texture2D splatMap = new Texture2D(gridWidthSize, gridDepthSize);
-                splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.heightMap, splatMap);
+                if (terrainTextureBasedOnVoronoiPoints)
+                {
+                    Biome[,] biomeMap = GenerateBiomeMap(threadInfo.parameter.globalOffset);
+                    splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, biomeMap, splatMap);
+
+                }
+                else {splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.heightMap, splatMap);
+                   
+
+                    
+                    }
                 threadInfo.parameter.splatMap = splatMap;
-                //Mesh mesh = threadInfo.parameter.meshData.UpdateMesh();
                 threadInfo.callback(threadInfo.parameter);
             }
         }
@@ -180,24 +181,6 @@ public class TerrainGenerator : MonoBehaviour
         }
 
     }
-    //public void RequestMeshData(MapData mapData, Action<MeshData> callback)
-    //{
-    //    ThreadStart threadStart = delegate {
-    //        MeshDataThread(mapData, callback);
-    //    };
-
-    //    new Thread(threadStart).Start();
-    //}
-
-    //void MeshDataThread(MapData mapData, Action<MeshData> callback)
-    //{
-    //    MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap);
-
-    //    lock (meshDataThreadInfoQueue)
-    //    {
-    //        meshDataThreadInfoQueue.Enqueue(new MapThreadInfo<MeshData>(callback, meshData));
-    //    }
-    //}
 }
 [System.Serializable]
 public class Biome
@@ -207,7 +190,12 @@ public class Biome
     public float maxHeight;
     //public color color;
     public Texture2D texture;
+    public float amplitude; // Height variation within the biome
+    public float frequency; // Detail level of the biome's terrain
+    [Range(0, 1)] public float persistence =1; // How much detail is added or removed at each octave
+    //public AnimationCurve heightCurve; // Curve to apply to heights within this biome
 }
+
 public struct MapData
 {
     public readonly float[,] heightMap;
@@ -224,11 +212,13 @@ public struct TerrainData
     public Texture2D splatMap;
     public readonly float[,] heightMap;
     public readonly TerrainGenerator terrainGenerator;
-    public TerrainData(MeshData meshData, Texture2D splatMap, float[,] heightMap, TerrainGenerator terrainGenerator)
+    public Vector2 globalOffset;
+    public TerrainData(MeshData meshData, Texture2D splatMap, float[,] heightMap, TerrainGenerator terrainGenerator, Vector2 globalOffset)
     {
         this.meshData = meshData;
         this.splatMap = splatMap;
         this.heightMap = heightMap;
         this.terrainGenerator = terrainGenerator;
+        this.globalOffset = globalOffset;
     }
 }
