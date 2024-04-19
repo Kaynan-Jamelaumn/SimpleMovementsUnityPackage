@@ -71,6 +71,8 @@ public class TerrainGenerator : MonoBehaviour
     {
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
+        //Noise.InitializeVoronoiCache(VoronoiSeed, VoronoiScale, NumVoronoiPoints, biomes.ToList());
+        VoronoiCache.Instance.Initialize(VoronoiScale, NumVoronoiPoints, biomes.ToList(), VoronoiSeed);
 
     }
     MapData GenerateTerrain(Vector2 globalOffset)
@@ -89,7 +91,7 @@ public class TerrainGenerator : MonoBehaviour
             for (int x = 0; x < gridWidthSize; x++)
             {
                 Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
-                biomeMap[x, y] = Noise.Voronoi(worldPos, VoronoiSeed, VoronoiScale, (int)NumVoronoiPoints, Biomes.ToList());
+                biomeMap[x, y] = NoiseGenerator.Voronoi(worldPos, VoronoiScale, NumVoronoiPoints, Biomes.ToList(), VoronoiSeed);
             }
         }
 

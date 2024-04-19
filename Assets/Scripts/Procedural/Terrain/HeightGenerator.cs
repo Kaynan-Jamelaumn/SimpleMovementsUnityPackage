@@ -28,7 +28,7 @@ public static class HeightGenerator
     }
     private static float CalculateHeight(TerrainGenerator terrainGenerator, float x, float y, int voronoiSeed, float height, List<Biome> availableBiomes, float inverseWidth, float inverseDepth)
     {
-        Biome biome = Noise.Voronoi(new Vector2(x, y), voronoiSeed, terrainGenerator.VoronoiScale, terrainGenerator.NumVoronoiPoints, availableBiomes);
+        Biome biome = NoiseGenerator.Voronoi(new Vector2(x, y), terrainGenerator.VoronoiScale, terrainGenerator.NumVoronoiPoints, availableBiomes, voronoiSeed);
         float amplitude = biome.amplitude;
         float frequency = biome.frequency;
         float persistence = biome.persistence;
@@ -72,41 +72,4 @@ public static class HeightGenerator
         //return originalHeight;
     }
 
-}
-public static class Noise
-{
-    // Generate Voronoi noise based on a point's positionSSS
-    public static Biome Voronoi(Vector2 point, int seed, float scale, int numPoints, List<Biome> availableBiomes)
-    {
-        System.Random prng = new System.Random(seed);
-        List<Vector2> points = new List<Vector2>();
-        Dictionary<Vector2, Biome> pointBiomeMap = new Dictionary<Vector2, Biome>();
-
-        // Generate random points
-        for (int i = 0; i < numPoints; i++)
-        {
-            float randX = (float)prng.NextDouble() * scale;
-            float randY = (float)prng.NextDouble() * scale;
-            Vector2 newPoint = new Vector2(randX, randY);
-            points.Add(newPoint);
-            Biome biome = availableBiomes[prng.Next(availableBiomes.Count)];
-            pointBiomeMap[newPoint] = biome;
-        }
-        Biome closestBiome = availableBiomes[0]; // Default value
-        float minDist = float.MaxValue;
-        // Find the closest point
-        foreach (var seedPoint in points)
-        {
-            //float dist = Vector2.Distance(point, seedPoint);
-            float dist = (point - seedPoint).sqrMagnitude;
-
-            if (dist < minDist)
-            {
-                minDist = dist;
-                closestBiome = pointBiomeMap[seedPoint];
-            }
-        }
-
-        return closestBiome ?? availableBiomes[0];
-    }
 }

@@ -860,137 +860,40 @@ MonoBehaviour:
     m_RotationOrder: 4
   minHeight: 0
   maxHeight: 0
-  minVoronoi: 0
-  maxVoronoi: 0
-  NumVoronoiPoints: 0
-  VoronoiSeed: 15
-  VoronoiScale: 0
+  terrainTextureBasedOnVoronoiPoints: 1
+  NumVoronoiPoints: 6
+  VoronoiSeed: 0
+  VoronoiScale: 1
   levelOfDetail: 6
   biomes:
   - name: a
     minHeight: 0
     maxHeight: 2
     texture: {fileID: 2800000, guid: 275844e622956564082767955338a997, type: 3}
-    amplitude: 1
+    amplitude: 0.1
     frequency: 0.1
-    persistence: 0
-    heightCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 2
-        outSlope: 2
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
+    persistence: 1
   - name: b
     minHeight: 2
     maxHeight: 5
     texture: {fileID: 2800000, guid: 49b8f8bd232e4394a9948ed155fe1516, type: 3}
-    amplitude: 7
-    frequency: 0.8
-    persistence: 0.021
-    heightCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
+    amplitude: 5
+    frequency: 16
+    persistence: 1
   - name: c
-    minHeight: 5.01
-    maxHeight: 8
+    minHeight: 5
+    maxHeight: 7
     texture: {fileID: 2800000, guid: 328744a432075d64eb27996e4ff7c550, type: 3}
     amplitude: 60
     frequency: 0.3
-    persistence: 0.759
-    heightCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 2
-        outSlope: 2
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
+    persistence: 0.765
   - name: d
-    minHeight: 8
+    minHeight: 7
     maxHeight: 10
     texture: {fileID: 2800000, guid: 937e2b9ff53f9894b87e3d6d1954ccd7, type: 3}
     amplitude: 140
     frequency: 0.7
     persistence: 0.6
-    heightCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 1
-        outSlope: 1
-        tangentMode: 34
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 1
-        outSlope: 1
-        tangentMode: 34
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
 --- !u!114 &491525272
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1331,8 +1234,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   minHeight: 0
   maxHeight: 0
-  minVoronoi: 0
-  maxVoronoi: 0
+  terrainTextureBasedOnVoronoiPoints: 0
   NumVoronoiPoints: 0
   VoronoiSeed: 0
   VoronoiScale: 0
@@ -1345,12 +1247,6 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
-    heightCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
   - name: b
     minHeight: 4.1
     maxHeight: 7.5
@@ -1358,12 +1254,6 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
-    heightCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
   - name: c
     minHeight: 7.5
     maxHeight: 8
@@ -1371,12 +1261,6 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
-    heightCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
   - name: d
     minHeight: 8
     maxHeight: 10
@@ -1384,12 +1268,6 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
-    heightCurve:
-      serializedVersion: 2
-      m_Curve: []
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
 --- !u!64 &536917232
 MeshCollider:
   m_ObjectHideFlags: 0

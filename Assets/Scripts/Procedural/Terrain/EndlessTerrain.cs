@@ -148,4 +148,42 @@ public class EndlessTerrain : MonoBehaviour
 
         //}
     }
+
+    //class LODMesh
+    //{
+
+    //    public Mesh mesh;
+    //    public bool hasRequestedMesh;
+    //    public bool hasMesh;
+    //    int lod;
+    //    System.Action updateCallback;
+
+    //    public LODMesh(int lod, System.Action updateCallback)
+    //    {
+    //        this.lod = lod;
+    //        this.updateCallback = updateCallback;
+    //    }
+
+    //    void OnMeshDataReceived(TerrainData terrainData)
+    //    {
+    //        mesh = terrainData.meshData.UpdateMesh();
+    //        hasMesh = true;
+
+    //        updateCallback();
+    //    }
+
+    //    public void RequestMesh(MapData mapData)
+    //    {
+    //        hasRequestedMesh = true;
+    //        mapGenerator.RequestMeshData(mapData, lod, OnMeshDataReceived);
+    //    }
+
+    //}
+
+    //[System.Serializable]
+    //public struct LODInfo
+    //{
+    //    public int lod;
+    //    public float visibleDstThreshold;
+    //}
 }
