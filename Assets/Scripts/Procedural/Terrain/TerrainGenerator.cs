@@ -71,8 +71,8 @@ public class TerrainGenerator : MonoBehaviour
     {
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
-        //Noise.InitializeVoronoiCache(VoronoiSeed, VoronoiScale, NumVoronoiPoints, biomes.ToList());
         VoronoiCache.Instance.Initialize(VoronoiScale, NumVoronoiPoints, biomes.ToList(), VoronoiSeed);
+
 
     }
     MapData GenerateTerrain(Vector2 globalOffset)
@@ -91,11 +91,44 @@ public class TerrainGenerator : MonoBehaviour
             for (int x = 0; x < gridWidthSize; x++)
             {
                 Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
-                biomeMap[x, y] = NoiseGenerator.Voronoi(worldPos, VoronoiScale, NumVoronoiPoints, Biomes.ToList(), VoronoiSeed);
+                Biome chosenBiome = NoiseGenerator.Voronoi(worldPos, VoronoiScale, NumVoronoiPoints, Biomes.ToList(), VoronoiSeed);
+                biomeMap[x, y] = chosenBiome;
+                PlaceObjectsForBiome(this, worldPos, chosenBiome);
             }
         }
 
         return biomeMap;
+    }
+    public  void PlaceObjectsForBiome(TerrainGenerator terrainGenerator, Vector3 worldPosition, Biome biome)
+    {
+        foreach (BiomeObject biomeObject in biome.objects)
+        {
+            // Check if we can spawn more objects of this type
+            if (biomeObject.currentNumberOfThisObject >= biomeObject.maxNumberOfThisObject)
+                continue;
+
+            // Random check against the probability to spawn
+            if (UnityEngine.Random.value < biomeObject.probabilityToSpawn)
+            {
+                Vector3 spawnPosition = GetSpawnPosition(worldPosition, biomeObject);
+                InstantiateBiomeObject(biomeObject.terrainObject, spawnPosition);
+                biomeObject.currentNumberOfThisObject++;
+            }
+        }
+    }
+
+    private static Vector3 GetSpawnPosition(Vector3 basePosition, BiomeObject biomeObject)
+    {
+        // You may want to add some randomness to the position here
+        // For example, to prevent objects from being on a grid exactly
+        return basePosition;
+    }
+
+    private static void InstantiateBiomeObject(GameObject prefab, Vector3 position)
+    {
+        // Instantiate the object at the given position
+        // You may want to add additional logic here, such as checking for collisions
+        Instantiate(prefab, position, Quaternion.identity);
     }
     public void RequestMapData(Action<MapData> callback, Vector2 globalOffset)
     {
@@ -116,16 +149,16 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
-    public void RequestTerrainhData(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset)
+    public void RequestTerrainData(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset, int lod = 0)
     {
         ThreadStart threadStart = delegate {
-            TerrainDataThread(mapData, callback, globalOffset);
+            TerrainDataThread(mapData, callback, globalOffset, lod);
         };
 
         new Thread(threadStart).Start();
     }
 
-    void TerrainDataThread(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset)
+    void TerrainDataThread(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset, int lod = 0)
     {
         MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap);
         TerrainData terrainData = new TerrainData(meshData, null, mapData.heightMap, this, globalOffset);
@@ -196,6 +229,18 @@ public class Biome
     public float frequency; // Detail level of the biome's terrain
     [Range(0, 1)] public float persistence =1; // How much detail is added or removed at each octave
     //public AnimationCurve heightCurve; // Curve to apply to heights within this biome
+    public List<BiomeObject> objects;
+    public float maxNumberOfObjects;
+}
+[System.Serializable]
+public class BiomeObject
+{
+    public GameObject terrainObject;
+    public float weight;
+    public float currentNumberOfThisObject;
+    public float probabilityToSpawn;
+    public float maxNumberOfThisObject;
+
 }
 
 public struct MapData

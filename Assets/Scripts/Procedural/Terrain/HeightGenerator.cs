@@ -15,6 +15,7 @@ public static class HeightGenerator
         float inverseWidth = 1f / terrainGenerator.GridWidthSize;
         float inverseDepth = 1f / terrainGenerator.GridDepthSize;
 
+
         for (int y = 0; y <= terrainGenerator.GridDepthSize; y++)
         {
             float worldPosY = globalOffset.y + y;
@@ -71,5 +72,6 @@ public static class HeightGenerator
 
         //return originalHeight;
     }
+
 
 }

@@ -681,7 +681,7 @@ GameObject:
   - component: {fileID: 491525271}
   - component: {fileID: 491525272}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: terrain
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -861,25 +861,39 @@ MonoBehaviour:
   minHeight: 0
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 1
-  NumVoronoiPoints: 6
-  VoronoiSeed: 0
-  VoronoiScale: 1
+  NumVoronoiPoints: 12
+  VoronoiSeed: 3
+  VoronoiScale: 300
   levelOfDetail: 6
   biomes:
   - name: a
     minHeight: 0
     maxHeight: 2
     texture: {fileID: 2800000, guid: 275844e622956564082767955338a997, type: 3}
-    amplitude: 0.1
-    frequency: 0.1
+    amplitude: 0
+    frequency: 1
     persistence: 1
+    objects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      weight: 0
+      currentNumberOfThisObject: 0
+      probabilityToSpawn: 80
+      maxNumberOfThisObject: 140
+    maxNumberOfObjects: 0
   - name: b
     minHeight: 2
     maxHeight: 5
     texture: {fileID: 2800000, guid: 49b8f8bd232e4394a9948ed155fe1516, type: 3}
     amplitude: 5
-    frequency: 16
+    frequency: 0.1
     persistence: 1
+    objects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      weight: 0
+      currentNumberOfThisObject: 0
+      probabilityToSpawn: 80
+      maxNumberOfThisObject: 150
+    maxNumberOfObjects: 0
   - name: c
     minHeight: 5
     maxHeight: 7
@@ -887,6 +901,8 @@ MonoBehaviour:
     amplitude: 60
     frequency: 0.3
     persistence: 0.765
+    objects: []
+    maxNumberOfObjects: 0
   - name: d
     minHeight: 7
     maxHeight: 10
@@ -894,6 +910,8 @@ MonoBehaviour:
     amplitude: 140
     frequency: 0.7
     persistence: 0.6
+    objects: []
+    maxNumberOfObjects: 0
 --- !u!114 &491525272
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -907,6 +925,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   viewer: {fileID: 1207614693}
+  shouldHaveMaxChunkPerSide: 1
+  maxChunksPerSide: 1
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0
@@ -1247,6 +1267,8 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
+    objects: []
+    maxNumberOfObjects: 0
   - name: b
     minHeight: 4.1
     maxHeight: 7.5
@@ -1254,6 +1276,8 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
+    objects: []
+    maxNumberOfObjects: 0
   - name: c
     minHeight: 7.5
     maxHeight: 8
@@ -1261,6 +1285,8 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
+    objects: []
+    maxNumberOfObjects: 0
   - name: d
     minHeight: 8
     maxHeight: 10
@@ -1268,6 +1294,8 @@ MonoBehaviour:
     amplitude: 0
     frequency: 0
     persistence: 1
+    objects: []
+    maxNumberOfObjects: 0
 --- !u!64 &536917232
 MeshCollider:
   m_ObjectHideFlags: 0

@@ -34,42 +34,42 @@ public class PlayerAbilityView : MonoBehaviour
     public void OnAbility1(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility2(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility3(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility4(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility5(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility6(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
 
     }
     public void OnAbility7(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        playerAbilityController.CheckAbilities(value.action);
+        //playerAbilityController.CheckAbilities(value.action);
     }
 }

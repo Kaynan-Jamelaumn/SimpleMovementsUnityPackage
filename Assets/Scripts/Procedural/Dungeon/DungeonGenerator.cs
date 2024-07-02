@@ -114,7 +114,6 @@ public class DungeonGenerator : MonoBehaviour
             MazeGenerator(floor, maxStairs);
         }
         mobSpawner.StartSpawningMobs();
-
     }
 
     void MazeGenerator(int floor, int maxStairs)
@@ -122,6 +121,7 @@ public class DungeonGenerator : MonoBehaviour
         int currentCell = startPos;
         board = new List<Cell>();
         List<Cell> floorCells = new List<Cell>();
+        firstVisited = false;
 
         for (int i = 0; i < size.x; i++)
         {
@@ -141,6 +141,15 @@ public class DungeonGenerator : MonoBehaviour
         while (k < 1000)
         {
             k++;
+            if (!firstVisited)
+            {
+                firstVisited = true;
+                // Adjust the spawn position based on your offset and floor height
+                spawnPosition = new Vector3(currentCell % size.x * offset.x, floor * offset.y, -(currentCell / size.x) * offset.z) + transform.position;
+                //spawnPosition = new Vector3(currentCell % size.x * offset.x, floor * offset.y, -(currentCell / size.x) * offset.z);
+                spawnPosition.y += 2; // Raise the spawn position slightly if needed
+                Debug.Log("Spawn position set to: " + spawnPosition);
+            }
 
             board[currentCell].visited = true;
 
@@ -255,7 +264,10 @@ public class DungeonGenerator : MonoBehaviour
                                 Cell cellBelow = cellsOnFloorBelow[i + j * size.x];
                                 if (Random.value <= stairSpawnChance && (cellBelow.roomType && cellBelow.roomType != stairRoom || canPlaceStairInEmptyCells))
                                 {
-                                    RoomBehaviour belowNewRoom = Instantiate(stairRoom, new Vector3(i * offset.x, (floor - 1) * offset.y, -j * offset.z), Quaternion.identity, transform).GetComponent<RoomBehaviour>();
+                                    Vector3 roomPosition = new Vector3(i * offset.x, (floor -1) * offset.y, -j * offset.z) + transform.position;
+
+                                    RoomBehaviour belowNewRoom = Instantiate(stairRoom, roomPosition, Quaternion.identity, transform).GetComponent<RoomBehaviour>();
+                                    //RoomBehaviour belowNewRoom = Instantiate(stairRoom, new Vector3(i * offset.x, (floor - 1) * offset.y, -j * offset.z), Quaternion.identity, transform).GetComponent<RoomBehaviour>();
                                     belowNewRoom.UpdateRoom(cellBelow.status);
                                     belowNewRoom.UpdateUpperRoom(currentCell.status);
 
@@ -279,21 +291,14 @@ public class DungeonGenerator : MonoBehaviour
 
     void InstantiateNewRandomRoom(int i, int j, int floor, int randomRoom, Cell currentCell)
     {
-        RoomBehaviour newRoom = Instantiate(rooms[randomRoom].room, new Vector3(i * offset.x, floor * offset.y, -j * offset.z), Quaternion.identity, transform).GetComponent<RoomBehaviour>();
+        // Calculate the room's position relative to the DungeonGenerator's GameObject transform
+        Vector3 roomPosition = new Vector3(i * offset.x, floor * offset.y, -j * offset.z) + transform.position;
+
+        RoomBehaviour newRoom = Instantiate(rooms[randomRoom].room, roomPosition, Quaternion.identity, transform).GetComponent<RoomBehaviour>();
         newRoom.UpdateRoom(currentCell.status);
-        //Debug.Log(newRoom.transform.position);
         currentCell.roomType = newRoom.gameObject;
-        newRoom.name += " " + i + "-" + j + "-" + floor; if (floor == 0 && currentCell == board[startPos])
-        if (firstVisited == false)// currentCell == board[startPos])
-        {
-                spawnPosition = newRoom.transform.position;
-
-                 firstVisited = true;
-                Debug.Log(newRoom.transform.position);
-            }
-
+        newRoom.name += $"Room ({i}, {j}, {floor})";
     }
-
     List<int> CheckNeighbors(int cell)
     {
         List<int> neighbors = new List<int>();
@@ -311,7 +316,7 @@ public class DungeonGenerator : MonoBehaviour
         }
 
 
-        //check right neighbor
+        //check right neighbor  
         if ((cell + 1) % size.x != 0 && !board[(cell + 1)].visited)
         {
             neighbors.Add((cell + 1));

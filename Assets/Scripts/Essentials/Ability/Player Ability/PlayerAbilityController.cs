@@ -11,6 +11,8 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
     [Tooltip("the target has been selected")][SerializeField] public bool isWaitingForClick;
     [Tooltip("the ability is waiting to have a selected target to execute the ability")][SerializeField] public bool abilityStillInProgress;
     public List<PlayerAbilityHolder> Abilities { get { return abilities; }   }
+
+
     private void OnDrawGizmos()
     {
         foreach (var ability in abilities)
@@ -24,6 +26,7 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
     private void Awake()
     {
         if (! movementModel) movementModel = GetComponent<PlayerMovementModel>();
+        if (!abilitiesStateMachine) abilitiesStateMachine = GetComponent<AbilitiesStateMachine>();
         if (!targetTransform) targetTransform = transform;
         foreach (var ability in abilities)
             if (!ability.targetTransform) ability.targetTransform = transform;
@@ -57,9 +60,36 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
             }
         }
     }
-    protected override IEnumerator SetBulletLikeTargetLaunchRoutine(AbilityHolder ability, Transform playerTransform, GameObject instantiatedParticle, AttackCast attackCast = null)
+    public void CheckAbilities2(InputAction inputAction, AbilityStateMachine abilityStateMachine)
     {
-        ability.abilityState = AbilityHolder.AbilityState.Launching;
+        foreach (var ability in abilities)
+        {
+            if (ability.abilityEffect != null && ability.AbilityActionReference.action == inputAction)
+            {
+                AttackCast attackCast = ability.attackCast.First();
+                if (ability.abilityEffect.numberOfTargets > 1) // multi target abilities with  feet target spawn
+                    foreach (var eachaAttackCast in ability.attackCast) _ = SetAbilityActions(ability, transform, abilityStateMachine, eachaAttackCast);
+
+                else if (ability.abilityEffect.shouldLaunch)
+                    _ = SetAbilityActions(ability, transform, abilityStateMachine, attackCast);
+                else if (!abilityStillInProgress && !ability.abilityEffect.isFixedPosition)
+                {
+                    abilityStillInProgress = true;
+                    isWaitingForClick = true;
+                    StartCoroutine(WaitForClickRoutine(ability, attackCast));
+
+                }
+                else if (ability.abilityEffect.isFixedPosition)
+                {
+                    _ = SetAbilityActions(ability, transform, abilityStateMachine, attackCast);
+                }
+            }
+        }
+    }
+    protected override IEnumerator SetBulletLikeTargetLaunchRoutine(AbilityHolder ability, Transform playerTransform, GameObject instantiatedParticle, AbilityStateMachine abilityStateMachine, AttackCast attackCast = null)
+    {
+        //ability.abilityState = AbilityHolder.AbilityState.Launching;
+        abilityStateMachine.TransitionToState(AbilityStateMachine.EAbilityState.Launching);
         float startTime = Time.time;
 
         ability.targetTransform = GetTargetTransform(playerTransform);
@@ -127,4 +157,40 @@ public class PlayerAbilityController : BaseAbilityController<PlayerAbilityHolder
         ProcessRayCastAbility(ability, attackCast);
 
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }

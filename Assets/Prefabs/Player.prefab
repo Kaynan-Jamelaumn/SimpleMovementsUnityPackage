@@ -6512,7 +6512,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3546557981370951511}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.3404381, y: 0.65787, z: -0.44506773, w: 0.50321335}
+  m_LocalRotation: {x: 0.001364824, y: 0.9048681, z: -0.42568004, w: 0.0029012067}
   m_LocalPosition: {x: 0.13300006, y: 0.0059999824, z: 0.41699982}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -6654,6 +6654,7 @@ GameObject:
   - component: {fileID: 4243198867069121134}
   - component: {fileID: 3347692938611366089}
   - component: {fileID: 3501264768263462519}
+  - component: {fileID: 3096013540147076013}
   m_Layer: 6
   m_Name: Player
   m_TagString: Player
@@ -6987,6 +6988,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   targetTransform: {fileID: 0}
+  abilitiesStateMachine: {fileID: 0}
   movementModel: {fileID: 8141768776123130879}
   abilities:
   - activeTime: 2
@@ -7100,7 +7102,7 @@ MonoBehaviour:
     particle: {fileID: 0}
     targetTransform: {fileID: 0}
     abilityEffect: {fileID: 0}
-    abilityActionReference: {fileID: -8720183483728730813, guid: f8d50c74cf36b904993fe75db0347fd5, type: 3}
+    abilityActionReference: {fileID: 334852152459999448, guid: f8d50c74cf36b904993fe75db0347fd5, type: 3}
   isWaitingForClick: 0
   abilityStillInProgress: 0
 --- !u!114 &6055919496691103488
@@ -7736,6 +7738,21 @@ MonoBehaviour:
   statusController: {fileID: 8761928077631927965}
   staminaManager: {fileID: 2275446686108570921}
   animationModel: {fileID: 4937398676102223084}
+--- !u!114 &3096013540147076013
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3553647395073543041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b0f8e13299b0a0409b65512d6daca94, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  abilityController: {fileID: 7621022011232775754}
+  animationModel: {fileID: 4937398676102223084}
+  abilityAction: []
 --- !u!1 &3565880855370106506
 GameObject:
   m_ObjectHideFlags: 0
@@ -13946,13 +13963,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_RecenterTarget: 0
   m_VerticalAxis:
-    Value: 68.15893
+    Value: 50.387703
     m_SpeedMode: 0
     m_MaxSpeed: 300
     m_AccelTime: 0.1
     m_DecelTime: 0.1
     m_InputAxisName: Mouse Y
-    m_InputAxisValue: 0
+    m_InputAxisValue: -0.3
     m_InvertInput: 1
     m_MinValue: -70
     m_MaxValue: 70
@@ -13970,13 +13987,13 @@ MonoBehaviour:
     m_LegacyHeadingDefinition: -1
     m_LegacyVelocityFilterStrength: -1
   m_HorizontalAxis:
-    Value: 105.17432
+    Value: 179.6326
     m_SpeedMode: 0
     m_MaxSpeed: 300
     m_AccelTime: 0.1
     m_DecelTime: 0.1
     m_InputAxisName: Mouse X
-    m_InputAxisValue: 0
+    m_InputAxisValue: -0.35
     m_InvertInput: 0
     m_MinValue: -180
     m_MaxValue: 180

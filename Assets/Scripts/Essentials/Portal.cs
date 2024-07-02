@@ -21,11 +21,11 @@ public class Portal : MonoBehaviour
             SceneManager.LoadScene(sceneToLoad);
 
             // Definir a posição do jogador na nova cena
-            SceneManager.sceneLoaded += OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSpawnPositionSeted;
         }
     }
 
-    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    private void OnSpawnPositionSeted(Scene scene, LoadSceneMode mode)
     {
         if (scene.name == sceneToLoad)
         {
@@ -36,6 +36,8 @@ public class Portal : MonoBehaviour
                 DungeonGenerator dungeonGenerator = FindObjectOfType<DungeonGenerator>();
                 if (dungeonGenerator != null)
                 {
+                    Debug.Log(dungeonGenerator.SpawnPosition);
+                    Debug.Log(player.transform.position);
                     // Define a posição do jogador como a posição do spawnPosition do DungeonGenerator
                     player.transform.position = dungeonGenerator.SpawnPosition;
                 }
@@ -48,7 +50,7 @@ public class Portal : MonoBehaviour
             }
 
             // Remover o evento OnSceneLoaded para evitar chamadas repetidas
-            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded -= OnSpawnPositionSeted;
         }
     }
 }

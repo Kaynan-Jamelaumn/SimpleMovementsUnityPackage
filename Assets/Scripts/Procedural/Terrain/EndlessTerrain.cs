@@ -4,16 +4,16 @@ using System.Collections.Generic;
 
 public class EndlessTerrain : MonoBehaviour
 {
-
     public const float maxViewDst = 450;
     public Transform viewer;
-    //public Texture2D splatmap2D;
 
     public static Vector2 viewerPosition;
     static TerrainGenerator mapGenerator;
     float scaleFactor = 1.0f;
     int chunkSize;
     int chunksVisibleInViewDst;
+    public bool shouldHaveMaxChunkPerSide = true; // Maximum number of chunks per side
+    public int maxChunksPerSide = 5; // Maximum number of chunks per side
 
     Dictionary<Vector2, TerrainChunk> terrainChunkDictionary = new Dictionary<Vector2, TerrainChunk>();
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
@@ -23,7 +23,7 @@ public class EndlessTerrain : MonoBehaviour
         mapGenerator = FindObjectOfType<TerrainGenerator>();
         chunkSize = TerrainGenerator.chunkSize - 1;
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
-        scaleFactor =  mapGenerator.ScaleFactor;
+        scaleFactor = mapGenerator.ScaleFactor;
     }
 
     void Update()
@@ -34,7 +34,6 @@ public class EndlessTerrain : MonoBehaviour
 
     void UpdateVisibleChunks()
     {
-
         for (int i = 0; i < terrainChunksVisibleLastUpdate.Count; i++)
         {
             terrainChunksVisibleLastUpdate[i].SetVisible(false);
@@ -50,6 +49,14 @@ public class EndlessTerrain : MonoBehaviour
             {
                 Vector2 viewedChunkCoord = new Vector2(currentChunkCoordX + xOffset, currentChunkCoordY + yOffset);
 
+                if (shouldHaveMaxChunkPerSide)
+                {
+                    if (Mathf.Abs(viewedChunkCoord.x) > maxChunksPerSide || Mathf.Abs(viewedChunkCoord.y) > maxChunksPerSide)
+                    {
+                        continue;
+                    }
+                }
+
                 if (terrainChunkDictionary.ContainsKey(viewedChunkCoord))
                 {
                     terrainChunkDictionary[viewedChunkCoord].UpdateTerrainChunk();
@@ -62,14 +69,12 @@ public class EndlessTerrain : MonoBehaviour
                 {
                     terrainChunkDictionary.Add(viewedChunkCoord, new TerrainChunk(viewedChunkCoord, chunkSize, transform));
                 }
-
             }
         }
     }
 
     public class TerrainChunk
     {
-
         GameObject meshObject;
         Vector2 position;
         Bounds bounds;
@@ -81,7 +86,6 @@ public class EndlessTerrain : MonoBehaviour
         private Texture2D splatmap;
         Vector2 globalOffset;
 
-
         public TerrainChunk(Vector2 coord, int size, Transform parent)
         {
             position = coord * size;
@@ -92,7 +96,6 @@ public class EndlessTerrain : MonoBehaviour
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
-            //GenerateTexture.AssignMaterial(splatmap2D, mapGenerator);
 
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
@@ -101,15 +104,12 @@ public class EndlessTerrain : MonoBehaviour
             mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
         }
 
-
         void OnMapDataReceived(MapData mapData)
         {
-            mapGenerator.RequestTerrainhData(mapData, OnTerrainhDataReceived, globalOffset);
-            //mapGenerator.RequestMeshData(mapData, OnMeshDataReceived);
-
+            mapGenerator.RequestTerrainData(mapData, OnTerrainDataReceived, globalOffset);
         }
 
-        void OnTerrainhDataReceived(TerrainData terrainData)
+        void OnTerrainDataReceived(TerrainData terrainData)
         {
             terrainGenerator = terrainData.terrainGenerator;
             splatmap = terrainData.splatMap;
@@ -117,9 +117,7 @@ public class EndlessTerrain : MonoBehaviour
             Mesh mesh = terrainData.meshData.UpdateMesh();
             meshFilter.mesh = mesh;
             meshCollider.sharedMesh = mesh;
-
         }
-
 
         public void UpdateTerrainChunk()
         {
@@ -137,53 +135,5 @@ public class EndlessTerrain : MonoBehaviour
         {
             return meshObject.activeSelf;
         }
-
-        //void OnMeshDataReceived(MeshData meshData)
-        //{
-        //terrainGenerator = meshData.terrainGenerator;
-        //splatmap = meshData.splatMap;
-        //    if (terrainGenerator == null || splatmap == null) Debug.Log("kbrau");
-        //AssignTexture(meshData.splatMap, terrainGenerator);
-        //meshFilter.mesh = meshData.UpdateMesh();
-
-        //}
     }
-
-    //class LODMesh
-    //{
-
-    //    public Mesh mesh;
-    //    public bool hasRequestedMesh;
-    //    public bool hasMesh;
-    //    int lod;
-    //    System.Action updateCallback;
-
-    //    public LODMesh(int lod, System.Action updateCallback)
-    //    {
-    //        this.lod = lod;
-    //        this.updateCallback = updateCallback;
-    //    }
-
-    //    void OnMeshDataReceived(TerrainData terrainData)
-    //    {
-    //        mesh = terrainData.meshData.UpdateMesh();
-    //        hasMesh = true;
-
-    //        updateCallback();
-    //    }
-
-    //    public void RequestMesh(MapData mapData)
-    //    {
-    //        hasRequestedMesh = true;
-    //        mapGenerator.RequestMeshData(mapData, lod, OnMeshDataReceived);
-    //    }
-
-    //}
-
-    //[System.Serializable]
-    //public struct LODInfo
-    //{
-    //    public int lod;
-    //    public float visibleDstThreshold;
-    //}
 }

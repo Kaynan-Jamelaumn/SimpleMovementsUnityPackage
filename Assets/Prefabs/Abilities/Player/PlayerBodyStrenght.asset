@@ -24,9 +24,9 @@ MonoBehaviour:
   castDuration: 2
   finalLaunchTime: 0
   isFixedPosition: 1
-  isPartialPermanentTargetWhileCasting: 1
-  isPermanentTarget: 1
-  shouldMarkAtCast: 1
+  isPartialPermanentTargetWhileCasting: 0
+  isPermanentTarget: 0
+  shouldMarkAtCast: 0
   effects:
   - effectType: 0
     effectName: bauaudusu
@@ -34,7 +34,7 @@ MonoBehaviour:
     timeBuffEffect: 0
     tickCooldown: 0
     isProcedural: 0
-    isStackable: 1
+    isStackable: 0
     enemyEffect: 0
     randomAmount: 0
     randomTimeBuffEffect: 0
