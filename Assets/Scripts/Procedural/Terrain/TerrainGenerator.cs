@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
 using System.Linq;
+using Unity.VisualScripting;
 
 public class TerrainGenerator : MonoBehaviour
 {
@@ -41,6 +42,7 @@ public class TerrainGenerator : MonoBehaviour
 
     Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
     Queue<MapThreadInfo<TerrainData>> terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
+    Queue<MapThreadInfo<BiomeObjectData>> biomeObjectDataThreadInfoQueue = new Queue<MapThreadInfo<BiomeObjectData>>();
 
     public Biome[] Biomes { get => biomes; set => biomes = value; }
     public bool TerrainTextureBasedOnVoronoiPoints { get => terrainTextureBasedOnVoronoiPoints;}
@@ -71,6 +73,9 @@ public class TerrainGenerator : MonoBehaviour
     {
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
+        biomeObjectDataThreadInfoQueue = new Queue<MapThreadInfo<BiomeObjectData>>();
+
+
         VoronoiCache.Instance.Initialize(VoronoiScale, NumVoronoiPoints, biomes.ToList(), VoronoiSeed);
 
 
@@ -82,7 +87,7 @@ public class TerrainGenerator : MonoBehaviour
         return new MapData(heightMap, null);
 
     }
-    public Biome[,] GenerateBiomeMap(Vector2 globalOffset)
+    public Biome[,] GenerateBiomeMap(Vector2 globalOffset, float[,] heightMap)
     {
         Biome[,] biomeMap = new Biome[gridWidthSize, gridDepthSize];
 
@@ -93,43 +98,15 @@ public class TerrainGenerator : MonoBehaviour
                 Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
                 Biome chosenBiome = NoiseGenerator.Voronoi(worldPos, VoronoiScale, NumVoronoiPoints, Biomes.ToList(), VoronoiSeed);
                 biomeMap[x, y] = chosenBiome;
-                PlaceObjectsForBiome(this, worldPos, chosenBiome);
+                //Vector3 worldPos3D = new Vector3(worldPos.x, 0, worldPos.y);
+                //PlaceObjectsForBiome(this, worldPos3D, chosenBiome, heightMap);
             }
         }
 
         return biomeMap;
     }
-    public  void PlaceObjectsForBiome(TerrainGenerator terrainGenerator, Vector3 worldPosition, Biome biome)
-    {
-        foreach (BiomeObject biomeObject in biome.objects)
-        {
-            // Check if we can spawn more objects of this type
-            if (biomeObject.currentNumberOfThisObject >= biomeObject.maxNumberOfThisObject)
-                continue;
 
-            // Random check against the probability to spawn
-            if (UnityEngine.Random.value < biomeObject.probabilityToSpawn)
-            {
-                Vector3 spawnPosition = GetSpawnPosition(worldPosition, biomeObject);
-                InstantiateBiomeObject(biomeObject.terrainObject, spawnPosition);
-                biomeObject.currentNumberOfThisObject++;
-            }
-        }
-    }
 
-    private static Vector3 GetSpawnPosition(Vector3 basePosition, BiomeObject biomeObject)
-    {
-        // You may want to add some randomness to the position here
-        // For example, to prevent objects from being on a grid exactly
-        return basePosition;
-    }
-
-    private static void InstantiateBiomeObject(GameObject prefab, Vector3 position)
-    {
-        // Instantiate the object at the given position
-        // You may want to add additional logic here, such as checking for collisions
-        Instantiate(prefab, position, Quaternion.identity);
-    }
     public void RequestMapData(Action<MapData> callback, Vector2 globalOffset)
     {
         ThreadStart threadStart = delegate {
@@ -138,6 +115,7 @@ public class TerrainGenerator : MonoBehaviour
 
         new Thread(threadStart).Start();
     }
+
 
     void MapDataThread(Action<MapData> callback, Vector2 globalOffset)
     {
@@ -158,10 +136,13 @@ public class TerrainGenerator : MonoBehaviour
         new Thread(threadStart).Start();
     }
 
-    void TerrainDataThread(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset, int lod = 0)
+
+    void TerrainDataThread(MapData mapData, Action<TerrainData> callback, Vector2 globalOffset,
+        int lod = 0)
     {
         MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap);
-        TerrainData terrainData = new TerrainData(meshData, null, mapData.heightMap, this, globalOffset);
+        Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
+        TerrainData terrainData = new TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap);
 
         lock (terrainDataThreadInfoQueue)
         {
@@ -169,6 +150,33 @@ public class TerrainGenerator : MonoBehaviour
         }
     }
 
+
+
+
+    public void RequestBiomeObjectData(Action<BiomeObjectData> callback, TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform)
+    {
+        ThreadStart threadStart = delegate {
+            BiomeObjectThread(callback, terrainData, globalOffset, chunkTransform);
+        };
+
+        new Thread(threadStart).Start();
+    }
+    void BiomeObjectThread(Action<BiomeObjectData> callback, TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform)
+    {
+        if (callback == null)
+        {
+            Debug.LogError("Callback is null");
+            return;
+        }
+        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap,  globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform);
+
+
+
+        lock (biomeObjectDataThreadInfoQueue)
+        {
+            biomeObjectDataThreadInfoQueue.Enqueue(new MapThreadInfo<BiomeObjectData>(callback, biomeObjectData));
+        }
+    }
 
     void Update()
     {
@@ -189,8 +197,8 @@ public class TerrainGenerator : MonoBehaviour
                 Texture2D splatMap = new Texture2D(gridWidthSize, gridDepthSize);
                 if (terrainTextureBasedOnVoronoiPoints)
                 {
-                    Biome[,] biomeMap = GenerateBiomeMap(threadInfo.parameter.globalOffset);
-                    splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, biomeMap, splatMap);
+                    //Biome[,] biomeMap = GenerateBiomeMap(threadInfo.parameter.globalOffset, threadInfo.parameter.heightMap);
+                    splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.biomeMap, splatMap);
 
                 }
                 else {splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.heightMap, splatMap);
@@ -202,7 +210,31 @@ public class TerrainGenerator : MonoBehaviour
                 threadInfo.callback(threadInfo.parameter);
             }
         }
+
+        if (biomeObjectDataThreadInfoQueue.Count > 0)
+        {
+            for (int i = 0; i < biomeObjectDataThreadInfoQueue.Count; i++)
+            {
+                MapThreadInfo<BiomeObjectData> threadInfo = biomeObjectDataThreadInfoQueue.Dequeue();
+
+
+                for (int y = 0; y < threadInfo.parameter.terrainGenerator.GridDepthSize; y++)
+                {
+                    for (int x = 0; x < threadInfo.parameter.terrainGenerator.GridWidthSize; x++)
+                    {
+                        //may debug the global offset
+                        Vector2 worldPos2D = new Vector2(threadInfo.parameter.globalOffset.x + x, threadInfo.parameter.globalOffset.y + y);
+                        Vector3 worldPos3D = new Vector3(worldPos2D.x, 0, worldPos2D.y);
+                        Biome chosenBiome = threadInfo.parameter.biomeMap[x, y];
+                        PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiome, threadInfo.parameter.heightMap, x, y);
+                    }
+
+
+                }
+            }
+        }
     }
+
 
     struct MapThreadInfo<T>
     {
@@ -216,7 +248,75 @@ public class TerrainGenerator : MonoBehaviour
         }
 
     }
+
+    public void PlaceObjectsForBiome(Transform chunkTransform, Vector3 worldPosition, Biome biome, float[,] heightMap, int x, int y)
+    {
+        foreach (BiomeObject biomeObject in biome.objects)
+        {
+            //if (biomeObject.currentNumberOfThisObject >= biomeObject.maxNumberOfThisObject)
+            //    continue;
+
+            if ((UnityEngine.Random.value * 100) < biomeObject.probabilityToSpawn)
+            {
+                Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y); // this function here for you to get the coordinates of the objects
+                InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, heightMap, x, y);
+                biomeObject.currentNumberOfThisObject++;
+            }
+        }
+    }
+    private Vector3 GetSpawnPosition(Vector3 worldPosition, float[,] heightMap, int x, int y)
+    {
+
+        // Get the height at the position
+        float height = heightMap[x, y];
+
+        // Return the position with the correct height
+        return new Vector3(worldPosition.x, height, worldPosition.z);
+    }
+
+    private static void InstantiateBiomeObject(Transform chunkTransform, GameObject prefab, Vector3 position, float[,] heightMap, int x, int y)
+    {
+        // Get the terrain's normal vector at the spawn position
+        Vector3 normal = CalculateTerrainNormal(heightMap, x, y);
+
+        // Calculate a random Y rotation for the object
+        Quaternion randomYRotation = Quaternion.Euler(0, UnityEngine.Random.Range(0f, 360f), 0);
+
+        // Align the object's up direction with the terrain normal
+        Quaternion terrainAlignmentRotation = Quaternion.FromToRotation(Vector3.up, normal);
+
+        // Combine the random Y rotation with the terrain alignment rotation
+        Quaternion finalRotation = terrainAlignmentRotation * randomYRotation;
+
+        // Instantiate the object with the calculated rotation
+        GameObject obj = Instantiate(prefab, position, finalRotation);
+        obj.transform.parent = chunkTransform;
+    }
+
+    private static Vector3 CalculateTerrainNormal(float[,] heightMap, int x, int y)
+    {
+        // Get the height differences between neighboring points
+        float heightL = heightMap[Mathf.Max(0, x - 1), y];
+        float heightR = heightMap[Mathf.Min(heightMap.GetLength(0) - 1, x + 1), y];
+        float heightD = heightMap[x, Mathf.Max(0, y - 1)];
+        float heightU = heightMap[x, Mathf.Min(heightMap.GetLength(1) - 1, y + 1)];
+
+        // Calculate the normal vector using cross product
+        Vector3 normal = new Vector3(heightL - heightR, 2f, heightD - heightU).normalized;
+
+        return normal;
+    }
 }
+
+
+
+
+
+
+
+
+
+
 [System.Serializable]
 public class Biome
 {
@@ -237,9 +337,9 @@ public class BiomeObject
 {
     public GameObject terrainObject;
     public float weight;
-    public float currentNumberOfThisObject;
     public float probabilityToSpawn;
-    public float maxNumberOfThisObject;
+    public int currentNumberOfThisObject;
+    public int maxNumberOfThisObject;
 
 }
 
@@ -260,12 +360,32 @@ public struct TerrainData
     public readonly float[,] heightMap;
     public readonly TerrainGenerator terrainGenerator;
     public Vector2 globalOffset;
-    public TerrainData(MeshData meshData, Texture2D splatMap, float[,] heightMap, TerrainGenerator terrainGenerator, Vector2 globalOffset)
+    public Biome[,] biomeMap;
+    public TerrainData(MeshData meshData, Texture2D splatMap, float[,] heightMap, TerrainGenerator terrainGenerator, Vector2 globalOffset, Biome[,] biomeMap)
     {
         this.meshData = meshData;
         this.splatMap = splatMap;
         this.heightMap = heightMap;
         this.terrainGenerator = terrainGenerator;
         this.globalOffset = globalOffset;
+        this.biomeMap = biomeMap;
     }
 }
+public struct BiomeObjectData
+{
+    public readonly float[,] heightMap;
+    public Vector2 globalOffset;    
+    public readonly TerrainGenerator terrainGenerator;
+    //public readonly TerrainData terrainData;
+    public readonly Biome[,] biomeMap;
+    public readonly Transform chunkTransform;
+    public BiomeObjectData(float[,] heightMap, Vector2 globalOffset, TerrainGenerator terrainGenerator, Biome[,] biomeMap, Transform chunkTransform)
+    {
+        this.heightMap = heightMap;
+        this.globalOffset = globalOffset;
+        this.terrainGenerator = terrainGenerator;
+        this.biomeMap = biomeMap;
+        this.chunkTransform = chunkTransform;
+    }
+}
+

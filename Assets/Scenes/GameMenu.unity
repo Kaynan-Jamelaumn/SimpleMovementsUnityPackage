@@ -862,7 +862,7 @@ MonoBehaviour:
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 1
   NumVoronoiPoints: 12
-  VoronoiSeed: 3
+  VoronoiSeed: 5
   VoronoiScale: 300
   levelOfDetail: 6
   biomes:
@@ -876,9 +876,9 @@ MonoBehaviour:
     objects:
     - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
       weight: 0
+      probabilityToSpawn: 0.1
       currentNumberOfThisObject: 0
-      probabilityToSpawn: 80
-      maxNumberOfThisObject: 140
+      maxNumberOfThisObject: 400
     maxNumberOfObjects: 0
   - name: b
     minHeight: 2
@@ -890,9 +890,9 @@ MonoBehaviour:
     objects:
     - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
       weight: 0
+      probabilityToSpawn: 1
       currentNumberOfThisObject: 0
-      probabilityToSpawn: 80
-      maxNumberOfThisObject: 150
+      maxNumberOfThisObject: 400
     maxNumberOfObjects: 0
   - name: c
     minHeight: 5
@@ -926,7 +926,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   viewer: {fileID: 1207614693}
   shouldHaveMaxChunkPerSide: 1
-  maxChunksPerSide: 1
+  maxChunksPerSide: 2
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0
@@ -4775,6 +4775,6 @@ SceneRoots:
   - {fileID: 1911114684}
   - {fileID: 1203556284}
   - {fileID: 1223225811}
+  - {fileID: 1207614693}
   - {fileID: 491525269}
   - {fileID: 536917236}
-  - {fileID: 1207614693}

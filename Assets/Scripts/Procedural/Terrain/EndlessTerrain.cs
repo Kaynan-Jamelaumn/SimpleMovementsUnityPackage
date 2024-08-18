@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using static EndlessTerrain;
+using Unity.VisualScripting;
 
 public class EndlessTerrain : MonoBehaviour
 {
@@ -86,6 +88,7 @@ public class EndlessTerrain : MonoBehaviour
         private Texture2D splatmap;
         Vector2 globalOffset;
 
+
         public TerrainChunk(Vector2 coord, int size, Transform parent)
         {
             position = coord * size;
@@ -108,6 +111,10 @@ public class EndlessTerrain : MonoBehaviour
         {
             mapGenerator.RequestTerrainData(mapData, OnTerrainDataReceived, globalOffset);
         }
+        void OnBiomeObjectDataReceived(BiomeObjectData biomeObjectData)
+        {
+
+        }
 
         void OnTerrainDataReceived(TerrainData terrainData)
         {
@@ -117,7 +124,12 @@ public class EndlessTerrain : MonoBehaviour
             Mesh mesh = terrainData.meshData.UpdateMesh();
             meshFilter.mesh = mesh;
             meshCollider.sharedMesh = mesh;
+            if  (terrainData.heightMap == null) Debug.Log("zzzzzzzzzz");
+
+
+            mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
         }
+
 
         public void UpdateTerrainChunk()
         {
@@ -135,5 +147,7 @@ public class EndlessTerrain : MonoBehaviour
         {
             return meshObject.activeSelf;
         }
+
+
     }
 }
