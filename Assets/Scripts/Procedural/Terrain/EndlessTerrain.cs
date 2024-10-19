@@ -1,8 +1,7 @@
 ﻿using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
-using static EndlessTerrain;
-using Unity.VisualScripting;
+
+using Unity.AI.Navigation;
 
 public class EndlessTerrain : MonoBehaviour
 {
@@ -84,8 +83,14 @@ public class EndlessTerrain : MonoBehaviour
         MeshRenderer meshRenderer;
         MeshFilter meshFilter;
         MeshCollider meshCollider;
+
+        NavMeshSurface navMeshSurface;
         private TerrainGenerator terrainGenerator;
+
         private Texture2D splatmap;
+
+        private WorldMobSpawner worldMobSpawner;
+
         Vector2 globalOffset;
 
 
@@ -100,9 +105,19 @@ public class EndlessTerrain : MonoBehaviour
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
 
+            // Add NavMeshSurface component to the terrain chunk
+            navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
+            navMeshSurface.collectObjects = CollectObjects.Children;
+
+            worldMobSpawner = meshObject.AddComponent<WorldMobSpawner>();
+            worldMobSpawner.Initialize(size, globalOffset, parent, navMeshSurface); //size = chunkSize
+
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
             SetVisible(false);
+
+            // Initialize the WorldMobSpawner for this chunk
+ 
 
             mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
         }
@@ -114,6 +129,12 @@ public class EndlessTerrain : MonoBehaviour
         void OnBiomeObjectDataReceived(BiomeObjectData biomeObjectData)
         {
 
+            BakeNavMesh();
+
+            worldMobSpawner.SetBiomes(biomeObjectData.biomeMap);  // Pass the biome data to the spawner
+
+            worldMobSpawner.StartSpawningMobs(biomeObjectData.heightMap);
+
         }
 
         void OnTerrainDataReceived(TerrainData terrainData)
@@ -124,10 +145,13 @@ public class EndlessTerrain : MonoBehaviour
             Mesh mesh = terrainData.meshData.UpdateMesh();
             meshFilter.mesh = mesh;
             meshCollider.sharedMesh = mesh;
-            if  (terrainData.heightMap == null) Debug.Log("zzzzzzzzzz");
-
 
             mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
+        }
+        // Function to bake NavMesh after mesh is generated
+        void BakeNavMesh()
+        {
+            navMeshSurface.BuildNavMesh(); // Bake the NavMesh for the chunk
         }
 
 

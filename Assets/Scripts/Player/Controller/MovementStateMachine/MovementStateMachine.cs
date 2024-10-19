@@ -2,8 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
-using UnityEngine.Windows;
-using static UnityEditor.Timeline.TimelinePlaybackControls;
+
 
 public class MovementStateMachine : StateManager<MovementStateMachine.EMovementState>
 {
@@ -62,7 +61,7 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         States.Add(EMovementState.Running, new RunningState(context, EMovementState.Running));
         States.Add(EMovementState.Jumping, new JumpingState(context, EMovementState.Jumping));
         States.Add(EMovementState.Dashing, new DashingState(context, EMovementState.Dashing));
-        States.Add(EMovementState.Rolling, new RollState(context, EMovementState.Rolling));
+        States.Add(EMovementState.Rolling, new RollingState(context, EMovementState.Rolling));
         CurrentState = States[EMovementState.Idle];
     }
 }

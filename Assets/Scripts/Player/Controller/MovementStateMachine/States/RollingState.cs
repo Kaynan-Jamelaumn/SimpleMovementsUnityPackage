@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
-public class RollState : MovementState
+public class RollingState : MovementState
 {
-    public RollState(MovementContext context, MovementStateMachine.EMovementState estate) : base(context, estate)
+    public RollingState(MovementContext context, MovementStateMachine.EMovementState estate) : base(context, estate)
     {
         MovementContext Context = context;
     }

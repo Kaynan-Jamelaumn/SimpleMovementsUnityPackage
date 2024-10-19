@@ -8,6 +8,7 @@ using Unity.VisualScripting;
 public class TerrainGenerator : MonoBehaviour
 {
     public const int chunkSize = 241; // divisble by 2, 4, 6, 8, 10, 12
+        public int ChunkSize { get => chunkSize; }
 
     [SerializeField] private int gridWidthSize = 241;
     [SerializeField] private int gridDepthSize = 241;
@@ -28,8 +29,9 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] public int VoronoiSeed = 0;
     [SerializeField] public float VoronoiScale = 1;
 
-    [SerializeField][Range(0,6)]private int levelOfDetail; 
-    
+    [SerializeField][Range(0,6)]private int levelOfDetail;
+    [SerializeField] private bool shouldSpawnObjects = true;
+
     public float Lacunarity { get => lacunarity; }
     public int Octaves { get => octaves; }
     //public float Persistence { get => persistence; }
@@ -75,11 +77,13 @@ public class TerrainGenerator : MonoBehaviour
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<TerrainData>>();
         biomeObjectDataThreadInfoQueue = new Queue<MapThreadInfo<BiomeObjectData>>();
 
-
-        VoronoiCache.Instance.Initialize(VoronoiScale, NumVoronoiPoints, biomes.ToList(), VoronoiSeed);
+        VoronoiCache.Instance.Initialize(VoronoiSeed);
+        //VoronoiCache.Instance.Initialize(VoronoiScale, biomes.ToList(), VoronoiSeed);
+        //VoronoiCache.Instance.Initialize(VoronoiScale, NumVoronoiPoints, biomes.ToList(), VoronoiSeed);
 
 
     }
+
     MapData GenerateTerrain(Vector2 globalOffset)
     {
         float[,] heightMap = HeightGenerator.GenerateHeightMap(this, globalOffset);
@@ -226,11 +230,12 @@ public class TerrainGenerator : MonoBehaviour
                         Vector2 worldPos2D = new Vector2(threadInfo.parameter.globalOffset.x + x, threadInfo.parameter.globalOffset.y + y);
                         Vector3 worldPos3D = new Vector3(worldPos2D.x, 0, worldPos2D.y);
                         Biome chosenBiome = threadInfo.parameter.biomeMap[x, y];
-                        PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiome, threadInfo.parameter.heightMap, x, y);
+                        if (shouldSpawnObjects)
+                            PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiome, threadInfo.parameter.heightMap, x, y);
                     }
 
-
                 }
+                threadInfo.callback(threadInfo.parameter);
             }
         }
     }
@@ -331,6 +336,7 @@ public class Biome
     //public AnimationCurve heightCurve; // Curve to apply to heights within this biome
     public List<BiomeObject> objects;
     public float maxNumberOfObjects;
+    public List<SpawnableMob> mobList;
 }
 [System.Serializable]
 public class BiomeObject

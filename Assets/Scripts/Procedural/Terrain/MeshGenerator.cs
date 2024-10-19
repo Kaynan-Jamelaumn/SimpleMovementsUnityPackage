@@ -61,14 +61,18 @@ public static class MeshGenerator
                 meshData.uvs[vertexIndex] = new Vector2((float)x / width, (float)y / depth);
                 vertexIndex++;
 
-                // Verifica se ainda estamos dentro dos limites da malha ao criar triângulos
+                // Verify if we're still in the bounds of the mesh
                 if (x < width - lodFactor && y < depth - lodFactor)
                 {
                     int vert = (y / lodFactor) * lodWidth + (x / lodFactor);
                     // Create two triangles (as a quad) per iteration
+
+
+                    //First Triangle : vertexes(vert, vert + lodWidth, vert + 1)
                     meshData.triangles[triangleIndex++] = vert;
                     meshData.triangles[triangleIndex++] = vert + lodWidth;
                     meshData.triangles[triangleIndex++] = vert + 1;
+                    //Second Triangle 2: vertexes(vert + 1, vert + lodWidth, vert + lodWidth + 1)
                     meshData.triangles[triangleIndex++] = vert + 1;
                     meshData.triangles[triangleIndex++] = vert + lodWidth;
                     meshData.triangles[triangleIndex++] = vert + lodWidth + 1;
