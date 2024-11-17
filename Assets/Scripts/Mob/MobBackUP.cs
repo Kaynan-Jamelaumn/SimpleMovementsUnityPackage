@@ -6,7 +6,7 @@ using UnityEngine.Assertions;
 
 
 // Enum representing the possible states of the Animal.
-public enum MobState
+public enum MobStateBackup
 {
     Idle,
     Moving,
@@ -14,7 +14,7 @@ public enum MobState
     Patrol,
 }
 
-public enum MobType
+public enum MobTypeBackup
 {
     Player,
     Sheep,
@@ -26,7 +26,7 @@ public enum MobType
 // Require the presence of a NavMeshAgent component on the GameObject.
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(MobStatusController))]
-public class Mob : MonoBehaviour
+public class MobBackUP : MonoBehaviour
 {
 
     [SerializeField] private MobStatusController statusController;
@@ -58,7 +58,7 @@ public class Mob : MonoBehaviour
     [Header("Prey Variables")]
     [SerializeField] protected float escapeMaxDistance = 80f;   // The maximum distance the prey can escape from the predator.
 
-    [SerializeField] protected MobActionsController currentPredator = null;   // Reference to the current predator pursuing the prey.
+    [SerializeField] protected MobActionsControllerBackup currentPredator = null;   // Reference to the current predator pursuing the prey.
 
     [Header("Predator Variables")]
     [SerializeField] protected float maxChaseTime = 10f;          // The maximum time the predator will chase prey.
@@ -66,7 +66,7 @@ public class Mob : MonoBehaviour
     [SerializeField] protected bool isPartialWait = false;               //If after biting it should stop moving or keep chasing and then attack?
     [SerializeField] protected float biteCooldown = 1f;          // The cooldown time between consecutive bites.
     [SerializeField] protected float attackDistance = 2f;
-    [SerializeField] protected MobActionsController currentChaseTarget;   // Reference to the current prey being chased.
+    [SerializeField] protected MobActionsControllerBackup currentChaseTarget;   // Reference to the current prey being chased.
     [Header("Player Chase Variables")]
     [SerializeField] protected bool playerHasMaxChaseTime = false;          // The maximum time the predator will chase prey.
     [SerializeField] protected PlayerStatusController currentPlayerTarget;
@@ -85,8 +85,8 @@ public class Mob : MonoBehaviour
     public Coroutine WaitToMoveRoutine { get => waitToMoveRoutine; set => waitToMoveRoutine = value; }
     public Coroutine WaitToReachDestinationRoutine { get => waitToReachDestinationRoutine; set => waitToReachDestinationRoutine = value; }
     public PlayerStatusController CurrentPlayerTarget { get => currentPlayerTarget; set => currentPlayerTarget = value; }
-    public MobActionsController CurrentPredator { get => currentPredator; set => currentPredator = value; }
-    public MobActionsController CurrentChaseTarget { get => currentChaseTarget; set => currentChaseTarget = value; }
+    public MobActionsControllerBackup CurrentPredator { get => currentPredator; set => currentPredator = value; }
+    public MobActionsControllerBackup CurrentChaseTarget { get => currentChaseTarget; set => currentChaseTarget = value; }
     public Cast DetectionCast { get => detectionCast; }
     public List<MobType> PreysReference { get => Preys; }
     public bool PlayerHasMaxChaseTime { get => playerHasMaxChaseTime; }
@@ -100,7 +100,6 @@ public class Mob : MonoBehaviour
     public int BiteDamage { get => biteDamage; }
     public float BiteCooldown { get => biteCooldown; }
     public float AttackDistance { get => attackDistance;}
-    public float EscapeMaxDistance { get => escapeMaxDistance; }
 
     private void Awake()
     {
@@ -131,30 +130,30 @@ public class Mob : MonoBehaviour
         navMeshAgent.speed = statusController.SpeedManager.Speed;
 
         // Set the initial state to Idle and update the state.
-        //currentState = MobState.Idle;
-        //UpdateState();
+        currentState = MobState.Idle;
+        UpdateState();
     }
 
     // Updates the state of the Animal based on the current state.
-    //protected virtual void UpdateState()
-    //{
-    //    // Switch between different states and call respective handling methods.
-    //    switch (currentState)
-    //    {
-    //        case MobState.Idle:
-    //            HandleIdleState();
-    //            break;
-    //        case MobState.Moving:
-    //            HandleMovingState();
-    //            break;
-    //        case MobState.Chase:
-    //            HandleChaseState();
-    //            break;
-    //        case MobState.Patrol:
-    //            HandlePatrolState();
-    //            break;
-    //    }
-    //}
+    protected virtual void UpdateState()
+    {
+        // Switch between different states and call respective handling methods.
+        switch (currentState)
+        {
+            case MobState.Idle:
+                HandleIdleState();
+                break;
+            case MobState.Moving:
+                HandleMovingState();
+                break;
+            case MobState.Chase:
+                HandleChaseState();
+                break;
+            case MobState.Patrol:
+                HandlePatrolState();
+                break;
+        }
+    }
 
     // Returns a random position on the NavMesh within a specified distance from the given origin.
     public Vector3 GetRandomNavMeshPosition(Vector3 origin, float distance)
@@ -178,132 +177,132 @@ public class Mob : MonoBehaviour
     }
 
     // Placeholder method for checking conditions to enter the Chase state.
-    //public virtual void CheckChaseConditions()
-    //{
-    //    // To be implemented in derived classes.
-    //}
+    public virtual void CheckChaseConditions()
+    {
+        // To be implemented in derived classes.
+    }
 
-    //// Placeholder method for handling the Chase state.
-    //public virtual void HandleChaseState()
-    //{
-    //    // Stop all coroutines when entering the Chase state.
-    //    StopAllCoroutines();
-    //}
+    // Placeholder method for handling the Chase state.
+    public virtual void HandleChaseState()
+    {
+        // Stop all coroutines when entering the Chase state.
+        StopAllCoroutines();
+    }
 
-    //// Initiates the Idle state by waiting for a random amount of time, then setting a random destination.
-    //protected virtual void HandleIdleState()
-    //{
-    //    // Start the coroutine to wait and then move to a random destination.
-    //    StartCoroutine(WaitToMove());
-    //}
+    // Initiates the Idle state by waiting for a random amount of time, then setting a random destination.
+    protected virtual void HandleIdleState()
+    {
+        // Start the coroutine to wait and then move to a random destination.
+        StartCoroutine(WaitToMove());
+    }
 
-    //protected virtual void HandlePatrolState()
-    //{
-    //    if (patrolPoints.Length == 0) return; // No patrol points set
+    protected virtual void HandlePatrolState()
+    {
+        if (patrolPoints.Length == 0) return; // No patrol points set
 
-    //    navMeshAgent.SetDestination(patrolPoints[currentPatrolPoint]);
-    //    StartCoroutine(WaitToReachDestination());
+        navMeshAgent.SetDestination(patrolPoints[currentPatrolPoint]);
+        StartCoroutine(WaitToReachDestination());
 
-    //    if (HasReachedDestinationWithMargin())
-    //    {
-    //        currentPatrolPoint = (currentPatrolPoint + 1) % patrolPoints.Length;
-    //       // SetState(MobState.Idle); // Continue to the next patrol point
-    //    }
-    //}
-    //// Coroutine that makes the Animal wait for a random amount of time and then move to a random destination.
-    ////private float offsetMargin = 1.0f; // Adjust this value as needed.
+        if (HasReachedDestinationWithMargin())
+        {
+            currentPatrolPoint = (currentPatrolPoint + 1) % patrolPoints.Length;
+           // SetState(MobState.Idle); // Continue to the next patrol point
+        }
+    }
+    // Coroutine that makes the Animal wait for a random amount of time and then move to a random destination.
+    //private float offsetMargin = 1.0f; // Adjust this value as needed.
 
-    //private IEnumerator WaitToMove()
-    //{
-    //    // Check if the player is within the detection range.
-    //    if (currentPlayerTarget != null && Vector3.Distance(transform.position, currentPlayerTarget.transform.position) <= detectionRange)
-    //    {
-    //        // Set the destination to the player's position.
-    //        navMeshAgent.SetDestination(currentPlayerTarget.transform.position);
-    //        HandleMovingState();
-    //    }
-    //    else
-    //    {
-    //        // If the player is not in range, move to a random destination.
-    //        float waitTime = Random.Range(idleTime / 2, idleTime * 2);
-    //        yield return new WaitForSeconds(waitTime);
+    private IEnumerator WaitToMove()
+    {
+        // Check if the player is within the detection range.
+        if (currentPlayerTarget != null && Vector3.Distance(transform.position, currentPlayerTarget.transform.position) <= detectionRange)
+        {
+            // Set the destination to the player's position.
+            navMeshAgent.SetDestination(currentPlayerTarget.transform.position);
+            HandleMovingState();
+        }
+        else
+        {
+            // If the player is not in range, move to a random destination.
+            float waitTime = Random.Range(idleTime / 2, idleTime * 2);
+            yield return new WaitForSeconds(waitTime);
 
-    //        // Get a random destination on the NavMesh and set it for the Animal.
-    //        if (patrolPoints.Length ==0)
-    //        {
-    //            Vector3 randomDestination = GetRandomNavMeshPosition(transform.position, wanderDistance);
-    //            navMeshAgent.SetDestination(randomDestination);
-    //            if (!currentPlayerTarget) SetState(MobState.Moving);
-    //        }
-    //        else SetState(MobState.Patrol);
-    //    }
-    //}
+            // Get a random destination on the NavMesh and set it for the Animal.
+            if (patrolPoints.Length ==0)
+            {
+                Vector3 randomDestination = GetRandomNavMeshPosition(transform.position, wanderDistance);
+                navMeshAgent.SetDestination(randomDestination);
+                if (!currentPlayerTarget) SetState(MobState.Moving);
+            }
+            else SetState(MobState.Patrol);
+        }
+    }
 
-    //// Placeholder method for handling the Moving state.
-    //protected virtual void HandleMovingState()
-    //{
-    //    // Start the coroutine to wait until reaching the destination or a maximum walk time is exceeded.
-    //    StartCoroutine(WaitToReachDestination());
-    //}
+    // Placeholder method for handling the Moving state.
+    protected virtual void HandleMovingState()
+    {
+        // Start the coroutine to wait until reaching the destination or a maximum walk time is exceeded.
+        StartCoroutine(WaitToReachDestination());
+    }
 
     // Coroutine that makes the Animal wait until it reaches its destination or a maximum walk time is exceeded.
-    //public IEnumerator WaitToReachDestination()
-    //{
-    //    // Record the start time for measuring the walk time.
-    //    float startTime = Time.time;
+    public IEnumerator WaitToReachDestination()
+    {
+        // Record the start time for measuring the walk time.
+        float startTime = Time.time;
 
-    //    // Continue the loop until the destination is reached or the maximum walk time is exceeded.
-    //    //while (navMeshAgent.pathPending || (navMeshAgent.isActiveAndEnabled && navMeshAgent.isOnNavMesh && navMeshAgent.remainingDistance > navMeshAgent.stoppingDistance))
-    //    while (navMeshAgent.pathPending || (navMeshAgent.isActiveAndEnabled && navMeshAgent.isOnNavMesh &&
-    //       !HasReachedDestinationWithMargin()))
+        // Continue the loop until the destination is reached or the maximum walk time is exceeded.
+        //while (navMeshAgent.pathPending || (navMeshAgent.isActiveAndEnabled && navMeshAgent.isOnNavMesh && navMeshAgent.remainingDistance > navMeshAgent.stoppingDistance))
+        while (navMeshAgent.pathPending || (navMeshAgent.isActiveAndEnabled && navMeshAgent.isOnNavMesh &&
+           !HasReachedDestinationWithMargin()))
 
-    //        {
-    //        // If the maximum walk time is exceeded, reset the path and set the state to Idle.
-    //        if (currentPlayerTarget != null && playerHasMaxChaseTime && Time.time - startTime >= maxWalkTime || currentPlayerTarget == null && Time.time - startTime >= maxWalkTime)
-    //        {
-    //            if (currentPredator) currentPredator = null;
-    //            navMeshAgent.ResetPath();
-    //            SetState(MobState.Idle);
-    //            yield break;
-    //        }
+            {
+            // If the maximum walk time is exceeded, reset the path and set the state to Idle.
+            if (currentPlayerTarget != null && playerHasMaxChaseTime && Time.time - startTime >= maxWalkTime || currentPlayerTarget == null && Time.time - startTime >= maxWalkTime)
+            {
+                if (currentPredator) currentPredator = null;
+                navMeshAgent.ResetPath();
+                SetState(MobState.Idle);
+                yield break;
+            }
 
-    //        // Check conditions to enter the Chase state during movement.
-    //        CheckChaseConditions();
+            // Check conditions to enter the Chase state during movement.
+            CheckChaseConditions();
 
-    //        yield return null;
-    //    }
+            yield return null;
+        }
 
-    //    // Destination has been reached, set the state to Idle.
-    //    if (!currentPlayerTarget) SetState(MobState.Idle);
-    //    else CheckChaseConditions();
-    //}
+        // Destination has been reached, set the state to Idle.
+        if (!currentPlayerTarget) SetState(MobState.Idle);
+        else CheckChaseConditions();
+    }
 
     // Sets the state of the Animal and invokes the OnStateChanged method.
-    //protected void SetState(MobState newState)
-    //{
-    //    // Check if the new state is different from the current state.
-    //    if (currentState == newState)
-    //        return;
+    protected void SetState(MobState newState)
+    {
+        // Check if the new state is different from the current state.
+        if (currentState == newState)
+            return;
 
-    //    // Update the current state and invoke the OnStateChanged method.
-    //    currentState = newState;
-    //    OnStateChanged(newState);
-    //}
+        // Update the current state and invoke the OnStateChanged method.
+        currentState = newState;
+        OnStateChanged(newState);
+    }
 
-    //// Invoked when the state of the Animal changes, adjusts the NavMeshAgent speed accordingly, and updates the state.
-    //protected virtual void OnStateChanged(MobState newState)
-    //{
-    //    animator?.CrossFadeInFixedTime(newState.ToString(), 0.5f);
-    //    // Adjust NavMeshAgent speed based on the new state.
-    //    if (newState == MobState.Moving)
-    //        navMeshAgent.speed = statusController.SpeedManager.Speed;
+    // Invoked when the state of the Animal changes, adjusts the NavMeshAgent speed accordingly, and updates the state.
+    protected virtual void OnStateChanged(MobState newState)
+    {
+        animator?.CrossFadeInFixedTime(newState.ToString(), 0.5f);
+        // Adjust NavMeshAgent speed based on the new state.
+        if (newState == MobState.Moving)
+            navMeshAgent.speed = statusController.SpeedManager.Speed;
 
-    //    if (newState == MobState.Chase)
-    //        navMeshAgent.speed = statusController.SpeedManager.Speed * statusController.SpeedManager.SpeedWhileRunningMultiplier;
+        if (newState == MobState.Chase)
+            navMeshAgent.speed = statusController.SpeedManager.Speed * statusController.SpeedManager.SpeedWhileRunningMultiplier;
 
-    //    // Update the state based on the new state.
-    //    UpdateState();
-    //}
+        // Update the state based on the new state.
+        UpdateState();
+    }
 
     // Reduces the health of the Animal based on received damage and triggers the Die method if health is depleted.
     public virtual void ReceiveDamage(int damage)

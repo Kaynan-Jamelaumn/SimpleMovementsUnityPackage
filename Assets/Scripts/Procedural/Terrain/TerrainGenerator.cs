@@ -261,6 +261,7 @@ public class TerrainGenerator : MonoBehaviour
             //if (biomeObject.currentNumberOfThisObject >= biomeObject.maxNumberOfThisObject)
             //    continue;
 
+            // Check global probability to spawn
             if ((UnityEngine.Random.value * 100) < biomeObject.probabilityToSpawn)
             {
                 Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y); // this function here for you to get the coordinates of the objects

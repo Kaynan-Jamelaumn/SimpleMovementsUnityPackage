@@ -74,8 +74,11 @@ public class WorldMobSpawner : MonoBehaviour
             // Verify if the position is on a NavMesh
             if (IsValidSpawnPosition(spawnPosition))
             {
+                
+                GameObject mobInstance = Instantiate(chosenMob.mobPrefab, spawnPosition, Quaternion.identity);
 
-                Instantiate(chosenMob.mobPrefab, spawnPosition, Quaternion.identity);
+                // Set the mob as a child of the terrain chunk
+                mobInstance.transform.SetParent(this.transform);
             }
         }
     }

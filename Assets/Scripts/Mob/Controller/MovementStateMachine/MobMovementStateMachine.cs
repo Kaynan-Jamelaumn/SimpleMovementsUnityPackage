@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.Assertions;
-using UnityEngine.Windows;
-using static UnityEditor.Timeline.TimelinePlaybackControls;
+
 
 public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMobMovementState>
 {
@@ -16,19 +16,32 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         Patrol,
     }
     [SerializeField] private MobActionsController actionsController;
+    [SerializeField] private Mob mob;
+    [SerializeField] private Animator animator;
+    [SerializeField] private NavMeshAgent navMeshAgent;
+    [SerializeField] private MobStatusController statusController;
 
 
     private void Awake()
-    {        
+    {
+        statusController = GetComponent<MobStatusController>();
+        navMeshAgent = GetComponent<NavMeshAgent>();
+        animator = transform.GetChild(0).GetChild(0).GetComponent<Animator>();
         ValiDateConstraints();
-        context = new MobMovementContext(actionsController);
+
+        navMeshAgent.speed = statusController.SpeedManager.Speed;
+
+        context = new MobMovementContext(mob, actionsController, animator, statusController, navMeshAgent);
         InitializeStates();
     }
 
 
     private void ValiDateConstraints()
     {
-        Assert.IsNotNull(actionsController, "PlayerMovementModel is Not Assigned");
+        Assert.IsNotNull(actionsController, "MobActionsController is Not Assigned");
+        Assert.IsNotNull(animator, "MobAnimator is Not Assigned");
+        Assert.IsNotNull(navMeshAgent, "MobActionsController is Not Assigned");
+        Assert.IsNotNull(statusController, "MobStatusController is Not Assigned");
 
     }
     private void InitializeStates()

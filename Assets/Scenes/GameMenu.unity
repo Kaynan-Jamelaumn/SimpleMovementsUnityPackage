@@ -861,11 +861,11 @@ MonoBehaviour:
   minHeight: 0
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 1
-  NumVoronoiPoints: 301
+  NumVoronoiPoints: 30
   VoronoiSeed: 4
   VoronoiScale: 300
   levelOfDetail: 6
-  shouldSpawnObjects: 0
+  shouldSpawnObjects: 1
   biomes:
   - name: a
     minHeight: 0
