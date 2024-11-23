@@ -861,9 +861,9 @@ MonoBehaviour:
   minHeight: 0
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 1
-  NumVoronoiPoints: 30
-  VoronoiSeed: 4
-  VoronoiScale: 300
+  NumVoronoiPoints: 8
+  VoronoiSeed: 3
+  VoronoiScale: 350
   levelOfDetail: 6
   shouldSpawnObjects: 1
   biomes:
@@ -882,6 +882,7 @@ MonoBehaviour:
       maxNumberOfThisObject: 400
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
   - name: b
     minHeight: 2
     maxHeight: 5
@@ -904,6 +905,7 @@ MonoBehaviour:
       minTimeToSpawn: 2
       maxTimeToSpawn: 10
       currentMobs: 0
+    Weight: 1
   - name: c
     minHeight: 5
     maxHeight: 7
@@ -914,6 +916,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
   - name: d
     minHeight: 7
     maxHeight: 10
@@ -924,6 +927,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
 --- !u!114 &491525272
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1283,6 +1287,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
   - name: b
     minHeight: 4.1
     maxHeight: 7.5
@@ -1293,6 +1298,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
   - name: c
     minHeight: 7.5
     maxHeight: 8
@@ -1303,6 +1309,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
   - name: d
     minHeight: 8
     maxHeight: 10
@@ -1313,6 +1320,7 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
+    Weight: 1
 --- !u!64 &536917232
 MeshCollider:
   m_ObjectHideFlags: 0

@@ -554,9 +554,9 @@ MonoBehaviour:
     targetLayers:
       serializedVersion: 2
       m_Bits: 192
-  escapeMaxDistance: 80
+  escapeMaxDistance: 20
   currentPredator: {fileID: 0}
-  maxChaseTime: 400
+  maxChaseTime: 30
   biteDamage: 1
   isPartialWait: 0
   biteCooldown: 5

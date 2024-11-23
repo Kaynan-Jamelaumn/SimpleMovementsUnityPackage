@@ -16,11 +16,11 @@ public static class SplatMapGenerator
 
     public static Texture2D GenerateSplatMapOutsideMainThread(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Texture2D splatMap)
     {
-        Color[] colorMap = new Color[terrainGenerator.GridWidthSize * terrainGenerator.GridDepthSize];
+        Color[] colorMap = new Color[terrainGenerator.ChunkSize * terrainGenerator.ChunkSize];
 
-        for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
+        for (int y = 0; y < terrainGenerator.ChunkSize; y++)
         {
-            for (int x = 0; x < terrainGenerator.GridWidthSize; x++)
+            for (int x = 0; x < terrainGenerator.ChunkSize; x++)
             {
                 Biome biome = biomeMap[x, y];
                 Color channelWeight = new Color(0, 0, 0, 0);
@@ -34,7 +34,7 @@ public static class SplatMapGenerator
                     }
                 }
 
-                colorMap[y * terrainGenerator.GridWidthSize + x] = channelWeight;
+                colorMap[y * terrainGenerator.ChunkSize + x] = channelWeight;
             }
         }
 
@@ -44,11 +44,11 @@ public static class SplatMapGenerator
     }
     public static Texture2D GenerateSplatMapOutsideMainThread(TerrainGenerator terrainGenerator, float[,] heightMap, Texture2D splatMap)
     {
-        Color[] colorMap = new Color[terrainGenerator.GridWidthSize * terrainGenerator.GridDepthSize];
+        Color[] colorMap = new Color[terrainGenerator.ChunkSize * terrainGenerator.ChunkSize];
 
-        for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
+        for (int y = 0; y < terrainGenerator.ChunkSize; y++)
         {
-            for (int x = 0; x < terrainGenerator.GridWidthSize; x++)
+            for (int x = 0; x < terrainGenerator.ChunkSize; x++)
             {
                 float height = heightMap[x, y];
                 Color channelWeight = new Color(0, 0, 0, 0);
@@ -69,7 +69,7 @@ public static class SplatMapGenerator
                     }
                 }
 
-                colorMap[y * terrainGenerator.GridWidthSize + x] = channelWeight;
+                colorMap[y * terrainGenerator.ChunkSize + x] = channelWeight;
             }
         }
 
@@ -80,10 +80,10 @@ public static class SplatMapGenerator
     public static Texture2D GenerateSplatMap(TerrainGenerator terrainGenerator, float[,] heightMap)
     {
 
-        Texture2D splatMap = new Texture2D(terrainGenerator.GridWidthSize, terrainGenerator.GridDepthSize);
-        for (int y = 0; y < terrainGenerator.GridDepthSize; y++)
+        Texture2D splatMap = new Texture2D(terrainGenerator.ChunkSize, terrainGenerator.ChunkSize);
+        for (int y = 0; y < terrainGenerator.ChunkSize; y++)
         {
-            for (int x = 0; x < terrainGenerator.GridWidthSize; x++)
+            for (int x = 0; x < terrainGenerator.ChunkSize; x++)
             {
                 float height = heightMap[x, y];
                 Color channelWeight = new Color(0, 0, 0, 0);
@@ -146,7 +146,7 @@ public static class SplatMapGenerator
             terrainGenerator.SplatMapShader.SetTexture(kernelHandle, "Result", splatMapData.SplatMap);
 
             // Dispatch the Compute Shader
-            terrainGenerator.SplatMapShader.Dispatch(kernelHandle, terrainGenerator.GridWidthSize / 8, terrainGenerator.GridDepthSize / 8, 1); //splatMapShader.Dispatch(kernelHandle, gridWidthSize * 0.125, gridDephtSize * 0.125, 1);
+            terrainGenerator.SplatMapShader.Dispatch(kernelHandle, terrainGenerator.GridWidthSize / 8, terrainGenerator.GridDepthSize / 8, 1); //splatMapShader.Dispatch(kernelHandle, ChunkSize * 0.125, gridDephtSize * 0.125, 1);
         }
 
         // The splatMap RenderTexture can now be used as the splat map.

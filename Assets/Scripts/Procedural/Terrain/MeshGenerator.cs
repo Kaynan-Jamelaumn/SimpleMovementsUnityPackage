@@ -37,8 +37,8 @@ public static class MeshGenerator
 {
     public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0)
     {
-        int width = terrainGenerator.GridWidthSize;
-        int depth = terrainGenerator.GridDepthSize;
+        int width = terrainGenerator.ChunkSize;
+        int depth = terrainGenerator.ChunkSize;
 
         // LOD factor é calculado como um múltiplo de 2 para LODs acima de 1, e 1 caso contrário.
         int lodFactor = lod > 1 ? lod * 2 : 1;
