@@ -86,15 +86,16 @@ public class VoronoiCache
 
     private IEnumerable<Vector2Int> GetAdjacentChunks(Vector2Int chunkCoord)
     {
-        yield return chunkCoord;
-        yield return chunkCoord + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.right;
-        yield return chunkCoord + Vector2Int.up;
-        yield return chunkCoord + Vector2Int.down;
-        yield return chunkCoord + Vector2Int.up + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.up + Vector2Int.right;
-        yield return chunkCoord + Vector2Int.down + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.down + Vector2Int.right;
+        // Returns the current chunk and all direct/diagonal neighbors
+        yield return chunkCoord;                         // Current chunk
+        yield return chunkCoord + Vector2Int.left;       // Left
+        yield return chunkCoord + Vector2Int.right;      // Right
+        yield return chunkCoord + Vector2Int.up;         // Up
+        yield return chunkCoord + Vector2Int.down;       // Down
+        yield return chunkCoord + Vector2Int.up + Vector2Int.left;   // Top-left
+        yield return chunkCoord + Vector2Int.up + Vector2Int.right;  // Top-right
+        yield return chunkCoord + Vector2Int.down + Vector2Int.left; // Bottom-left
+        yield return chunkCoord + Vector2Int.down + Vector2Int.right;// Bottom-right
     }
 
     public Biome GetClosestBiome(Vector2 worldPosition, Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes)
@@ -113,6 +114,7 @@ public class VoronoiCache
 
             foreach (var point in points)
             {
+                // Calculate the distance from the given position to each point
                 float dist = (worldPosition - point).sqrMagnitude;
                 if (dist < minDist)
                 {
@@ -121,7 +123,7 @@ public class VoronoiCache
                 }
             }
         }
-
+         // Return the closest biome based on calculated proximity
         return closestBiome;
     }
 
