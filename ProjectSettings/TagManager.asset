@@ -8,6 +8,7 @@ TagManager:
   - Collectable
   - DungeonWall
   - RoomRemovable
+  - Portal
   layers:
   - Default
   - TransparentFX

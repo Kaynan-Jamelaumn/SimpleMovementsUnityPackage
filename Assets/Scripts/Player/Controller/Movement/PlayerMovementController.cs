@@ -175,20 +175,6 @@ public class PlayerMovementController : MonoBehaviour
 
         model.Controller.Move(Vector3.up * model.VerticalVelocity * Time.deltaTime);
     }
-    //private void HandleMovementAnimation()
-    //{
-    //    bool isWalking = model.Anim.GetBool(model.IsWalkingHash);
-    //    bool isRunning = model.Anim.GetBool(model.IsRunningHash);
-    //    bool currentMovement = model.Movement2D.sqrMagnitude > 0;
-    //    bool movementPressed = model.CurrentPlayerState == PlayerMovementModel.PlayerState.Walking;
-    //    bool runPressed = model.CurrentPlayerState == PlayerMovementModel.PlayerState.Running;
-
-    //    if (movementPressed && !isWalking) model.Anim.SetBool(model.IsWalkingHash, true);
-    //    if (!movementPressed && isWalking) model.Anim.SetBool(model.IsWalkingHash, false);
-    //    if ((currentMovement && runPressed) && !isRunning) model.Anim.SetBool(model.IsRunningHash, true);
-    //    if ((!currentMovement || !runPressed) && isRunning) model.Anim.SetBool(model.IsRunningHash, false);
-    //}
-    // Apply animations based on player state
 
     // Rotate player based on camera angle if required
     private void RotatePlayerByCameraAngle(ref Vector3 currentDirection)
@@ -232,86 +218,3 @@ public class PlayerMovementController : MonoBehaviour
     }
 
 }
-//public void ApplyMovement()
-//{
-//    float currentSpeed = model.Speed;
-//    switch (model.CurrentPlayerState)
-//    {
-//        case PlayerMovementModel.PlayerState.Idle:
-//            currentSpeed = 0;
-//            break;
-
-//        case PlayerMovementModel.PlayerState.Walking:
-//            currentSpeed *= 1.0f; // Adjust as needed
-
-//            break;
-
-//        case PlayerMovementModel.PlayerState.Running:
-//            currentSpeed *= model.SpeedWhileRunningMultiplier;
-//            statusController.StaminaManager.IsConsumingStamina = true;
-//            if (statusController.StaminaManager.HasEnoughStamina(model.AmountOfSprintStaminaCost) == false)
-//            {
-//                // Check if the coroutine is running before stopping it
-//                if (model.SprintCoroutine != null) StopCoroutine(model.SprintCoroutine);
-//                model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-//                statusController.StaminaManager.IsConsumingStamina = false;
-//                break;
-//            }
-//            break;
-
-//        case PlayerMovementModel.PlayerState.Crouching:
-//            currentSpeed *= model.SpeedWhileCrouchingMultiplier;
-//            statusController.StaminaManager.IsConsumingStamina = true;
-//            if (model.CrouchCoroutine != null && statusController.StaminaManager.HasEnoughStamina(model.AmountOfCrouchStaminaCost) == false)
-//            {
-
-//                // Check if the coroutine is running before stopping it   
-//                if (model.CrouchCoroutine != null) StopCoroutine(model.CrouchCoroutine);
-
-
-//                model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-//                statusController.StaminaManager.IsConsumingStamina = false;
-//            }
-//            break;
-
-//        default:
-//            break;
-//    }
-//    Vector3 currentDirection = model.Direction;
-//    // If stamina consumption is required, handle it
-//    if (model.ShouldConsumeStamina)
-//    {
-//        //HandleStaminaConsumption();
-//    }
-
-//    currentSpeed = statusController.WeightManager.CalculateSpeedBasedOnWeight(currentSpeed);
-
-//    // Rotate player based on camera angle if required
-//    RotatePlayerByCameraAngle(ref currentDirection);
-//    model.Controller.Move(currentDirection * currentSpeed * Time.deltaTime);
-//}
-
-
-
-//private void JumpingStateHandler()
-//{
-//    if (model.CurrentPlayerState == PlayerMovementModel.PlayerState.Jumping)
-//        if (IsGrounded() == true) UpdateMovementState();
-//}
-//public void UpdateMovementState()
-//{
-
-//    bool stillMoving = model.Movement2D.sqrMagnitude > 0;
-//    bool isNotInADefaultMovingState = model.CurrentPlayerState == PlayerMovementModel.PlayerState.Running || model.CurrentPlayerState == PlayerMovementModel.PlayerState.Crouching;
-//    if (stillMoving && !isNotInADefaultMovingState)
-//        model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-//    // movementStateMachine.CurrentState = movementStateMachine.States[EMovementState.Walking];
-//    else if (!stillMoving ||
-//   (model.actionPressed && !stillMoving || !model.actionPressed && stillMoving && isNotInADefaultMovingState) &&
-//   (model.ShouldConsumeStamina && !statusController.StaminaManager.IsConsumingStamina))
-//    {
-//        if (stillMoving && !model.actionPressed) model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-//        else model.CurrentPlayerState = PlayerMovementModel.PlayerState.Idle;
-//    }
-//}
-

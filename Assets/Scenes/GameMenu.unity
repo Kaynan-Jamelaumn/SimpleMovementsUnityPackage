@@ -680,6 +680,7 @@ GameObject:
   - component: {fileID: 491525270}
   - component: {fileID: 491525271}
   - component: {fileID: 491525272}
+  - component: {fileID: 491525273}
   m_Layer: 0
   m_Name: terrain
   m_TagString: Untagged
@@ -827,37 +828,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gridWidthSize: 241
-  gridDepthSize: 241
   scaleFactor: 1
   octaves: 5
   lacunarity: 2
   defaultTexture: {fileID: 2800000, guid: 00ced6628f099374ebf7475a8b513648, type: 3}
   splatMapShader: {fileID: 7200000, guid: f13807e8508f5af4884ebd2d74e492a6, type: 3}
-  heightCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
   minHeight: 0
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 1
@@ -865,7 +840,6 @@ MonoBehaviour:
   VoronoiSeed: 3
   VoronoiScale: 350
   levelOfDetail: 6
-  shouldSpawnObjects: 1
   biomes:
   - name: a
     minHeight: 0
@@ -880,9 +854,12 @@ MonoBehaviour:
       probabilityToSpawn: 0.1
       currentNumberOfThisObject: 0
       maxNumberOfThisObject: 400
+      slopeThreshold: 80
+      isClusterable: 1
+      clusterCount: 5
+      clusterRadius: 50
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
   - name: b
     minHeight: 2
     maxHeight: 5
@@ -896,16 +873,19 @@ MonoBehaviour:
       probabilityToSpawn: 1
       currentNumberOfThisObject: 0
       maxNumberOfThisObject: 400
+      slopeThreshold: 80
+      isClusterable: 1
+      clusterCount: 5
+      clusterRadius: 50
     maxNumberOfObjects: 0
     mobList:
     - mobPrefab: {fileID: 3954741356165816016, guid: 8317280f482040048953fdc183b57bea, type: 3}
-      maxInstancesOfThisMob: 4
+      maxInstancesOfThisMob: 40
       HasMaxInstancesOfThisMob: 0
       weightToSpawnFactor: 1
-      minTimeToSpawn: 2
-      maxTimeToSpawn: 10
+      minTimeToSpawn: 1
+      maxTimeToSpawn: 1
       currentMobs: 0
-    Weight: 1
   - name: c
     minHeight: 5
     maxHeight: 7
@@ -916,7 +896,6 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
   - name: d
     minHeight: 7
     maxHeight: 10
@@ -927,7 +906,10 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
+  shouldSpawnObjects: 1
+  clusterBaseFrequency: 0
+  clusterAmplitude: 0
+  clusteringIntensity: 0
 --- !u!114 &491525272
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -943,6 +925,28 @@ MonoBehaviour:
   viewer: {fileID: 1207614693}
   shouldHaveMaxChunkPerSide: 0
   maxChunksPerSide: 2
+  portalManager: {fileID: 491525273}
+--- !u!114 &491525273
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 491525265}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3d793c72748fbed47ac99fa94cdd5d46, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  portalPrefabs:
+  - prefab: {fileID: 4855282368247094320, guid: 77dedbdf7a985fa4dbae8fd0b209673a, type: 3}
+    maxInstances: 90
+    spawnTime: 2
+    minSpawnTime: 2
+    maxSpawnTime: 2
+    shouldHaveRandomSpawnTime: 0
+  globalMaxPortals: 90
+  totalActivePortals: 0
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0
@@ -1237,37 +1241,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gridWidthSize: 241
-  gridDepthSize: 241
   scaleFactor: 3
   octaves: 5
   lacunarity: 2
   defaultTexture: {fileID: 2800000, guid: 00ced6628f099374ebf7475a8b513648, type: 3}
   splatMapShader: {fileID: 7200000, guid: f13807e8508f5af4884ebd2d74e492a6, type: 3}
-  heightCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
   minHeight: 0
   maxHeight: 0
   terrainTextureBasedOnVoronoiPoints: 0
@@ -1275,7 +1253,6 @@ MonoBehaviour:
   VoronoiSeed: 0
   VoronoiScale: 0
   levelOfDetail: 0
-  shouldSpawnObjects: 0
   biomes:
   - name: a
     minHeight: 0
@@ -1287,7 +1264,6 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
   - name: b
     minHeight: 4.1
     maxHeight: 7.5
@@ -1298,7 +1274,6 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
   - name: c
     minHeight: 7.5
     maxHeight: 8
@@ -1309,7 +1284,6 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
   - name: d
     minHeight: 8
     maxHeight: 10
@@ -1320,7 +1294,10 @@ MonoBehaviour:
     objects: []
     maxNumberOfObjects: 0
     mobList: []
-    Weight: 1
+  shouldSpawnObjects: 0
+  clusterBaseFrequency: 0
+  clusterAmplitude: 0
+  clusteringIntensity: 0
 --- !u!64 &536917232
 MeshCollider:
   m_ObjectHideFlags: 0

@@ -1,4 +1,5 @@
 ﻿
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -58,22 +59,22 @@ public class DungeonGenerator : MonoBehaviour
             return obligatory ? 2 : 1;
         }
     }
-    [SerializeField] private int seed;
+    [SerializeField] public int seed;
     [SerializeField] private int randomSeed;
-    [SerializeField] private Vector2Int size;
+    [SerializeField] public Vector2Int size;
     [SerializeField] private int startPos = 0;
-    [SerializeField] private Vector3 offset;
+    [SerializeField] public Vector3 offset;
     [Header("Stair Config")]
     [Tooltip("The StairRoomPrefab( a room that will connect differents floors trough a stair)")] public GameObject stairRoom;
-    [SerializeField] private int maxNumberOfStairsPerFloor = 3; // Maximum number of floors
-    [SerializeField] private int minNumberOfStairsPerFloor = 3; // Maximum number of floors
+    [SerializeField] private int maxNumberOfStairsPerFloor = 3; // Maximum number per floors
+    [SerializeField] private int minNumberOfStairsPerFloor = 3; // Minimum number per floors
     [SerializeField] private bool randomMaxStairsPerFloor = false;
     [SerializeField] private bool canPlaceStairInEmptyCells = true;
     [Tooltip("What is the chance for the stair to be spawned in every cell")][Range(0f, 1f)] public float stairSpawnChance;
 
     [Header("Rooms Config")]
-    [SerializeField] private int minFloors = 1; // Minimum number of floors
-    [SerializeField] private int maxFloors = 3; // Maximum number of floors
+    [SerializeField] public int minFloors = 1; // Minimum number of floors
+    [SerializeField] public int maxFloors = 3; // Maximum number of floors
     [SerializeField] private Rule[] rooms;
     private List<Cell> board;
     private Dictionary<int, List<Cell>> bigBoard = new Dictionary<int, List<Cell>>();
@@ -81,16 +82,17 @@ public class DungeonGenerator : MonoBehaviour
     [SerializeField] private Vector3 spawnPosition;
     bool firstVisited = false;
     public Vector3 SpawnPosition { get => spawnPosition; set => spawnPosition = value; }
+    public event Action OnDungeonGenerated;
     // Start is called before the first frame update
     void Start()
     {
 
         if (!mobSpawner) mobSpawner = GetComponent<DungeonMobSpawner>();
-        if (seed != 0) Random.InitState(seed);
+        if (seed != 0) UnityEngine.Random.InitState(seed);
         else
         {
-            randomSeed = System.DateTime.Now.Millisecond + Random.Range(0, 100000);
-            Random.InitState(randomSeed);
+            randomSeed = System.DateTime.Now.Millisecond + UnityEngine.Random.Range(0, 100000);
+            UnityEngine.Random.InitState(randomSeed);
 
         }
         GenerateDungeon();
@@ -106,14 +108,18 @@ public class DungeonGenerator : MonoBehaviour
 
     void GenerateDungeon()
     {
-        int numFloors = Random.Range(minFloors, maxFloors + 1); // Randomize number of floors
-        int maxStairs = Random.Range(minNumberOfStairsPerFloor, maxNumberOfStairsPerFloor + 1);
+        int numFloors = UnityEngine.Random.Range(minFloors, maxFloors + 1);
+        int maxStairs = UnityEngine.Random.Range(minNumberOfStairsPerFloor, maxNumberOfStairsPerFloor + 1);
+        firstVisited = false;
         for (int floor = 0; floor < numFloors; floor++)
         {
-            if (randomMaxStairsPerFloor) maxStairs = Random.Range(minNumberOfStairsPerFloor, maxNumberOfStairsPerFloor + 1);
+            if (randomMaxStairsPerFloor)
+                maxStairs = UnityEngine.Random.Range(minNumberOfStairsPerFloor, maxNumberOfStairsPerFloor + 1);
             MazeGenerator(floor, maxStairs);
         }
         mobSpawner.StartSpawningMobs();
+
+        OnDungeonGenerated?.Invoke(); // Notify that the dungeon generation is complete.
     }
 
     void MazeGenerator(int floor, int maxStairs)
@@ -121,7 +127,6 @@ public class DungeonGenerator : MonoBehaviour
         int currentCell = startPos;
         board = new List<Cell>();
         List<Cell> floorCells = new List<Cell>();
-        firstVisited = false;
 
         for (int i = 0; i < size.x; i++)
         {
@@ -141,15 +146,7 @@ public class DungeonGenerator : MonoBehaviour
         while (k < 1000)
         {
             k++;
-            if (!firstVisited)
-            {
-                firstVisited = true;
-                // Adjust the spawn position based on your offset and floor height
-                spawnPosition = new Vector3(currentCell % size.x * offset.x, floor * offset.y, -(currentCell / size.x) * offset.z) + transform.position;
-                //spawnPosition = new Vector3(currentCell % size.x * offset.x, floor * offset.y, -(currentCell / size.x) * offset.z);
-                spawnPosition.y += 2; // Raise the spawn position slightly if needed
-                Debug.Log("Spawn position set to: " + spawnPosition);
-            }
+
 
             board[currentCell].visited = true;
 
@@ -176,7 +173,7 @@ public class DungeonGenerator : MonoBehaviour
             {
                 path.Push(currentCell);
 
-                int newCell = neighbors[Random.Range(0, neighbors.Count)];
+                int newCell = neighbors[UnityEngine.Random.Range(0, neighbors.Count)];
 
                 if (newCell > currentCell)
                 {
@@ -249,7 +246,7 @@ public class DungeonGenerator : MonoBehaviour
 
                     if (randomRoom == -1 && availableRooms.Count > 0)
                     {
-                        randomRoom = availableRooms[Random.Range(0, availableRooms.Count)];
+                        randomRoom = availableRooms[UnityEngine.Random.Range(0, availableRooms.Count)];
                     }
                     // else randomRoom = 0;
                     //Cell cellBelow = board[(i + j * size.x) + (floor - 1) * (size.x * size.y)];
@@ -262,7 +259,7 @@ public class DungeonGenerator : MonoBehaviour
 
                                 List<Cell> cellsOnFloorBelow = bigBoard[floor - 1];
                                 Cell cellBelow = cellsOnFloorBelow[i + j * size.x];
-                                if (Random.value <= stairSpawnChance && (cellBelow.roomType && cellBelow.roomType != stairRoom || canPlaceStairInEmptyCells))
+                                if (UnityEngine.Random.value <= stairSpawnChance && (cellBelow.roomType && cellBelow.roomType != stairRoom || canPlaceStairInEmptyCells))
                                 {
                                     Vector3 roomPosition = new Vector3(i * offset.x, (floor -1) * offset.y, -j * offset.z) + transform.position;
 
@@ -295,6 +292,17 @@ public class DungeonGenerator : MonoBehaviour
         Vector3 roomPosition = new Vector3(i * offset.x, floor * offset.y, -j * offset.z) + transform.position;
 
         RoomBehaviour newRoom = Instantiate(rooms[randomRoom].room, roomPosition, Quaternion.identity, transform).GetComponent<RoomBehaviour>();
+        if (!firstVisited)
+        {
+            firstVisited = true;
+
+            // Calculate the center based on the room position and offset (assuming offset is the room size)
+            Vector3 roomCenter = roomPosition + new Vector3(offset.x / 2, offset.y / 2, -offset.z / 2);
+
+            // Set spawnPosition to the center of the room
+            spawnPosition = roomCenter;
+        }
+
         newRoom.UpdateRoom(currentCell.status);
         currentCell.roomType = newRoom.gameObject;
         newRoom.name += $"Room ({i}, {j}, {floor})";

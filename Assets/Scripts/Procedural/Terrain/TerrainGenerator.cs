@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
 using System.Linq;
 using Unity.VisualScripting;
+using UnityEditor.Experimental.GraphView;
 
 /// <summary>
 /// Generates terrain data and biomes using noise and Voronoi algorithms.
@@ -15,6 +17,7 @@ public class TerrainGenerator : MonoBehaviour
     // Constant size of each terrain chunk, designed for compatibility with different levels of detail.
     public const int chunkSize = 241; // divisble by 2, 4, 6, 8, 10, 12 for smooth LOD scaling.
     public int ChunkSize { get => chunkSize; }
+    public PortalManager portalManager;
 
     //[SerializeField] private int gridWidthSize = 241;
     //[SerializeField] private int gridDepthSize = 241;
@@ -91,6 +94,9 @@ public class TerrainGenerator : MonoBehaviour
     /// </summary>
     [SerializeField] private float clusteringIntensity = 2f;
 
+    float[,] heightMap;
+    Vector2 globalOffset;
+    Coroutine awaitingPortalDataRoutine;
 
     public float Lacunarity { get => lacunarity; }
     public int Octaves { get => octaves; }
@@ -118,6 +124,7 @@ public class TerrainGenerator : MonoBehaviour
     public float MinHeight { get => minHeight; set => minHeight = value; }
     public float MaxHeight { get => maxHeight; set => maxHeight = value; }
     public int LevelOfDetail { get => levelOfDetail; set => levelOfDetail = value; }
+    bool isR;
 
     /// <summary>
     /// Updates the minimum and maximum height values based on a given height.
@@ -163,6 +170,53 @@ public class TerrainGenerator : MonoBehaviour
             }
         }
     }
+    //private void OnEnable()
+    //{
+    //    Debug.Log($"vasco instantiated under parent: {this.transform.gameObject.name}");
+    //    Debug.Log($"teste instantiated under parent: {this.transform.parent.name}");
+    //    if (globalOffset != null && heightMap != null)
+    //    {
+    //        portalManager = GetComponent<PortalManager>();
+    //        portalManager.SpawnPortalsInChunk(globalOffset, transform, heightMap, chunkSize);
+    //    }
+    //    else
+    //    {
+    //        awaitingPortalDataRoutine = StartCoroutine(WaitForInitialization());
+    //    }
+    //}
+    //private void OnDisable()
+    //{
+    //    if (awaitingPortalDataRoutine != null) StopCoroutine(awaitingPortalDataRoutine);
+    //    if (portalManager.portalRoutine != null) portalManager.StopSpawningPortals(transform);
+    //}
+    private void Start()
+    {
+        StartCoroutine(TestCoroutine());
+    }
+    private IEnumerator TestCoroutine()
+    {
+        while (true)
+        {
+
+            if (isR == false) isR = true;
+            Debug.Log("waba zCoroutine running...");
+            yield return new WaitForSeconds(3);
+        }
+
+    }
+    //private IEnumerator WaitForInitialization()
+    //{
+    //    // Wait until both globalOffset and heightMap are not null
+    //    while (globalOffset == null || heightMap == null)
+    //    {
+    //        yield return new WaitForSeconds(3); // Wait for the next frame
+    //    }
+    //    portalManager = GetComponentInParent<PortalManager>();
+
+    //    // Once both are not null, initialize the portal manager
+    //    portalManager.SpawnPortalsInChunk(globalOffset, transform, heightMap, chunkSize);
+    //}
+
 
     /// <summary>
     /// Generates the terrain height map using noise-based algorithms.
@@ -177,8 +231,9 @@ public class TerrainGenerator : MonoBehaviour
     /// </returns>
     MapData GenerateTerrain(Vector2 globalOffset)
     {
+        this.globalOffset = globalOffset;
         // Generate the height map using noise algorithms, scaled by the global offset.
-        float[,] heightMap = HeightGenerator.GenerateHeightMap(this, globalOffset);
+        heightMap = HeightGenerator.GenerateHeightMap(this, globalOffset);
 
         // Return the generated height map encapsulated in a MapData object.
         return new MapData(heightMap, null);

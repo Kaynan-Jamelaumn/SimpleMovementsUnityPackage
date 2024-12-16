@@ -1,56 +1,108 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class Portal : MonoBehaviour
 {
     [SerializeField] private string sceneToLoad = null; // name of the scene to load
     [SerializeField] private Vector3 position;
+
+    [Header("Dungeon Config")]
+    [SerializeField] private GameObject dungeonObject;
+    [SerializeField] private float despawnTime; // Fixed time for activation
+    [SerializeField] private float minDespawnTime; // Minimum random time
+    [SerializeField] private float maxDespawnTime; // Maximum random time
+    [SerializeField] private bool shouldHaveRandomDespawnTime; // Flag for random time activation
+
+    public delegate void PortalDestroyedHandler();
+    public event PortalDestroyedHandler OnPortalDestroyed;
+    private void Awake()
+    {
+        StartCoroutine(ActivatePortal());
+    }
+
+    private IEnumerator ActivatePortal()
+    {
+        float waitTime = shouldHaveRandomDespawnTime ? Random.Range(minDespawnTime, maxDespawnTime) : despawnTime;
+        yield return new WaitForSeconds(waitTime);
+        Debug.Log("Portal destroyed after " + waitTime + " seconds.");
+
+        // Destroy the portal GameObject
+        Destroy(gameObject);
+    }
+
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))
         {
-            if (sceneToLoad== null)
+            if (string.IsNullOrEmpty(sceneToLoad))
             {
+                Debug.LogWarning("Bad Scene");
                 other.gameObject.transform.position = position;
                 return;
             }
-            // Manter o GameObject do jogador durante a transição de cena
+            PlayerMovementController movementController = other.GetComponent<PlayerMovementController>();
+            CharacterController characterController = other.GetComponent<CharacterController>();
+
+            movementController.enabled = false;
+            characterController.enabled = false;
+            // Preserve the player during the transition
             DontDestroyOnLoad(other.gameObject);
 
-            // Carregar a cena especificada
+            // Load the new scene
             SceneManager.LoadScene(sceneToLoad);
 
-            // Definir a posição do jogador na nova cena
-            SceneManager.sceneLoaded += OnSpawnPositionSeted;
+            // Set up the callback for when the scene is loaded
+            SceneManager.sceneLoaded += OnSceneLoaded;
+
+            void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+            {
+                if (scene.name == sceneToLoad)
+                {
+                    // Move the player to the correct scene
+                    SceneManager.MoveGameObjectToScene(other.gameObject, scene);
+
+                    // Find the dungeon generator and set the spawn position
+                    Instantiate(dungeonObject);
+                    DungeonGenerator dungeonGenerator = dungeonObject.GetComponent<DungeonGenerator>();
+
+                    if (dungeonGenerator != null)
+                    {
+                        dungeonGenerator.OnDungeonGenerated += () => SetPlayerPosition(other, dungeonGenerator, characterController, movementController);
+                    }
+                    else
+                    {
+                        Debug.LogWarning("DungeonGenerator not found in the loaded scene.");
+                    }
+
+                    // Remove the scene loaded event to avoid repeated calls
+                    SceneManager.sceneLoaded -= OnSceneLoaded;
+                }
+            }
         }
     }
 
-    private void OnSpawnPositionSeted(Scene scene, LoadSceneMode mode)
+    private void SetPlayerPosition(Collider player, DungeonGenerator dungeonGenerator, CharacterController characterController, PlayerMovementController movementController)
     {
-        if (scene.name == sceneToLoad)
+
+
+        if (dungeonGenerator != null)
         {
-            // Encontrar o jogador na nova cena e definir sua posição
-            GameObject player = GameObject.FindGameObjectWithTag("Player");
-            if (player != null)
-            {
-                DungeonGenerator dungeonGenerator = FindObjectOfType<DungeonGenerator>();
-                if (dungeonGenerator != null)
-                {
-                    Debug.Log(dungeonGenerator.SpawnPosition);
-                    Debug.Log(player.transform.position);
-                    // Define a posição do jogador como a posição do spawnPosition do DungeonGenerator
-                    player.transform.position = dungeonGenerator.SpawnPosition;
-                }
-                else
-                {
-                    Debug.LogWarning("DungeonGenerator não encontrado na cena carregada.");
-                }
-
-                //player.transform.position = position;
-            }
-
-            // Remover o evento OnSceneLoaded para evitar chamadas repetidas
-            SceneManager.sceneLoaded -= OnSpawnPositionSeted;
+            player.transform.position = dungeonGenerator.SpawnPosition;
+            Debug.Log("Player spawned at: " + player.transform.position);
+            movementController.enabled = true;
+            characterController.enabled = true;
         }
+        else
+        {
+            Debug.LogWarning("DungeonGenerator not found when setting player position.");
+        }
+
+    }
+
+    private void OnDestroy()
+    {
+        OnPortalDestroyed?.Invoke();
     }
 }
+

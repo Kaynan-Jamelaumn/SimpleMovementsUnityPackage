@@ -197,6 +197,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   interactionTime: 2
+  hasRandomInteractionTime: 0
+  minInteractionTime: 0
+  maxInteractionTime: 0
   openAngle: -90
   closeAngle: 0
   smooth: 2
@@ -282,6 +285,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   interactionTime: 2
+  hasRandomInteractionTime: 0
+  minInteractionTime: 0
+  maxInteractionTime: 0
   openAngle: -90
   closeAngle: 0
   smooth: 2
@@ -367,6 +373,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   interactionTime: 2
+  hasRandomInteractionTime: 0
+  minInteractionTime: 0
+  maxInteractionTime: 0
   openAngle: -90
   closeAngle: 0
   smooth: 2
@@ -452,6 +461,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   interactionTime: 2
+  hasRandomInteractionTime: 0
+  minInteractionTime: 0
+  maxInteractionTime: 0
   openAngle: -90
   closeAngle: 0
   smooth: 2

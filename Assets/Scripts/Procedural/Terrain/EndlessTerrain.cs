@@ -1,7 +1,10 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
-
+using System.Collections;
 using Unity.AI.Navigation;
+using static PortalManager;
+using System.Drawing;
+
 /// <summary>
 /// Manages the creation and updating of an infinite terrain system around the viewer's position.
 /// This system generates terrain chunks dynamically based on proximity, ensuring performance optimization 
@@ -18,7 +21,7 @@ public class EndlessTerrain : MonoBehaviour
     /// The maximum distance (in world units) from the viewer within which terrain chunks are displayed.
     /// The distance is used to calculate how many chunks are needed around the viewer for a seamless experience.
     /// </summary>
-    public const float maxViewDst = 450;
+    [SerializeField] public const float maxViewDst = 250;
 
     /// <summary>
     /// The object (e.g., player or camera) whose position determines the visibility of terrain chunks.
@@ -75,6 +78,10 @@ public class EndlessTerrain : MonoBehaviour
     /// This allows efficient hiding of chunks that are no longer visible.
     /// </summary>
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
+
+
+    int count = -1;
+
     void Start()
     {
         mapGenerator = FindObjectOfType<TerrainGenerator>();
@@ -82,6 +89,9 @@ public class EndlessTerrain : MonoBehaviour
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
         scaleFactor = mapGenerator.ScaleFactor;
     }
+
+    public PortalManager portalManager;
+
     /// <summary>
     /// Updates the viewer's position and recalculates visible chunks each frame.
     /// </summary>
@@ -90,6 +100,7 @@ public class EndlessTerrain : MonoBehaviour
         viewerPosition = new Vector2(viewer.position.x, viewer.position.z);
         UpdateVisibleChunks();
     }
+
     /// <summary>
     /// Updates the visibility of terrain chunks based on the viewer's current position.
     /// This method ensures only chunks within the viewing distance are active,
@@ -99,10 +110,10 @@ public class EndlessTerrain : MonoBehaviour
     void UpdateVisibleChunks()
     {
         // Hide all chunks from the last update.
-        for (int i = 0; i < terrainChunksVisibleLastUpdate.Count; i++)
-        {
-            terrainChunksVisibleLastUpdate[i].SetVisible(false);
-        }
+        //for (int i = 0; i < terrainChunksVisibleLastUpdate.Count; i++)
+        //{
+        //    terrainChunksVisibleLastUpdate[i].SetVisible(false);
+        //}
         terrainChunksVisibleLastUpdate.Clear();
 
         // Calculate the viewer's current chunk coordinates in the chunk grid.
@@ -141,13 +152,19 @@ public class EndlessTerrain : MonoBehaviour
                     {
                         terrainChunksVisibleLastUpdate.Add(terrainChunkDictionary[viewedChunkCoord]);
                     }
+                   
                 }
                 else
                 {
-                    terrainChunkDictionary.Add(viewedChunkCoord, new TerrainChunk(viewedChunkCoord, chunkSize, transform));
+                    count ++;
+                    TerrainChunk newChunk = new TerrainChunk(viewedChunkCoord, chunkSize, transform, portalManager.portalPrefabs, portalManager.globalMaxPortals, count);
+                    terrainChunkDictionary.Add(viewedChunkCoord, newChunk);
+
                 }
             }
         }
+
+
     }
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
@@ -171,7 +188,12 @@ public class EndlessTerrain : MonoBehaviour
 
         private WorldMobSpawner worldMobSpawner;
 
+        private float[,] heightMap;
+
         Vector2 globalOffset;
+        private bool wasActiveLastFrame = false;
+        List<PortalPrefab> portalPrefabs;
+        int maxPortals;
 
         /// <summary>
         /// Creates a new terrain chunk at the specified coordinates.
@@ -180,7 +202,7 @@ public class EndlessTerrain : MonoBehaviour
         /// <param name="size">The size of the chunk in world units.</param>
         /// <param name="parent">The parent transform for the chunk.</param>
 
-        public TerrainChunk(Vector2 coord, int size, Transform parent)
+        public TerrainChunk(Vector2 coord, int size, Transform parent, List<PortalPrefab> portalPrefabs, int maxPortals, int count)
         {
             position = coord * size; // The chunk's world position is its grid coordinate multiplied by its size.
             bounds = new Bounds(position, Vector2.one * size);  // The chunk's bounding box.
@@ -188,7 +210,7 @@ public class EndlessTerrain : MonoBehaviour
             globalOffset = new Vector2(position.x, position.y); // Store the global offset for terrain data.
 
             // Create the chunk GameObject and components.
-            meshObject = new GameObject("Terrain Chunk");
+            meshObject = new GameObject("Terrain Chunk" + count);
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
@@ -199,6 +221,15 @@ public class EndlessTerrain : MonoBehaviour
 
             worldMobSpawner = meshObject.AddComponent<WorldMobSpawner>();
             worldMobSpawner.Initialize(size, globalOffset, parent, navMeshSurface); //size = chunkSize
+
+            // PortalManager Initialization
+            PortalManager portalManager = meshObject.AddComponent<PortalManager>();
+            portalManager.portalPrefabs = portalPrefabs;
+            portalManager.globalMaxPortals = maxPortals;
+
+            this.portalPrefabs = portalPrefabs;
+            this.maxPortals = maxPortals;
+
 
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
@@ -230,9 +261,21 @@ public class EndlessTerrain : MonoBehaviour
             // Bake the NavMesh for AI navigation and start spawning mobs.
             BakeNavMesh();
 
-            worldMobSpawner.SetBiomes(biomeObjectData.biomeMap);  // Pass the biome data to the spawner
+          //  worldMobSpawner.SetBiomes(biomeObjectData.biomeMap);  // Pass the biome data to the spawner
 
-            worldMobSpawner.StartSpawningMobs(biomeObjectData.heightMap);
+           // worldMobSpawner.StartSpawningMobs(biomeObjectData.heightMap);
+            heightMap = biomeObjectData.heightMap;
+            //PortalManager portal = meshObject.gameObject.GetComponent<PortalManager>();
+            //portal.SpawnPortalsInChunk(globalOffset, meshObject.transform, biomeObjectData.heightMap, TerrainGenerator.chunkSize);
+            //portalManager.SpawnPortalsInChunk(globalOffset, meshObject.transform, biomeObjectData.heightMap, TerrainGenerator.chunkSize);
+            // Initialize the PortalManager for this chunk
+            PortalManager portalManager = meshObject.GetComponent<PortalManager>();
+            if (portalManager != null)
+            {
+                portalManager.InitializePortalManager(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform);
+            }
+
+
 
         }
 
@@ -277,6 +320,7 @@ public class EndlessTerrain : MonoBehaviour
         {
             float viewerDstFromNearestEdge = Mathf.Sqrt(bounds.SqrDistance(viewerPosition));
             bool visible = viewerDstFromNearestEdge <= maxViewDst;
+
             SetVisible(visible);
         }
         /// <summary>
@@ -285,6 +329,7 @@ public class EndlessTerrain : MonoBehaviour
         /// <param name="visible">True to make the chunk visible, false to hide it.</param>
         public void SetVisible(bool visible)
         {
+
             meshObject.SetActive(visible);
         }
         /// <summary>
@@ -297,5 +342,29 @@ public class EndlessTerrain : MonoBehaviour
         }
 
 
+
+
     }
 }
+
+
+
+//PortalManager portal = meshObject.gameObject.GetComponent<PortalManager>();
+
+//if (visible && !wasActiveLastFrame || portal.portalRoutine == null)
+//{
+
+//    if (portal.portalRoutine == null)
+//    {
+
+//    Debug.Log("ggggg");
+//    // Chunk became active
+//   // portalManager.SpawnPortalsInChunk(globalOffset, meshObject.transform, heightMap, TerrainGenerator.chunkSize);
+//    }
+//}
+//else if (!visible && wasActiveLastFrame)
+//{
+//    Debug.Log("KKKKKKkk");
+//    // Chunk became inactive
+//    portalManager.StopSpawningPortals(meshObject.transform);
+//}
