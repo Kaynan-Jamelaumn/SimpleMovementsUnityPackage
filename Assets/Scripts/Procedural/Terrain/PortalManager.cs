@@ -29,38 +29,6 @@ public class PortalManager : MonoBehaviour
     private float[,] heightMap;
     private int chunkSize;
 
-    private void Start()
-    {
-        foreach (var portalPrefab in portalPrefabs)
-        {
-            activePortals[portalPrefab] = new List<GameObject>();
-        }
-    }
-
-    private void OnEnable()
-    {
-        Debug.Log("PortalManager enabled for chunk: " + transform.name);
-        if (heightMap != null && chunkSize > 0)
-        {
-            Debug.Log("xalabrau");
-            portalRoutine = StartCoroutine(SpawnPortalRoutine(chunkPosition, transform, heightMap, chunkSize));
-        }
-        else
-        {
-            Debug.Log("majestic");
-        }
-    }
-
-    private void OnDisable()
-    {
-        if (portalRoutine != null)
-        {
-            StopCoroutine(portalRoutine);
-            portalRoutine = null;
-        }
-        DespawnPortalsInChunk(transform);
-    }
-
     public void InitializePortalManager(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform chunk)
     {
         this.chunkPosition = chunkPosition;
@@ -76,42 +44,52 @@ public class PortalManager : MonoBehaviour
                     activePortals[portalPrefab] = new List<GameObject>();
                 }
             }
-            Debug.Log("PortalPrefabs initialized: " + portalPrefabs.Count);
         }
         else
         {
             Debug.LogError("PortalPrefabs is null or not assigned!");
         }
-        if (this.chunkPosition == null) Debug.Log("tst0");
-        if (this.heightMap == null) Debug.Log("tst1");
-        if (this.chunkSize == null) Debug.Log("tst2");
-        if (this.chunk == null) Debug.Log("ts3");
 
     }
+
+    private void Start()
+    {
+        foreach (var portalPrefab in portalPrefabs)
+        {
+            activePortals[portalPrefab] = new List<GameObject>();
+        }
+    }
+
+    public void InstantiatePortal(PortalPrefab randomPortalPrefab)
+    {
+
+        if (activePortals[randomPortalPrefab].Count < randomPortalPrefab.maxInstances && totalActivePortals < globalMaxPortals)
+        {
+            float xOffset = UnityEngine.Random.Range(0, chunkSize);
+            float zOffset = UnityEngine.Random.Range(0, chunkSize);
+
+            float height = heightMap[(int)xOffset, (int)zOffset];
+            Vector3 spawnPosition = new Vector3(
+                chunkPosition.x + xOffset,
+                height,
+                chunkPosition.y + zOffset
+            );
+
+            GameObject portal = Instantiate(randomPortalPrefab.prefab, spawnPosition, Quaternion.identity);
+            portal.transform.parent = chunk;
+            activePortals[randomPortalPrefab].Add(portal);
+            totalActivePortals++;
+        }
+    }
+
 
     private IEnumerator SpawnPortalRoutine(Vector2 chunkPosition, Transform parent, float[,] heightMap, int chunkSize)
     {
         while (parent != null && parent.gameObject.activeInHierarchy)
         {
-            Debug.Log("talal");
             PortalPrefab randomPortalPrefab = portalPrefabs[UnityEngine.Random.Range(0, portalPrefabs.Count)];
 
-            if (activePortals[randomPortalPrefab].Count < randomPortalPrefab.maxInstances && totalActivePortals < globalMaxPortals)
-            {
-                float xOffset = UnityEngine.Random.Range(0, chunkSize);
-                float zOffset = UnityEngine.Random.Range(0, chunkSize);
-
-                float height = heightMap[(int)xOffset, (int)zOffset];
-                Vector3 spawnPosition = new Vector3(
-                    chunkPosition.x + xOffset,
-                    height,
-                    chunkPosition.y + zOffset
-                );
-
-                GameObject portal = Instantiate(randomPortalPrefab.prefab, spawnPosition, Quaternion.identity, parent);
-                activePortals[randomPortalPrefab].Add(portal);
-                totalActivePortals++;
-            }
+            InstantiatePortal(randomPortalPrefab);
 
             float waitTime = randomPortalPrefab.shouldHaveRandomSpawnTime
                 ? UnityEngine.Random.Range(randomPortalPrefab.minSpawnTime, randomPortalPrefab.maxSpawnTime)
@@ -132,4 +110,58 @@ public class PortalManager : MonoBehaviour
             }
         }
     }
+
+    private void OnEnable()
+    {
+        StartPortalRoutine();
+    }
+
+    private void OnDisable()
+    {
+        StopPortalRoutine();
+        DespawnPortalsInChunk(transform);
+        StopAllCoroutines();
+    }
+
+    private void StartPortalRoutine()
+    {
+       // Debug.Log("PortalManager enabled for chunk: " + transform.name);
+        if (heightMap != null && chunkSize > 0)
+        {
+            if (portalRoutine == null)
+            {
+                portalRoutine = StartCoroutine(SpawnPortalRoutine(chunkPosition, transform, heightMap, chunkSize));
+            }
+        }
+        else
+        {
+            //Debug.Log("Dados de Height map/ chunkSize/chunkPosition/chunk null em" + transform.name);
+            StartCoroutine(WaitForInitialization());
+        }
+
+    }
+
+    private void StopPortalRoutine()
+    {
+        if (portalRoutine != null)
+        {
+            StopCoroutine(portalRoutine);
+            portalRoutine = null;
+        }
+    }
+
+    private IEnumerator WaitForInitialization()
+    {
+        // Wait until both globalOffset and heightMap are not null
+
+        while (chunk == null || heightMap == null || chunkPosition == null || chunkSize == 0)
+        {
+            yield return new WaitForSeconds(3); // Wait for the next frame
+        }
+
+
+        // Once both are not null, initialize the portal manager
+        StartPortalRoutine();
+    }
+
 }

@@ -170,52 +170,6 @@ public class TerrainGenerator : MonoBehaviour
             }
         }
     }
-    //private void OnEnable()
-    //{
-    //    Debug.Log($"vasco instantiated under parent: {this.transform.gameObject.name}");
-    //    Debug.Log($"teste instantiated under parent: {this.transform.parent.name}");
-    //    if (globalOffset != null && heightMap != null)
-    //    {
-    //        portalManager = GetComponent<PortalManager>();
-    //        portalManager.SpawnPortalsInChunk(globalOffset, transform, heightMap, chunkSize);
-    //    }
-    //    else
-    //    {
-    //        awaitingPortalDataRoutine = StartCoroutine(WaitForInitialization());
-    //    }
-    //}
-    //private void OnDisable()
-    //{
-    //    if (awaitingPortalDataRoutine != null) StopCoroutine(awaitingPortalDataRoutine);
-    //    if (portalManager.portalRoutine != null) portalManager.StopSpawningPortals(transform);
-    //}
-    private void Start()
-    {
-        StartCoroutine(TestCoroutine());
-    }
-    private IEnumerator TestCoroutine()
-    {
-        while (true)
-        {
-
-            if (isR == false) isR = true;
-            Debug.Log("waba zCoroutine running...");
-            yield return new WaitForSeconds(3);
-        }
-
-    }
-    //private IEnumerator WaitForInitialization()
-    //{
-    //    // Wait until both globalOffset and heightMap are not null
-    //    while (globalOffset == null || heightMap == null)
-    //    {
-    //        yield return new WaitForSeconds(3); // Wait for the next frame
-    //    }
-    //    portalManager = GetComponentInParent<PortalManager>();
-
-    //    // Once both are not null, initialize the portal manager
-    //    portalManager.SpawnPortalsInChunk(globalOffset, transform, heightMap, chunkSize);
-    //}
 
 
     /// <summary>

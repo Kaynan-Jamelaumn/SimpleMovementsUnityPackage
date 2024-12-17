@@ -109,12 +109,6 @@ public class EndlessTerrain : MonoBehaviour
 
     void UpdateVisibleChunks()
     {
-        // Hide all chunks from the last update.
-        //for (int i = 0; i < terrainChunksVisibleLastUpdate.Count; i++)
-        //{
-        //    terrainChunksVisibleLastUpdate[i].SetVisible(false);
-        //}
-        terrainChunksVisibleLastUpdate.Clear();
 
         // Calculate the viewer's current chunk coordinates in the chunk grid.
         // Each chunk is `chunkSize` units wide, so we divide the viewer's position by `chunkSize`
@@ -122,7 +116,9 @@ public class EndlessTerrain : MonoBehaviour
         int currentChunkCoordX = Mathf.RoundToInt(viewerPosition.x / chunkSize);
         int currentChunkCoordY = Mathf.RoundToInt(viewerPosition.y / chunkSize);
 
-        // Iterate over all potential chunks within the viewing distance.
+        HashSet<Vector2> chunksToBeVisible = new HashSet<Vector2>();
+
+        // Iterate through chunks in view distance
         for (int yOffset = -chunksVisibleInViewDst; yOffset <= chunksVisibleInViewDst; yOffset++)
         {
             for (int xOffset = -chunksVisibleInViewDst; xOffset <= chunksVisibleInViewDst; xOffset++)
@@ -131,41 +127,68 @@ public class EndlessTerrain : MonoBehaviour
                 Vector2 viewedChunkCoord = new Vector2(currentChunkCoordX + xOffset, currentChunkCoordY + yOffset);
 
                 // Limit the number of chunks if maximum chunks per side is enabled.
-                if (shouldHaveMaxChunkPerSide)
+                if (shouldHaveMaxChunkPerSide &&
+                // This condition ensures that the number of chunks generated or rendered does not exceed the maximum allowed per side.
+                // It checks if the absolute value of either the x or y coordinate of the chunk exceeds the limit set by 'maxChunksPerSide'.
+                // If either coordinate is outside the allowed range (greater than 'maxChunksPerSide'), the chunk is skipped to optimize performance,
+                // preventing the generation or rendering of chunks that are too far from the viewer's position.
+                // For example, if 'maxChunksPerSide' is 3, the system will only generate chunks within a 7x7 grid centered on the viewer (from -3 to 3 on both axes).
+                (Mathf.Abs(viewedChunkCoord.x) > maxChunksPerSide || Mathf.Abs(viewedChunkCoord.y) > maxChunksPerSide))
                 {
-                    // This condition ensures that the number of chunks generated or rendered does not exceed the maximum allowed per side.
-                    // It checks if the absolute value of either the x or y coordinate of the chunk exceeds the limit set by 'maxChunksPerSide'.
-                    // If either coordinate is outside the allowed range (greater than 'maxChunksPerSide'), the chunk is skipped to optimize performance,
-                    // preventing the generation or rendering of chunks that are too far from the viewer's position.
-                    // For example, if 'maxChunksPerSide' is 3, the system will only generate chunks within a 7x7 grid centered on the viewer (from -3 to 3 on both axes).
-                    if (Mathf.Abs(viewedChunkCoord.x) > maxChunksPerSide || Mathf.Abs(viewedChunkCoord.y) > maxChunksPerSide)
-                    {
-                        continue;
-                    }
+                    continue;
                 }
-                // Update existing chunk or create a new one if it doesn't exist.
-                if (terrainChunkDictionary.ContainsKey(viewedChunkCoord))
-                {
-                    // Update the chunk and check if it's visible.
-                    terrainChunkDictionary[viewedChunkCoord].UpdateTerrainChunk();
-                    if (terrainChunkDictionary[viewedChunkCoord].IsVisible())
-                    {
-                        terrainChunksVisibleLastUpdate.Add(terrainChunkDictionary[viewedChunkCoord]);
-                    }
-                   
-                }
-                else
-                {
-                    count ++;
-                    TerrainChunk newChunk = new TerrainChunk(viewedChunkCoord, chunkSize, transform, portalManager.portalPrefabs, portalManager.globalMaxPortals, count);
-                    terrainChunkDictionary.Add(viewedChunkCoord, newChunk);
 
+                chunksToBeVisible.Add(viewedChunkCoord);
+
+                // Check if chunk exists, otherwise create it
+                if (!terrainChunkDictionary.TryGetValue(viewedChunkCoord, out TerrainChunk chunk))
+                {
+                    chunk = CreateNewChunk(viewedChunkCoord);
                 }
+
+                chunk.UpdateTerrainChunk();
             }
         }
 
-
+        // Update visibility for chunks not in `chunksToBeVisible`
+        UpdateChunkVisibility(chunksToBeVisible);
     }
+
+    //Create a new chunk
+    TerrainChunk CreateNewChunk(Vector2 coord)
+    {
+        count++;
+        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, transform, portalManager.portalPrefabs, portalManager.globalMaxPortals, count);
+        terrainChunkDictionary.Add(coord, newChunk);
+        return newChunk;
+    }
+
+    // Update visibility for old and new chunks
+    void UpdateChunkVisibility(HashSet<Vector2> chunksToBeVisible)
+    {
+        for (int i = terrainChunksVisibleLastUpdate.Count - 1; i >= 0; i--)
+        {
+            TerrainChunk chunk = terrainChunksVisibleLastUpdate[i];
+            Vector2 chunkCoord = chunk.Position / chunkSize;
+
+            if (!chunksToBeVisible.Contains(chunkCoord))
+            {
+                chunk.SetVisible(false);
+                terrainChunksVisibleLastUpdate.RemoveAt(i);
+            }
+        }
+
+        foreach (Vector2 coord in chunksToBeVisible)
+        {
+            TerrainChunk chunk = terrainChunkDictionary[coord];
+            if (chunk.IsVisible() && !terrainChunksVisibleLastUpdate.Contains(chunk))
+            {
+                terrainChunksVisibleLastUpdate.Add(chunk);
+            }
+        }
+    }
+
+
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
     /// Manages its mesh, texture, collision, navigation mesh, and spawner systems dynamically.
@@ -194,6 +217,7 @@ public class EndlessTerrain : MonoBehaviour
         private bool wasActiveLastFrame = false;
         List<PortalPrefab> portalPrefabs;
         int maxPortals;
+        public Vector2 Position { get { return position; } }
 
         /// <summary>
         /// Creates a new terrain chunk at the specified coordinates.
@@ -265,10 +289,6 @@ public class EndlessTerrain : MonoBehaviour
 
            // worldMobSpawner.StartSpawningMobs(biomeObjectData.heightMap);
             heightMap = biomeObjectData.heightMap;
-            //PortalManager portal = meshObject.gameObject.GetComponent<PortalManager>();
-            //portal.SpawnPortalsInChunk(globalOffset, meshObject.transform, biomeObjectData.heightMap, TerrainGenerator.chunkSize);
-            //portalManager.SpawnPortalsInChunk(globalOffset, meshObject.transform, biomeObjectData.heightMap, TerrainGenerator.chunkSize);
-            // Initialize the PortalManager for this chunk
             PortalManager portalManager = meshObject.GetComponent<PortalManager>();
             if (portalManager != null)
             {
@@ -346,25 +366,3 @@ public class EndlessTerrain : MonoBehaviour
 
     }
 }
-
-
-
-//PortalManager portal = meshObject.gameObject.GetComponent<PortalManager>();
-
-//if (visible && !wasActiveLastFrame || portal.portalRoutine == null)
-//{
-
-//    if (portal.portalRoutine == null)
-//    {
-
-//    Debug.Log("ggggg");
-//    // Chunk became active
-//   // portalManager.SpawnPortalsInChunk(globalOffset, meshObject.transform, heightMap, TerrainGenerator.chunkSize);
-//    }
-//}
-//else if (!visible && wasActiveLastFrame)
-//{
-//    Debug.Log("KKKKKKkk");
-//    // Chunk became inactive
-//    portalManager.StopSpawningPortals(meshObject.transform);
-//}
