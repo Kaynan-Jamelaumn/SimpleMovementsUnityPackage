@@ -3,30 +3,31 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[System.Serializable]
-public class SpawnableMob
-{
-    public GameObject mobPrefab;
-    public int maxInstancesOfThisMob;
-    public bool HasMaxInstancesOfThisMob;
-    public float weightToSpawnFactor;
-    public float minTimeToSpawn;
-    public float maxTimeToSpawn;
-    public float currentMobs;
-    public float CalculateSpawnWeight(float weightSpawnFactor)
-    {
-        // If any of the factors is 0, we return 0
-        if (weightToSpawnFactor == 0 || weightSpawnFactor == 0)
-            return 0;
-
-        // Calculate the weight by multiplying the spawn factor by the inverse of weightToSpawnFactor
-        return weightSpawnFactor / weightToSpawnFactor;
-    }
-
-}
 
 public class DungeonMobSpawner : MonoBehaviour
 {
+    [System.Serializable]
+    public class SpawnableMob
+    {
+        public GameObject mobPrefab;
+        public int maxInstancesOfThisMob;
+        public bool HasMaxInstancesOfThisMob;
+        public float weightToSpawnFactor;
+        public float minTimeToSpawn;
+        public float maxTimeToSpawn;
+        public float currentMobs;
+        public float CalculateSpawnWeight(float weightSpawnFactor)
+        {
+            // If any of the factors is 0, we return 0
+            if (weightToSpawnFactor == 0 || weightSpawnFactor == 0)
+                return 0;
+
+            // Calculate the weight by multiplying the spawn factor by the inverse of weightToSpawnFactor
+            return weightSpawnFactor / weightToSpawnFactor;
+        }
+
+    }
+
     public enum ESpawnDifficulty
     {
         Easy,

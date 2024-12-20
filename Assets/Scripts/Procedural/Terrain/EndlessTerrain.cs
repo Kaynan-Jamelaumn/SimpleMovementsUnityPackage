@@ -2,8 +2,78 @@
 using System.Collections.Generic;
 using System.Collections;
 using Unity.AI.Navigation;
-using static PortalManager;
 using System.Drawing;
+
+
+[System.Serializable]
+public class PortalPrefab: ISpawbleBySpawner
+{
+    public GameObject prefab;
+    public int maxInstances;
+    public float spawnTime;
+    public float minSpawnTime;
+    public float maxSpawnTime;
+    public bool shouldHaveRandomSpawnTime;
+    [HideInInspector] public int currentInstances;
+
+    public int MaxInstances { get => maxInstances; set => maxInstances = value; }
+    public int CurrentInstances { get => currentInstances; set => currentInstances = value; }
+}
+
+[System.Serializable]
+public class SpawnableMob: ISpawbleBySpawner
+{
+    public GameObject mobPrefab;
+    public int maxInstances;        // Maximum instances of this mob
+    public float spawnWeight;       // Weight for random spawning
+    public float spawnTime;         // Fixed spawn interval
+    public float minSpawnTime;      // Min spawn time (for randomized interval)
+    public float maxSpawnTime;      // Max spawn time
+    public bool shouldHaveRandomSpawnTime;  // Use randomized spawn interval?
+    public float weightToSpawnFactor = 1;
+    [HideInInspector] public int currentInstances;
+
+    public int MaxInstances { get => maxInstances; set => maxInstances = value; }
+    public int CurrentInstances { get => currentInstances; set => currentInstances = value; }
+    public float CalculateSpawnWeight(float weightSpawnFactor)
+    {
+        // If any of the factors is 0, we return 0
+        if (weightToSpawnFactor == 0 || weightSpawnFactor == 0)
+            return 0;
+
+        // Calculate the weight by multiplying the spawn factor by the inverse of weightToSpawnFactor
+        return weightSpawnFactor / weightToSpawnFactor;
+    }
+
+}
+
+[System.Serializable]
+public class PortalSettings
+{
+    public List<PortalPrefab> prefabs;
+    public int maxNumberOfPortals;
+    public bool shouldWaitToStartSpawning;
+    public float waitingTime;
+    public float minWaitingTime;
+    public float maxWaitingTime;
+    public bool shouldHaveRandomWaitingTime;
+    public float retryingSpawnTime;
+}
+
+[System.Serializable]
+public class MobSettings
+{
+    public List<SpawnableMob> prefabs;
+    public int maxNumberOfMobs;
+    public bool shouldWaitToStartSpawning;
+    public float waitingTime;
+    public float minWaitingTime;
+    public float maxWaitingTime;
+    public bool shouldHaveRandomWaitingTime;
+    public float retryingSpawnTime;
+}
+
+
 
 /// <summary>
 /// Manages the creation and updating of an infinite terrain system around the viewer's position.
@@ -79,6 +149,9 @@ public class EndlessTerrain : MonoBehaviour
     /// </summary>
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
 
+    [SerializeField] PortalSettings portalSettings;
+    [SerializeField] MobSettings mobSettings;
+
 
     int count = -1;
 
@@ -89,8 +162,6 @@ public class EndlessTerrain : MonoBehaviour
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
         scaleFactor = mapGenerator.ScaleFactor;
     }
-
-    public PortalManager portalManager;
 
     /// <summary>
     /// Updates the viewer's position and recalculates visible chunks each frame.
@@ -158,7 +229,7 @@ public class EndlessTerrain : MonoBehaviour
     TerrainChunk CreateNewChunk(Vector2 coord)
     {
         count++;
-        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, transform, portalManager.portalPrefabs, portalManager.globalMaxPortals, count);
+        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, transform, portalSettings, mobSettings, count);
         terrainChunkDictionary.Add(coord, newChunk);
         return newChunk;
     }
@@ -207,16 +278,11 @@ public class EndlessTerrain : MonoBehaviour
         NavMeshSurface navMeshSurface;
         private TerrainGenerator terrainGenerator;
 
-        private Texture2D splatmap;
-
         private WorldMobSpawner worldMobSpawner;
 
-        private float[,] heightMap;
 
         Vector2 globalOffset;
-        private bool wasActiveLastFrame = false;
-        List<PortalPrefab> portalPrefabs;
-        int maxPortals;
+        int maxMobs;
         public Vector2 Position { get { return position; } }
 
         /// <summary>
@@ -226,7 +292,7 @@ public class EndlessTerrain : MonoBehaviour
         /// <param name="size">The size of the chunk in world units.</param>
         /// <param name="parent">The parent transform for the chunk.</param>
 
-        public TerrainChunk(Vector2 coord, int size, Transform parent, List<PortalPrefab> portalPrefabs, int maxPortals, int count)
+        public TerrainChunk(Vector2 coord, int size, Transform parent, PortalSettings portalSettings, MobSettings mobSettings,  int count)
         {
             position = coord * size; // The chunk's world position is its grid coordinate multiplied by its size.
             bounds = new Bounds(position, Vector2.one * size);  // The chunk's bounding box.
@@ -247,19 +313,31 @@ public class EndlessTerrain : MonoBehaviour
             worldMobSpawner.Initialize(size, globalOffset, parent, navMeshSurface); //size = chunkSize
 
             // PortalManager Initialization
-            PortalManager portalManager = meshObject.AddComponent<PortalManager>();
-            portalManager.portalPrefabs = portalPrefabs;
-            portalManager.globalMaxPortals = maxPortals;
+            PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
+            portalSpawner.spawnablePrefabs = portalSettings.prefabs;
+            portalSpawner.globalMaxInstances = portalSettings.maxNumberOfPortals;
+            portalSpawner.shouldWaitToStartSpawning = portalSettings.shouldWaitToStartSpawning;
+            portalSpawner.waitingTime = portalSettings.waitingTime;
+            portalSpawner.minWaitingTime = portalSettings.minWaitingTime;
+            portalSpawner.maxWaitingTime = portalSettings.maxWaitingTime;
+            portalSpawner.shouldHaveRandomWaitingTime = portalSettings.shouldHaveRandomWaitingTime;
+            portalSpawner.retryingSpawnTime = portalSettings.retryingSpawnTime;
 
-            this.portalPrefabs = portalPrefabs;
-            this.maxPortals = maxPortals;
+            MobSpawner mobSpawner = meshObject.AddComponent<MobSpawner>();
+            mobSpawner.spawnablePrefabs = mobSettings.prefabs;
+            mobSpawner.globalMaxInstances = mobSettings.maxNumberOfMobs;
+            mobSpawner.shouldWaitToStartSpawning = mobSettings.shouldWaitToStartSpawning;
+            mobSpawner.waitingTime = mobSettings.waitingTime;
+            mobSpawner.minWaitingTime = mobSettings.minWaitingTime;
+            mobSpawner.maxWaitingTime = mobSettings.maxWaitingTime;
+            mobSpawner.shouldHaveRandomWaitingTime = mobSettings.shouldHaveRandomWaitingTime;
+            mobSpawner.retryingSpawnTime = mobSettings.retryingSpawnTime;
 
 
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
             SetVisible(false);
 
-            // Initialize the WorldMobSpawner for this chunk
 
             // Request map data from the terrain generator.
             mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
@@ -285,15 +363,12 @@ public class EndlessTerrain : MonoBehaviour
             // Bake the NavMesh for AI navigation and start spawning mobs.
             BakeNavMesh();
 
-          //  worldMobSpawner.SetBiomes(biomeObjectData.biomeMap);  // Pass the biome data to the spawner
+            MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
+            mobSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, terrainGenerator.ChunkSize, meshObject.transform);
 
-           // worldMobSpawner.StartSpawningMobs(biomeObjectData.heightMap);
-            heightMap = biomeObjectData.heightMap;
-            PortalManager portalManager = meshObject.GetComponent<PortalManager>();
-            if (portalManager != null)
-            {
-                portalManager.InitializePortalManager(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform);
-            }
+            PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
+            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform);
+            
 
 
 
@@ -306,7 +381,6 @@ public class EndlessTerrain : MonoBehaviour
         {
             // Apply terrain data to the chunk's components.
             terrainGenerator = terrainData.terrainGenerator;
-            splatmap = terrainData.splatMap;
             TextureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);
 
             // Update the mesh and collider.
@@ -317,7 +391,6 @@ public class EndlessTerrain : MonoBehaviour
             // Request biome object data to populate the chunk.
             mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
         }
-        // Function to bake NavMesh after mesh is generated
 
         /// <summary>
         /// Builds the NavMesh for this chunk, allowing AI navigation.
@@ -360,9 +433,6 @@ public class EndlessTerrain : MonoBehaviour
         {
             return meshObject.activeSelf;
         }
-
-
-
 
     }
 }

@@ -17,7 +17,7 @@ public class TerrainGenerator : MonoBehaviour
     // Constant size of each terrain chunk, designed for compatibility with different levels of detail.
     public const int chunkSize = 241; // divisble by 2, 4, 6, 8, 10, 12 for smooth LOD scaling.
     public int ChunkSize { get => chunkSize; }
-    public PortalManager portalManager;
+    public PortalSpawner portalManager;
 
     //[SerializeField] private int gridWidthSize = 241;
     //[SerializeField] private int gridDepthSize = 241;

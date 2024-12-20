@@ -278,3 +278,341 @@
 //        }
 //    }
 //}
+
+
+
+//public class PortalSpawner : MonoBehaviour
+//{
+
+//    public List<PortalPrefab> portalPrefabs;
+//    public int globalMaxPortals;
+
+//    private Dictionary<PortalPrefab, List<GameObject>> activePortals = new Dictionary<PortalPrefab, List<GameObject>>();
+//    public Coroutine portalRoutine;
+//    [SerializeField] private int totalActivePortals;
+
+//    // Assigned by the TerrainChunk
+//    Transform chunk;
+//    private Vector2 chunkPosition;
+//    private float[,] heightMap;
+//    private int chunkSize;
+
+//    public void InitializeSpawner(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform chunk)
+//    {
+//        this.chunkPosition = chunkPosition;
+//        this.heightMap = heightMap;
+//        this.chunkSize = chunkSize;
+//        this.chunk = chunk;
+//        if (portalPrefabs != null)
+//        {
+//            foreach (var portalPrefab in portalPrefabs)
+//            {
+//                if (!activePortals.ContainsKey(portalPrefab))
+//                {
+//                    activePortals[portalPrefab] = new List<GameObject>();
+//                }
+//            }
+//        }
+//        else
+//        {
+//            Debug.LogError("PortalPrefabs is null or not assigned!");
+//        }
+
+//    }
+
+//    private void Start()
+//    {
+//        foreach (var portalPrefab in portalPrefabs)
+//        {
+//            activePortals[portalPrefab] = new List<GameObject>();
+//        }
+//    }
+
+//    public void InstantiatePortal(PortalPrefab randomPortalPrefab)
+//    {
+
+//        if (activePortals[randomPortalPrefab].Count < randomPortalPrefab.maxInstances && totalActivePortals < globalMaxPortals)
+//        {
+//            float xOffset = UnityEngine.Random.Range(0, chunkSize);
+//            float zOffset = UnityEngine.Random.Range(0, chunkSize);
+
+//            float height = heightMap[(int)xOffset, (int)zOffset];
+//            Vector3 spawnPosition = new Vector3(
+//                chunkPosition.x + xOffset,
+//                height,
+//                chunkPosition.y + zOffset
+//            );
+
+//            GameObject portal = Instantiate(randomPortalPrefab.prefab, spawnPosition, Quaternion.identity);
+//            portal.transform.parent = chunk;
+//            activePortals[randomPortalPrefab].Add(portal);
+//            totalActivePortals++;
+//        }
+//    }
+
+
+//    private IEnumerator SpawnPortalRoutine(Vector2 chunkPosition, Transform parent, float[,] heightMap, int chunkSize)
+//    {
+//        while (parent != null && parent.gameObject.activeInHierarchy)
+//        {
+//            PortalPrefab randomPortalPrefab = portalPrefabs[UnityEngine.Random.Range(0, portalPrefabs.Count)];
+
+//            InstantiatePortal(randomPortalPrefab);
+
+//            float waitTime = randomPortalPrefab.shouldHaveRandomSpawnTime
+//                ? UnityEngine.Random.Range(randomPortalPrefab.minSpawnTime, randomPortalPrefab.maxSpawnTime)
+//                : randomPortalPrefab.spawnTime;
+
+//            yield return new WaitForSeconds(waitTime);
+//        }
+//    }
+
+//    public void DespawnPortalsInChunk(Transform chunkParent)
+//    {
+//        foreach (Transform child in chunkParent)
+//        {
+//            if (child.CompareTag("Portal"))
+//            {
+//                Destroy(child.gameObject);
+//                totalActivePortals--;
+//            }
+//        }
+//    }
+
+//    private void OnEnable()
+//    {
+//        StartPortalRoutine();
+//    }
+
+//    private void OnDisable()
+//    {
+//        StopPortalRoutine();
+//        DespawnPortalsInChunk(transform);
+//        StopAllCoroutines();
+//    }
+
+//    private void StartPortalRoutine()
+//    {
+//       // Debug.Log("PortalManager enabled for chunk: " + transform.name);
+//        if (heightMap != null && chunkSize > 0)
+//        {
+//            if (portalRoutine == null)
+//            {
+//                portalRoutine = StartCoroutine(SpawnPortalRoutine(chunkPosition, transform, heightMap, chunkSize));
+//            }
+//        }
+//        else
+//        {
+//            //Debug.Log("Dados de Height map/ chunkSize/chunkPosition/chunk null em" + transform.name);
+//            StartCoroutine(WaitForInitialization());
+//        }
+
+//    }
+
+//    private void StopPortalRoutine()
+//    {
+//        if (portalRoutine != null)
+//        {
+//            StopCoroutine(portalRoutine);
+//            portalRoutine = null;
+//        }
+//    }
+
+//    private IEnumerator WaitForInitialization()
+//    {
+//        // Wait until both globalOffset and heightMap are not null
+
+//        while (chunk == null || heightMap == null || chunkPosition == null || chunkSize == 0)
+//        {
+//            yield return new WaitForSeconds(3); // Wait for the next frame
+//        }
+
+
+//        // Once both are not null, initialize the portal manager
+//        StartPortalRoutine();
+//    }
+
+//}
+
+
+
+
+//public class MobSpawner : MonoBehaviour
+//{
+
+//    public List<SpawnableMob> mobPrefabs;
+//    public int globalMaxMobs = 50;  // Global limit for mobs
+
+//    private Dictionary<SpawnableMob, List<GameObject>> activeMobs = new Dictionary<SpawnableMob, List<GameObject>>();
+//    private Coroutine spawnRoutine;
+//    private Coroutine waitForInitRoutine;
+//    private int totalActiveMobs;
+
+//    private float[,] heightMap;
+//    private Vector2 chunkPosition;
+//    private int chunkSize;
+//    private Transform chunkParent;
+
+//    public void InitializeSpawner(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform parent)
+//    {
+//        this.chunkPosition = chunkPosition;
+//        this.heightMap = heightMap;
+//        this.chunkSize = chunkSize;
+//        this.chunkParent = parent;
+
+//        // Initialize active mobs tracking
+//        foreach (var mob in mobPrefabs)
+//        {
+//            activeMobs[mob] = new List<GameObject>();
+//        }
+//    }
+
+//    private void OnEnable()
+//    {
+//        StartWaitingForInitialization();
+//    }
+
+//    private void OnDisable()
+//    {
+//        StopSpawnRoutine();
+//        DespawnAllMobs();
+//    }
+
+//    private void StartWaitingForInitialization()
+//    {
+//        if (waitForInitRoutine == null)
+//        {
+//            waitForInitRoutine = StartCoroutine(WaitForInitialization());
+//        }
+//    }
+
+//    private IEnumerator WaitForInitialization()
+//    {
+//        // Wait until required data is set
+//        while (heightMap == null || chunkParent == null || chunkSize == 0 || chunkPosition == Vector2.zero)
+//        {
+//            yield return new WaitForSeconds(1f);  // Check every second
+//        }
+
+//        // Once initialized, start the spawn routine
+//        StartSpawnRoutine();
+//    }
+
+//    private void StartSpawnRoutine()
+//    {
+//        if (spawnRoutine == null)
+//        {
+//            spawnRoutine = StartCoroutine(SpawnMobRoutine());
+//        }
+//    }
+
+//    private void StopSpawnRoutine()
+//    {
+//        if (spawnRoutine != null)
+//        {
+//            StopCoroutine(spawnRoutine);
+//            spawnRoutine = null;
+//        }
+//        if (waitForInitRoutine != null)
+//        {
+//            StopCoroutine(waitForInitRoutine);
+//            waitForInitRoutine = null;
+//        }
+//    }
+
+//    private IEnumerator SpawnMobRoutine()
+//    {
+//        while (chunkParent != null && chunkParent.gameObject.activeInHierarchy)
+//        {
+//            // Select a mob based on weighted random logic
+//            SpawnableMob chosenMob = ChooseWeightedMob();
+//            if (chosenMob != null)
+//            {
+//                SpawnMob(chosenMob);
+//            }
+
+//            // Determine spawn wait time
+//            float waitTime = chosenMob.shouldHaveRandomSpawnTime
+//                ? Random.Range(chosenMob.minSpawnTime, chosenMob.maxSpawnTime)
+//                : chosenMob.spawnTime;
+
+//            yield return new WaitForSeconds(waitTime);
+//        }
+//    }
+
+//    private SpawnableMob ChooseWeightedMob()
+//    {
+//        float totalWeight = 0f;
+
+//        foreach (var mob in mobPrefabs)
+//        {
+//            if (activeMobs[mob].Count < mob.maxInstances)  // Consider only mobs under their instance limit
+//            {
+//                totalWeight += mob.spawnWeight;
+//            }
+//        }
+
+//        if (totalWeight <= 0) return null;
+
+//        float randomValue = Random.Range(0, totalWeight);
+
+//        foreach (var mob in mobPrefabs)
+//        {
+//            if (activeMobs[mob].Count < mob.maxInstances)
+//            {
+//                if (randomValue <= mob.spawnWeight)
+//                {
+//                    return mob;
+//                }
+//                randomValue -= mob.spawnWeight;
+//            }
+//        }
+
+//        return null;
+//    }
+
+//    private void SpawnMob(SpawnableMob mobData)
+//    {
+//        if (totalActiveMobs >= globalMaxMobs) return;  // Enforce global mob limit
+
+//        Vector3 spawnPosition = GetRandomSpawnPosition();
+
+//        if (IsValidSpawnPosition(spawnPosition))
+//        {
+//            GameObject mobInstance = Instantiate(mobData.mobPrefab, spawnPosition, Quaternion.identity);
+//            mobInstance.transform.parent = chunkParent;
+
+//            activeMobs[mobData].Add(mobInstance);
+//            totalActiveMobs++;
+//        }
+//    }
+
+//    private Vector3 GetRandomSpawnPosition()
+//    {
+//        float xOffset = Random.Range(0, chunkSize);
+//        float zOffset = Random.Range(0, chunkSize);
+
+//        float height = heightMap[(int)xOffset, (int)zOffset];
+//        return new Vector3(chunkPosition.x + xOffset, height, chunkPosition.y + zOffset);
+//    }
+
+//    private bool IsValidSpawnPosition(Vector3 position)
+//    {
+//        NavMeshHit hit;
+//        return NavMesh.SamplePosition(position, out hit, 1.0f, NavMesh.AllAreas) &&
+//               Vector3.Distance(position, hit.position) < 1.0f;
+//    }
+
+//    private void DespawnAllMobs()
+//    {
+//        foreach (var kvp in activeMobs)
+//        {
+//            foreach (GameObject mob in kvp.Value)
+//            {
+//                Destroy(mob);
+//                totalActiveMobs--;
+//            }
+//            kvp.Value.Clear();
+//        }
+//    }
+//}

@@ -29,6 +29,9 @@ public enum MobType
 public class Mob : MonoBehaviour
 {
 
+    public delegate void MobDestroyedHandler();
+    public event MobDestroyedHandler OnMobDestroyed;
+
     [SerializeField] private MobStatusController statusController;
     [Header("Wander")]
     [SerializeField] private float wanderDistance = 50f; // How far the animal can move in one go.
@@ -321,6 +324,10 @@ public class Mob : MonoBehaviour
         // Stop all coroutines and destroy the GameObject.
         StopAllCoroutines();
         Destroy(gameObject);
+    }
+    private void OnDestroy()
+    {
+        OnMobDestroyed?.Invoke();
     }
 }
 

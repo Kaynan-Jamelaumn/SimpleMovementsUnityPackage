@@ -14,6 +14,7 @@ public class Portal : MonoBehaviour
     [SerializeField] private float maxDespawnTime; // Maximum random time
     [SerializeField] private bool shouldHaveRandomDespawnTime; // Flag for random time activation
 
+
     public delegate void PortalDestroyedHandler();
     public event PortalDestroyedHandler OnPortalDestroyed;
     private void Awake()
@@ -102,6 +103,7 @@ public class Portal : MonoBehaviour
 
     private void OnDestroy()
     {
+        // Notify the spawner before invoking event
         OnPortalDestroyed?.Invoke();
     }
 }

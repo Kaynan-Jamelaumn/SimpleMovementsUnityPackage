@@ -680,7 +680,6 @@ GameObject:
   - component: {fileID: 491525270}
   - component: {fileID: 491525271}
   - component: {fileID: 491525272}
-  - component: {fileID: 491525273}
   m_Layer: 0
   m_Name: terrain
   m_TagString: Untagged
@@ -828,6 +827,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  portalManager: {fileID: 0}
   scaleFactor: 1
   octaves: 5
   lacunarity: 2
@@ -878,14 +878,7 @@ MonoBehaviour:
       clusterCount: 5
       clusterRadius: 50
     maxNumberOfObjects: 0
-    mobList:
-    - mobPrefab: {fileID: 3954741356165816016, guid: 8317280f482040048953fdc183b57bea, type: 3}
-      maxInstancesOfThisMob: 40
-      HasMaxInstancesOfThisMob: 0
-      weightToSpawnFactor: 1
-      minTimeToSpawn: 1
-      maxTimeToSpawn: 1
-      currentMobs: 0
+    mobList: []
   - name: c
     minHeight: 5
     maxHeight: 7
@@ -925,28 +918,40 @@ MonoBehaviour:
   viewer: {fileID: 1207614693}
   shouldHaveMaxChunkPerSide: 0
   maxChunksPerSide: 2
-  portalManager: {fileID: 491525273}
---- !u!114 &491525273
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 491525265}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3d793c72748fbed47ac99fa94cdd5d46, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  portalPrefabs:
-  - prefab: {fileID: 4855282368247094320, guid: 77dedbdf7a985fa4dbae8fd0b209673a, type: 3}
-    maxInstances: 90
-    spawnTime: 2
-    minSpawnTime: 2
-    maxSpawnTime: 2
-    shouldHaveRandomSpawnTime: 0
-  globalMaxPortals: 90
-  totalActivePortals: 0
+  portalSettings:
+    prefabs:
+    - prefab: {fileID: 4855282368247094320, guid: 77dedbdf7a985fa4dbae8fd0b209673a, type: 3}
+      maxInstances: 2
+      spawnTime: 10
+      minSpawnTime: 0
+      maxSpawnTime: 0
+      shouldHaveRandomSpawnTime: 0
+      currentInstances: 0
+    maxNumberOfPortals: 50
+    shouldWaitToStartSpawning: 1
+    waitingTime: 5
+    minWaitingTime: 5
+    maxWaitingTime: 5
+    shouldHaveRandomWaitingTime: 0
+    retryingSpawnTime: 0
+  mobSettings:
+    prefabs:
+    - mobPrefab: {fileID: 1607186504203915171, guid: 349d32d15de6fcf4d9966cb3ea93da8b, type: 3}
+      maxInstances: 2
+      spawnWeight: 1
+      spawnTime: 2
+      minSpawnTime: 2
+      maxSpawnTime: 2
+      shouldHaveRandomSpawnTime: 0
+      weightToSpawnFactor: 1
+      currentInstances: 0
+    maxNumberOfMobs: 15
+    shouldWaitToStartSpawning: 1
+    waitingTime: 2
+    minWaitingTime: 0
+    maxWaitingTime: 0
+    shouldHaveRandomWaitingTime: 0
+    retryingSpawnTime: 0
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0
@@ -1241,6 +1246,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  portalManager: {fileID: 0}
   scaleFactor: 3
   octaves: 5
   lacunarity: 2
