@@ -24,6 +24,7 @@ public class PortalPrefab: ISpawbleBySpawner
 public class SpawnableMob: ISpawbleBySpawner
 {
     public GameObject mobPrefab;
+    public List<Biome> allowedBiomes;
     public int maxInstances;        // Maximum instances of this mob
     public float spawnWeight;       // Weight for random spawning
     public float spawnTime;         // Fixed spawn interval
@@ -31,6 +32,7 @@ public class SpawnableMob: ISpawbleBySpawner
     public float maxSpawnTime;      // Max spawn time
     public bool shouldHaveRandomSpawnTime;  // Use randomized spawn interval?
     public float weightToSpawnFactor = 1;
+
     [HideInInspector] public int currentInstances;
 
     public int MaxInstances { get => maxInstances; set => maxInstances = value; }
@@ -157,7 +159,8 @@ public class EndlessTerrain : MonoBehaviour
 
     void Start()
     {
-        mapGenerator = FindObjectOfType<TerrainGenerator>();
+        mapGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
+
         chunkSize = TerrainGenerator.chunkSize - 1;  // Adjust for overlap at edges.
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
         scaleFactor = mapGenerator.ScaleFactor;
@@ -171,6 +174,8 @@ public class EndlessTerrain : MonoBehaviour
         viewerPosition = new Vector2(viewer.position.x, viewer.position.z);
         UpdateVisibleChunks();
     }
+
+
 
     /// <summary>
     /// Updates the visibility of terrain chunks based on the viewer's current position.
@@ -229,7 +234,8 @@ public class EndlessTerrain : MonoBehaviour
     TerrainChunk CreateNewChunk(Vector2 coord)
     {
         count++;
-        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, transform, portalSettings, mobSettings, count);
+        int scaledChunkSize = Mathf.RoundToInt(chunkSize * scaleFactor);
+        TerrainChunk newChunk = new TerrainChunk(coord, scaledChunkSize, transform, portalSettings, mobSettings, count);
         terrainChunkDictionary.Add(coord, newChunk);
         return newChunk;
     }
@@ -259,6 +265,11 @@ public class EndlessTerrain : MonoBehaviour
         }
     }
 
+    public TerrainChunk GetRandomActiveChunk()
+    {
+        if (terrainChunksVisibleLastUpdate.Count == 0) return null;
+        return terrainChunksVisibleLastUpdate[Random.Range(0, terrainChunksVisibleLastUpdate.Count)];
+    }
 
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
@@ -277,8 +288,7 @@ public class EndlessTerrain : MonoBehaviour
 
         NavMeshSurface navMeshSurface;
         private TerrainGenerator terrainGenerator;
-
-        private WorldMobSpawner worldMobSpawner;
+        public float[,] heightmap;
 
 
         Vector2 globalOffset;
@@ -309,8 +319,6 @@ public class EndlessTerrain : MonoBehaviour
             navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
             navMeshSurface.collectObjects = CollectObjects.Children;
 
-            worldMobSpawner = meshObject.AddComponent<WorldMobSpawner>();
-            worldMobSpawner.Initialize(size, globalOffset, parent, navMeshSurface); //size = chunkSize
 
             // PortalManager Initialization
             PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
@@ -364,10 +372,10 @@ public class EndlessTerrain : MonoBehaviour
             BakeNavMesh();
 
             MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
-            mobSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, terrainGenerator.ChunkSize, meshObject.transform);
+            mobSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, terrainGenerator.ChunkSize, meshObject.transform, biomeObjectData.biomeMap);
 
             PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
-            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform);
+            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform, biomeObjectData.biomeMap);
             
 
 
@@ -381,7 +389,10 @@ public class EndlessTerrain : MonoBehaviour
         {
             // Apply terrain data to the chunk's components.
             terrainGenerator = terrainData.terrainGenerator;
-            TextureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);
+            TextureGenerator textureGenerator = new TextureGenerator();
+            textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);
+            //TextureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);   
+            heightmap = terrainData.heightMap;
 
             // Update the mesh and collider.
             Mesh mesh = terrainData.meshData.UpdateMesh();

@@ -4,8 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
 using System.Linq;
-using Unity.VisualScripting;
-using UnityEditor.Experimental.GraphView;
+
 
 /// <summary>
 /// Generates terrain data and biomes using noise and Voronoi algorithms.
@@ -370,11 +369,7 @@ public class TerrainGenerator : MonoBehaviour
                     splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.biomeMap, splatMap);
 
                 }
-                else {splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.heightMap, splatMap);
-                   
-
-                    
-                    }
+                else {splatMap = SplatMapGenerator.GenerateSplatMapBasedOnHeight(this, threadInfo.parameter.heightMap, splatMap); }
                 threadInfo.parameter.splatMap = splatMap;
                 threadInfo.callback(threadInfo.parameter);
             }
@@ -390,7 +385,7 @@ public class TerrainGenerator : MonoBehaviour
                 // Iterate over terrain cells to place biome objects.
                 for (int y = 0; y < threadInfo.parameter.terrainGenerator.ChunkSize; y++)
                 {
-                    if (shouldBreak) break; 
+                    if (shouldBreak) break;
                     for (int x = 0; x < threadInfo.parameter.terrainGenerator.ChunkSize; x++)
                     {
                         //may debug the global offset
@@ -401,8 +396,11 @@ public class TerrainGenerator : MonoBehaviour
                         {
                             shouldBreak = true;
                             break;
-                        };
+                        }
+                        else
+                        {
                             PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiome, threadInfo.parameter.heightMap, x, y);
+                        }
                     }   
 
                 }
@@ -424,23 +422,6 @@ public class TerrainGenerator : MonoBehaviour
         }
 
     }
-
-    //public void PlaceObjectsForBiome(Transform chunkTransform, Vector3 worldPosition, Biome biome, float[,] heightMap, int x, int y)
-    //{
-    //    foreach (BiomeObject biomeObject in biome.objects)
-    //    {
-    //        //if (biomeObject.currentNumberOfThisObject >= biomeObject.maxNumberOfThisObject)
-    //        //    continue;
-
-    //        // Check global probability to spawn
-    //        if ((UnityEngine.Random.value * 100) < biomeObject.probabilityToSpawn)
-    //        {
-    //            Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y); // this function here for you to get the coordinates of the objects
-    //            InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, heightMap, x, y);
-    //            biomeObject.currentNumberOfThisObject++;
-    //        }
-    //    }
-    //}
     /// <summary>
     /// Places objects on the terrain for a given biome, considering various factors like clustering, probability of spawn, and slope constraints.
     /// </summary>
@@ -645,7 +626,7 @@ public class TerrainGenerator : MonoBehaviour
         // If the prefab doesn't have a collider, it cannot be placed, so return false
         if (collider == null)
         {
-            Debug.LogWarning($"Prefab {objectPrefab.name} has no Collider component!");
+            //Debug.LogWarning($"Prefab {objectPrefab.name} has no Collider component!");
             return false;
         }
 
@@ -673,13 +654,14 @@ public class TerrainGenerator : MonoBehaviour
 
 /// <summary>
 /// Represents a biome within the terrain. A biome defines its characteristics, 
-/// including its height range, texture, terrain variation, and associated objects and mobs.
+/// including its height range, texture, terrain variation, and associated objects.
 /// </summary>
-[System.Serializable]
-public class Biome
+//[System.Serializable]
+[CreateAssetMenu(menuName = "Scriptable Objects/Biome", fileName = "NewBiome")]
+public class Biome: ScriptableObject
 {
     /// <summary>Name of the biome.</summary>
-    public string name;
+    public new string name;
 
     /// <summary>Minimum height value for the biome. Used to define its elevation range.</summary>
     public float minHeight;
@@ -708,9 +690,6 @@ public class Biome
 
     /// <summary>Maximum number of objects that can exist within this biome.</summary>
     public float maxNumberOfObjects;
-
-    /// <summary>List of mobs that can spawn within this biome.</summary>
-    public List<SpawnableMob> mobList;
 }
 
 /// <summary>
@@ -861,8 +840,3 @@ public struct BiomeObjectData
         this.chunkTransform = chunkTransform;
     }
 }
-
-
-//I need help improving the way I spawn objects on a Unity terrain. Specifically, I create clusters of specific object types in designated areas of the terrain. This means objects of a particular type should spawn more frequently within their respective clusters or regions, creating a natural-looking distribution.
-
-//Please review my current implementation and either enhance it to include better this functionality or provide an entirely new solution that achieves this clustering effect effectively and efficiently or better object spawning
