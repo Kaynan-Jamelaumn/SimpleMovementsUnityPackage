@@ -36,7 +36,7 @@ public class SpawnableMobDrawer : PropertyDrawer
         EditorGUI.PropertyField(rect, property.FindPropertyRelative("shouldHaveRandomSpawnTime"), new GUIContent("Random Spawn Time?"));
         rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("weightToSpawnFactor"), new GUIContent("Weight to Spawn Factor"));
+        EditorGUI.PropertyField(rect, property.FindPropertyRelative("spawnWeight"), new GUIContent("Weight to Spawn Factor"));
         rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
         // Draw allowedBiomes as checkboxes

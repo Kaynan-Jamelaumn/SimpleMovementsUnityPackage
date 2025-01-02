@@ -6,15 +6,10 @@ using System.Threading.Tasks;
 
 
 [System.Serializable]
-public class MobSettings
+public class MobSettings : BaseSettings
 {
     public List<SpawnableMob> prefabs;
     public int maxNumberOfMobs;
-    public bool shouldWaitToStartSpawning;
-    public float waitingTime;
-    public float minWaitingTime;
-    public float maxWaitingTime;
-    public bool shouldHaveRandomWaitingTime;
-    public float retryingSpawnTime;
+
 }
 

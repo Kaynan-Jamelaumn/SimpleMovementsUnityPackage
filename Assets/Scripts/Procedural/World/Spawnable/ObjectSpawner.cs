@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 
 public static class ObjectSpawner
@@ -122,7 +125,6 @@ public static class ObjectSpawner
 
         return normal;
     }
-
     /// <summary>
     /// Generates a density map for clustering objects on the terrain, using Perlin noise and cluster centers.
     /// </summary>
@@ -132,70 +134,161 @@ public static class ObjectSpawner
     /// <param name="clusterRadius">The radius of each cluster.</param>
     /// <param name="baseFrequency">The frequency of Perlin noise for base density.</param>
     /// <param name="amplitude">The amplitude of Perlin noise to scale the density.</param>
+    /// <param name="scaleFactor">The scale factor to adjust cluster size.</param>
     /// <returns>A 2D array representing the density map values, where higher values indicate more dense areas.</returns>
     public static float[,] GenerateClusteredDensityMap(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor)
     {
         //amplitude: Scales the values of the noise. Higher values increase the intensity of the noise (making the contrast between low and high values more noticeable).
         //baseFrequency: Controls the "zoom level" of the Perlin noise pattern. Higher values create tighter noise patterns (smaller "islands"), while lower values produce broader, smoother patterns.
+        // Create native arrays for cluster centers and radii
+        NativeArray<Vector2> clusterCenters = new NativeArray<Vector2>(clusterCount, Allocator.TempJob);
+        NativeArray<float> clusterRadii = new NativeArray<float>(clusterCount, Allocator.TempJob);
 
-        // Initialize an empty density map
-        float[,] densityMap = new float[width, height];
+        // Generate cluster data
+        // Randomly generate cluster centers and radii
         System.Random prng = new System.Random();
-
-        Vector2[] clusterCenters = new Vector2[clusterCount];
-        clusterRadius = clusterRadius * scaleFactor; // Scale factor to adjust cluster size
-        float[] clusterRadii = new float[clusterCount];
-
-        // Generate random cluster centers and radii
         for (int i = 0; i < clusterCount; i++)
         {
             clusterCenters[i] = new Vector2(prng.Next(0, width), prng.Next(0, height));
-            clusterRadii[i] = clusterRadius * (0.8f + (0.4f * (float)prng.NextDouble())); // Slight radius variation between 80% and 120%
+            clusterRadii[i] = clusterRadius * scaleFactor * (0.8f + 0.4f * (float)prng.NextDouble()); 
+            // Slight variation in radius between 80% and 120% of the scaled cluster radius
             //Case 1: prng.NextDouble() = 0.0: Multiplier: 0.8f + 0.4f * 0.0 = 0.8
             //Case 2: prng.NextDouble() = 0.5: Multiplier: 0.8f + 0.4f * 0.5 = 0.8 + 0.2 = 1.0
             //Case 3: prng.NextDouble() = 1.0: Multiplier: 0.8f + 0.4f * 1.0 = 0.8 + 0.4 = 1.2
-
         }
-        // Loop through every cell in the density map
 
+        // Create a native array for the density map
+        NativeArray<float> densityMap = new NativeArray<float>(width * height, Allocator.TempJob);
+
+        // Create and schedule the job
+        DensityMapJob densityMapJob = new DensityMapJob
+        {
+            DensityMap = densityMap,
+            ClusterCenters = clusterCenters,
+            ClusterRadii = clusterRadii,
+            BaseFrequency = baseFrequency,
+            Amplitude = amplitude,
+            Width = width
+        };
+
+        // The DensityMapJob struct is designed to calculate the density map by:
+        // - Using Perlin noise to generate a base terrain density.
+        // - Adding contributions from cluster centers, with a quadratic falloff for cells within cluster radii.
+        // The job is parameterized with:
+        // - DensityMap: The output array storing density values.
+        // - ClusterCenters and ClusterRadii: Representing the location and influence of clusters.
+        // - BaseFrequency and Amplitude: Controlling the Perlin noise characteristics.
+        // - Width: The map's width for index calculations.
+
+
+        // Schedule the job with a batch size of 64
+        JobHandle jobHandle = densityMapJob.Schedule(width * height, 64);
+        jobHandle.Complete(); // Wait for the job to finish
+
+        // Copy results back to a 2D array
+        // The 2D array format is necessary for seamless integration with traditional game objects or visualizations.
+        // This operation ensures that the data from the NativeArray, which is optimized for job systems,
+        // can be readily used in Unity's rendering pipelines or gameplay mechanics.
+        float[,] result = new float[width, height];
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                float maxDensity = 0f;
-
-                // Calculate density contribution from each cluster
-                foreach (Vector2 center in clusterCenters)
-                {
-                    float distance = Vector2.Distance(new Vector2(x, y), center); // the distance from the current cell position to the cluster center
-                    float radius = clusterRadii[Array.IndexOf(clusterCenters, center)];
-                    if (distance < radius) //if the distance from the cluster center is less than the cluster radius(is inside the cluster area then...)
-                    {
-                        // float clusterDensity = Mathf.Max(0, 1 - (distance / radius)); // Linear falloff
-                        //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
-                        //Value:    1.0    0.75   0.5   0.25   0.0
-
-
-                        float clusterDensity = Mathf.Pow(1 - (distance / radius), 2); // Exponential falloff   // Quadratic falloff: closer to the center -> higher density
-                        //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
-                        // Value:   1.0    0.56   0.25  0.06   0.0
-                        maxDensity = Mathf.Max(maxDensity, clusterDensity);
-                    }
-                }
-
-                // Combine the cluster density with Perlin noise for overall terrain density
-                float baseDensity = Mathf.PerlinNoise(x * baseFrequency, y * baseFrequency) * amplitude;
-
-
-                // Calculate the final density value and clamp it between 0 and 1
-                float rawDensity = Mathf.Clamp01(maxDensity + baseDensity);
-                // Normalize the value to be between 1 and 2
-                densityMap[x, y] = 1 + rawDensity; // This will map rawDensity from [0, 1] to [1, 2]
+                result[x, y] = densityMap[y * width + x];
             }
         }
+        // Dispose of native arrays to free memory
+        // Disposing of NativeArrays is crucial to avoid memory leaks. Unity's job system does not automatically
+        // manage the memory of NativeArrays, so failing to dispose of them can lead to increased memory usage
+        // and potential crashes in long-running applications.
+        densityMap.Dispose();
+        clusterCenters.Dispose();
+        clusterRadii.Dispose();
 
-        return densityMap;
+        return result;
     }
+
+    /// <remarks>
+    /// The density map combines two components:
+    /// <list type="bullet">
+    /// <item>
+    /// <description>Cluster-based density: Higher density near cluster centers, decreasing with distance.</description>
+    /// </item>
+    /// <item>
+    /// <description>Perlin noise: Adds natural variation to the density map.</description>
+    /// </item>
+    /// </list>
+    /// </remarks>
+    public struct DensityMapJob : IJobParallelFor
+    {
+        /// <summary>
+        /// The output density map, stored as a 1D array.
+        /// </summary>
+        [WriteOnly] public NativeArray<float> DensityMap;
+
+        /// <summary>
+        /// The coordinates of cluster centers, which define areas of increased density.
+        /// </summary>
+        [ReadOnly] public NativeArray<Vector2> ClusterCenters;
+
+        /// <summary>
+        /// The radii of influence for each cluster.
+        /// </summary>
+        [ReadOnly] public NativeArray<float> ClusterRadii;
+
+        /// <summary>
+        /// The frequency of Perlin noise for generating base density patterns. Higher values create finer noise details.
+        /// </summary>
+        public float BaseFrequency;
+
+        /// <summary>
+        /// The amplitude of Perlin noise, scaling its impact on density values. Larger values result in greater variations.
+        /// </summary>
+        public float Amplitude;
+
+        /// <summary>
+        /// The width of the density map, used for converting between 1D and 2D indexing.
+        /// </summary>
+        public int Width;
+
+        /// <summary>
+        /// Executes the job for each cell in the density map.
+        /// </summary>
+        /// <param name="index">The linear index of the cell in the 1D array.</param>
+        public void Execute(int index)
+        {
+            int x = index % Width; // Calculate x-coordinate
+            int y = index / Width; // Calculate y-coordinate
+
+            float maxDensity = 0f;
+
+            // Calculate density contribution from each cluster
+            for (int i = 0; i < ClusterCenters.Length; i++)
+            {
+                float distance = Vector2.Distance(new Vector2(x, y), ClusterCenters[i]);
+                if (distance < ClusterRadii[i]) //if the distance from the cluster center is less than the cluster radius(is inside the cluster area then...)
+                {
+                    // float clusterDensity = Mathf.Max(0, 1 - (distance / radius)); // Linear falloff
+                    //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
+                    //Value:    1.0    0.75   0.5   0.25   0.0
+                    // Quadratic falloff: closer to the center -> higher density
+                    maxDensity = math.max(maxDensity, math.pow(1 - distance / ClusterRadii[i], 2)); // Exponential falloff   // Quadratic falloff: closer to the center -> higher density
+                                                                                                    //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
+                                                                                                    // Value:   1.0    0.56   0.25  0.06   0.0
+                }
+            }
+
+            // Combine the cluster density with Perlin noise for overall terrain density
+            float baseDensity = Mathf.PerlinNoise(x * BaseFrequency, y * BaseFrequency) * Amplitude;
+
+            // Calculate the final density value and clamp it between 0 and 1
+            DensityMap[index] = 1 + math.clamp(maxDensity + baseDensity, 0, 1);
+            // Normalize the value to be between 1 and 2
+        }
+    }
+
+
+
     /// <summary>
     /// Checks if the specified position is free of any overlapping objects, ensuring that the spawn location is valid for placing a new object.
     /// </summary>
@@ -237,5 +330,81 @@ public static class ObjectSpawner
     }
 
 
-}
 
+
+    /// <summary>
+    /// Generates a density map for clustering objects on the terrain, using Perlin noise and cluster centers.
+    /// </summary>
+    /// <param name="width">The width of the density map.</param>
+    /// <param name="height">The height of the density map.</param>
+    /// <param name="clusterCount">The number of clusters to generate.</param>
+    /// <param name="clusterRadius">The radius of each cluster.</param>
+    /// <param name="baseFrequency">The frequency of Perlin noise for base density.</param>
+    /// <param name="amplitude">The amplitude of Perlin noise to scale the density.</param>
+    /// <returns>A 2D array representing the density map values, where higher values indicate more dense areas.</returns>
+    public static float[,] GenerateClusteredDensityMapWithoutJobSystem(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor)
+    {
+        //amplitude: Scales the values of the noise. Higher values increase the intensity of the noise (making the contrast between low and high values more noticeable).
+        //baseFrequency: Controls the "zoom level" of the Perlin noise pattern. Higher values create tighter noise patterns (smaller "islands"), while lower values produce broader, smoother patterns.
+
+        // Initialize an empty density map
+        float[,] densityMap = new float[width, height];
+        System.Random prng = new System.Random();
+
+        Vector2[] clusterCenters = new Vector2[clusterCount];
+        clusterRadius = clusterRadius * scaleFactor; // Scale factor to adjust cluster size
+        float[] clusterRadii = new float[clusterCount];
+
+        // Generate random cluster centers and radii
+        for (int i = 0; i < clusterCount; i++)
+        {
+            clusterCenters[i] = new Vector2(prng.Next(0, width), prng.Next(0, height));
+            clusterRadii[i] = clusterRadius * (0.8f + (0.4f * (float)prng.NextDouble())); // Slight radius variation between 80% and 120%
+                                                                                          //Case 1: prng.NextDouble() = 0.0: Multiplier: 0.8f + 0.4f * 0.0 = 0.8
+                                                                                          //Case 2: prng.NextDouble() = 0.5: Multiplier: 0.8f + 0.4f * 0.5 = 0.8 + 0.2 = 1.0
+                                                                                          //Case 3: prng.NextDouble() = 1.0: Multiplier: 0.8f + 0.4f * 1.0 = 0.8 + 0.4 = 1.2
+
+        }
+        // Loop through every cell in the density map
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float maxDensity = 0f;
+
+                // Calculate density contribution from each cluster
+                foreach (Vector2 center in clusterCenters)
+                {
+                    float distance = Vector2.Distance(new Vector2(x, y), center); // the distance from the current cell position to the cluster center
+                    float radius = clusterRadii[Array.IndexOf(clusterCenters, center)];
+                    if (distance < radius) //if the distance from the cluster center is less than the cluster radius(is inside the cluster area then...)
+                    {
+                        // float clusterDensity = Mathf.Max(0, 1 - (distance / radius)); // Linear falloff
+                        //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
+                        //Value:    1.0    0.75   0.5   0.25   0.0
+
+
+                        float clusterDensity = Mathf.Pow(1 - (distance / radius), 2); // Exponential falloff   // Quadratic falloff: closer to the center -> higher density
+                                                                                      //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
+                                                                                      // Value:   1.0    0.56   0.25  0.06   0.0
+                        maxDensity = Mathf.Max(maxDensity, clusterDensity);
+                    }
+                }
+
+                // Combine the cluster density with Perlin noise for overall terrain density
+                float baseDensity = Mathf.PerlinNoise(x * baseFrequency, y * baseFrequency) * amplitude;
+
+
+                // Calculate the final density value and clamp it between 0 and 1
+                float rawDensity = Mathf.Clamp01(maxDensity + baseDensity);
+                // Normalize the value to be between 1 and 2
+                densityMap[x, y] = 1 + rawDensity; // This will map rawDensity from [0, 1] to [1, 2]
+            }
+        }
+
+        return densityMap;
+    }
+
+
+}

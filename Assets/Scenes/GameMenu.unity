@@ -1139,15 +1139,14 @@ MonoBehaviour:
   - BiomePrefab: {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
     runtimeObjects:
     - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
-      weight: 1
       probabilityToSpawn: 1
       hasMaxNumberOfObjects: 1
       currentNumberOfThisObject: 0
       maxNumberOfThisObject: 3
       slopeThreshold: 60
-      isClusterable: 0
-      clusterCount: 0
-      clusterRadius: 0
+      isClusterable: 1
+      clusterCount: 5
+      clusterRadius: 50
     currentNumberOfObjects: 0
   - BiomePrefab: {fileID: 11400000, guid: 8a0827e08616557479db8128d3fec729, type: 2}
     runtimeObjects: []
@@ -1158,7 +1157,6 @@ MonoBehaviour:
   - BiomePrefab: {fileID: 11400000, guid: 0f0d1615d0795ee4f9968530e67d5431, type: 2}
     runtimeObjects:
     - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
-      weight: 1
       probabilityToSpawn: 1
       hasMaxNumberOfObjects: 1
       currentNumberOfThisObject: 0
@@ -1188,6 +1186,12 @@ MonoBehaviour:
   shouldHaveMaxChunkPerSide: 0
   maxChunksPerSide: 2
   portalSettings:
+    shouldWaitToStartSpawning: 1
+    waitingTime: 5
+    minWaitingTime: 5
+    maxWaitingTime: 5
+    shouldHaveRandomWaitingTime: 0
+    retryingSpawnTime: 0
     prefabs:
     - prefab: {fileID: 4855282368247094320, guid: 77dedbdf7a985fa4dbae8fd0b209673a, type: 3}
       maxInstances: 2
@@ -1197,13 +1201,13 @@ MonoBehaviour:
       shouldHaveRandomSpawnTime: 0
       currentInstances: 0
     maxNumberOfPortals: 50
+  mobSettings:
     shouldWaitToStartSpawning: 1
-    waitingTime: 5
-    minWaitingTime: 5
-    maxWaitingTime: 5
+    waitingTime: 2
+    minWaitingTime: 0
+    maxWaitingTime: 0
     shouldHaveRandomWaitingTime: 0
     retryingSpawnTime: 0
-  mobSettings:
     prefabs:
     - mobPrefab: {fileID: 1607186504203915171, guid: 349d32d15de6fcf4d9966cb3ea93da8b, type: 3}
       allowedBiomes:
@@ -1222,7 +1226,6 @@ MonoBehaviour:
       minSpawnTime: 2
       maxSpawnTime: 2
       shouldHaveRandomSpawnTime: 0
-      weightToSpawnFactor: 1
       currentInstances: 0
     - mobPrefab: {fileID: 1607186504203915171, guid: 349d32d15de6fcf4d9966cb3ea93da8b, type: 3}
       allowedBiomes:
@@ -1241,15 +1244,8 @@ MonoBehaviour:
       minSpawnTime: 2
       maxSpawnTime: 2
       shouldHaveRandomSpawnTime: 0
-      weightToSpawnFactor: 1
       currentInstances: 0
     maxNumberOfMobs: 15
-    shouldWaitToStartSpawning: 1
-    waitingTime: 2
-    minWaitingTime: 0
-    maxWaitingTime: 0
-    shouldHaveRandomWaitingTime: 0
-    retryingSpawnTime: 0
 --- !u!1 &500221670
 GameObject:
   m_ObjectHideFlags: 0
