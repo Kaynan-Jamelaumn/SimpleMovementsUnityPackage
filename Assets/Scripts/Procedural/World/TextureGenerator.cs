@@ -6,10 +6,10 @@ public  class TextureGenerator
     {
         Material mat = new Material(Shader.Find("Custom/TerrainSplatMapShader"));
         //mat.SetTexture("_MainTex", defaultTexture);
-        mat.SetTexture("_TextureR", terrainGenerator.Biomes[0].texture);
-        mat.SetTexture("_TextureG", terrainGenerator.Biomes[1].texture);
-        mat.SetTexture("_TextureB", terrainGenerator.Biomes[2].texture);
-        mat.SetTexture("_TextureA", terrainGenerator.Biomes[3].texture);
+        mat.SetTexture("_TextureR", terrainGenerator.BiomeDefinitions[0].BiomePrefab.texture);
+        mat.SetTexture("_TextureG", terrainGenerator.BiomeDefinitions[1].BiomePrefab.texture);
+        mat.SetTexture("_TextureB", terrainGenerator.BiomeDefinitions[2].BiomePrefab.texture);
+        mat.SetTexture("_TextureA", terrainGenerator.BiomeDefinitions[3].BiomePrefab.texture);
         mat.SetTexture("_SplatMap", splatMap);
         meshRenderer.sharedMaterial = mat;
     }
@@ -29,11 +29,11 @@ public  class TextureGenerator
         TextureFormat format = TextureFormat.RGBA32;
 
         // Create the Texture2DArray
-        Texture2DArray textureArray = new Texture2DArray(textureWidth, textureHeight, terrainGenerator.Biomes.Length, format, true);
+        Texture2DArray textureArray = new Texture2DArray(textureWidth, textureHeight, terrainGenerator.BiomeDefinitions.Length, format, true);
 
-        for (int i = 0; i < terrainGenerator.Biomes.Length; i++)
+        for (int i = 0; i < terrainGenerator.BiomeDefinitions.Length; i++)
         {
-            Texture2D sourceTexture = terrainGenerator.Biomes[i].texture;
+            Texture2D sourceTexture = terrainGenerator.BiomeDefinitions[i].BiomePrefab.texture;
 
             // Standardize the texture
             Texture2D standardizedTexture = StandardizeTexture(sourceTexture, textureWidth, textureHeight, format);

@@ -9,16 +9,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 3fce94c1947b690419e95e09caf8f913, type: 3}
   m_Name: Biome D
-  m_EditorClassIdentifier: Assembly-CSharp::Biome
-  name: Teste
+  m_EditorClassIdentifier: 
+  name: D
   minHeight: 0
   maxHeight: 0
-  texture: {fileID: 2800000, guid: 5020511136143724ea1108909fdadc7a, type: 3}
-  amplitude: 20
-  frequency: 0.87
-  persistence: 0.461
-  objects: []
-  maxNumberOfObjects: 0
-  mobList: []
+  texture: {fileID: 2800000, guid: 937e2b9ff53f9894b87e3d6d1954ccd7, type: 3}
+  amplitude: 160
+  frequency: 0.4
+  persistence: 0.624

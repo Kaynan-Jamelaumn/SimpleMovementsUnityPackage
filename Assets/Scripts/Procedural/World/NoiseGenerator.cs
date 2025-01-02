@@ -2,9 +2,9 @@
 using UnityEngine;
 using System.Collections.Concurrent;
 using System.Threading;
+
 public class VoronoiCache
 {
-
     private static VoronoiCache _instance;
     private ConcurrentDictionary<Vector2Int, List<Vector2>> chunkPoints; // Store points per chunk
     private ConcurrentDictionary<Vector2, Biome> pointBiomeMap;
@@ -61,29 +61,6 @@ public class VoronoiCache
         chunkPoints[chunkCoord] = points;
     }
 
-
-
-    private void GeneratePointsForChunkOld(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes)
-    {
-        if (chunkPoints.ContainsKey(chunkCoord))
-            return;
-
-        var points = new List<Vector2>(numPoints);
-        for (int i = 0; i < numPoints; i++)
-        {
-            float randX = chunkCoord.x * scale + (float)prng.Value.NextDouble() * scale;
-            float randY = chunkCoord.y * scale + (float)prng.Value.NextDouble() * scale;
-            Vector2 newPoint = new Vector2(randX, randY);
-            points.Add(newPoint);
-
-            Biome biome = availableBiomes[prng.Value.Next(availableBiomes.Count)];
-            pointBiomeMap[newPoint] = biome;
-        }
-
-        chunkPoints[chunkCoord] = points;
-    }
-
-
     private IEnumerable<Vector2Int> GetAdjacentChunks(Vector2Int chunkCoord)
     {
         // Returns the current chunk and all direct/diagonal neighbors
@@ -100,22 +77,28 @@ public class VoronoiCache
 
     public Biome GetClosestBiome(Vector2 worldPosition, Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes)
     {
+        // Generate points for all adjacent chunks
+        var generatedChunks = new HashSet<Vector2Int>();
         foreach (var adjChunk in GetAdjacentChunks(chunkCoord))
         {
-            GeneratePointsForChunk(adjChunk, scale, numPoints, availableBiomes);
+            if (!generatedChunks.Contains(adjChunk))
+            {
+                GeneratePointsForChunk(adjChunk, scale, numPoints, availableBiomes);
+                generatedChunks.Add(adjChunk);
+            }
         }
 
         Biome closestBiome = null;
         float minDist = float.MaxValue;
 
-        foreach (var adjChunk in GetAdjacentChunks(chunkCoord))
+        foreach (var adjChunk in generatedChunks)
         {
             if (!chunkPoints.TryGetValue(adjChunk, out var points)) continue;
 
             foreach (var point in points)
             {
                 // Calculate the distance from the given position to each point
-                float dist = (worldPosition - point).sqrMagnitude;
+                float dist = (worldPosition - point).sqrMagnitude; // Compare squared distances for efficiency
                 if (dist < minDist)
                 {
                     minDist = dist;
@@ -123,10 +106,10 @@ public class VoronoiCache
                 }
             }
         }
-         // Return the closest biome based on calculated proximity
+
+        // Return the closest biome based on calculated proximity
         return closestBiome;
     }
-
 }
 
 public static class NoiseGenerator

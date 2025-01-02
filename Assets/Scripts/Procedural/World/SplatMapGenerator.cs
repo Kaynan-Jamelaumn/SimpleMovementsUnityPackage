@@ -24,9 +24,9 @@ public static class SplatMapGenerator
                 Biome biome = biomeMap[x, y];
                 Color channelWeight = new Color(0, 0, 0, 0);
 
-                for (int i = 0; i < terrainGenerator.Biomes.Length; i++)
+                for (int i = 0; i < terrainGenerator.BiomeDefinitions.Length; i++)
                 {
-                    if (terrainGenerator.Biomes[i].name == biome.name)
+                    if (terrainGenerator.BiomeDefinitions[i].BiomePrefab.name == biome.name)
                     {
                         channelWeight[i % 4] = 1; // Assign weight for the first 4 channels
                         break;
@@ -88,9 +88,9 @@ public static class SplatMapGenerator
                 // Here you would determine the blend weights for each texture
                 // based on height or other criteria, like slope, noise, etc.
                 // For a simple height-based blend, you might do something like this:
-                for (int i = 0; i < terrainGenerator.Biomes.Length; i++)
+                for (int i = 0; i < terrainGenerator.BiomeDefinitions.Length; i++)
                 {
-                    if (scaledHeight >= terrainGenerator.Biomes[i].minHeight && scaledHeight <= terrainGenerator.Biomes[i].maxHeight)
+                    if (scaledHeight >= terrainGenerator.BiomeDefinitions[i].BiomePrefab.minHeight && scaledHeight <= terrainGenerator.BiomeDefinitions[i].BiomePrefab.maxHeight)
                     {
                         channelWeight[i] = 1; // Assign full weight to the corresponding channel
                         break; // Exit the loop since we found our height range

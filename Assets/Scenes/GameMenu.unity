@@ -1123,7 +1123,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  portalManager: {fileID: 0}
   scaleFactor: 1
   octaves: 5
   lacunarity: 2
@@ -1135,16 +1134,44 @@ MonoBehaviour:
   NumVoronoiPoints: 8
   VoronoiSeed: 3
   VoronoiScale: 350
-  levelOfDetail: 6
-  biomes:
-  - {fileID: 11400000, guid: 1c56a280c61d6f54996e5d885bd1cd81, type: 2}
-  - {fileID: 11400000, guid: 867cf179470a81d4fb58c0a10ecd5e85, type: 2}
-  - {fileID: 11400000, guid: 1b03e709e7255244ca248d8209ed930b, type: 2}
-  - {fileID: 11400000, guid: a8620838622cc9b4fa578e095f587318, type: 2}
+  levelOfDetail: 0
+  biomeDefinitions:
+  - BiomePrefab: {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
+    runtimeObjects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      weight: 1
+      probabilityToSpawn: 1
+      hasMaxNumberOfObjects: 1
+      currentNumberOfThisObject: 0
+      maxNumberOfThisObject: 3
+      slopeThreshold: 60
+      isClusterable: 0
+      clusterCount: 0
+      clusterRadius: 0
+    currentNumberOfObjects: 0
+  - BiomePrefab: {fileID: 11400000, guid: 8a0827e08616557479db8128d3fec729, type: 2}
+    runtimeObjects: []
+    currentNumberOfObjects: 0
+  - BiomePrefab: {fileID: 11400000, guid: 980e4c36d22783840b5b423210cd3e60, type: 2}
+    runtimeObjects: []
+    currentNumberOfObjects: 0
+  - BiomePrefab: {fileID: 11400000, guid: 0f0d1615d0795ee4f9968530e67d5431, type: 2}
+    runtimeObjects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      weight: 1
+      probabilityToSpawn: 1
+      hasMaxNumberOfObjects: 1
+      currentNumberOfThisObject: 0
+      maxNumberOfThisObject: 1
+      slopeThreshold: 20
+      isClusterable: 0
+      clusterCount: 0
+      clusterRadius: 0
+    currentNumberOfObjects: 0
   shouldSpawnObjects: 1
-  clusterBaseFrequency: 0
-  clusterAmplitude: 0
-  clusteringIntensity: 0
+  clusterBaseFrequency: 1
+  clusterAmplitude: 1
+  clusteringIntensity: 1
 --- !u!114 &491525272
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1188,6 +1215,7 @@ MonoBehaviour:
       - {fileID: 11400000, guid: a8620838622cc9b4fa578e095f587318, type: 2}
       - {fileID: 11400000, guid: 1c56a280c61d6f54996e5d885bd1cd81, type: 2}
       - {fileID: 11400000, guid: 867cf179470a81d4fb58c0a10ecd5e85, type: 2}
+      - {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
       maxInstances: 2
       spawnWeight: 1
       spawnTime: 2
@@ -1206,6 +1234,7 @@ MonoBehaviour:
       - {fileID: 11400000, guid: a8620838622cc9b4fa578e095f587318, type: 2}
       - {fileID: 11400000, guid: 1c56a280c61d6f54996e5d885bd1cd81, type: 2}
       - {fileID: 11400000, guid: 867cf179470a81d4fb58c0a10ecd5e85, type: 2}
+      - {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
       maxInstances: 2
       spawnWeight: 1
       spawnTime: 2
@@ -1517,7 +1546,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c420dce78bcfb894293c968a220b06b3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  portalManager: {fileID: 0}
   scaleFactor: 3
   octaves: 5
   lacunarity: 2
@@ -1530,11 +1558,7 @@ MonoBehaviour:
   VoronoiSeed: 0
   VoronoiScale: 0
   levelOfDetail: 0
-  biomes:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  biomeDefinitions: []
   shouldSpawnObjects: 0
   clusterBaseFrequency: 0
   clusterAmplitude: 0

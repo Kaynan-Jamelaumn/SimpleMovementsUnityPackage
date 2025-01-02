@@ -503,7 +503,7 @@ MonoBehaviour:
   actionsController: {fileID: 68590106890630332}
   mob: {fileID: 68590106890630332}
   animator: {fileID: 0}
-  navMeshAgent: {fileID: 0}
+  navMeshAgent: {fileID: 9175384091686205056}
   statusController: {fileID: 0}
 --- !u!1 &1880409748939515727
 GameObject:

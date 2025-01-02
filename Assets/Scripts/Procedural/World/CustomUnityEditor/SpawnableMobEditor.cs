@@ -1,5 +1,6 @@
 ﻿using UnityEditor;
 using UnityEngine;
+using System.Linq;
 
 [CustomPropertyDrawer(typeof(SpawnableMob))]
 public class SpawnableMobDrawer : PropertyDrawer
@@ -40,18 +41,18 @@ public class SpawnableMobDrawer : PropertyDrawer
 
         // Draw allowedBiomes as checkboxes
         TerrainGenerator terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
-        if (terrainGenerator != null && terrainGenerator.Biomes != null)
+        if (terrainGenerator != null && terrainGenerator.BiomeDefinitions != null)
         {
-            Biome[] biomes = terrainGenerator.Biomes;
+            BiomeInstance[] biomeDefinitions = terrainGenerator.BiomeDefinitions;
 
             SerializedProperty allowedBiomesProp = property.FindPropertyRelative("allowedBiomes");
 
             EditorGUI.LabelField(rect, "Allowed Biomes");
             rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
-            for (int i = 0; i < biomes.Length; i++)
+            for (int i = 0; i < biomeDefinitions.Length; i++)
             {
-                Biome biome = biomes[i];
+                Biome biome = biomeDefinitions[i].BiomePrefab;
                 bool isSelected = false;
 
                 // Check if the biome is already in the allowedBiomes list
@@ -90,7 +91,7 @@ public class SpawnableMobDrawer : PropertyDrawer
         }
         else
         {
-            EditorGUI.LabelField(rect, "No TerrainGenerator or Biomes Found");
+            EditorGUI.LabelField(rect, "No TerrainGenerator or BiomeDefinitions Found");
         }
 
         EditorGUI.EndProperty();
@@ -101,9 +102,9 @@ public class SpawnableMobDrawer : PropertyDrawer
         float height = EditorGUIUtility.singleLineHeight * 9; // Fixed fields count
         TerrainGenerator terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
 
-        if (terrainGenerator != null && terrainGenerator.Biomes != null)
+        if (terrainGenerator != null && terrainGenerator.BiomeDefinitions != null)
         {
-            height += (terrainGenerator.Biomes.Length + 1) * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
+            height += (terrainGenerator.BiomeDefinitions.Length + 1) * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
         }
         return height;
     }

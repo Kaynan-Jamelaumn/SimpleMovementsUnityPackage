@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using System.Linq;
+
 public static class HeightGenerator
 {
     private static List<Biome> availableBiomes;
@@ -11,7 +13,8 @@ public static class HeightGenerator
         int voronoiSeed = terrainGenerator.VoronoiSeed;// Mathf.RoundToInt(x + y); 
         float height = 0;
 
-        availableBiomes = new List<Biome>(terrainGenerator.Biomes);
+        availableBiomes = terrainGenerator.BiomeDefinitions.Select(biomeInstance => biomeInstance.BiomePrefab)
+     .ToList();
         float inverseWidth = 1f / terrainGenerator.ChunkSize;
         float inverseDepth = 1f / terrainGenerator.ChunkSize;
 

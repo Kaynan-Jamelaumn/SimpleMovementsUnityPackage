@@ -3,79 +3,7 @@ using System.Collections.Generic;
 using System.Collections;
 using Unity.AI.Navigation;
 using System.Drawing;
-
-
-[System.Serializable]
-public class PortalPrefab: ISpawbleBySpawner
-{
-    public GameObject prefab;
-    public int maxInstances;
-    public float spawnTime;
-    public float minSpawnTime;
-    public float maxSpawnTime;
-    public bool shouldHaveRandomSpawnTime;
-    [HideInInspector] public int currentInstances;
-
-    public int MaxInstances { get => maxInstances; set => maxInstances = value; }
-    public int CurrentInstances { get => currentInstances; set => currentInstances = value; }
-}
-
-[System.Serializable]
-public class SpawnableMob: ISpawbleBySpawner
-{
-    public GameObject mobPrefab;
-    public List<Biome> allowedBiomes;
-    public int maxInstances;        // Maximum instances of this mob
-    public float spawnWeight;       // Weight for random spawning
-    public float spawnTime;         // Fixed spawn interval
-    public float minSpawnTime;      // Min spawn time (for randomized interval)
-    public float maxSpawnTime;      // Max spawn time
-    public bool shouldHaveRandomSpawnTime;  // Use randomized spawn interval?
-    public float weightToSpawnFactor = 1;
-
-    [HideInInspector] public int currentInstances;
-
-    public int MaxInstances { get => maxInstances; set => maxInstances = value; }
-    public int CurrentInstances { get => currentInstances; set => currentInstances = value; }
-    public float CalculateSpawnWeight(float weightSpawnFactor)
-    {
-        // If any of the factors is 0, we return 0
-        if (weightToSpawnFactor == 0 || weightSpawnFactor == 0)
-            return 0;
-
-        // Calculate the weight by multiplying the spawn factor by the inverse of weightToSpawnFactor
-        return weightSpawnFactor / weightToSpawnFactor;
-    }
-
-}
-
-[System.Serializable]
-public class PortalSettings
-{
-    public List<PortalPrefab> prefabs;
-    public int maxNumberOfPortals;
-    public bool shouldWaitToStartSpawning;
-    public float waitingTime;
-    public float minWaitingTime;
-    public float maxWaitingTime;
-    public bool shouldHaveRandomWaitingTime;
-    public float retryingSpawnTime;
-}
-
-[System.Serializable]
-public class MobSettings
-{
-    public List<SpawnableMob> prefabs;
-    public int maxNumberOfMobs;
-    public bool shouldWaitToStartSpawning;
-    public float waitingTime;
-    public float minWaitingTime;
-    public float maxWaitingTime;
-    public bool shouldHaveRandomWaitingTime;
-    public float retryingSpawnTime;
-}
-
-
+using static DataStructure;
 
 /// <summary>
 /// Manages the creation and updating of an infinite terrain system around the viewer's position.
@@ -311,9 +239,11 @@ public class EndlessTerrain : MonoBehaviour
 
             // Create the chunk GameObject and components.
             meshObject = new GameObject("Terrain Chunk" + count);
+            meshObject.tag = "Ground";
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
+
 
             // Add NavMeshSurface component to the terrain chunk
             navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
@@ -383,9 +313,9 @@ public class EndlessTerrain : MonoBehaviour
         }
 
         /// <summary>
-        /// Receives terrain data and applies it to the chunk.
+        /// Receives terrain da ta and applies it to the chunk.
         /// </summary>
-        void OnTerrainDataReceived(TerrainData terrainData)
+        void OnTerrainDataReceived(DataStructure.TerrainData terrainData)
         {
             // Apply terrain data to the chunk's components.
             terrainGenerator = terrainData.terrainGenerator;

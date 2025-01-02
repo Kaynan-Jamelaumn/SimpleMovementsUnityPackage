@@ -9,16 +9,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 3fce94c1947b690419e95e09caf8f913, type: 3}
   m_Name: Biome B
-  m_EditorClassIdentifier: Assembly-CSharp::Biome
-  name: Grass
+  m_EditorClassIdentifier: 
+  name: B
   minHeight: 0
   maxHeight: 0
-  texture: {fileID: 2800000, guid: 59e11b4d76877334080d7b2dfec3f51b, type: 3}
-  amplitude: 15
-  frequency: 2
-  persistence: 0.078
-  objects: []
-  maxNumberOfObjects: 0
-  mobList: []
+  texture: {fileID: 2800000, guid: 00ced6628f099374ebf7475a8b513648, type: 3}
+  amplitude: 29
+  frequency: 0.8
+  persistence: 0.297

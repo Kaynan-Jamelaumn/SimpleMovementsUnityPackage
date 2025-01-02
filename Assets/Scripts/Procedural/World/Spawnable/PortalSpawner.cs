@@ -6,7 +6,7 @@ using UnityEngine;
 /// Specialized spawner for portals that inherits from SpawnerBase.
 /// It handles the spawning of portal instances with random spawn times and positions.
 /// </summary>
-public class PortalSpawner : SpawnerBase<PortalPrefab, PortalPrefab>
+public class PortalSpawner : SpawnerBase<SpawnablePortal, SpawnablePortal>
 {
     /// <summary>
     /// Coroutine responsible for the portal spawning routine. It continuously attempts to spawn portals
@@ -19,7 +19,7 @@ public class PortalSpawner : SpawnerBase<PortalPrefab, PortalPrefab>
         while (chunkParent != null && chunkParent.gameObject.activeInHierarchy)
         {
             // Select a random portal from the list of spawnable portals
-            PortalPrefab chosenPortal = spawnablePrefabs[Random.Range(0, spawnablePrefabs.Count)];
+            SpawnablePortal chosenPortal = spawnablePrefabs[Random.Range(0, spawnablePrefabs.Count)];
 
             // If a valid portal is chosen, spawn it
             if (chosenPortal != null)
@@ -45,7 +45,7 @@ public class PortalSpawner : SpawnerBase<PortalPrefab, PortalPrefab>
     /// Gets a random spawn position within the chunk based on the chunk's size and height map.
     /// </summary>
     /// <returns>A random spawn position as a Vector3.</returns>
-    protected override Vector3 GetRandomSpawnPosition(PortalPrefab data)
+    protected override Vector3 GetRandomSpawnPosition(SpawnablePortal data)
     {
         // Generate random offsets within the chunk size
         float xOffset = Random.Range(0, chunkSize);
@@ -75,7 +75,7 @@ public class PortalSpawner : SpawnerBase<PortalPrefab, PortalPrefab>
     /// </summary>
     /// <param name="data">The portal data used to retrieve the associated prefab.</param>
     /// <returns>The GameObject prefab for the portal.</returns>
-    protected override GameObject GetPrefab(PortalPrefab data)
+    protected override GameObject GetPrefab(SpawnablePortal data)
     {
         return data.prefab; // Return the portal prefab associated with the data
     }
