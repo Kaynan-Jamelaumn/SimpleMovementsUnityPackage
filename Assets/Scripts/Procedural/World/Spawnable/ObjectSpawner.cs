@@ -39,25 +39,26 @@ public static class ObjectSpawner
             }
 
             // Check if an object should be spawned based on a random probability roll
-            if ((UnityEngine.Random.value * 100) < adjustedProbability)
-            {
-                // Get the position to spawn the object, including terrain height
-                Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y);
+            if (UnityEngine.Random.value * 100 >= adjustedProbability)
+                continue;
+            
+            // Get the position to spawn the object, including terrain height
+            Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y);
 
-                // Calculate the slope at the spawn position and skip placement if it exceeds the allowed slope threshold for the object
-                Vector3 normal = CalculateTerrainNormal(heightMap, x, y);
-                if (Vector3.Angle(Vector3.up, normal) > biomeObject.slopeThreshold)
-                    continue;
+            // Calculate the slope at the spawn position and skip placement if it exceeds the allowed slope threshold for the object
+            Vector3 normal = CalculateTerrainNormal(heightMap, x, y);
+            if (Vector3.Angle(Vector3.up, normal) > biomeObject.slopeThreshold)
+                continue;
 
-                // Check if the spawn position is free of overlapping objects
-                if (!IsPositionFree(spawnPosition, biomeObject.terrainObject))
-                    continue;
+            // Check if the spawn position is free of overlapping objects
+            if (!IsPositionFree(spawnPosition, biomeObject.terrainObject))
+                continue;
 
-                // Instantiate the object at the determined position with correct rotation
-                InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, heightMap, x, y);
-                biomeObject.currentNumberOfThisObject++; // Increment the count of objects placed
+            // Instantiate the object at the determined position with correct rotation
+            InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, heightMap, x, y);
+            biomeObject.currentNumberOfThisObject++; // Increment the count of objects placed
 
-            }
+            
 
         }
     }
@@ -69,15 +70,12 @@ public static class ObjectSpawner
     /// <param name="x">The X index of the terrain cell.</param>
     /// <param name="y">The Y index of the terrain cell.</param>
     /// <returns>The 3D position (X, Y, Z) for spawning the object with correct height.</returns>
-    private static Vector3 GetSpawnPosition(Vector3 worldPosition, float[,] heightMap, int x, int y)
+  private static Vector3 GetSpawnPosition(Vector3 worldPosition, float[,] heightMap, int x, int y)
     {
-
-        // Retrieve the height value at the specific (x, y) location from the height map
-        float height = heightMap[x, y];
-
         // Return the position with the correct height (Y-value) for the terrain
-        return new Vector3(worldPosition.x, height, worldPosition.z);
+        return new Vector3(worldPosition.x, heightMap[x, y], worldPosition.z);
     }
+
     /// <summary>
     /// Instantiates a biome object at a given position with a correct rotation, based on terrain normals.
     /// </summary>
@@ -309,8 +307,7 @@ public static class ObjectSpawner
         }
 
         // Calculate the size of the object (bounds size) and derive half of it to perform the overlap check
-        Vector3 objectSize = collider.bounds.size;
-        Vector3 halfExtents = objectSize / 2f;
+        Vector3 halfExtents = collider.bounds.size * 0.5f; // multiply by 0.5 is the same as to divide by two
 
         // Perform an overlap box check to detect other colliders in the area
         Collider[] hitColliders = Physics.OverlapBox(position, halfExtents, Quaternion.identity);
@@ -318,12 +315,10 @@ public static class ObjectSpawner
         foreach (Collider hitCollider in hitColliders)
         {
             // If the hit object is the terrain (ground), we ignore it since it's acceptable
-        
-            if (hitCollider.gameObject.CompareTag("Ground"))
-            {
-                continue; // Ignore terrain
-            }
-            return false; // If a non-terrain object overlaps, return false as the position is not free
+
+            if (!hitCollider.gameObject.CompareTag("Ground"))
+                return false;  // If a non-terrain object overlaps, return false as the position is not free
+
         }
 
         return true; // No overlap with non-terrain objects, return true to indicate the position is free

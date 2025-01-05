@@ -35,7 +35,7 @@ public static class HeightGenerator
 
     private static float CalculateHeight(TerrainGenerator terrainGenerator, float x, float y, int voronoiSeed, float height, List<Biome> availableBiomes, float inverseWidth, float inverseDepth)
     {
-        Biome biome = NoiseGenerator.Voronoi(new Vector2(x, y), terrainGenerator.VoronoiScale, terrainGenerator.NumVoronoiPoints, availableBiomes, voronoiSeed);
+        Biome biome = VoronoiBiomeGenerator.GetBiomeAtPosition(new Vector2(x, y), terrainGenerator.VoronoiScale, terrainGenerator.NumVoronoiPoints, availableBiomes, voronoiSeed);
         // Biome biome = NoiseGenerator.Voronoi(new Vector2(x, y), terrainGenerator.VoronoiScale, terrainGenerator.NumVoronoiPoints, availableBiomes, voronoiSeed);
         float amplitude = biome.amplitude;
         float frequency = biome.frequency;

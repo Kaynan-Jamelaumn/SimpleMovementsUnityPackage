@@ -12,87 +12,103 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     /// <summary>
     /// List of prefabs that can be spawned by this spawner.
     /// </summary>
+    [Tooltip("List of prefabs that can be spawned by this spawner.")]
     public List<TData> spawnablePrefabs;
 
     /// <summary>
     /// Maximum number of instances allowed globally.
     /// </summary>
+    [Tooltip("Maximum number of instances allowed globally.")]
     public int globalMaxInstances;
 
     /// <summary>
     /// Whether spawning should wait until initialization is complete.
     /// </summary>
+    [Tooltip("Whether spawning should wait until initialization is complete.")]
     public bool shouldWaitToStartSpawning;
 
     /// <summary>
     /// Time to wait before starting the spawn process.
     /// </summary>
+    [Tooltip("Time to wait before starting the spawn process.")]
     public float waitingTime;
 
     /// <summary>
     /// Minimum time to wait if random waiting time is enabled.
     /// </summary>
+    [Tooltip("Minimum time to wait if random waiting time is enabled.")]
     public float minWaitingTime;
 
     /// <summary>
     /// Maximum time to wait if random waiting time is enabled.
     /// </summary>
+    [Tooltip("Maximum time to wait if random waiting time is enabled.")]
     public float maxWaitingTime;
 
     /// <summary>
     /// Whether the waiting time before spawning should be randomized.
     /// </summary>
+    [Tooltip("Whether the waiting time before spawning should be randomized.")]
     public bool shouldHaveRandomWaitingTime;
 
     /// <summary>
     /// Time to wait before retrying to spawn after a failed attempt.
     /// </summary>
+    [Tooltip("Time to wait before retrying to spawn after a failed attempt.")]
     public float retryingSpawnTime = 2f;
 
     /// <summary>
     /// Dictionary holding active instances of spawned objects, mapped by their associated data.
     /// </summary>
+    [HideInInspector] // Hide this field in the Unity inspector as it is internal to the class
     protected Dictionary<TData, List<GameObject>> activeInstances = new Dictionary<TData, List<GameObject>>();
 
     /// <summary>
     /// Coroutine responsible for handling the spawn logic.
     /// </summary>
+    [HideInInspector]
     protected Coroutine spawnRoutine;
 
     /// <summary>
     /// Coroutine responsible for waiting until initialization is complete before spawning.
     /// </summary>
+    [HideInInspector]
     protected Coroutine waitForInitRoutine;
 
     /// <summary>
     /// Total count of active instances currently spawned.
     /// </summary>
+    [HideInInspector]
     protected int totalActiveInstances;
 
     /// <summary>
     /// Heightmap used to define spawn position in the Y.
     /// </summary>
+    [HideInInspector]
     protected float[,] heightMap;
-
 
     /// <summary>
     /// Biome used to define the biome positions.
     /// </summary>
+    [HideInInspector]
     protected Biome[,] biomeMap;
 
     /// <summary>
     /// Position of the chunk being processed.
     /// </summary>
+    [HideInInspector]
     protected Vector2 chunkPosition;
 
     /// <summary>
     /// Size of the chunk being processed.
     /// </summary>
+    [HideInInspector]
     protected int chunkSize;
 
     /// <summary>
     /// Parent transform for all spawned instances, typically a container for the spawned objects.
     /// </summary>
+    [HideInInspector]
     protected Transform chunkParent;
 
     /// <summary>
@@ -131,7 +147,7 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     }
 
     /// <summary>
-    /// Stops spawn routine and destroys all spawned instances when the object is disabled.
+    /// Stops spawn routine and destroys all spawned instances when the object is disabled. 
     /// </summary>
     private void OnDisable()
     {

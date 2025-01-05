@@ -57,32 +57,27 @@ Shader "Custom/TerrainSplatMapShaderHDRP"
     // Fragment shader to calculate the final color based on the splat maps and texture array
     float4 Frag(Varyings input) : SV_Target
     {
-        // Initialize color to black (transparent)
         float4 color = float4(0, 0, 0, 0);
+        int maxTextures = min(_TextureArrayLength, _SplatMapCount * 4);
 
-        // Loop through each splat map
-        for (int i = 0; i < _SplatMapCount; i++)
+        // Flattened loop for better performance
+        for (int textureIndex = 0; textureIndex < maxTextures; textureIndex++)
         {
-            // Sample the splat control values from the splat map at the given UV coordinates
-            float4 splatControl = SAMPLE_TEXTURE2D_ARRAY(_SplatMaps, sampler_SplatMaps, input.uv, i);
+            // Determine the splat map index and channel
+            int splatMapIndex = textureIndex / 4;
+            int channelIndex = textureIndex % 4;
 
-            // Loop through each texture channel (R, G, B, A) for the current splat map
-            for (int j = 0; j < 4; j++)
-            {
-                // Calculate the texture index for the current texture
-                int textureIndex = i * 4 + j;
+            // Sample the splat control and texture
+            float splatControl = SAMPLE_TEXTURE2D_ARRAY(_SplatMaps, sampler_SplatMaps, input.uv, splatMapIndex)[channelIndex];
+            float4 textureSample = SAMPLE_TEXTURE2D_ARRAY(_TextureArray, sampler_TextureArray, input.uv, textureIndex);
 
-                // Break if the texture index exceeds the available texture array length
-                if (textureIndex >= _TextureArrayLength) break;
-
-                // Accumulate the color by multiplying the splat control with the texture sample
-                color += splatControl[j] * SAMPLE_TEXTURE2D_ARRAY(_TextureArray, sampler_TextureArray, input.uv, textureIndex);
-            }
+            // Accumulate color
+            color += splatControl * textureSample;
         }
 
-        // Ensure the color is clamped between 0 and 1
         return saturate(color);
     }
+
 
     ENDHLSL
 
