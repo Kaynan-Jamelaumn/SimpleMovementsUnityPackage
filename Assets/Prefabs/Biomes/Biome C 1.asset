@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3fce94c1947b690419e95e09caf8f913, type: 3}
-  m_Name: Biome D
+  m_Name: Biome C 1
   m_EditorClassIdentifier: 
-  name: D
+  name: C1
   minHeight: 0
   maxHeight: 0
-  texture: {fileID: 2800000, guid: 6981165247b02434ba1723a379fd0a0c, type: 3}
-  amplitude: 160
-  frequency: 0.4
-  persistence: 0.624
+  texture: {fileID: 2800000, guid: d9470477fefdd8242ab17cb54b821558, type: 3}
+  amplitude: 10
+  frequency: 1
+  persistence: 1

@@ -242,14 +242,16 @@ public class TerrainGenerator : MonoBehaviour
             {
                 MapThreadInfo<DataStructure.TerrainData> threadInfo = terrainDataThreadInfoQueue.Dequeue();
 
-                Texture2D splatMap = new Texture2D(chunkSize, chunkSize);
+                Texture2D[] splatMap = null;
+                //Texture2D splatMap = new Texture2D(chunkSize, chunkSize);
                 if (terrainTextureBasedOnVoronoiPoints)
                 {
 
-                    splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.biomeMap, splatMap);
+                    splatMap = SplatMapGenerator.GenerateSplatMaps(this, threadInfo.parameter.biomeMap);
+                   // splatMap = SplatMapGenerator.GenerateSplatMapOutsideMainThread(this, threadInfo.parameter.biomeMap, splatMap);
 
                 }
-                else { splatMap = SplatMapGenerator.GenerateSplatMapBasedOnHeight(this, threadInfo.parameter.heightMap, splatMap); }
+              
                 threadInfo.parameter.splatMap = splatMap;
                 threadInfo.callback(threadInfo.parameter);
             }

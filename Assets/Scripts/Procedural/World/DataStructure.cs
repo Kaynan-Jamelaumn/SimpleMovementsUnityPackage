@@ -8,9 +8,9 @@ public static class DataStructure
 
         public readonly float[,] heightMap;
 
-        public Texture2D splatMap;
+        public Texture2D[] splatMap;
 
-        public MapData(float[,] heightMap, Texture2D splatMap = null)
+        public MapData(float[,] heightMap, Texture2D[] splatMap = null)
         {
             this.heightMap = heightMap;
             this.splatMap = splatMap;
@@ -22,7 +22,7 @@ public static class DataStructure
 
         public readonly MeshData meshData;
 
-        public Texture2D splatMap;
+        public Texture2D[] splatMap;
 
         public readonly float[,] heightMap;
 
@@ -34,7 +34,7 @@ public static class DataStructure
 
         public TerrainData(
             MeshData meshData,
-            Texture2D splatMap,
+            Texture2D[] splatMap,
             float[,] heightMap,
             TerrainGenerator terrainGenerator,
             Vector2 globalOffset,

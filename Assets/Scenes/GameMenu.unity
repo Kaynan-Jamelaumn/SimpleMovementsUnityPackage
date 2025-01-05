@@ -1134,7 +1134,7 @@ MonoBehaviour:
   NumVoronoiPoints: 8
   VoronoiSeed: 3
   VoronoiScale: 350
-  levelOfDetail: 0
+  levelOfDetail: 6
   biomeDefinitions:
   - BiomePrefab: {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
     runtimeObjects:
@@ -1155,6 +1155,30 @@ MonoBehaviour:
     runtimeObjects: []
     currentNumberOfObjects: 0
   - BiomePrefab: {fileID: 11400000, guid: 0f0d1615d0795ee4f9968530e67d5431, type: 2}
+    runtimeObjects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      probabilityToSpawn: 1
+      hasMaxNumberOfObjects: 1
+      currentNumberOfThisObject: 0
+      maxNumberOfThisObject: 1
+      slopeThreshold: 20
+      isClusterable: 0
+      clusterCount: 0
+      clusterRadius: 0
+    currentNumberOfObjects: 0
+  - BiomePrefab: {fileID: 11400000, guid: ecefaabfc5b237842a4d00ecd8fe005e, type: 2}
+    runtimeObjects:
+    - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
+      probabilityToSpawn: 1
+      hasMaxNumberOfObjects: 1
+      currentNumberOfThisObject: 0
+      maxNumberOfThisObject: 1
+      slopeThreshold: 20
+      isClusterable: 0
+      clusterCount: 0
+      clusterRadius: 0
+    currentNumberOfObjects: 0
+  - BiomePrefab: {fileID: 11400000, guid: de6782d1098714c4a94fa4eb96b731dd, type: 2}
     runtimeObjects:
     - terrainObject: {fileID: 416386656469751746, guid: 9175d08a6bdddeb48afa15d1b714d918, type: 3}
       probabilityToSpawn: 1
