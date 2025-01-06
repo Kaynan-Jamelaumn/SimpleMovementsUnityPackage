@@ -18,4 +18,5 @@ MonoBehaviour:
   texture: {fileID: 2800000, guid: 00ced6628f099374ebf7475a8b513648, type: 3}
   amplitude: 29
   frequency: 0.8
+  weight: 1.2
   persistence: 0.297

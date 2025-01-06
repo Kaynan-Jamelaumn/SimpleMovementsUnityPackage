@@ -12,7 +12,7 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Scriptable Objects/Biome", fileName = "NewBiome")]
 public class Biome : ScriptableObject
 {
-    /// <summary>Name of the biome.</summary>
+    /// <summary>Name of the biome-RECOMMENDED TO BE UNIQUE.</summary>
     public new string name;
 
     /// <summary>Minimum height value for the biome. Used to define its elevation range.</summary>
@@ -29,6 +29,9 @@ public class Biome : ScriptableObject
 
     /// <summary>Frequency of height details within the biome. Higher values result in more details.</summary>
     public float frequency;
+
+    /// <summary>How Likely is this Biome supposed to be chosen compared to other Biomes</summary>
+    public float weight = 1;
 
     /// <summary>
     /// Persistence controls the detail added or removed at each noise octave. 

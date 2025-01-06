@@ -13,68 +13,130 @@ using static DataStructure;
 public class TerrainGenerator : MonoBehaviour
 {
     // Constants
+    /// <summary>
+    /// Fixed size of a terrain chunk.
+    /// </summary>
+    [Tooltip("Fixed size of a terrain chunk.")]
     public const int chunkSize = 241;
 
     /// <summary>
     /// Gets the size of a terrain chunk.
     /// </summary>
+    [Tooltip("Property to get the terrain chunk size.")]
     public int ChunkSize => chunkSize;
 
     [Header("Noise Configuration")]
+    /// <summary>
+    /// Scaling factor for terrain generation.
+    /// </summary>
     [Tooltip("Scaling factor for terrain generation.")]
     [HideInInspector][SerializeField] private float scaleFactor = 1;
 
-    [Tooltip("Number of noise octaves.")]
+    /// <summary>
+    /// Number of noise octaves for terrain generation.
+    /// </summary>
+    [Tooltip("Number of noise octaves for terrain generation.")]
     [SerializeField] private int octaves = 5;
 
-    [Tooltip("Lacunarity value for noise generation.")]
+    /// <summary>
+    /// Lacunarity value for noise generation, affecting frequency scaling.
+    /// </summary>
+    [Tooltip("Lacunarity value for noise generation, affecting frequency scaling.")]
     [SerializeField] private float lacunarity = 2f;
 
     [Header("Texture")]
+    /// <summary>
+    /// Default texture for the terrain.
+    /// </summary>
     [Tooltip("Default texture for the terrain.")]
     [HideInInspector][SerializeField] private Texture2D defaultTexture;
 
+    /// <summary>
+    /// Compute shader for generating splat maps.
+    /// </summary>
     [Tooltip("Compute shader for generating splat maps.")]
     [HideInInspector][SerializeField] private ComputeShader splatMapShader;
 
-    [Tooltip("Minimum height for the terrain if it's NOT Voronoi  based texture.")]
+    /// <summary>
+    /// Minimum height for the terrain if it's NOT Voronoi-based texture.
+    /// </summary>
+    [Tooltip("Minimum height for the terrain if it's NOT Voronoi-based texture.")]
     [SerializeField] private float minHeight;
 
-    [Tooltip("Maximum height for the terrain  if it's NOT Voronoi based texture.")]
+    /// <summary>
+    /// Maximum height for the terrain if it's NOT Voronoi-based texture.
+    /// </summary>
+    [Tooltip("Maximum height for the terrain if it's NOT Voronoi-based texture.")]
     [SerializeField] private float maxHeight;
 
+    /// <summary>
+    /// Determines if terrain textures are based on Voronoi points.
+    /// </summary>
     [Tooltip("Determines if terrain textures are based on Voronoi points.")]
     [SerializeField] private bool terrainTextureBasedOnVoronoiPoints = true;
 
     [Header("Voronoi Noise Configuration")]
-    [Tooltip("Number of Voronoi points to generate.")]
+    /// <summary>
+    /// Number of Voronoi points to generate for terrain features.
+    /// </summary>
+    [Tooltip("Number of Voronoi points to generate for terrain features.")]
     [SerializeField] public int NumVoronoiPoints = 3;
 
-    [Tooltip("Seed for Voronoi noise generation.")]
+    /// <summary>
+    /// Seed value for Voronoi noise generation.
+    /// </summary>
+    [Tooltip("Seed value for Voronoi noise generation.")]
     [SerializeField] public int VoronoiSeed = 0;
 
-    [Tooltip("Scaling factor for Voronoi noise.")]
+    /// <summary>
+    /// Scaling factor for Voronoi noise, affecting detail size.
+    /// </summary>
+    [Tooltip("Scaling factor for Voronoi noise, affecting detail size.")]
     [SerializeField] public float VoronoiScale = 1;
 
+    /// <summary>
+    /// Determines if biome selection should be weighted or random.
+    /// </summary>
+    [Tooltip("Determines if biome selection should be weighted or random.")]
+    [SerializeField] public bool useWeightedBiome = true;
+
     [Header("Other Configurations")]
-    [Tooltip("Level of detail for terrain generation.")]
+    /// <summary>
+    /// Level of detail for terrain generation, controlling mesh resolution.
+    /// </summary>
+    [Tooltip("Level of detail for terrain generation, controlling mesh resolution.")]
     [SerializeField][Range(0, 6)] private int levelOfDetail;
 
     [Header("Biomes")]
+    /// <summary>
+    /// Definitions for biomes used in terrain generation.
+    /// </summary>
     [Tooltip("Definitions for biomes used in terrain generation.")]
     [SerializeField] private BiomeInstance[] biomeDefinitions;
 
     [Header("Objects")]
-    [Tooltip("Determines if objects should be spawned on the terrain.")]
+    /// <summary>
+    /// Determines if objects (e.g., trees, rocks) should be spawned on the terrain.
+    /// </summary>
+    [Tooltip("Determines if objects (e.g., trees, rocks) should be spawned on the terrain.")]
     [SerializeField] private bool shouldSpawnObjects = true;
 
-    [Tooltip("Base frequency for object clustering.")]
+    /// <summary>
+    /// Base frequency for clustering spawned objects.
+    /// </summary>
+    [Tooltip("Base frequency for clustering spawned objects.")]
     [SerializeField] private float clusterBaseFrequency = 0.1f;
 
-    [Tooltip("Amplitude for object clustering.")]
+    /// <summary>
+    /// Amplitude for object clustering, affecting density variations.
+    /// </summary>
+    [Tooltip("Amplitude for object clustering, affecting density variations.")]
     [SerializeField] private float clusterAmplitude = 1f;
 
-    [Tooltip("Intensity of object clustering.")]
+    /// <summary>
+    /// Intensity of object clustering, controlling grouping strength.
+    /// </summary>
+    [Tooltip("Intensity of object clustering, controlling grouping strength.")]
     [SerializeField] private float clusteringIntensity = 2f;
 
     // Private fields
@@ -180,7 +242,8 @@ public class TerrainGenerator : MonoBehaviour
                     VoronoiScale,
                     NumVoronoiPoints,
                     biomeDefinitions.Select(b => b.BiomePrefab).ToList(),
-                    VoronoiSeed
+                    VoronoiSeed,
+                    useWeightedBiome
                 );
                 biomeMap[x, y] = chosenBiome;
             }

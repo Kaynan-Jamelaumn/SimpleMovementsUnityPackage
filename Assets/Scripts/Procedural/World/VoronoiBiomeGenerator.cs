@@ -1,6 +1,9 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
-
+/// <summary>
+/// Generates Voronoi-based biomes for a procedurally generated map.
+/// </summary>
 public static class VoronoiBiomeGenerator
 {
     // Represents a point in the Voronoi diagram with an assigned biome.
@@ -18,13 +21,10 @@ public static class VoronoiBiomeGenerator
     }
 
     // Dictionary to store Voronoi points for different chunks (keyed by chunk coordinates).
-    private static readonly Dictionary<Vector2Int, List<VoronoiPoint>> ChunkVoronoiPoints = new Dictionary<Vector2Int, List<VoronoiPoint>>();
-
-    // Global random instance for generating random numbers.
-    private static readonly System.Random GlobalRandom = new System.Random();
+    private static readonly Dictionary<Vector2Int, List<VoronoiPoint>> ChunkVoronoiPoints = new();
 
     // Lock object used to ensure thread-safe access to the ChunkVoronoiPoints dictionary.
-    private static readonly object LockObject = new object();
+    private static readonly object LockObject = new();
 
     /// <summary>
     /// Generates Voronoi biome data for a given chunk or retrieves it if already generated.
@@ -34,7 +34,8 @@ public static class VoronoiBiomeGenerator
     /// <param name="numPoints">The number of Voronoi points to generate for the chunk.</param>
     /// <param name="availableBiomes">A list of biomes to assign to the Voronoi points.</param>
     /// <param name="seed">A seed for random number generation, ensuring reproducibility.</param>
-    public static void GenerateChunkVoronoi(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes, int seed)
+    /// <param name="useWeightedBiome">Whether to use weighted biome selection.</param>
+    public static void GenerateChunkVoronoi(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome)
     {
         // Ensure thread-safe access to the shared dictionary.
         lock (LockObject)
@@ -43,26 +44,23 @@ public static class VoronoiBiomeGenerator
             if (ChunkVoronoiPoints.ContainsKey(chunkCoord))
                 return;
 
-            // List to hold the Voronoi points generated for this chunk.
             var chunkPoints = new List<VoronoiPoint>();
-
             // Create a random generator with a seed based on the chunk coordinates.
-            var random = new System.Random(seed + chunkCoord.x * 73856093 ^ chunkCoord.y * 19349663);
+            var random = new System.Random(GenerateSeed(chunkCoord, seed));
 
             // Generate the specified number of Voronoi points for the chunk.
             for (int i = 0; i < numPoints; i++)
             {
                 // Generate a random position for the Voronoi point.
-                Vector2 randomPoint = GenerateRandomPoint(chunkCoord, scale, random);
-
-                // Select a random biome from the available biomes.
-                Biome randomBiome = availableBiomes[random.Next(availableBiomes.Count)];
-
+                var randomPoint = GenerateRandomPoint(chunkCoord, scale, random);
+                // Select a random biome from the available biomes, considering or not their weights.
+                Biome selectedBiome = useWeightedBiome
+                   ? WeightedRandomBiome(availableBiomes, random)
+                   : availableBiomes[random.Next(availableBiomes.Count)];
                 // Add the Voronoi point to the chunk's points list.
-                chunkPoints.Add(new VoronoiPoint(randomPoint, randomBiome));
+                chunkPoints.Add(new VoronoiPoint(randomPoint, selectedBiome));
             }
 
-            // Store the generated Voronoi points for the chunk in the dictionary.
             ChunkVoronoiPoints[chunkCoord] = chunkPoints;
         }
     }
@@ -76,19 +74,16 @@ public static class VoronoiBiomeGenerator
     /// <param name="availableBiomes">List of available biomes for selection.</param>
     /// <param name="seed">Seed for random generation.</param>
     /// <returns>The closest biome at the specified world position.</returns>
-    public static Biome GetBiomeAtPosition(Vector2 worldPosition, float scale, int numPoints, List<Biome> availableBiomes, int seed)
+    public static Biome GetBiomeAtPosition(Vector2 worldPosition, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome)
     {
         // Determine the chunk coordinates for the world position.
-        Vector2Int chunkCoord = GetChunkCoord(worldPosition, scale);
-
+        var chunkCoord = GetChunkCoord(worldPosition, scale);
         // Ensure the chunk and its neighboring chunks have their Voronoi points generated.
-        EnsureChunkAndNeighbors(chunkCoord, scale, numPoints, availableBiomes, seed);
-
+        EnsureChunkAndNeighbors(chunkCoord, scale, numPoints, availableBiomes, seed, useWeightedBiome);
         // Variable to track the closest biome.
         Biome closestBiome = null;
         // Variable to track the minimum distance squared (avoiding expensive square roots).
         float minDistanceSquared = float.MaxValue;
-
         // Iterate over all Voronoi points in the relevant chunks.
         foreach (var point in GetRelevantVoronoiPoints(chunkCoord))
         {
@@ -103,7 +98,6 @@ public static class VoronoiBiomeGenerator
             }
         }
 
-        // Return the closest biome.
         return closestBiome;
     }
 
@@ -144,22 +138,24 @@ public static class VoronoiBiomeGenerator
     /// <param name="numPoints">The number of points to generate per chunk.</param>
     /// <param name="availableBiomes">The list of available biomes.</param>
     /// <param name="seed">The seed for random generation.</param>
-    private static void EnsureChunkAndNeighbors(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes, int seed)
+    /// <param name="useWeightedBiome">Whether to use weighted biome selection.</param>
+    private static void EnsureChunkAndNeighbors(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome)
     {
-        // Loop through the chunk and its adjacent chunks to ensure all Voronoi points are generated.
-        foreach (var neighbor in GetAdjacentChunks(chunkCoord))
+        // Get the neighboring chunks that do not yet have Voronoi points generated.
+        var neighbors = GetAdjacentChunks(chunkCoord).Where(neighbor =>
         {
-            lock (LockObject) // Ensure thread-safe access to shared resources.
+            lock (LockObject)
             {
-                // If the neighboring chunk does not have Voronoi points, generate them.
-                if (!ChunkVoronoiPoints.ContainsKey(neighbor))
-                {
-                    GenerateChunkVoronoi(neighbor, scale, numPoints, availableBiomes, seed);
-                }
+                return !ChunkVoronoiPoints.ContainsKey(neighbor);
             }
+        });
+
+        // Generate Voronoi points for the neighboring chunks.
+        foreach (var neighbor in neighbors)
+        {
+            GenerateChunkVoronoi(neighbor, scale, numPoints, availableBiomes, seed, useWeightedBiome);
         }
     }
-
     /// <summary>
     /// Returns the coordinates of the neighboring chunks surrounding a given chunk.
     /// </summary>
@@ -169,14 +165,14 @@ public static class VoronoiBiomeGenerator
     {
         // Yield the current chunk and its 8 surrounding neighbors.
         yield return chunkCoord;
-        yield return chunkCoord + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.right;
-        yield return chunkCoord + Vector2Int.up;
-        yield return chunkCoord + Vector2Int.down;
-        yield return chunkCoord + Vector2Int.up + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.up + Vector2Int.right;
-        yield return chunkCoord + Vector2Int.down + Vector2Int.left;
-        yield return chunkCoord + Vector2Int.down + Vector2Int.right;
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int y = -1; y <= 1; y++)
+            {
+                if (x != 0 || y != 0) // Skip the center chunk since it's already included.
+                    yield return chunkCoord + new Vector2Int(x, y);
+            }
+        }
     }
 
     /// <summary>
@@ -188,18 +184,57 @@ public static class VoronoiBiomeGenerator
     {
         // Create a list to store the Voronoi points from the relevant chunks.
         var points = new List<VoronoiPoint>();
-
-        // Iterate through the chunk and its neighbors to gather all Voronoi points.
         foreach (var neighbor in GetAdjacentChunks(chunkCoord))
         {
-            // If the neighboring chunk has Voronoi points, add them to the list.
-            if (ChunkVoronoiPoints.TryGetValue(neighbor, out var neighborPoints))
+            // Iterate through the chunk and its neighbors to gather all Voronoi points.
+            lock (LockObject)
             {
-                points.AddRange(neighborPoints);
+                // If the neighboring chunk has Voronoi points, add them to the list.
+                if (ChunkVoronoiPoints.TryGetValue(neighbor, out var neighborPoints))
+                {
+                    points.AddRange(neighborPoints);
+                }
             }
         }
 
-        // Return the gathered Voronoi points.
         return points;
+    }
+
+    /// <summary>
+    /// Generates a unique seed using the chunk coordinates and a base seed.
+    /// </summary>
+    /// <param name="chunkCoord">The coordinates of the chunk.</param>
+    /// <param name="baseSeed">The base seed for randomness.</param>
+    /// <returns>A unique integer seed for the given chunk.</returns>
+    private static int GenerateSeed(Vector2Int chunkCoord, int baseSeed)
+    {
+        // Generate a unique seed using hash functions and chunk coordinates.
+        return baseSeed + chunkCoord.x * 73856093 ^ chunkCoord.y * 19349663;
+    }
+    /// <summary>
+    /// Selects a biome randomly from a list of biomes, taking into account the weights of each biome.
+    /// </summary>
+    /// <param name="biomes">The list of available biomes with associated weights.</param>
+    /// <param name="random">The random number generator to use.</param>
+    /// <returns>A randomly selected biome, based on weight distribution.</returns>
+    private static Biome WeightedRandomBiome(List<Biome> biomes, System.Random random)
+    {
+        // Calculate the total weight of all biomes.
+        float totalWeight = biomes.Sum(b => b.weight);
+
+        // Generate a random value within the range of the total weight.
+        float randomValue = (float)random.NextDouble() * totalWeight;
+
+        // Iterate through the biomes to find the one corresponding to the random value.
+        foreach (var biome in biomes)
+        {
+            if (randomValue < biome.weight)
+                return biome;
+
+            randomValue -= biome.weight;
+        }
+
+        // Return the first biome as a fallback in case of an error.
+        return biomes[0];
     }
 }

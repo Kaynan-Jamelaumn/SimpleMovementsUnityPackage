@@ -19,68 +19,87 @@ public class EndlessTerrain : MonoBehaviour
 {
     /// <summary>
     /// The maximum distance (in world units) from the viewer within which terrain chunks are displayed.
-    /// The distance is used to calculate how many chunks are needed around the viewer for a seamless experience.
     /// </summary>
-    [SerializeField] public const float maxViewDst = 250;
+    [Tooltip("Maximum distance (in world units) from the viewer within which terrain chunks are displayed.")]
+    [SerializeField]
+    public const float maxViewDst = 250;
 
     /// <summary>
     /// The object (e.g., player or camera) whose position determines the visibility of terrain chunks.
     /// </summary>
+    [Tooltip("The object (e.g., player or camera) whose position determines terrain visibility.")]
     public Transform viewer;
 
     /// <summary>
     /// The viewer's position in world space, represented as a 2D coordinate (x, z).
-    /// This simplifies distance calculations by ignoring the y-axis (height).
+    /// Used for efficient distance calculations, ignoring the y-axis (height).
     /// </summary>
+    [Tooltip("Viewer's position in world space (x, z), ignoring height.")]
     public static Vector2 viewerPosition;
 
     /// <summary>
-    /// Reference to the terrain generator, which creates the terrain data (e.g., height maps, textures).
+    /// Reference to the terrain generator, which creates terrain features such as height maps and textures.
     /// </summary>
+    [Tooltip("Reference to the terrain generator responsible for creating terrain data.")]
     static TerrainGenerator mapGenerator;
 
     /// <summary>
-    /// Scale factor that affects the terrain's features, such as the size and spacing of details.
+    /// Scale factor affecting terrain features, such as size and spacing.
     /// </summary>
+    [Tooltip("Scale factor affecting terrain features (size, spacing, etc.).")]
     float scaleFactor = 1.0f;
 
     /// <summary>
-    /// The size (in world units) of each terrain chunk. Chunks are square and their size determines 
-    /// how detailed or large each section of terrain is.
+    /// The size of each terrain chunk in world units.
     /// </summary>
+    [Tooltip("The size of each terrain chunk in world units.")]
     int chunkSize;
 
     /// <summary>
-    /// The number of chunks that fit within the maximum viewing distance.
-    /// This is calculated by dividing the maximum view distance by the chunk size.
+    /// Number of terrain chunks visible within the maximum viewing distance.
     /// </summary>
+    [Tooltip("Number of terrain chunks visible within the maximum viewing distance.")]
     int chunksVisibleInViewDst;
 
     /// <summary>
-    /// Determines if the number of visible chunks per side should be limited.
-    /// If enabled, this restricts the terrain generation to reduce memory usage and performance costs.
+    /// Enables or disables limiting the number of visible chunks per side.
+    /// Helps optimize performance by reducing terrain generation beyond a certain limit.
     /// </summary>
+    [Tooltip("Enable to limit the number of visible chunks per side.")]
     public bool shouldHaveMaxChunkPerSide = true;
 
     /// <summary>
-    /// The maximum number of chunks that can be generated per side when 
-    /// <see cref="shouldHaveMaxChunkPerSide"/> is enabled.
+    /// The maximum number of terrain chunks generated per side if limiting is enabled.
     /// </summary>
+    [Tooltip("Maximum number of terrain chunks generated per side.")]
     public int maxChunksPerSide = 5;
 
     /// <summary>
-    /// Dictionary storing terrain chunks, where the key is the chunk's 2D coordinate and the value is the <see cref="TerrainChunk"/> object.
+    /// Dictionary storing terrain chunks, keyed by their 2D coordinates.
     /// </summary>
+    [Tooltip("Dictionary storing terrain chunks, keyed by their 2D coordinates.")]
     Dictionary<Vector2, TerrainChunk> terrainChunkDictionary = new Dictionary<Vector2, TerrainChunk>();
 
     /// <summary>
     /// List of terrain chunks that were visible during the last frame update.
-    /// This allows efficient hiding of chunks that are no longer visible.
+    /// Used to hide chunks no longer in the viewing area.
     /// </summary>
+    [Tooltip("List of terrain chunks visible during the last frame update.")]
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
 
-    [SerializeField] PortalSettings portalSettings;
-    [SerializeField] MobSettings mobSettings;
+    /// <summary>
+    /// Settings for spawning portals in the terrain system.
+    /// </summary>
+    [Tooltip("Configuration settings for spawning portals.")]
+    [SerializeField]
+    PortalSettings portalSettings;
+
+    /// <summary>
+    /// Settings for spawning mobs in the terrain system.
+    /// </summary>
+    [Tooltip("Configuration settings for spawning mobs.")]
+    [SerializeField]
+    MobSettings mobSettings;
 
 
     int count = -1;
