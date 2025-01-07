@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
 
+//CURRENTLY UNSUED BUT FOR ROLLBACK/STUDY PUPORSES THIS IS STILL MANTAINED
 public class VoronoiCache
 {
     private static VoronoiCache _instance;

@@ -1134,6 +1134,7 @@ MonoBehaviour:
   NumVoronoiPoints: 8
   VoronoiSeed: 3
   VoronoiScale: 350
+  useWeightedBiome: 1
   levelOfDetail: 6
   biomeDefinitions:
   - BiomePrefab: {fileID: 11400000, guid: 31a7457c13cfabd4a950eb24859a9c87, type: 2}
@@ -1577,6 +1578,7 @@ MonoBehaviour:
   NumVoronoiPoints: 0
   VoronoiSeed: 0
   VoronoiScale: 0
+  useWeightedBiome: 0
   levelOfDetail: 0
   biomeDefinitions: []
   shouldSpawnObjects: 0

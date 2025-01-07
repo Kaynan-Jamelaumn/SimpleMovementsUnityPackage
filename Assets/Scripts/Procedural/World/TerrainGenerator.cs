@@ -80,7 +80,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Number of Voronoi points to generate for terrain features.
     /// </summary>
     [Tooltip("Number of Voronoi points to generate for terrain features.")]
-    [SerializeField] public int NumVoronoiPoints = 3;
+    [SerializeField] public int NumVoronoiPoints = 8;
 
     /// <summary>
     /// Seed value for Voronoi noise generation.
@@ -92,7 +92,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Scaling factor for Voronoi noise, affecting detail size.
     /// </summary>
     [Tooltip("Scaling factor for Voronoi noise, affecting detail size.")]
-    [SerializeField] public float VoronoiScale = 1;
+    [SerializeField] public float VoronoiScale = 350;
 
     /// <summary>
     /// Determines if biome selection should be weighted or random.
@@ -105,7 +105,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Level of detail for terrain generation, controlling mesh resolution.
     /// </summary>
     [Tooltip("Level of detail for terrain generation, controlling mesh resolution.")]
-    [SerializeField][Range(0, 6)] private int levelOfDetail;
+    [SerializeField][Range(0, 6)] private int levelOfDetail=6;
 
     [Header("Biomes")]
     /// <summary>
@@ -125,7 +125,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Base frequency for clustering spawned objects.
     /// </summary>
     [Tooltip("Base frequency for clustering spawned objects.")]
-    [SerializeField] private float clusterBaseFrequency = 0.1f;
+    [SerializeField] private float clusterBaseFrequency = 1f;
 
     /// <summary>
     /// Amplitude for object clustering, affecting density variations.
@@ -137,7 +137,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Intensity of object clustering, controlling grouping strength.
     /// </summary>
     [Tooltip("Intensity of object clustering, controlling grouping strength.")]
-    [SerializeField] private float clusteringIntensity = 2f;
+    [SerializeField] private float clusteringIntensity = 1f;
 
     // Private fields
     private float[,] heightMap;

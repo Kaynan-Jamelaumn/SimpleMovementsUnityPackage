@@ -132,3 +132,4 @@ MonoBehaviour:
   minDespawnTime: 55
   maxDespawnTime: 50
   shouldHaveRandomDespawnTime: 0
+  instantiateInsteadOfLoading: 0
