@@ -17,6 +17,11 @@ using static DataStructure;
 /// </example>
 public class EndlessTerrain : MonoBehaviour
 {
+
+    [Tooltip("If Should use HDRP Shader if not, will use URP Shaders(Lighter)")]
+    [SerializeField]
+    public bool shouldUseHDRPShaders = false;
+
     /// <summary>
     /// The maximum distance (in world units) from the viewer within which terrain chunks are displayed.
     /// </summary>
@@ -182,7 +187,7 @@ public class EndlessTerrain : MonoBehaviour
     {
         count++;
         int scaledChunkSize = Mathf.RoundToInt(chunkSize * scaleFactor);
-        TerrainChunk newChunk = new TerrainChunk(coord, scaledChunkSize, transform, portalSettings, mobSettings, count);
+        TerrainChunk newChunk = new TerrainChunk(coord, scaledChunkSize, transform, portalSettings, mobSettings, count, shouldUseHDRPShaders);
         terrainChunkDictionary.Add(coord, newChunk);
         return newChunk;
     }
@@ -225,6 +230,8 @@ public class EndlessTerrain : MonoBehaviour
 
     public class TerrainChunk
     {
+        bool shouldUseHDRPShaders = false;
+
         GameObject meshObject;
         Vector2 position;
         Bounds bounds;
@@ -249,8 +256,10 @@ public class EndlessTerrain : MonoBehaviour
         /// <param name="size">The size of the chunk in world units.</param>
         /// <param name="parent">The parent transform for the chunk.</param>
 
-        public TerrainChunk(Vector2 coord, int size, Transform parent, PortalSettings portalSettings, MobSettings mobSettings,  int count)
+        public TerrainChunk(Vector2 coord, int size, Transform parent, PortalSettings portalSettings, MobSettings mobSettings,  int count, bool shouldUseHDRPShaders)
         {
+            this.shouldUseHDRPShaders |= shouldUseHDRPShaders;
+
             position = coord * size; // The chunk's world position is its grid coordinate multiplied by its size.
             bounds = new Bounds(position, Vector2.one * size);  // The chunk's bounding box.
             Vector3 positionV3 = new Vector3(position.x, 0, position.y); // Convert 2D position to 3D for the GameObject.
@@ -298,6 +307,7 @@ public class EndlessTerrain : MonoBehaviour
 
             // Request map data from the terrain generator.
             mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
+            this.shouldUseHDRPShaders = shouldUseHDRPShaders;
         }
 
         /// <summary>
@@ -339,7 +349,7 @@ public class EndlessTerrain : MonoBehaviour
             // Apply terrain data to the chunk's components.
             terrainGenerator = terrainData.terrainGenerator;
             TextureGenerator textureGenerator = new TextureGenerator();
-            textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);
+            textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer, shouldUseHDRPShaders);
             //TextureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);   
             heightmap = terrainData.heightMap;
 

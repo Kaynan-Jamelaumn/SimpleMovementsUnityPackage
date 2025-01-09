@@ -32,10 +32,12 @@ public class TextureGenerator
     /// <param name="splatMaps">An array of <see cref="Texture2D"/> representing the splat maps used for terrain blending.</param>
     /// <param name="terrainGenerator">An instance of <see cref="TerrainGenerator"/> containing biome definitions and terrain data.</param>
     /// <param name="meshRenderer">The <see cref="MeshRenderer"/> to which the textures will be applied.</param>
-    public void AssignTexture(Texture2D[] splatMaps, TerrainGenerator terrainGenerator, MeshRenderer meshRenderer)
+    public void AssignTexture(Texture2D[] splatMaps, TerrainGenerator terrainGenerator, MeshRenderer meshRenderer, bool shouldUseHDRPShader)
     {
+        string shaderToUse = shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP";
         // Find the shader used for terrain splat maps
-        Shader cachedShader = Shader.Find("Custom/TerrainSplatMapShaderHDRP");
+        Shader cachedShader = Shader.Find("Custom/TerrainSplat" + shaderToUse);
+           // "MapShaderHDRP"); ;
         if (cachedShader == null)
         {
             Debug.LogError("Failed to find shader: Custom/TerrainSplatMapShaderHDRP");
@@ -134,8 +136,4 @@ public class TextureGenerator
 
         return standardizedTexture;
     }
-
-
-
-
 }
