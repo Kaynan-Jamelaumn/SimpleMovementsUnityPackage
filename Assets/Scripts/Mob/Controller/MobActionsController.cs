@@ -5,138 +5,91 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
 
+/// <summary>
+/// The <see cref="MobActionsController"/> class manages the behavior of animals in the game, including wandering, detecting predators,
+/// and being pursued by predators.
+/// </summary>
+/// <remarks>
+/// This class handles the animal's state transitions and interactions with other game objects.
+/// </remarks>
 public class MobActionsController : Mob
 {
-
     [SerializeField] Vector3 detectionDistance;
     [SerializeField] Vector3 offSetDetectionDistance;
     [SerializeField] Transform mobTransform;
 
-    public Transform MobTransform { get => mobTransform; set => mobTransform = value; }
-    public Vector3 OffSetDetectionDistance { get => offSetDetectionDistance; set => offSetDetectionDistance = value; }
-    public Vector3 DetectionDistance { get => detectionDistance; set => detectionDistance = value; }
-    // Alert the prey and initiate a chase when a predator is detected.
-    //public void AlertPrey(MobActionsController predator)
-    //{
-    //   // SetState(MobState.Chase);    // Set the state to Chase.
-    //    currentChaseTarget = null;
-    //    currentPredator = predator;      // Store the reference to the current predator.
-    //    StartCoroutine(RunFromPredator());  // Start the coroutine to handle running away from the predator.
-    //}
+    /// <summary>
+    /// Gets or sets the Transform of the mob.
+    /// </summary>
+    public Transform MobTransform
+    {
+        get => mobTransform;
+        set => mobTransform = value;
+    }
 
-    // Coroutine that manages the prey's behavior while being chased by a predator.
-    //private IEnumerator RunFromPredator()
-    //{
-    //    // Wait until the predator is within detection range.
-    //    while (currentPredator == null || Vector3.Distance(transform.position, currentPredator.transform.position) > detectionRange)
-    //    {
-    //        yield return null;
-    //    }
+    /// <summary>
+    /// Gets or sets the offset detection distance.
+    /// </summary>
+    public Vector3 OffSetDetectionDistance
+    {
+        get => offSetDetectionDistance;
+        set => offSetDetectionDistance = value;
+    }
 
-    //    // Predator detected, so we should run away.
-    //    while (currentPredator != null && Vector3.Distance(transform.position, currentPredator.transform.position) <= detectionRange)
-    //    {
-    //        RunAwayFromPredator();   // Execute the method to run away from the predator.
+    /// <summary>
+    /// Gets or sets the detection distance.
+    /// </summary>
+    public Vector3 DetectionDistance
+    {
+        get => detectionDistance;
+        set => detectionDistance = value;
+    }
 
-    //        yield return null;
-    //    }
-
-    //    // Predator out of range, run to our final location and go back to idle.
-    //    if (!navMeshAgent.pathPending && navMeshAgent.remainingDistance > navMeshAgent.stoppingDistance)
-    //    {
-    //        yield return null;
-    //    }
-    //    SetState(MobState.Idle);  // Set the state back to Idle.
-
-    //}
-
-    // Method responsible for determining the escape destination and updating the NavMeshAgent.
-    //private void RunAwayFromPredator()
-    //{
-    //    if (navMeshAgent != null && navMeshAgent.isActiveAndEnabled)
-    //    {
-    //        if (!navMeshAgent.pathPending && navMeshAgent.remainingDistance < navMeshAgent.stoppingDistance)
-    //        {
-    //            // Calculate the direction opposite to the predator and set the escape destination.
-    //            Vector3 runDirection = transform.position - currentPredator.transform.position;
-    //            Vector3 escapeDestination = transform.position + runDirection.normalized * (escapeMaxDistance * 2);
-    //            navMeshAgent.SetDestination(GetRandomNavMeshPosition(escapeDestination, escapeMaxDistance));
-    //        }
-    //        if (currentPredator != null && Vector3.Distance(transform.position, currentPredator.transform.position) > detectionRange)
-    //        {
-    //            StopChase();
-    //        }
-    //    }
-    //}
-    // Override the base class method to implement custom conditions for starting a chase.
-    //public override void CheckChaseConditions()
-    //{
-    //    // If already chasing a target or being chased by a predator, do nothing.
-    //    if (currentChaseTarget || currentPredator || currentPlayerTarget)
-    //        return;
-
-    //    // Define as camadas desejadas (Player e Mob)
-    //    Collider[] detectedObjects = detectionCast.DetectObjects(transform);
-
-    //    MobActionsController backUpPrey = null;
-
-    //    // Iterate through detected colliders to find prey.
-    //    foreach (var collider in detectedObjects)
-    //    {
-    //        MobActionsController prey = collider.GetComponent<MobActionsController>();
-    //        PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
-
-    //        if (player != null && Preys.Contains(MobType.Player))
-    //        {
-    //            StartPlayerChase(player);
-    //            return;
-    //        }
-
-    //        if (prey != null && Preys.Contains(prey.type))
-    //        {
-    //            backUpPrey = prey;
-    //        }
-    //    }
-
-    //    if (backUpPrey != null)
-    //    {
-    //        StartChase(backUpPrey);
-    //        return;
-    //    }
-
-    //    // Reset the chase target if no prey is found.
-    //    currentPlayerTarget = null;
-    //    currentChaseTarget = null;
-    //}
+    /// <summary>
+    /// Determines the available target for the mob.
+    /// </summary>
+    /// <returns>Returns the Transform of the available target, or null if no target is found.</returns>
     public Transform AvailableTarget()
     {
+        // Detects objects within the detection distance.
         Collider[] detectedObjects = detectionCast.DetectObjects(transform);
-
         MobActionsController backUpPrey = null;
 
         // Iterate through detected colliders to find prey.
         foreach (var collider in detectedObjects)
         {
+            // Check if the collider belongs to a MobActionsController.
             MobActionsController prey = collider.GetComponent<MobActionsController>();
+            // Check if the collider belongs to a PlayerStatusController.
             PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
 
-            if (player != null && Preys.Contains(MobType.Player))
+            // If the detected object is a player and is not currently targeted.
+            if (player != null && Preys.Contains("Player"))
                 if (player.gameObject != currentPlayerTarget)
+                    // Return the player's transform as the available target.
                     return player.transform;
 
+            // If the detected object is a prey.
             if (prey != null && Preys.Contains(prey.type))
+                // Store the prey as a backup prey.
                 backUpPrey = prey;
-
         }
 
+        // If a backup prey was found and is not currently targeted, return the backup prey's transform.
         if (backUpPrey != null && backUpPrey.gameObject != currentChaseTarget)
             return backUpPrey.transform;
-        return null;
 
+        // If no valid target was found, return null.
+        return null;
     }
 
+    /// <summary>
+    /// Determines the available targets for the mob.
+    /// </summary>
+    /// <returns>Returns a list of Transforms of available targets, or null if no targets are found.</returns>
     public List<Transform> AvailableTargets()
     {
+        // Detects objects within the detection distance.
         Collider[] detectedObjects = detectionCast.DetectObjects(transform);
         List<Transform> validPlayersTransforms = new List<Transform>();
         List<Transform> validMobsTransforms = new List<Transform>();
@@ -144,202 +97,62 @@ public class MobActionsController : Mob
         // Iterate through detected colliders to find prey.
         foreach (var collider in detectedObjects)
         {
+            // Check if the collider belongs to a MobActionsController.
             MobActionsController prey = collider.GetComponent<MobActionsController>();
+            // Check if the collider belongs to a PlayerStatusController.
             PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
 
-            if (player != null && Preys.Contains(MobType.Player))
+            // If the detected object is a player and is not currently targeted.
+            if (player != null && Preys.Contains("Player"))
                 if (player.gameObject != currentPlayerTarget && !validMobsTransforms.Contains(player.transform))
-                    validPlayersTransforms.Append<Transform>(player.transform);
+                    // Add the player's transform to the list of valid player transforms.
+                    validPlayersTransforms.Add(player.transform);
 
-            if (prey != null && Preys.Contains(prey.type) &&!validMobsTransforms.Contains(player.transform))
-                validMobsTransforms.Append<Transform>(prey.transform);
-
+            // If the detected object is a prey and is not currently targeted.
+            if (prey != null && Preys.Contains(prey.type) && !validMobsTransforms.Contains(prey.transform))
+                // Add the prey's transform to the list of valid mob transforms.
+                validMobsTransforms.Add(prey.transform);
         }
 
+        // Combine the lists of valid player and mob transforms.
         validPlayersTransforms.AddRange(validMobsTransforms);
-        if (validPlayersTransforms.Count > 0) 
-            return validPlayersTransforms;
-        return null;
 
+        // If there are any valid targets, return the list of valid targets.
+        if (validPlayersTransforms.Count > 0)
+            return validPlayersTransforms;
+
+        // If no valid targets were found, return null.
+        return null;
     }
 
-    //// Method to initiate a chase with a specific prey target.
-    //private void StartChase(MobActionsController prey)
-    //{
-    //    currentChaseTarget = prey;         // Set the current chase target.
-    //    SetState(MobState.Chase);        // Set the state to Chase.
-        
-    //}    
-    //private void StartPlayerChase(PlayerStatusController player)
-    //{
-    //    currentPlayerTarget = player;         // Set the current chase target.
-    //    SetState(MobState.Chase);        // Set the state to Chase.
-        
-    //}
-
-    //// Override the base class method to handle logic specific to the Chase state for predators.
-    //public override void HandleChaseState()
-    //{
-    //    // If there is a current prey target, alert the prey and start chasing.
-    //    if(currentPlayerTarget != null) 
-    //    {
-    //        StartCoroutine(ChasePlayerCoroutine());
-    //        return;    
-    //    }
-    //    if (currentChaseTarget != null)
-    //    {
-
-    //        currentChaseTarget.AlertPrey(this);    // Alert the prey about the chase.
-    //        StartCoroutine(ChasePrey());           // Start the coroutine to handle the chase.
-    //    }
-
-    //}
-
-    //// Coroutine to manage the chase behavior.
-    //private IEnumerator ChasePrey()
-    //{
-    //    float startTime = Time.time;
-
-    //    // Continue chasing until the max chase time is reached or the prey is caught or the predator is being Preyd.
-    //    while (currentChaseTarget != null && Vector3.Distance(transform.position, currentChaseTarget.transform.position) > navMeshAgent.stoppingDistance)
-    //    {
-    //        // If max chase time is exceeded or prey is lost, stop the chase.
-    //        if (Time.time - startTime >= maxChaseTime || currentChaseTarget == null)
-    //        {
-    //            StopChase();
-    //            yield break;
-    //        }
-
-    //        SetState(MobState.Chase);  // Update the state to Chase.
-    //        navMeshAgent.SetDestination(currentChaseTarget.transform.position);  // Set the destination to the prey.
-    //        if (currentChaseTarget != null && currentChaseTarget.isActiveAndEnabled)
-    //        {
-    //            float distance = Vector3.Distance(transform.position, currentChaseTarget.transform.position);
-    //            // Adicione esta verificação para morder apenas quando o predador estiver perto o suficiente.
-    //            if (distance <= attackDistance)
-    //            {
-    //                // Mordida
-    //                currentChaseTarget.ReceiveDamage(biteDamage);
-    //                yield return new WaitForSeconds(biteCooldown);
-
-    //                // Resetar o alvo da presa, retomar a perseguição ou voltar ao estado Idle.
-    //                currentChaseTarget = null;
-    //                HandleChaseState();
-    //                CheckChaseConditions();
-    //            }
-    //            // Se não estiver perto o suficiente, continue perseguindo.
-    //            else navMeshAgent.SetDestination(currentChaseTarget.transform.position);
-                
-    //        }
-    //        yield return null;
-    //    }
-    //}
-    //public void ChasePlayer(PlayerStatusController player)
-    //{
-    //    SetState(MobState.Chase);        // Set the state to Chase.
-    //    currentPlayerTarget = player;       // Set the current player target.
-    //    StartCoroutine(ChasePlayerCoroutine());  // Start the coroutine to handle chasing the player.
-    //}
-
-    // Coroutine to manage the chase behavior with the player.
-    //private IEnumerator ChasePlayerCoroutine()
-    //{
-    //    float startTime = Time.time;
-    //    float timeSinceLastBit = Time.time;
-    //    // Continue chasing until the max chase time is reached or the player is caught.
-    //    while (currentPlayerTarget != null && Vector3.Distance(transform.position, currentPlayerTarget.transform.position) > navMeshAgent.stoppingDistance)
-    //    {
-    //        if (playerHasMaxChaseTime)
-    //        {
-    //            // If max chase time is exceeded, stop the chase.
-    //            if (Time.time - startTime >= maxChaseTime)
-    //            {
-    //                StopChase();
-    //                yield break;
-    //            }
-    //        }
-
-    //        SetState(MobState.Chase);  // Update the state to Chase.
-    //        navMeshAgent.SetDestination(currentPlayerTarget.transform.position);  // Set the destination to the player.
-
-    //        // Check if the predator is close enough to bite the player.
-    //        if (Time.time - timeSinceLastBit >= biteCooldown)
-    //            {
-    //            // Bite logic
-    //            Vector3 boxPosition = mobTransform.position + offSetDetectionDistance;
-
-
-    //            Vector3 size = new Vector3(detectionDistance.x, detectionDistance.y, detectionDistance.z); // Tamanho da caixa de detecção
-    //            Collider[] hits = Physics.OverlapBox(boxPosition, size, mobTransform.rotation, LayerMask.NameToLayer("player"));; // Verificar colisões
-              
-    //            // Loop através de todas as colisões
-    //            foreach (Collider hit in hits)
-    //            {
-    
-    //                // Se o jogador está dentro da caixa de detecção
-    //                if (hit.gameObject == currentPlayerTarget.gameObject)
-    //                {
-    //                    // Atacar o jogador
-    //                    timeSinceLastBit = Time.time;
-    //                    currentPlayerTarget.HpManager.ConsumeHP(biteDamage);
-    //                    if (!isPartialWait) yield return new WaitForSeconds(biteCooldown);
-
-    //                    // Reset the player target, resume chasing or return to the Idle state.
-    //                    currentPlayerTarget = null;
-    //                    CheckChaseConditions();
-    //                    //HandleChaseState();
-    //                    break; // Saia do loop
-    //                }
-    //            }
-           
-    //        }
-
-    //        yield return null;
-    //    }
-    //    if (!currentPlayerTarget) StopChase();
-
-    //    // Player caught or out of range, stop the chase and return to Idle state.
-    //}
-
-    // Method to stop the chase and return to Idle state.
-    //private void StopChase()
-    //{
-    //    navMeshAgent.ResetPath();           // Reset the path to stop the chase movement.
-    //    if (currentChaseTarget !=null)
-    //    {
-
-    //        currentChaseTarget.currentPredator = null;
-    //        currentChaseTarget = null;          // Reset the prey target.
-    //    }
-    //    else currentPlayerTarget = null;
-    //    SetState(MobState.Idle);         // Set the state back to Idle.
-    //}
-
-
-    // Override the Die method to stop all coroutines before calling the base class's Die method.
+    /// <summary>
+    /// Overrides the Die method to stop all coroutines before calling the base class's Die method.
+    /// </summary>
     protected override void Die()
     {
-        StopAllCoroutines();  // Stop all coroutines specific to the prey.
-        base.Die();           // Call the base class's Die method.
+        StopAllCoroutines(); // Stop all coroutines specific to the prey.
+        base.Die(); // Call the base class's Die method.
     }
 
+    /// <summary>
+    /// Draws gizmos to visualize the detection distance in the editor.
+    /// </summary>
     private void OnDrawGizmos()
     {
-        Gizmos.color = Color.blue;
+        Gizmos.color = Color.blue; // Set gizmo color to blue.
 
-        // Saving the current Matrix 
+        // Saving the current Matrix
         Matrix4x4 oldMatrix = Gizmos.matrix;
 
-        // Applying  the gizmos to work with the mob rotation
+        // Applying the gizmos to work with the mob rotation
         Gizmos.matrix = Matrix4x4.TRS(mobTransform.position, mobTransform.rotation, Vector3.one);
 
-        // Drawgizmos
+        // Draw gizmos
         Vector3 boxPosition = offSetDetectionDistance;
         Vector3 size = new Vector3(detectionDistance.x, detectionDistance.y, detectionDistance.z);
         Gizmos.DrawWireCube(boxPosition, size);
 
-        // Restaurando a matriz de transformação anterior
+        // Restoring the previous transformation matrix
         Gizmos.matrix = oldMatrix;
     }
 }
-

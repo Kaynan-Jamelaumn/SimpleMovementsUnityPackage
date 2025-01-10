@@ -66,7 +66,7 @@ public abstract class MobMovementState : BaseState<MobMovementStateMachine.EMobM
             MobActionsController prey = collider.GetComponent<MobActionsController>();
             PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
 
-            if (player != null && Context.MobReference.PreysReference.Contains(MobType.Player))
+            if (player != null && Context.MobReference.PreysReference.Contains("Player"))
             {
                 StartPlayerChase(player);
                 return;
