@@ -21,85 +21,166 @@ public class Mob : MonoBehaviour
     public delegate void MobDestroyedHandler();
     public event MobDestroyedHandler OnMobDestroyed; // Event called when the mob is destroyed.
 
-    [SerializeField] private MobStatusController statusController; // Status controller for the mob.
+    /// <summary>
+    /// Status controller for the mob.
+    /// </summary>
+    [SerializeField] private MobStatusController statusController;
 
     [Header("Wander")]
+    /// <summary>
+    /// How far the animal can move in one go.
+    /// </summary>
     [Tooltip("How far the animal can move in one go.")]
-    [SerializeField] private float wanderDistance = 50f; // How far the animal can move in one go.
+    [SerializeField] private float wanderDistance = 50f;
 
+    /// <summary>
+    /// Maximum time the animal will wander.
+    /// </summary>
     [Tooltip("Maximum time the animal will wander.")]
-    [SerializeField] private float maxWalkTime = 6f; // Maximum time the animal will wander.
+    [SerializeField] private float maxWalkTime = 6f;
 
+    /// <summary>
+    /// Points that the animal will patrol.
+    /// </summary>
     [Tooltip("Points that the animal will patrol.")]
-    [SerializeField] protected Vector3[] patrolPoints; // Points that the animal will patrol.
-    [SerializeField] protected int currentPatrolPoint = 0; // Current patrol point index.
+    [SerializeField] protected Vector3[] patrolPoints;
+
+    /// <summary>
+    /// Current patrol point index.
+    /// </summary>
+    [SerializeField] protected int currentPatrolPoint = 0;
 
     [Header("Idle")]
+    /// <summary>
+    /// How long the animal takes a break for.
+    /// </summary>
     [Tooltip("How long the animal takes a break for.")]
-    [SerializeField] private float idleTime = 5f; // How long the animal takes a break for.
+    [SerializeField] private float idleTime = 5f;
 
     [Header("Chase")]
-
     [Header("Attributes")]
 
-    protected NavMeshAgent navMeshAgent; // Reference to the NavMeshAgent component.
-    protected Animator animator; // Reference to the Animator component.
+    /// <summary>
+    /// Reference to the NavMeshAgent component.
+    /// </summary>
+    protected NavMeshAgent navMeshAgent;
 
+    /// <summary>
+    /// Reference to the Animator component.
+    /// </summary>
+    protected Animator animator;
+
+    /// <summary>
+    /// Types of mobs.
+    /// </summary>
     [Tooltip("Types of mobs.")]
-    [SerializeField] public List<string> mobTypes = new List<string> { "Player", "Sheep", "Wolf", "Fox" }; // Types of mobs.
+    [SerializeField] public List<string> mobTypes = new List<string> { "Player", "Sheep", "Wolf", "Fox" };
 
+    /// <summary>
+    /// The type of mob as a string.
+    /// </summary>
     [Tooltip("The type of mob as a string.")]
-    [SerializeField] public string type; // The type of mob as a string.
+    [SerializeField] public string type;
 
+    /// <summary>
+    /// The range within which the prey can detect predators.
+    /// </summary>
     [Tooltip("The range within which the prey can detect predators.")]
-    [SerializeField] protected float detectionRange = 10f; // The range within which the prey can detect predators.
+    [SerializeField] protected float detectionRange = 10f;
 
+    /// <summary>
+    /// Reference to the cast detection.
+    /// </summary>
     [Tooltip("Reference to the cast detection.")]
-    [SerializeField] protected Cast detectionCast; // Reference to the cast detection.
+    [SerializeField] protected Cast detectionCast;
 
     [Header("Prey Variables")]
-    [Tooltip("The maximum distance the prey can go to not  escape from the predator.")]
-    [SerializeField] protected float escapeMaxDistance = 80f; // The maximum distance the prey can escape from the predator.
+    /// <summary>
+    /// The maximum distance the prey can escape from the predator.
+    /// </summary>
+    [Tooltip("The maximum distance the prey can escape from the predator.")]
+    [SerializeField] protected float escapeMaxDistance = 80f;
 
+    /// <summary>
+    /// Reference to the current predator pursuing the prey.
+    /// </summary>
     [Tooltip("Reference to the current predator pursuing the prey.")]
-    [SerializeField] protected MobActionsController currentPredator = null; // Reference to the current predator pursuing the prey.
+    [SerializeField] protected MobActionsController currentPredator = null;
 
     [Header("Predator Variables")]
+    /// <summary>
+    /// The maximum time the predator will chase prey.
+    /// </summary>
     [Tooltip("The maximum time the predator will chase prey.")]
-    [SerializeField] protected float maxChaseTime = 10f; // The maximum time the predator will chase prey.
+    [SerializeField] protected float maxChaseTime = 10f;
 
+    /// <summary>
+    /// The damage inflicted when the predator catches prey.
+    /// </summary>
     [Tooltip("The damage inflicted when the predator catches prey.")]
-    [SerializeField] protected int biteDamage = 3; // The damage inflicted when the predator catches prey.
+    [SerializeField] protected int biteDamage = 3;
 
-    [Tooltip("If after biting it should stop moving or keep chasing and attack.")]
-    [SerializeField] protected bool isPartialWait = false; // If after biting it should stop moving or keep chasing and then attack.
+    /// <summary>
+    /// If after biting it should stop moving or keep chasing and then attack.
+    /// </summary>
+    [Tooltip("If after biting it should stop moving or keep chasing and then attack.")]
+    [SerializeField] protected bool isPartialWait = false;
 
+    /// <summary>
+    /// The cooldown time between consecutive bites.
+    /// </summary>
     [Tooltip("The cooldown time between consecutive bites.")]
-    [SerializeField] protected float biteCooldown = 1f; // The cooldown time between consecutive bites.
+    [SerializeField] protected float biteCooldown = 1f;
 
+    /// <summary>
+    /// The distance within which the predator can attack prey.
+    /// </summary>
     [Tooltip("The distance within which the predator can attack prey.")]
-    [SerializeField] protected float attackDistance = 2f; // The distance within which the predator can attack prey.
+    [SerializeField] protected float attackDistance = 2f;
 
+    /// <summary>
+    /// Reference to the current prey being chased.
+    /// </summary>
     [Tooltip("Reference to the current prey being chased.")]
-    [SerializeField] protected MobActionsController currentChaseTarget; // Reference to the current prey being chased.
+    [SerializeField] protected MobActionsController currentChaseTarget;
 
     [Header("Player Chase Variables")]
+    /// <summary>
+    /// Determines if the player has a maximum chase time.
+    /// </summary>
     [Tooltip("Determines if the player has a maximum chase time.")]
-    [SerializeField] protected bool playerHasMaxChaseTime = false; // Determines if the player has a maximum chase time.
+    [SerializeField] protected bool playerHasMaxChaseTime = false;
 
+    /// <summary>
+    /// Reference to the current player target.
+    /// </summary>
     [Tooltip("Reference to the current player target.")]
-    [SerializeField] protected PlayerStatusController currentPlayerTarget; // Reference to the current player target.
+    [SerializeField] protected PlayerStatusController currentPlayerTarget;
 
+    /// <summary>
+    /// List of prey types.
+    /// </summary>
     [Tooltip("List of prey types.")]
-    [SerializeField] protected List<string> Preys; // List of prey types.
+    [SerializeField] protected List<string> Preys;
 
-    [SerializeField] private float stoppingMargin = 0; // Stopping margin for navigation.
+    /// <summary>
+    /// Stopping margin for navigation.
+    /// </summary>
+    [SerializeField] private float stoppingMargin = 0;
 
-    private Coroutine waitToMoveRoutine; // Coroutine reference.
-    private Coroutine waitToReachDestinationRoutine; // Coroutine reference.
+    /// <summary>
+    /// Coroutine reference for waiting to move.
+    /// </summary>
+    private Coroutine waitToMoveRoutine;
 
-    // Properties
-    public float WanderDistance { get => wanderDistance; set => wanderDistance = value; }
+    /// <summary>
+    /// Coroutine reference for waiting to reach destination.
+    /// </summary>
+    private Coroutine waitToReachDestinationRoutine;
+
+
+// Properties
+public float WanderDistance { get => wanderDistance; set => wanderDistance = value; }
     public float DetectionRange { get => detectionRange; }
     public Transform TransformReference { get => transform; }
     public Coroutine WaitToMoveRoutine { get => waitToMoveRoutine; set => waitToMoveRoutine = value; }

@@ -289,14 +289,14 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 5701993247689818098}
-  - component: {fileID: 68590106890630332}
   - component: {fileID: 9175384091686205056}
   - component: {fileID: 5414860707805858131}
   - component: {fileID: 4026889596531281738}
-  - component: {fileID: 5668813673084257047}
-  - component: {fileID: 7367921941314163370}
-  - component: {fileID: 8002380438087664721}
   - component: {fileID: 5731124351009575778}
+  - component: {fileID: 7367921941314163370}
+  - component: {fileID: 5668813673084257047}
+  - component: {fileID: 8002380438087664721}
+  - component: {fileID: 68590106890630332}
   m_Layer: 7
   m_Name: Animal (3)
   m_TagString: Untagged
@@ -320,51 +320,6 @@ Transform:
   - {fileID: 3592952246077288722}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &68590106890630332
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1607186504203915171}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9ab918ae0001507499d2c9b861abcef8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  statusController: {fileID: 7367921941314163370}
-  wanderDistance: 50
-  maxWalkTime: 6
-  patrolPoints: []
-  currentPatrolPoint: 0
-  idleTime: 2
-  currentState: 0
-  type: 1
-  detectionRange: 30
-  detectionCast:
-    castType: 0
-    castSize: 5
-    boxSize: {x: 0, y: 0, z: 0}
-    customOrigin: {x: 0, y: 0, z: 0}
-    customAngle: {x: 0, y: 0, z: 0}
-    targetLayers:
-      serializedVersion: 2
-      m_Bits: 192
-  escapeMaxDistance: 20
-  currentPredator: {fileID: 0}
-  maxChaseTime: 30
-  biteDamage: 1
-  isPartialWait: 0
-  biteCooldown: 5
-  attackDistance: 2
-  currentChaseTarget: {fileID: 0}
-  playerHasMaxChaseTime: 1
-  currentPlayerTarget: {fileID: 0}
-  Preys: 00000000
-  stoppingMargin: 0
-  detectionDistance: {x: 2, y: 2, z: 2}
-  offSetDetectionDistance: {x: 0, y: 0, z: 0}
-  mobTransform: {fileID: 2629004641081640666}
 --- !u!195 &9175384091686205056
 NavMeshAgent:
   m_ObjectHideFlags: 0
@@ -435,6 +390,37 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0.5, z: 0}
+--- !u!114 &5731124351009575778
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1607186504203915171}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d82e82cb7fc7194f9bea0e83ad19994, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  actionsController: {fileID: 68590106890630332}
+  mob: {fileID: 68590106890630332}
+  animator: {fileID: 0}
+  navMeshAgent: {fileID: 9175384091686205056}
+  statusController: {fileID: 0}
+--- !u!114 &7367921941314163370
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1607186504203915171}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 24b3e36abad18bd488dfd77b8a9c43e7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  healthManager: {fileID: 5668813673084257047}
+  speedManager: {fileID: 8002380438087664721}
 --- !u!114 &5668813673084257047
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -459,20 +445,6 @@ MonoBehaviour:
   isRegeneratingHp: 0
   isConsumingHp: 0
   hpImage: {fileID: 0}
---- !u!114 &7367921941314163370
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1607186504203915171}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 24b3e36abad18bd488dfd77b8a9c43e7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  healthManager: {fileID: 5668813673084257047}
-  speedManager: {fileID: 8002380438087664721}
 --- !u!114 &8002380438087664721
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -488,7 +460,7 @@ MonoBehaviour:
   speed: 5
   speedWhileRunningMultiplier: 2.3
   incrementFactor: 15
---- !u!114 &5731124351009575778
+--- !u!114 &68590106890630332
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -497,14 +469,46 @@ MonoBehaviour:
   m_GameObject: {fileID: 1607186504203915171}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1d82e82cb7fc7194f9bea0e83ad19994, type: 3}
+  m_Script: {fileID: 11500000, guid: 9ab918ae0001507499d2c9b861abcef8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  actionsController: {fileID: 68590106890630332}
-  mob: {fileID: 68590106890630332}
-  animator: {fileID: 0}
-  navMeshAgent: {fileID: 9175384091686205056}
-  statusController: {fileID: 0}
+  statusController: {fileID: 7367921941314163370}
+  wanderDistance: 50
+  maxWalkTime: 6
+  patrolPoints: []
+  currentPatrolPoint: 0
+  idleTime: 2
+  mobTypes:
+  - Player
+  - Sheep
+  - Wolf
+  - Fox
+  type: 1
+  detectionRange: 30
+  detectionCast:
+    castType: 0
+    castSize: 5
+    boxSize: {x: 0, y: 0, z: 0}
+    customOrigin: {x: 0, y: 0, z: 0}
+    customAngle: {x: 0, y: 0, z: 0}
+    targetLayers:
+      serializedVersion: 2
+      m_Bits: 192
+  escapeMaxDistance: 20
+  currentPredator: {fileID: 0}
+  maxChaseTime: 30
+  biteDamage: 1
+  isPartialWait: 0
+  biteCooldown: 5
+  attackDistance: 2
+  currentChaseTarget: {fileID: 0}
+  playerHasMaxChaseTime: 1
+  currentPlayerTarget: {fileID: 0}
+  Preys: []
+  stoppingMargin: 0
+  detectionDistance: {x: 2, y: 2, z: 2}
+  offSetDetectionDistance: {x: 0, y: 0, z: 0}
+  mobTransform: {fileID: 2629004641081640666}
 --- !u!1 &1880409748939515727
 GameObject:
   m_ObjectHideFlags: 0

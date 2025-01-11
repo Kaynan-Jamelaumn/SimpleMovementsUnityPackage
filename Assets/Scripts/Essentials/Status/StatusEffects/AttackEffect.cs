@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Defines the types of effects an attack can have.
+/// </summary>
 public enum AttackEffectType
 {
     Hp,
@@ -16,32 +19,124 @@ public enum AttackEffectType
     StaminaHealFactor,
     HpDamageFactor,
     StaminaDamageFactor,
-
 }
+
+/// <summary>
+/// Represents the effect of an attack in terms of type, amount, duration, and other attributes.
+/// </summary>
 [System.Serializable]
 public class AttackEffect
 {
+    /// <summary>
+    /// The type of effect.
+    /// </summary>
     public AttackEffectType effectType;
+
+    /// <summary>
+    /// The name of the effect.
+    /// </summary>
     public string effectName;
+
+    /// <summary>
+    /// The amount of the effect.
+    /// </summary>
     public float amount;
-    [Tooltip("the duration of the effect")] public float timeBuffEffect;
-    [Tooltip("how much time for the effect to tick again")] public float tickCooldown;
-    [Tooltip("the amount will be divided by the time")] public bool isProcedural;
-    [Tooltip("if the same affect is being applied can it be applied again or it wont and only reset the time")] public bool isStackable;
-    [Tooltip("if it is applied to the caster or the enemy")] public bool enemyEffect = true;
+
+    /// <summary>
+    /// The duration of the effect.
+    /// </summary>
+    [Tooltip("The duration of the effect")] public float timeBuffEffect;
+
+    /// <summary>
+    /// The cooldown time for the effect to tick again.
+    /// </summary>
+    [Tooltip("How much time for the effect to tick again")] public float tickCooldown;
+
+    /// <summary>
+    /// Indicates if the effect is procedural (the amount is divided by the time).
+    /// </summary>
+    [Tooltip("The amount will be divided by the time")] public bool isProcedural;
+
+    /// <summary>
+    /// Indicates if the effect can be applied again or only reset the time.
+    /// </summary>
+    [Tooltip("If the same effect is being applied, can it be applied again or it won't and only reset the time")]
+    public bool isStackable;
+
+    /// <summary>
+    /// Indicates if the effect is applied to the enemy.
+    /// </summary>
+    [Tooltip("If it is applied to the caster or the enemy")] public bool enemyEffect = true;
+
     [Header("Random effectPower")]
+
+    /// <summary>
+    /// Indicates if the amount is random.
+    /// </summary>
     public bool randomAmount;
+
+    /// <summary>
+    /// Indicates if the time buff effect duration is random.
+    /// </summary>
     public bool randomTimeBuffEffect;
+
+    /// <summary>
+    /// Indicates if the tick cooldown is random.
+    /// </summary>
     public bool randomTickCooldown;
+
+    /// <summary>
+    /// The minimum amount of the effect.
+    /// </summary>
     public float minAmount;
+
+    /// <summary>
+    /// The maximum amount of the effect.
+    /// </summary>
     public float maxAmount;
+
+    /// <summary>
+    /// The minimum time buff effect duration.
+    /// </summary>
     public float minTimeBuffEffect;
+
+    /// <summary>
+    /// The maximum time buff effect duration.
+    /// </summary>
     public float maxTimeBuffEffect;
+
+    /// <summary>
+    /// The minimum tick cooldown time.
+    /// </summary>
     public float minTickCooldown;
+
+    /// <summary>
+    /// The maximum tick cooldown time.
+    /// </summary>
     public float maxTickCooldown;
+
+    /// <summary>
+    /// The multiplier for critical damage.
+    /// </summary>
     public float criticalDamageMultiplier = 1.0f;
-    [Tooltip("probability of applying the effect")][Range(0f, 1f)] public float probabilityToApply =1;
+
+    /// <summary>
+    /// The probability of applying the effect.
+    /// </summary>
+    [Tooltip("Probability of applying the effect")][Range(0f, 1f)] public float probabilityToApply = 1;
+
+    /// <summary>
+    /// The critical chance of the effect.
+    /// </summary>
     [Range(0f, 1f)] public float criticalChance;
+
+    /// <summary>
+    /// The list of attack casts associated with this effect.
+    /// </summary>
     public List<AttackCast> attackCast;
-    [Tooltip("max number of targets this ability can be applied")] public int maxHitTimes;
+
+    /// <summary>
+    /// The maximum number of targets this ability can be applied to.
+    /// </summary>
+    [Tooltip("Max number of targets this ability can be applied to")] public int maxHitTimes;
 }
