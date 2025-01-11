@@ -4,7 +4,7 @@ using UnityEditor.EditorTools;
 using UnityEngine;
 using UnityEngine.Assertions;
 
-public class MobStatusController : MonoBehaviour
+public class MobStatusController : MonoBehaviour, IAssignmentsValidator
 {
     [SerializeField] private HealthManager healthManager;
     [SerializeField] private SpeedManager speedManager;
@@ -38,7 +38,7 @@ public class MobStatusController : MonoBehaviour
         }
             
     }
-    private void ValidateAssignments()
+    public void ValidateAssignments()
     {
         Assert.IsNotNull(healthManager, "Target HealthManager is not Asigned");
         Assert.IsNotNull(speedManager, "Target SppedNanager is not Asigned");

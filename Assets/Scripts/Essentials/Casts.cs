@@ -1,8 +1,15 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+
+/// <summary>
+/// Base class representing a cast used for detecting objects in the game world.
+/// </summary>
 [System.Serializable]
 public class CastBase
 {
+    /// <summary>
+    /// Enumeration of possible cast types.
+    /// </summary>
     public enum CastType
     {
         Sphere,
@@ -19,6 +26,10 @@ public class CastBase
     [SerializeField] public Vector3 customAngle = Vector3.zero;
     [SerializeField] public LayerMask targetLayers;
 
+    /// <summary>
+    /// Draws gizmos to visualize the cast in the Unity editor.
+    /// </summary>
+    /// <param name="transform">The transform of the object to visualize the cast from.</param>
     public virtual void DrawGizmos(Transform transform)
     {
         Gizmos.color = Color.yellow;
@@ -39,14 +50,15 @@ public class CastBase
         }
     }
 
+    /// <summary>
+    /// Detects objects within the cast area.
+    /// </summary>
+    /// <param name="transform">The transform of the object performing the cast.</param>
+    /// <returns>An array of colliders detected by the cast.</returns>
     public virtual Collider[] DetectObjects(Transform transform)
     {
         if (!transform) return new Collider[0];
-        int targetLayerMask = 0;
-        //foreach (LayerMask mask in targetLayers)
-        //{
-            targetLayerMask |= targetLayers.value;
-//        }
+        int targetLayerMask = targetLayers.value;
 
         switch (castType)
         {
@@ -71,6 +83,13 @@ public class CastBase
         }
     }
 
+    /// <summary>
+    /// Draws a wireframe capsule gizmo in the Unity editor.
+    /// </summary>
+    /// <param name="position">The position of the capsule's base.</param>
+    /// <param name="height">The height of the capsule.</param>
+    /// <param name="radius">The radius of the capsule.</param>
+    /// <param name="direction">The direction the capsule is facing.</param>
     private void DrawWireCapsule(Vector3 position, float height, float radius, Vector3 direction)
     {
         int segments = 20;
@@ -91,6 +110,10 @@ public class CastBase
         }
     }
 }
+
+/// <summary>
+/// Derived class for basic casting.
+/// </summary>
 [System.Serializable]
 public class Cast : CastBase
 {
@@ -99,14 +122,21 @@ public class Cast : CastBase
     //    base.DrawGizmos(transform, Color.yellow);
     //}
 }
+
+/// <summary>
+/// Derived class for attack casting with red gizmos.
+/// </summary>
 [System.Serializable]
 public class AttackCast : CastBase
 {
     //public float attackRange = 10f;
 
+    /// <summary>
+    /// Draws gizmos to visualize the attack cast in the Unity editor.
+    /// </summary>
+    /// <param name="transform">The transform of the object to visualize the cast from.</param>
     public override void DrawGizmos(Transform transform)
     {
-
         // Set the color of the gizmos to red
         Gizmos.color = Color.red;
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Assertions;
-public class MobAbilityController : BaseAbilityController<AbilityHolder>
+public class MobAbilityController : BaseAbilityController<AbilityHolder>, IAssignmentsValidator
 {
     [SerializeField] private MobActionsController mobActionController;
     //private Transform oldTransform;
@@ -58,7 +58,7 @@ public class MobAbilityController : BaseAbilityController<AbilityHolder>
 
     }
 
-    private void ValidateAssignments()
+    public void ValidateAssignments()
     {
         Assert.IsNotNull(targetTransform, "Target Transform is not assigned in MobAbilityController.");
         Assert.IsNotNull(mobActionController, "MobActionsController is not assigned in MobAbilityController.");
