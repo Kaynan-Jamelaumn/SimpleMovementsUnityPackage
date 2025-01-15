@@ -327,7 +327,7 @@ public class TerrainGenerator : MonoBehaviour
     public void RequestBiomeObjectData(Action<BiomeObjectData> callback, DataStructure.TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform)
     {
         ThreadStart threadStart = delegate {
-            BiomeObjectThread(callback, terrainData, globalOffset, chunkTransform);
+            BiomeObjectThread(callback, terrainData, globalOffset, chunkTransform, terrainData.meshData);
         };
 
         new Thread(threadStart).Start();
@@ -340,7 +340,7 @@ public class TerrainGenerator : MonoBehaviour
     /// <param name="terrainData">The terrain data used for object placement.</param>
     /// <param name="globalOffset">The global offset for the terrain generation.</param>
     /// <param name="chunkTransform">The transform of the terrain chunk.</param>
-    void BiomeObjectThread(Action<BiomeObjectData> callback, DataStructure.TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform)
+    void BiomeObjectThread(Action<BiomeObjectData> callback, DataStructure.TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform, MeshData meshData)
     {
         if (callback == null)
         {
@@ -348,7 +348,7 @@ public class TerrainGenerator : MonoBehaviour
             return;
         }
 
-        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform);
+        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform,  meshData);
 
         lock (biomeObjectDataThreadInfoQueue)
         {
@@ -431,7 +431,7 @@ public class TerrainGenerator : MonoBehaviour
                                 .FirstOrDefault(b => b.BiomePrefab == chosenBiome);
 
                             // Place objects for the selected biome at the calculated position.
-                            ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y);
+                            ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, levelOfDetail);
                         }
                     }
                 }

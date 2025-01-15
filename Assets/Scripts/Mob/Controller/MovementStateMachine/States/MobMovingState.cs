@@ -46,35 +46,4 @@ public class MobMovingState : MobMovementState
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
 
-    //private IEnumerator WaitToReachDestination()
-    //{
-    //    // Record the start time for measuring the walk time.
-    //    float startTime = Time.time;
-
-    //    // Continue the loop until the destination is reached or the maximum walk time is exceeded.
-    //    //while (navMeshAgent.pathPending || (navMeshAgent.isActiveAndEnabled && navMeshAgent.isOnNavMesh && navMeshAgent.remainingDistance > navMeshAgent.stoppingDistance))
-    //    while (Context.MobReference.NavMeshAgentReference.pathPending || (Context.MobReference.NavMeshAgentReference.isActiveAndEnabled && Context.MobReference.NavMeshAgentReference.isOnNavMesh &&
-    //    !HasReachedDestinationWithMargin()))
-
-    //    {
-    //        // If the maximum walk time is exceeded, reset the path and set the state to Idle.
-    //        if (currentPlayerTarget != null && playerHasMaxChaseTime && Time.time - startTime >= maxWalkTime || currentPlayerTarget == null && Time.time - startTime >= maxWalkTime)
-    //        {
-    //            if (currentPredator) currentPredator = null;
-    //            navMeshAgent.ResetPath();
-    //            SetState(MobState.Idle);
-    //            yield break;
-    //        }
-
-    //        // Check conditions to enter the Chase state during movement.
-    //        CheckChaseConditions();
-
-    //        yield return null;
-    //    }
-
-    //    // Destination has been reached, set the state to Idle.
-    //    if (!currentPlayerTarget) SetState(MobState.Idle);
-    //    else CheckChaseConditions();
-    //}
-
 }

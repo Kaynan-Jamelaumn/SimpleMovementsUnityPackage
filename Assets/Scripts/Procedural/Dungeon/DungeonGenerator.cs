@@ -9,7 +9,7 @@ using UnityEngine.Assertions;
 /// <summary>
 /// Manages the generation of a multi-floor dungeon with customizable room types, rules, and constraints.
 /// </summary>
-public class DungeonGenerator : MonoBehaviour
+public class DungeonGenerator : MonoBehaviour, IAssignmentsValidator
 {
     /// <summary>
     /// Represents a cell in the dungeon grid.
@@ -163,7 +163,7 @@ public class DungeonGenerator : MonoBehaviour
     /// <summary>
     /// Ensures necessary components are assigned.
     /// </summary>
-    private void ValidateAssignments()
+    public void ValidateAssignments()
     {
         // Example of a validation check (currently commented out)
         // Ensures that all critical components are properly assigned

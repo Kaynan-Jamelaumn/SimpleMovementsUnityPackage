@@ -17,7 +17,7 @@ public static class ObjectSpawner
     /// <param name="heightMap">The height map that provides the height values for the terrain.</param>
     /// <param name="x">The X index of the terrain cell being processed.</param>
     /// <param name="y">The Y index of the terrain cell being processed.</param>
-    public static void PlaceObjectsForBiome(Transform chunkTransform, Vector3 worldPosition, BiomeInstance biomeDefinition,  float[,] heightMap, int x, int y)
+    public static void PlaceObjectsForBiome(Transform chunkTransform, Vector3 worldPosition, BiomeInstance biomeDefinition,  float[,] heightMap, int x, int y, MeshData meshData, int lodFactor)
     {
         // Iterate through all objects defined in the biome
         foreach (BiomeObject biomeObject in biomeDefinition.runtimeObjects)
@@ -28,53 +28,158 @@ public static class ObjectSpawner
             continue;
 
 
-            float adjustedProbability = biomeObject.probabilityToSpawn;
-            // Adjust the probability to spawn based on clustering (if enabled)
-            if (biomeObject.isClusterable)
-            {
-                // Retrieve density map value for clustering at the current cell
-                float densityWeight = biomeObject.densityMap[x, y];
-                // Increase spawn probability near cluster centers by amplifying the density weight
-                adjustedProbability *= Mathf.Pow(densityWeight, 2); // Amplify clustering
-            }
+            float adjustedProbability = AdjustSpawnProbability(biomeObject, x, y);
 
             // Check if an object should be spawned based on a random probability roll
             if (UnityEngine.Random.value * 100 >= adjustedProbability)
                 continue;
-            
-            // Get the position to spawn the object, including terrain height
-            Vector3 spawnPosition = GetSpawnPosition(worldPosition, heightMap, x, y);
 
-            // Calculate the slope at the spawn position and skip placement if it exceeds the allowed slope threshold for the object
-            Vector3 normal = CalculateTerrainNormal(heightMap, x, y);
-            if (Vector3.Angle(Vector3.up, normal) > biomeObject.slopeThreshold)
+            // Check if a valid spawn position and normal can be determined.
+            // The method returns `false` if the position cannot be calculated (e.g., invalid terrain or out of bounds).
+            // Additionally, ensure the terrain slope is within the allowable threshold for the biome object
+            // by comparing the angle between the surface normal and the upward vector (Vector3.up).
+            // Finally, verify that the calculated spawn position is not occupied by another object.
+            if (!(TryGetSpawnPositionAndNormal(worldPosition, heightMap, meshData, chunkTransform, x, y, lodFactor, out var spawnPosition, out var normal) &&
+                IsValidSpawnPosition(spawnPosition, normal, biomeObject)))
                 continue;
 
-            // Check if the spawn position is free of overlapping objects
-            if (!IsPositionFree(spawnPosition, biomeObject.terrainObject))
-                continue;
 
-            // Instantiate the object at the determined position with correct rotation
+            // Instantiate the object
             InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, heightMap, x, y);
-            biomeObject.currentNumberOfThisObject++; // Increment the count of objects placed
+            biomeObject.currentNumberOfThisObject++;
 
-            
 
         }
     }
     /// <summary>
-    /// Retrieves the position on the terrain where an object should be spawned based on the height map at the given coordinates.
+    /// Adjusts the probability of spawning based on the density at a given position. This accounts for whether the biome object is clusterable or not.
     /// </summary>
-    /// <param name="worldPosition">The world position of the terrain cell being processed.</param>
-    /// <param name="heightMap">The height map that contains terrain height values.</param>
-    /// <param name="x">The X index of the terrain cell.</param>
-    /// <param name="y">The Y index of the terrain cell.</param>
-    /// <returns>The 3D position (X, Y, Z) for spawning the object with correct height.</returns>
-  private static Vector3 GetSpawnPosition(Vector3 worldPosition, float[,] heightMap, int x, int y)
+    /// <param name="biomeObject">The biome object representing the type of object being spawned.</param>
+    /// <param name="x">The x-coordinate on the density map for the spawn position(Terrain Cell).</param>
+    /// <param name="y">The y-coordinate on the density map for the spawn position(Terrain Cell).</param>
+    /// <returns>The adjusted spawn probability.</returns>
+    /// <remarks>
+    /// If clustering is enabled for the given biome object, the spawn probability is adjusted using the density weight at the specified (x, y) position.
+    /// The probability is amplified based on the square of the density weight.
+    /// </remarks>
+    private static float AdjustSpawnProbability(BiomeObject biomeObject, int x, int y)
     {
-        // Return the position with the correct height (Y-value) for the terrain
-        return new Vector3(worldPosition.x, heightMap[x, y], worldPosition.z);
+        if (!biomeObject.isClusterable)
+            return biomeObject.probabilityToSpawn;
+
+        // Adjust the probability to spawn based on clustering (if enabled)
+        float densityWeight = biomeObject.densityMap[x, y];
+
+        // Increase spawn probability near cluster centers by amplifying the density weight
+        return biomeObject.probabilityToSpawn * Mathf.Pow(densityWeight, 2);
     }
+
+    /// <summary>
+    /// Checks if a spawn position is valid based on the terrain slope and whether the position is free of obstacles.
+    /// </summary>
+    /// <param name="position">The 3D world position where the spawn is being considered.</param>
+    /// <param name="normal">The surface normal at the spawn position, used to check slope angle.</param>
+    /// <param name="biomeObject">The biome object, containing information about spawn constraints.</param>
+    /// <returns>True if the position is valid for spawning, false otherwise.</returns>
+    /// <remarks>
+    /// The spawn position is considered valid if the angle between the surface normal and the upward direction (Vector3.up) is within the allowable slope threshold defined by the biome object.
+    /// Additionally, the position must be free from obstacles, as checked by the IsPositionFree method.
+    /// </remarks>
+    private static bool IsValidSpawnPosition(Vector3 position, Vector3 normal, BiomeObject biomeObject)
+    {
+        return Vector3.Angle(Vector3.up, normal) <= biomeObject.slopeThreshold && IsPositionFree(position, biomeObject.terrainObject);
+    }
+
+    /// <summary>
+    /// Attempts to calculate the spawn position and surface normal for an object.
+    /// </summary>
+    /// <param name="worldPosition">World position of the terrain cell.</param>
+    /// <param name="heightMap">Height map for terrain data.</param>
+    /// <param name="meshData">Mesh data for finer detail.</param>
+    /// <param name="chunkTransform">Transform of the terrain chunk.</param>
+    /// <param name="x">X index of the cell.</param>
+    /// <param name="y">Y index of the cell.</param>
+    /// <param name="lodFactor">Level of detail factor for mesh data.</param>
+    /// <param name="spawnPosition">Calculated spawn position (output).</param>
+    /// <param name="normal">Calculated surface normal (output).</param>
+    /// <returns>True if position and normal were successfully determined; otherwise false.</returns>
+    private static bool TryGetSpawnPositionAndNormal(
+    Vector3 worldPosition,
+    float[,] heightMap,
+    MeshData meshData,
+    Transform chunkTransform,
+    int x,
+    int y,
+    int lodFactor,
+    out Vector3 spawnPosition,
+    out Vector3 normal)
+    {
+        if (lodFactor == 0)
+        {
+            // Use height map data for position and calculate normal
+            spawnPosition = new Vector3(worldPosition.x, heightMap[x, y], worldPosition.z);
+            normal = CalculateTerrainNormal(heightMap, x, y);
+            return true;
+        }
+        // Use mesh data for finer detail
+        int vertexIndex = y * meshData.uvs.GetLength(0) + x;
+        if (lodFactor > 0 && vertexIndex < meshData.vertices.Length)
+        {
+            spawnPosition = chunkTransform.TransformPoint(meshData.vertices[vertexIndex]);
+            normal = CalculateTerrainNormalFromMesh(meshData, x, y);
+            return true;
+        }
+
+        spawnPosition = Vector3.zero;
+        normal = Vector3.zero;
+        return false;
+    }
+
+    /// <summary>
+    /// Calculates the surface normal using mesh data.
+    /// </summary>
+    /// <param name="meshData">Mesh data of the terrain.</param>
+    /// <param name="x">X index of the cell.</param>
+    /// <param name="y">Y index of the cell.</param>
+    /// <returns>The calculated surface normal vector.</returns>
+    private static Vector3 CalculateTerrainNormalFromMesh(MeshData meshData, int x, int y)
+    {
+        int uvWidth = meshData.uvs.GetLength(0);
+        int index = y * uvWidth + x;
+
+        if (index + uvWidth >= meshData.vertices.Length)
+            return Vector3.up;
+
+        // Compute vectors from adjacent vertices
+        return Vector3.Cross
+        (
+            meshData.vertices[Mathf.Min(meshData.vertices.Length - 1, index + 1)] -
+            meshData.vertices[Mathf.Max(0, index - 1)],
+            meshData.vertices[Mathf.Min(meshData.vertices.Length - 1, index + uvWidth)] -
+            meshData.vertices[Mathf.Max(0, index - uvWidth)]
+        ).normalized;
+    }
+
+    /// <summary>
+    /// Calculates the surface normal using the height map.
+    /// </summary>
+    /// <param name="heightMap">Height map of the terrain.</param>
+    /// <param name="x">X index of the cell.</param>
+    /// <param name="y">Y index of the cell.</param>
+    /// <returns>The calculated surface normal vector.</returns>
+    private static Vector3 CalculateTerrainNormal(float[,] heightMap, int x, int y)
+    {
+        int width = heightMap.GetLength(0), height = heightMap.GetLength(1);
+
+        float heightL = heightMap[Mathf.Max(0, x - 1), y];
+        float heightR = heightMap[Mathf.Min(width - 1, x + 1), y];
+        float heightD = heightMap[x, Mathf.Max(0, y - 1)];
+        float heightU = heightMap[x, Mathf.Min(height - 1, y + 1)];
+
+        return new Vector3(heightL - heightR, 2f, heightD - heightU).normalized;
+    }
+
+  
 
     /// <summary>
     /// Instantiates a biome object at a given position with a correct rotation, based on terrain normals.
@@ -103,26 +208,45 @@ public static class ObjectSpawner
         GameObject obj = UnityEngine.Object.Instantiate(prefab, position, finalRotation);
         obj.transform.parent = chunkTransform; // Parent the object to the chunk's transform
     }
+
+
     /// <summary>
-    /// Calculates the terrain normal at a given position based on the surrounding height values from the height map.
+    /// Checks if the specified position is free of any overlapping objects, ensuring that the spawn location is valid for placing a new object.
     /// </summary>
-    /// <param name="heightMap">The height map used to calculate the terrain's normals.</param>
-    /// <param name="x">The X index of the terrain cell.</param>
-    /// <param name="y">The Y index of the terrain cell.</param>
-    /// <returns>The calculated normal vector of the terrain at the given position.</returns>
-    private static Vector3 CalculateTerrainNormal(float[,] heightMap, int x, int y)
+    /// <param name="position">The position in world space where the object will be placed.</param>
+    /// <param name="objectPrefab">The prefab of the object being placed, used to get its collider for overlap checks.</param>
+    /// <returns>
+    /// Returns `true` if the position is free of any overlapping objects (other than the terrain), otherwise `false` if there is overlap.
+    /// </returns>
+    private static bool IsPositionFree(Vector3 position, GameObject objectPrefab)
     {
-        // Get the height values of the neighboring cells (left, right, down, up)
-        float heightL = heightMap[Mathf.Max(0, x - 1), y];
-        float heightR = heightMap[Mathf.Min(heightMap.GetLength(0) - 1, x + 1), y];
-        float heightD = heightMap[x, Mathf.Max(0, y - 1)];
-        float heightU = heightMap[x, Mathf.Min(heightMap.GetLength(1) - 1, y + 1)];
+        // Get the collider component attached to the prefab (used for determining its size and boundaries)
+        Collider collider = objectPrefab.GetComponent<Collider>();
+        // If the prefab doesn't have a collider, it cannot be placed, so return false
+        if (collider == null)
+        {
+            Debug.LogError("No Collider Found for the Object Cant Spawn:" + objectPrefab.name);
+            return false;
+        }
 
-        // Calculate the normal using the cross product of vectors representing the slope in X and Y directions
-        Vector3 normal = new Vector3(heightL - heightR, 2f, heightD - heightU).normalized;
+        // Calculate the size of the object (bounds size) and derive half of it to perform the overlap check
+        Vector3 halfExtents = collider.bounds.size * 0.5f; // multiply by 0.5 is the same as to divide by two
 
-        return normal;
+        // Perform an overlap box check to detect other colliders in the area
+        Collider[] hitColliders = Physics.OverlapBox(position, halfExtents, Quaternion.identity);
+        // Iterate through all colliders found in the overlap area
+        foreach (Collider hitCollider in hitColliders)
+        {
+            // If the hit object is the terrain (ground), we ignore it since it's acceptable
+
+            if (!hitCollider.gameObject.CompareTag("Ground"))
+                return false;  // If a non-terrain object overlaps, return false as the position is not free
+
+        }
+
+        return true; // No overlap with non-terrain objects, return true to indicate the position is free
     }
+
     /// <summary>
     /// Generates a density map for clustering objects on the terrain, using Perlin noise and cluster centers.
     /// </summary>
@@ -270,9 +394,16 @@ public static class ObjectSpawner
                     //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
                     //Value:    1.0    0.75   0.5   0.25   0.0
                     // Quadratic falloff: closer to the center -> higher density
-                    maxDensity = math.max(maxDensity, math.pow(1 - distance / ClusterRadii[i], 2)); // Exponential falloff   // Quadratic falloff: closer to the center -> higher density
-                                                                                                    //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
-                                                                                                    // Value:   1.0    0.56   0.25  0.06   0.0
+                    // -----------------------------------------------------------------------------------------------
+
+                    maxDensity = Mathf.Max(maxDensity, (1 - distance / ClusterRadii[i]) * (1 - distance / ClusterRadii[i]));
+
+                    //maxDensity = math.max(maxDensity, math.pow(1 - distance / ClusterRadii[i], 2)); 
+                    // Exponential falloff   // Quadratic falloff: closer to the center -> higher density
+                                                                                                    
+                    //Distance: 0      0.25   0.5   0.75   1.0(clusterRadius)
+                                                                                                    
+                    // Value:   1.0    0.56   0.25  0.06   0.0
                 }
             }
 
@@ -286,43 +417,6 @@ public static class ObjectSpawner
     }
 
 
-
-    /// <summary>
-    /// Checks if the specified position is free of any overlapping objects, ensuring that the spawn location is valid for placing a new object.
-    /// </summary>
-    /// <param name="position">The position in world space where the object will be placed.</param>
-    /// <param name="objectPrefab">The prefab of the object being placed, used to get its collider for overlap checks.</param>
-    /// <returns>
-    /// Returns `true` if the position is free of any overlapping objects (other than the terrain), otherwise `false` if there is overlap.
-    /// </returns>
-    private static bool IsPositionFree(Vector3 position, GameObject objectPrefab)
-    {
-        // Get the collider component attached to the prefab (used for determining its size and boundaries)
-        Collider collider = objectPrefab.GetComponent<Collider>();
-        // If the prefab doesn't have a collider, it cannot be placed, so return false
-        if (collider == null)
-        {
-            Debug.LogError("No Collider Found for the Object Cant Spawn:" + objectPrefab.name);
-            return false;
-        }
-
-        // Calculate the size of the object (bounds size) and derive half of it to perform the overlap check
-        Vector3 halfExtents = collider.bounds.size * 0.5f; // multiply by 0.5 is the same as to divide by two
-
-        // Perform an overlap box check to detect other colliders in the area
-        Collider[] hitColliders = Physics.OverlapBox(position, halfExtents, Quaternion.identity);
-        // Iterate through all colliders found in the overlap area
-        foreach (Collider hitCollider in hitColliders)
-        {
-            // If the hit object is the terrain (ground), we ignore it since it's acceptable
-
-            if (!hitCollider.gameObject.CompareTag("Ground"))
-                return false;  // If a non-terrain object overlaps, return false as the position is not free
-
-        }
-
-        return true; // No overlap with non-terrain objects, return true to indicate the position is free
-    }
 
 
 

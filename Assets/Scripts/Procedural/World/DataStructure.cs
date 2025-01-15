@@ -98,6 +98,7 @@ public static class DataStructure
 
         [Tooltip("Transform of the chunk this biome object belongs to.")]
         public readonly Transform chunkTransform;
+        public readonly MeshData meshData;
 
         /// <summary>
         /// Constructor for BiomeObjectData.
@@ -112,13 +113,15 @@ public static class DataStructure
             Vector2 globalOffset,
             TerrainGenerator terrainGenerator,
             Biome[,] biomeMap,
-            Transform chunkTransform)
+            Transform chunkTransform,
+                        MeshData meshData)
         {
             this.heightMap = heightMap;
             this.globalOffset = globalOffset;
             this.terrainGenerator = terrainGenerator;
             this.biomeMap = biomeMap;
             this.chunkTransform = chunkTransform;
+            this.meshData = meshData;
         }
     }
 }
