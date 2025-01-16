@@ -1,6 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
-using UnityEditor.EditorTools;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -11,37 +9,51 @@ public class MobStatusController : MonoBehaviour, IAssignmentsValidator
 
     public HealthManager HealthManager { get => healthManager; }
     public SpeedManager SpeedManager { get => speedManager; }
+
+    private AbilitySpawner abilitySpawner;
+    private ItemSpawner itemSpawner;
+    private MobActionsController mobActionsController;
+    private MobAbilityController mobAbilityController;
+
     private void Awake()
     {
         healthManager = GetComponent<HealthManager>();
         speedManager = GetComponent<SpeedManager>();
+
+        // Cache components to avoid repeated GetComponent calls
+        abilitySpawner = GetComponent<AbilitySpawner>();
+        itemSpawner = GetComponent<ItemSpawner>();
+        mobActionsController = GetComponent<MobActionsController>();
+        mobAbilityController = GetComponent<MobAbilityController>();
     }
+
     private void Start()
     {
         ValidateAssignments();
     }
+
     private void Update()
     {
         if (healthManager.Hp <= 0)
         {
-            AbilitySpawner abilitySpawner = GetComponent<AbilitySpawner>();
-            ItemSpawnner itemSpawnner = GetComponent<ItemSpawnner>();
-            MobActionsController mobActionsController = GetComponent<MobActionsController>();
-            MobAbilityController mobAbilityController = GetComponent<MobAbilityController>();
-            if (abilitySpawner) abilitySpawner.SpawnAbility();
-            if (itemSpawnner) itemSpawnner.SpawnItem(this.transform.position);
-            if (mobActionsController) mobActionsController.StopAllCoroutines();
-            if (mobAbilityController) mobAbilityController.StopAllCoroutines();
-            healthManager.StopAllCoroutines();
-            speedManager.StopAllCoroutines();
-            Destroy(this.gameObject);
+            HandleDeath();
         }
-            
-    }
-    public void ValidateAssignments()
-    {
-        Assert.IsNotNull(healthManager, "Target HealthManager is not Asigned");
-        Assert.IsNotNull(speedManager, "Target SppedNanager is not Asigned");
     }
 
+    private void HandleDeath()
+    {
+        if (abilitySpawner) abilitySpawner.SpawnAbility();
+        if (itemSpawner) itemSpawner.SpawnItem(transform.position);
+        if (mobActionsController) mobActionsController.StopAllCoroutines();
+        if (mobAbilityController) mobAbilityController.StopAllCoroutines();
+        healthManager.StopAllCoroutines();
+        speedManager.StopAllCoroutines();
+        Destroy(gameObject);
+    }
+
+    public void ValidateAssignments()
+    {
+        Assert.IsNotNull(healthManager, "HealthManager is not assigned.");
+        Assert.IsNotNull(speedManager, "SpeedManager is not assigned.");
+    }
 }

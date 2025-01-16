@@ -1,6 +1,5 @@
 ﻿
 using UnityEngine;
-using UnityEngine;
 
 /// <summary>
 /// A static class that contains various data structures used for terrain and biome management.

@@ -400,7 +400,7 @@ public class DungeonGenerator : MonoBehaviour, IAssignmentsValidator
                 Vector3 roomPosition = new Vector3(x * offset.x, (floor - 1) * offset.y, -y * offset.z) + transform.position;
                 RoomBehaviour stairRoomInstance = Instantiate(stairRoom, roomPosition, Quaternion.identity, transform).GetComponent<RoomBehaviour>();
                 stairRoomInstance.UpdateRoom(cellBelow.status);
-                stairRoomInstance.UpdateUpperRoom(currentCell.status);
+                stairRoomInstance.UpdateRoom(currentCell.status, true);
 
                 // Replace any existing room type in the cell below with the stair room.
                 if (cellBelow.roomType)

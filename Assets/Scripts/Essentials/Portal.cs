@@ -100,7 +100,7 @@ public class Portal : MonoBehaviour
     private void HandleDungeonInstantiation(Collider player, PlayerMovementController movementController, CharacterController characterController)
     {
         // Destroy any existing dungeon generator
-        DungeonGenerator existingDungeonGenerator = FindObjectOfType<DungeonGenerator>();
+        DungeonGenerator existingDungeonGenerator = FindAnyObjectByType<DungeonGenerator>();
         if (existingDungeonGenerator != null)
         {
             Destroy(existingDungeonGenerator.gameObject);
@@ -133,7 +133,7 @@ public class Portal : MonoBehaviour
         SceneManager.sceneLoaded -= OnSceneLoaded;
 
         GameObject player = GameObject.FindGameObjectWithTag("Player");
-        DungeonGenerator dungeonGenerator = FindObjectOfType<DungeonGenerator>();
+        DungeonGenerator dungeonGenerator = FindAnyObjectByType<DungeonGenerator>();
 
         if (player != null && dungeonGenerator != null)
         {

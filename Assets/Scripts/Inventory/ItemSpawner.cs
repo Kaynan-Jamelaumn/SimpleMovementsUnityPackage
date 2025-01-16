@@ -8,7 +8,7 @@ public class ItemDrop
     [SerializeField, Range(0f, 1f)] public float spawnChance = 1;
 }
 
-public class ItemSpawnner : MonoBehaviour
+public class ItemSpawner : MonoBehaviour
 {
     [SerializeField] private List<ItemDrop> itemDrops = new List<ItemDrop>();
 

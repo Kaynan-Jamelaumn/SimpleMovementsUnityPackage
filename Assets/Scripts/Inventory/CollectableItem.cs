@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class CollectableItem : ItemSpawnner
+public class CollectableItem : ItemSpawner
 {
     [SerializeField] public ToolType toolTypeRequired;
     [SerializeField] private float health;

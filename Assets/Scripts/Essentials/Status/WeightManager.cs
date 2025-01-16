@@ -3,88 +3,154 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class WeightManager: StatusManager
+public class WeightManager : StatusManager
 {
-    private const float speedReductionByWeightConstant = 0.28f;
+    private const float SpeedReductionFactor = 0.28f;
 
     [Header("Weight-related fields")]
-    [SerializeField] private float weight;
-    [SerializeField] private float maxWeight = 100;
-    [SerializeField] private float incrementFactor = 15;
-
+    [SerializeField] private float weight = 0f;
+    [SerializeField] private float maxWeight = 100f;
+    [SerializeField] private float incrementFactor = 15f;
     [SerializeField] private bool shouldHaveWeight = true;
     [SerializeField] private Image weightImage;
 
     private Coroutine weightIncreaseEffectRoutine;
-    private List<CoroutineInfo> weightIncreaseEffectRoutines = new List<CoroutineInfo>();
-    public Coroutine WeightIncreaseEffectRoutine { get => weightIncreaseEffectRoutine; set => weightIncreaseEffectRoutine = value; }
-    public List<CoroutineInfo> WeightIncreaseEffectRoutines { get => weightIncreaseEffectRoutines; set => weightIncreaseEffectRoutines = value; }
-    public float MaxWeight { get => maxWeight; set => maxWeight = value; }
-    public float IncrementFactor { get => incrementFactor; set => incrementFactor = value; }
-    public float Weight { get => weight; set => weight = value; }
-    public float SpeedReductionByWeightConstant { get => speedReductionByWeightConstant; }
-    public bool ShouldHaveWeight { get => shouldHaveWeight; set => shouldHaveWeight = value; }
-    public Image WeightImage { get => weightImage; set => weightImage = value; }
+    private readonly List<CoroutineInfo> weightIncreaseEffectRoutines = new List<CoroutineInfo>();
+
+    public float MaxWeight
+    {
+        get => maxWeight;
+        set => maxWeight = Mathf.Max(0f, value);
+    }
+
+    public float IncrementFactor
+    {
+        get => incrementFactor;
+        set => incrementFactor = Mathf.Max(0f, value);
+    }
+
+    public float Weight
+    {
+        get => weight;
+        set => weight = Mathf.Clamp(value, 0f, MaxWeight);
+    }
+
+    public bool ShouldHaveWeight
+    {
+        get => shouldHaveWeight;
+        set => shouldHaveWeight = value;
+    }
+
+    public Image WeightImage
+    {
+        get => weightImage;
+        set => weightImage = value;
+    }
+
+    public List<CoroutineInfo> WeightIncreaseEffectRoutines => weightIncreaseEffectRoutines;
+
+    /// <summary>
+    /// Updates the weight bar UI.
+    /// </summary>
     public void UpdateWeightBar()
     {
+        if (WeightImage == null)
+        {
+            Debug.LogWarning("WeightImage is not assigned.");
+            return;
+        }
+
         UpdateBar(Weight, MaxWeight, WeightImage);
     }
+
+    /// <summary>
+    /// Adds weight to the current total.
+    /// </summary>
+    /// <param name="amount">The amount of weight to add.</param>
     public void AddWeight(float amount)
     {
-        Weight += amount;// Mathf.Min(Weight + amount, MaxWeight);
+        Weight += amount;
+        UpdateWeightBar();
     }
+
+    /// <summary>
+    /// Modifies the maximum weight capacity.
+    /// </summary>
+    /// <param name="amount">The amount to add to the maximum weight.</param>
     public void ModifyMaxWeight(float amount)
     {
         MaxWeight += amount;
+        UpdateWeightBar();
     }
+
+    /// <summary>
+    /// Consumes weight, reducing the current total.
+    /// </summary>
+    /// <param name="amount">The amount of weight to consume.</param>
     public void ConsumeWeight(float amount)
     {
-        if (Weight <= 0) return;
-        Weight -= amount;
+        if (Weight > 0)
+        {
+            Weight -= amount;
+            UpdateWeightBar();
+        }
     }
+
+    /// <summary>
+    /// Adds a weight-related effect.
+    /// </summary>
     public void AddWeightEffect(string effectName, float weightAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
         AddEffect(WeightIncreaseEffectRoutines, effectName, weightAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyWeightIncreaseEffectRoutine);
     }
 
-    public float CalculateSpeedBasedOnWeight(float speed)
+    /// <summary>
+    /// Calculates movement speed based on current weight.
+    /// </summary>
+    /// <param name="baseSpeed">The base movement speed.</param>
+    /// <returns>The adjusted speed based on weight.</returns>
+    public float CalculateSpeedBasedOnWeight(float baseSpeed)
     {
-        if (!ShouldHaveWeight) return speed;
+        if (!ShouldHaveWeight) return baseSpeed;
+
         float weightPercentage = Weight / MaxWeight;
-        float speedReductionByWeight = -SpeedReductionByWeightConstant;
+        float speedFactor = -SpeedReductionFactor;
 
-        if (weightPercentage >= 0.82f && weightPercentage <= 1.0f) speedReductionByWeight -= 0.255f;
-        else if (Weight > MaxWeight) speedReductionByWeight -= 0.5f;
+        if (weightPercentage >= 0.82f && weightPercentage <= 1.0f)
+            speedFactor -= 0.255f;
+        else if (Weight > MaxWeight)
+            speedFactor -= 0.5f;
 
-        float currentSpeedBasedOnWeightCarried = speed * Mathf.Exp(speedReductionByWeight * weightPercentage);
-        return currentSpeedBasedOnWeightCarried;
+        return baseSpeed * Mathf.Exp(speedFactor * weightPercentage);
     }
 
+    /// <summary>
+    /// Applies a weight-increase effect over time.
+    /// </summary>
     public IEnumerator ApplyWeightIncreaseEffectRoutine(string effectName, float weightIncreaseAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
-        float amount = weightIncreaseAmount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-        float maxWeightOriginalAmount = MaxWeight;
+        float increment = isProcedural ? weightIncreaseAmount / (timeBuffEffect / tickCooldown) : weightIncreaseAmount;
+        float originalMaxWeight = MaxWeight;
 
         float startTime = Time.time;
         while (Time.time < startTime + timeBuffEffect)
         {
             if (isProcedural)
             {
-                MaxWeight += amount;
+                MaxWeight += increment;
+                UpdateWeightBar();
                 yield return new WaitForSeconds(tickCooldown);
-                // Wait for the specified tickCooldown duration
             }
             else
             {
-                MaxWeight = amount;
+                MaxWeight = increment;
+                UpdateWeightBar();
+                yield break; // Non-procedural effects are applied instantly.
             }
-
         }
 
-        // Ensure the final stamina value is within the maximum limit
-        MaxWeight = maxWeightOriginalAmount;
+        // Restore original max weight
+        MaxWeight = originalMaxWeight;
+        UpdateWeightBar();
     }
 }
-
