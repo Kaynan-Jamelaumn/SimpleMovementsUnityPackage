@@ -1,11 +1,10 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Assertions;
-using System;
-using System.Collections.Generic;
-public class PlayerStatusController : MonoBehaviour
+
+public class PlayerStatusController : BaseStatusController
 {
-    // Models
+    [Header("Models")]
     [SerializeField] private PlayerMovementModel movementModel;
     [SerializeField] private StaminaManager staminaManager;
     [SerializeField] private HealthManager hpManager;
@@ -14,145 +13,103 @@ public class PlayerStatusController : MonoBehaviour
     [SerializeField] private WeightManager weightManager;
     [SerializeField] private ExperienceManager xpManager;
 
+    [Header("Controllers")]
     [SerializeField] private PlayerRollModel rollModel;
     [SerializeField] private PlayerDashModel dashModel;
-
     [SerializeField] private PlayerRollController rollController;
     [SerializeField] private PlayerDashController dashController;
 
-    public ExperienceManager XPManager { get { return xpManager; } }
     public BasePlayerClass PlayerClass { get; private set; }
 
-    public PlayerMovementModel MovementModel
+    public ExperienceManager XPManager => xpManager;
+    public PlayerMovementModel MovementModel => movementModel;
+    public StaminaManager StaminaManager => staminaManager;
+    public HealthManager HpManager => hpManager;
+    public FoodManager FoodManager => foodManager;
+    public DrinkManager DrinkManager => drinkManager;
+    public WeightManager WeightManager => weightManager;
+    public PlayerRollModel RollModel => rollModel;
+    public PlayerDashModel DashModel => dashModel;
+    public PlayerRollController RollController => rollController;
+    public PlayerDashController DashController => dashController;
+
+    protected override void CacheComponents()
     {
-        get { return movementModel; }
+        xpManager = GetComponentOrLogError(ref xpManager, "ExperienceManager");
+        movementModel = GetComponentOrLogError(ref movementModel, "PlayerMovementModel");
+        staminaManager = GetComponentOrLogError(ref staminaManager, "StaminaManager");
+        hpManager = GetComponentOrLogError(ref hpManager, "HealthManager");
+        foodManager = GetComponentOrLogError(ref foodManager, "FoodManager");
+        drinkManager = GetComponentOrLogError(ref drinkManager, "DrinkManager");
+        weightManager = GetComponentOrLogError(ref weightManager, "WeightManager");
+        rollModel = GetComponentOrLogError(ref rollModel, "PlayerRollModel");
+        dashModel = GetComponentOrLogError(ref dashModel, "PlayerDashModel");
     }
 
-    public StaminaManager StaminaManager
+    protected override void Start()
     {
-        get { return staminaManager; }
-    }
-
-    public HealthManager HpManager
-    {
-        get { return hpManager; }
-    }
-
-    public FoodManager FoodManager
-    {
-        get { return foodManager; }
-    }
-
-    public DrinkManager DrinkManager
-    {
-        get { return drinkManager; }
-    }
-
-    public WeightManager WeightManager
-    {
-        get { return weightManager; }
-    }
-
-    public PlayerRollModel RollModel
-    {
-        get { return rollModel; }
-    }
-
-    public PlayerDashModel Dashmodel
-    {
-        get { return dashModel; }
-    }
-
-    public PlayerRollController RollController
-    {
-        get { return rollController; }
-    }
-
-    public PlayerDashController DashController
-    {
-        get { return dashController; }
-    }
-
-    private void Awake()
-    {
-        // Assign models
-        if(!xpManager) xpManager = GetComponent<ExperienceManager>();
-        if (!movementModel) movementModel = GetComponent<PlayerMovementModel>();
-        if (!staminaManager) staminaManager = GetComponent<StaminaManager>();
-        if (!hpManager) hpManager = GetComponent<HealthManager>();
-        if (!foodManager) foodManager = GetComponent<FoodManager>();
-        if (!drinkManager) drinkManager = GetComponent<DrinkManager>();
-        if (!weightManager) weightManager = GetComponent<WeightManager>();
-        if (!rollModel) rollModel = GetComponent<PlayerRollModel>();
-        if (!dashModel) dashModel = GetComponent<PlayerDashModel>();
-
-    }
-    private void Start()
-    {
-        ValidateAsignments();
-        // Initialize player status variables
+        base.Start();
         xpManager.OnSkillPointGained += HandleSkillPointGained;
-        staminaManager.IsRegeneratingStamina = false;
-        hpManager.IsRegeneratingHp = false;
         InitializePlayerClass();
-
-
     }
 
     private void Update()
     {
         UpdateStatusBars();
     }
-    private void ValidateAsignments()
+
+    public override void ValidateAssignments()
     {
-        Assert.IsNotNull(xpManager, "ExperienceManager is not assigned in xpManager.");
-        Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned in movementModel.");
-        Assert.IsNotNull(staminaManager, "StaminaManager is not assigned in staminaManager.");
-        Assert.IsNotNull(hpManager, "HealthManager is not assigned in hpManager.");
-        Assert.IsNotNull(foodManager, "FoodManager is not assigned in  foodManager.");
-        Assert.IsNotNull(drinkManager, "DrinkManager is not assigned in  drinkManager.");
-        Assert.IsNotNull(weightManager, "WeightManager is not assigned in  weightManager.");
-        Assert.IsNotNull(rollModel, "PlayerRollModel is not assigned in  rollModel.");
-        Assert.IsNotNull(dashModel, "PlayerDashModel is not assigned in  dashModel.");
+        Assert.IsNotNull(xpManager, "ExperienceManager is not assigned.");
+        Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned.");
+        Assert.IsNotNull(staminaManager, "StaminaManager is not assigned.");
+        Assert.IsNotNull(hpManager, "HealthManager is not assigned.");
+        Assert.IsNotNull(foodManager, "FoodManager is not assigned.");
+        Assert.IsNotNull(drinkManager, "DrinkManager is not assigned.");
+        Assert.IsNotNull(weightManager, "WeightManager is not assigned.");
+        Assert.IsNotNull(rollModel, "PlayerRollModel is not assigned.");
+        Assert.IsNotNull(dashModel, "PlayerDashModel is not assigned.");
     }
+
     private void UpdateStatusBars()
     {
-        if (staminaManager.StaminaImage) staminaManager.UpdateStaminaBar();
-        if (hpManager.HpImage) hpManager.UpdateHpBar();
-        if (foodManager.FoodImage) foodManager.UpdateFoodBar();
-        if (drinkManager.DrinkImage) drinkManager.UpdateDrinkBar();
-        if (weightManager.WeightImage) weightManager.UpdateWeightBar();
+        staminaManager?.UpdateStaminaBar();
+        hpManager?.UpdateHpBar();
+        foodManager?.UpdateFoodBar();
+        drinkManager?.UpdateDrinkBar();
+        weightManager?.UpdateWeightBar();
     }
+
     private void OnDestroy()
     {
-        // Unsubscribe when the object is destroyed to prevent memory leaks
         if (xpManager != null)
         {
             xpManager.OnSkillPointGained -= HandleSkillPointGained;
         }
     }
+
     public void SelectPlayerClass(string className)
     {
-        BasePlayerClass selectedClass = null;
-
-        switch (className.ToLower())
+        PlayerClass = className.ToLower() switch
         {
-            case "warrior":
-                selectedClass = new WarriorClass();
-                break;
-            //case "mage":
-            //    selectedClass = new MageClass();
-            //    break;
-                // Add more cases for additional classes
-        }
+            "warrior" => new WarriorClass(),
+            _ => null
+        };
 
-        if (selectedClass != null)
+        if (PlayerClass == null)
         {
-            PlayerClass = selectedClass;
+            Debug.LogWarning($"Invalid class name: {className}");
         }
     }
-    private void InitializePlayerClass( )
+
+    private void InitializePlayerClass()
     {
+        if (PlayerClass == null)
+        {
+            Debug.LogWarning("PlayerClass is not initialized.");
+            return;
+        }
+
         hpManager.MaxHp = PlayerClass.health;
         staminaManager.MaxStamina = PlayerClass.stamina;
         movementModel.Speed = PlayerClass.speed;
@@ -175,10 +132,10 @@ public class PlayerStatusController : MonoBehaviour
                 break;
             case "stamina":
                 staminaManager.ModifyMaxStamina(staminaManager.IncrementFactor);
-                break;  
+                break;
             case "speed":
                 movementModel.Speed += movementModel.SpeedIncrementFactor;
-                break;  
+                break;
             case "hunger":
                 foodManager.ModifyMaxFood(foodManager.IncrementFactor);
                 break;
@@ -193,63 +150,96 @@ public class PlayerStatusController : MonoBehaviour
                 return;
         }
 
-        xpManager.SkillPoints--; // Use up a skill point
+        xpManager.SkillPoints--;
     }
 
-    // Method to handle the skill point gained event
     private void HandleSkillPointGained()
     {
         Debug.Log("Skill point gained! Time to level up!");
+    }
+
+    public IEnumerator ApplySpeedEffectRoutine(string effectName, float speedAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
+    {
+        float elapsedTime = 0f;
+        float increment = isProcedural ? speedAmount / (timeBuffEffect / tickCooldown) : speedAmount;
+
+        while (elapsedTime < timeBuffEffect)
+        {
+            if (isProcedural)
+            {
+                movementModel.Speed += increment;
+                yield return new WaitForSeconds(tickCooldown);
+                elapsedTime += tickCooldown;
+            }
+            else
+            {
+                movementModel.Speed = speedAmount;
+                yield return new WaitForSeconds(timeBuffEffect);
+                break;
+            }
+        }
+
+        movementModel.Speed -= speedAmount;
+    }
+
+    public void StopAllEffects(bool isBuff)
+    {
+        staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, isBuff);
+        hpManager.StopAllEffectsByType(hpManager.HpEffectRoutines, isBuff);
+        foodManager.StopAllEffectsByType(foodManager.FoodEffectRoutines, isBuff);
+        drinkManager.StopAllEffectsByType(drinkManager.DrinkEffectRoutines, isBuff);
     }
 
     public void ModifySpeed(float amount)
     {
         movementModel.Speed += amount;
     }
-
-    
-    public IEnumerator ApplySpeedEffectRoutine(string effectName, float speedAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
+    public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
-        float amount = speedAmount;
-        float speedOriginalAmount = amount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-
-
-        while (Time.time < Time.time + timeBuffEffect)
+        switch (effect.effectType)
         {
-            if (isProcedural)
-            {
-               movementModel.Speed += amount;
-                yield return new WaitForSeconds(tickCooldown);
-                // Wait for the specified tickCooldown duration
-            }
-            else
-            {
-                movementModel.Speed = amount;
-            }
-
+            case AttackEffectType.Stamina:
+                if (timeBuffEffect == 0) StaminaManager.AddStamina(amount);
+                else StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.Hp:
+                if (timeBuffEffect == 0) HpManager.AddHp(amount);
+                else HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.Food:
+                if (timeBuffEffect == 0) FoodManager.AddFood(amount);
+                else FoodManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.Drink:
+                if (timeBuffEffect == 0) DrinkManager.AddDrink(amount);
+                else DrinkManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.Weight:
+                if (timeBuffEffect == 0) WeightManager.AddWeight(amount);
+                else WeightManager.AddWeightEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpHealFactor:
+                HpManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpDamageFactor:
+                HpManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.StaminaHealFactor:
+                StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.StaminaDamageFactor:
+                StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.StaminaRegeneration:
+                StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpRegeneration:
+                HpManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
         }
-
-        // Ensure the final stamina value is within the maximum limit
-        movementModel.Speed -= speedOriginalAmount;
-    }
-
-    public void StopAllDebuffEffects()
-    {
-        staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, false);
-        hpManager.StopAllEffectsByType(hpManager.HpEffectRoutines, false);
-        foodManager.StopAllEffectsByType(foodManager.FoodEffectRoutines, false);
-        drinkManager.StopAllEffectsByType(drinkManager.DrinkEffectRoutines, false);
-    }
-    public void StopAllBuffEffects()
-    {
-        staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, true);
-        hpManager.StopAllEffectsByType(hpManager.HpEffectRoutines, true);
-        foodManager.StopAllEffectsByType(foodManager.FoodEffectRoutines, true);
-        drinkManager.StopAllEffectsByType(drinkManager.DrinkEffectRoutines, true);
     }
 }
+
 
 
 //public void RemoveHpEffect(string effectName = null, Coroutine effectRoutine = null)

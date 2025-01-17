@@ -2,34 +2,34 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.Assertions;
 
-public class MobStatusController : MonoBehaviour, IAssignmentsValidator
+
+public class MobStatusController : BaseStatusController
 {
     [SerializeField] private HealthManager healthManager;
     [SerializeField] private SpeedManager speedManager;
-
-    public HealthManager HealthManager { get => healthManager; }
-    public SpeedManager SpeedManager { get => speedManager; }
 
     private AbilitySpawner abilitySpawner;
     private ItemSpawner itemSpawner;
     private MobActionsController mobActionsController;
     private MobAbilityController mobAbilityController;
 
-    private void Awake()
-    {
-        healthManager = GetComponent<HealthManager>();
-        speedManager = GetComponent<SpeedManager>();
+    public HealthManager HealthManager => healthManager;
+    public SpeedManager SpeedManager => speedManager;
 
-        // Cache components to avoid repeated GetComponent calls
-        abilitySpawner = GetComponent<AbilitySpawner>();
-        itemSpawner = GetComponent<ItemSpawner>();
-        mobActionsController = GetComponent<MobActionsController>();
+    protected override void CacheComponents()
+    {
+        healthManager = GetComponentOrLogError(ref healthManager, "HealthManager");
+        speedManager = GetComponentOrLogError(ref speedManager, "SpeedManager");
+        abilitySpawner = GetComponentOrLogError(ref abilitySpawner, "AbilitySpawner");
+        itemSpawner = GetComponentOrLogError(ref itemSpawner, "ItemSpawner");
+        mobActionsController = GetComponentOrLogError(ref mobActionsController, "MobActionsController");
         mobAbilityController = GetComponent<MobAbilityController>();
     }
 
-    private void Start()
+    public override void ValidateAssignments()
     {
-        ValidateAssignments();
+        Assert.IsNotNull(healthManager, "HealthManager is not assigned.");
+        Assert.IsNotNull(speedManager, "SpeedManager is not assigned.");
     }
 
     private void Update()
@@ -40,20 +40,33 @@ public class MobStatusController : MonoBehaviour, IAssignmentsValidator
         }
     }
 
-    private void HandleDeath()
+    protected override void HandleDeath()
     {
-        if (abilitySpawner) abilitySpawner.SpawnAbility();
-        if (itemSpawner) itemSpawner.SpawnItem(transform.position);
-        if (mobActionsController) mobActionsController.StopAllCoroutines();
-        if (mobAbilityController) mobAbilityController.StopAllCoroutines();
+        abilitySpawner?.SpawnAbility();
+        itemSpawner?.SpawnItem(transform.position);
+        mobActionsController?.StopAllCoroutines();
+        mobAbilityController?.StopAllCoroutines();
         healthManager.StopAllCoroutines();
         speedManager.StopAllCoroutines();
-        Destroy(gameObject);
+        base.HandleDeath();
     }
-
-    public void ValidateAssignments()
+    public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
-        Assert.IsNotNull(healthManager, "HealthManager is not assigned.");
-        Assert.IsNotNull(speedManager, "SpeedManager is not assigned.");
+        switch (effect.effectType)
+        {
+            case AttackEffectType.Hp:
+                if (timeBuffEffect == 0) HealthManager.AddHp(amount);
+                else HealthManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpHealFactor:
+                HealthManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpDamageFactor:
+                HealthManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+            case AttackEffectType.HpRegeneration:
+                HealthManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                break;
+        }
     }
 }

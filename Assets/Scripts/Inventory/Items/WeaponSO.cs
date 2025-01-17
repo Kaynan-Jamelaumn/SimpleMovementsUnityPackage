@@ -158,8 +158,9 @@ public class WeaponSO : ItemSO
 
     private void ApplyEffectsToTarget(GameObject target, GameObject playerObject)
     {
-        // Continue with the existing logic to check the type of target and perform corresponding actions
+        // Get the player's status controller
         PlayerStatusController statusController = playerObject.GetComponent<PlayerStatusController>();
+
         if (target.CompareTag("Player")) // Example: Player target
         {
             PlayerStatusController otherPlayerController = target.GetComponent<PlayerStatusController>();
@@ -222,13 +223,14 @@ public class WeaponSO : ItemSO
         }
        
     }
-    private void ApplyEffectsToController<T>(T TargetThatGotHitStatusController, PlayerStatusController statusController = null) where T : MonoBehaviour
+    private void ApplyEffectsToController<T>(T TargetThatGotHitStatusController, PlayerStatusController statusController = null)
+    where T : BaseStatusController
     {
         foreach (var effect in effects)
         {
             if (Random.value <= effect.probabilityToApply)
             {
-                if (effect.enemyEffect == false)
+                if (effect.enemyEffect == false && statusController != null) // Buff: Apply to the player
                 {
                     ApplyEffect(effect, statusController);
                 }
@@ -239,85 +241,20 @@ public class WeaponSO : ItemSO
             }
         }
     }
-    public void ApplyEffect<T>(AttackEffect effect, T statusController) where T : MonoBehaviour
+
+    public void ApplyEffect<T>(AttackEffect effect, T statusController) where T : BaseStatusController
     {
         float amount = GenericMethods.GetRandomValue(effect.amount, effect.randomAmount, effect.minAmount, effect.maxAmount);
         float criticalMultiplier = (Random.value <= effect.criticalChance) ? effect.criticalDamageMultiplier : 1.0f;
         amount *= criticalMultiplier;
+
         float timeBuffEffect = GenericMethods.GetRandomValue(effect.timeBuffEffect, effect.randomTimeBuffEffect, effect.minTimeBuffEffect, effect.maxTimeBuffEffect);
         float tickCooldown = GenericMethods.GetRandomValue(effect.tickCooldown, effect.randomTickCooldown, effect.minTickCooldown, effect.maxTickCooldown);
-        PlayerStatusController playerController = statusController.GetComponent<PlayerStatusController>();
-        if (playerController != null)
-            ApplyEffectToPlayer(effect, playerController, amount, timeBuffEffect, tickCooldown);
-        MobStatusController mobController = statusController.GetComponent<MobStatusController>();
-        if (mobController != null)
-            ApplyEffectToMob(effect, mobController, amount, timeBuffEffect, tickCooldown);
-    }
-    private void ApplyEffectToPlayer(AttackEffect effect, PlayerStatusController playerController, float amount, float timeBuffEffect, float tickCooldown)
-    {
-            switch (effect.effectType)
-        {
-            case AttackEffectType.Stamina:
-                if (effect.timeBuffEffect == 0) playerController.StaminaManager.AddStamina(effect.amount);
-                else playerController.StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) playerController.HpManager.AddHp(effect.amount);
-                else playerController.HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Food:
-                if (effect.timeBuffEffect == 0) playerController.FoodManager.AddFood(effect.amount);
-                else playerController.FoodManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Drink:
-                if (effect.timeBuffEffect == 0) playerController.DrinkManager.AddDrink(effect.amount);
-                else playerController.DrinkManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Weight:
-                if (effect.timeBuffEffect == 0) playerController.WeightManager.AddWeight(effect.amount);
-                else playerController.WeightManager.AddWeightEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpHealFactor:
-                playerController.HpManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpDamageFactor:
-                playerController.HpManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaHealFactor:
-                playerController.StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaDamageFactor:
-                playerController.StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaRegeneration:
-                playerController.StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpRegeneration:
-                playerController.HpManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-        }
+
+        statusController.ApplyEffect(effect, amount, timeBuffEffect, tickCooldown);
     }
 
-    private void ApplyEffectToMob(AttackEffect effect, MobStatusController mobController, float amount, float timeBuffEffect, float tickCooldown)
-    {
 
-        switch (effect.effectType)
-        {
-            case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) mobController.HealthManager.AddHp(effect.amount);
-                else mobController.HealthManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpHealFactor:
-                mobController.HealthManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpDamageFactor:
-                mobController.HealthManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpRegeneration:
-                mobController.HealthManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-        }
-    }
     public override void UseItem(GameObject player, PlayerStatusController statusController = null)
     {
         base.UseItem(player, null);

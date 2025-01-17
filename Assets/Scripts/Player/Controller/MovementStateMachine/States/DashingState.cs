@@ -17,7 +17,7 @@ public class DashingState : MovementState
     public override
     MovementStateMachine.EMovementState GetNextState()
     {
-        if (Time.time - startTime < Context.StatusController.Dashmodel.DashDuration) return StateKey;
+        if (Time.time - startTime < Context.StatusController.DashModel.DashDuration) return StateKey;
 
 
         if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
