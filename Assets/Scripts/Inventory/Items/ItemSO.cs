@@ -12,129 +12,76 @@ public enum ItemType
 [CreateAssetMenu(fileName = "Item", menuName = "Scriptable Objects/Item/ItemSO")]
 public abstract class ItemSO : ScriptableObject
 {
+    // Basic Item Information
+    [Header("Basic Information")]
     [SerializeField] protected new string name;
+    [SerializeField] protected string description;
+    [SerializeField] protected ItemType itemType;
     [SerializeField] protected Sprite icon;
-    [Tooltip("the item prefab")][SerializeField] protected GameObject prefab;
-    [Tooltip("how mauch the same item can be contained in one slot")][SerializeField] protected int stackMax;
+    [Tooltip("The item prefab")][SerializeField] protected GameObject prefab;
+
+    // Stack and Weight
+    [Header("Stack and Weight")]
+    [Tooltip("How much of the same item can be contained in one slot")]
+    [SerializeField] protected int stackMax;
     [SerializeField] protected float weight;
     [SerializeField] protected float price;
+
+    // Durability
+    [Header("Durability")]
     [SerializeField] protected int maxDurability;
     [SerializeField] protected int durability = 1;
     [SerializeField] protected int durabilityReductionPerUse;
     [SerializeField] protected bool shouldBeDestroyedOn0UsesLeft = true;
-    [SerializeField] protected ItemType itemType;
-    [SerializeField] protected string description; 
-    [Tooltip("coolDown for the same item to be used again")][SerializeField] protected float cooldown = 0;
+
+    // Cooldown
+    [Header("Cooldown")]
+    [Tooltip("Cooldown for the same item to be used again")]
+    [SerializeField] protected float cooldown = 0;
+
+    // Hand Position, Rotation, and Scale
     [Header("Item Hand Position")]
     [Header("Position")]
     [SerializeField] protected Vector3 position;
-
     [Header("Rotation")]
-    [SerializeField] protected Vector3 rotation = new Vector3(80f,-20f,0);
-
+    [SerializeField] protected Vector3 rotation = new Vector3(80f, -20f, 0);
     [Header("Scale")]
     [SerializeField] protected Vector3 scale = new Vector3(1, 1, 1);
+
+    // Animation and Audio
     [Header("Animation")]
     [SerializeField] protected AnimationClip useAnimation;
-
     [Header("Audio")]
     [SerializeField] protected AudioClip useAudioClip;
+
+    // Particles
     [Header("Particles")]
     [SerializeField] protected ParticleSystem useParticles;
+
+    // Pickup Time
+    [Header("Pickup")]
     [SerializeField] protected float pickUpTime;
-    public float PickUpTime
-    {
-        get => pickUpTime;
-        set => pickUpTime = value;
-    } 
-    public string Name
-    {
-        get => name;
-        set => name = value; 
-    }    
-    public string Description
-    {
-        get => description;
-    }
-    public ItemType ItemType
-    {
-        get => itemType;
-    }
 
-    public Sprite Icon
-    {
-        get => icon; 
-    }
-
-    public GameObject Prefab
-    {
-        get => prefab; 
-    }
-    public int StackMax
-    {
-        get => stackMax; 
-    }
-
-    public float Weight
-    {
-        get => weight;
-        set => weight = value; 
-    }
-    
-    public float Price
-    {
-        get => price;
-        set => price = value; 
-    }
-
-    
-    public int MaxDurability
-    {
-        get => maxDurability; 
-    }
-
-    public int Durability
-    {
-        get => durability;
-    }
-
-    
-    public int DurabilityReductionPerUse
-    {
-        get => durabilityReductionPerUse; 
-    }
-
-    
-    public bool ShouldBeDestroyedOn0UsesLeft
-    {
-        get => shouldBeDestroyedOn0UsesLeft;
-    }
-
-    public float Cooldown
-    {
-        get => cooldown;
-    }
+    // Properties
+    public float PickUpTime => pickUpTime;
+    public string Name => name;
+    public string Description => description;
+    public ItemType ItemType => itemType;
+    public Sprite Icon => icon;
+    public GameObject Prefab => prefab;
+    public int StackMax => stackMax;
+    public float Weight => weight;
+    public float Price => price;
+    public int MaxDurability => maxDurability;
+    public int Durability => durability;
+    public int DurabilityReductionPerUse => durabilityReductionPerUse;
+    public bool ShouldBeDestroyedOn0UsesLeft => shouldBeDestroyedOn0UsesLeft;
+    public float Cooldown => cooldown;
+    public Vector3 Position => position;
+    public Vector3 Rotation => rotation;
+    public Vector3 Scale => scale;
 
     //-16.8 56.58 0.067 -0.04 0.659 
-
-    public Vector3 Position
-    {
-        get => position;
-        set => position = value;
-    }
-    
-    public Vector3 Rotation
-    {
-        get => rotation;
-        set => rotation = value;
-    }
-    
-    public Vector3 Scale
-    {
-        get => scale;
-        set => scale = value;
-    }
-
     public virtual void ApplyEquippedStats(bool shouldApply = false, PlayerStatusController statusController = null)
     {
 

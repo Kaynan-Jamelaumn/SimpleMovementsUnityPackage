@@ -16,21 +16,33 @@ public enum ToolType
 [CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Item/Weapon")]
 public class WeaponSO : ItemSO
 {
+    // Weapon Attributes
+    [Header("Weapon Attributes")]
     [SerializeField] protected ToolType toolType;
     [SerializeField] private float minDamage;
     [SerializeField] private float maxDamage;
-    [SerializeField] private float criticalDamageMultiplier= 1.0f;
+    [SerializeField] private float criticalDamageMultiplier = 1.0f;
     [SerializeField] private float criticalChance;
     [SerializeField] private float knockBack;
     [SerializeField] private float attackSpeed;
+
+    // Weapon Range
+    [Header("Weapon Range")]
     [SerializeField] private float minRange;
     [SerializeField] private float maxRange;
+
+    // Tool-Specific Attributes
+    [Header("Tool Attributes")]
     [SerializeField] private float toolDamage;
+
+    // Attack Effects
     [Header("Attack Effects")]
     [SerializeField] private List<AttackEffect> effects;
     [SerializeField] public AttackCast attackCast;
     private HashSet<Collider> detectedColliders = new HashSet<Collider>();
-    //[SerializeField] private ApplyEffects applyEffects = new ApplyEffects();
+
+    // Attack Sound
+    [Header("Audio")]
     [SerializeField] private AudioClip attackSound;
 
     public List<AttackEffect> Effects

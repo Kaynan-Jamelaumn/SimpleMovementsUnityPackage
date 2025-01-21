@@ -1,4 +1,6 @@
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -19,6 +21,20 @@ public class PlayerStatusController : BaseStatusController
     [SerializeField] private PlayerRollController rollController;
     [SerializeField] private PlayerDashController dashController;
 
+
+    private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> effectHandlers;
+    private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> EffectHandlers
+    {
+        get
+        {
+            if (effectHandlers == null)
+            {
+                InitializeEffectHandlers();
+            }
+            return effectHandlers;
+        }
+    }
+
     public BasePlayerClass PlayerClass { get; private set; }
 
     public ExperienceManager XPManager => xpManager;
@@ -35,13 +51,13 @@ public class PlayerStatusController : BaseStatusController
 
     protected override void CacheComponents()
     {
-        xpManager = GetComponentOrLogError(ref xpManager, "ExperienceManager");
-        movementModel = GetComponentOrLogError(ref movementModel, "PlayerMovementModel");
-        staminaManager = GetComponentOrLogError(ref staminaManager, "StaminaManager");
-        hpManager = GetComponentOrLogError(ref hpManager, "HealthManager");
-        foodManager = GetComponentOrLogError(ref foodManager, "FoodManager");
-        drinkManager = GetComponentOrLogError(ref drinkManager, "DrinkManager");
-        weightManager = GetComponentOrLogError(ref weightManager, "WeightManager");
+        CacheManager(ref xpManager, "ExperienceManager");
+        CacheManager(ref movementModel, "PlayerMovementModel");
+        CacheManager(ref staminaManager, "StaminaManager");
+        CacheManager(ref hpManager, "HealthManager");
+        CacheManager(ref foodManager, "FoodManager");
+        CacheManager(ref drinkManager, "DrinkManager");
+        CacheManager(ref weightManager, "WeightManager");
         rollModel = GetComponentOrLogError(ref rollModel, "PlayerRollModel");
         dashModel = GetComponentOrLogError(ref dashModel, "PlayerDashModel");
     }
@@ -51,7 +67,9 @@ public class PlayerStatusController : BaseStatusController
         base.Start();
         xpManager.OnSkillPointGained += HandleSkillPointGained;
         InitializePlayerClass();
+        InitializeEffectHandlers();
     }
+
 
     private void Update()
     {
@@ -194,51 +212,69 @@ public class PlayerStatusController : BaseStatusController
     {
         movementModel.Speed += amount;
     }
+
+
+
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
-        switch (effect.effectType)
+        if (EffectHandlers.TryGetValue(effect.effectType, out Action<AttackEffect, float, float, float> handler))
         {
-            case AttackEffectType.Stamina:
-                if (timeBuffEffect == 0) StaminaManager.AddStamina(amount);
-                else StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Hp:
-                if (timeBuffEffect == 0) HpManager.AddHp(amount);
-                else HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Food:
-                if (timeBuffEffect == 0) FoodManager.AddFood(amount);
-                else FoodManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Drink:
-                if (timeBuffEffect == 0) DrinkManager.AddDrink(amount);
-                else DrinkManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Weight:
-                if (timeBuffEffect == 0) WeightManager.AddWeight(amount);
-                else WeightManager.AddWeightEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpHealFactor:
-                HpManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpDamageFactor:
-                HpManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaHealFactor:
-                StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaDamageFactor:
-                StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaRegeneration:
-                StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpRegeneration:
-                HpManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
+            handler.Invoke(effect, amount, timeBuffEffect, tickCooldown);
+        }
+        else
+        {
+            Debug.LogWarning($"Unhandled effect type: {effect.effectType}");
         }
     }
+private void InitializeEffectHandlers()
+{
+    effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
+    {
+        { AttackEffectType.Stamina, CreateHandler(staminaManager.AddStamina, staminaManager.AddStaminaEffect) },
+        { AttackEffectType.Hp, CreateHandler(hpManager.AddHp, hpManager.AddHpEffect) },
+        { AttackEffectType.Food, CreateHandler(foodManager.AddFood, foodManager.AddFoodEffect) },
+        { AttackEffectType.Drink, CreateHandler(drinkManager.AddDrink, drinkManager.AddDrinkEffect) },
+        { AttackEffectType.Weight, (effect, amount, time, cooldown) => weightManager.AddWeightEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.HpHealFactor, (effect, amount, time, cooldown) => hpManager.AddHpHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.HpDamageFactor, (effect, amount, time, cooldown) => hpManager.AddHpDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.StaminaHealFactor, (effect, amount, time, cooldown) => staminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.StaminaDamageFactor, (effect, amount, time, cooldown) => staminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.StaminaRegeneration, (effect, amount, time, cooldown) => staminaManager.AddStaminaRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+        { AttackEffectType.HpRegeneration, (effect, amount, time, cooldown) => hpManager.AddHpRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }
+    };
 }
+
+    private void HandleEffect(
+        Action<float> directAction,
+        Action<string, float, float, float, bool, bool> effectAction,
+        AttackEffect effect,
+        float amount,
+        float timeBuffEffect,
+        float tickCooldown)
+    {
+        if (timeBuffEffect == 0)
+        {
+            directAction?.Invoke(amount);
+        }
+        else
+        {
+            effectAction?.Invoke(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+        }
+    }
+
+
+    private Action<AttackEffect, float, float, float> CreateHandler(
+    Action<float> directAction,
+    Action<string, float, float, float, bool, bool> effectAction)
+    {
+        return (effect, amount, time, cooldown) => HandleEffect(directAction, effectAction, effect, amount, time, cooldown);
+    }
+
+}
+
+
+
+
 
 
 
