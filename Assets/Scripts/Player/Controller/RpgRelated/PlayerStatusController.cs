@@ -4,25 +4,55 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
 
+/// <summary>
+/// Manages the player's status, including health, stamina, food, drink, and experience.
+/// Provides access to various models and controllers for player actions and attributes.
+/// </summary>
 public class PlayerStatusController : BaseStatusController
 {
     [Header("Models")]
+    [Tooltip("Handles player movement mechanics.")]
     [SerializeField] private PlayerMovementModel movementModel;
+
+    [Tooltip("Manages the player's stamina.")]
     [SerializeField] private StaminaManager staminaManager;
+
+    [Tooltip("Manages the player's health.")]
     [SerializeField] private HealthManager hpManager;
+
+    [Tooltip("Tracks the player's food consumption and hunger levels.")]
     [SerializeField] private FoodManager foodManager;
+
+    [Tooltip("Tracks the player's drink consumption and thirst levels.")]
     [SerializeField] private DrinkManager drinkManager;
+
+    [Tooltip("Tracks and manages the player's carried weight.")]
     [SerializeField] private WeightManager weightManager;
+
+    [Tooltip("Manages player experience and skill points.")]
     [SerializeField] private ExperienceManager xpManager;
 
     [Header("Controllers")]
+    [Tooltip("Handles player rolling mechanics.")]
     [SerializeField] private PlayerRollModel rollModel;
+
+    [Tooltip("Handles player dashing mechanics.")]
     [SerializeField] private PlayerDashModel dashModel;
+
+    [Tooltip("Controller for player rolling actions.")]
     [SerializeField] private PlayerRollController rollController;
+
+    [Tooltip("Controller for player dashing actions.")]
     [SerializeField] private PlayerDashController dashController;
 
-
+    /// <summary>
+    /// Dictionary mapping attack effect types to their corresponding handlers.
+    /// </summary>
     private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> effectHandlers;
+
+    /// <summary>
+    /// Lazy-initialized dictionary of effect handlers.
+    /// </summary>
     private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> EffectHandlers
     {
         get
@@ -32,6 +62,26 @@ public class PlayerStatusController : BaseStatusController
                 InitializeEffectHandlers();
             }
             return effectHandlers;
+        }
+    }
+
+    /// <summary>
+    /// Dictionary mapping stat upgrade keys to their corresponding handlers.
+    /// </summary>
+    private Dictionary<string, Action> upgradeStatHandlers;
+
+    /// <summary>
+    /// Lazy-initialized dictionary of upgrade stat handlers.
+    /// </summary>
+    private Dictionary<string, Action> UpgradeStatHandlers
+    {
+        get
+        {
+            if (upgradeStatHandlers == null)
+            {
+                InitializeUpgradeStatHandlers();
+            }
+            return upgradeStatHandlers;
         }
     }
 
@@ -49,6 +99,10 @@ public class PlayerStatusController : BaseStatusController
     public PlayerRollController RollController => rollController;
     public PlayerDashController DashController => dashController;
 
+
+    /// <summary>
+    /// Caches references to various components required by the controller.
+    /// </summary>
     protected override void CacheComponents()
     {
         CacheManager(ref xpManager, "ExperienceManager");
@@ -58,10 +112,14 @@ public class PlayerStatusController : BaseStatusController
         CacheManager(ref foodManager, "FoodManager");
         CacheManager(ref drinkManager, "DrinkManager");
         CacheManager(ref weightManager, "WeightManager");
+
         rollModel = GetComponentOrLogError(ref rollModel, "PlayerRollModel");
         dashModel = GetComponentOrLogError(ref dashModel, "PlayerDashModel");
     }
 
+    /// <summary>
+    /// Initializes the player status controller and subscribes to necessary events.
+    /// </summary>
     protected override void Start()
     {
         base.Start();
@@ -70,12 +128,17 @@ public class PlayerStatusController : BaseStatusController
         InitializeEffectHandlers();
     }
 
-
+    /// <summary>
+    /// Updates the player status each frame.
+    /// </summary>
     private void Update()
     {
         UpdateStatusBars();
     }
 
+    /// <summary>
+    /// Validates that all required assignments are properly set.
+    /// </summary>
     public override void ValidateAssignments()
     {
         Assert.IsNotNull(xpManager, "ExperienceManager is not assigned.");
@@ -89,6 +152,9 @@ public class PlayerStatusController : BaseStatusController
         Assert.IsNotNull(dashModel, "PlayerDashModel is not assigned.");
     }
 
+    /// <summary>
+    /// Updates various status bars such as stamina, health, and hunger.
+    /// </summary>
     private void UpdateStatusBars()
     {
         staminaManager?.UpdateStaminaBar();
@@ -97,15 +163,22 @@ public class PlayerStatusController : BaseStatusController
         drinkManager?.UpdateDrinkBar();
         weightManager?.UpdateWeightBar();
     }
-
+    /// <summary>
+    /// Handles cleanup operations upon destruction of the object.
+    /// </summary>
     private void OnDestroy()
     {
+        // Unsubscribe from the OnSkillPointGained event to prevent memory leaks.
         if (xpManager != null)
         {
             xpManager.OnSkillPointGained -= HandleSkillPointGained;
         }
     }
 
+    /// <summary>
+    /// Selects the player's class based on the provided class name.
+    /// </summary>
+    /// <param name="className">The name of the class to assign to the player.</param>
     public void SelectPlayerClass(string className)
     {
         PlayerClass = className.ToLower() switch
@@ -120,6 +193,9 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
+    /// <summary>
+    /// Initializes the player's class and updates related attributes.
+    /// </summary>
     private void InitializePlayerClass()
     {
         if (PlayerClass == null)
@@ -128,6 +204,7 @@ public class PlayerStatusController : BaseStatusController
             return;
         }
 
+        // Set initial values for player attributes based on their class.
         hpManager.MaxHp = PlayerClass.health;
         staminaManager.MaxStamina = PlayerClass.stamina;
         movementModel.Speed = PlayerClass.speed;
@@ -135,6 +212,10 @@ public class PlayerStatusController : BaseStatusController
         drinkManager.MaxDrink = PlayerClass.thirst;
     }
 
+    /// <summary>
+    /// Upgrades a specific player stat if skill points are available.
+    /// </summary>
+    /// <param name="statType">The type of stat to upgrade.</param>
     public void UpgradeStat(string statType)
     {
         if (xpManager.SkillPoints <= 0)
@@ -143,38 +224,42 @@ public class PlayerStatusController : BaseStatusController
             return;
         }
 
-        switch (statType.ToLower())
+        // Check if the stat type has a corresponding upgrade handler.
+        if (upgradeStatHandlers.TryGetValue(statType.ToLower(), out var action))
         {
-            case "health":
-                hpManager.ModifyMaxHp(hpManager.IncrementFactor);
-                break;
-            case "stamina":
-                staminaManager.ModifyMaxStamina(staminaManager.IncrementFactor);
-                break;
-            case "speed":
-                movementModel.Speed += movementModel.SpeedIncrementFactor;
-                break;
-            case "hunger":
-                foodManager.ModifyMaxFood(foodManager.IncrementFactor);
-                break;
-            case "thirst":
-                drinkManager.ModifyMaxDrink(drinkManager.IncrementFactor);
-                break;
-            case "weight":
-                weightManager.ModifyMaxWeight(weightManager.IncrementFactor);
-                break;
-            default:
-                Debug.Log("Invalid stat type!");
-                return;
+            action();
+            xpManager.SkillPoints--;
         }
-
-        xpManager.SkillPoints--;
+        else
+        {
+            Debug.Log("Invalid stat type!");
+        }
     }
 
+    /// <summary>
+    /// Initializes handlers for upgrading player stats.
+    /// </summary>
+    private void InitializeUpgradeStatHandlers()
+    {
+        upgradeStatHandlers = new Dictionary<string, Action>
+    {
+        { "health", () => hpManager.ModifyMaxHp(hpManager.IncrementFactor) },
+        { "stamina", () => staminaManager.ModifyMaxStamina(staminaManager.IncrementFactor) },
+        { "speed", () => movementModel.Speed += movementModel.SpeedIncrementFactor },
+        { "hunger", () => foodManager.ModifyMaxFood(foodManager.IncrementFactor) },
+        { "thirst", () => drinkManager.ModifyMaxDrink(drinkManager.IncrementFactor) },
+        { "weight", () => weightManager.ModifyMaxWeight(weightManager.IncrementFactor) }
+    };
+    }
+
+    /// <summary>
+    /// Handles the event when a skill point is gained.
+    /// </summary>
     private void HandleSkillPointGained()
     {
         Debug.Log("Skill point gained! Time to level up!");
     }
+
 
     public IEnumerator ApplySpeedEffectRoutine(string effectName, float speedAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
@@ -200,6 +285,16 @@ public class PlayerStatusController : BaseStatusController
         movementModel.Speed -= speedAmount;
     }
 
+
+    public void ModifySpeed(float amount)
+    {
+        movementModel.Speed += amount;
+    }
+
+    /// <summary>
+    /// Stops all active effects on the player, optionally filtering by type.
+    /// </summary>
+    /// <param name="isBuff">Indicates if only buff effects should be stopped.</param>
     public void StopAllEffects(bool isBuff)
     {
         staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, isBuff);
@@ -208,16 +303,16 @@ public class PlayerStatusController : BaseStatusController
         drinkManager.StopAllEffectsByType(drinkManager.DrinkEffectRoutines, isBuff);
     }
 
-    public void ModifySpeed(float amount)
-    {
-        movementModel.Speed += amount;
-    }
-
-
-
+    /// <summary>
+    /// Applies an attack effect to the player.
+    /// </summary>
+    /// <param name="effect">The attack effect to apply.</param>
+    /// <param name="amount">The value associated with the effect.</param>
+    /// <param name="timeBuffEffect">The duration of the effect.</param>
+    /// <param name="tickCooldown">The interval for applying procedural effects.</param>
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
-        if (EffectHandlers.TryGetValue(effect.effectType, out Action<AttackEffect, float, float, float> handler))
+        if (EffectHandlers.TryGetValue(effect.effectType, out var handler))
         {
             handler.Invoke(effect, amount, timeBuffEffect, tickCooldown);
         }
@@ -226,9 +321,13 @@ public class PlayerStatusController : BaseStatusController
             Debug.LogWarning($"Unhandled effect type: {effect.effectType}");
         }
     }
-private void InitializeEffectHandlers()
-{
-    effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
+
+    /// <summary>
+    /// Initializes handlers for different attack effects.
+    /// </summary>
+    private void InitializeEffectHandlers()
+    {
+        effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
     {
         { AttackEffectType.Stamina, CreateHandler(staminaManager.AddStamina, staminaManager.AddStaminaEffect) },
         { AttackEffectType.Hp, CreateHandler(hpManager.AddHp, hpManager.AddHpEffect) },
@@ -242,8 +341,17 @@ private void InitializeEffectHandlers()
         { AttackEffectType.StaminaRegeneration, (effect, amount, time, cooldown) => staminaManager.AddStaminaRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
         { AttackEffectType.HpRegeneration, (effect, amount, time, cooldown) => hpManager.AddHpRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }
     };
-}
+    }
 
+    /// <summary>
+    /// Handles the application of a specific effect to the player.
+    /// </summary>
+    /// <param name="directAction">The direct action to apply if no duration is specified.</param>
+    /// <param name="effectAction">The effect action to apply over time.</param>
+    /// <param name="effect">The effect details.</param>
+    /// <param name="amount">The value associated with the effect.</param>
+    /// <param name="timeBuffEffect">The duration of the effect.</param>
+    /// <param name="tickCooldown">The interval for applying procedural effects.</param>
     private void HandleEffect(
         Action<float> directAction,
         Action<string, float, float, float, bool, bool> effectAction,
@@ -262,10 +370,15 @@ private void InitializeEffectHandlers()
         }
     }
 
-
+    /// <summary>
+    /// Creates a handler for a specific effect type.
+    /// </summary>
+    /// <param name="directAction">The direct action to apply if no duration is specified.</param>
+    /// <param name="effectAction">The effect action to apply over time.</param>
+    /// <returns>An action handler for the specified effect type.</returns>
     private Action<AttackEffect, float, float, float> CreateHandler(
-    Action<float> directAction,
-    Action<string, float, float, float, bool, bool> effectAction)
+        Action<float> directAction,
+        Action<string, float, float, float, bool, bool> effectAction)
     {
         return (effect, amount, time, cooldown) => HandleEffect(directAction, effectAction, effect, amount, time, cooldown);
     }
