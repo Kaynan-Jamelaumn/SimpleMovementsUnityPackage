@@ -3,7 +3,6 @@ using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
-using static UnityEditor.Timeline.Actions.MenuPriority;
 
 
 
@@ -376,7 +375,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     public void ItemPicked(GameObject pickedItem)
     {
-        AddItemToInventory(pickedItem);
+        ItemPickupHandler.AddItemToInventory(this,pickedItem, slots, itemPrefab, player);
 
     }
 
@@ -439,76 +438,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         return null;
     }
-    private void AddItemToInventory(GameObject pickedItem)
-    {
-        GameObject emptySlot = null;
 
-        for (int slotIndex = 0; slotIndex < slots.Length; slotIndex++)
-        {
-            if (slots[slotIndex].GetComponent<InventorySlot>().SlotType != SlotType.Common) continue;
-            InventorySlot currentSlot = slots[slotIndex].GetComponent<InventorySlot>();
-            if (currentSlot.heldItem != null)
-            {
-                InventoryItem currentItem = currentSlot.heldItem.GetComponent<InventoryItem>();
-                ItemPickable pickedItemProperties = pickedItem.GetComponentInParent<ItemPickable>();
-                ItemSO pickedItemSO = pickedItem.GetComponentInParent<ItemPickable>().itemScriptableObject;
-
-                if (currentItem != null && pickedItemSO == currentItem.itemScriptableObject)
-                {
-                    if (pickedItemProperties.quantity + currentItem.stackCurrent <= currentItem.stackMax)
-                    {
-                        currentItem.totalWeight += pickedItemProperties.quantity * pickedItemSO.Weight;
-                        UpdateInventoryOnItemPick(currentSlot, pickedItemProperties.quantity, pickedItemProperties.DurabilityList);
-                        Destroy(pickedItem);
-                        return;
-                    }
-                    else
-                    {
-                        int remainingQuantity = pickedItemProperties.quantity - (currentItem.stackMax - currentItem.stackCurrent);
-                        List<int> durabilityListToTransfer = new List<int>();
-                        int quantityToBeAddedToTheFoundItem = pickedItemProperties.quantity - remainingQuantity;
-
-                        durabilityListToTransfer.AddRange(pickedItemProperties.DurabilityList.GetRange(pickedItemProperties.DurabilityList.Count - quantityToBeAddedToTheFoundItem, quantityToBeAddedToTheFoundItem));
-                        pickedItemProperties.DurabilityList.RemoveRange(pickedItemProperties.DurabilityList.Count - quantityToBeAddedToTheFoundItem, quantityToBeAddedToTheFoundItem);
-
-                        currentItem.totalWeight += quantityToBeAddedToTheFoundItem * pickedItemSO.Weight;
-                        UpdateInventoryOnItemPick(currentSlot, quantityToBeAddedToTheFoundItem, durabilityListToTransfer);
-                        pickedItemProperties.quantity = remainingQuantity;
-                        if (remainingQuantity <= 0) return;
-                    }
-                }
-            }
-            else if (currentSlot.heldItem == null)
-            {
-                emptySlot = slots[slotIndex];
-                break;
-            }
-        }
-
-        if (emptySlot != null)
-        {
-            InstantiateNewItem(emptySlot, pickedItem);
-            if (pickedItem.scene.IsValid())
-                // It's an instantiated object in the scene
-                Destroy(pickedItem); // This will safely destroy the object
-            
-        }
-    }
-
-    private void UpdateInventoryOnItemPick(InventorySlot slot, int quantityToAdd, List<int> durabilityList)
-    {
-        InventoryItem currentItem = slot.heldItem.GetComponent<InventoryItem>();
-        currentItem.stackCurrent += quantityToAdd;
-
-        foreach (int durability in durabilityList)
-        {
-            currentItem.DurabilityList.Add(durability);
-        }
-
-        player.GetComponent<PlayerStatusController>().WeightManager.AddWeight(currentItem.itemScriptableObject.Weight * quantityToAdd);
-    }
-
-    private void InstantiateNewItem(GameObject emptySlot, GameObject pickedItem)
+    public void InstantiateNewItem(GameObject emptySlot, GameObject pickedItem)
     {
         GameObject newItem = Instantiate(itemPrefab);
         InventoryItem newItemItem = newItem.GetComponent<InventoryItem>();
