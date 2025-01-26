@@ -12,6 +12,33 @@ public enum ToolType
 
 }
 
+public enum AttackType
+{
+    Normal,
+    Light,
+    Heavy,
+    Charged,
+    Special
+}
+
+
+[System.Serializable]
+public class AttackPattern
+{
+    public AttackType Type;
+    public float BaseDamage;
+    public bool hasFixedBaseDamage;
+    public float MinDamage;
+    public float MaxDamage;
+    public bool hasDifferentCriticalChange;
+    public float CriticalChange;
+    public string AnimationTrigger;
+    public float StaminaCost;
+    public float ComboResetTime;
+    //public int ComboIndex;
+}
+
+
 
 [CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Item/Weapon")]
 public class WeaponSO : ItemSO
@@ -25,6 +52,10 @@ public class WeaponSO : ItemSO
     [SerializeField] private float criticalChance;
     [SerializeField] private float knockBack;
     [SerializeField] private float attackSpeed;
+
+
+    [Header("Attack Pattern")]
+    [SerializeField] private List<AttackPattern> attackPatterns;
 
     // Weapon Range
     [Header("Weapon Range")]
@@ -50,7 +81,18 @@ public class WeaponSO : ItemSO
         get { return effects; }
     }
 
-
+    public AudioClip AttackSound
+    {
+        get => attackSound;
+    }
+    public List<AttackPattern> AttackPatterns
+    {
+        get => attackPatterns;
+    }
+    public AttackCast AttackCast
+    {
+        get => attackCast;
+    }
 
     public ToolType ToolType
     {
@@ -122,53 +164,8 @@ public class WeaponSO : ItemSO
     }
 
 
-    private void PerformAttack(GameObject playerObject)
-    {
-        PlayerAnimationModel playerAnimationModel = playerObject.GetComponent<PlayerAnimationModel>();
-        if (playerAnimationModel.IsAttacking == true) return;
-        playerAnimationModel.IsAttacking = true;
 
-
-        // Clear the list of detected colliders before starting a new check
-        detectedColliders.Clear();
-
-        // Start collision detection
-        StartCollisionDetection(playerObject);
-    }
-
-    private void StartCollisionDetection(GameObject playerObject)
-    {
-        // Start collision detection in the WeaponController
-        WeaponController weaponControllexr = playerObject.GetComponent<WeaponController>();
-        if (weaponControllexr != null)
-            weaponControllexr.StartCollisionDetection(this, playerObject);
-
-    }
-
-    public void PerformCollisionDetection(Transform handGameObject, GameObject playerObject)
-    {
-        //Transform attackPosition = playerObject.transform; // You may need to adjust this position according to the weapon's position
-        Collider[] colliders = attackCast.DetectObjects(handGameObject);
-        if (colliders.Length > 0 && attackSound)
-            playerObject.GetComponent<Player>().PlayerAudioSource.PlayOneShot(attackSound);
-        foreach (Collider collider in colliders)
-        {
-
-        // Check if the collider has been detected before
-        if (!detectedColliders.Contains(collider))
-        {
-            // If it hasn't been detected before, add it to the list of detected colliders
-            detectedColliders.Add(collider);
-
-            GameObject target = collider.gameObject;
-            // Check if the target is the player character
-            if (target == playerObject || target == null) continue;
-                ApplyEffectsToTarget(target, playerObject);
-        }
-        }
-    }
-
-    private void ApplyEffectsToTarget(GameObject target, GameObject playerObject)
+    public void ApplyEffectsToTarget(GameObject target, GameObject playerObject)
     {
         // Get the player's status controller
         PlayerStatusController statusController = playerObject.GetComponent<PlayerStatusController>();
@@ -267,10 +264,22 @@ public class WeaponSO : ItemSO
     }
 
 
-    public override void UseItem(GameObject player, PlayerStatusController statusController = null)
+    public override void UseItem(GameObject player, PlayerStatusController statusController = null, WeaponController weaponController = null, AttackType attackType = AttackType.Normal )
     {
         base.UseItem(player, null);
-        PerformAttack(player);
+        if (weaponController != null)
+        {
+            weaponController.EquipWeapon(this);
+            if (weaponController.AnimController.model.IsAttacking)
+            {
+                if (durability <= 0) return;
+                durability -= durabilityReductionPerUse;
+                weaponController.PerformAttack(player, AttackType.Normal); 
+            }
+
+        }
+
     }
+
 
 }

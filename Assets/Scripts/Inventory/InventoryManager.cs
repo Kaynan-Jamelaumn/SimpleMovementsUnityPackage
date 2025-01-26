@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using static UnityEditor.Timeline.Actions.MenuPriority;
 
 
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
@@ -24,6 +25,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     GameObject lastItemSlotObject;
     [SerializeField] GameObject player;
     PlayerStatusController playerStatusController;
+    WeaponController weaponController;
+    PlayerAnimationController animController;
     Storage lastStorage;
 
     bool isInventoryOpened;
@@ -50,6 +53,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         storageParent.SetActive(false);
         inventoryParent.SetActive(false);
         if (player) playerStatusController = player.GetComponent<PlayerStatusController>();
+        if (player) weaponController = player.GetComponent<WeaponController>();
+        if (player) animController =  player.GetComponent<PlayerAnimationController>();
     }
 
     void Start()
@@ -100,44 +105,107 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
     public void OnUseItem(InputAction.CallbackContext value)
     {
+        // Exit early if the action is not started
         if (!value.started) return;
-        InventorySlot selectedSlot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
 
-        if (selectedSlot.heldItem != null && selectedSlot.heldItem.GetComponent<InventoryItem>() != null)
+        // Get the selected inventory slot
+        var selectedSlot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
+
+        // Validate the held item
+        var heldItem = GetHeldItem(selectedSlot);
+        if (heldItem == null) return;
+
+        // Check and update cooldown
+        if (!HandleCooldown(heldItem)) return;
+
+        // Use the item
+        UseHeldItem(heldItem);
+
+        // Handle item durability and stack
+        HandleItemDurabilityAndStack(selectedSlot, heldItem);
+    }
+
+    private InventoryItem GetHeldItem(InventorySlot selectedSlot)
+    {
+        // Exit if there is no held item or if the held item does not have an InventoryItem component
+        return selectedSlot.heldItem?.GetComponent<InventoryItem>();
+    }
+
+    private bool HandleCooldown(InventoryItem heldItem)
+    {
+        // Exit if the item is still on cooldown
+        if (Time.time < heldItem.timeSinceLastUse) return false;
+
+        // Update cooldown if applicable
+        var cooldown = heldItem.itemScriptableObject.Cooldown;
+        if (cooldown != 0)
         {
-            // Check if there is a held item in the selected hotbar slot
-            InventoryItem heldItem = selectedSlot.heldItem.GetComponent<InventoryItem>();
-            // Ensure heldItem is not null before accessing its properties
-            if (heldItem != null)
-            {
-                if (Time.time < heldItem.timeSinceLastUse) return;
-                if (heldItem.itemScriptableObject.Cooldown != 0) heldItem.timeSinceLastUse = Time.time + heldItem.itemScriptableObject.Cooldown;
-                heldItem.itemScriptableObject.UseItem(player, playerStatusController);
-                if (heldItem.itemScriptableObject is ConsumableSO || heldItem.itemScriptableObject.ShouldBeDestroyedOn0UsesLeft)
-                {
-                    if (heldItem.itemScriptableObject.Durability <= 0)
-                    {
-                        heldItem.stackCurrent--;
-                        if (heldItem.DurabilityList.Count > 0)
-                        {
-                            heldItem.durability = heldItem.DurabilityList[heldItem.DurabilityList.Count - 1];
-                            heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
-                        }
-                        player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(heldItem.itemScriptableObject.Weight);
-                        if (heldItem.stackCurrent <= 0)
-                        {
-                            selectedSlot.heldItem = null;
-                            Destroy(heldItem.gameObject);
-                            for (int i = 0; i < handParent.childCount; i++)
-                            {
-                                Destroy(handParent.GetChild(i).gameObject);
-                            }
+            heldItem.timeSinceLastUse = Time.time + cooldown;
+        }
+        return true;
+    }
 
-                        }
-                    }
-                }
-                // This will call the overridden UseItem method in the ItemSO derived classes
+    private void UseHeldItem(InventoryItem heldItem)
+    {
+        // Use the item based on its type
+        if (heldItem.itemScriptableObject is WeaponSO)
+        {
+            heldItem.itemScriptableObject.UseItem(player, playerStatusController, weaponController);
+        }
+        else
+        {
+            heldItem.itemScriptableObject.UseItem(player, playerStatusController);
+        }
+    }
+
+    private void HandleItemDurabilityAndStack(InventorySlot selectedSlot, InventoryItem heldItem)
+    {
+        // Check if the item is a consumable or should be destroyed when out of uses
+        if (heldItem.itemScriptableObject is ConsumableSO || heldItem.itemScriptableObject.ShouldBeDestroyedOn0UsesLeft)
+        {
+            ProcessItemDurability(heldItem);
+
+            if (heldItem.stackCurrent <= 0)
+            {
+                DestroyHeldItem(selectedSlot, heldItem);
             }
+        }
+    }
+
+    private void ProcessItemDurability(InventoryItem heldItem)
+    {
+        if (heldItem.DurabilityList.Count > 0 && heldItem.DurabilityList[^1] <= 0)
+        {
+            DecreaseItemStack(heldItem);
+            UpdateItemDurability(heldItem);
+        }
+    }
+
+    private void DecreaseItemStack(InventoryItem heldItem)
+    {
+        // Reduce stack count and update player weight
+        heldItem.stackCurrent--;
+        player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(heldItem.itemScriptableObject.Weight);
+    }
+
+    private void UpdateItemDurability(InventoryItem heldItem)
+    {
+        // Update durability and remove the used durability entry
+        heldItem.durability = heldItem.DurabilityList[^1];
+        heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
+    }
+
+
+    private void DestroyHeldItem(InventorySlot selectedSlot, InventoryItem heldItem)
+    {
+        // Remove the item from the slot and destroy the GameObject
+        selectedSlot.heldItem = null;
+        Destroy(heldItem.gameObject);
+
+        // Clear all children of the handParent
+        for (int i = handParent.childCount - 1; i >= 0; i--)
+        {
+            Destroy(handParent.GetChild(i).gameObject);
         }
     }
     public void InstantiateClassItems(List<GameObject> classItems)

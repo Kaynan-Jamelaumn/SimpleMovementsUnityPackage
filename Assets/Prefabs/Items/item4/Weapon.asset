@@ -13,18 +13,17 @@ MonoBehaviour:
   m_Name: Weapon
   m_EditorClassIdentifier: 
   name: 
+  description: arma
+  itemType: 2
   icon: {fileID: 21300018, guid: 1e627bcafe9e32d40ad554880f36b5eb, type: 3}
   prefab: {fileID: 5181494411761360807, guid: 7efe259af5fe2f14a90724d2c5bc60d5, type: 3}
   stackMax: 1
   weight: 1
   price: 3
-  maxDurability: 20
-  durability: 20
+  maxDurability: 100
+  durability: 100
   durabilityReductionPerUse: 1
   shouldBeDestroyedOn0UsesLeft: 1
-  itemType: 2
-  description: arma
-  isEquipped: 0
   cooldown: 0
   position: {x: 0.081, y: -0.032, z: 0.13}
   rotation: {x: 100, y: -20, z: -50}
@@ -40,6 +39,27 @@ MonoBehaviour:
   criticalChance: 0
   knockBack: 0
   attackSpeed: 1
+  attackPatterns:
+  - Type: 0
+    BaseDamage: 4
+    hasFixedBaseDamage: 1
+    MinDamage: 0
+    MaxDamage: 0.02
+    hasDifferentCriticalChange: 0
+    CriticalChange: 0
+    AnimationTrigger: NormalAttack
+    StaminaCost: 0
+    ComboResetTime: 0
+  - Type: 0
+    BaseDamage: 4
+    hasFixedBaseDamage: 1
+    MinDamage: 0
+    MaxDamage: 0.02
+    hasDifferentCriticalChange: 0
+    CriticalChange: 0
+    AnimationTrigger: NormalAttack
+    StaminaCost: 0
+    ComboResetTime: 0
   minRange: 5
   maxRange: 100
   toolDamage: 10

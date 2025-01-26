@@ -94,6 +94,15 @@ public abstract class ItemSO : ScriptableObject
         // Play animation if available
         InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
 
+    }
+
+    public virtual void UseItem(GameObject player, PlayerStatusController statusController, WeaponController weaponController, AttackType attackType = AttackType.Normal)
+    {
+        if (durability <= 0) return;
+        durability -= durabilityReductionPerUse;
+        // Play animation if available
+        InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
+
 
     }
 

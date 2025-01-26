@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -47,10 +48,7 @@ public class PlayerAnimationController : MonoBehaviour
         model.Anim.SetBool(model.IsJumpingHash, movementStateMachine.CurrentState.StateKey == MovementStateMachine.EMovementState.Jumping);
         model.Anim.SetBool(model.IsRollingHash, movementStateMachine.CurrentState.StateKey == MovementStateMachine.EMovementState.Rolling);
         model.Anim.SetBool(model.IsDashingHash, movementStateMachine.CurrentState.StateKey == MovementStateMachine.EMovementState.Dashing);
-        //        model.Anim.SetBool(model.IsWalkingHash, movementModel.CurrentPlayerState == PlayerMovementModel.PlayerState.Walking);
-        //model.Anim.SetBool(model.IsRunningHash, movementModel.CurrentPlayerState == PlayerMovementModel.PlayerState.Running);
-        //model.Anim.SetBool(model.IsCrouchingHash, movementModel.CurrentPlayerState == PlayerMovementModel.PlayerState.Crouching);
-        //model.Anim.SetBool(model.IsJumpingHash, movementModel.CurrentPlayerState == PlayerMovementModel.PlayerState.Jumping);
+
 
         model.Anim.SetBool(model.IsAttackingHash, model.IsAttacking);
         //model.Anim.SetBool(model.IsRollingHash, model.IsRolling);
@@ -76,5 +74,32 @@ public class PlayerAnimationController : MonoBehaviour
         model.IsDashing = false;
         model.Anim.SetBool("IsDashing", false);
     }
+
+
+    public void TriggerAttackAnimation(string animationTrigger)
+    {
+
+        if (!string.IsNullOrEmpty(animationTrigger))
+        {
+
+            model.Anim.SetTrigger(animationTrigger);
+            model.IsAttacking = true;
+
+
+            // Get the length of the currently playing animation
+            AnimatorStateInfo stateInfo = model.Anim.GetCurrentAnimatorStateInfo(1); // Assuming Layer 1
+            float animationLength = stateInfo.length;
+
+            // Unlock input after animation finishes
+            StartCoroutine(UnlockInputAfterAnimation(animationLength));
+        }
+    }
+
+    private IEnumerator UnlockInputAfterAnimation(float animationLength)
+    {
+        yield return new WaitForSeconds(animationLength);
+        model.IsAttacking = false; // Allow input again
+    }
+
 
 }
