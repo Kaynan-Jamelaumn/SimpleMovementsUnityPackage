@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 using static UnityEditor.Timeline.Actions.MenuPriority;
 
 
+
+
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
     [HideInInspector] public bool isStorageOpened;
@@ -31,7 +33,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     bool isInventoryOpened;
 
-    int selectedHotbarSlot = 0;
+ 
 
     public Transform HandParent
     {
@@ -60,13 +62,13 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     void Start()
     {
         ValidateAssignments();
-        HotbarItemChanged();
+        HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
         
     }
     void Update()
     {
 
-        CheckForHotbarInput();
+        HotbarHandler.CheckForHotbarInput(hotbarSlots, handParent);
 
         storageParent.SetActive(isStorageOpened);
         inventoryParent.SetActive(isInventoryOpened);
@@ -105,109 +107,20 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
     public void OnUseItem(InputAction.CallbackContext value)
     {
-        // Exit early if the action is not started
         if (!value.started) return;
 
-        // Get the selected inventory slot
-        var selectedSlot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
+        var selectedSlot = hotbarSlots[HotbarHandler.SelectedHotbarSlot].GetComponent<InventorySlot>();
+        var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
 
-        // Validate the held item
-        var heldItem = GetHeldItem(selectedSlot);
         if (heldItem == null) return;
 
-        // Check and update cooldown
-        if (!HandleCooldown(heldItem)) return;
+        if (!ItemUsageHandler.HandleCooldown(heldItem)) return;
 
-        // Use the item
-        UseHeldItem(heldItem);
+        ItemUsageHandler.UseHeldItem(player, playerStatusController, weaponController, heldItem);
 
-        // Handle item durability and stack
-        HandleItemDurabilityAndStack(selectedSlot, heldItem);
+        ItemUsageHandler.HandleItemDurabilityAndStack(player, handParent, selectedSlot, heldItem);
     }
 
-    private InventoryItem GetHeldItem(InventorySlot selectedSlot)
-    {
-        // Exit if there is no held item or if the held item does not have an InventoryItem component
-        return selectedSlot.heldItem?.GetComponent<InventoryItem>();
-    }
-
-    private bool HandleCooldown(InventoryItem heldItem)
-    {
-        // Exit if the item is still on cooldown
-        if (Time.time < heldItem.timeSinceLastUse) return false;
-
-        // Update cooldown if applicable
-        var cooldown = heldItem.itemScriptableObject.Cooldown;
-        if (cooldown != 0)
-        {
-            heldItem.timeSinceLastUse = Time.time + cooldown;
-        }
-        return true;
-    }
-
-    private void UseHeldItem(InventoryItem heldItem)
-    {
-        // Use the item based on its type
-        if (heldItem.itemScriptableObject is WeaponSO)
-        {
-            heldItem.itemScriptableObject.UseItem(player, playerStatusController, weaponController);
-        }
-        else
-        {
-            heldItem.itemScriptableObject.UseItem(player, playerStatusController);
-        }
-    }
-
-    private void HandleItemDurabilityAndStack(InventorySlot selectedSlot, InventoryItem heldItem)
-    {
-        // Check if the item is a consumable or should be destroyed when out of uses
-        if (heldItem.itemScriptableObject is ConsumableSO || heldItem.itemScriptableObject.ShouldBeDestroyedOn0UsesLeft)
-        {
-            ProcessItemDurability(heldItem);
-
-            if (heldItem.stackCurrent <= 0)
-            {
-                DestroyHeldItem(selectedSlot, heldItem);
-            }
-        }
-    }
-
-    private void ProcessItemDurability(InventoryItem heldItem)
-    {
-        if (heldItem.DurabilityList.Count > 0 && heldItem.DurabilityList[^1] <= 0)
-        {
-            DecreaseItemStack(heldItem);
-            UpdateItemDurability(heldItem);
-        }
-    }
-
-    private void DecreaseItemStack(InventoryItem heldItem)
-    {
-        // Reduce stack count and update player weight
-        heldItem.stackCurrent--;
-        player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(heldItem.itemScriptableObject.Weight);
-    }
-
-    private void UpdateItemDurability(InventoryItem heldItem)
-    {
-        // Update durability and remove the used durability entry
-        heldItem.durability = heldItem.DurabilityList[^1];
-        heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
-    }
-
-
-    private void DestroyHeldItem(InventorySlot selectedSlot, InventoryItem heldItem)
-    {
-        // Remove the item from the slot and destroy the GameObject
-        selectedSlot.heldItem = null;
-        Destroy(heldItem.gameObject);
-
-        // Clear all children of the handParent
-        for (int i = handParent.childCount - 1; i >= 0; i--)
-        {
-            Destroy(handParent.GetChild(i).gameObject);
-        }
-    }
     public void InstantiateClassItems(List<GameObject> classItems)
     {
         foreach (GameObject item in classItems)
@@ -216,88 +129,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
 
 
-    private void CheckForHotbarInput()
-    {
-        if (Input.GetKeyDown(KeyCode.Alpha1))
-        {
-            selectedHotbarSlot = 0;
-            HotbarItemChanged();
-        }
-        else if (Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            selectedHotbarSlot = 1;
-            HotbarItemChanged();
-        }
-        else if (Input.GetKeyDown(KeyCode.Alpha3))
-        {
-            selectedHotbarSlot = 2;
-            HotbarItemChanged();
-        }
-        else if (Input.GetKeyDown(KeyCode.Alpha4))
-        {
-            selectedHotbarSlot = 3;
-            HotbarItemChanged();
-        }
-        else if (Input.GetKeyDown(KeyCode.Alpha5))
-        {
-            selectedHotbarSlot = 4;
-            HotbarItemChanged();
-        }
-    }
-
-    private void HotbarItemChanged()
-    {
-        foreach (GameObject slot in hotbarSlots)
-        {
-            Vector3 scale;
-
-            if (slot == hotbarSlots[selectedHotbarSlot])
-            {
-                scale = new Vector3(1.25f, 1.25f, 1.25f);
-
-                // Delete every child inside handparent
-                for (int i = 0; i < handParent.childCount; i++)
-                {
-                    Destroy(handParent.GetChild(i).gameObject);
-                }
-
-                if (slot.GetComponent<InventorySlot>().heldItem != null)
-                {
-
-                    // Instantiate the prefab of the item in the hand
-                    GameObject newItem = Instantiate(hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.Prefab);
-
-
-                    //hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject)
-
-                    Rigidbody rb = newItem.GetComponent<Rigidbody>();
-                    if (rb != null)
-                    {
-                        Destroy(rb);
-                    }
-
-                    // Remove ItemPickable component
-                    ItemPickable itemPickable = newItem.GetComponent<ItemPickable>();
-                    if (itemPickable != null)
-                    {
-                        Destroy(itemPickable);
-                    }
-
-
-                    newItem.transform.parent = handParent;
-                    newItem.transform.localPosition = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.Position;
-                    newItem.transform.localRotation = Quaternion.Euler(hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.Rotation);
-                    newItem.transform.localScale = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>().itemScriptableObject.Scale;              
-                }
-            }
-            else
-            {
-                scale = new Vector3(1f, 1f, 1f);
-            }
-
-            slot.transform.localScale = scale;
-        }
-    }
 
     public void OnPointerClick(PointerEventData eventData)
     {
@@ -387,7 +218,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                 DropItem();
             }
 
-            HotbarItemChanged();
+            HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
             draggedObject = null;
         }
     }
