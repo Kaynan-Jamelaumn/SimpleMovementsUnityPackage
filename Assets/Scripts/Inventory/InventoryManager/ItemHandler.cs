@@ -5,20 +5,48 @@ public static class ItemHandler
 {
     public static void PlaceItemInSlot(InventorySlot slot, GameObject draggedObject, PlayerStatusController playerStatusController)
     {
+        SetItemInSlot(slot, draggedObject);
+        HandleItemEquipping(slot, draggedObject.GetComponent<InventoryItem>(), playerStatusController);
+    }
+
+    private static void SetItemInSlot(InventorySlot slot, GameObject draggedObject)
+    {
         slot.SetHeldItem(draggedObject);
         draggedObject.transform.SetParent(slot.transform.parent.parent.GetChild(2));
+    }
 
-        InventoryItem draggedItem = draggedObject.GetComponent<InventoryItem>();
-        if (slot.SlotType != SlotType.Common && slot.SlotType == (SlotType)draggedItem.itemScriptableObject.ItemType && !draggedItem.isEquipped)
+    private static void HandleItemEquipping(InventorySlot slot, InventoryItem draggedItem, PlayerStatusController playerStatusController)
+    {
+        if (IsEquippable(slot, draggedItem))
         {
-            draggedItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-            draggedItem.isEquipped = true;
+            EquipItem(draggedItem, playerStatusController);
         }
-        else if (draggedItem.isEquipped && slot.SlotType == SlotType.Common && slot.SlotType != (SlotType)draggedItem.itemScriptableObject.ItemType)
+        else if (ShouldUnequip(slot, draggedItem))
         {
-            draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-            draggedItem.isEquipped = false;
+            UnequipItem(draggedItem, playerStatusController);
         }
+    }
+
+    private static bool IsEquippable(InventorySlot slot, InventoryItem item)
+    {
+        return slot.SlotType != SlotType.Common && slot.SlotType == (SlotType)item.itemScriptableObject.ItemType && !item.isEquipped;
+    }
+
+    private static bool ShouldUnequip(InventorySlot slot, InventoryItem item)
+    {
+        return item.isEquipped && slot.SlotType == SlotType.Common && slot.SlotType != (SlotType)item.itemScriptableObject.ItemType;
+    }
+
+    private static void EquipItem(InventoryItem item, PlayerStatusController playerStatusController)
+    {
+        item.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
+        item.isEquipped = true;
+    }
+
+    private static void UnequipItem(InventoryItem item, PlayerStatusController playerStatusController)
+    {
+        item.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
+        item.isEquipped = false;
     }
 
     public static void SwitchOrFillStack(InventorySlot slot, GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController)
@@ -26,14 +54,24 @@ public static class ItemHandler
         InventoryItem slotHeldItem = slot.heldItem.GetComponent<InventoryItem>();
         InventoryItem draggedItem = draggedObject.GetComponent<InventoryItem>();
 
-        if (slot.heldItem != null && (slotHeldItem.stackCurrent == slotHeldItem.stackMax || slotHeldItem.itemScriptableObject != draggedItem.itemScriptableObject))
+        if (ShouldSwitchItems(slot, slotHeldItem, draggedItem))
         {
             SwitchItems(slot, draggedObject, lastItemSlotObject, playerStatusController);
         }
-        else if (slotHeldItem.stackCurrent < slotHeldItem.stackMax && slotHeldItem.itemScriptableObject == draggedItem.itemScriptableObject)
+        else if (CanFillStack(slotHeldItem, draggedItem))
         {
             FillStack(slot, slotHeldItem, draggedItem, lastItemSlotObject);
         }
+    }
+
+    private static bool ShouldSwitchItems(InventorySlot slot, InventoryItem slotHeldItem, InventoryItem draggedItem)
+    {
+        return slot.heldItem != null && (slotHeldItem.stackCurrent == slotHeldItem.stackMax || slotHeldItem.itemScriptableObject != draggedItem.itemScriptableObject);
+    }
+
+    private static bool CanFillStack(InventoryItem slotHeldItem, InventoryItem draggedItem)
+    {
+        return slotHeldItem.stackCurrent < slotHeldItem.stackMax && slotHeldItem.itemScriptableObject == draggedItem.itemScriptableObject;
     }
 
     public static void SwitchItems(InventorySlot slot, GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController)
@@ -42,31 +80,38 @@ public static class ItemHandler
         InventorySlot lastSlot = lastItemSlotObject.GetComponent<InventorySlot>();
         InventoryItem currentItem = slot.heldItem.GetComponent<InventoryItem>();
 
-        if ((currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType && slot.SlotType != SlotType.Common) ||
-            (lastSlot.SlotType != SlotType.Common && currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType))
+        if (CannotSwitchItems(slot, lastSlot, currentItem, draggedItem))
         {
             ReturnItemToLastSlot(lastItemSlotObject, draggedObject);
             return;
         }
 
-        if (slot.SlotType != SlotType.Common || (lastSlot.SlotType != SlotType.Common && draggedItem.itemScriptableObject.ItemType == currentItem.itemScriptableObject.ItemType))
-        {
-            if (slot.SlotType != SlotType.Common)
-            {
-                currentItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-                currentItem.isEquipped = false;
-                draggedItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-                draggedItem.isEquipped = true;
-            }
-            else
-            {
-                currentItem.itemScriptableObject.ApplyEquippedStats(true, playerStatusController);
-                currentItem.isEquipped = true;
-                draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
-                draggedItem.isEquipped = false;
-            }
-        }
+        UpdateEquippedStates(slot, lastSlot, currentItem, draggedItem, playerStatusController);
+        SwapItems(slot, lastSlot, draggedObject);
+    }
 
+    private static bool CannotSwitchItems(InventorySlot slot, InventorySlot lastSlot, InventoryItem currentItem, InventoryItem draggedItem)
+    {
+        return (currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType && slot.SlotType != SlotType.Common) ||
+               (lastSlot.SlotType != SlotType.Common && currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType);
+    }
+
+    private static void UpdateEquippedStates(InventorySlot slot, InventorySlot lastSlot, InventoryItem currentItem, InventoryItem draggedItem, PlayerStatusController playerStatusController)
+    {
+        if (slot.SlotType != SlotType.Common)
+        {
+            UnequipItem(currentItem, playerStatusController);
+            EquipItem(draggedItem, playerStatusController);
+        }
+        else if (lastSlot.SlotType != SlotType.Common)
+        {
+            EquipItem(currentItem, playerStatusController);
+            UnequipItem(draggedItem, playerStatusController);
+        }
+    }
+
+    private static void SwapItems(InventorySlot slot, InventorySlot lastSlot, GameObject draggedObject)
+    {
         lastSlot.SetHeldItem(slot.heldItem);
         slot.heldItem.transform.SetParent(slot.transform.parent.parent.GetChild(2));
 
@@ -80,15 +125,15 @@ public static class ItemHandler
 
         if (itemsToFillStack >= draggedItem.stackCurrent)
         {
-            FillEntireStack(slot, slotHeldItem, draggedItem);
+            FillEntireStack(slotHeldItem, draggedItem);
         }
         else
         {
-            FillPartialStack(slot, slotHeldItem, draggedItem, itemsToFillStack, lastItemSlotObject);
+            FillPartialStack(slotHeldItem, draggedItem, itemsToFillStack, lastItemSlotObject);
         }
     }
 
-    public static void FillEntireStack(InventorySlot slot, InventoryItem slotHeldItem, InventoryItem draggedItem)
+    private static void FillEntireStack(InventoryItem slotHeldItem, InventoryItem draggedItem)
     {
         slotHeldItem.stackCurrent += draggedItem.stackCurrent;
         slotHeldItem.DurabilityList.AddRange(draggedItem.DurabilityList);
@@ -97,7 +142,7 @@ public static class ItemHandler
         Object.Destroy(draggedItem.gameObject);
     }
 
-    public static void FillPartialStack(InventorySlot slot, InventoryItem slotHeldItem, InventoryItem draggedItem, int itemsToFillStack, GameObject lastItemSlotObject)
+    private static void FillPartialStack(InventoryItem slotHeldItem, InventoryItem draggedItem, int itemsToFillStack, GameObject lastItemSlotObject)
     {
         for (int j = 0; j < itemsToFillStack; j++)
         {
@@ -127,15 +172,26 @@ public static class ItemHandler
 
         if (lastSlot.SlotType != SlotType.Common)
         {
-            draggedItem.isEquipped = false;
-            draggedItem.itemScriptableObject.ApplyEquippedStats(false, playerStatusController);
+            UnequipItem(draggedItem, playerStatusController);
         }
 
+        Vector3 dropPosition = GetDropPosition(cam);
+        CreateDroppedItem(draggedItem, dropPosition, player);
+
+        lastSlot.heldItem = null;
+        Object.Destroy(draggedObject);
+    }
+
+    private static Vector3 GetDropPosition(Camera cam)
+    {
         if (!cam) cam = Camera.main;
 
         Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        Vector3 position = ray.GetPoint(3);
+        return ray.GetPoint(3);
+    }
 
+    private static void CreateDroppedItem(InventoryItem draggedItem, Vector3 position, GameObject player)
+    {
         GameObject newItem = Object.Instantiate(draggedItem.itemScriptableObject.Prefab, position, Quaternion.identity);
 
         ItemPickable itemPickableComponent = newItem.GetComponent<ItemPickable>();
@@ -145,8 +201,5 @@ public static class ItemHandler
         itemPickableComponent.InteractionTime = draggedItem.itemScriptableObject.PickUpTime;
 
         player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(itemPickableComponent.itemScriptableObject.Weight * itemPickableComponent.quantity);
-
-        lastSlot.heldItem = null;
-        Object.Destroy(draggedObject);
     }
 }
