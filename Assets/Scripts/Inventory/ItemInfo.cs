@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using UnityEngine.InputSystem;
+using Unity.VisualScripting.Antlr3.Runtime.Misc;
 
 public class ItemInfo : MonoBehaviour
 {
@@ -56,7 +57,8 @@ public class ItemInfo : MonoBehaviour
 
     public void SplitItem()
     {
-        inventoryManager.SplitItemIntoNewStack(clickedItem);
+        //inventoryManager.SplitItemIntoNewStack(clickedItem);
+        SplitItemHandler.SplitItemIntoNewStack(inventoryManager, clickedItem, inventoryManager.Slots, inventoryManager.Player);
     }
 
     public void ShowItemInfo(InventoryItem itemToShow)
