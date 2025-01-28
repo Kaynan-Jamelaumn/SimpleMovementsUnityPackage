@@ -6,6 +6,7 @@ public static class HotbarHandler
 
     public static int SelectedHotbarSlot { get => selectedHotbarSlot; }
 
+
     public static void CheckForHotbarInput(GameObject[] hotbarSlots, Transform handParent)
     {
         if (Input.GetKeyDown(KeyCode.Alpha1))

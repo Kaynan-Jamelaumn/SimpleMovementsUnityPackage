@@ -4,6 +4,7 @@ using UnityEngine;
 
 public static class SplitItemHandler
 {
+
     public static GameObject FindEmptySlot(GameObject[] slots)
     {
         foreach (var slot in slots)

@@ -3,6 +3,7 @@ using UnityEngine;
 
 public static class ItemHandler
 {
+
     public static void PlaceItemInSlot(InventorySlot slot, GameObject draggedObject, PlayerStatusController playerStatusController)
     {
         SetItemInSlot(slot, draggedObject);

@@ -9,6 +9,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     [HideInInspector] public bool isStorageOpened;
 
     [SerializeField] GameObject[] hotbarSlots = new GameObject[4];
+
     [SerializeField] GameObject[] slots = new GameObject[20];
     [Tooltip("inventory UI parent from everything for when I open the inventory or close")][SerializeField] GameObject inventoryParent;
     [Tooltip("equippable inventory UI to be equipped when Inventory opened or closed")][SerializeField] GameObject equippableInventory;
@@ -22,9 +23,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     GameObject draggedObject;
     GameObject lastItemSlotObject;
     [SerializeField] GameObject player;
-    PlayerStatusController playerStatusController;
-    WeaponController weaponController;
-    PlayerAnimationController animController;
+    [SerializeField] PlayerStatusController playerStatusController;
+    [SerializeField] WeaponController weaponController;
+    [SerializeField] PlayerAnimationController animController;
     Storage lastStorage;
 
     bool isInventoryOpened;
@@ -53,9 +54,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         storageParent.SetActive(false);
         inventoryParent.SetActive(false);
-        if (Player) playerStatusController = Player.GetComponent<PlayerStatusController>();
-        if (Player) weaponController = Player.GetComponent<WeaponController>();
-        if (Player) animController =  Player.GetComponent<PlayerAnimationController>();
+        if (Player && !playerStatusController) playerStatusController = Player.GetComponent<PlayerStatusController>();
+        if (Player && !weaponController) weaponController = Player.GetComponent<WeaponController>();
+        if (Player && !animController) animController =  Player.GetComponent<PlayerAnimationController>();
     }
 
     void Start()
@@ -108,8 +109,16 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (!value.started) return;
 
+        Debug.Log("OnUseItem called");
+
         var selectedSlot = hotbarSlots[HotbarHandler.SelectedHotbarSlot].GetComponent<InventorySlot>();
-        var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
+        if (selectedSlot == null)
+        {
+            Debug.LogWarning("Selected slot is null or does not have an InventorySlot component.");
+            return;
+        }
+
+            var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
 
         if (heldItem == null) return;
 

@@ -2,10 +2,25 @@
 
 public static class ItemUsageHandler
 {
+
     public static InventoryItem GetHeldItem(InventorySlot selectedSlot)
     {
-        return selectedSlot.heldItem?.GetComponent<InventoryItem>();
+        if (selectedSlot == null || selectedSlot.heldItem == null)
+        {
+            return null;
+        }
+
+        InventoryItem heldItemComponent;
+        if (selectedSlot.heldItem.TryGetComponent(out heldItemComponent))
+        {
+            return heldItemComponent;
+        }
+        else
+        {
+            return null;
+        }
     }
+
 
     public static bool HandleCooldown(InventoryItem heldItem)
     {
@@ -46,12 +61,21 @@ public static class ItemUsageHandler
 
     private static void ProcessItemDurability(GameObject player, InventoryItem heldItem)
     {
-        if (heldItem.DurabilityList.Count > 0 && heldItem.DurabilityList[^1] <= 0)
+        // Reduce durability if it exists and is greater than zero
+        if (heldItem.durability > 0)
         {
-            DecreaseItemStack(player, heldItem);
-            UpdateItemDurability(heldItem);
+
+            heldItem.durability= - heldItem.itemScriptableObject.DurabilityReductionPerUse; // Reduce durability by 1
+
+            // If durability reaches zero, decrease stack and refresh durability if applicable
+            if (heldItem.durability <= 0)
+            {
+                DecreaseItemStack(player, heldItem);
+                UpdateItemDurability(heldItem);
+            }
         }
     }
+
 
     private static void DecreaseItemStack(GameObject player, InventoryItem heldItem)
     {

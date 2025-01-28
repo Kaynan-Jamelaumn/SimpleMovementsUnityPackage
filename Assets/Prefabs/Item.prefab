@@ -206,10 +206,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c0598bc4fa0688b4180f5a2d4cb1bb90, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  itemScriptableObject: {fileID: 11400000, guid: 61dcdb9a4acff1442815141ed50fd0d6, type: 2}
+  itemScriptableObject: {fileID: 0}
   stackCurrent: 1
   stackMax: 0
   totalWeight: 0
+  timeSinceLastUse: 0
+  isEquipped: 0
+  durability: 0
   durabilityList: 
   iconImage: {fileID: 6572697006396416599}
   stackText: {fileID: 6572697006359627708}

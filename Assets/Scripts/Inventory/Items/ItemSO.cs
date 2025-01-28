@@ -31,7 +31,7 @@ public abstract class ItemSO : ScriptableObject
     [Header("Durability")]
     [SerializeField] protected int maxDurability;
     [SerializeField] protected int durability = 1;
-    [SerializeField] protected int durabilityReductionPerUse;
+    [SerializeField] protected int durabilityReductionPerUse=1;
     [SerializeField] protected bool shouldBeDestroyedOn0UsesLeft = true;
 
     // Cooldown
@@ -89,18 +89,13 @@ public abstract class ItemSO : ScriptableObject
 
     public virtual void UseItem(GameObject player, PlayerStatusController statusController)
     {
-        if (durability <= 0) return;
-        durability -= durabilityReductionPerUse;
-        // Play animation if available
+
         InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
 
     }
 
     public virtual void UseItem(GameObject player, PlayerStatusController statusController, WeaponController weaponController, AttackType attackType = AttackType.Normal)
     {
-        if (durability <= 0) return;
-        durability -= durabilityReductionPerUse;
-        // Play animation if available
         InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
 
 

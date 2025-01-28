@@ -58,12 +58,19 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
     /// </summary>
     public void ValidateAssignments()
     {
-        // Ensure all required components are assigned.
-        Assert.IsNotNull(actionsController, "MobActionsController is Not Assigned");
-        Assert.IsNotNull(animator, "MobAnimator is Not Assigned");
-        Assert.IsNotNull(navMeshAgent, "NavMeshAgent is Not Assigned");
-        Assert.IsNotNull(statusController, "MobStatusController is Not Assigned");
+        actionsController = GetComponentOrLogError(ref actionsController, "MobActionsController");
+        animator = GetComponentOrLogError(ref animator, "MobAnimator");
+        navMeshAgent = GetComponentOrLogError(ref navMeshAgent, "NavMeshAgent");
+        statusController = GetComponentOrLogError(ref statusController, "MobStatusController");
     }
+
+    protected T GetComponentOrLogError<T>(ref T field, string fieldName) where T : Component
+    {
+        field = GetComponent<T>();
+        Assert.IsNotNull(field, $"{fieldName} is not assigned.");
+        return field;
+    }
+
 
     /// <summary>
     /// Initializes the states of the state machine.

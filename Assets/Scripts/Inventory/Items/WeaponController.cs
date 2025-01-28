@@ -2,8 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Assertions;
 
-public class WeaponController : MonoBehaviour
+public class WeaponController : MonoBehaviour, IAssignmentsValidator
 {
     private WeaponSO equippedWeapon;
     [SerializeField] public GameObject handGameObject;
@@ -24,9 +25,33 @@ public class WeaponController : MonoBehaviour
     private Dictionary<AttackType, ComboState> comboStates = new Dictionary<AttackType, ComboState>();
     private Dictionary<AttackType, List<AttackPattern>> attackPatternsByType;
     private List<Collider> collisionBuffer = new List<Collider>();
-    PlayerAnimationController animController;
+    [SerializeField]PlayerAnimationController animController;
 
     public PlayerAnimationController AnimController { get => animController; set => animController = value; }
+
+    private void Awake()
+    {
+        ValidateAssignments();
+    }
+
+    public  void ValidateAssignments()
+    {
+        animController = GetComponentOrLogError(ref animController, "HealthManager");
+    }
+    /// <summary>
+    /// Gets a component of type <typeparamref name="T"/> and logs an error if not found.
+    /// </summary>
+    /// <typeparam name="T">Type of the component.</typeparam>
+    /// <param name="field">Reference to the field to assign the component to.</param>
+    /// <param name="fieldName">Name of the field for error logging.</param>
+    /// <returns>The found component, or null if not found.</returns>
+    private T GetComponentOrLogError<T>(ref T field, string fieldName) where T : Component
+    {
+        field = GetComponent<T>();
+        Assert.IsNotNull(field, $"{fieldName} is not assigned.");
+        return field;
+    }
+
 
     public void EquipWeapon(WeaponSO weaponSO)
     {
@@ -41,7 +66,6 @@ public class WeaponController : MonoBehaviour
     public void PerformAttack(GameObject player, AttackType attackType)
     {
         if (equippedWeapon == null || !attackPatternsByType.ContainsKey(attackType)) return;
-        Debug.Log("aaa");
 
         // Get current animation state
         PlayerAnimationController animController = player.GetComponent<PlayerAnimationController>();
@@ -53,7 +77,6 @@ public class WeaponController : MonoBehaviour
         if (attackPattern == null) return;
         TriggerAttackEffects(player, attackPattern);
         StartCollisionDetection(player);
-        Debug.Log("ddd");
         UpdateComboState(attackType, attackPattern.ComboResetTime);
 
         // Lock inputs until animation ends
@@ -67,7 +90,6 @@ public class WeaponController : MonoBehaviour
         {
             yield return new WaitForSeconds(animationLength);
         }
-        Debug.Log("eee");
         animController.EndAttackAnimation();
     }
 

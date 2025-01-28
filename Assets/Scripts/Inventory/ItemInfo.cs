@@ -58,6 +58,7 @@ public class ItemInfo : MonoBehaviour
     public void SplitItem()
     {
         //inventoryManager.SplitItemIntoNewStack(clickedItem);
+        Debug.Log("split");
         SplitItemHandler.SplitItemIntoNewStack(inventoryManager, clickedItem, inventoryManager.Slots, inventoryManager.Player);
     }
 
