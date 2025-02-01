@@ -29,8 +29,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     Storage lastStorage;
 
     bool isInventoryOpened;
+    bool isDragging;
 
- 
+
 
     public Transform HandParent
     {
@@ -107,7 +108,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
     public void OnUseItem(InputAction.CallbackContext value)
     {
-        if (!value.started) return;
+        if (!value.started || isDragging) return; // Prevent OnUseItem while dragging
 
         Debug.Log("OnUseItem called");
 
@@ -118,7 +119,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             return;
         }
 
-            var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
+        var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
 
         if (heldItem == null) return;
 
@@ -128,6 +129,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         ItemUsageHandler.HandleItemDurabilityAndStack(Player, handParent, selectedSlot, heldItem);
     }
+
 
     public void InstantiateClassItems(List<GameObject> classItems)
     {
@@ -181,9 +183,10 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         {
             GameObject clickedObject = eventData.pointerCurrentRaycast.gameObject;
             InventorySlot slot = clickedObject.GetComponent<InventorySlot>();
-            //There is item in the slot - pick it up
+            // There is an item in the slot - pick it up
             if (slot != null && slot.heldItem != null)
             {
+                isDragging = true; // Start dragging
                 draggedObject = slot.heldItem;
                 slot.heldItem = null;
                 lastItemSlotObject = clickedObject;
@@ -229,8 +232,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
             draggedObject = null;
         }
-    }
 
+        isDragging = false; // Stop dragging
+    }
 
     private void DropItem()
     {

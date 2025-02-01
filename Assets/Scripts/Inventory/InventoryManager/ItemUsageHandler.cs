@@ -64,29 +64,38 @@ public static class ItemUsageHandler
         // Reduce durability if it exists and is greater than zero
         if (heldItem.durability > 0)
         {
+            heldItem.durability -= heldItem.itemScriptableObject.DurabilityReductionPerUse;
 
-            heldItem.durability= - heldItem.itemScriptableObject.DurabilityReductionPerUse; // Reduce durability by 1
-
-            // If durability reaches zero, decrease stack and refresh durability if applicable
+            // If durability reaches zero or below, update stack and durability
             if (heldItem.durability <= 0)
             {
                 DecreaseItemStack(player, heldItem);
-                UpdateItemDurability(heldItem);
+
+                if (heldItem.DurabilityList.Count > 0)
+                {
+                    UpdateItemDurability(heldItem);
+                }
+                else if (heldItem.stackCurrent <= 0)
+                {
+                    heldItem.durability = 0; // Prevents negative durability display
+                }
             }
         }
     }
 
+    private static void UpdateItemDurability(InventoryItem heldItem)
+    {
+        if (heldItem.DurabilityList.Count > 0)
+        {
+            heldItem.durability = heldItem.DurabilityList[^1];
+            heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
+        }
+    }
 
     private static void DecreaseItemStack(GameObject player, InventoryItem heldItem)
     {
         heldItem.stackCurrent--;
         player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(heldItem.itemScriptableObject.Weight);
-    }
-
-    private static void UpdateItemDurability(InventoryItem heldItem)
-    {
-        heldItem.durability = heldItem.DurabilityList[^1];
-        heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
     }
 
     private static void DestroyHeldItem(GameObject player, Transform handParent, InventorySlot selectedSlot, InventoryItem heldItem)
