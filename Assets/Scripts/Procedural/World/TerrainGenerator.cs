@@ -398,7 +398,7 @@ public class TerrainGenerator : MonoBehaviour
         if (biomeObjectDataThreadInfoQueue.Count > 0)
         {
             bool shouldBreak = false;
-
+            int lodFactor = levelOfDetail > 0 ? levelOfDetail * 2 : 1;
             // Iterate over the queued biome object data and place objects based on biome information.
             for (int i = 0; i < biomeObjectDataThreadInfoQueue.Count; i++)
             {
@@ -414,6 +414,7 @@ public class TerrainGenerator : MonoBehaviour
                         // Calculate the world position for the current chunk coordinates.
                         Vector2 worldPos2D = new Vector2(threadInfo.parameter.globalOffset.x + x, threadInfo.parameter.globalOffset.y + y);
                         Vector3 worldPos3D = new Vector3(worldPos2D.x, 0, worldPos2D.y);
+
 
                         // Determine the biome at the current position.
                         Biome chosenBiome = threadInfo.parameter.biomeMap[x, y];
@@ -431,7 +432,7 @@ public class TerrainGenerator : MonoBehaviour
                                 .FirstOrDefault(b => b.BiomePrefab == chosenBiome);
 
                             // Place objects for the selected biome at the calculated position.
-                            ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, levelOfDetail);
+                            ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, lodFactor);
                         }
                     }
                 }
