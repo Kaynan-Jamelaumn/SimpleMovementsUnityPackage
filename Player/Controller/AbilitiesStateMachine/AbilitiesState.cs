@@ -8,7 +8,12 @@ public abstract class AbilitiesState : BaseState<AbilitiesStateMachine.EAbilitie
     {
         Context = context;
     }
-    protected bool IsAbilityTriggered(int index) => Context.AbilityAction[index].abilityActionReference.action.triggered && Context.AbilityAction[index].abilityStateMachine.CurrentState.StateKey == AbilityStateMachine.EAbilityState.Ready;
+    protected bool IsAbilityTriggered(int index)
+    {
+        var abilityAction = Context?.AbilityAction?[index];
+        return abilityAction?.abilityActionReference?.action?.triggered == true
+               && abilityAction?.abilityStateMachine?.CurrentState?.StateKey == AbilityStateMachine.EAbilityState.Ready;
+    }
 
     protected bool TriggeredAbility1() => Context.AbilityAction[0].abilityActionReference.action.triggered && Context.AbilityAction[0].abilityStateMachine.CurrentState.StateKey == AbilityStateMachine.EAbilityState.Ready && Context.AbilityController.Abilities[0].abilityEffect != null;
     protected bool TriggeredAbility2() => Context.AbilityAction[1].abilityActionReference.action.triggered && Context.AbilityAction[1].abilityStateMachine.CurrentState.StateKey == AbilityStateMachine.EAbilityState.Ready && Context.AbilityController.Abilities[1].abilityEffect != null;
