@@ -1,4 +1,5 @@
-﻿using System;
+﻿
+using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.Assertions;
@@ -6,18 +7,16 @@ using UnityEngine.Assertions;
 public class PlayerAnimationController : MonoBehaviour
 {
     [SerializeField] public PlayerAnimationModel model;
-    private PlayerMovementModel movementModel;
+    [SerializeField] private PlayerMovementModel movementModel;
     [SerializeField] private MovementStateMachine movementStateMachine;
 
     private void Awake()
     {
-        // Assign models and controllers
-        if (model == null) model = GetComponent<PlayerAnimationModel>();
-        if (movementModel == null) movementModel = GetComponent<PlayerMovementModel>();
+        model = this.CheckComponent(model, nameof(model));
+        movementModel = this.CheckComponent(movementModel, nameof(movementModel));
     }
     private void Start()
     {
-        ValidateAsignments();
         model.IsWalkingHash = Animator.StringToHash("IsWalking");
         model.IsRunningHash = Animator.StringToHash("IsRunning");
 
@@ -34,11 +33,7 @@ public class PlayerAnimationController : MonoBehaviour
     {
         ApplyAnimation();
     }
-    private void ValidateAsignments()
-    {
-        Assert.IsNotNull(model, "PlayerAnimationModel is not assigned in model.");
-        Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned in movementModel.");
-    }
+
     public void ApplyAnimation()
     {
         //model.Anim.SetBool(model., movementStateMachine.CurrentState.StateKey == MovementStateMachine.EMovementState.Walking);

@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 public class PlayerMovementView : MonoBehaviour
 {
     // Reference to movement components
-    private PlayerMovementModel model;
+    [SerializeField] private PlayerMovementModel model;
     // Initialization method
     private void Awake()
     {

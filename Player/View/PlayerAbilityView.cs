@@ -12,8 +12,8 @@ public class PlayerAbilityView : MonoBehaviour
 
     private void Awake()
     {
-        if (!playerAbilityController) playerAbilityController = GetComponent<PlayerAbilityController>();
-
+        playerAbilityController = this.CheckComponent(playerAbilityController, nameof(playerAbilityController));
+        inventoryManager = this.CheckComponent(inventoryManager, nameof(inventoryManager), isCritical: false);
     }
     private void Start()
     {

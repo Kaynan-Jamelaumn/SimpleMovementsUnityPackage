@@ -1,20 +1,19 @@
-using Unity.Cinemachine;
-using System.Collections;
-using UnityEditor.EditorTools;
 using UnityEngine;
+using System.Collections;
+
 using UnityEngine.Assertions;
 public class PlayerZoomController : MonoBehaviour
 {
     // Models
-    private PlayerZoomModel model;
-    private PlayerCameraController cameraController;
+    [SerializeField] private PlayerZoomModel model;
+    [SerializeField] private PlayerCameraController cameraController;
 
     private void Awake()
     {
-        // Assign models
-        model = GetComponent<PlayerZoomModel>();
-        cameraController = GetComponent<PlayerCameraController>();
+        model = this.CheckComponent(model, nameof(model));
+        cameraController = this.CheckComponent(cameraController, nameof(cameraController));
     }
+
     private void Start()
     {
         ValidateAsignments();

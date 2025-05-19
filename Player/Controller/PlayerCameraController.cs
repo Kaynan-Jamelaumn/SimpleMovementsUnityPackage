@@ -1,88 +1,128 @@
+
+
 using Unity.Cinemachine;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
+
 public class PlayerCameraController : MonoBehaviour
 {
-    // Reference to the camera model
-    private PlayerCameraModel model;
+    [SerializeField] private PlayerCameraModel model;
+    private List<GameObject> cameraOrder = new List<GameObject>();
+    private int currentIndex = 0;
 
-    // Initialization method
     private void Awake()
     {
-        // Get reference to the camera model
-        model = GetComponent<PlayerCameraModel>();
-
-        // Check if CameraTransform is not set, attempt to find the main camera
-        if (model.CameraTransform == null)
+        model = this.CheckComponent(model, nameof(model));
+        model.CameraTransform = this.CheckComponent(model.CameraTransform, nameof(model.CameraTransform), searchChildren: true);
+        
+        this.ValidateDict(model.CameraDictionary, nameof(model.CameraDictionary), allowEmpty: false);
+        
+        foreach (var kvp in model.CameraDictionary)
         {
-            GameObject mainCameraObject = GameObject.FindGameObjectWithTag("MainCamera");
-            if (mainCameraObject != null)
-                model.CameraTransform = mainCameraObject.transform;
-            
-            else
-                Debug.LogError("Main camera not found!");
-            
+            if (kvp.Key != null) // Only add valid cameras
+            {
+                cameraOrder.Add(kvp.Key);
+                kvp.Key.SetActive(false);
+            }
         }
     }
 
-    // Start method
     private void Start()
     {
         ValidateAsignments();
-        // Set initial cursor lock state and camera index
-      //  SetCursorLock(false);
-        model.CurrentIndex = 1;
+        if (cameraOrder.Count > 0)
+        {
+            currentIndex = 0;
+            ActivateCamera(cameraOrder[currentIndex]);
+        }
     }
 
-    // Update method
     private void Update()
     {
-        // Update the first-person state based on the current index
-        model.IsFirstPerson = model.CurrentIndex == 1;
+        if (model.CurrentCamera == null) return;
+
+        if (model.CameraDictionary.TryGetValue(model.CurrentCamera, out bool isFirstPerson))
+        {
+            model.IsFirstPerson = isFirstPerson;
+            model.PlayerShouldRotateByCameraAngle = isFirstPerson || (model.IsRightPressed && !isFirstPerson);
+        }
     }
+
     private void ValidateAsignments()
     {
         Assert.IsNotNull(model, "PlayerCameraModel is not assigned in model.");
     }
-    // Calculate movement direction relative to the camera
+
     public Vector3 DirectionToMoveByCamera(Vector3 direction)
     {
         return Quaternion.AngleAxis(model.CameraTransform.rotation.eulerAngles.y, Vector3.up) * direction;
     }
 
-    // Set cursor lock state
-    private void CursorLocker(bool shouldLock) => Cursor.lockState = CursorLockMode.Locked;
-  //  private void CursorLocker(bool shouldLock) => Cursor.lockState = shouldLock ? CursorLockMode.Locked : CursorLockMode.None;
+    private void CursorLocker(bool shouldLock) => Cursor.lockState = shouldLock ? CursorLockMode.Locked : CursorLockMode.None;
 
-    // Public method to set cursor lock state
     public void SetCursorLock(bool shouldLock)
     {
         CursorLocker(shouldLock);
+        Cursor.visible = !shouldLock;
     }
 
-    // Set the active state of a camera GameObject
-    public void SetCameraActive(GameObject camera, bool isActive)
-    {
-        camera.SetActive(isActive);
-    }
-
-    // Change to the next camera in the camera list
     public void ChangeCamera()
     {
-        // Deactivate the current camera
-        SetCameraActive(model.CameraList[model.CurrentIndex], false);
+        if (cameraOrder.Count == 0) return;
 
-        // Increment the camera index and wrap around the list
-        model.CurrentIndex = (model.CurrentIndex + 1) % model.CameraList.Length;
-        if (model.CurrentIndex < 0)
-            model.CurrentIndex += model.CameraList.Length;
+        // Deactivate current camera
+        SetCameraActive(model.CurrentCamera, false);
 
-        // Activate the new camera
-        SetCameraActive(model.CameraList[model.CurrentIndex], true);
+        // Move to next camera
+        currentIndex = (currentIndex + 1) % cameraOrder.Count;
+        ActivateCamera(cameraOrder[currentIndex]);
     }
 
+    private void ActivateCamera(GameObject camera)
+    {
+        if (camera == null) return;
+
+        SetCameraActive(camera, true);
+        model.CurrentCamera = camera;
+
+        // Handle FreeLook camera using modern CinemachineCamera approach
+        if (camera.TryGetComponent<CinemachineCamera>(out var cmCamera))
+        {
+            if (cmCamera.TryGetComponent<CinemachineFreeLook>(out var freeLook))
+            {
+                freeLook.m_XAxis.m_InputAxisName = "Mouse X";
+                freeLook.m_YAxis.m_InputAxisName = "Mouse Y";
+                freeLook.m_XAxis.m_MaxSpeed = 300f;
+                freeLook.m_YAxis.m_MaxSpeed = 2f;
+            }
+        }
+
+        // Set cursor lock based on camera type
+        if (model.CameraDictionary.TryGetValue(camera, out bool isFirstPerson))
+        {
+            SetCursorLock(isFirstPerson);
+        }
+    }
+
+    public void SetCameraActive(GameObject camera, bool isActive)
+    {
+        if (camera != null)
+        {
+            camera.SetActive(isActive);
+            if (isActive)
+            {
+                model.CameraTransform = camera.transform;
+
+                // Handle CinemachineBrain transition using the new API
+                var brain = CinemachineCore.FindPotentialTargetBrain(camera.GetComponent<CinemachineVirtualCameraBase>());
+                if (brain != null)
+                {
+                    brain.ManualUpdate();
+                }
+            }
+        }
+    }
 
     public void InterpolateFOV(float startingFOV, float playerFOV, float timeLapse, float timeToZoom)
     {
@@ -92,13 +132,32 @@ public class PlayerCameraController : MonoBehaviour
 
     public void SetCameraFOV(float fov)
     {
-        model.CameraList[model.CurrentIndex]
-            .GetComponent<CinemachineCamera>().Lens.FieldOfView = fov;
+        if (model.CurrentCamera != null)
+        {
+            if (model.CurrentCamera.TryGetComponent<CinemachineCamera>(out var cmCamera))
+            {
+                cmCamera.Lens.FieldOfView = fov;
+            }
+            else if (model.CurrentCamera.TryGetComponent<Camera>(out var regularCamera))
+            {
+                regularCamera.fieldOfView = fov;
+            }
+        }
     }
 
     public float GetCameraFOV()
     {
-        return model.CameraList[model.CurrentIndex].GetComponent<CinemachineCamera>().Lens.FieldOfView;
-
+        if (model.CurrentCamera != null)
+        {
+            if (model.CurrentCamera.TryGetComponent<CinemachineCamera>(out var cmCamera))
+            {
+                return cmCamera.Lens.FieldOfView;
+            }
+            else if (model.CurrentCamera.TryGetComponent<Camera>(out var regularCamera))
+            {
+                return regularCamera.fieldOfView;
+            }
+        }
+        return 60f;
     }
 }

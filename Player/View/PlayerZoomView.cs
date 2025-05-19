@@ -6,15 +6,16 @@ using UnityEngine.Assertions;
 using UnityEngine.InputSystem;
 public class PlayerZoomView : MonoBehaviour
 {
-    private PlayerCameraController cameraController;
-    private PlayerZoomModel model;
-    private PlayerZoomController controller;
+    [SerializeField] private PlayerCameraController cameraController;
+    [SerializeField] private PlayerZoomModel model;
+    [SerializeField] private PlayerZoomController controller;
     private void Awake()
     {
-        controller = GetComponent<PlayerZoomController>();
-        model = GetComponent<PlayerZoomModel>();
-        cameraController = GetComponent<PlayerCameraController>();
+        controller = this.CheckComponent(controller, nameof(controller));
+        model = this.CheckComponent(model, nameof(model));
+        cameraController = this.CheckComponent(cameraController, nameof(cameraController));
     }
+
     private void Start()
     {
         ValidateAsignments();

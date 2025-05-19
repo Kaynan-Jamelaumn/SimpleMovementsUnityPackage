@@ -3,7 +3,6 @@ using UnityEngine;
 
 public class PlayerAnimationModel : MonoBehaviour
 {
-
     int isWalkingHash;
     int isRunningHash;
     int isCrouchingHash;
@@ -19,6 +18,12 @@ public class PlayerAnimationModel : MonoBehaviour
     private bool isAttacking = false;
     private bool isDashing = false;
     private bool isRolling = false;
+
+    private void Awake()
+    {
+        anim = this.CheckComponent(anim, nameof(anim), isCritical: true, searchChildren: true);
+    }
+
     public bool IsAttacking { get => isAttacking; set => isAttacking = value; }
     public bool IsDashing { get => isDashing; set => isDashing = value; }
     public bool IsRolling { get => isRolling; set => isRolling = value; }
@@ -33,4 +38,3 @@ public class PlayerAnimationModel : MonoBehaviour
     public int IsAttackingHash { get => isAttackingHash; set => isAttackingHash = value; }
     public Animator Anim { get => anim; set => anim = value; }
 }
-
