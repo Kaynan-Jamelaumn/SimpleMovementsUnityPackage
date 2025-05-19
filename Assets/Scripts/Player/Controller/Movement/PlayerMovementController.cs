@@ -108,13 +108,13 @@ public class PlayerMovementController : MonoBehaviour
             case MovementStateMachine.EMovementState.Running:
             //case PlayerMovementModel.PlayerState.Running:
                 currentSpeed *= model.SpeedWhileRunningMultiplier;
-                statusController.StaminaManager.IsConsumingStamina = true;
-                if (statusController.StaminaManager.HasEnoughStamina(model.AmountOfSprintStaminaCost) == false)
+                statusController.StaminaManager.IsConsuming = true;
+                if (statusController.StaminaManager.HasEnougCurrentValue(model.AmountOfSprintStaminaCost) == false)
                 {
                     // Check if the coroutine is running before stopping it
                     if (model.SprintCoroutine != null) StopCoroutine(model.SprintCoroutine);
                     model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-                    statusController.StaminaManager.IsConsumingStamina = false;
+                    statusController.StaminaManager.IsConsuming = false;
                     break;
                 }
                 break;
@@ -122,8 +122,8 @@ public class PlayerMovementController : MonoBehaviour
             case MovementStateMachine.EMovementState.Crouching:
             //case PlayerMovementModel.PlayerState.Crouching:
                 currentSpeed *= model.SpeedWhileCrouchingMultiplier;
-                statusController.StaminaManager.IsConsumingStamina = true;
-                if (model.CrouchCoroutine != null && statusController.StaminaManager.HasEnoughStamina(model.AmountOfCrouchStaminaCost) == false)
+                statusController.StaminaManager.IsConsuming = true;
+                if (model.CrouchCoroutine != null && statusController.StaminaManager.HasEnougCurrentValue(model.AmountOfCrouchStaminaCost) == false)
                 {
 
                     // Check if the coroutine is running before stopping it   
@@ -131,7 +131,7 @@ public class PlayerMovementController : MonoBehaviour
 
 
                     model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
-                    statusController.StaminaManager.IsConsumingStamina = false;
+                    statusController.StaminaManager.IsConsuming = false;
                 }
                 break;
 
@@ -210,7 +210,7 @@ public class PlayerMovementController : MonoBehaviour
         // movementStateMachine.CurrentState = movementStateMachine.States[EMovementState.Walking];
         else if (!stillMoving ||
        (model.actionPressed && !stillMoving || !model.actionPressed && stillMoving && isNotInADefaultMovingState) &&
-       (model.ShouldConsumeStamina && !statusController.StaminaManager.IsConsumingStamina))
+       (model.ShouldConsumeStamina && !statusController.StaminaManager.IsConsuming))
         {
             if (stillMoving && !model.actionPressed) model.CurrentPlayerState = PlayerMovementModel.PlayerState.Walking;
             else model.CurrentPlayerState = PlayerMovementModel.PlayerState.Idle;

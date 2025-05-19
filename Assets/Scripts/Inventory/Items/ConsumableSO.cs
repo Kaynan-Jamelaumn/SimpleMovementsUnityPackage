@@ -132,10 +132,10 @@ public class ConsumableSO : ItemSO
     {
         effectActions = new Dictionary<ConsumableEffectType, Action<ConsumableEffect, PlayerStatusController>>
     {
-        { ConsumableEffectType.Hp, CreateHandler((controller) => controller.HpManager.AddHp, (controller) => controller.HpManager.AddHpEffect) },
-        { ConsumableEffectType.Stamina, CreateHandler((controller) => controller.StaminaManager.AddStamina, (controller) => controller.StaminaManager.AddStaminaEffect) },
-        { ConsumableEffectType.Food, CreateHandler((controller) => controller.FoodManager.AddFood, (controller) => controller.FoodManager.AddFoodEffect) },
-        { ConsumableEffectType.Drink, CreateHandler((controller) => controller.DrinkManager.AddDrink, (controller) => controller.DrinkManager.AddDrinkEffect) },
+        { ConsumableEffectType.Hp, CreateHandler((controller) => controller.HpManager.AddCurrentValue, (controller) => controller.HpManager.AddHpEffect) },
+        { ConsumableEffectType.Stamina, CreateHandler((controller) => controller.StaminaManager.AddCurrentValue, (controller) => controller.StaminaManager.AddStaminaEffect) },
+        { ConsumableEffectType.Food, CreateHandler((controller) => controller.HungerManager.AddCurrentValue, (controller) => controller.HungerManager.AddFoodEffect) },
+        { ConsumableEffectType.Drink, CreateHandler((controller) => controller.ThirstManager.AddCurrentValue, (controller) => controller.ThirstManager.AddDrinkEffect) },
         { ConsumableEffectType.Weight, (effect, controller) => ApplyEffect(effect, controller,
             (amount) => controller.WeightManager.AddWeightEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
         { ConsumableEffectType.HpHealFactor, (effect, controller) => ApplyEffect(effect, controller,

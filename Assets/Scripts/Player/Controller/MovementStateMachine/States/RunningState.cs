@@ -13,7 +13,7 @@ public class RunningState : MovementState
         if (Context.MovementModel.ShouldConsumeStamina)
         {
             Context.MovementModel.SprintCoroutine = Context.MovementModel.StartCoroutine(Context.StatusController.StaminaManager.ConsumeStaminaRoutine(Context.MovementModel.AmountOfSprintStaminaCost, 0.8f));
-            Context.StatusController.StaminaManager.IsConsumingStamina = true;
+            Context.StatusController.StaminaManager.IsConsuming = true;
 
         }
 
@@ -26,7 +26,7 @@ public class RunningState : MovementState
             Context.MovementModel.StopCoroutine(Context.MovementModel.SprintCoroutine);
             Context.MovementModel.SprintCoroutine = null; // Reset coroutine reference
         }
-        Context.StatusController.StaminaManager.IsConsumingStamina = false;
+        Context.StatusController.StaminaManager.IsConsuming = false;
 
     }
     public override void UpdateState()
@@ -43,7 +43,7 @@ public class RunningState : MovementState
 
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero && !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;
-        if (Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfSprintStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Sprint.IsPressed())
+        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfSprintStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Sprint.IsPressed())
            return MovementStateMachine.EMovementState.Walking;
 
 

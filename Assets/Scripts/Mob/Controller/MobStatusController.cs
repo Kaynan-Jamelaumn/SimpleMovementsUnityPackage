@@ -77,7 +77,7 @@ public class MobStatusController : BaseStatusController
     /// </summary>
     private void Update()
     {
-        if (healthManager.Hp <= 0)
+        if (healthManager.CurrentValue <= 0)
         {
             HandleDeath();
         }
@@ -114,7 +114,7 @@ public class MobStatusController : BaseStatusController
         effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
         {
             { AttackEffectType.Hp, (effect, amount, time, cooldown) => HandleEffect(
-                HealthManager.AddHp, HealthManager.AddHpEffect, effect, amount, time, cooldown) },
+                HealthManager.AddCurrentValue, HealthManager.AddHpEffect, effect, amount, time, cooldown) },
 
             { AttackEffectType.HpHealFactor, (effect, amount, time, cooldown) => HealthManager.AddHpHealFactorEffect(
                 effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },

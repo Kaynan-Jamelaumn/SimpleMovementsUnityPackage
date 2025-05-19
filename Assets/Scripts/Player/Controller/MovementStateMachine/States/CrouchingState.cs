@@ -13,7 +13,7 @@ public class CrouchingState : MovementState
         if (Context.MovementModel.ShouldConsumeStamina)
         {
             Context.MovementModel.CrouchCoroutine = Context.MovementModel.StartCoroutine(Context.StatusController.StaminaManager.ConsumeStaminaRoutine(Context.MovementModel.AmountOfCrouchStaminaCost, 0.8f));
-            Context.StatusController.StaminaManager.IsConsumingStamina = true;
+            Context.StatusController.StaminaManager.IsConsuming = true;
 
         }
 
@@ -26,7 +26,7 @@ public class CrouchingState : MovementState
             Context.MovementController.StopCoroutine(Context.MovementModel.CrouchCoroutine);
             Context.MovementModel.CrouchCoroutine = null; // Reset coroutine reference
         }
-        Context.StatusController.StaminaManager.IsConsumingStamina = false;
+        Context.StatusController.StaminaManager.IsConsuming = false;
 
     }
     public override void UpdateState()
@@ -43,7 +43,7 @@ public class CrouchingState : MovementState
 
         if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero && !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
             return MovementStateMachine.EMovementState.Idle;
-        if (Context.StatusController.StaminaManager.HasEnoughStamina(Context.MovementModel.AmountOfCrouchStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Crouch.IsPressed())
+        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfCrouchStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Crouch.IsPressed())
             return MovementStateMachine.EMovementState.Walking;
 
 

@@ -21,10 +21,10 @@ public class PlayerStatusController : BaseStatusController
     [SerializeField] private HealthManager hpManager;
 
     [Tooltip("Tracks the player's food consumption and hunger levels.")]
-    [SerializeField] private FoodManager foodManager;
+    [SerializeField] private HungerManager hungerManager;
 
     [Tooltip("Tracks the player's drink consumption and thirst levels.")]
-    [SerializeField] private DrinkManager drinkManager;
+    [SerializeField] private ThirstManager thirstManager;
 
     [Tooltip("Tracks and manages the player's carried weight.")]
     [SerializeField] private WeightManager weightManager;
@@ -91,8 +91,8 @@ public class PlayerStatusController : BaseStatusController
     public PlayerMovementModel MovementModel => movementModel;
     public StaminaManager StaminaManager => staminaManager;
     public HealthManager HpManager => hpManager;
-    public FoodManager FoodManager => foodManager;
-    public DrinkManager DrinkManager => drinkManager;
+    public HungerManager HungerManager => hungerManager;
+    public ThirstManager ThirstManager => thirstManager;
     public WeightManager WeightManager => weightManager;
     public PlayerRollModel RollModel => rollModel;
     public PlayerDashModel DashModel => dashModel;
@@ -109,8 +109,8 @@ public class PlayerStatusController : BaseStatusController
         CacheManager(ref movementModel, "PlayerMovementModel");
         CacheManager(ref staminaManager, "StaminaManager");
         CacheManager(ref hpManager, "HealthManager");
-        CacheManager(ref foodManager, "FoodManager");
-        CacheManager(ref drinkManager, "DrinkManager");
+        CacheManager(ref hungerManager, "HungerManager");
+        CacheManager(ref thirstManager, "ThirstManager");
         CacheManager(ref weightManager, "WeightManager");
 
         rollModel = GetComponentOrLogError(ref rollModel, "PlayerRollModel");
@@ -145,8 +145,8 @@ public class PlayerStatusController : BaseStatusController
         Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned.");
         Assert.IsNotNull(staminaManager, "StaminaManager is not assigned.");
         Assert.IsNotNull(hpManager, "HealthManager is not assigned.");
-        Assert.IsNotNull(foodManager, "FoodManager is not assigned.");
-        Assert.IsNotNull(drinkManager, "DrinkManager is not assigned.");
+        Assert.IsNotNull(hungerManager, "HungerManager is not assigned.");
+        Assert.IsNotNull(thirstManager, "ThirstManager is not assigned.");
         Assert.IsNotNull(weightManager, "WeightManager is not assigned.");
         Assert.IsNotNull(rollModel, "PlayerRollModel is not assigned.");
         Assert.IsNotNull(dashModel, "PlayerDashModel is not assigned.");
@@ -157,10 +157,16 @@ public class PlayerStatusController : BaseStatusController
     /// </summary>
     private void UpdateStatusBars()
     {
+        //staminaManager?.UpdateBar();
+        //hpManager?.UpdateBar();
+        //foodManager?.UpdateBar();
+        //drinkManager?.UpdateBar();
+        //weightManager?.UpdateBar();
+
         staminaManager?.UpdateStaminaBar();
         hpManager?.UpdateHpBar();
-        foodManager?.UpdateFoodBar();
-        drinkManager?.UpdateDrinkBar();
+        hungerManager?.UpdateFoodBar();
+        thirstManager?.UpdateDrinkBar();
         weightManager?.UpdateWeightBar();
     }
     /// <summary>
@@ -205,11 +211,11 @@ public class PlayerStatusController : BaseStatusController
         }
 
         // Set initial values for player attributes based on their class.
-        hpManager.MaxHp = PlayerClass.health;
-        staminaManager.MaxStamina = PlayerClass.stamina;
+        hpManager.MaxValue = PlayerClass.health;
+        staminaManager.MaxValue = PlayerClass.stamina;
         movementModel.Speed = PlayerClass.speed;
-        foodManager.MaxFood = PlayerClass.hunger;
-        drinkManager.MaxDrink = PlayerClass.thirst;
+        hungerManager.MaxValue = PlayerClass.hunger;
+        thirstManager.MaxValue = PlayerClass.thirst;
     }
 
     /// <summary>
@@ -243,12 +249,12 @@ public class PlayerStatusController : BaseStatusController
     {
         upgradeStatHandlers = new Dictionary<string, Action>
     {
-        { "health", () => hpManager.ModifyMaxHp(hpManager.IncrementFactor) },
-        { "stamina", () => staminaManager.ModifyMaxStamina(staminaManager.IncrementFactor) },
+        { "health", () => hpManager.ModifyMaxValue(hpManager.StatusIncrementValue) },
+        { "stamina", () => staminaManager.ModifyMaxValue(staminaManager.StatusIncrementValue) },
         { "speed", () => movementModel.Speed += movementModel.SpeedIncrementFactor },
-        { "hunger", () => foodManager.ModifyMaxFood(foodManager.IncrementFactor) },
-        { "thirst", () => drinkManager.ModifyMaxDrink(drinkManager.IncrementFactor) },
-        { "weight", () => weightManager.ModifyMaxWeight(weightManager.IncrementFactor) }
+        { "hunger", () => hungerManager.ModifyMaxValue(hungerManager.StatusIncrementValue) },
+        { "thirst", () => thirstManager.ModifyMaxValue(thirstManager.StatusIncrementValue) },
+        { "weight", () => weightManager.ModifyMaxValue(weightManager.StatusIncrementValue) }
     };
     }
 
@@ -299,8 +305,8 @@ public class PlayerStatusController : BaseStatusController
     {
         staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, isBuff);
         hpManager.StopAllEffectsByType(hpManager.HpEffectRoutines, isBuff);
-        foodManager.StopAllEffectsByType(foodManager.FoodEffectRoutines, isBuff);
-        drinkManager.StopAllEffectsByType(drinkManager.DrinkEffectRoutines, isBuff);
+        hungerManager.StopAllEffectsByType(hungerManager.FoodEffectRoutines, isBuff);
+        thirstManager.StopAllEffectsByType(thirstManager.DrinkEffectRoutines, isBuff);
     }
 
     /// <summary>
@@ -329,10 +335,10 @@ public class PlayerStatusController : BaseStatusController
     {
         effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
     {
-        { AttackEffectType.Stamina, CreateHandler(staminaManager.AddStamina, staminaManager.AddStaminaEffect) },
-        { AttackEffectType.Hp, CreateHandler(hpManager.AddHp, hpManager.AddHpEffect) },
-        { AttackEffectType.Food, CreateHandler(foodManager.AddFood, foodManager.AddFoodEffect) },
-        { AttackEffectType.Drink, CreateHandler(drinkManager.AddDrink, drinkManager.AddDrinkEffect) },
+        { AttackEffectType.Stamina, CreateHandler(staminaManager.AddCurrentValue, staminaManager.AddStaminaEffect) },
+        { AttackEffectType.Hp, CreateHandler(hpManager.AddCurrentValue, hpManager.AddHpEffect) },
+        { AttackEffectType.Food, CreateHandler(hungerManager.AddCurrentValue, hungerManager.AddFoodEffect) },
+        { AttackEffectType.Drink, CreateHandler(thirstManager.AddCurrentValue, thirstManager.AddDrinkEffect) },
         { AttackEffectType.Weight, (effect, amount, time, cooldown) => weightManager.AddWeightEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
         { AttackEffectType.HpHealFactor, (effect, amount, time, cooldown) => hpManager.AddHpHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
         { AttackEffectType.HpDamageFactor, (effect, amount, time, cooldown) => hpManager.AddHpDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },

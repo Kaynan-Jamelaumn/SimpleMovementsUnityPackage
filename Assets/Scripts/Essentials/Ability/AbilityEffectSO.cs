@@ -155,20 +155,20 @@ public class AbilityEffectSO : AbilitySO
         switch (effect.effectType)
         {
             case AttackEffectType.Stamina:
-                if (effect.timeBuffEffect == 0) playerController.StaminaManager.AddStamina(effect.amount);
+                if (effect.timeBuffEffect == 0) playerController.StaminaManager.AddCurrentValue(effect.amount);
                 else playerController.StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
                 break;
             case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) playerController.HpManager.AddHp(effect.amount);
+                if (effect.timeBuffEffect == 0) playerController.HpManager.AddCurrentValue(effect.amount);
                 else playerController.HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);    
                 break;
             case AttackEffectType.Food:
-                if (effect.timeBuffEffect == 0) playerController.FoodManager.AddFood(effect.amount);
-                else playerController.FoodManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                if (effect.timeBuffEffect == 0) playerController.HungerManager.AddCurrentValue(effect.amount);
+                else playerController.HungerManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
                 break;
             case AttackEffectType.Drink:
-                if (effect.timeBuffEffect == 0) playerController.DrinkManager.AddDrink(effect.amount);
-                else playerController.DrinkManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
+                if (effect.timeBuffEffect == 0) playerController.ThirstManager.AddCurrentValue(effect.amount);
+                else playerController.ThirstManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
                 break;
             case AttackEffectType.Weight:
                 if (effect.timeBuffEffect == 0) playerController.WeightManager.AddWeight(effect.amount);
@@ -201,7 +201,7 @@ public class AbilityEffectSO : AbilitySO
         switch (effect.effectType)
         {
             case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) mobController.HealthManager.AddHp(effect.amount);
+                if (effect.timeBuffEffect == 0) mobController.HealthManager.AddCurrentValue(effect.amount);
                 else mobController.HealthManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
                 break;
             case AttackEffectType.HpHealFactor:

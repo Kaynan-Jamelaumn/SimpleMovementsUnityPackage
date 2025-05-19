@@ -75,14 +75,14 @@ public class EquippableSO : ItemSO
         {
             { EquippableEffectType.MaxWeight, amount => statusController.WeightManager.ModifyMaxWeight(amount) },
             { EquippableEffectType.Speed, amount => statusController.ModifySpeed(amount) },
-            { EquippableEffectType.MaxStamina, amount => statusController.StaminaManager.ModifyMaxStamina(amount) },
-            { EquippableEffectType.StaminaRegeneration, amount => statusController.StaminaManager.ModifyStaminaRegeneration(amount) },
-            { EquippableEffectType.StaminaHealFactor, amount => statusController.StaminaManager.ModifyStaminaHealFactor(amount) },
-            { EquippableEffectType.StaminaDamageFactor, amount => statusController.StaminaManager.ModifyStaminaDamageFactor(amount) },
-            { EquippableEffectType.MaxHp, amount => statusController.HpManager.ModifyMaxHp(amount) },
-            { EquippableEffectType.HpRegeneration, amount => statusController.HpManager.ModifyHpRegeneration(amount) },
-            { EquippableEffectType.HpHealFactor, amount => statusController.HpManager.ModifyHpHealFactor(amount) },
-            { EquippableEffectType.HpDamageFactor, amount => statusController.HpManager.ModifyHpDamageFactor(amount) }
+            { EquippableEffectType.MaxStamina, amount => statusController.StaminaManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.StaminaRegeneration, amount => statusController.StaminaManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.StaminaHealFactor, amount => statusController.StaminaManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.StaminaDamageFactor, amount => statusController.StaminaManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.MaxHp, amount => statusController.HpManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.HpRegeneration, amount => statusController.HpManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.HpHealFactor, amount => statusController.HpManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.HpDamageFactor, amount => statusController.HpManager.ModifyDecrementFactor(amount) }
         };
     }
 

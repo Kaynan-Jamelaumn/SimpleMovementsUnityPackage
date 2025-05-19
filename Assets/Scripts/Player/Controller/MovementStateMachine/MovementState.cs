@@ -10,7 +10,7 @@ public abstract class MovementState : BaseState<MovementStateMachine.EMovementSt
     }
     protected bool HasStaminaForAction(float staminaCost)
     {
-        return !Context.MovementModel.ShouldConsumeStamina || Context.StatusController.StaminaManager.HasEnoughStamina(staminaCost);
+        return !Context.MovementModel.ShouldConsumeStamina || Context.StatusController.StaminaManager.HasEnougCurrentValue(staminaCost);
     }
     protected bool TriggeredJump() => Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost);
     protected bool TriggeredDash() => Context.PlayerInput.Player.Dash.triggered && HasStaminaForAction(Context.StatusController.DashModel.AmountOfDashStaminaCost);

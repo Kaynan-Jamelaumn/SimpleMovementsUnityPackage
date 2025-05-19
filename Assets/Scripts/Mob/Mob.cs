@@ -278,7 +278,7 @@ public float WanderDistance { get => wanderDistance; set => wanderDistance = val
         // Reduce health based on the received damage.
         statusController.HealthManager.ConsumeHP(damage);
         // If health is depleted, trigger the Die method.
-        if (statusController.HealthManager.Hp <= 0)
+        if (statusController.HealthManager.CurrentValue <= 0)
             Die();
     }
 

@@ -6,274 +6,163 @@ using UnityEngine.UI;
 public class HealthManager : StatusManager
 {
     [Header("Health-related fields")]
-    [SerializeField] private float hp;
-    [SerializeField] private float maxHp = 100;
-    [SerializeField] private float incrementFactor = 15;
-    [SerializeField] private float hpRegen = 1;
-    [SerializeField] private float hpTickRegen = 0.5f;
-    [SerializeField] private float hpHealFactor;
-    [SerializeField] private float hpDamageFactor;
     [SerializeField] private float healthRegenCooldownDuration = 15;
-    [SerializeField] private float healthRegenCooldownTimer = -15;
-    [SerializeField] private bool isRegeneratingHp;
-    [SerializeField] private bool isConsumingHp;
-    [SerializeField] private Image hpImage;
+    private float healthRegenCooldownTimer = -15;
+
     private Coroutine hpRegenerationRoutine;
-    //private Coroutine hpHealFactorRoutine;
-    //private Coroutine hpDamageFactorRoutine;
-    //private Coroutine hpRegenEffectRoutine;
     private List<CoroutineInfo> hpEffectRoutines = new List<CoroutineInfo>();
-    public Coroutine HpRegenerationRoutine { get => hpRegenerationRoutine; set => hpRegenerationRoutine = value; }
     public List<CoroutineInfo> HpEffectRoutines { get => hpEffectRoutines; set => hpEffectRoutines = value; }
-    public float Hp { get => hp; set => hp = value; }
-    public float MaxHp { get => maxHp; set => maxHp = value; }
-    public float IncrementFactor { get => incrementFactor; set => incrementFactor = value; }
-    public float HpRegen { get => hpRegen; set => hpRegen = value; }
-    public float HpTickRegen { get => hpTickRegen; set => hpTickRegen = value; }
-    public float HpHealFactor { get => hpHealFactor; set => hpHealFactor = value; }
-    public float HpDamageFactor { get => hpDamageFactor; set => hpDamageFactor = value; }
-    public float HealthRegenCooldownDuration { get => healthRegenCooldownDuration; }
-    public float HealthRegenCooldownTimer { get => healthRegenCooldownTimer; set => healthRegenCooldownTimer = value; }
-    public bool IsRegeneratingHp { get => isRegeneratingHp; set => isRegeneratingHp = value; }
-    public bool IsConsumingHp { get => isConsumingHp; set => isConsumingHp = value; }
-    public Image HpImage { get => hpImage; set => hpImage = value; }
+
     private void Start()
     {
-        Hp = MaxHp;
+        currentValue = maxValue;
     }
 
     private void Update()
     {
-        if (!IsRegeneratingHp && Hp < MaxHp &&  Time.time - HealthRegenCooldownTimer > HealthRegenCooldownDuration)
+        if (!isRegenerating && currentValue < maxValue &&  Time.time - healthRegenCooldownTimer > healthRegenCooldownDuration)
         {
-            HealthRegenCooldownTimer = Time.time;
-            IsRegeneratingHp = true;
-            HpRegenerationRoutine = StartCoroutine(RegenerateHpRoutine());
+            healthRegenCooldownTimer = Time.time;
+            isRegenerating = true;
+            hpRegenerationRoutine = StartCoroutine(RegenerateHpRoutine());
         }
 
     }
     public void UpdateHpBar()
     {
-        UpdateBar(Hp, MaxHp, HpImage);
-        Hp = Mathf.Clamp(Hp, 0, MaxHp);
+        UpdateBar(currentValue, maxValue, uiImage);
+        currentValue = Mathf.Clamp(currentValue, 0, maxValue);
     }
-
-    public void AddHp(float amount)
-    {
-        Hp = Mathf.Min(Hp + HpAddFactor(amount), MaxHp);
-    }
-    public bool HasEnoughHp(float amount)
-    {
-        return Hp - amount >= 0;
-    }
-
     public void ConsumeHP(float amount, bool scapeBounds= false)
     {
-        if (Hp <= 0) return;
-        HealthRegenCooldownTimer = Time.time;
-        if (scapeBounds) hp -= amount;
-        else Hp -= HpRemoveFactor(amount);
-        IsConsumingHp = true;
+        if (currentValue <= 0) return;
+        healthRegenCooldownTimer = Time.time;
+        if (scapeBounds) currentValue -= amount;
+        else currentValue -= RemoveFactor(amount);
+        isConsuming = true;
     }
 
-    public void ModifyMaxHp(float amount)
-    {
-        MaxHp += amount;
-    }
+    protected override void UpdateStatus() => UpdateBar();
+    protected override float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
+    protected override float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
 
-    public void ModifyHpRegeneration(float amount)
-    {
-        HpRegen += amount;
-    }
-    public void ModifyHpHealFactor(float amount)
-    {
-        HpHealFactor += amount;
-    }
+    public void AddHpEffect(string effectName, float hpAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false) 
+        => AddEffect(HpEffectRoutines, effectName, hpAmount,timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpEffectRoutine);
 
-
-    public void ModifyHpDamageFactor(float amount)
-    {
-        HpDamageFactor += amount;
-    }
-
-
-    private float HpAddFactor(float amount)
-    {
-        return ApplyFactor(amount, HpHealFactor);
-    }
-    private float HpRemoveFactor(float amount)
-    {
-        return ApplyFactor(amount, HpDamageFactor);
-    }
-
-    public void AddHpEffect(string effectName, float hpAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        AddEffect(HpEffectRoutines, effectName, hpAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpEffectRoutine);
-    }
-
-    public void AddHpHealFactorEffect(string effectName, float hpHealFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        AddEffect(HpEffectRoutines, effectName, hpHealFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpHealFactorEffectRoutine);
-    }
+    public void AddHpHealFactorEffect(string effectName, float hpHealFactorAmount, float timeBuffEffect,float tickCooldown, bool isProcedural = false,  bool isStackable = false)
+        => AddEffect(HpEffectRoutines, effectName, hpHealFactorAmount, timeBuffEffect,tickCooldown, isProcedural, isStackable, ApplyHpHealFactorEffectRoutine);
     public void AddHpDamageFactorEffect(string effectName, float hpDamageFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        AddEffect(HpEffectRoutines, effectName, hpDamageFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpDamageFactorEffectRoutine);
-    }
-
-    public void AddHpRegenEffect(string effectName, float hpRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        AddEffect(HpEffectRoutines, effectName, hpRegenAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpRegenEffectRoutine);
-    }
+        => AddEffect(HpEffectRoutines, effectName, hpDamageFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpDamageFactorEffectRoutine);
+    public void AddHpRegenEffect(string effectName, float hpRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false) 
+        => AddEffect(HpEffectRoutines, effectName, hpRegenAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyHpRegenEffectRoutine);
 
     public void RemoveHpEffect(string effectName = null, Coroutine effectRoutine = null)
-    {
-        RemoveEffect(HpEffectRoutines, effectName, effectRoutine);
-    }
-
-
+     => RemoveEffect(HpEffectRoutines, effectName, effectRoutine);
 
     public void StopAllHpEffects()
-    {
-        StopAllEffects(HpEffectRoutines);
-    }
+        => StopAllEffects(HpEffectRoutines);
 
     public void StopAllHpEffectsByType(bool isBuff = true)
-    {
-        StopAllEffectsByType(HpEffectRoutines, isBuff);
-    }
+        => StopAllEffectsByType(HpEffectRoutines, isBuff);
 
     public void StopHpRegeneration()
-    {
-        IsConsumingHp = true;
-    }
+        => isConsuming = true;
     public IEnumerator RegenerateHpRoutine()
     {
         // Check if stamina consumption is active, exit coroutine if true
-        if (IsConsumingHp)
+        if (isConsuming)
         {
-            IsRegeneratingHp = false;
+            isRegenerating = false;
             yield break; // Exit the coroutine
         }
 
-        IsRegeneratingHp = true;
+        isRegenerating = true;
 
         // Regenerate stamina while it is below the maximum
-        while (Hp < MaxHp)
+        while (currentValue < maxValue)
         {
-            Hp += HpRegen;
+            currentValue += incrementValue;
 
             // Check the flag and exit the coroutine if needed
-            if (IsConsumingHp)
+            if (isConsuming)
             {
-                IsConsumingHp = false;
-                IsRegeneratingHp = false;
+                isConsuming = false;
+                isRegenerating = false;
                 yield break;
             }
 
-            yield return new WaitForSeconds(HpTickRegen); // Delay between regen updates
+            yield return new WaitForSeconds(tickRate); // Delay between regen updates
         }
 
-        IsRegeneratingHp = false;
+        isRegenerating = false;
     }
 
+    // Example refactored coroutines
     public IEnumerator ApplyHpEffectRoutine(string effectName, float hpAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
-        float amount = hpAmount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-        float startTime = Time.time;
-        while (Time.time < startTime + timeBuffEffect)
-        {
-            float newAmount = amount;
-            if (newAmount > 0) newAmount = HpAddFactor(newAmount);
-            else newAmount = HpRemoveFactor(newAmount);
-            Hp += newAmount;
-
-            // Wait for the specified tickCooldown duration
-            yield return new WaitForSeconds(tickCooldown);
-        }
-
-        // Ensure the final stamina value is within the maximum limit
-        Hp = Mathf.Min(Hp, MaxHp);
+        return ApplyEffectRoutine(
+            effectName,
+            hpAmount,
+            timeBuffEffect,
+            tickCooldown,
+            isProcedural,
+            isStackable,
+            perTick =>
+            {
+                float newAmount = perTick > 0 ? AddFactor(perTick) : RemoveFactor(perTick);
+                currentValue += newAmount;
+            },
+            total =>
+            {
+                float newAmount = total > 0 ? AddFactor(total) : RemoveFactor(total);
+                currentValue += newAmount;
+            },
+            _ => currentValue = Mathf.Min(currentValue, maxValue)
+        );
     }
+
     public IEnumerator ApplyHpHealFactorEffectRoutine(string effectName, float hpHealFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
-        float amount = hpHealFactorAmount;
-        float hpHealFactorOriginalAmount = amount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-
-        float startTime = Time.time;
-        while (Time.time < startTime + timeBuffEffect)
-        {
-            if (isProcedural)
-            {
-                HpHealFactor += amount;
-                yield return new WaitForSeconds(tickCooldown);
-                // Wait for the specified tickCooldown duration
-            }
-            else
-            {
-                HpHealFactor = amount;
-            }
-
-        }
-
-        // Ensure the final stamina value is within the maximum limit
-        HpHealFactor -= hpHealFactorOriginalAmount;
+        return ApplyEffectRoutine(
+            effectName,
+            hpHealFactorAmount,
+            timeBuffEffect,
+            tickCooldown,
+            isProcedural,
+            isStackable,
+            perTick => incrementFactor += perTick,
+            total => incrementFactor += total,
+            original => incrementFactor -= original
+        );
     }
+
     public IEnumerator ApplyHpDamageFactorEffectRoutine(string effectName, float hpDamageFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
-        float amount = hpDamageFactorAmount;
-        float hpDamageFactorOriginalAmount = amount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-
-        float startTime = Time.time;
-        while (Time.time < startTime + timeBuffEffect)
-        {
-            if (isProcedural)
-            {
-                HpDamageFactor += amount;
-                yield return new WaitForSeconds(tickCooldown);
-                // Wait for the specified tickCooldown duration
-            }
-            else
-            {
-                HpDamageFactor = amount;
-            }
-
-        }
-
-        // Ensure the final stamina value is within the maximum limit
+        return ApplyEffectRoutine(
+            effectName,
+            hpDamageFactorAmount,
+            timeBuffEffect,
+            tickCooldown,
+            isProcedural,
+            isStackable,
+            perTick => decrementFactor += perTick,
+            total => decrementFactor = total,
+            original => decrementFactor -= original
+        );
     }
 
     public IEnumerator ApplyHpRegenEffectRoutine(string effectName, float hpRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
-        float amount = hpRegenAmount;
-        float hpRegenOriginalAmount = amount;
-        amount = isProcedural ? amount / (timeBuffEffect / tickCooldown) : amount;
-
-
-        float startTime = Time.time;
-        while (Time.time < startTime + timeBuffEffect)
-        {
-            if (isProcedural)
-            {
-                HpRegen += amount;
-                yield return new WaitForSeconds(tickCooldown);
-                // Wait for the specified tickCooldown duration
-            }
-            else
-            {
-                HpRegen = amount;
-            }
-
-        }
-
-        // Ensure the final stamina value is within the maximum limit
-        HpRegen -= hpRegenOriginalAmount;
+        return ApplyEffectRoutine(
+            effectName,
+            hpRegenAmount,
+            timeBuffEffect,
+            tickCooldown,
+            isProcedural,
+            isStackable,
+            perTick => incrementValue += perTick,
+            total => incrementValue = total,
+            original => incrementValue -= original
+        );
     }
-
-
 }

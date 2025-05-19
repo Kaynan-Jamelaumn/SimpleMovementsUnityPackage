@@ -13,7 +13,7 @@ public class PlayerDashController : PlayerActionControllerBase<PlayerDashModel>
     {
         if (Time.time - model.LastDashTime > model.DashCoolDown)
         {
-            if (model.ShouldConsumeStamina && statusController.StaminaManager.HasEnoughStamina(model.AmountOfDashStaminaCost))
+            if (model.ShouldConsumeStamina && statusController.StaminaManager.HasEnougCurrentValue(model.AmountOfDashStaminaCost))
             {
                 statusController.StaminaManager.ConsumeStamina(model.AmountOfDashStaminaCost);
                 StartAction();

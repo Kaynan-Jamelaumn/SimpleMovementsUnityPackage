@@ -12,7 +12,7 @@ public class PlayerRollController : PlayerActionControllerBase<PlayerRollModel>
     {
         if (Time.time - model.LastRollTime > model.RollCoolDown)
         {
-            if (model.ShouldConsumeStamina && statusController.StaminaManager.HasEnoughStamina(model.AmountOfRollStaminaCost))
+            if (model.ShouldConsumeStamina && statusController.StaminaManager.HasEnougCurrentValue(model.AmountOfRollStaminaCost))
             {
                 statusController.StaminaManager.ConsumeStamina(model.AmountOfRollStaminaCost);
                 StartAction();
