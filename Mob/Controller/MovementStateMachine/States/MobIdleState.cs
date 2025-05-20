@@ -27,15 +27,7 @@ public class MobIdleState : MobMovementState
         Context.Anim?.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
         Context.ActionsController.WaitToMoveRoutine = Context.ActionsController.StartCoroutine(WaitToMoveRoutine());
     }
-
-    /// <summary>
-    /// Called when exiting the idle state.
-    /// </summary>
     public override void ExitState() { }
-
-    /// <summary>
-    /// Called to update the idle state.
-    /// </summary>
     public override void UpdateState()
     {
         // GetNextState();
@@ -65,23 +57,10 @@ public class MobIdleState : MobMovementState
         return StateKey;
     }
 
-    /// <summary>
-    /// Called when a trigger collider enters the state.
-    /// </summary>
-    /// <param name="other">The collider that entered the trigger.</param>
     public override void OnTriggerEnter(Collider other) { }
-
-    /// <summary>
-    /// Called when a trigger collider stays in the state.
-    /// </summary>
-    /// <param name="other">The collider that is staying in the trigger.</param>
     public override void OnTriggerStay(Collider other) { }
-
-    /// <summary>
-    /// Called when a trigger collider exits the state.
-    /// </summary>
-    /// <param name="other">The collider that exited the trigger.</param>
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
 
     /// <summary>
     /// Coroutine that waits for the mob to move to a new location.

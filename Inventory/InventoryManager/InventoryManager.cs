@@ -103,6 +103,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         else
         {
             Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             isInventoryOpened = true;
         }
     }

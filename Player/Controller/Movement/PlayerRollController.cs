@@ -3,11 +3,6 @@ using UnityEngine;
 
 public class PlayerRollController : PlayerActionControllerBase<PlayerRollModel>
 {
-    private void Start()
-    {
-        ValidateAssignments();
-    }
-
     public void Roll()
     {
         if (Time.time - model.LastRollTime > model.RollCoolDown)

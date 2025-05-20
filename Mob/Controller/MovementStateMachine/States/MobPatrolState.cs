@@ -35,23 +35,13 @@ public class MobPatrolState : MobMovementState
         }
     }
 
-    /// <summary>
-    /// Called when exiting the patrol state.
-    /// </summary>
     public override void ExitState() { }
 
-    /// <summary>
-    /// Called to update the patrol state.
-    /// </summary>
+
     public override void UpdateState()
     {
-        // GetNextState();
     }
 
-    /// <summary>
-    /// Determines the next state to transition to based on various conditions.
-    /// </summary>
-    /// <returns>The next state to transition to.</returns>
     public override MobMovementStateMachine.EMobMovementState GetNextState()
     {
         if (shouldChangeToIdleState)
@@ -71,22 +61,9 @@ public class MobPatrolState : MobMovementState
         }
         return StateKey;
     }
-
-    /// <summary>
-    /// Called when a trigger collider enters the state.
-    /// </summary>
-    /// <param name="other">The collider that entered the trigger.</param>
     public override void OnTriggerEnter(Collider other) { }
-
-    /// <summary>
-    /// Called when a trigger collider stays in the state.
-    /// </summary>
-    /// <param name="other">The collider that is staying in the trigger.</param>
     public override void OnTriggerStay(Collider other) { }
 
-    /// <summary>
-    /// Called when a trigger collider exits the state.
-    /// </summary>
-    /// <param name="other">The collider that exited the trigger.</param>
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
 }

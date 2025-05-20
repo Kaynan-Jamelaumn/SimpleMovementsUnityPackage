@@ -10,6 +10,7 @@ public class WalkingState : MovementState
     public override void EnterState()
     {
         Context.MovementModel.CurrentSpeed = Context.MovementModel.Speed;
+
     }
     public override void ExitState()
 
@@ -17,7 +18,8 @@ public class WalkingState : MovementState
     }
     public override void UpdateState()
     {
-        //GetNextState();
+        MovePlayer();
+
     }
     public override
     MovementStateMachine.EMovementState GetNextState()
@@ -36,5 +38,7 @@ public class WalkingState : MovementState
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
+
 
 }

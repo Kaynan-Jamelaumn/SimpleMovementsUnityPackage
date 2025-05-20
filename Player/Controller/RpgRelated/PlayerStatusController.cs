@@ -100,69 +100,44 @@ public class PlayerStatusController : BaseStatusController
     public PlayerDashController DashController => dashController;
 
 
-    /// <summary>
-    /// Caches references to various components required by the controller.
-    /// </summary>
-    protected override void CacheComponents()
+    protected void Awake()
     {
-        CacheManager(ref xpManager, "ExperienceManager");
-        CacheManager(ref movementModel, "PlayerMovementModel");
-        CacheManager(ref staminaManager, "StaminaManager");
-        CacheManager(ref hpManager, "HealthManager");
-        CacheManager(ref hungerManager, "HungerManager");
-        CacheManager(ref thirstManager, "ThirstManager");
-        CacheManager(ref weightManager, "WeightManager");
-
-        rollModel = GetComponentOrLogError(ref rollModel, "PlayerRollModel");
-        dashModel = GetComponentOrLogError(ref dashModel, "PlayerDashModel");
+        movementModel = this.CheckComponent(movementModel, nameof(movementModel));
+        staminaManager = this.CheckComponent(staminaManager, nameof(staminaManager));
+        hpManager = this.CheckComponent(hpManager, nameof(hpManager));
+        hungerManager = this.CheckComponent(hungerManager, nameof(hungerManager));
+        thirstManager = this.CheckComponent(thirstManager, nameof(thirstManager));
+        weightManager = this.CheckComponent(weightManager, nameof(weightManager));
+        xpManager = this.CheckComponent(xpManager, nameof(xpManager));
+        rollModel = this.CheckComponent(rollModel, nameof(rollModel));
+        dashModel = this.CheckComponent(dashModel, nameof(dashModel));
+        rollController = this.CheckComponent(rollController, nameof(rollController));
+        dashController = this.CheckComponent(dashController, nameof(dashController));
     }
+
+
 
     /// <summary>
     /// Initializes the player status controller and subscribes to necessary events.
     /// </summary>
-    protected override void Start()
+     void Start()
     {
-        base.Start();
+       
         xpManager.OnSkillPointGained += HandleSkillPointGained;
         InitializePlayerClass();
         InitializeEffectHandlers();
     }
-
-    /// <summary>
-    /// Updates the player status each frame.
-    /// </summary>
     private void Update()
     {
         UpdateStatusBars();
     }
 
-    /// <summary>
-    /// Validates that all required assignments are properly set.
-    /// </summary>
-    public override void ValidateAssignments()
-    {
-        Assert.IsNotNull(xpManager, "ExperienceManager is not assigned.");
-        Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned.");
-        Assert.IsNotNull(staminaManager, "StaminaManager is not assigned.");
-        Assert.IsNotNull(hpManager, "HealthManager is not assigned.");
-        Assert.IsNotNull(hungerManager, "HungerManager is not assigned.");
-        Assert.IsNotNull(thirstManager, "ThirstManager is not assigned.");
-        Assert.IsNotNull(weightManager, "WeightManager is not assigned.");
-        Assert.IsNotNull(rollModel, "PlayerRollModel is not assigned.");
-        Assert.IsNotNull(dashModel, "PlayerDashModel is not assigned.");
-    }
 
     /// <summary>
     /// Updates various status bars such as stamina, health, and hunger.
     /// </summary>
     private void UpdateStatusBars()
     {
-        //staminaManager?.UpdateBar();
-        //hpManager?.UpdateBar();
-        //foodManager?.UpdateBar();
-        //drinkManager?.UpdateBar();
-        //weightManager?.UpdateBar();
-
         staminaManager?.UpdateStaminaBar();
         hpManager?.UpdateHpBar();
         hungerManager?.UpdateFoodBar();
@@ -390,36 +365,3 @@ public class PlayerStatusController : BaseStatusController
     }
 
 }
-
-
-
-
-
-
-
-//public void RemoveHpEffect(string effectName = null, Coroutine effectRoutine = null)
-//    {
-//        // Remove effect based on effectName
-//        if (effectName != null)
-//        {
-//            CoroutineInfo effectToRemove = model.StaminaEffectRoutines.Find(e => e.effectName == effectName);
-
-//            if (effectToRemove != null)
-//            {
-//                StopCoroutine(effectToRemove.coroutine);
-//                model.StaminaEffectRoutines.Remove(effectToRemove);
-//            }
-//        }
-
-//        // Remove effect based on effectRoutine
-//        if (effectRoutine != null)
-//        {
-//            CoroutineInfo effectToRemove = model.StaminaEffectRoutines.Find(e => e.coroutine == effectRoutine);
-
-//            if (effectToRemove != null)
-//            {
-//                StopCoroutine(effectToRemove.coroutine);
-//                model.StaminaEffectRoutines.Remove(effectToRemove);
-//            }
-//        }
-//    }

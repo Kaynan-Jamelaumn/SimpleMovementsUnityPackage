@@ -59,4 +59,6 @@ public abstract class BaseState<EState> where EState : Enum
     /// </summary>
     /// <param name="other">The collider that exited the trigger.</param>
     public abstract void OnTriggerExit(Collider other);
+
+    public abstract void LateUpdateState();
 }

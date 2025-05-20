@@ -22,8 +22,10 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
 
     private void Awake()
     {
+        abilityController = this.CheckComponent(abilityController, nameof(abilityController));
+        animationModel = this.CheckComponent(animationModel, nameof(animationModel));
+
         playerInput = new PlayerInput();
-        //ValiDateConstraints();
         context = new AbilityContext(playerInput, animationModel, abilityController);
         InitializeStates();
     }
@@ -35,15 +37,10 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
 
     private void OnDisable()
     {
-        // Desabilita todas as ações do player input
         playerInput.Player.Disable();
     }
 
-    private void ValiDateConstraints()
-    {
-        Assert.IsNotNull(playerInput, "PlayerInput is Not playerInput");
-        Assert.IsNotNull(animationModel, "PlayerAnimationModel is Not animationModel");
-    }
+
     private void InitializeStates()
     {
         States.Add(EAbilityState.Ready, new ReadyState(context, EAbilityState.Ready));

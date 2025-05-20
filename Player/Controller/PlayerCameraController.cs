@@ -1,9 +1,8 @@
-
-
 using Unity.Cinemachine;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
+using UnityEngine.InputSystem;
 
 public class PlayerCameraController : MonoBehaviour
 {
@@ -15,12 +14,12 @@ public class PlayerCameraController : MonoBehaviour
     {
         model = this.CheckComponent(model, nameof(model));
         model.CameraTransform = this.CheckComponent(model.CameraTransform, nameof(model.CameraTransform), searchChildren: true);
-        
+
         this.ValidateDict(model.CameraDictionary, nameof(model.CameraDictionary), allowEmpty: false);
-        
+
         foreach (var kvp in model.CameraDictionary)
         {
-            if (kvp.Key != null) // Only add valid cameras
+            if (kvp.Key != null)
             {
                 cameraOrder.Add(kvp.Key);
                 kvp.Key.SetActive(false);
@@ -71,10 +70,7 @@ public class PlayerCameraController : MonoBehaviour
     {
         if (cameraOrder.Count == 0) return;
 
-        // Deactivate current camera
         SetCameraActive(model.CurrentCamera, false);
-
-        // Move to next camera
         currentIndex = (currentIndex + 1) % cameraOrder.Count;
         ActivateCamera(cameraOrder[currentIndex]);
     }
@@ -86,19 +82,14 @@ public class PlayerCameraController : MonoBehaviour
         SetCameraActive(camera, true);
         model.CurrentCamera = camera;
 
-        // Handle FreeLook camera using modern CinemachineCamera approach
+        // Modern Cinemachine configuration
         if (camera.TryGetComponent<CinemachineCamera>(out var cmCamera))
         {
-            if (cmCamera.TryGetComponent<CinemachineFreeLook>(out var freeLook))
-            {
-                freeLook.m_XAxis.m_InputAxisName = "Mouse X";
-                freeLook.m_YAxis.m_InputAxisName = "Mouse Y";
-                freeLook.m_XAxis.m_MaxSpeed = 300f;
-                freeLook.m_YAxis.m_MaxSpeed = 2f;
-            }
+            // Input handling should be configured via CinemachineInputHandler component
+            // Ensure your camera has CinemachineInputHandler component attached
+            // and input actions are set up in the Inspector
         }
 
-        // Set cursor lock based on camera type
         if (model.CameraDictionary.TryGetValue(camera, out bool isFirstPerson))
         {
             SetCursorLock(isFirstPerson);
@@ -113,13 +104,8 @@ public class PlayerCameraController : MonoBehaviour
             if (isActive)
             {
                 model.CameraTransform = camera.transform;
-
-                // Handle CinemachineBrain transition using the new API
                 var brain = CinemachineCore.FindPotentialTargetBrain(camera.GetComponent<CinemachineVirtualCameraBase>());
-                if (brain != null)
-                {
-                    brain.ManualUpdate();
-                }
+                brain?.ManualUpdate();
             }
         }
     }

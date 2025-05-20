@@ -4,10 +4,6 @@ using UnityEngine;
 using UnityEngine.Assertions;
 public class PlayerDashController : PlayerActionControllerBase<PlayerDashModel>
 {
-    private void Start()
-    {
-        ValidateAssignments();
-    }
 
     public void Dash()
     {

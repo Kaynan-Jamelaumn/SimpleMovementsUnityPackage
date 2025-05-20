@@ -13,7 +13,10 @@ public class DashingState : MovementState
         startTime = Time.time;
     }
     public override void ExitState() { }
-    public override void UpdateState() { }
+    public override void UpdateState() {
+
+        MovePlayer();
+    }
     public override
     MovementStateMachine.EMovementState GetNextState()
     {
@@ -38,5 +41,7 @@ public class DashingState : MovementState
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
+
 
 }

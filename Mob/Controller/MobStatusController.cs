@@ -49,28 +49,8 @@ public class MobStatusController : BaseStatusController
         }
     }
 
-    /// <summary>
-    /// Caches required components and logs an error if any are missing.
-    /// </summary>
-    protected override void CacheComponents()
-    {
-        healthManager = GetComponentOrLogError(ref healthManager, "HealthManager");
-        speedManager = GetComponentOrLogError(ref speedManager, "SpeedManager");
-        abilitySpawner = GetComponentOrLogError(ref abilitySpawner, "AbilitySpawner");
-        itemSpawner = GetComponentOrLogError(ref itemSpawner, "ItemSpawner");
-        mobActionsController = GetComponentOrLogError(ref mobActionsController, "MobActionsController");
-        mobAbilityController = GetComponent<MobAbilityController>();
-    }
 
-    /// <summary>
-    /// Validates assignments of critical components.
-    /// Logs warnings if components are not assigned.
-    /// </summary>
-    public override void ValidateAssignments()
-    {
-        Assert.IsNotNull(healthManager, "HealthManager is not assigned.");
-        Assert.IsNotNull(speedManager, "SpeedManager is not assigned.");
-    }
+
 
     /// <summary>
     /// Updates the mob's status each frame. Handles death if HP is below or equal to zero.
@@ -86,9 +66,8 @@ public class MobStatusController : BaseStatusController
     /// <summary>
     /// Invoked when the script starts. Initializes effect handlers.
     /// </summary>
-    protected override void Start()
+    void Start()
     {
-        base.Start();
         InitializeEffectHandlers();
     }
 

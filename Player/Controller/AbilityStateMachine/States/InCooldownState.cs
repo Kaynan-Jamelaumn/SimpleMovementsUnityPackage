@@ -21,5 +21,6 @@ public class InCooldownState : AbilityState
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
 
 }

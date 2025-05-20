@@ -20,6 +20,7 @@ public class RollingState : MovementState
     }
     public override void UpdateState()
     {
+        MovePlayer();
     }
     public override
     MovementStateMachine.EMovementState GetNextState()
@@ -45,5 +46,7 @@ public class RollingState : MovementState
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
+    public override void LateUpdateState() { }
+
 
 }

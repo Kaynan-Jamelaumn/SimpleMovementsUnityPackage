@@ -24,13 +24,32 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
     [SerializeField] private StaminaManager staminaManager;
     [SerializeField] private PlayerAnimationModel animationModel;
 
+    [SerializeField] private PlayerCameraModel cameraModel;
+    [SerializeField] private PlayerCameraController cameraController;
+
     private PlayerInput playerInput;
 
     private void Awake()
-    {        
+    {
+        movementModel = this.CheckComponent(movementModel, nameof(movementModel));
+        movementController = this.CheckComponent(movementController, nameof(movementController));
+        statusController = this.CheckComponent(statusController, nameof(statusController));
+        staminaManager = this.CheckComponent(staminaManager, nameof(staminaManager));
+        animationModel = this.CheckComponent(animationModel, nameof(animationModel));
+        cameraModel = this.CheckComponent(cameraModel, nameof(cameraModel));
+        cameraController = this.CheckComponent(cameraController, nameof(cameraController));
+
         playerInput = new PlayerInput();
-        ValiDateConstraints();
-        context = new MovementContext(movementModel, statusController, playerInput, movementController, animationModel);
+        context = new MovementContext(
+            movementModel,
+            statusController,
+            playerInput,
+            movementController,
+            animationModel,
+            cameraModel,
+            cameraController
+        );
+
         InitializeStates();
     }
 
@@ -45,14 +64,7 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         playerInput.Player.Disable();
     }
 
-    private void ValiDateConstraints()
-    {
-        Assert.IsNotNull(movementModel, "PlayerMovementModel is Not Assigned");
-        Assert.IsNotNull(statusController, "PlayerStatusController is Not Assigned");
-        Assert.IsNotNull(playerInput, "PlayerInput is Not playerInput");
-        Assert.IsNotNull(movementController, "PlayerMovementController is Not movementController");
-        Assert.IsNotNull(animationModel, "PlayerAnimationModel is Not animationModel");
-    }
+
     private void InitializeStates()
     {
         States.Add(EMovementState.Idle, new IdleState(context, EMovementState.Idle));

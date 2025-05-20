@@ -9,28 +9,20 @@ public abstract class PlayerActionModelBase : MonoBehaviour
 
 public abstract class PlayerActionControllerBase<TModel> : MonoBehaviour where TModel : PlayerActionModelBase, new()
 {
-    protected TModel model;
-    protected PlayerMovementModel movementModel;
-    protected PlayerMovementController controllerMovement;
-    protected PlayerStatusController statusController;
-    protected PlayerAnimationModel playerAnimationModel;
+    [SerializeField] protected TModel model;
+    [SerializeField] protected PlayerMovementModel movementModel;
+    [SerializeField] protected PlayerMovementController controllerMovement;
+    [SerializeField] protected PlayerStatusController statusController;
+    [SerializeField] protected PlayerAnimationModel playerAnimationModel;
 
     protected virtual void Awake()
     {
-        model = GetComponent<TModel>();
-        movementModel = GetComponent<PlayerMovementModel>();
-        controllerMovement = GetComponent<PlayerMovementController>();
-        playerAnimationModel = GetComponent<PlayerAnimationModel>();
-        statusController = GetComponent<PlayerStatusController>();
-        //if (model.ShouldConsumeStamina)
+        model = this.CheckComponent(model, nameof(model));
+        movementModel = this.CheckComponent(movementModel, nameof(movementModel));
+        controllerMovement = this.CheckComponent(controllerMovement, nameof(controllerMovement));
+        statusController = this.CheckComponent(statusController, nameof(statusController));
+        playerAnimationModel = this.CheckComponent(playerAnimationModel, nameof(playerAnimationModel));
     }
 
-    protected void ValidateAssignments()
-    {
-        Assert.IsNotNull(model, $"{typeof(TModel).Name} is not assigned in model.");
-        Assert.IsNotNull(movementModel, "PlayerMovementModel is not assigned in movementModel.");
-        Assert.IsNotNull(controllerMovement, "PlayerMovementController is not assigned in controllerMovement.");
-        Assert.IsNotNull(statusController, "PlayerStatusController is not assigned in statusController.");
-        Assert.IsNotNull(playerAnimationModel, "PlayerAnimationModel is not assigned in playerAnimationModel.");
-    }
+
 }

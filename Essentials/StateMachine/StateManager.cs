@@ -45,6 +45,10 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
             TransitionToState(nextStateKey);
         }
     }
+    void LateUpdate()
+    {
+        CurrentState.LateUpdateState();
+    }
 
     /// <summary>
     /// Transitions to the specified state.

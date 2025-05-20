@@ -17,16 +17,18 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
 
     [SerializeField] private PlayerAnimationModel animationModel;
     [SerializeField] private List<AbilityAction> abilityAction = new List<AbilityAction>();
-    PlayerAbilityController playerAbilityController;
+    [SerializeField] private PlayerAbilityController playerAbilityController;
     private PlayerInput playerInput;
 
 
     private void Awake()
     {
-        playerInput = new PlayerInput();
-        ValiDateConstraints();
+        abilityController = this.CheckComponent(abilityController, nameof(abilityController));
+        animationModel = this.CheckComponent(animationModel, nameof(animationModel));
+        playerAbilityController = this.CheckComponent<PlayerAbilityController>(null, nameof(playerAbilityController));
 
-        playerAbilityController = GetComponent<PlayerAbilityController>();
+
+        playerInput = new PlayerInput();
         InitializeAbilityActions(playerAbilityController);
 
 
@@ -44,12 +46,6 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
         }
     }
 
-
-
-    private void Start()
-    {
-
-    }
     private void OnEnable()
     {
         playerInput.Player.Enable();
@@ -61,11 +57,7 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
         playerInput.Player.Disable();
     }
 
-    private void ValiDateConstraints()
-    {
-        Assert.IsNotNull(playerInput, "PlayerInput is Not playerInput");
-        Assert.IsNotNull(animationModel, "PlayerAnimationModel is Not animationModel");
-    }
+
     private void InitializeStates()
     {
         States.Add(EAbilitiesState.Available, new AvailableState(context, EAbilitiesState.Available));
