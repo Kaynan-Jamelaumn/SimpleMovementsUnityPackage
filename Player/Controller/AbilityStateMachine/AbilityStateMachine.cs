@@ -3,9 +3,15 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.InputSystem;
+using static AbilityStateMachine;
+
+
+
+
 public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityState>
 {
-    AbilityContext context;
+    private AbilityContext context;
+    public AbilityContext Context => context;
     public enum EAbilityState
     {
         Ready,
@@ -16,9 +22,26 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
     }
     [SerializeField] private PlayerAbilityController abilityController;
     [SerializeField] private PlayerAnimationModel animationModel;
+    [SerializeField] private PlayerAbilityHolder abilityHolder;
+
+
+    public bool Available()
+    {
+        return context.cachedAvailability;
+    }
+
+    //public bool Available()
+    //{
+    //    if (abilityHolder.abilityEffect.StateAvailabilityDict.TryGetValue(CurrentState.StateKey, out bool isAvailable))
+    //    {
+    //        return isAvailable;
+    //    }
+    //    return true;
+    //}
+
 
     public PlayerInput playerInput;
-
+    public PlayerAbilityHolder AbilityHolder { get => abilityHolder; set => abilityHolder = value; }
 
     private void Awake()
     {
@@ -26,7 +49,7 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
         animationModel = this.CheckComponent(animationModel, nameof(animationModel));
 
         playerInput = new PlayerInput();
-        context = new AbilityContext(playerInput, animationModel, abilityController);
+        context = new AbilityContext(playerInput, animationModel, abilityController, abilityHolder);
         InitializeStates();
     }
 
@@ -50,5 +73,8 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
         States.Add(EAbilityState.InCooldown, new InCooldownState(context, EAbilityState.InCooldown));
         CurrentState = States[EAbilityState.Ready];
     }
+
+
+
 }
 

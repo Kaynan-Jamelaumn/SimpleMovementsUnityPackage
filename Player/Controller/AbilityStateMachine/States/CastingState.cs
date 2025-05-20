@@ -8,6 +8,7 @@ public class CastingState : AbilityState
     }
     public override void EnterState()
     {
+        RecalculateAvailability(AbilityStateMachine.EAbilityState.Casting);
     }
     public override void ExitState() { }
     public override void UpdateState()

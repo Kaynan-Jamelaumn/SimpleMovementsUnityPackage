@@ -19,8 +19,7 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
     [SerializeField] private List<AbilityAction> abilityAction = new List<AbilityAction>();
     [SerializeField] private PlayerAbilityController playerAbilityController;
     private PlayerInput playerInput;
-
-
+       
     private void Awake()
     {
         abilityController = this.CheckComponent(abilityController, nameof(abilityController));

@@ -12,18 +12,14 @@ public class AvailableState : AbilitiesState
     public override void ExitState() { }
     public override void UpdateState()
     {
-        //GetNextState();
+        GetNextState();
+
     }
     public override AbilitiesStateMachine.EAbilitiesState GetNextState()
     {
-        for (int i = 0; i < Context.AbilityAction.Count; i++)
-        {
-            if (IsAbilityTriggered(i))
-            {
-                Context.AbilityController.CheckAbilities2(Context.AbilityAction[i].abilityActionReference, Context.AbilityAction[i].abilityStateMachine);
-                return AbilitiesStateMachine.EAbilitiesState.Unavailable;
-            }
-        }
+
+        if (!Available()) return AbilitiesStateMachine.EAbilitiesState.Unavailable;
+
         return StateKey;
 
     }

@@ -12,10 +12,12 @@ public class UnavailableState : AbilitiesState
     public override void ExitState() { }
     public override void UpdateState()
     {
-        //GetNextState();
+        GetNextState();
     }
     public override AbilitiesStateMachine.EAbilitiesState GetNextState()
     {
+
+        if (!Available()) return AbilitiesStateMachine.EAbilitiesState.Unavailable;
 
         return StateKey;
 

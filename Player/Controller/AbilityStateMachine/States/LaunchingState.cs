@@ -8,6 +8,7 @@ public class LaunchingState : AbilityState
     }
     public override void EnterState()
     {
+        RecalculateAvailability(AbilityStateMachine.EAbilityState.Launching);
     }
     public override void ExitState() { }
     public override void UpdateState()
@@ -16,11 +17,6 @@ public class LaunchingState : AbilityState
     }
     public override AbilityStateMachine.EAbilityState GetNextState()
     {
-        //if (TriggeredJump()) return MovementStateMachine.EMovementState.Jumping;
-        //if (TriggeredDash()) return MovementStateMachine.EMovementState.Dashing;
-        //if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
-        //if (IsMoving()) return MovementStateMachine.EMovementState.Walking;
-
         return StateKey;
 
     }

@@ -2,6 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static AbilityEffectSO;
+using static AbilityStateMachine;
+
+
+
 
 [CreateAssetMenu(fileName = "Ability", menuName = "Scriptable Objects/Ability/Ability")]
 public class AbilityEffectSO : AbilitySO
@@ -16,12 +21,41 @@ public class AbilityEffectSO : AbilitySO
     [Tooltip("Caster will receibe the buffs even outside the AttackCast Collider")][SerializeField] public bool isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area")][SerializeField] public bool multiAreaEffect;
     [SerializeField] public bool canBeHitMoreThanOnce;
-    [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area does it have a max amount of targets")][SerializeField] public bool hasMaxHitPerCollider;    
-   // [SerializeField] public float maxVictimsPerCollider;
-
-
-
+    [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area does it have a max amount of targets")][SerializeField] public bool hasMaxHitPerCollider;
+    // [SerializeField] public float maxVictimsPerCollider;
     //private ApplyEffects applyEffects = new ApplyEffects();
+
+    [System.Serializable]
+    public class StateAvailability
+    {
+        public EAbilityState state;
+        public bool available;
+    }
+
+
+    [SerializeField]
+    private List<StateAvailability> _stateAvailability = new List<StateAvailability>();
+    private Dictionary<EAbilityState, bool> stateAvailabilityDict = new Dictionary<EAbilityState, bool>();
+
+    public Dictionary<EAbilityState, bool> StateAvailabilityDict { get => stateAvailabilityDict; set => stateAvailabilityDict = value; }
+
+    private void OnValidate()
+    {
+        UpdateStateAvailabilityDict();
+    }
+
+    private void UpdateStateAvailabilityDict()
+    {
+        StateAvailabilityDict.Clear();
+        foreach (var entry in _stateAvailability)
+        {
+            if (!StateAvailabilityDict.ContainsKey(entry.state))
+            {
+                StateAvailabilityDict.Add(entry.state, entry.available);
+            }
+        }
+    }
+
 
 
     public  void AbnormalUse(Transform targetxTransform, AttackEffect effect)

@@ -8,6 +8,7 @@ public class ActiveState : AbilityState
     }
     public override void EnterState()
     {
+        RecalculateAvailability(AbilityStateMachine.EAbilityState.Active);
     }
     public override void ExitState() { }
     public override void UpdateState()

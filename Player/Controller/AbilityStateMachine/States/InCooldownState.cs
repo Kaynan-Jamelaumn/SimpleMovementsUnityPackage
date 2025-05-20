@@ -8,6 +8,7 @@ public class InCooldownState : AbilityState
     }
     public override void EnterState()
     {
+        RecalculateAvailability(AbilityStateMachine.EAbilityState.InCooldown);
     }
     public override void ExitState() { }
     public override void UpdateState()
