@@ -17,24 +17,22 @@ public class ReadyState : AbilityState
     {
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Ready);
     }
-    public override void ExitState() { }
+    public override void ExitState() { 
+        useStateMasterKey = false;
+    }
     public override void UpdateState()
     {
     }
     public override AbilityStateMachine.EAbilityState GetNextState()
     {
         if (useStateMasterKey)
-        {
-            useStateMasterKey = false;
-
             return stateMasterKey;
 
-        }
+        
 
         if ( Context.triggered)
             StartAbility(); 
         
-        if (Context.abilityStartedActivating) return AbilityStateMachine.EAbilityState.Active;
             return StateKey;
 
     }
@@ -66,7 +64,6 @@ public class ReadyState : AbilityState
             _ = SetAbilityActions(Context.AbilityController.transform, attackCast);
         else if (!Context.abilityStillInProgress && ability.abilityEffect.doesAbilityNeedsConfirmationClickToLaunch)
         {
-            Debug.Log("B");
             Context.abilityStillInProgress = true;
             Context.isWaitingForClick = true;
             Context.AbilityController.StartCoroutine(WaitForClickRoutine(ability, attackCast));
@@ -74,7 +71,6 @@ public class ReadyState : AbilityState
         }
         else
         {
-            Debug.Log("A");
             _ = SetAbilityActions(Context.AbilityController.transform, attackCast);
         }
     }
@@ -151,9 +147,6 @@ public class ReadyState : AbilityState
         Transform targetedTransform = abilityTargetTransform;
         GameObject instantiatedParticle = UnityEngine.Object.Instantiate(ability.abilityEffect.particle);
 
-        Debug.Log(instantiatedParticle.gameObject.name);
-
-
         if (ability.abilityEffect.shouldMarkAtCast)
         {
             ability.targetTransform = GetTargetTransform(targetedTransform);
@@ -166,11 +159,9 @@ public class ReadyState : AbilityState
         {
             stateMasterKey = AbilityStateMachine.EAbilityState.Casting;
             useStateMasterKey = true;
-            Debug.LogError("3");
         }
         else
         {
-            Debug.LogError("2");
             stateMasterKey = AbilityStateMachine.EAbilityState.Launching;
             useStateMasterKey = true;
         }

@@ -17,7 +17,6 @@ public class CastingState : AbilityState
         // isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
         // shouldMarkAtCast activate the ability at the first position when casting was activated
         // enemyEffect affect non agressive creature true= no
-        Debug.Log("estado casting");
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Casting);
         //if (Context.isPermanentTargetOnCast) Context.AbilityController.StartCoroutine(SetPermanentTargetOnCastRoutine(Context.AbilityController.transform, Context.instantiatedParticle, Context.AbilityStateMachine));
         //else Context.AbilityController.StartCoroutine(SetTargetOnCastRoutine(Context.AbilityController.transform, Context.instantiatedParticle, Context.AbilityStateMachine));
@@ -31,7 +30,7 @@ public class CastingState : AbilityState
 
     public override void ExitState()
     {
-      
+        goToNextState = false;
     }
 
     public override AbilityStateMachine.EAbilityState GetNextState()

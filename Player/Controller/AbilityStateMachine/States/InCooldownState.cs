@@ -11,10 +11,9 @@ public class InCooldownState : AbilityState
     public override void EnterState()
     {
         RecalculateAvailability(AbilityStateMachine.EAbilityState.InCooldown);
-        cooldownFinished = false;
         Context.AbilityController.StartCoroutine(CooldownAbilityRoutine(Context.AbilityHolder));
     }
-    public override void ExitState() { }
+    public override void ExitState() { cooldownFinished = false; }
     public override void UpdateState()
     {
         GetNextState();

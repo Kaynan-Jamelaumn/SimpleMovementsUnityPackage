@@ -11,7 +11,6 @@ public class LaunchingState : AbilityState
     }
     public override void EnterState()
     {
-        Debug.Log("estado launching");
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Launching);
         //if (Context.shouldHaveDelayedLaunchTime) Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
         //else Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
@@ -33,14 +32,18 @@ public class LaunchingState : AbilityState
 
 
     }
-    public override void ExitState() { }
+    public override void ExitState() {
+        goToNextState = false;
+    }
     public override void UpdateState()
     {
 
     }
     public override AbilityStateMachine.EAbilityState GetNextState()
     {
-        if (Context.abilityStartedActivating) return AbilityStateMachine.EAbilityState.Active;
+        if (goToNextState)
+            return AbilityStateMachine.EAbilityState.Active;
+        
         return StateKey;
 
     }
@@ -59,7 +62,7 @@ public class LaunchingState : AbilityState
             SetGizmosAndColliderAndParticlePosition(true);
             yield return null;
         }
-
+        goToNextState = true;
         ApplyAbilityUse();
     }
 
@@ -69,6 +72,7 @@ public class LaunchingState : AbilityState
 
         if (!ability.abilityEffect.shouldMarkAtCast) SetGizmosAndColliderAndParticlePosition();
         yield return new WaitForSeconds(ability.abilityEffect.finalLaunchTime);
+        goToNextState = true;
         ApplyAbilityUse();
     }
 
@@ -100,8 +104,14 @@ public class LaunchingState : AbilityState
                 if (Context.instantiatedParticle) Object.Destroy(Context.instantiatedParticle);
                 Context.targetTransform = ability.targetTransform.transform;
                 if (ability.abilityEffect.multiAreaEffect)
+                {
+                    goToNextState = true;
                     ApplyAbilityUse();
-                else ApplyAbilityUse(hasFoundTarget);
+                }
+                else {
+                    goToNextState = true;
+                    ApplyAbilityUse(hasFoundTarget); 
+                }
                 yield break;
             }
 
@@ -113,6 +123,7 @@ public class LaunchingState : AbilityState
         if (Context.instantiatedParticle) Object.Destroy(Context.instantiatedParticle);
         Context.targetTransform = ability.targetTransform.transform;
         // Apply the ability use
+        goToNextState = true;
         ApplyAbilityUse();
     }
 

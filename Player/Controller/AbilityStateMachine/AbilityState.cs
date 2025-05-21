@@ -87,7 +87,6 @@ public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState
     {
         AbilityHolder ability = Context.AbilityHolder;
 
-        //ability.abilityEffect.Use();
         foreach (var effect in ability.abilityEffect.effects)
         {
 
@@ -116,10 +115,8 @@ public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState
             }
 
         }
-        Context.abilityStartedActivating = true;//ability.abilityState = AbilityHolder.AbilityState.Active;
         ability.activeTime = Time.time;
         Context.targetTransform = Context.AbilityController.transform;
-        //Context.AbilityController.StartCoroutine(ActiveAbilityRoutine(ability, instantiatedParticle));
     }
 
 
