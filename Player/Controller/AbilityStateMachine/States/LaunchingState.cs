@@ -4,47 +4,38 @@ using UnityEngine;
 
 public class LaunchingState : AbilityState
 {
+    bool goToNextState = false;
     public LaunchingState(AbilityContext context, AbilityStateMachine.EAbilityState estate) : base(context, estate)
     {
         AbilityContext Context = context;
     }
     public override void EnterState()
     {
+        Debug.Log("estado launching");
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Launching);
         //if (Context.shouldHaveDelayedLaunchTime) Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
         //else Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
 
-
+        // enemyEffect singleTargetSelfTarget isFixedPosition isPartialPermanentTargetWhileCasting isPermanentTarget shouldMarkAtCast
+        // singleTargetselfTarget ability that follows player afftect only player
+        // isFixedPosition ability that follows the player until activated
+        // isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
+        // shouldMarkAtCast activate the ability at the first position when casting was activated
+        // enemyEffect affect non agressive creature true= no
         AbilityHolder ability = Context.AbilityHolder;
-        if (Context.isPermanentTargetOnCast)
-        {
-            if (ability.abilityEffect.isPermanentTarget)
-                Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
-            else
-                Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
-
-        }
-        else
-        {
-            if (ability.abilityEffect.shouldLaunch)
-                Context.AbilityController.StartCoroutine(SetBulletLikeTargetLaunchRoutine());
-            else if (!ability.abilityEffect.shouldLaunch && ability.abilityEffect.isPermanentTarget)
-                Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
-            else
-                Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
-        }
-
-        if (ability.abilityEffect.isPermanentTarget)
+        if (ability.abilityEffect.shouldLaunch) // does it launch like a fireball or a bullet
+            Context.AbilityController.StartCoroutine(SetBulletLikeTargetLaunchRoutine());
+        else if (!ability.abilityEffect.shouldLaunch && ability.abilityEffect.isPermanentTarget)  // while the ability is charging does it follow the player
             Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
         else
-            Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
+            Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine()); // it will only set the target(spawn) when it finishes charging
+
 
 
     }
     public override void ExitState() { }
     public override void UpdateState()
     {
-        GetNextState();
 
     }
     public override AbilityStateMachine.EAbilityState GetNextState()
@@ -62,9 +53,6 @@ public class LaunchingState : AbilityState
     public virtual IEnumerator SetPermanentTargetLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
-
-
-        //ability.abilityState = AbilityHolder.AbilityState.Launching;
         float startTime = Time.time;
         while (Time.time <= startTime + ability.abilityEffect.finalLaunchTime)
         {
@@ -75,56 +63,38 @@ public class LaunchingState : AbilityState
         ApplyAbilityUse();
     }
 
-
-
-
-
-
     public virtual IEnumerator DelayedSetTargetLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
 
         if (!ability.abilityEffect.shouldMarkAtCast) SetGizmosAndColliderAndParticlePosition();
-        ability.abilityState = AbilityHolder.AbilityState.Launching;
         yield return new WaitForSeconds(ability.abilityEffect.finalLaunchTime);
         ApplyAbilityUse();
     }
-
-
-
-
-
-
-
-
-
-
-
 
     protected IEnumerator SetBulletLikeTargetLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
 
 
-
-        //ability.abilityState = AbilityHolder.AbilityState.Launching;
         float startTime = Time.time;
 
         ability.targetTransform = GetTargetTransform(Context.targetTransform);
         // Calculate the direction from player to mouse position
         Vector3 cameraForward = Camera.main.transform.forward;
-        if (ability.abilityEffect.isGroundFixedPosition) cameraForward.y = 0f; // Ignore vertical component
+        if (ability.abilityEffect.isGroundFixedPosition) // will the ability be affected to where the player is looking 
+            cameraForward.y = 0f; // Ignore vertical component
         else cameraForward.y *= 0.33f;
         Vector3 direction = cameraForward.normalized;
-        ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime;
+        ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime; //it will move the target transform(since the ability is a game object this means moving the ability) to the direction of the camera
         GameObject hasFoundTarget = null;
-        while (Time.time < startTime + ability.abilityEffect.lifeSpan)
+        while (Time.time < startTime + ability.abilityEffect.lifeSpan) // move the ability while it is active
         {
             // Update the target position based on the object's transform
             ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime;
             Context.instantiatedParticle.transform.position = ability.targetTransform.transform.position;
             if (hasFoundTarget == null)
-                hasFoundTarget = ability.abilityEffect.CheckContactCollider(ability.targetTransform, Context.attackCast, Context.AbilityController.gameObject);
+                hasFoundTarget = ability.abilityEffect.CheckContactCollider(ability.targetTransform, Context.attackCast, Context.AbilityController.gameObject); // search for colliders
             if (hasFoundTarget)
             {
                 if (Context.instantiatedParticle) Object.Destroy(Context.instantiatedParticle);
@@ -153,7 +123,6 @@ public class LaunchingState : AbilityState
     public virtual IEnumerator UntilReachesPosition()
     {
         AbilityHolder ability = Context.AbilityHolder;
-        //ability.abilityState = AbilityHolder.AbilityState.Launching;
         float startTime = Time.time;
         if (ability.abilityEffect.shouldLaunch)
         {

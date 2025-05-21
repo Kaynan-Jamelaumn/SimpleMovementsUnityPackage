@@ -55,18 +55,18 @@ public class AttackEffect
     /// <summary>
     /// Indicates if the effect is procedural (the amount is divided by the time).
     /// </summary>
-    [Tooltip("The amount will be divided by the time")] public bool isProcedural;
+    [Tooltip("Will the amount be divided by the time")] public bool isProcedural;
 
     /// <summary>
     /// Indicates if the effect can be applied again or only reset the time.
     /// </summary>
-    [Tooltip("If the same effect is being applied, can it be applied again or it won't and only reset the time")]
+    [Tooltip("If the same effect is being applied, can it be applied again or only reset the time")]
     public bool isStackable;
 
     /// <summary>
     /// Indicates if the effect is applied to the enemy.
     /// </summary>
-    [Tooltip("If it is applied to the caster or the enemy")] public bool enemyEffect = true;
+    [Tooltip("Enemy effect = true, a player effect= false")] public bool enemyEffect = true;
 
     [Header("Random effectPower")]
 

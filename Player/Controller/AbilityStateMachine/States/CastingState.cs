@@ -4,20 +4,28 @@ using UnityEngine;
 
 public class CastingState : AbilityState
 {
+    bool goToNextState = false;
     public CastingState(AbilityContext context, AbilityStateMachine.EAbilityState estate) : base(context, estate)
     {
         AbilityContext Context = context;
     }
     public override void EnterState()
     {
+        // enemyEffect singleTargetSelfTarget isFixedPosition isPartialPermanentTargetWhileCasting isPermanentTarget shouldMarkAtCast
+        // singleTargetselfTarget ability that follows player afftect only player
+        // isFixedPosition ability that follows the player until activated
+        // isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
+        // shouldMarkAtCast activate the ability at the first position when casting was activated
+        // enemyEffect affect non agressive creature true= no
+        Debug.Log("estado casting");
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Casting);
         //if (Context.isPermanentTargetOnCast) Context.AbilityController.StartCoroutine(SetPermanentTargetOnCastRoutine(Context.AbilityController.transform, Context.instantiatedParticle, Context.AbilityStateMachine));
         //else Context.AbilityController.StartCoroutine(SetTargetOnCastRoutine(Context.AbilityController.transform, Context.instantiatedParticle, Context.AbilityStateMachine));
 
         PlayerAbilityHolder ability = Context.AbilityHolder;
-        if (ability.abilityEffect.isPartialPermanentTargetWhileCasting)
+        if (ability.abilityEffect.isPartialPermanentTargetWhileCasting || ability.abilityEffect.isFixedPosition || ability.abilityEffect.singleTargetSelfTarget)
             Context.AbilityController.StartCoroutine(SetPermanentTargetOnCastRoutine());
-        else
+        if (ability.abilityEffect.shouldMarkAtCast)
             Context.AbilityController.StartCoroutine(SetTargetOnCastRoutine());
     }
 
@@ -28,7 +36,7 @@ public class CastingState : AbilityState
 
     public override AbilityStateMachine.EAbilityState GetNextState()
     {
-        if (Context.abilityStartedActivating) return AbilityStateMachine.EAbilityState.Active;
+        if (goToNextState) return AbilityStateMachine.EAbilityState.Launching;
         return StateKey;
 
     }
@@ -51,7 +59,6 @@ public class CastingState : AbilityState
 
     public override void UpdateState()
     {
-        GetNextState();
     }
 
 
@@ -70,6 +77,7 @@ public class CastingState : AbilityState
         }
 
         SetGizmosAndColliderAndParticlePosition(false);
+        goToNextState = true;
         //if (ability.abilityEffect.isPermanentTarget)
         //    Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine(ability, playerTransform, instantiatedParticle, abilityStateMachine, attackCast));
         //else
@@ -89,6 +97,7 @@ public class CastingState : AbilityState
         float startTime = Time.time;
         while (Time.time <= startTime + ability.abilityEffect.castDuration)
             yield return null;
+        goToNextState = true;
         //if (ability.abilityEffect.shouldLaunch)
         //    Context.AbilityController.StartCoroutine(SetBulletLikeTargetLaunchRoutine(ability, playerTransform, instantiatedParticle, abilityStateMachine, attackCast));
         //else if (!ability.abilityEffect.shouldLaunch && ability.abilityEffect.isPermanentTarget)
