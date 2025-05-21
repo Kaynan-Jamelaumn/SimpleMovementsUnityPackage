@@ -27,7 +27,7 @@ public class PlayerAbilityView : MonoBehaviour
     public void OnAttackClick(InputAction.CallbackContext value)
     {
         if (!value.started) return;
-        if (playerAbilityController.abilityStillInProgress) playerAbilityController.isWaitingForClick = false;
+        //if (playerAbilityController.abilityStillInProgress) playerAbilityController.isWaitingForClick = false;
         //else inventoryManager.OnUseItem(value);
 
     }

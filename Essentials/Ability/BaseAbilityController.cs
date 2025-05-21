@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 public abstract class BaseAbilityController<T> : MonoBehaviour where T : AbilityHolder
 {
     [SerializeField] protected Transform targetTransform;
-    protected Transform oldTransform;
+    public Transform oldTransform;
     [SerializeField] public AbilitiesStateMachine abilitiesStateMachine;
     protected virtual async Task SetAbilityActions(T ability, Transform abilityTargetTransform, AttackCast attackCast = null)
     {
@@ -309,28 +309,6 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
         targetTransform = transform;
         StartCoroutine(ActiveAbilityRoutine(ability, instantiatedParticle));
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -17,7 +17,7 @@ public class MobStatusController : BaseStatusController
     [SerializeField, Tooltip("Manages the mob's speed and related effects.")]
     private SpeedManager speedManager;
 
-    private AbilitySpawner abilitySpawner;
+    //private AbilitySpawner abilitySpawner;
     private ItemSpawner itemSpawner;
     private MobActionsController mobActionsController;
     private MobAbilityController mobAbilityController;
@@ -76,7 +76,7 @@ public class MobStatusController : BaseStatusController
     /// </summary>
     protected override void HandleDeath()
     {
-        abilitySpawner?.SpawnAbility();
+        //abilitySpawner?.SpawnAbility();
         itemSpawner?.SpawnItem(transform.position);
         mobActionsController?.StopAllCoroutines();
         mobAbilityController?.StopAllCoroutines();

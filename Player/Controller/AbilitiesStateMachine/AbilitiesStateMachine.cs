@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Assertions;
@@ -13,36 +14,41 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
         Available,
         Unavailable,
     }
-    [SerializeField] private PlayerAbilityController abilityController;
 
+    [SerializeField] private PlayerAbilityController abilityController;
     [SerializeField] private PlayerAnimationModel animationModel;
     [SerializeField] private List<AbilityAction> abilityAction = new List<AbilityAction>();
-    [SerializeField] private PlayerAbilityController playerAbilityController;
+    //[SerializeField] private PlayerAbilityController playerAbilityController;
     private PlayerInput playerInput;
        
     private void Awake()
     {
         abilityController = this.CheckComponent(abilityController, nameof(abilityController));
         animationModel = this.CheckComponent(animationModel, nameof(animationModel));
-        playerAbilityController = this.CheckComponent<PlayerAbilityController>(null, nameof(playerAbilityController));
+       // playerAbilityController = this.CheckComponent<PlayerAbilityController>(null, nameof(playerAbilityController));
 
 
         playerInput = new PlayerInput();
-        InitializeAbilityActions(playerAbilityController);
+        //InitializeAbilityActions(playerAbilityController);
 
 
         context = new AbilitiesContext(playerInput, animationModel, abilityController, abilityAction);    
         InitializeStates();
+        for (int i = 0; i < abilityAction.Count; i++)
+        {
+            if (abilityAction[i].AbilityStateMachine.AbilityHolder.abilityEffect != null)
+            abilityAction[i].AbilityStateMachine.AbilityHolder.attackCast = abilityAction[i].AbilityStateMachine.AbilityHolder.abilityEffect.effects[0].attackCast;
+        }
 
     }
     private void InitializeAbilityActions(PlayerAbilityController playerAbilityController)
     {
-        for (int i = 0; i < playerAbilityController.Abilities.Count; i++)
-        {
-            var abilityStateMachine = this.AddComponent<AbilityStateMachine>();
-            var action = new AbilityAction(playerAbilityController.Abilities[i].AbilityActionReference, abilityStateMachine);
-            abilityAction.Add(action);
-        }
+        //for (int i = 0; i < playerAbilityController.Abilities.Count; i++)
+        //{
+        //    var abilityStateMachine = this.AddComponent<AbilityStateMachine>();
+        //    var action = new AbilityAction(playerAbilityController.Abilities[i].AbilityActionReference, abilityStateMachine);
+        //    abilityAction.Add(action);
+        //}
     }
 
     private void OnEnable()
@@ -62,6 +68,14 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
         States.Add(EAbilitiesState.Available, new AvailableState(context, EAbilitiesState.Available));
         States.Add(EAbilitiesState.Unavailable, new UnavailableState(context, EAbilitiesState.Unavailable));
         CurrentState = States[EAbilitiesState.Available];
+    }
+
+    public AbilityAction FindAbilityActionByInputAction(InputAction inputAction)
+    {
+        // Search for the first AbilityAction that has a matching InputActionReference
+        return abilityAction.FirstOrDefault(action =>
+            action.abilityActionReference != null &&
+            action.abilityActionReference.action == inputAction);
     }
 }
 

@@ -1,14 +1,33 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
+using UnityEngine;
 public class AbilityContext
 {
     private PlayerInput playerInput;
     private PlayerAnimationModel animationModel;
     private PlayerAbilityController abilityController;
     private PlayerAbilityHolder abilityHolder;
-
+    private InputActionReference abilityActionReference;
     public bool cachedAvailability;
+
+    public bool triggered;
+    public Transform targetTransform;
+    public Transform oldTransform;
+    public GameObject instantiatedParticle;
+    public bool abilityStartedActivating = false;
+
+
+    public bool shouldHaveDelayedLaunchTime = false;
+    public bool abilityStillInProgress = false;
+    public bool isWaitingForClick = false;
+
+
+    public bool isPermanentTargetOnCast = false;
+    public AttackCast attackCast = null;
+
+
+
 
     public AbilityContext(PlayerInput playerInput, PlayerAnimationModel animationModel, PlayerAbilityController abilityController, PlayerAbilityHolder abilityHolder) 
     {
@@ -30,10 +49,12 @@ public class AbilityContext
         }
     }
 
+
     public PlayerInput PlayerInput => playerInput;
     public PlayerAnimationModel AnimationModel => animationModel;
     public PlayerAbilityController AbilityController => abilityController;
     public PlayerAbilityHolder AbilityHolder => abilityHolder;
 
+    public InputActionReference AbilityActionReference { get => abilityActionReference; set => abilityActionReference = value; }
 }
 

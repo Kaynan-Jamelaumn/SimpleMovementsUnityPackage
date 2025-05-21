@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 [System.Serializable]
 public class AbilityAction 
 {
-    private AbilityStateMachine abilityStateMachine;
+    [SerializeField]private AbilityStateMachine abilityStateMachine;
     public InputActionReference abilityActionReference;
 
     public AbilityStateMachine AbilityStateMachine { get => abilityStateMachine; set => abilityStateMachine = value; }
