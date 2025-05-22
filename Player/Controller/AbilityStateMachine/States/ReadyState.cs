@@ -104,26 +104,11 @@ public class ReadyState : AbilityState
 
         if (clicked)
         {
-            Debug.Log("Processing ability after click confirmation");
             Context.abilityStillInProgress = false;
             Context.isWaitingForClick = false;
             ProcessRayCastAbility(ability, attackCast);
         }
     }
-
-
-
-    //public virtual IEnumerator WaitForClickRoutine(PlayerAbilityHolder ability, AttackCast attackCast)
-    //{
-    //    while (Context.isWaitingForClick)
-    //        yield return null;
-    //    Debug.Log("C");
-    //    Context.abilityStillInProgress = false;
-    //    Context.isWaitingForClick = false;
-    //    ProcessRayCastAbility(ability, attackCast);
-
-    //}
-
 
 
     private void ProcessRayCastAbility(PlayerAbilityHolder ability, AttackCast attackCast)
@@ -145,15 +130,15 @@ public class ReadyState : AbilityState
     {
         PlayerAbilityHolder ability = Context.AbilityHolder;
         Transform targetedTransform = abilityTargetTransform;
-        GameObject instantiatedParticle = UnityEngine.Object.Instantiate(ability.abilityEffect.particle);
+        Context.instantiatedParticle = UnityEngine.Object.Instantiate(ability.abilityEffect.particle);
 
         if (ability.abilityEffect.shouldMarkAtCast)
         {
             ability.targetTransform = GetTargetTransform(targetedTransform);
             Context.targetTransform = ability.targetTransform;
         }
-        await Context.SetParticleDuration(instantiatedParticle, ability, attackCast);
-        instantiatedParticle.transform.position = Context.AbilityController.transform.position;
+        Context.SetParticleDuration(Context.instantiatedParticle, ability, attackCast);
+        Context.instantiatedParticle.transform.position = Context.AbilityController.transform.position;
 
         if (ability.abilityEffect.castDuration != 0)
         {

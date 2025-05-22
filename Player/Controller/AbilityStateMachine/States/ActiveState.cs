@@ -16,7 +16,13 @@ public class ActiveState : AbilityState
         abilityFinishedActivating = false;
         Context.AbilityController.StartCoroutine(ActiveAbilityRoutine(Context.AbilityHolder, Context.instantiatedParticle));
     }
-    public override void ExitState() { }
+    public override void ExitState() { 
+         if (Context.instantiatedParticle != null)
+            {
+                Object.Destroy(Context.instantiatedParticle);
+                Context.instantiatedParticle = null;
+            }
+    }
     public override void UpdateState()
     {
         GetNextState();
