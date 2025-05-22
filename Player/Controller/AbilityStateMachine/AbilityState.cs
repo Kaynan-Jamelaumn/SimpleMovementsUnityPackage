@@ -6,6 +6,13 @@ using UnityEditor.VersionControl;
 using UnityEngine;
 using System.Threading.Tasks;
 using static AbilityStateMachine;
+
+// enemyEffect singleTargetSelfTarget isFixedPosition isPartialPermanentTargetWhileCasting isPermanentTarget shouldMarkAtCast
+// singleTargetselfTarget ability that follows player afftect only player
+// isFixedPosition ability that follows the player until activated
+// isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
+// shouldMarkAtCast activate the ability at the first position when casting was activated
+// enemyEffect affect non agressive creature true= no
 public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState>
 {
     protected AbilityContext Context;

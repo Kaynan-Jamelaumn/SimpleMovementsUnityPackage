@@ -4,7 +4,6 @@ using UnityEngine.InputSystem;
 
 public class ReadyState : AbilityState
 {
-    // State transition control variables
     private AbilityStateMachine.EAbilityState _nextStateKey;
     private bool _useStateTransitionFlag = false;
 
