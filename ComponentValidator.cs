@@ -3,13 +3,37 @@ using System.Collections.Generic;
 
 public static class ComponentValidator
 {
-    public static T CheckComponent<T>(this MonoBehaviour script, T component, string variableName, bool isCritical = true, bool searchChildren = false) where T : Component
+    public static T CheckComponent<T>(this MonoBehaviour script, T component, string variableName, bool isCritical = true, bool searchChildren = false, bool searchSiblings = false, bool searchParent = false) where T : Component
     {
         if (component == null)
         {
             component = searchChildren ?
                 script.GetComponentInChildren<T>() :
                 script.GetComponent<T>();
+
+            // Search siblings if enabled
+            if (component == null && searchSiblings)
+            {
+                Transform parentTransform = script.transform.parent;
+                if (parentTransform != null)
+                {
+                    foreach (Transform sibling in parentTransform)
+                    {
+                        if (sibling != script.transform)
+                        {
+                            component = sibling.GetComponent<T>();
+                            if (component != null)
+                                break;
+                        }
+                    }
+                }
+            }
+
+            // Search parent if enabled
+            if (component == null && searchParent)
+            {
+                component = script.GetComponentInParent<T>();
+            }
 
             if (component == null)
             {

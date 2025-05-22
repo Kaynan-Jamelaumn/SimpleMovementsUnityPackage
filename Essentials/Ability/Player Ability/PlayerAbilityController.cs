@@ -74,7 +74,7 @@ public class PlayerAbilityController : MonoBehaviour// BaseAbilityController<Pla
 
 
 
-    public virtual async Task SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
+    public virtual Task SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
     {
         ParticleSystem particleSystem = instantiatedParticle.GetComponent<ParticleSystem>();
         if (particleSystem.isPlaying)
@@ -112,7 +112,7 @@ public class PlayerAbilityController : MonoBehaviour// BaseAbilityController<Pla
             mainModuleSubParticle.startLifetime = subParticleDuration - ability.abilityEffect.finalLaunchTime;
             if (ability.abilityEffect.subParticleShouldChangeSize)
             {
-                if (attackCast.castType == AttackCast.CastType.Box)
+                if (attackCast.castType == CastBase.CastType.Box)
                 {
                     if (mainModuleSubParticle.startSizeX.constant < attackCast.boxSize.x && mainModuleSubParticle.startSizeZ.constant < attackCast.boxSize.z && mainModuleSubParticle.startSizeY.constant < attackCast.boxSize.y)
                         ChangeParticleSize(mainModuleSubParticle, attackCast);
@@ -123,6 +123,7 @@ public class PlayerAbilityController : MonoBehaviour// BaseAbilityController<Pla
         }
         if (ability.abilityEffect.particleShouldChangeSize) ChangeParticleSize(mainModule, attackCast);
         particleSystem.Play();
+        return Task.CompletedTask;
     }
 #pragma warning restore CS1998
     private void ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
