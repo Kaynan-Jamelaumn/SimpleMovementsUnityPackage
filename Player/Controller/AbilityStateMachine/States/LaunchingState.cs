@@ -4,133 +4,163 @@ using UnityEngine;
 
 public class LaunchingState : AbilityState
 {
-    bool goToNextState = false;
-    public LaunchingState(AbilityContext context, AbilityStateMachine.EAbilityState estate) : base(context, estate)
-    {
-        AbilityContext Context = context;
-    }
+    private bool goToNextState = false;
+
+    public LaunchingState(AbilityContext context, AbilityStateMachine.EAbilityState estate)
+        : base(context, estate) { }
+
     public override void EnterState()
     {
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Launching);
-        //if (Context.shouldHaveDelayedLaunchTime) Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine());
-        //else Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
-
-        // enemyEffect singleTargetSelfTarget isFixedPosition isPartialPermanentTargetWhileCasting isPermanentTarget shouldMarkAtCast
-        // singleTargetselfTarget ability that follows player afftect only player
-        // isFixedPosition ability that follows the player until activated
-        // isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
-        // shouldMarkAtCast activate the ability at the first position when casting was activated
-        // enemyEffect affect non agressive creature true= no
-        AbilityHolder ability = Context.AbilityHolder;
-        if (ability.abilityEffect.shouldLaunch) // does it launch like a fireball or a bullet
-            Context.AbilityController.StartCoroutine(SetBulletLikeTargetLaunchRoutine());
-        else if (!ability.abilityEffect.shouldLaunch && ability.abilityEffect.isPermanentTarget)  // while the ability is charging does it follow the player
-            Context.AbilityController.StartCoroutine(SetPermanentTargetLaunchRoutine());
-        else
-            Context.AbilityController.StartCoroutine(DelayedSetTargetLaunchRoutine()); // it will only set the target(spawn) when it finishes charging
-
-
-
+        ChooseLaunchRoutine();  // Critical: Entry point for all launch behaviors
     }
-    public override void ExitState() {
-        goToNextState = false;
-    }
-    public override void UpdateState()
-    {
 
-    }
-    public override AbilityStateMachine.EAbilityState GetNextState()
-    {
-        if (goToNextState)
-            return AbilityStateMachine.EAbilityState.Active;
-        
-        return StateKey;
+    public override void ExitState() => goToNextState = false;
+    public override AbilityStateMachine.EAbilityState GetNextState() =>
+        goToNextState ? AbilityStateMachine.EAbilityState.Active : StateKey;
 
-    }
+    // Empty overrides preserved for state machine interface compliance
+    public override void UpdateState() { }
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
     public override void LateUpdateState() { }
+    private void TriggerStateTransition() => goToNextState = true;
 
 
-    public virtual IEnumerator SetPermanentTargetLaunchRoutine()
+    private void ChooseLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
-        float startTime = Time.time;
-        while (Time.time <= startTime + ability.abilityEffect.finalLaunchTime)
-        {
-            SetGizmosAndColliderAndParticlePosition(true);
-            yield return null;
-        }
-        goToNextState = true;
-        ApplyAbilityUse();
+
+        // Critical logic branch: Determines projectile tracking behavior
+        if (ability.abilityEffect.shouldLaunch)
+            Context.AbilityController.StartCoroutine(BulletLikeLaunchRoutine());
+        else if (ability.abilityEffect.isPermanentTarget)
+            Context.AbilityController.StartCoroutine(PermanentTargetLaunchRoutine());
+        else
+            Context.AbilityController.StartCoroutine(DelayedLaunchRoutine());
     }
 
-    public virtual IEnumerator DelayedSetTargetLaunchRoutine()
+    private IEnumerator PermanentTargetLaunchRoutine()
+    {
+        // Continuously updates position until launch time expires
+        float startTime = Time.time;
+        float duration = Context.AbilityHolder.abilityEffect.finalLaunchTime;
+
+        while (Time.time <= startTime + duration)
+        {
+            SetGizmosAndColliderAndParticlePosition(true);  // Critical: Real-time position tracking
+            yield return null;
+        }
+        FinalizeAbility();
+    }
+
+    private IEnumerator DelayedLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
 
-        if (!ability.abilityEffect.shouldMarkAtCast) SetGizmosAndColliderAndParticlePosition();
+        // Critical: Only set initial position if not marked at cast
+        if (!ability.abilityEffect.shouldMarkAtCast)
+            SetGizmosAndColliderAndParticlePosition();
+
         yield return new WaitForSeconds(ability.abilityEffect.finalLaunchTime);
-        goToNextState = true;
-        ApplyAbilityUse();
+        FinalizeAbility();
     }
 
-    protected IEnumerator SetBulletLikeTargetLaunchRoutine()
+    private IEnumerator BulletLikeLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
-
-
+        ability.targetTransform = GetTargetTransform(Context.targetTransform);
+        Vector3 direction = CalculateLaunchDirection(ability);
+        GameObject hitTarget = null;
         float startTime = Time.time;
 
-        ability.targetTransform = GetTargetTransform(Context.targetTransform);
-        // Calculate the direction from player to mouse position
-        Vector3 cameraForward = Camera.main.transform.forward;
-        if (ability.abilityEffect.isGroundFixedPosition) // will the ability be affected to where the player is looking 
-            cameraForward.y = 0f; // Ignore vertical component
-        else cameraForward.y *= 0.33f;
-        Vector3 direction = cameraForward.normalized;
-        ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime; //it will move the target transform(since the ability is a game object this means moving the ability) to the direction of the camera
-        GameObject hasFoundTarget = null;
-        while (Time.time < startTime + ability.abilityEffect.lifeSpan) // move the ability while it is active
+        // Critical loop: Manages projectile lifetime and movement
+        while (Time.time < startTime + ability.abilityEffect.lifeSpan)
         {
-            // Update the target position based on the object's transform
-            ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime;
-            Context.instantiatedParticle.transform.position = ability.targetTransform.transform.position;
-            if (hasFoundTarget == null)
-                hasFoundTarget = ability.abilityEffect.CheckContactCollider(ability.targetTransform, Context.attackCast, Context.AbilityController.gameObject); // search for colliders
-            if (hasFoundTarget)
-            {
-                if (Context.instantiatedParticle) Object.Destroy(Context.instantiatedParticle);
-                Context.targetTransform = ability.targetTransform.transform;
-                if (ability.abilityEffect.multiAreaEffect)
-                {
-                    goToNextState = true;
-                    ApplyAbilityUse();
-                }
-                else {
-                    goToNextState = true;
-                    ApplyAbilityUse(hasFoundTarget); 
-                }
-                yield break;
-            }
+            MoveProjectile(ability, direction);
+            hitTarget = CheckCollisions(ability, hitTarget);
 
+            if (hitTarget != null)
+            {
+                HandleProjectileImpact(ability, hitTarget);
+                yield break;  // Exit early on hit
+            }
             yield return null;
         }
+        HandleProjectileExpiration(ability);  // Time-based expiration
+    }
 
-        // If it reaches here, it means the ability expired without hitting a target
-        // Destroy the particle if it exists
-        if (Context.instantiatedParticle) Object.Destroy(Context.instantiatedParticle);
-        Context.targetTransform = ability.targetTransform.transform;
-        // Apply the ability use
-        goToNextState = true;
+    private Vector3 CalculateLaunchDirection(AbilityHolder ability)
+    {
+        Vector3 cameraForward = Camera.main.transform.forward;
+
+        // Critical adjustment: Control vertical influence based on ability type
+        if (ability.abilityEffect.isGroundFixedPosition)
+            cameraForward.y = 0f;  // Lock to horizontal plane
+        else
+            cameraForward.y *= 0.33f;  // Partial vertical tracking (magic number justified by design)
+
+        return cameraForward.normalized;
+    }
+
+    private void MoveProjectile(AbilityHolder ability, Vector3 direction)
+    {
+        // Applies continuous movement using speed value
+        ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime;
+        Context.instantiatedParticle.transform.position = ability.targetTransform.position;
+    }
+
+    private GameObject CheckCollisions(AbilityHolder ability, GameObject previousHit)
+    {
+        // Early exit if already found target
+        if (previousHit != null) return previousHit;
+
+        return ability.abilityEffect.CheckContactCollider(
+            ability.targetTransform,
+            Context.attackCast,
+            Context.AbilityController.gameObject
+        );
+    }
+
+    private void HandleProjectileImpact(AbilityHolder ability, GameObject hitTarget)
+    {
+        CleanupParticle();
+        Context.targetTransform = ability.targetTransform;
+
+        // Critical decision: Multi-area vs single-target application
+        if (ability.abilityEffect.multiAreaEffect)
+            ApplyAbilityUse();
+        else
+            ApplyAbilityUse(hitTarget);
+
+        TriggerStateTransition();
+    }
+
+    private void HandleProjectileExpiration(AbilityHolder ability)
+    {
+        CleanupParticle();
+        Context.targetTransform = ability.targetTransform;
+        ApplyAbilityUse();  // Applies effect even if no collision occurred
+        TriggerStateTransition();
+    }
+
+    private void CleanupParticle()
+    {
+        if (Context.instantiatedParticle)
+            Object.Destroy(Context.instantiatedParticle);
+    }
+
+
+    private void FinalizeAbility()
+    {
+        TriggerStateTransition();
         ApplyAbilityUse();
     }
 
 
 
-
-
+    // "legacy"
     public virtual IEnumerator UntilReachesPosition()
     {
         AbilityHolder ability = Context.AbilityHolder;
@@ -138,22 +168,20 @@ public class LaunchingState : AbilityState
         if (ability.abilityEffect.shouldLaunch)
         {
             Vector3 startPosition = Context.AbilityController.transform.position;
-            Vector3 targetPosition = Context.targetTransform.transform.position;//ability.abilityEffect.targetTransform.position; must be player transform
+            Vector3 targetPosition = Context.targetTransform.transform.position;
             float journeyLength = Vector3.Distance(startPosition, targetPosition);
             Transform newPlayerTransform = GetTargetTransform(Context.AbilityController.transform);
+
             while (Time.time < startTime + ability.abilityEffect.finalLaunchTime)
             {
                 float distCovered = (Time.time - startTime) * ability.abilityEffect.speed;
                 float fracJourney = distCovered / journeyLength;
                 newPlayerTransform.transform.position = Vector3.Lerp(startPosition, targetPosition, fracJourney);
-                //instantiatedParticle.transform.position = Vector3.Lerp(startPosition, targetPosition, fracJourney);
-
                 Context.targetTransform = newPlayerTransform.transform;
                 Context.instantiatedParticle.transform.position = newPlayerTransform.transform.position;
                 yield return null;
             }
             Context.targetTransform = newPlayerTransform.transform;
-
         }
     }
 }
