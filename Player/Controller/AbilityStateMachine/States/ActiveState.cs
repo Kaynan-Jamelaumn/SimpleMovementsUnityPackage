@@ -5,6 +5,7 @@ using UnityEngine;
 public class ActiveState : AbilityState
 {
     bool abilityFinishedActivating = false;
+    private Coroutine _activeAbilityRoutine;
     public ActiveState(AbilityContext context, AbilityStateMachine.EAbilityState estate) : base(context, estate)
     {
         AbilityContext Context = context;
@@ -14,13 +15,18 @@ public class ActiveState : AbilityState
     {
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Active);
         abilityFinishedActivating = false;
-        Context.AbilityController.StartCoroutine(ActiveAbilityRoutine(Context.AbilityHolder, Context.instantiatedParticle));
+        _activeAbilityRoutine = Context.AbilityController.StartCoroutine(ActiveAbilityRoutine(Context.AbilityHolder, Context.instantiatedParticle));
     }
     public override void ExitState() { 
          if (Context.instantiatedParticle != null)
             {
                 Object.Destroy(Context.instantiatedParticle);
                 Context.instantiatedParticle = null;
+            }
+         if (_activeAbilityRoutine != null)
+        {
+                Context.AbilityController.StopCoroutine(_activeAbilityRoutine);
+                _activeAbilityRoutine = null;
             }
     }
     public override void UpdateState()

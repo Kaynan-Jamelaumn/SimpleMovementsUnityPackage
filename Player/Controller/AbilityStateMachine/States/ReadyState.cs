@@ -6,6 +6,7 @@ public class ReadyState : AbilityState
 {
     private AbilityStateMachine.EAbilityState _nextStateKey;
     private bool _useStateTransitionFlag = false;
+    private Coroutine _waitingForClickRoutine;
 
     public ReadyState(AbilityContext context, AbilityStateMachine.EAbilityState estate)
         : base(context, estate) { }
@@ -20,6 +21,11 @@ public class ReadyState : AbilityState
     public override void ExitState()
     {
         _useStateTransitionFlag = false; // Reset transition flag when leaving state
+        if (_waitingForClickRoutine != null)
+        {
+            Context.AbilityController.StopCoroutine(_waitingForClickRoutine);
+            _waitingForClickRoutine = null; 
+        }
     }
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
@@ -60,7 +66,7 @@ public class ReadyState : AbilityState
             // Abilities requiring click confirmation start coroutine
             Context.abilityStillInProgress = true;
             Context.isWaitingForClick = true;
-            Context.AbilityController.StartCoroutine(HandleClickConfirmation(ability, primaryCast));
+            _waitingForClickRoutine =Context.AbilityController.StartCoroutine(HandleClickConfirmation(ability, primaryCast));
         }
         else
         {

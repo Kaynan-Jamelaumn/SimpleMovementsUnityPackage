@@ -5,6 +5,9 @@ using UnityEngine;
 public class CastingState : AbilityState
 {
     private bool _goToNextState = false;
+    private Coroutine _dynamicTrackingRoutine;
+    private Coroutine _staticMarkRoutine;
+
 
     public CastingState(AbilityContext context, AbilityStateMachine.EAbilityState estate)
         : base(context, estate) { }
@@ -30,7 +33,20 @@ public class CastingState : AbilityState
             StartStaticMarkCoroutine();
     }
 
-    public override void ExitState() => _goToNextState = false;
+    public override void ExitState()
+    {
+        // Stop all active routines to prevent memory leaks
+        if (_dynamicTrackingRoutine != null)
+            Context.AbilityController.StopCoroutine(_dynamicTrackingRoutine);
+        if (_staticMarkRoutine != null)
+            Context.AbilityController.StopCoroutine(_staticMarkRoutine);
+
+        _dynamicTrackingRoutine = null;
+        _staticMarkRoutine = null;
+
+        _goToNextState = false;
+    }
+
 
     public override AbilityStateMachine.EAbilityState GetNextState() =>
         _goToNextState ? AbilityStateMachine.EAbilityState.Launching : StateKey;
@@ -41,14 +57,15 @@ public class CastingState : AbilityState
     public override void OnTriggerStay(Collider other) { }
     public override void UpdateState() { }
 
+    private void TriggerStateTransition() => _goToNextState = true;
 
     // Starts coroutine to track dynamic targets (e.g., abilities that follow the caster)
     private void StartDynamicTrackingCoroutine() =>
-        Context.AbilityController.StartCoroutine(DynamicTrackingRoutine());
+        _dynamicTrackingRoutine = Context.AbilityController.StartCoroutine(DynamicTrackingRoutine());
 
     // Starts coroutine to mark a static position at cast start (e.g., ground-targeted abilities)
     private void StartStaticMarkCoroutine() =>
-        Context.AbilityController.StartCoroutine(StaticMarkRoutine());
+        _staticMarkRoutine = Context.AbilityController.StartCoroutine(StaticMarkRoutine());
 
     // Updates visuals continuously during casting (e.g., projectile spawners)
     private IEnumerator DynamicTrackingRoutine()
@@ -66,7 +83,7 @@ public class CastingState : AbilityState
 
         // Lock final position and trigger state transition
         SetGizmosAndColliderAndParticlePosition(false);
-        _goToNextState = true;
+        TriggerStateTransition();
     }
 
     // Marks a fixed position at cast start (e.g., delayed AoE)
@@ -80,7 +97,7 @@ public class CastingState : AbilityState
 
         // Wait for cast duration without updates
         yield return WaitForSeconds(ability.abilityEffect.castDuration);
-        _goToNextState = true;
+        TriggerStateTransition();
     }
 
     // Reusable wait-for-duration logic

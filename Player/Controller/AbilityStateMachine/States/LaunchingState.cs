@@ -4,7 +4,10 @@ using UnityEngine;
 
 public class LaunchingState : AbilityState
 {
-    private bool goToNextState = false;
+    private bool _goToNextState = false;
+    private Coroutine _bulletRoutine;
+    private Coroutine _trackingTargetRoutine;
+    private Coroutine _setAtLaunchRoutine;
 
     public LaunchingState(AbilityContext context, AbilityStateMachine.EAbilityState estate)
         : base(context, estate) { }
@@ -15,9 +18,26 @@ public class LaunchingState : AbilityState
         ChooseLaunchRoutine();  // Critical: Entry point for all launch behaviors
     }
 
-    public override void ExitState() => goToNextState = false;
-    public override AbilityStateMachine.EAbilityState GetNextState() =>
-        goToNextState ? AbilityStateMachine.EAbilityState.Active : StateKey;
+    public override void ExitState()   { 
+        
+        // Stop all active routines to prevent memory leaks
+        if (_bulletRoutine != null)
+            Context.AbilityController.StopCoroutine(_bulletRoutine);
+        if (_trackingTargetRoutine != null)
+            Context.AbilityController.StopCoroutine(_trackingTargetRoutine);
+        if (_setAtLaunchRoutine != null)
+            Context.AbilityController.StopCoroutine(_setAtLaunchRoutine);
+
+        _bulletRoutine = null;
+        _trackingTargetRoutine = null;
+        _setAtLaunchRoutine = null;
+
+        _goToNextState = false;
+}
+public override AbilityStateMachine.EAbilityState GetNextState() =>
+        _goToNextState ? AbilityStateMachine.EAbilityState.Active : StateKey;
+
+
 
     // Empty overrides preserved for state machine interface compliance
     public override void UpdateState() { }
@@ -25,7 +45,7 @@ public class LaunchingState : AbilityState
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
     public override void LateUpdateState() { }
-    private void TriggerStateTransition() => goToNextState = true;
+    private void TriggerStateTransition() => _goToNextState = true;
 
 
     private void ChooseLaunchRoutine()
@@ -34,11 +54,11 @@ public class LaunchingState : AbilityState
 
         // Critical logic branch: Determines projectile tracking behavior
         if (ability.abilityEffect.shouldLaunch)
-            Context.AbilityController.StartCoroutine(BulletLikeLaunchRoutine());
+            _bulletRoutine = Context.AbilityController.StartCoroutine(BulletLikeLaunchRoutine());
         else if (ability.abilityEffect.isPermanentTarget)
-            Context.AbilityController.StartCoroutine(PermanentTargetLaunchRoutine());
+            _trackingTargetRoutine = Context.AbilityController.StartCoroutine(PermanentTargetLaunchRoutine());
         else
-            Context.AbilityController.StartCoroutine(DelayedLaunchRoutine());
+            _setAtLaunchRoutine = Context.AbilityController.StartCoroutine(DelayedLaunchRoutine());
     }
 
     private IEnumerator PermanentTargetLaunchRoutine()
