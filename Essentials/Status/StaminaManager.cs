@@ -7,7 +7,7 @@ public class StaminaManager : StatusManager
 {
     [Header("Stamina-related fields")]
     private Coroutine staminaRegenerationRoutine;
-
+    private int activeConsumptionRoutines = 0;
     private List<CoroutineInfo> staminaEffectRoutines = new List<CoroutineInfo>();
     public Coroutine StaminaRegenerationRoutine { get => staminaRegenerationRoutine; set => staminaRegenerationRoutine = value; }
     public List<CoroutineInfo> StaminaEffectRoutines { get => staminaEffectRoutines; set => staminaEffectRoutines = value; }
@@ -69,47 +69,54 @@ public class StaminaManager : StatusManager
 
     public IEnumerator RegenerateStaminaRoutine()
     {
-        // Check if stamina consumption is active, exit coroutine if true
         if (isConsuming)
         {
             isRegenerating = false;
-            yield break; // Exit the coroutine
+            yield break;
         }
 
         isRegenerating = true;
 
-        // Regenerate stamina while it is below the maximum
         while (currentValue < maxValue)
         {
             currentValue += incrementValue;
+            UpdateStaminaBar();
 
-            // Check the flag and exit the coroutine if needed
             if (isConsuming)
             {
-                isConsuming = false;
                 isRegenerating = false;
                 yield break;
             }
 
-            yield return new WaitForSeconds(tickRate); // Delay between regen updates
+            yield return new WaitForSeconds(tickRate);
         }
 
         isRegenerating = false;
     }
 
     // Coroutine to consume stamina over time
-    public IEnumerator ConsumeStaminaRoutine(float amount = 0, float staminaTickConsuption = 0.5f)
+    public IEnumerator ConsumeStaminaRoutine(float amount = 0, float staminaTickConsumption = 0.5f)
     {
-        // Signal the regeneration coroutine to stop
-        StopStaminaRegeneration();
-        while (true) {
-            currentValue -= amount;
-            if (currentValue - amount < 1)
+        activeConsumptionRoutines++;
+        isConsuming = true;
+
+        try
+        {
+            while (true)
             {
-                isConsuming = false;
-                yield break;
+                ConsumeStamina(amount);
+                UpdateStaminaBar();
+
+                if (currentValue <= 0)
+                    break;
+
+                yield return new WaitForSeconds(staminaTickConsumption);
             }
-            yield return new WaitForSeconds(staminaTickConsuption);
+        }
+        finally
+        {
+            activeConsumptionRoutines--;
+            isConsuming = activeConsumptionRoutines > 0; // Update flag based on remaining routines
         }
     }
     public IEnumerator ApplyStaminaEffectRoutine(string effectName, float staminaAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
