@@ -1,40 +1,26 @@
-﻿using System;
-using System.Collections;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class ReadyState : AbilityState
 {
-    AbilityStateMachine.EAbilityState stateMasterKey;
-    bool useStateMasterKey = false;
-    public ReadyState(AbilityContext context, AbilityStateMachine.EAbilityState estate) : base(context, estate)
-    {
-        AbilityContext Context = context;
-    }
+    // State transition control variables
+    private AbilityStateMachine.EAbilityState _nextStateKey;
+    private bool _useStateTransitionFlag = false;
+
+    public ReadyState(AbilityContext context, AbilityStateMachine.EAbilityState estate)
+        : base(context, estate) { }
+
     public override void EnterState()
     {
         RecalculateAvailability(AbilityStateMachine.EAbilityState.Ready);
     }
-    public override void ExitState() { 
-        useStateMasterKey = false;
-    }
-    public override void UpdateState()
+
+    public override void UpdateState() { }
+
+    public override void ExitState()
     {
-    }
-    public override AbilityStateMachine.EAbilityState GetNextState()
-    {
-        if (useStateMasterKey)
-            return stateMasterKey;
-
-        
-
-        if ( Context.triggered)
-            StartAbility(); 
-        
-            return StateKey;
-
+        _useStateTransitionFlag = false; // Reset transition flag when leaving state
     }
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
@@ -42,114 +28,124 @@ public class ReadyState : AbilityState
     public override void LateUpdateState() { }
 
 
-
-
-
-    public void StartAbility()
+    public override AbilityStateMachine.EAbilityState GetNextState()
     {
-        // enemyEffect singleTargetSelfTarget isFixedPosition isPartialPermanentTargetWhileCasting isPermanentTarget shouldMarkAtCast
-        // singleTargetselfTarget ability that follows player afftect only player
-        // isFixedPosition ability that follows the player until activated
-        // isPartialPermanentTargetWhileCasting follows the player until the end of casting(entering launching)
-        // shouldMarkAtCast activate the ability at the first position when casting was activated
-        // enemyEffect affect non agressive creature true= no
-        // doesAbilityNeedsConfirmationClickToLaunch 
-        PlayerAbilityHolder ability = Context.AbilityHolder;
-        AttackCast attackCast = ability.attackCast[0];
-        Context.triggered = false;
+        if (_useStateTransitionFlag) return _nextStateKey;
 
-        if (ability.abilityEffect.numberOfTargets > 1) // multi target abilities with  feet target spawn
-            foreach (var eachaAttackCast in ability.attackCast) _ = SetAbilityActions(Context.AbilityController.transform, eachaAttackCast);
-        else if (ability.abilityEffect.shouldLaunch)
-            _ = SetAbilityActions(Context.AbilityController.transform, attackCast);
-        else if (!Context.abilityStillInProgress && ability.abilityEffect.doesAbilityNeedsConfirmationClickToLaunch)
+        // Only trigger ability if we're not already processing one
+        if (Context.triggered && !Context.abilityStillInProgress)
         {
+            StartAbility();
+            Context.triggered = false; // Consume the trigger
+        }
+
+        return StateKey;
+    }
+
+    private void StartAbility()
+    {
+        PlayerAbilityHolder ability = Context.AbilityHolder;
+        AttackCast primaryCast = ability.attackCast[0];
+
+        // Handle different ability types
+        if (ability.abilityEffect.numberOfTargets > 1)
+        {
+            // Multi-target abilities get their own attack casts
+            foreach (var cast in ability.attackCast)
+            {
+                ExecuteAbility(Context.AbilityController.transform, cast);
+            }
+        }
+        else if (ability.abilityEffect.doesAbilityNeedsConfirmationClickToLaunch)
+        {
+            // Abilities requiring click confirmation start coroutine
             Context.abilityStillInProgress = true;
             Context.isWaitingForClick = true;
-            Context.AbilityController.StartCoroutine(WaitForClickRoutine(ability, attackCast));
-
+            Context.AbilityController.StartCoroutine(HandleClickConfirmation(ability, primaryCast));
         }
         else
         {
-            _ = SetAbilityActions(Context.AbilityController.transform, attackCast);
+            // Immediate execution for non-interactive abilities
+            ExecuteAbility(Context.AbilityController.transform, primaryCast);
         }
     }
 
-
-    public virtual IEnumerator WaitForClickRoutine(PlayerAbilityHolder ability, AttackCast attackCast)
+    private IEnumerator HandleClickConfirmation(PlayerAbilityHolder ability, AttackCast attackCast)
     {
-        // Get the Mouse device from the new Input System
         Mouse mouse = Mouse.current;
-        bool clicked = false;
+        bool confirmed = false;
 
-        while (Context.isWaitingForClick && !clicked)
+        // Input loop with exit conditions
+        while (Context.isWaitingForClick && !confirmed)
         {
-            // Check for left mouse button click (button 0)
             if (mouse.leftButton.wasPressedThisFrame)
             {
-                Debug.Log("Left mouse button clicked - proceeding with ability");
-                clicked = true;
+                // Left click confirms ability execution
+                confirmed = true;
+                Debug.Log("Ability confirmed at mouse position");
             }
-            // Check for right mouse button click (button 1)
             else if (mouse.rightButton.wasPressedThisFrame)
             {
-                Debug.Log("Right mouse button clicked - canceling wait");
-                Context.isWaitingForClick = false;
-                Context.abilityStillInProgress = false;
-                yield break; // Exit the coroutine without processing the ability
+                // Right click cancels the ability
+                Debug.Log("Ability activation cancelled");
+                ResetAbilityState();
+                yield break;
             }
 
-            yield return null;
+            yield return null; // Wait until next frame
         }
 
-        if (clicked)
+        if (confirmed)
         {
-            Context.abilityStillInProgress = false;
-            Context.isWaitingForClick = false;
-            ProcessRayCastAbility(ability, attackCast);
+            // Find target position through raycasting
+            ProcessTargetedAbility(attackCast);
+            ResetAbilityState();
         }
     }
 
-
-    private void ProcessRayCastAbility(PlayerAbilityHolder ability, AttackCast attackCast)
+    private void ProcessTargetedAbility(AttackCast attackCast)
     {
-        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        // Camera-based targeting system
+        if (Camera.main == null) return;
 
-        if (Physics.Raycast(ray, out RaycastHit hit, attackCast.castSize))
+        RaycastHit hit;
+        Ray targetingRay = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
+
+        // Physics check for valid target
+        if (Physics.Raycast(targetingRay, out hit, attackCast.castSize))
         {
-            if (hit.collider != null)
-                _ = SetAbilityActions(hit.collider.transform, attackCast);
+            ExecuteAbility(hit.transform, attackCast);
         }
     }
 
-
-
-
-
-    protected virtual async Task SetAbilityActions(Transform abilityTargetTransform, AttackCast attackCast = null)
+    private void  ExecuteAbility(Transform target, AttackCast attackCast)
     {
-        PlayerAbilityHolder ability = Context.AbilityHolder;
-        Transform targetedTransform = abilityTargetTransform;
-        Context.instantiatedParticle = UnityEngine.Object.Instantiate(ability.abilityEffect.particle);
-
-        if (ability.abilityEffect.shouldMarkAtCast)
-        {
-            ability.targetTransform = GetTargetTransform(targetedTransform);
-            Context.targetTransform = ability.targetTransform;
-        }
-        Context.SetParticleDuration(Context.instantiatedParticle, ability, attackCast);
+        // Particle system initialization
+        Context.instantiatedParticle = Object.Instantiate(Context.AbilityHolder.abilityEffect.particle);
         Context.instantiatedParticle.transform.position = Context.AbilityController.transform.position;
 
-        if (ability.abilityEffect.castDuration != 0)
+        // Special case: mark initial cast position
+        if (Context.AbilityHolder.abilityEffect.shouldMarkAtCast)
         {
-            stateMasterKey = AbilityStateMachine.EAbilityState.Casting;
-            useStateMasterKey = true;
+            Context.targetTransform = GetTargetTransform(target);
         }
-        else
-        {
-            stateMasterKey = AbilityStateMachine.EAbilityState.Launching;
-            useStateMasterKey = true;
-        }
+
+        // Delegate particle timing to context
+        Context.SetParticleDuration(Context.instantiatedParticle, Context.AbilityHolder, attackCast);
+
+        // Determine next state based on cast duration
+        _nextStateKey = Context.AbilityHolder.abilityEffect.castDuration > 0
+            ? AbilityStateMachine.EAbilityState.Casting
+            : AbilityStateMachine.EAbilityState.Launching;
+
+        _useStateTransitionFlag = true; // Flag for state machine transition
+    }
+
+    private void ResetAbilityState()
+    {
+        // Cleanup for cancellation or completion
+        Context.abilityStillInProgress = false;
+        Context.isWaitingForClick = false;
     }
 
 }
