@@ -17,8 +17,8 @@ public class AbilityEffectSO : AbilitySO
     [SerializeField] public GameObject particle;
     [Tooltip("Particle change the size according to the AttackCast Collider")][SerializeField] public bool particleShouldChangeSize;
     [Tooltip("A Child Particle from the Particle Object change the size according to the AttackCast Collider")][SerializeField] public bool subParticleShouldChangeSize;
-    [Tooltip("Caster receives damage/debuff from it's own ability true = is imune")][SerializeField] public bool casterIsImune;
-    [Tooltip("when the ability activates even if the caster(player or mob) is not within the area of effect of the skill it still will receive effects from the skill")][SerializeField] public bool isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway;
+    [Tooltip("Caster receives damage/debuff from it's own ability true = is imune")][SerializeField] public bool casterReceivePenalties;
+    [Tooltip("when the ability activates even if the caster(player or mob) is not within the area of effect of the skill it still will receive effects from the skill")][SerializeField] public bool casterReceivesBeneffitsBuffsEvenFromFarAway;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area")][SerializeField] public bool multiAreaEffect;
     [SerializeField] public bool canBeHitMoreThanOnce;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area does it have a max amount of targets")][SerializeField] public bool hasMaxHitPerCollider;
@@ -43,23 +43,42 @@ public class AbilityEffectSO : AbilitySO
 
     public Dictionary<EAbilityState, bool> StateAvailabilityDict { get => stateAvailabilityDict; set => stateAvailabilityDict = value; }
 
-    private void OnValidate()
+    private void OnEnable()
     {
+        PopulateStateAvailabilityList();
         UpdateStateAvailabilityDict();
     }
 
-    private void UpdateStateAvailabilityDict()
+    public void PopulateStateAvailabilityList()
+    {
+        EAbilityState[] allStates = (EAbilityState[])System.Enum.GetValues(typeof(EAbilityState));
+
+        // Add missing states
+        foreach (var state in allStates)
+        {
+            if (!_stateAvailability.Any(entry => entry.state == state))
+            {
+                _stateAvailability.Add(new StateAvailability
+                {
+                    state = state,
+                    available = true // Default to available
+                });
+            }
+        }
+
+        // Remove obsolete states (in case enum values were removed)
+        _stateAvailability.RemoveAll(entry =>
+            !System.Enum.IsDefined(typeof(EAbilityState), entry.state));
+    }
+
+    public void UpdateStateAvailabilityDict()
     {
         StateAvailabilityDict.Clear();
         foreach (var entry in _stateAvailability)
         {
-            if (!StateAvailabilityDict.ContainsKey(entry.state))
-            {
-                StateAvailabilityDict.Add(entry.state, entry.available);
-            }
+            StateAvailabilityDict[entry.state] = entry.available;
         }
     }
-
 
 
     public  void AbnormalUse(Transform targetxTransform, AttackEffect effect)

@@ -55,7 +55,7 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
         // Critical logic branch: Determines projectile tracking behavior
         if (ability.abilityEffect.shouldLaunch)
             _bulletRoutine = Context.AbilityController.StartCoroutine(BulletLikeLaunchRoutine());
-        else if (ability.abilityEffect.isPermanentTarget)
+        else if (ability.abilityEffect.isPermanentTarget || ability.abilityEffect.isFixedPosition)
             _trackingTargetRoutine = Context.AbilityController.StartCoroutine(PermanentTargetLaunchRoutine());
         else
             _setAtLaunchRoutine = Context.AbilityController.StartCoroutine(DelayedLaunchRoutine());

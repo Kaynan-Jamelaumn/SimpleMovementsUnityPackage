@@ -30,15 +30,6 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
         return context.cachedAvailability;
     }
 
-    //public bool Available()
-    //{
-    //    if (abilityHolder.abilityEffect.StateAvailabilityDict.TryGetValue(CurrentState.StateKey, out bool isAvailable))
-    //    {
-    //        return isAvailable;
-    //    }
-    //    return true;
-    //}
-
 
     public PlayerInput playerInput;
     public PlayerAbilityHolder AbilityHolder { get => abilityHolder; set => abilityHolder = value; }

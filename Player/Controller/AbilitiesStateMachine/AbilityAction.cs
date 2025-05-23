@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Xml.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
-//UnityEngine.InputSystem.InputAction.PlayerInput.PlayerActions
 [System.Serializable]
 public class AbilityAction 
 {

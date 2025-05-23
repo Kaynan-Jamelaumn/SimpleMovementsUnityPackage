@@ -282,7 +282,7 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             if (effect.attackCast == null) effect.attackCast = new List<AttackCast> { attackCast };
             if (effect.enemyEffect == false)
             {
-                if(ability.abilityEffect.isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
+                if(ability.abilityEffect.casterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
                 else ability.abilityEffect.Use(targetTransform,effect, effect.attackCast);
 
             }
@@ -291,13 +291,13 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             {
                 if (ability.abilityEffect.multiAreaEffect)
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false, null, this.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false, null, this.gameObject);
                     else if (affectedTarget) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, affectedTarget);
                     else ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false);
                 }
                 else
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true, null, this.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true, null, this.gameObject);
                     else ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true);
                 }
 
@@ -498,7 +498,7 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             if (effect.attackCast == null) effect.attackCast = new List<AttackCast> { attackCast };
             if (effect.enemyEffect == false)
             {
-                if (ability.abilityEffect.isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
+                if (ability.abilityEffect.casterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(this.gameObject, effect);
                 else ability.abilityEffect.Use(targetTransform, effect, effect.attackCast);
 
             }
@@ -507,13 +507,13 @@ public abstract class BaseAbilityController<T> : MonoBehaviour where T : Ability
             {
                 if (ability.abilityEffect.multiAreaEffect)
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false, null, this.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false, null, this.gameObject);
                     else if (affectedTarget) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, affectedTarget);
                     else ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, false);
                 }
                 else
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true, null, this.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true, null, this.gameObject);
                     else ability.abilityEffect.Use(targetTransform, effect, effect.attackCast, true);
                 }
 

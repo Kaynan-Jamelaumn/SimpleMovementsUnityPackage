@@ -18,18 +18,14 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
     [SerializeField] private PlayerAbilityController abilityController;
     [SerializeField] private PlayerAnimationModel animationModel;
     [SerializeField] private List<AbilityAction> abilityAction = new List<AbilityAction>();
-    //[SerializeField] private PlayerAbilityController playerAbilityController;
     private PlayerInput playerInput;
        
     private void Awake()
     {
         abilityController = this.CheckComponent(abilityController, nameof(abilityController));
         animationModel = this.CheckComponent(animationModel, nameof(animationModel));
-       // playerAbilityController = this.CheckComponent<PlayerAbilityController>(null, nameof(playerAbilityController));
-
 
         playerInput = new PlayerInput();
-        //InitializeAbilityActions(playerAbilityController);
 
 
         context = new AbilitiesContext(playerInput, animationModel, abilityController, abilityAction);    
@@ -41,15 +37,6 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
         }
 
     }
-    private void InitializeAbilityActions(PlayerAbilityController playerAbilityController)
-    {
-        //for (int i = 0; i < playerAbilityController.Abilities.Count; i++)
-        //{
-        //    var abilityStateMachine = this.AddComponent<AbilityStateMachine>();
-        //    var action = new AbilityAction(playerAbilityController.Abilities[i].AbilityActionReference, abilityStateMachine);
-        //    abilityAction.Add(action);
-        //}
-    }
 
     private void OnEnable()
     {
@@ -58,7 +45,6 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
 
     private void OnDisable()
     {
-        // Desabilita todas as ações do player input
         playerInput.Player.Disable();
     }
 

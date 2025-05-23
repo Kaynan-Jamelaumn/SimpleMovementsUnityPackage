@@ -100,7 +100,7 @@ public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState
             if (effect.attackCast == null) effect.attackCast = new List<AttackCast> { Context.attackCast };
             if (effect.enemyEffect == false)
             {
-                if (ability.abilityEffect.isSelfTargetOrCasterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(Context.AbilityController.gameObject, effect);
+                if (ability.abilityEffect.casterReceivesBeneffitsBuffsEvenFromFarAway) ability.abilityEffect.Use(Context.AbilityController.gameObject, effect);
                 else ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast);
 
             }
@@ -109,13 +109,13 @@ public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState
             {
                 if (ability.abilityEffect.multiAreaEffect)
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, false, null, Context.AbilityController.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, false, null, Context.AbilityController.gameObject);
                     else if (affectedTarget) ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, affectedTarget);
                     else ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, false);
                 }
                 else
                 {
-                    if (ability.abilityEffect.casterIsImune) ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, true, null, Context.AbilityController.gameObject);
+                    if (ability.abilityEffect.casterReceivePenalties) ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, true, null, Context.AbilityController.gameObject);
                     else ability.abilityEffect.Use(Context.targetTransform, effect, effect.attackCast, true);
                 }
 
