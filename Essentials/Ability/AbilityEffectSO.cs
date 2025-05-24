@@ -17,6 +17,7 @@ public class AbilityEffectSO : AbilitySO
     [SerializeField] public GameObject particle;
     [Tooltip("Particle change the size according to the AttackCast Collider")][SerializeField] public bool particleShouldChangeSize;
     [Tooltip("A Child Particle from the Particle Object change the size according to the AttackCast Collider")][SerializeField] public bool subParticleShouldChangeSize;
+    public bool onlyPrincipalParticle;
     [Tooltip("Caster receives damage/debuff from it's own ability true = is imune")][SerializeField] public bool casterReceivePenalties;
     [Tooltip("when the ability activates even if the caster(player or mob) is not within the area of effect of the skill it still will receive effects from the skill")][SerializeField] public bool casterReceivesBeneffitsBuffsEvenFromFarAway;
     [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area")][SerializeField] public bool multiAreaEffect;

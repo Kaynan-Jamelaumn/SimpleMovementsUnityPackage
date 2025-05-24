@@ -1,5 +1,4 @@
 ﻿using System.Collections;
-using UnityEditor.Playables;
 using UnityEngine;
 
 public class LaunchingState : AbilityState
@@ -18,39 +17,48 @@ public class LaunchingState : AbilityState
         ChooseLaunchRoutine();  // Critical: Entry point for all launch behaviors
     }
 
-    public override void ExitState()   { 
-        
+    public override void ExitState()
+    {
         // Stop all active routines to prevent memory leaks
         if (_bulletRoutine != null)
+        {
             Context.AbilityController.StopCoroutine(_bulletRoutine);
+            _bulletRoutine = null;
+        }
         if (_trackingTargetRoutine != null)
+        {
             Context.AbilityController.StopCoroutine(_trackingTargetRoutine);
+            _trackingTargetRoutine = null;
+        }
         if (_setAtLaunchRoutine != null)
+        {
             Context.AbilityController.StopCoroutine(_setAtLaunchRoutine);
-
-        _bulletRoutine = null;
-        _trackingTargetRoutine = null;
-        _setAtLaunchRoutine = null;
+            _setAtLaunchRoutine = null;
+        }
 
         _goToNextState = false;
-}
-public override AbilityStateMachine.EAbilityState GetNextState() =>
+    }
+
+    public override AbilityStateMachine.EAbilityState GetNextState() =>
         _goToNextState ? AbilityStateMachine.EAbilityState.Active : StateKey;
-
-
-
-    // Empty overrides preserved for state machine interface compliance
     public override void UpdateState() { }
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
     public override void LateUpdateState() { }
-    private void TriggerStateTransition() => _goToNextState = true;
 
+    private void TriggerStateTransition() => _goToNextState = true;
 
     private void ChooseLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
+
+        if (ability?.abilityEffect == null)
+        {
+            Debug.LogError("AbilityHolder or AbilityEffect is null in LaunchingState");
+            TriggerStateTransition();
+            return;
+        }
 
         // Critical logic branch: Determines projectile tracking behavior
         if (ability.abilityEffect.shouldLaunch)
@@ -90,15 +98,39 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
     private IEnumerator BulletLikeLaunchRoutine()
     {
         AbilityHolder ability = Context.AbilityHolder;
-        ability.targetTransform = GetTargetTransform(Context.targetTransform);
+
+        if (ability?.abilityEffect == null)
+            yield break;
+        
+
+        // Initialize target transform properly with null check
+        Transform playerTransform = Context.AbilityController?.transform;
+        if (playerTransform == null)
+            yield break;
+        
+
+        // Initialize target transform - use current player position if targetTransform is null
+        if (Context.targetTransform == null)
+            Context.targetTransform = GetTargetTransform(playerTransform);
+        
+
+        ability.targetTransform = Context.targetTransform;
         Vector3 direction = CalculateLaunchDirection(ability);
         GameObject hitTarget = null;
         float startTime = Time.time;
+        float endTime = startTime + ability.abilityEffect.lifeSpan;
+        float deltaTime;
 
         // Critical loop: Manages projectile lifetime and movement
-        while (Time.time < startTime + ability.abilityEffect.lifeSpan)
+        while (Time.time < endTime)
         {
-            MoveProjectile(ability, direction);
+            deltaTime = Time.deltaTime;
+
+            if (ability.targetTransform == null || Context.instantiatedParticle == null)
+                break;
+            
+
+            MoveProjectile(ability, direction, deltaTime);
             hitTarget = CheckCollisions(ability, hitTarget);
 
             if (hitTarget != null)
@@ -113,6 +145,10 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
 
     private Vector3 CalculateLaunchDirection(AbilityHolder ability)
     {
+        if (Camera.main == null)
+            return Vector3.forward;
+        
+
         Vector3 cameraForward = Camera.main.transform.forward;
 
         // Critical adjustment: Control vertical influence based on ability type
@@ -124,11 +160,19 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
         return cameraForward.normalized;
     }
 
-    private void MoveProjectile(AbilityHolder ability, Vector3 direction)
+    private void MoveProjectile(AbilityHolder ability, Vector3 direction, float deltaTime)
     {
+        if (ability?.targetTransform == null)
+            return;
+        
+
         // Applies continuous movement using speed value
-        ability.targetTransform.position += direction * ability.abilityEffect.speed * Time.deltaTime;
-        Context.instantiatedParticle.transform.position = ability.targetTransform.position;
+        Vector3 movement = direction * ability.abilityEffect.speed * deltaTime;
+        ability.targetTransform.position += movement;
+
+        // Update particle position if it exists
+        if (Context.instantiatedParticle != null)
+            Context.instantiatedParticle.transform.position = ability.targetTransform.position;
     }
 
     private GameObject CheckCollisions(AbilityHolder ability, GameObject previousHit)
@@ -136,20 +180,30 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
         // Early exit if already found target
         if (previousHit != null) return previousHit;
 
-        return ability.abilityEffect.CheckContactCollider(
-            ability.targetTransform,
-            Context.attackCast,
-            Context.AbilityController.gameObject
-        );
+        try
+        {
+            return ability.abilityEffect.CheckContactCollider(
+                ability.targetTransform,
+                Context.attackCast,
+                Context.AbilityController.gameObject
+            );
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error in CheckContactCollider: {ex.Message}");
+            return null;
+        }
     }
 
     private void HandleProjectileImpact(AbilityHolder ability, GameObject hitTarget)
     {
         CleanupParticle();
-        Context.targetTransform = ability.targetTransform;
+
+        if (ability?.targetTransform != null)
+            Context.targetTransform = ability.targetTransform;
 
         // Critical decision: Multi-area vs single-target application
-        if (ability.abilityEffect.multiAreaEffect)
+        if (ability?.abilityEffect?.multiAreaEffect == true)
             ApplyAbilityUse();
         else
             ApplyAbilityUse(hitTarget);
@@ -160,17 +214,22 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
     private void HandleProjectileExpiration(AbilityHolder ability)
     {
         CleanupParticle();
-        Context.targetTransform = ability.targetTransform;
+
+        if (ability?.targetTransform != null)
+            Context.targetTransform = ability.targetTransform;
+
         ApplyAbilityUse();  // Applies effect even if no collision occurred
         TriggerStateTransition();
     }
 
     private void CleanupParticle()
     {
-        if (Context.instantiatedParticle)
+        if (Context.instantiatedParticle != null)
+        {
             Object.Destroy(Context.instantiatedParticle);
+            Context.instantiatedParticle = null;
+        }
     }
-
 
     private void FinalizeAbility()
     {
@@ -178,9 +237,8 @@ public override AbilityStateMachine.EAbilityState GetNextState() =>
         ApplyAbilityUse();
     }
 
-
-
-    // "legacy"
+    // "legacy" - kept for backward compatibility but marked obsolete
+    [System.Obsolete("Use optimized launch routines instead")]
     public virtual IEnumerator UntilReachesPosition()
     {
         AbilityHolder ability = Context.AbilityHolder;

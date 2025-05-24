@@ -1,8 +1,9 @@
 ﻿using System;
 using UnityEngine.InputSystem;
 using UnityEngine;
+using System.Collections.Generic;
 
-public class AbilityContext
+public class AbilityContext : IDisposable
 {
     // Core dependencies injected through constructor
     private PlayerInput playerInput;
@@ -13,13 +14,31 @@ public class AbilityContext
 
     // State management fields
     public bool cachedAvailability;
-    public bool triggered;
+    public bool triggered; // Indicates if the ability has been triggered.
     public Transform targetTransform;
-    public Transform oldTransform;
     public GameObject instantiatedParticle;
     public bool abilityStillInProgress = false;
     public bool isWaitingForClick = false;
     public AttackCast attackCast = null;
+
+    // Memory optimization fields.
+    private Transform cachedPlayerTransform; // Cached transform for optimization purposes.
+    private readonly Dictionary<ParticleSystem, ParticleSystemConfig> particleConfigCache = new(); // Cache for particle configurations.
+    private bool isDisposed = false; // Tracks whether the object has been disposed.
+
+    private Vector3 lastPlayerPosition;
+    private Quaternion lastPlayerRotation;
+
+    // Struct to cache particle configurations and avoid repeated calculations
+    private struct ParticleSystemConfig
+    {
+        public float duration;
+        public float startDelay;
+        public float startLifetime;
+        public Vector3 startSize;
+        public Vector3 originalSize; // Store original size for proportional scaling
+        public bool isConfigured;
+    }
 
     // Property accessors
     public PlayerInput PlayerInput => playerInput;
@@ -35,9 +54,24 @@ public class AbilityContext
         this.animationModel = animationModel;
         this.abilityController = abilityController;
         this.abilityHolder = abilityHolder;
+
+        // Initialize cached transform reference
+        InitializeCachedTransform();
     }
 
-    // Event for tracking availability changes
+    private void InitializeCachedTransform()
+    {
+        if (cachedPlayerTransform == null)
+        {
+            // Ensures that the transform is not destroyed when loading new scenes.
+            GameObject transformCache = new GameObject("PlayerTransformCache");
+            // Don't destroy on load to prevent recreation
+            UnityEngine.Object.DontDestroyOnLoad(transformCache);
+            cachedPlayerTransform = transformCache.transform;
+        }
+    }
+
+    // Tracks changes to ability availability and raises an event when it changes.
     public event Action<bool> AvailabilityChanged;
 
     public void SetCachedAvailability(bool value)
@@ -45,53 +79,179 @@ public class AbilityContext
         if (cachedAvailability != value)
         {
             cachedAvailability = value;
-            AvailabilityChanged?.Invoke(value);
+            AvailabilityChanged?.Invoke(value); // Notifies subscribers of the change.
         }
     }
 
-    // Main particle configuration entry point
+    // Configures and plays particle effects, leveraging cached configurations for optimization.
     public virtual void SetParticleDuration(GameObject instantiatedParticle, AbilityHolder ability, AttackCast attackCast = null)
     {
+        if (instantiatedParticle == null || ability?.abilityEffect == null) return;
+
         ParticleSystem particleSystem = instantiatedParticle.GetComponent<ParticleSystem>();
+        if (particleSystem == null) return;
 
-        // Configure main particle first
-        StopAndConfigureParticleSystem(particleSystem, ability, attackCast);
+        // Checks if the particle system configuration is cached, otherwise calculates it.
+        if (!particleConfigCache.TryGetValue(particleSystem, out ParticleSystemConfig config) || !config.isConfigured)
+        {
+            config = CalculateParticleConfig(ability, attackCast, true, particleSystem);
+            particleConfigCache[particleSystem] = config; // Caches the configuration for future use.
+        }
 
-        // Then configure all child particles
+        // Apply cached configuration
+        ApplyParticleConfiguration(particleSystem, config, ability, attackCast, true);
+
+        // Configure child particles with optimized loop
         ConfigureSubParticles(particleSystem, ability, attackCast);
 
         particleSystem.Play();
     }
 
-    private void StopAndConfigureParticleSystem(ParticleSystem particleSystem, AbilityHolder ability, AttackCast attackCast)
+    // Calculates particle configurations based on ability properties and context.
+    private ParticleSystemConfig CalculateParticleConfig(AbilityHolder ability, AttackCast attackCast, bool isMainParticle, ParticleSystem particleSystem)
     {
-        // Ensure particle system is stopped before reconfiguration
+        // Determines duration and delay for the main or sub-particles.
+        float duration = isMainParticle ? CalculateMainParticleDuration(ability) : CalculateSubParticleDuration(ability);
+        float startDelay = isMainParticle ? ability.abilityEffect.castDuration : ability.abilityEffect.finalLaunchTime;
+
+        // Store original size for proportional scaling
+        var mainModule = particleSystem.main;
+        Vector3 originalSize = new Vector3(
+            mainModule.startSizeX.constant,
+            mainModule.startSizeY.constant,
+            mainModule.startSizeZ.constant
+        );
+
+        return new ParticleSystemConfig
+        {
+            duration = duration,
+            startDelay = startDelay,
+            startLifetime = isMainParticle ? duration : duration - startDelay,
+            startSize = CalculateParticleSize(ability, attackCast),
+            originalSize = originalSize,
+            isConfigured = true
+        };
+    }
+
+    private Vector3 CalculateParticleSize(AbilityHolder ability, AttackCast attackCast)
+    {
+        if (attackCast == null) return Vector3.one;
+
+        return attackCast.castType == AttackCast.CastType.Sphere
+            ? Vector3.one * attackCast.castSize
+            : attackCast.boxSize;
+    }
+
+    private void ApplyParticleConfiguration(ParticleSystem particleSystem, ParticleSystemConfig config, AbilityHolder ability, AttackCast attackCast, bool isMainParticle)
+    {
+        // Stop only if playing to avoid unnecessary operations
         if (particleSystem.isPlaying)
             particleSystem.Stop(true);
 
         var mainModule = particleSystem.main;
+        mainModule.startDelay = config.startDelay;
+        mainModule.duration = config.duration;
+        mainModule.startLifetime = config.startLifetime;
 
-        // Calculate duration based on multiple ability flags
-        float duration = CalculateMainParticleDuration(ability);
+        // Apply size changes based on ability settings
+        bool shouldChangeSize = false;
 
-        // Set core timing properties
-        mainModule.startDelay = ability.abilityEffect.castDuration;
-        mainModule.duration = duration;
-        mainModule.startLifetime = duration;
-
-        // Handle main particle size changes if required
-        if (ability.abilityEffect.particleShouldChangeSize)
+        if (isMainParticle)
         {
-            ChangeParticleSize(mainModule, attackCast);
+            // Main particle follows particleShouldChangeSize setting
+            shouldChangeSize = ability.abilityEffect.particleShouldChangeSize;
         }
+        else
+        {
+            // Sub-particles: check OnlyPrincipal setting and subParticleShouldChangeSize
+            if (ability.abilityEffect.onlyPrincipalParticle)
+            {
+                shouldChangeSize = false; // Only main particle should change size
+            }
+            else
+            {
+                shouldChangeSize = ability.abilityEffect.subParticleShouldChangeSize &&
+                                 ShouldChangeSubParticleSize(mainModule, attackCast);
+            }
+        }
+
+        if (shouldChangeSize && attackCast != null)
+        {
+            Vector3 proportionalSize = CalculateProportionalSize(config.originalSize, config.startSize);
+            ApplyParticleSize(mainModule, proportionalSize);
+        }
+    }
+
+    private Vector3 CalculateProportionalSize(Vector3 originalSize, Vector3 targetSize)
+    {
+        // Calculate scaling factors for each axis to maintain proportions
+        float scaleX = originalSize.x > 0 ? targetSize.x / originalSize.x : 1f;
+        float scaleY = originalSize.y > 0 ? targetSize.y / originalSize.y : 1f;
+        float scaleZ = originalSize.z > 0 ? targetSize.z / originalSize.z : 1f;
+
+        // Use the largest scale factor to maintain proportions
+        float maxScale = Mathf.Max(scaleX, scaleY, scaleZ);
+
+        return new Vector3(
+            originalSize.x * maxScale,
+            originalSize.y * maxScale,
+            originalSize.z * maxScale
+        );
+    }
+
+    private void ApplyParticleSize(ParticleSystem.MainModule mainModule, Vector3 size)
+    {
+        mainModule.startSizeX = size.x;
+        mainModule.startSizeY = size.y;
+        mainModule.startSizeZ = size.z;
+    }
+
+    private void ConfigureSubParticles(ParticleSystem mainParticle, AbilityHolder ability, AttackCast attackCast)
+    {
+        // Skip sub-particles if OnlyPrincipal is true
+        if (ability.abilityEffect.onlyPrincipalParticle) return;
+
+        // Get all child particles once to avoid repeated GetComponent calls
+        ParticleSystem[] childParticles = mainParticle.GetComponentsInChildren<ParticleSystem>();
+
+        for (int i = 0; i < childParticles.Length; i++)
+        {
+            if (childParticles[i] == mainParticle) continue; // Skip main particle
+
+            ConfigureSubParticle(childParticles[i], ability, attackCast);
+        }
+    }
+
+    private void ConfigureSubParticle(ParticleSystem particle, AbilityHolder ability, AttackCast attackCast)
+    {
+        // Use cached configuration for sub-particles too
+        if (!particleConfigCache.TryGetValue(particle, out ParticleSystemConfig config) || !config.isConfigured)
+        {
+            config = CalculateParticleConfig(ability, attackCast, false, particle);
+            particleConfigCache[particle] = config;
+        }
+
+        ApplyParticleConfiguration(particle, config, ability, attackCast, false);
+    }
+
+    private bool ShouldChangeSubParticleSize(ParticleSystem.MainModule mainModule, AttackCast attackCast)
+    {
+        if (attackCast == null) return false;
+
+        return attackCast.castType switch
+        {
+            AttackCast.CastType.Box => mainModule.startSizeX.constant < attackCast.boxSize.x &&
+                                      mainModule.startSizeZ.constant < attackCast.boxSize.z &&
+                                      mainModule.startSizeY.constant < attackCast.boxSize.y,
+            AttackCast.CastType.Sphere => mainModule.startSizeX.constant < attackCast.castSize &&
+                                          mainModule.startSizeZ.constant < attackCast.castSize &&
+                                          mainModule.startSizeY.constant < attackCast.castSize,
+            _ => false
+        };
     }
 
     private float CalculateMainParticleDuration(AbilityHolder ability)
     {
-        // Complex duration logic based on ability type:
-        // - Launch abilities use lifespan
-        // - Casting/marking abilities use sum of multiple timings
-        // - Default to launch time + duration
         if (ability.abilityEffect.shouldLaunch)
             return ability.abilityEffect.lifeSpan;
 
@@ -104,98 +264,70 @@ public class AbilityContext
         return ability.abilityEffect.finalLaunchTime + ability.abilityEffect.duration;
     }
 
-    private void ConfigureSubParticles(ParticleSystem mainParticle, AbilityHolder ability, AttackCast attackCast)
-    {
-        // Process all child particle systems recursively
-        foreach (var particle in mainParticle.GetComponentsInChildren<ParticleSystem>())
-        {
-            ConfigureSubParticle(particle, ability, attackCast);
-        }
-    }
-
-    private void ConfigureSubParticle(ParticleSystem particle, AbilityHolder ability, AttackCast attackCast)
-    {
-        var mainModule = particle.main;
-
-        // Sub-particles have different duration calculations
-        float subDuration = CalculateSubParticleDuration(ability);
-
-        // Sub-particle timing relative to main particle
-        mainModule.startDelay = ability.abilityEffect.finalLaunchTime;
-        mainModule.duration = subDuration;
-
-        // Get the constant value from startDelay if it's using constant mode
-        float startDelayValue = mainModule.startDelay.mode == ParticleSystemCurveMode.Constant
-            ? mainModule.startDelay.constant
-            : 0f;
-
-        mainModule.startLifetime = subDuration - startDelayValue;
-
-        // Conditional size changes for sub-particles
-        if (ability.abilityEffect.subParticleShouldChangeSize && attackCast != null)
-        {
-            HandleSubParticleSizeChange(mainModule, attackCast);
-        }
-    }
-
     private float CalculateSubParticleDuration(AbilityHolder ability)
     {
-        // Simplified duration for sub-particles:
-        // Either lifespan for launched abilities
-        // or launch time + duration for others
         return ability.abilityEffect.shouldLaunch
             ? ability.abilityEffect.lifeSpan
             : ability.abilityEffect.finalLaunchTime + ability.abilityEffect.duration;
     }
 
-    private void HandleSubParticleSizeChange(ParticleSystem.MainModule mainModule, AttackCast attackCast)
+    // Optimized transform handling - reuse cached transform instead of creating GameObjects
+    public Transform GetCachedPlayerTransform(Transform sourceTransform)
     {
-        // Size change conditions based on cast type:
-        // - Box: Check against all dimensions
-        // - Sphere: Uniform size check
-        bool shouldChangeSize = attackCast.castType switch
+        if (cachedPlayerTransform == null)
         {
-            AttackCast.CastType.Box => mainModule.startSizeX.constant < attackCast.boxSize.x &&
-                                      mainModule.startSizeZ.constant < attackCast.boxSize.z &&
-                                      mainModule.startSizeY.constant < attackCast.boxSize.y,
-            AttackCast.CastType.Sphere => mainModule.startSizeX.constant < attackCast.castSize &&
-                                          mainModule.startSizeZ.constant < attackCast.castSize &&
-                                          mainModule.startSizeY.constant < attackCast.castSize,
-            _ => false
-        };
-
-        if (shouldChangeSize)
-        {
-            ChangeParticleSize(mainModule, attackCast);
+            InitializeCachedTransform();
         }
+
+        // Null check for sourceTransform
+        if (sourceTransform == null)
+        {
+            Debug.LogWarning("GetCachedPlayerTransform called with null sourceTransform");
+            return cachedPlayerTransform;
+        }
+
+        // Only update if position or rotation actually changed
+        if (lastPlayerPosition != sourceTransform.position || lastPlayerRotation != sourceTransform.rotation)
+        {
+            cachedPlayerTransform.position = sourceTransform.position;
+            cachedPlayerTransform.rotation = sourceTransform.rotation;
+            lastPlayerPosition = sourceTransform.position;
+            lastPlayerRotation = sourceTransform.rotation;
+        }
+
+        return cachedPlayerTransform;
     }
 
-    private void ChangeParticleSize(ParticleSystem.MainModule particle, AttackCast attackCast = null)
+    // Cleans up allocated resources, including cached transforms and particles.
+    public void Dispose()
     {
-        if (attackCast != null)
+        if (isDisposed) return;
+
+        // Clear particle cache
+        particleConfigCache.Clear(); // Clears cached particle configurations.
+
+        // Cleanup cached transform
+        if (cachedPlayerTransform != null)
         {
-            float sizeX, sizeY, sizeZ;
-
-            // Determine size parameters based on attack type:
-            // - Sphere uses uniform size
-            // - Box uses individual dimensions
-            if (attackCast.castType == AttackCast.CastType.Sphere)
-            {
-                sizeX = sizeY = sizeZ = attackCast.castSize;
-            }
-            else
-            {
-                sizeX = attackCast.boxSize.x;
-                sizeY = attackCast.boxSize.y;
-                sizeZ = attackCast.boxSize.z;
-            }
-
-            // Apply new size values to all dimensions
-            particle.startSizeX = sizeX;
-            particle.startSizeY = sizeY;
-            particle.startSizeZ = sizeZ;
+            UnityEngine.Object.Destroy(cachedPlayerTransform.gameObject); // Destroys the cached transform object.
+            cachedPlayerTransform = null;
         }
+
+        // Cleanup instantiated particle
+        if (instantiatedParticle != null)
+        {
+            UnityEngine.Object.Destroy(instantiatedParticle); // Ensures particle objects are destroyed to prevent memory leaks.
+            instantiatedParticle = null;
+        }
+
+        // Clear event subscriptions to prevent memory leaks
+        AvailabilityChanged = null; // Removes event subscribers to avoid memory leaks.
+        isDisposed = true; // Marks the object as disposed to prevent further use.
     }
 
-
+    // Finalizer ensures Dispose is called if it wasn't explicitly invoked.
+    ~AbilityContext()
+    {
+        Dispose();
+    }
 }

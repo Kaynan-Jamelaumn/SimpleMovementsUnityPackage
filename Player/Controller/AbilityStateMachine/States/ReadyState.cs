@@ -24,7 +24,7 @@ public class ReadyState : AbilityState
         if (_waitingForClickRoutine != null)
         {
             Context.AbilityController.StopCoroutine(_waitingForClickRoutine);
-            _waitingForClickRoutine = null; 
+            _waitingForClickRoutine = null;
         }
     }
     public override void OnTriggerEnter(Collider other) { }
@@ -66,7 +66,7 @@ public class ReadyState : AbilityState
             // Abilities requiring click confirmation start coroutine
             Context.abilityStillInProgress = true;
             Context.isWaitingForClick = true;
-            _waitingForClickRoutine =Context.AbilityController.StartCoroutine(HandleClickConfirmation(ability, primaryCast));
+            _waitingForClickRoutine = Context.AbilityController.StartCoroutine(HandleClickConfirmation(ability, primaryCast));
         }
         else
         {
@@ -123,8 +123,11 @@ public class ReadyState : AbilityState
         }
     }
 
-    private void  ExecuteAbility(Transform target, AttackCast attackCast)
+    private void ExecuteAbility(Transform target, AttackCast attackCast)
     {
+        // Set the attack cast in context before transitioning states
+        Context.attackCast = attackCast;
+
         // Particle system initialization
         Context.instantiatedParticle = Object.Instantiate(Context.AbilityHolder.abilityEffect.particle);
         Context.instantiatedParticle.transform.position = Context.AbilityController.transform.position;
@@ -152,5 +155,4 @@ public class ReadyState : AbilityState
         Context.abilityStillInProgress = false;
         Context.isWaitingForClick = false;
     }
-
 }
