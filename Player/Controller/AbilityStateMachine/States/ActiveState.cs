@@ -45,9 +45,10 @@ public class ActiveState : AbilityState
     public override void LateUpdateState() { }
     public virtual IEnumerator ActiveAbilityRoutine(AbilityHolder ability, GameObject instantiatedParticle = null)
     {
+       // Context.instantiatedParticle.transform.position = Context.AbilityController.transform.position;
+
         yield return new WaitForSeconds(ability.abilityEffect.duration);
         abilityFinishedActivating = true;
-        if (instantiatedParticle) Object.Destroy(instantiatedParticle);
     }
 
 

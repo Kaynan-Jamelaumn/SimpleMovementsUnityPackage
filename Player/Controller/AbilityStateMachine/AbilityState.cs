@@ -68,21 +68,20 @@ public abstract class AbilityState : BaseState<AbilityStateMachine.EAbilityState
 
         AbilityHolder ability = Context.AbilityHolder;
         Transform playerTransform = Context.AbilityController.transform;
-        if (!ability.abilityEffect.isFixedPosition)
+
+        if (isPermanent)
         {
-            if (isPermanent)
-            {
-                ability.targetTransform = playerTransform; // player transform
-                Context.targetTransform = playerTransform;
-            }
-            else
-            {
-                ability.targetTransform = GetTargetTransform(playerTransform);
-                Context.targetTransform = GetTargetTransform(playerTransform);
-            }
-            if (Context.instantiatedParticle)
-                Context.instantiatedParticle.transform.position = Context.targetTransform.position;
+            ability.targetTransform = playerTransform; // player transform
+            Context.targetTransform = playerTransform;
         }
+        else
+        {
+            ability.targetTransform = GetTargetTransform(playerTransform);
+            Context.targetTransform = GetTargetTransform(playerTransform);
+        }
+        if (Context.instantiatedParticle)
+            Context.instantiatedParticle.transform.position = Context.targetTransform.position;
+        
 
     }
 

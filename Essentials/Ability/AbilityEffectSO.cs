@@ -43,11 +43,7 @@ public class AbilityEffectSO : AbilitySO
 
     public Dictionary<EAbilityState, bool> StateAvailabilityDict { get => stateAvailabilityDict; set => stateAvailabilityDict = value; }
 
-    private void OnEnable()
-    {
-        PopulateStateAvailabilityList();
-        UpdateStateAvailabilityDict();
-    }
+
 
     public void PopulateStateAvailabilityList()
     {

@@ -15,15 +15,7 @@ public class PlayerAbilityView : MonoBehaviour
         playerAbilityController = this.CheckComponent(playerAbilityController, nameof(playerAbilityController));
         inventoryManager = this.CheckComponent(inventoryManager, nameof(inventoryManager), isCritical: false);
     }
-    private void Start()
-    {
-        ValidateAsignments();
-    }
-    private void ValidateAsignments()
-    {
-        Assert.IsNotNull(playerAbilityController, "PlayerAbilityController is not assigned in playerAbilityController.");
-        Assert.IsNotNull(inventoryManager, "InventoryManager is not assigned in inventoryManager.");
-    }
+
     public void OnAttackClick(InputAction.CallbackContext value)
     {
         if (!value.started) return;
@@ -31,12 +23,7 @@ public class PlayerAbilityView : MonoBehaviour
         //else inventoryManager.OnUseItem(value);
 
     }
-    public void OnAbility1(InputAction.CallbackContext value)
-    {
-        if (!value.started) return;
-        //playerAbilityController.CheckAbilities(value.action);
 
-    }
     public void OnAbility2(InputAction.CallbackContext value)
     {
         if (!value.started) return;
