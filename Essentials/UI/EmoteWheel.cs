@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using UnityEngine.Events;
@@ -34,6 +34,7 @@ public class EmoteWheel : MonoBehaviour
     private List<InputAction> disabledPlayerActions = new List<InputAction>();
     private List<Image> buttonImages = new List<Image>();
     private List<RectTransform> buttonRects = new List<RectTransform>();
+    private List<Vector2> buttonPositions = new List<Vector2>(); // Store button positions for selection
     private InputActionMap playerActionMap;
     private float angleStep; // Angle between each emote button
     private float deadzoneRadiusSquared; // Deadzone radius squared for distance comparison
@@ -74,6 +75,7 @@ public class EmoteWheel : MonoBehaviour
         // Clean up existing buttons
         buttonImages.Clear();
         buttonRects.Clear();
+        buttonPositions.Clear();
         foreach (Transform child in wheelTransform)
             Destroy(child.gameObject);
 
@@ -98,14 +100,16 @@ public class EmoteWheel : MonoBehaviour
             buttonRects.Add(rt);
 
             // Position button using polar coordinates (angle and radius)
-            // Mathf.Cos/Sin use radians to calculate x/y positions
-            rt.anchoredPosition = new Vector2(
+            Vector2 buttonPos = new Vector2(
                 Mathf.Cos(currentAngle) * radius,
                 Mathf.Sin(currentAngle) * radius
             );
+            rt.anchoredPosition = buttonPos;
+
+            // Store button position for selection calculation
+            buttonPositions.Add(buttonPos);
 
             // Rotate button to face outward from center
-            // Adding initialAngle ensures buttons align with selection sectors
             rt.localRotation = Quaternion.Euler(0, 0, (initialAngle + i * angleStep) % 360f);
 
             // Move to next angle position (convert angleStep to radians)
@@ -126,21 +130,14 @@ public class EmoteWheel : MonoBehaviour
         // Only process selection if outside deadzone
         if (sqrDistance > deadzoneRadiusSquared)
         {
-            // Get raw angle in degrees (-180 to 180) from x-axis
-            float rawAngle = Mathf.Atan2(cursorDirection.y, cursorDirection.x) * Mathf.Rad2Deg;
-
-            // Convert to 0-360 range and adjust for initial rotation offset
-            // Adding 360 before modulo ensures positive values
-            float normalizedAngle = (rawAngle - initialAngle + 360f) % 360f;
-
-            // Determine which sector the angle falls into
-            int selection = Mathf.FloorToInt(normalizedAngle / angleStep);
+            // Find the closest button to the cursor position
+            int closestButton = FindClosestButton(cursorDirection);
 
             // Handle selection changes
-            if (selection != currentSelection)
+            if (closestButton != currentSelection)
             {
                 previousSelection = currentSelection;
-                currentSelection = selection % emotes.Count; // Wrap around using modulo
+                currentSelection = closestButton;
                 UpdateSelection();
             }
         }
@@ -152,8 +149,29 @@ public class EmoteWheel : MonoBehaviour
         }
 
         // Update cursor position, clamping to wheel radius
-        // Mathf.Sqrt converts squared distance back to actual distance
         cursorTransform.position = wheelCenter + cursorDirection.normalized * Mathf.Min(Mathf.Sqrt(sqrDistance), radius);
+    }
+
+    private int FindClosestButton(Vector2 cursorDirection)
+    {
+        int closestIndex = 0;
+        float closestDistance = float.MaxValue;
+
+        for (int i = 0; i < buttonPositions.Count; i++)
+        {
+            // Calculate distance from cursor to button position
+            float distance = Vector2.Distance(cursorDirection, buttonPositions[i]);
+            // This uses: √[(x₂-x₁)² + (y₂-y₁)²]
+
+            // Find the minimum distance
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestIndex = i;
+            }
+        }
+
+        return closestIndex;
     }
 
     private void UpdateSelection()
@@ -185,22 +203,22 @@ public class EmoteWheel : MonoBehaviour
         }
     }
 
+
     private void ShowWheel()
     {
         wheelActive = true;
-        wheelCenter = wheelTransform.position; // Store center position in screen space
+        wheelCenter = wheelTransform.position; // Capture the wheel's screen-space position
         wheelTransform.gameObject.SetActive(true);
         cursorTransform.gameObject.SetActive(true);
 
-        // Store previous cursor state
+        // Store and modify cursor visibility and locking
         previousLockState = Cursor.lockState;
         hadPreviousCursorVisibility = Cursor.visible;
 
-        // Show and unlock cursor
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
-        // Disable player actions that might interfere
+        // Disable conflicting player actions
         DisableNonEssentialActions();
         inputActions.UI.Enable();
     }
@@ -228,13 +246,13 @@ public class EmoteWheel : MonoBehaviour
         Cursor.lockState = previousLockState;
         Cursor.visible = hadPreviousCursorVisibility;
 
-        // Re-enable disabled actions
+        // Re-enable disabled player actions
         foreach (InputAction action in disabledPlayerActions)
             action.Enable();
 
         inputActions.UI.Disable();
 
-        // Trigger selected emote if valid
+        // Trigger the selected emote if one is selected
         if (currentSelection >= 0)
         {
             ExecuteEmote(currentSelection);
@@ -246,13 +264,14 @@ public class EmoteWheel : MonoBehaviour
     {
         if (index < 0 || index >= emotes.Count) return;
 
-        // Play animation and invoke events
+        // Trigger the emote animation and invoke its associated event
         characterAnimator.SetTrigger(emotes[index].triggerName);
         emotes[index].onSelected?.Invoke();
     }
 
     private void OnEnable() => inputActions?.Enable();
     private void OnDisable() => inputActions?.Disable();
+
 
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
@@ -266,6 +285,17 @@ public class EmoteWheel : MonoBehaviour
         // Visualize deadzone
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(wheelTransform.position, radius * deadzoneRadiusPercent);
+
+        // Visualize button positions and selection areas
+        if (Application.isPlaying && buttonPositions.Count > 0)
+        {
+            Gizmos.color = Color.green;
+            for (int i = 0; i < buttonPositions.Count; i++)
+            {
+                Vector3 worldPos = wheelTransform.position + (Vector3)buttonPositions[i];
+                Gizmos.DrawWireSphere(worldPos, 30f); // Show button selection area
+            }
+        }
     }
 #endif
 }
