@@ -17,7 +17,7 @@ public class UnavailableState : AbilitiesState
     public override AbilitiesStateMachine.EAbilitiesState GetNextState()
     {
 
-        if (!Available()) return AbilitiesStateMachine.EAbilitiesState.Unavailable;
+        if (Available() && Context.AvailabilityState.CanCastSpells()) return AbilitiesStateMachine.EAbilitiesState.Available;
 
         return StateKey;
 

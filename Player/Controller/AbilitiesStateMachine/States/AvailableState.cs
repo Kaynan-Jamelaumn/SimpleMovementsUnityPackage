@@ -18,7 +18,7 @@ public class AvailableState : AbilitiesState
     public override AbilitiesStateMachine.EAbilitiesState GetNextState()
     {
 
-        if (!Available()) return AbilitiesStateMachine.EAbilitiesState.Unavailable;
+        if (!Available() || !Context.AvailabilityState.CanCastSpells() ) return AbilitiesStateMachine.EAbilitiesState.Unavailable;
         if (TriggeredAbility1()) Context.AbilityAction[0].AbilityStateMachine.Context.triggered = true;
         if (TriggeredAbility2()) Context.AbilityAction[1].AbilityStateMachine.Context.triggered = true;
         if (TriggeredAbility3()) Context.AbilityAction[2].AbilityStateMachine.Context.triggered = true;

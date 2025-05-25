@@ -17,18 +17,22 @@ public class AbilitiesStateMachine : StateManager<AbilitiesStateMachine.EAbiliti
 
     [SerializeField] private PlayerAbilityController abilityController;
     [SerializeField] private PlayerAnimationModel animationModel;
+    [SerializeField] private AvailabilityStateMachine availabilityStateMachine;
+
     [SerializeField] private List<AbilityAction> abilityAction = new List<AbilityAction>();
+
     private PlayerInput playerInput;
        
     private void Awake()
     {
         abilityController = this.CheckComponent(abilityController, nameof(abilityController));
         animationModel = this.CheckComponent(animationModel, nameof(animationModel));
+        availabilityStateMachine = this.CheckComponent(availabilityStateMachine, nameof(availabilityStateMachine));
 
         playerInput = new PlayerInput();
 
 
-        context = new AbilitiesContext(playerInput, animationModel, abilityController, abilityAction);    
+        context = new AbilitiesContext(playerInput, animationModel, abilityController, availabilityStateMachine, abilityAction);    
         InitializeStates();
         for (int i = 0; i < abilityAction.Count; i++)
         {

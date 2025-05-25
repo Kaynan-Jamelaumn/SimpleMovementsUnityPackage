@@ -11,14 +11,14 @@ public class LaunchingState : AbilityState
     private static readonly Collider[] _collisionResults = new Collider[64];
     private static readonly RaycastHit[] _raycastResults = new RaycastHit[32];
 
-    // Enhanced caching system
+    //  caching system
     // Cache frequently accessed components to avoid expensive GetComponent calls
     private Camera _cachedCamera;
     private Vector3 _cachedLaunchDirection;
     private float _lastCacheTime;
     private const float CACHE_REFRESH_INTERVAL = 0.1f; // How often to refresh cached values (in seconds)
 
-    // Optimized collision detection
+    //  collision detection
     private float _lastCollisionCheckTime;
     private float _collisionCheckInterval = 0.02f; // How often to check for collisions (in seconds)
 

@@ -27,6 +27,8 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
     [SerializeField] private PlayerCameraModel cameraModel;
     [SerializeField] private PlayerCameraController cameraController;
 
+    [SerializeField] private AvailabilityStateMachine availabilityStateMachine;
+
     private PlayerInput playerInput;
 
     private void Awake()
@@ -38,7 +40,7 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         animationModel = this.CheckComponent(animationModel, nameof(animationModel));
         cameraModel = this.CheckComponent(cameraModel, nameof(cameraModel));
         cameraController = this.CheckComponent(cameraController, nameof(cameraController));
-
+        availabilityStateMachine = this.CheckComponent(availabilityStateMachine, nameof(availabilityStateMachine));
         playerInput = new PlayerInput();
         context = new MovementContext(
             movementModel,
@@ -47,7 +49,8 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
             movementController,
             animationModel,
             cameraModel,
-            cameraController
+            cameraController,
+            availabilityStateMachine
         );
 
         InitializeStates();

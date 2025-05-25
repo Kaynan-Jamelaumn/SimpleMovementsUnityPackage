@@ -11,9 +11,11 @@ public class MovementContext
     private PlayerAnimationModel animationModel;
     private PlayerCameraModel cameraModel;
     private PlayerCameraController cameraController;
+    private AvailabilityStateMachine availabilityStateMachine;
+
     public MovementContext(PlayerMovementModel movementModel, PlayerStatusController statusController,
         PlayerInput playerInput, PlayerMovementController movementController, PlayerAnimationModel animationModel,
-        PlayerCameraModel cameraModel, PlayerCameraController cameraController) {
+        PlayerCameraModel cameraModel, PlayerCameraController cameraController, AvailabilityStateMachine availabilityStateMachine) {
 
             this.movementModel = movementModel;
             this.statusController = statusController;
@@ -22,6 +24,7 @@ public class MovementContext
             this.animationModel = animationModel;
             this.cameraModel = cameraModel;
             this.cameraController = cameraController;
+            this.availabilityStateMachine = availabilityStateMachine;
     }
     public PlayerMovementModel MovementModel => movementModel;
     public PlayerStatusController StatusController => statusController;
@@ -30,6 +33,6 @@ public class MovementContext
     public PlayerAnimationModel AnimationModel => animationModel;
     public PlayerCameraModel CameraModel => cameraModel;
     public PlayerCameraController CameraController => cameraController;
-
+    public AvailabilityStateMachine AvailabilityState => availabilityStateMachine;
 }
 
