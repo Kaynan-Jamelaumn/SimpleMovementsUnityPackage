@@ -8,12 +8,7 @@ public class UnnafectedState : AvailabilityState
 
     public override void EnterState()
     {
-        Debug.Log("Player is now Ready");
-        // Enable movement if not silenced
-        //if (Context.MovementStateMachine != null)
-        //{
-        //    Context.MovementStateMachine.enabled = true;
-        //}
+
     }
 
     public override void ExitState()

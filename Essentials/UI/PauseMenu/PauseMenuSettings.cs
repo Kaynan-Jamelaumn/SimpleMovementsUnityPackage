@@ -32,16 +32,34 @@ public class PauseMenuSettings : MonoBehaviour
     public Slider brightnessSlider;
     public TextMeshProUGUI brightnessText;
 
+    [Header("Advanced Graphics Settings")]
+    public Slider fpsLimitSlider;
+    public TextMeshProUGUI fpsLimitText;
+    public Toggle showFpsToggle;
+    public Slider renderDistanceSlider;
+    public TextMeshProUGUI renderDistanceText;
+    public Toggle motionBlurToggle;
+    public Toggle antiAliasingToggle;
+    public TMP_Dropdown shadowQualityDropdown;
+
     [Header("Controls Settings")]
     public Slider mouseSensitivitySlider;
     public TextMeshProUGUI mouseSensitivityText;
     public Toggle invertMouseToggle;
     public Button resetControlsButton;
 
+    [Header("FPS Counter")]
+    public GameObject fpsCounterObject; // Reference to FPS counter UI element
+    public TextMeshProUGUI fpsCounterText;
     // Cache frequently accessed components and data for better performance
     private Resolution[] availableResolutions;
     private bool isInitialized = false;
     private MonoBehaviour cachedPlayerController;
+    private Camera mainCamera;
+
+    // FPS tracking for display
+    private float deltaTime = 0.0f;
+    private bool showFps = false;
 
     // PlayerPrefs keys organized as constants to prevent typos and improve maintainability
     private const string MASTER_VOLUME_KEY = "MasterVolume";
@@ -55,6 +73,14 @@ public class PauseMenuSettings : MonoBehaviour
     private const string QUALITY_LEVEL_KEY = "QualityLevel";
     private const string RESOLUTION_INDEX_KEY = "ResolutionIndex";
 
+    // New Graphics Settings Keys
+    private const string FPS_LIMIT_KEY = "FPSLimit";
+    private const string SHOW_FPS_KEY = "ShowFPS";
+    private const string RENDER_DISTANCE_KEY = "RenderDistance";
+    private const string MOTION_BLUR_KEY = "MotionBlur";
+    private const string ANTI_ALIASING_KEY = "AntiAliasing";
+    private const string SHADOW_QUALITY_KEY = "ShadowQuality";
+
     // AudioMixer parameter names - must match the exposed parameters in the AudioMixer
     private const string MASTER_VOLUME_PARAM = "MasterVolume";
     private const string MUSIC_VOLUME_PARAM = "MusicVolume";
@@ -62,6 +88,9 @@ public class PauseMenuSettings : MonoBehaviour
 
     // Convert linear volume (0-1) to decibel scale for AudioMixer
     private const float VOLUME_MULTIPLIER = 20f;
+
+    // FPS limit options
+    private readonly int[] fpsLimitOptions = { 30, 60, 120, -1 }; // -1 represents unlimited
 
     // Centralized default values for consistency across the application
     private struct DefaultSettings
@@ -72,6 +101,14 @@ public class PauseMenuSettings : MonoBehaviour
         public const bool Fullscreen = true;
         public const bool VSync = true;
         public const bool InvertMouse = false;
+
+        // New Graphics Defaults
+        public const int FPSLimitIndex = 1; // Default to 60 FPS
+        public const bool ShowFPS = false;
+        public const float RenderDistance = 1000f;
+        public const bool MotionBlur = true;
+        public const bool AntiAliasing = true;
+        public const int ShadowQuality = 2; // Medium shadows by default
     }
 
     // Unity Lifecycle Events
@@ -80,6 +117,14 @@ public class PauseMenuSettings : MonoBehaviour
         InitializeSettings();
         LoadSettings();
         isInitialized = true; // Prevent sound effects during initialization
+    }
+
+    void Update()
+    {
+        if (showFps)
+        {
+            UpdateFPSCounter();
+        }
     }
 
     // Auto-save settings when application loses focus or is paused
@@ -104,8 +149,11 @@ public class PauseMenuSettings : MonoBehaviour
     {
         InitializeResolutionDropdown();
         InitializeQualityDropdown();
+        InitializeShadowQualityDropdown();
+        InitializeFPSLimitSlider();
         SetupUIListeners();
         CachePlayerController();
+        CacheMainCamera();
     }
 
     // Populate resolution dropdown with all available screen resolutions
@@ -157,6 +205,34 @@ public class PauseMenuSettings : MonoBehaviour
         qualityDropdown.RefreshShownValue();
     }
 
+    // Initialize shadow quality dropdown
+    private void InitializeShadowQualityDropdown()
+    {
+        if (shadowQualityDropdown == null) return;
+
+        shadowQualityDropdown.ClearOptions();
+        string[] shadowQualities = { "Disabled", "Hard Shadows", "Soft Shadows" };
+
+        for (int i = 0; i < shadowQualities.Length; i++)
+        {
+            shadowQualityDropdown.options.Add(new TMP_Dropdown.OptionData(shadowQualities[i]));
+        }
+
+        shadowQualityDropdown.value = DefaultSettings.ShadowQuality;
+        shadowQualityDropdown.RefreshShownValue();
+    }
+
+    // Initialize FPS limit slider with discrete values
+    private void InitializeFPSLimitSlider()
+    {
+        if (fpsLimitSlider == null) return;
+
+        fpsLimitSlider.minValue = 0;
+        fpsLimitSlider.maxValue = fpsLimitOptions.Length - 1;
+        fpsLimitSlider.wholeNumbers = true;
+        fpsLimitSlider.value = DefaultSettings.FPSLimitIndex;
+    }
+
     // Wire up all UI element event listeners
     private void SetupUIListeners()
     {
@@ -179,6 +255,20 @@ public class PauseMenuSettings : MonoBehaviour
             fullscreenToggle.onValueChanged.AddListener(SetFullscreen);
         if (vsyncToggle != null)
             vsyncToggle.onValueChanged.AddListener(SetVSync);
+
+        // New Graphics controls
+        if (fpsLimitSlider != null)
+            fpsLimitSlider.onValueChanged.AddListener(SetFPSLimit);
+        if (showFpsToggle != null)
+            showFpsToggle.onValueChanged.AddListener(SetShowFPS);
+        if (renderDistanceSlider != null)
+            renderDistanceSlider.onValueChanged.AddListener(SetRenderDistance);
+        if (motionBlurToggle != null)
+            motionBlurToggle.onValueChanged.AddListener(SetMotionBlur);
+        if (antiAliasingToggle != null)
+            antiAliasingToggle.onValueChanged.AddListener(SetAntiAliasing);
+        if (shadowQualityDropdown != null)
+            shadowQualityDropdown.onValueChanged.AddListener(SetShadowQuality);
 
         // Control settings
         if (mouseSensitivitySlider != null)
@@ -203,12 +293,30 @@ public class PauseMenuSettings : MonoBehaviour
         if (vsyncToggle != null) vsyncToggle.onValueChanged.RemoveAllListeners();
         if (invertMouseToggle != null) invertMouseToggle.onValueChanged.RemoveAllListeners();
         if (resetControlsButton != null) resetControlsButton.onClick.RemoveAllListeners();
+
+        // New Graphics listeners cleanup
+        if (fpsLimitSlider != null) fpsLimitSlider.onValueChanged.RemoveAllListeners();
+        if (showFpsToggle != null) showFpsToggle.onValueChanged.RemoveAllListeners();
+        if (renderDistanceSlider != null) renderDistanceSlider.onValueChanged.RemoveAllListeners();
+        if (motionBlurToggle != null) motionBlurToggle.onValueChanged.RemoveAllListeners();
+        if (antiAliasingToggle != null) antiAliasingToggle.onValueChanged.RemoveAllListeners();
+        if (shadowQualityDropdown != null) shadowQualityDropdown.onValueChanged.RemoveAllListeners();
     }
 
     // Find and cache the player controller for performance optimization
     private void CachePlayerController()
     {
         cachedPlayerController = FindPlayerController();
+    }
+
+    // Cache main camera reference
+    private void CacheMainCamera()
+    {
+        mainCamera = Camera.main;
+        if (mainCamera == null)
+        {
+            mainCamera = FindFirstObjectByType<Camera>();
+        }
     }
 
     // Settings Loading Methods
@@ -238,7 +346,7 @@ public class PauseMenuSettings : MonoBehaviour
 
     private void LoadGraphicsSettings()
     {
-        // Load fullscreen setting
+        // Load existing graphics settings
         if (fullscreenToggle != null)
         {
             bool isFullscreen = PlayerPrefs.GetInt(FULLSCREEN_KEY, DefaultSettings.Fullscreen ? 1 : 0) == 1;
@@ -246,7 +354,6 @@ public class PauseMenuSettings : MonoBehaviour
             Screen.fullScreen = isFullscreen;
         }
 
-        // Load VSync setting
         if (vsyncToggle != null)
         {
             bool vsync = PlayerPrefs.GetInt(VSYNC_KEY, DefaultSettings.VSync ? 1 : 0) == 1;
@@ -254,7 +361,6 @@ public class PauseMenuSettings : MonoBehaviour
             QualitySettings.vSyncCount = vsync ? 1 : 0;
         }
 
-        // Load brightness setting
         if (brightnessSlider != null)
         {
             float brightness = PlayerPrefs.GetFloat(BRIGHTNESS_KEY, DefaultSettings.Brightness);
@@ -262,7 +368,6 @@ public class PauseMenuSettings : MonoBehaviour
             SetBrightness(brightness);
         }
 
-        // Load quality level with bounds checking
         int savedQuality = PlayerPrefs.GetInt(QUALITY_LEVEL_KEY, QualitySettings.GetQualityLevel());
         if (qualityDropdown != null && savedQuality < QualitySettings.names.Length)
         {
@@ -270,7 +375,6 @@ public class PauseMenuSettings : MonoBehaviour
             QualitySettings.SetQualityLevel(savedQuality);
         }
 
-        // Load resolution with validation
         int savedResolutionIndex = PlayerPrefs.GetInt(RESOLUTION_INDEX_KEY, -1);
         if (savedResolutionIndex >= 0 && savedResolutionIndex < availableResolutions.Length)
         {
@@ -280,6 +384,60 @@ public class PauseMenuSettings : MonoBehaviour
             {
                 resolutionDropdown.value = savedResolutionIndex;
             }
+        }
+
+        // Load new graphics settings
+        LoadNewGraphicsSettings();
+    }
+
+    private void LoadNewGraphicsSettings()
+    {
+        // Load FPS limit
+        if (fpsLimitSlider != null)
+        {
+            int fpsLimitIndex = PlayerPrefs.GetInt(FPS_LIMIT_KEY, DefaultSettings.FPSLimitIndex);
+            fpsLimitSlider.value = fpsLimitIndex;
+            SetFPSLimit(fpsLimitIndex);
+        }
+
+        // Load show FPS setting
+        if (showFpsToggle != null)
+        {
+            bool showFpsEnabled = PlayerPrefs.GetInt(SHOW_FPS_KEY, DefaultSettings.ShowFPS ? 1 : 0) == 1;
+            showFpsToggle.isOn = showFpsEnabled;
+            SetShowFPS(showFpsEnabled);
+        }
+
+        // Load render distance
+        if (renderDistanceSlider != null)
+        {
+            float renderDistance = PlayerPrefs.GetFloat(RENDER_DISTANCE_KEY, DefaultSettings.RenderDistance);
+            renderDistanceSlider.value = renderDistance;
+            SetRenderDistance(renderDistance);
+        }
+
+        // Load motion blur
+        if (motionBlurToggle != null)
+        {
+            bool motionBlur = PlayerPrefs.GetInt(MOTION_BLUR_KEY, DefaultSettings.MotionBlur ? 1 : 0) == 1;
+            motionBlurToggle.isOn = motionBlur;
+            SetMotionBlur(motionBlur);
+        }
+
+        // Load anti-aliasing
+        if (antiAliasingToggle != null)
+        {
+            bool antiAliasing = PlayerPrefs.GetInt(ANTI_ALIASING_KEY, DefaultSettings.AntiAliasing ? 1 : 0) == 1;
+            antiAliasingToggle.isOn = antiAliasing;
+            SetAntiAliasing(antiAliasing);
+        }
+
+        // Load shadow quality
+        if (shadowQualityDropdown != null)
+        {
+            int shadowQuality = PlayerPrefs.GetInt(SHADOW_QUALITY_KEY, DefaultSettings.ShadowQuality);
+            shadowQualityDropdown.value = shadowQuality;
+            SetShadowQuality(shadowQuality);
         }
     }
 
@@ -358,7 +516,7 @@ public class PauseMenuSettings : MonoBehaviour
         }
     }
 
-    // Graphics Setting Methods
+    // Graphics Setting Methods (Existing)
     public void SetQuality(int qualityIndex)
     {
         if (qualityIndex < 0 || qualityIndex >= QualitySettings.names.Length) return;
@@ -410,10 +568,138 @@ public class PauseMenuSettings : MonoBehaviour
     }
 
     // Apply brightness setting to the game's rendering
-    // Note: This is a simple implementation using ambient intensity - replace with post-processing for better results
     private void ApplyBrightnessToRenderer(float brightness)
     {
         RenderSettings.ambientIntensity = brightness;
+    }
+
+    // New Graphics Setting Methods
+    public void SetFPSLimit(float sliderValue)
+    {
+        int fpsLimitIndex = Mathf.RoundToInt(sliderValue);
+        if (fpsLimitIndex < 0 || fpsLimitIndex >= fpsLimitOptions.Length) return;
+
+        int fpsLimit = fpsLimitOptions[fpsLimitIndex];
+
+        // Apply FPS limit
+        if (fpsLimit == -1)
+        {
+            Application.targetFrameRate = -1; // Unlimited
+            if (fpsLimitText != null)
+                fpsLimitText.text = "Unlimited";
+        }
+        else
+        {
+            Application.targetFrameRate = fpsLimit;
+            if (fpsLimitText != null)
+                fpsLimitText.text = $"{fpsLimit} FPS";
+        }
+
+        PlayerPrefs.SetInt(FPS_LIMIT_KEY, fpsLimitIndex);
+        PlayButtonSoundIfInitialized();
+    }
+
+    public void SetShowFPS(bool showFpsEnabled)
+    {
+        showFps = showFpsEnabled;
+
+        if (fpsCounterObject != null)
+        {
+            fpsCounterObject.SetActive(showFpsEnabled);
+
+            // Cache the text component when enabling for the first time
+            if (showFpsEnabled && fpsCounterText == null)
+            {
+                fpsCounterText = fpsCounterObject.GetComponent<TextMeshProUGUI>();
+            }
+        }
+
+        PlayerPrefs.SetInt(SHOW_FPS_KEY, showFpsEnabled ? 1 : 0);
+        PlayButtonSoundIfInitialized();
+    }
+    public void SetRenderDistance(float distance)
+    {
+        if (renderDistanceSlider != null &&
+            (distance < renderDistanceSlider.minValue || distance > renderDistanceSlider.maxValue))
+            return;
+
+        // Apply render distance to main camera
+        if (mainCamera != null)
+        {
+            mainCamera.farClipPlane = distance;
+        }
+
+        // Update display text
+        if (renderDistanceText != null)
+        {
+            renderDistanceText.text = $"{Mathf.RoundToInt(distance)}m";
+        }
+
+        PlayerPrefs.SetFloat(RENDER_DISTANCE_KEY, distance);
+        PlayButtonSoundIfInitialized();
+    }
+
+    public void SetMotionBlur(bool enabled)
+    {
+        PlayerPrefs.SetInt(MOTION_BLUR_KEY, enabled ? 1 : 0);
+        PlayButtonSoundIfInitialized();
+
+    }
+
+    public void SetAntiAliasing(bool enabled)
+    {
+        // Apply anti-aliasing setting
+        if (enabled)
+        {
+            QualitySettings.antiAliasing = 4; // 4x MSAA
+        }
+        else
+        {
+            QualitySettings.antiAliasing = 0; // Disabled
+        }
+
+        PlayerPrefs.SetInt(ANTI_ALIASING_KEY, enabled ? 1 : 0);
+        PlayButtonSoundIfInitialized();
+    }
+
+    public void SetShadowQuality(int qualityIndex)
+    {
+        if (qualityIndex < 0 || qualityIndex > 2) return;
+
+        switch (qualityIndex)
+        {
+            case 0: // Disabled
+                QualitySettings.shadows = ShadowQuality.Disable;
+                break;
+            case 1: // Hard Shadows
+                QualitySettings.shadows = ShadowQuality.HardOnly;
+                break;
+            case 2: // Soft Shadows
+                QualitySettings.shadows = ShadowQuality.All;
+                break;
+        }
+
+        PlayerPrefs.SetInt(SHADOW_QUALITY_KEY, qualityIndex);
+        PlayButtonSoundIfInitialized();
+    }
+
+    // FPS Counter Update
+    private void UpdateFPSCounter()
+    {
+        deltaTime += (Time.unscaledDeltaTime - deltaTime) * 0.1f;
+
+        // Use direct reference if available, otherwise try to find it
+        TextMeshProUGUI fpsText = fpsCounterText;
+        if (fpsText == null && fpsCounterObject != null)
+        {
+            fpsText = fpsCounterObject.GetComponent<TextMeshProUGUI>();
+        }
+
+        if (fpsText != null)
+        {
+            float fps = 1.0f / deltaTime;
+            fpsText.text = $"FPS: {Mathf.Ceil(fps)}";
+        }
     }
 
     // Control Setting Methods
@@ -478,7 +764,6 @@ public class PauseMenuSettings : MonoBehaviour
     }
 
     // Use reflection to dynamically update player controller settings
-    // This allows the settings system to work with different controller implementations
     private void UpdatePlayerControllerSetting(string fieldName, object value)
     {
         if (cachedPlayerController == null) return;
@@ -592,17 +877,77 @@ public class PauseMenuSettings : MonoBehaviour
         return PlayerPrefs.GetInt(INVERT_MOUSE_KEY, DefaultSettings.InvertMouse ? 1 : 0) == 1;
     }
 
+    // New public getters for the new graphics settings
+    public int GetCurrentFPSLimit()
+    {
+        int fpsLimitIndex = PlayerPrefs.GetInt(FPS_LIMIT_KEY, DefaultSettings.FPSLimitIndex);
+        return fpsLimitOptions[fpsLimitIndex];
+    }
+
+    public bool GetShowFPSSetting()
+    {
+        return PlayerPrefs.GetInt(SHOW_FPS_KEY, DefaultSettings.ShowFPS ? 1 : 0) == 1;
+    }
+
+    public float GetCurrentRenderDistance()
+    {
+        return PlayerPrefs.GetFloat(RENDER_DISTANCE_KEY, DefaultSettings.RenderDistance);
+    }
+
+    public bool GetMotionBlurSetting()
+    {
+        return PlayerPrefs.GetInt(MOTION_BLUR_KEY, DefaultSettings.MotionBlur ? 1 : 0) == 1;
+    }
+
+    public bool GetAntiAliasingSetting()
+    {
+        return PlayerPrefs.GetInt(ANTI_ALIASING_KEY, DefaultSettings.AntiAliasing ? 1 : 0) == 1;
+    }
+
+    public int GetShadowQualitySetting()
+    {
+        return PlayerPrefs.GetInt(SHADOW_QUALITY_KEY, DefaultSettings.ShadowQuality);
+    }
+
     // Reset all settings to their default values
     public void ResetAllSettings()
     {
+        // Audio settings reset
         if (masterVolumeSlider != null) { masterVolumeSlider.value = DefaultSettings.Volume; SetMasterVolume(DefaultSettings.Volume); }
         if (musicVolumeSlider != null) { musicVolumeSlider.value = DefaultSettings.Volume; SetMusicVolume(DefaultSettings.Volume); }
         if (sfxVolumeSlider != null) { sfxVolumeSlider.value = DefaultSettings.Volume; SetSFXVolume(DefaultSettings.Volume); }
+
+        // Original graphics settings reset
         if (brightnessSlider != null) { brightnessSlider.value = DefaultSettings.Brightness; SetBrightness(DefaultSettings.Brightness); }
         if (fullscreenToggle != null) { fullscreenToggle.isOn = DefaultSettings.Fullscreen; SetFullscreen(DefaultSettings.Fullscreen); }
         if (vsyncToggle != null) { vsyncToggle.isOn = DefaultSettings.VSync; SetVSync(DefaultSettings.VSync); }
 
+        // New graphics settings reset
+        if (fpsLimitSlider != null) { fpsLimitSlider.value = DefaultSettings.FPSLimitIndex; SetFPSLimit(DefaultSettings.FPSLimitIndex); }
+        if (showFpsToggle != null) { showFpsToggle.isOn = DefaultSettings.ShowFPS; SetShowFPS(DefaultSettings.ShowFPS); }
+        if (renderDistanceSlider != null) { renderDistanceSlider.value = DefaultSettings.RenderDistance; SetRenderDistance(DefaultSettings.RenderDistance); }
+        if (motionBlurToggle != null) { motionBlurToggle.isOn = DefaultSettings.MotionBlur; SetMotionBlur(DefaultSettings.MotionBlur); }
+        if (antiAliasingToggle != null) { antiAliasingToggle.isOn = DefaultSettings.AntiAliasing; SetAntiAliasing(DefaultSettings.AntiAliasing); }
+        if (shadowQualityDropdown != null) { shadowQualityDropdown.value = DefaultSettings.ShadowQuality; SetShadowQuality(DefaultSettings.ShadowQuality); }
+
+        // Controls reset
         ResetControls();
+        PlayButtonSoundIfInitialized();
+    }
+
+    // Reset only graphics settings
+    public void ResetGraphicsSettings()
+    {
+        if (brightnessSlider != null) { brightnessSlider.value = DefaultSettings.Brightness; SetBrightness(DefaultSettings.Brightness); }
+        if (fullscreenToggle != null) { fullscreenToggle.isOn = DefaultSettings.Fullscreen; SetFullscreen(DefaultSettings.Fullscreen); }
+        if (vsyncToggle != null) { vsyncToggle.isOn = DefaultSettings.VSync; SetVSync(DefaultSettings.VSync); }
+        if (fpsLimitSlider != null) { fpsLimitSlider.value = DefaultSettings.FPSLimitIndex; SetFPSLimit(DefaultSettings.FPSLimitIndex); }
+        if (showFpsToggle != null) { showFpsToggle.isOn = DefaultSettings.ShowFPS; SetShowFPS(DefaultSettings.ShowFPS); }
+        if (renderDistanceSlider != null) { renderDistanceSlider.value = DefaultSettings.RenderDistance; SetRenderDistance(DefaultSettings.RenderDistance); }
+        if (motionBlurToggle != null) { motionBlurToggle.isOn = DefaultSettings.MotionBlur; SetMotionBlur(DefaultSettings.MotionBlur); }
+        if (antiAliasingToggle != null) { antiAliasingToggle.isOn = DefaultSettings.AntiAliasing; SetAntiAliasing(DefaultSettings.AntiAliasing); }
+        if (shadowQualityDropdown != null) { shadowQualityDropdown.value = DefaultSettings.ShadowQuality; SetShadowQuality(DefaultSettings.ShadowQuality); }
+
         PlayButtonSoundIfInitialized();
     }
 }

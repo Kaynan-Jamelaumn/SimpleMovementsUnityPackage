@@ -85,7 +85,6 @@ public class PauseMenuManager : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
-            DontDestroyOnLoad(gameObject); // Persist across scene changes
         }
         else
         {
