@@ -868,33 +868,5 @@ public class LaunchingState : AbilityState
 
     private void TriggerStateTransition() => _goToNextState = true;
 
-    // Legacy method - marked obsolete but maintained for compatibility
-    [System.Obsolete("Use optimized launch routines instead - this method has performance issues")]
-    public virtual IEnumerator UntilReachesPosition()
-    {
-        AbilityHolder ability = Context.AbilityHolder;
-        float startTime = Time.time;
 
-        if (ability.abilityEffect.shouldLaunch)
-        {
-            Vector3 startPosition = Context.AbilityController.transform.position;
-            Vector3 targetPosition = Context.targetTransform.transform.position;
-            float journeyLength = Vector3.Distance(startPosition, targetPosition);
-            Transform newPlayerTransform = GetTargetTransform(Context.AbilityController.transform);
-
-            while (Time.time < startTime + ability.abilityEffect.finalLaunchTime)
-            {
-                float distCovered = (Time.time - startTime) * ability.abilityEffect.speed;
-                float fracJourney = distCovered / journeyLength;
-                newPlayerTransform.transform.position = Vector3.Lerp(startPosition, targetPosition, fracJourney);
-                Context.targetTransform = newPlayerTransform.transform;
-
-                if (Context.instantiatedParticle != null)
-                    Context.instantiatedParticle.transform.position = newPlayerTransform.transform.position;
-
-                yield return null;
-            }
-            Context.targetTransform = newPlayerTransform.transform;
-        }
-    }
 }
