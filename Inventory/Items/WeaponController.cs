@@ -69,7 +69,7 @@ public class WeaponController : MonoBehaviour, IAssignmentsValidator
 
         // Get current animation state
         PlayerAnimationController animController = player.GetComponent<PlayerAnimationController>();
-        if (animController.model.IsAttacking) return; // Prevent new attacks during animation
+        if (animController.Model.IsAttacking) return; // Prevent new attacks during animation
 
 
         ResetOtherCombos(attackType);
@@ -85,7 +85,7 @@ public class WeaponController : MonoBehaviour, IAssignmentsValidator
 
     private IEnumerator UnlockInputAfterAnimation(PlayerAnimationController animController, AttackPattern attackPattern)
     {
-        float animationLength = GetAnimationClipLength(animController.model.Anim, attackPattern.AnimationTrigger);
+        float animationLength = GetAnimationClipLength(animController.Model.Anim, attackPattern.AnimationTrigger);
         if (animationLength > 0f)
         {
             yield return new WaitForSeconds(animationLength);

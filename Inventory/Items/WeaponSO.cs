@@ -270,7 +270,7 @@ public class WeaponSO : ItemSO
         if (weaponController != null)
         {
             weaponController.EquipWeapon(this);
-            if (!weaponController.AnimController.model.IsAttacking)
+            if (!weaponController.AnimController.Model.IsAttacking)
             {
                 if (durability <= 0) return;
                 durability -= durabilityReductionPerUse;

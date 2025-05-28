@@ -9,7 +9,11 @@ public class JumpingState : MovementState
     public override void EnterState()
     {
         //Context.MovementModel.CurrentSpeed = Context.MovementModel.Speed;
-        Context.MovementModel.VerticalVelocity = Context.AnimationModel.Anim.GetBool(Context.AnimationModel.IsRunningHash) ? Context.MovementModel.JumpForce * 1.75f : Context.MovementModel.JumpForce;
+        bool isRunning = Context.AnimationModel.GetAnimationBool("IsRunning");
+
+        Context.MovementModel.VerticalVelocity = isRunning ?
+            Context.MovementModel.JumpForce * 1.75f :
+            Context.MovementModel.JumpForce;
     }
     public override void ExitState() { }
     public override void UpdateState()
