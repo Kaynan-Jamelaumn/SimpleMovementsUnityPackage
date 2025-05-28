@@ -1,41 +1,35 @@
 using System.Collections;
 using UnityEngine;
-
 public class PlayerRollController : PlayerActionControllerBase<PlayerRollModel>
 {
-    public void Roll()
-    {
-        if (Time.time - model.LastRollTime > model.RollCoolDown)
-        {
-            if (model.ShouldConsumeStamina && statusController.StaminaManager.HasEnougCurrentValue(model.AmountOfRollStaminaCost))
-            {
-                statusController.StaminaManager.ConsumeStamina(model.AmountOfRollStaminaCost);
-                StartAction();
-            }
-            else if (!model.ShouldConsumeStamina)
-            {
-                StartAction();
-            }
-        }
-    }
+    public void Roll() => TryExecuteAction();
 
-    private void StartAction()
+    protected override void ExecuteAction()
     {
-       // movementModel.CurrentPlayerState = PlayerMovementModel.PlayerState.Rolling;
         model.RollRoutine = StartCoroutine(RollRoutine());
-        model.LastRollTime = Time.time;
     }
 
     private IEnumerator RollRoutine()
     {
         playerAnimationModel.IsRolling = true;
-        float startTime = Time.time;
-        while (Time.time - startTime < model.RollDuration)
+
+        float elapsed = 0f;
+        while (elapsed < model.RollDuration)
         {
-            movementModel.Controller.Move(controllerMovement.PlayerForwardPosition() * model.RollSpeedModifier * statusController.WeightManager.CalculateSpeedBasedOnWeight(movementModel.Speed) * Time.deltaTime);
+            Vector3 movement = controllerMovement.PlayerForwardPosition() *
+                             model.RollSpeedModifier *
+                             statusController.WeightManager.CalculateSpeedBasedOnWeight(movementModel.Speed) *
+                             Time.deltaTime;
+
+            movementModel.Controller.Move(movement);
+            elapsed += Time.deltaTime;
             yield return null;
         }
+
         playerAnimationModel.IsRolling = false;
         model.RollRoutine = null;
+        model.LastActionTime = Time.time;
     }
+    public bool Ready => Time.time - model.LastActionTime > model.CooldownDuration &&
+        (!model.ShouldConsumeStamina || statusController.StaminaManager.HasEnougCurrentValue(model.StaminaCost));
 }
