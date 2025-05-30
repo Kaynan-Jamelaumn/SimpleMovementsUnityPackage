@@ -3,7 +3,6 @@ using UnityEngine;
 
 public static class ItemHandler
 {
-
     public static void PlaceItemInSlot(InventorySlot slot, GameObject draggedObject, PlayerStatusController playerStatusController)
     {
         SetItemInSlot(slot, draggedObject);
@@ -187,7 +186,13 @@ public static class ItemHandler
     {
         if (!cam) cam = Camera.main;
 
-        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        Vector2 mousePosition = Vector2.zero;
+        if (Mouse.current != null)
+        {
+            mousePosition = Mouse.current.position.ReadValue();
+        }
+
+        Ray ray = cam.ScreenPointToRay(mousePosition);
         return ray.GetPoint(3);
     }
 

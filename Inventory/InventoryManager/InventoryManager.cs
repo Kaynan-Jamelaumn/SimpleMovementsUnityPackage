@@ -31,7 +31,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     bool isInventoryOpened;
     bool isDragging;
 
-
+    // Add reference to Mouse for new Input System
+    private Mouse mouse;
 
     public Transform HandParent
     {
@@ -57,30 +58,33 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         inventoryParent.SetActive(false);
         if (Player && !playerStatusController) playerStatusController = Player.GetComponent<PlayerStatusController>();
         if (Player && !weaponController) weaponController = Player.GetComponent<WeaponController>();
-        if (Player && !animController) animController =  Player.GetComponent<PlayerAnimationController>();
+        if (Player && !animController) animController = Player.GetComponent<PlayerAnimationController>();
+
+        // Initialize mouse reference
+        mouse = Mouse.current;
     }
 
     void Start()
     {
         ValidateAssignments();
         HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
-        
     }
+
     void Update()
     {
-
         HotbarHandler.CheckForHotbarInput(hotbarSlots, handParent);
 
         storageParent.SetActive(isStorageOpened);
         inventoryParent.SetActive(isInventoryOpened);
         equippableInventory.SetActive(isInventoryOpened);
 
-        //Move item
-        if (draggedObject != null)
+  
+        if (draggedObject != null && mouse != null)
         {
-            draggedObject.transform.position = Input.mousePosition;
+            draggedObject.transform.position = mouse.position.ReadValue();
         }
     }
+
     private void ValidateAssignments()
     {
         Assert.IsNotNull(playerStatusController, "PlayerStatusController is not assigned in playerStatusController.");
@@ -92,7 +96,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         if (isInventoryOpened)
         {
-
             Cursor.lockState = CursorLockMode.Locked;
             isInventoryOpened = false;
             isStorageOpened = false;
@@ -107,6 +110,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             isInventoryOpened = true;
         }
     }
+
     public void OnUseItem(InputAction.CallbackContext value)
     {
         if (!value.started || isDragging) return; // Prevent OnUseItem while dragging
@@ -123,7 +127,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
 
         if (heldItem == null) return;
-
+        Debug.Log($"Using item: {heldItem.itemScriptableObject.Name}");
         if (!ItemUsageHandler.HandleCooldown(heldItem)) return;
 
         ItemUsageHandler.UseHeldItem(Player, playerStatusController, weaponController, heldItem);
@@ -131,15 +135,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         ItemUsageHandler.HandleItemDurabilityAndStack(Player, handParent, selectedSlot, heldItem);
     }
 
-
     public void InstantiateClassItems(List<GameObject> classItems)
     {
         foreach (GameObject item in classItems)
             ItemPicked(item);
     }
-
-
-
 
     public void OnPointerClick(PointerEventData eventData)
     {
@@ -239,15 +239,14 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void DropItem()
     {
-
         ItemHandler.DropItem(draggedObject, lastItemSlotObject, playerStatusController, cam, player);
     }
 
     public void ItemPicked(GameObject pickedItem)
     {
-        ItemPickupHandler.AddItemToInventory(this,pickedItem, Slots, itemPrefab, Player);
-
+        ItemPickupHandler.AddItemToInventory(this, pickedItem, Slots, itemPrefab, Player);
     }
+
     public void InstantiateNewItem(GameObject emptySlot, GameObject pickedItem)
     {
         GameObject newItem = Instantiate(itemPrefab);
@@ -266,8 +265,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         newItemItem.durability = pickedItemProperties.DurabilityList[pickedItemProperties.DurabilityList.Count - 1];
         newItemItem.DurabilityList = pickedItemProperties.DurabilityList;
 
-
-
         //pickedItemSO.PlayerObject = player.gameObject;
         //newItemItem.itemScriptableObject.statusController = player.GetComponent<PlayerStatusController>();
         // Set the new item's parent,
@@ -275,7 +272,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         newItem.transform.SetParent(parentTransform);
 
         // Update player weight and set the new item in the empty slot
-
         float itemWeight = newItemItem.itemScriptableObject.Weight * newItemItem.stackCurrent;
         newItemItem.totalWeight = itemWeight;
         Player.GetComponent<PlayerStatusController>().WeightManager.AddWeight(itemWeight);
@@ -284,11 +280,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         // Set the new item's scale
         newItem.transform.localScale = new Vector3(1, 1, 1);
     }
-
-
-
-
-
 
     public void OpenStorage(Storage storage)
     {
@@ -367,58 +358,3 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         }
     }
 }
-
-//public void onInventory(InputAction.CallbackContext value)
-//{
-
-//    
-//    if (!value.started) return;
-
-//    if (isInventoryOpened)
-//    {
-//        Cursor.lockState = CursorLockMode.Locked;
-//        isInventoryOpened = false;
-//        isStorageOpened = false;
-
-//        if (lastStorage != null)
-//        {
-//            CloseStorage(lastStorage);
-//        }
-//    }
-//    else
-//    {
-//        Cursor.lockState = CursorLockMode.None;
-//        isInventoryOpened = true;
-//    }
-//}
-//public void onUseItem(InputAction.CallbackContext value)
-//{
-//    
-//    if (!value.started) return;
-//    InventorySlot selectedSlot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
-
-//    if (selectedSlot.heldItem != null && selectedSlot.heldItem.GetComponent<InventoryItem>() != null)
-//    {
-//        // Check if there is a held item in the selected hotbar slot
-//        InventoryItem heldItem = selectedSlot.heldItem.GetComponent<InventoryItem>();
-
-//        // Ensure heldItem is not null before accessing its properties
-//        if (heldItem != null)
-//        {
-//            heldItem.itemScriptableObject.UseItem();
-//            if (heldItem.itemScriptableObject is ConsumableSO)
-//            {
-//                Debug.Log("ta chovendo ai");
-//                heldItem.stackCurrent--;
-//                if (heldItem.stackCurrent <= 0)
-//                {
-//                    selectedSlot.heldItem = null;
-//                    Destroy(heldItem.gameObject);
-//                }
-//            }
-//            // This will call the overridden UseItem method in the ItemSO derived classes
-//        }
-//    }
-//}
-
-
