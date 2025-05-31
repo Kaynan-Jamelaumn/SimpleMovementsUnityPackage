@@ -28,6 +28,8 @@ public class PauseMenuManager : MonoBehaviour
     public AudioClip pauseOpenSound;       // Sound when opening pause menu
     public AudioClip pauseCloseSound;      // Sound when closing pause menu
     public AudioClip buttonClickSound;     // Sound for button interactions
+    public AudioClip countdownTickSound;   // Sound for countdown ticks
+
     [Range(-80f, 0f)]
     public float pausedVolumeLevel = -20f; // Audio volume level when game is paused
 
@@ -229,15 +231,28 @@ public class PauseMenuManager : MonoBehaviour
         // Show and unlock cursor for menu navigation
         SetCursorState(true);
 
-        // Reduce audio volume to indicate paused state
-        SetAudioVolume(pausedVolumeLevel);
+        // Use SoundManager for audio management if available
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.OnGamePaused();
 
-        // Play pause open sound effect
-        PlayPauseSFX(pauseOpenSound);
+            // Play pause open sound - use assigned clip only, no hardcoded fallback
+            if (pauseOpenSound != null)
+            {
+                SoundManager.Instance.PlaySFX(pauseOpenSound);
+            }
+        }
+        else
+        {
+            // Fallback to original audio system
+            SetAudioVolume(pausedVolumeLevel);
+            PlayPauseSFX(pauseOpenSound);
+        }
 
         // Display pause menu with smooth transition
         ShowPauseUI();
-    }
+    }   
+
 
     // Resume Entry Point - Handles countdown or immediate resume
     public void ResumeGame()
@@ -315,10 +330,24 @@ public class PauseMenuManager : MonoBehaviour
         // Restore normal game state
         Time.timeScale = originalTimeScale; // Resume game time
         SetCursorState(false);              // Hide and lock cursor
-        RestoreAudioVolume();               // Restore normal audio volume
 
-        // Play resume sound effect
-        PlayPauseSFX(pauseCloseSound);
+        // Use SoundManager for audio management if available
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.OnGameResumed();
+
+            // Play pause close sound - use assigned clip only, no hardcoded fallback
+            if (pauseCloseSound != null)
+            {
+                SoundManager.Instance.PlaySFX(pauseCloseSound);
+            }
+        }
+        else
+        {
+            // Fallback to original audio system
+            RestoreAudioVolume();
+            PlayPauseSFX(pauseCloseSound);
+        }
     }
 
     // COUNTDOWN SYSTEM
@@ -343,7 +372,18 @@ public class PauseMenuManager : MonoBehaviour
         for (int i = 3; i > 0; i--)
         {
             if (countdownText != null) countdownText.text = i.ToString();
-            PlayPauseSFX(buttonClickSound); // Audio cue for each number
+            if (SoundManager.Instance != null)
+            {
+                if (countdownTickSound != null)
+                {
+                    SoundManager.Instance.PlaySFX(countdownTickSound);
+                }
+            }
+            else
+            {
+                PlayPauseSFX(countdownTickSound != null ? countdownTickSound : buttonClickSound);
+            }
+
             yield return new WaitForSecondsRealtime(1f); // Use real-time since game time is paused
         }
 
@@ -456,36 +496,85 @@ public class PauseMenuManager : MonoBehaviour
     {
         if (!IsPaused) return;
 
-        PlayPauseSFX(buttonClickSound); // Button click sound
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            if (buttonClickSound != null)
+            {
+                SoundManager.Instance.PlaySFX(buttonClickSound);
+            }
+        }
+        else
+        {
+            PlayPauseSFX(buttonClickSound);
+        }
+
         ResumeGame();
     }
 
     // Main Menu Button Handler - Returns to main menu scene
     public void ReturnToMainMenu()
     {
-        PlayPauseSFX(buttonClickSound);
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            if (buttonClickSound != null)
+            {
+                SoundManager.Instance.PlaySFX(buttonClickSound);
+            }
+        }
+        else
+        {
+            PlayPauseSFX(buttonClickSound);
+        }
+
         Time.timeScale = originalTimeScale; // Restore time scale before scene change
         SceneManager.LoadScene("MainMenu");
     }
 
+
     // Exits the application
+
     public void QuitGame()
     {
-        PlayPauseSFX(buttonClickSound);
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            if (buttonClickSound != null)
+            {
+                SoundManager.Instance.PlaySFX(buttonClickSound);
+            }
+        }
+        else
+        {
+            PlayPauseSFX(buttonClickSound);
+        }
 
         // Different behavior for editor vs build
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false; // Stop play mode in editor
 #else
-        Application.Quit(); // Quit application in build
+    Application.Quit(); // Quit application in build
 #endif
     }
 
     // Generic Button Sound - For buttons that only need sound feedback
     public void PlayButtonSound()
     {
-        PlayPauseSFX(buttonClickSound);
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            if (buttonClickSound != null)
+            {
+                SoundManager.Instance.PlaySFX(buttonClickSound);
+            }
+        }
+        else
+        {
+            PlayPauseSFX(buttonClickSound);
+        }
     }
+
 
     // PUBLIC STATE MANAGEMENT
     // Methods for external systems to control pause behavior

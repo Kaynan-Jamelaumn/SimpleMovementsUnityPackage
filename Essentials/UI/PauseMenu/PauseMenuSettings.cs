@@ -7,6 +7,10 @@ using System.Reflection;
 
 public class PauseMenuSettings : MonoBehaviour
 {
+    [Header("UI Audio Clips")]
+    public AudioClip buttonClickSound;
+    public AudioClip sliderChangeSound;
+
     [Header("Settings UI")]
     public GameObject mainMenuPanel;
     public GameObject settingsPanel;
@@ -329,10 +333,40 @@ public class PauseMenuSettings : MonoBehaviour
 
     private void LoadAudioSettings()
     {
-        LoadVolumeSlider(masterVolumeSlider, MASTER_VOLUME_KEY, DefaultSettings.Volume, SetMasterVolume);
-        LoadVolumeSlider(musicVolumeSlider, MUSIC_VOLUME_KEY, DefaultSettings.Volume, SetMusicVolume);
-        LoadVolumeSlider(sfxVolumeSlider, SFX_VOLUME_KEY, DefaultSettings.Volume, SetSFXVolume);
+        if (SoundManager.Instance != null)
+        {
+            // Load from SoundManager
+            if (masterVolumeSlider != null)
+            {
+                float volume = SoundManager.Instance.GetMasterVolume();
+                masterVolumeSlider.value = volume;
+                UpdateVolumeText(masterVolumeText, volume);
+            }
+
+            if (musicVolumeSlider != null)
+            {
+                float volume = SoundManager.Instance.GetMusicVolume();
+                musicVolumeSlider.value = volume;
+                UpdateVolumeText(musicVolumeText, volume);
+            }
+
+            if (sfxVolumeSlider != null)
+            {
+                float volume = SoundManager.Instance.GetSFXVolume();
+                sfxVolumeSlider.value = volume;
+                UpdateVolumeText(sfxVolumeText, volume);
+            }
+        }
+        else
+        {
+            // Fallback to original loading method
+            LoadVolumeSlider(masterVolumeSlider, MASTER_VOLUME_KEY, DefaultSettings.Volume, SetMasterVolume);
+            LoadVolumeSlider(musicVolumeSlider, MUSIC_VOLUME_KEY, DefaultSettings.Volume, SetMusicVolume);
+            LoadVolumeSlider(sfxVolumeSlider, SFX_VOLUME_KEY, DefaultSettings.Volume, SetSFXVolume);
+        }
     }
+
+
 
     // Generic method to load volume settings and apply them consistently
     private void LoadVolumeSlider(Slider slider, string key, float defaultValue, System.Action<float> setter)
@@ -465,19 +499,40 @@ public class PauseMenuSettings : MonoBehaviour
     {
         if (!ValidateVolumeSlider(masterVolumeSlider, volume)) return;
 
-        SetAudioMixerVolume(MASTER_VOLUME_PARAM, volume);
+        // Update SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.SetMasterVolume(volume);
+        }
+        else
+        {
+            // Fallback to original method if SoundManager not available
+            SetAudioMixerVolume(MASTER_VOLUME_PARAM, volume);
+            PlayerPrefs.SetFloat(MASTER_VOLUME_KEY, volume);
+        }
+
         UpdateVolumeText(masterVolumeText, volume);
-        PlayerPrefs.SetFloat(MASTER_VOLUME_KEY, volume);
         PlayButtonSoundIfInitialized();
     }
+
 
     public void SetMusicVolume(float volume)
     {
         if (!ValidateVolumeSlider(musicVolumeSlider, volume)) return;
 
-        SetAudioMixerVolume(MUSIC_VOLUME_PARAM, volume);
+        // Update SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.SetMusicVolume(volume);
+        }
+        else
+        {
+            // Fallback to original method
+            SetAudioMixerVolume(MUSIC_VOLUME_PARAM, volume);
+            PlayerPrefs.SetFloat(MUSIC_VOLUME_KEY, volume);
+        }
+
         UpdateVolumeText(musicVolumeText, volume);
-        PlayerPrefs.SetFloat(MUSIC_VOLUME_KEY, volume);
         PlayButtonSoundIfInitialized();
     }
 
@@ -485,12 +540,21 @@ public class PauseMenuSettings : MonoBehaviour
     {
         if (!ValidateVolumeSlider(sfxVolumeSlider, volume)) return;
 
-        SetAudioMixerVolume(SFX_VOLUME_PARAM, volume);
+        // Update SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.SetSFXVolume(volume);
+        }
+        else
+        {
+            // Fallback to original method
+            SetAudioMixerVolume(SFX_VOLUME_PARAM, volume);
+            PlayerPrefs.SetFloat(SFX_VOLUME_KEY, volume);
+        }
+
         UpdateVolumeText(sfxVolumeText, volume);
-        PlayerPrefs.SetFloat(SFX_VOLUME_KEY, volume);
         PlayButtonSoundIfInitialized();
     }
-
     private bool ValidateVolumeSlider(Slider slider, float volume)
     {
         return slider != null && volume >= 0f && volume <= 1f;
@@ -850,9 +914,43 @@ public class PauseMenuSettings : MonoBehaviour
     private void PlayButtonSoundIfInitialized()
     {
         if (!isInitialized) return;
-        PauseMenuManager.Instance?.PlayButtonSound();
-    }
 
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            // Try to play the assigned clip, otherwise use fallback
+            if (buttonClickSound != null)
+            {
+                SoundManager.Instance.PlaySFX(buttonClickSound);
+            }
+            else
+            {
+                SoundManager.Instance.PlayUISound("ButtonClick"); // Fallback to named sound
+            }
+        }
+        else
+        {
+            // Fallback to original method
+            PauseMenuManager.Instance?.PlayButtonSound();
+        }
+    }
+    private void PlaySliderSoundIfInitialized()
+    {
+        if (!isInitialized) return;
+
+        // Use SoundManager if available
+        if (SoundManager.Instance != null)
+        {
+            if (sliderChangeSound != null)
+            {
+                SoundManager.Instance.PlaySFX(sliderChangeSound, volume: 0.5f); // Quieter for sliders
+            }
+            else
+            {
+                SoundManager.Instance.PlayUISound("SliderChange"); // Fallback to named sound
+            }
+        }
+    }
     // Save all settings to PlayerPrefs with error handling
     private void SaveAllSettings()
     {
