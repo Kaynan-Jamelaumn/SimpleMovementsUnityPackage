@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.InputSystem;
 using TMPro;
@@ -9,154 +8,290 @@ using System.Collections;
 public class Player : MonoBehaviour
 {
     [SerializeField] InventoryManager inventoryManager;
-    //[SerializeField] PlayerCameraModel camera;
     [SerializeField] Camera cam;
     [SerializeField] TMPro.TextMeshProUGUI interactionText;
     [SerializeField] GameObject interactionUI;
     [SerializeField] Image fillingCircle;
     [SerializeField] private AudioSource playerAudioSource;
     [SerializeField] private string playerName;
+
     private ItemPickable item;
     private Storage storage;
     private Coroutine interactionCoroutine;
     private RaycastHit hitInfo;
-    public AudioSource PlayerAudioSource { get => playerAudioSource; set => playerAudioSource = value; }
-    public string PlayerName { get => playerName; set => playerName = value; }
-    public Camera Cam
+    private const float MAX_INTERACTION_DISTANCE = 3.2f;
+
+    // Properties with validation
+    public AudioSource PlayerAudioSource
     {
-        get => cam;
+        get => playerAudioSource;
+        set => playerAudioSource = value ?? throw new System.ArgumentNullException(nameof(value));
     }
 
-    public InventoryManager InventoryManager
+    public string PlayerName
     {
-        get => inventoryManager;
-        set => inventoryManager = value;
+        get => playerName;
+        set => playerName = !string.IsNullOrEmpty(value) ? value : "Unknown Player";
     }
 
-    public TextMeshProUGUI InteractionText
-    {
-        get => interactionText;
-        set => interactionText = value;
-    }
+    public Camera Cam => cam;
+    public InventoryManager InventoryManager => inventoryManager;
+    public TextMeshProUGUI InteractionText => interactionText;
+
     private void Awake()
     {
-        if (Cam) playerAudioSource = transform.GetComponent<AudioSource>();
+        ValidateComponents();
+        InitializeComponents();
     }
+
     private void Start()
     {
-        ValidateAsignments();
+        ValidateAssignments();
     }
+
     void Update()
     {
-        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
-        float maxDistance = 3.2f;
+        if (!IsValidForInteraction()) return;
 
-        if (Physics.Raycast(ray, out hitInfo, maxDistance))
+        HandleInteractionDetection();
+    }
+
+    private bool IsValidForInteraction()
+    {
+        return cam != null && Mouse.current != null;
+    }
+
+    private void HandleInteractionDetection()
+    {
+        try
         {
-            ItemPickable item = hitInfo.collider.gameObject.GetComponent<ItemPickable>();
-            Storage storage = hitInfo.collider.gameObject.GetComponent<Storage>();
-            Interactable interactable = hitInfo.collider.gameObject.GetComponentInParent<Interactable>();
+            Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-            if (item != null || storage != null || interactable != null)
+            if (Physics.Raycast(ray, out hitInfo, MAX_INTERACTION_DISTANCE))
             {
-                interactionUI.SetActive(true);
+                ProcessRaycastHit();
             }
             else
             {
-                interactionUI.SetActive(false);
+                DeactivateInteractionUI();
             }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error in interaction detection: {e.Message}");
+            DeactivateInteractionUI();
+        }
+    }
+
+    private void ProcessRaycastHit()
+    {
+        if (hitInfo.collider?.gameObject == null)
+        {
+            DeactivateInteractionUI();
+            return;
+        }
+
+        var item = hitInfo.collider.gameObject.GetComponent<ItemPickable>();
+        var storage = hitInfo.collider.gameObject.GetComponent<Storage>();
+        var interactable = hitInfo.collider.gameObject.GetComponentInParent<Interactable>();
+
+        if (item != null || storage != null || interactable != null)
+        {
+            ActivateInteractionUI();
         }
         else
         {
-            interactionUI.SetActive(false); // No objects hit, deactivate UI
+            DeactivateInteractionUI();
         }
     }
-    private void ValidateAsignments()
+
+    private void ActivateInteractionUI()
     {
-        Assert.IsNotNull(inventoryManager, "InventoryManager is not assigned in inventoryManager.");
-        Assert.IsNotNull(playerAudioSource, "AudioSource is not assigned in playerAudioSource.");
+        if (interactionUI != null)
+            interactionUI.SetActive(true);
     }
+
+    private void DeactivateInteractionUI()
+    {
+        if (interactionUI != null)
+            interactionUI.SetActive(false);
+    }
+
+    private void ValidateComponents()
+    {
+        if (cam == null) cam = Camera.main;
+        if (playerAudioSource == null) playerAudioSource = GetComponent<AudioSource>();
+    }
+
+    private void InitializeComponents()
+    {
+        if (cam && playerAudioSource == null)
+            playerAudioSource = GetComponent<AudioSource>();
+    }
+
+    private void ValidateAssignments()
+    {
+        Assert.IsNotNull(inventoryManager, "InventoryManager is not assigned.");
+        Assert.IsNotNull(cam, "Camera is not assigned.");
+        Assert.IsNotNull(interactionUI, "Interaction UI is not assigned.");
+        Assert.IsNotNull(fillingCircle, "Filling circle is not assigned.");
+
+        if (playerAudioSource == null)
+            Debug.LogWarning("Player AudioSource is not assigned - audio effects will not work.");
+    }
+
     public void OnInteract(InputAction.CallbackContext value)
     {
-        // Se o botão foi pressionado
-        if (value.started)
+        try
         {
-            if (item != null || hitInfo.collider != null && hitInfo.collider.gameObject != null && hitInfo.collider.GetComponent<Interactable>())
+            if (value.started)
             {
-                ItemPickable pickableItem = hitInfo.collider.gameObject.GetComponentInParent<ItemPickable>();
-                if (pickableItem != null)
-                {
-                    if (pickableItem.InteractionTime > 0)
-                        interactionCoroutine = StartCoroutine(InteractWithObject(pickableItem));
-                    
-                    else
-                        inventoryManager.ItemPicked(hitInfo.collider.gameObject);
-                    
-                }
-                else
-                {
-                    Interactable interactable = hitInfo.collider.GetComponent<Interactable>();
-                    if (interactable != null)
-                    {
-                        if (interactable.InteractionTime > 0)
-                            interactionCoroutine = StartCoroutine(InteractWithObject(interactable));
-                        
-                        else
-                            interactable.Interact();
-                        
-                    }
-
-                }
+                HandleInteractionStart();
             }
-            else if (storage != null)
+            else if (value.canceled)
             {
-                if (inventoryManager.isStorageOpened) inventoryManager.CloseStorage(storage);
-                else if (!inventoryManager.isStorageOpened) inventoryManager.OpenStorage(storage);
+                HandleInteractionCancel();
             }
         }
-        // Se o botão foi solto
-        else if (value.canceled)
+        catch (System.Exception e)
         {
-            // Se a ação foi cancelada, interrompa a coroutine
-            if (interactionCoroutine != null)
+            Debug.LogError($"Error during interaction: {e.Message}");
+            CleanupInteraction();
+        }
+    }
+
+    private void HandleInteractionStart()
+    {
+        if (!IsValidHitInfo()) return;
+
+        var pickableItem = hitInfo.collider.gameObject.GetComponentInParent<ItemPickable>();
+        var interactable = hitInfo.collider.GetComponent<Interactable>();
+        var storage = hitInfo.collider.GetComponent<Storage>();
+
+        if (pickableItem != null)
+        {
+            HandlePickableItem(pickableItem);
+        }
+        else if (interactable != null)
+        {
+            HandleInteractable(interactable);
+        }
+        else if (storage != null)
+        {
+            HandleStorage(storage);
+        }
+    }
+
+    private bool IsValidHitInfo()
+    {
+        return hitInfo.collider?.gameObject != null;
+    }
+
+    private void HandlePickableItem(ItemPickable pickableItem)
+    {
+        if (pickableItem.InteractionTime > 0)
+        {
+            interactionCoroutine = StartCoroutine(InteractWithObject(pickableItem));
+        }
+        else
+        {
+            Debug.Log($"Picking up item: {pickableItem.gameObject.name}");
+            if (inventoryManager != null)
             {
-                StopCoroutine(interactionCoroutine);
-                interactionCoroutine = null; // Limpa a referência à coroutine
-                                             // Limpar preenchimento do círculo
-                fillingCircle.fillAmount = 1f;
+                inventoryManager.ItemPicked(pickableItem.gameObject);
             }
         }
     }
 
+    private void HandleInteractable(Interactable interactable)
+    {
+        if (interactable.InteractionTime > 0)
+        {
+            interactionCoroutine = StartCoroutine(InteractWithObject(interactable));
+        }
+        else
+        {
+            interactable.Interact();
+        }
+    }
+
+    private void HandleStorage(Storage storage)
+    {
+        if (inventoryManager == null) return;
+
+        if (inventoryManager.isStorageOpened)
+        {
+            inventoryManager.CloseStorage(storage);
+        }
+        else
+        {
+            inventoryManager.OpenStorage(storage);
+        }
+    }
+
+    private void HandleInteractionCancel()
+    {
+        CleanupInteraction();
+    }
+
+    private void CleanupInteraction()
+    {
+        if (interactionCoroutine != null)
+        {
+            StopCoroutine(interactionCoroutine);
+            interactionCoroutine = null;
+
+            if (fillingCircle != null)
+                fillingCircle.fillAmount = 1f;
+        }
+    }
 
     private IEnumerator InteractWithObject(Interactable interactable)
     {
+        if (interactable == null || hitInfo.collider?.gameObject == null)
+        {
+            yield break;
+        }
+
         GameObject interactableObject = hitInfo.collider.gameObject;
-        fillingCircle.fillAmount = 0f;
+
+        if (fillingCircle != null)
+            fillingCircle.fillAmount = 0f;
+
         if (interactable.InteractionTime > 0)
         {
             float elapsedTime = 0f;
             while (elapsedTime < interactable.InteractionTime)
             {
-                float fillAmount = elapsedTime / interactable.InteractionTime;
-                fillingCircle.fillAmount = fillAmount;
+                if (fillingCircle != null)
+                {
+                    float fillAmount = elapsedTime / interactable.InteractionTime;
+                    fillingCircle.fillAmount = fillAmount;
+                }
+
                 elapsedTime += Time.deltaTime;
                 yield return null;
             }
-            fillingCircle.fillAmount = 1f; // Garante que a imagem esteja preenchida completamente
+
+            if (fillingCircle != null)
+                fillingCircle.fillAmount = 1f;
         }
 
-        if (interactableObject.GetComponent<ItemPickable>() != null)
+        // Complete the interaction
+        var itemPickable = interactableObject.GetComponent<ItemPickable>();
+        if (itemPickable != null && inventoryManager != null)
         {
             inventoryManager.ItemPicked(interactableObject);
         }
         else
         {
             interactable.Interact();
-
         }
-        interactionUI.gameObject.SetActive(false);
-        fillingCircle.fillAmount = 1f;
-    }
 
+        if (interactionUI != null)
+            interactionUI.SetActive(false);
+
+        if (fillingCircle != null)
+            fillingCircle.fillAmount = 1f;
+    }
 }

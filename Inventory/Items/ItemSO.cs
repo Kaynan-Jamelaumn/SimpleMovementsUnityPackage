@@ -1,4 +1,5 @@
 using UnityEngine;
+
 public enum ItemType
 {
     Potion,
@@ -7,8 +8,8 @@ public enum ItemType
     Helmet,
     Armor,
     Boots,
-
 }
+
 [CreateAssetMenu(fileName = "Item", menuName = "Scriptable Objects/Item/ItemSO")]
 public abstract class ItemSO : ScriptableObject
 {
@@ -31,7 +32,7 @@ public abstract class ItemSO : ScriptableObject
     [Header("Durability")]
     [SerializeField] protected int maxDurability;
     [SerializeField] protected int durability = 1;
-    [SerializeField] protected int durabilityReductionPerUse=1;
+    [SerializeField] protected int durabilityReductionPerUse = 1;
     [SerializeField] protected bool shouldBeDestroyedOn0UsesLeft = true;
 
     // Cooldown
@@ -80,25 +81,75 @@ public abstract class ItemSO : ScriptableObject
     public Vector3 Position => position;
     public Vector3 Rotation => rotation;
     public Vector3 Scale => scale;
+    public AnimationClip UseAnimation => useAnimation;
+    public AudioClip UseAudioClip => useAudioClip;
+    public ParticleSystem UseParticles => useParticles;
 
-    //-16.8 56.58 0.067 -0.04 0.659 
-    public virtual void ApplyEquippedStats(bool shouldApply = false, PlayerStatusController statusController = null)
-    {
+    public virtual void ApplyEquippedStats(bool shouldApply = false, PlayerStatusController statusController = null) { }
 
-    }
-
+    // Base UseItem method for non-weapon items
     public virtual void UseItem(GameObject player, PlayerStatusController statusController)
     {
-
-        InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
-
+        // Only apply interaction effects for non-weapon items
+        if (itemType != ItemType.Weapon)
+        {
+            ApplyItemEffects(player);
+        }
     }
 
+    // Weapon-specific UseItem method (will be overridden by WeaponSO)
     public virtual void UseItem(GameObject player, PlayerStatusController statusController, WeaponController weaponController, AttackType attackType = AttackType.Normal)
     {
-        InteractionEffects.ApplyEffects(prefab, useAnimation, useAudioClip, useParticles);
-
-
+        // Default implementation for non-weapon items
+        UseItem(player, statusController);
     }
 
+    // Protected method to apply item effects (for non-weapon items)
+    protected virtual void ApplyItemEffects(GameObject player)
+    {
+        // Apply audio effects
+        if (useAudioClip != null)
+        {
+            AudioSource audioSource = player.GetComponent<AudioSource>();
+            if (audioSource == null)
+            {
+                // Try to get from Player component
+                var playerComponent = player.GetComponent<Player>();
+                audioSource = playerComponent?.PlayerAudioSource;
+            }
+
+            if (audioSource != null)
+            {
+                audioSource.PlayOneShot(useAudioClip);
+            }
+        }
+
+        // Apply particle effects
+        if (useParticles != null)
+        {
+            var particles = Instantiate(useParticles, player.transform.position, player.transform.rotation);
+            particles.Play();
+        }
+
+        // For animation, we'll let individual item types handle their own animation logic
+        // since weapons use the PlayerAnimationController and other items might use different systems
+        ApplyItemAnimation(player);
+    }
+
+    // Virtual method for animation handling - can be overridden by subclasses
+    protected virtual void ApplyItemAnimation(GameObject player)
+    {
+        if (useAnimation != null)
+        {
+            // For non-weapon items, you might want to use a different animation system
+            // or trigger specific animations through the PlayerAnimationController
+            var animController = player.GetComponent<PlayerAnimationController>();
+            if (animController != null)
+            {
+                // You can create a method in PlayerAnimationController to handle item use animations
+                // animController.PlayItemUseAnimation(useAnimation);
+                Debug.Log($"Playing item use animation: {useAnimation.name}");
+            }
+        }
+    }
 }

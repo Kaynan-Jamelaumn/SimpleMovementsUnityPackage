@@ -1,17 +1,7 @@
 ﻿using UnityEngine;
 
-/// <summary>
-/// Static class that provides methods to apply various interaction effects to a GameObject.
-/// </summary>
 public static class InteractionEffects
 {
-    /// <summary>
-    /// Applies animation, audio, and particle effects to the specified GameObject.
-    /// </summary>
-    /// <param name="gameObject">The GameObject to apply the effects to.</param>
-    /// <param name="useAnimation">The animation clip to play.</param>
-    /// <param name="useAudioClip">The audio clip to play.</param>
-    /// <param name="useParticles">The particle system to play.</param>
     public static void ApplyEffects(GameObject gameObject, AnimationClip useAnimation, AudioClip useAudioClip, ParticleSystem useParticles)
     {
         ApplyAnimation(gameObject, useAnimation);
@@ -19,58 +9,79 @@ public static class InteractionEffects
         ApplyParticles(gameObject, useParticles);
     }
 
-    /// <summary>
-    /// Applies an animation effect to the specified GameObject.
-    /// </summary>
-    /// <param name="gameObject">The GameObject to apply the animation to.</param>
-    /// <param name="useAnimation">The animation clip to play.</param>
     private static void ApplyAnimation(GameObject gameObject, AnimationClip useAnimation)
     {
-        if (useAnimation != null)
+        if (useAnimation == null) return;
+
+        // First try to use the modern Animator system
+        var animController = gameObject.GetComponent<PlayerAnimationController>();
+        if (animController != null)
         {
-            Animation animation = gameObject.GetComponent<Animation>();
-            if (animation == null)
-            {
-                animation = gameObject.AddComponent<Animation>();
-            }
+            // Use the PlayerAnimationController for consistent animation handling
+            animController.PlayAnimation(useAnimation);
+            return;
+        }
+
+        // Fallback to legacy Animation component (for non-player objects)
+        Animation animation = gameObject.GetComponent<Animation>();
+        if (animation == null)
+        {
+            animation = gameObject.AddComponent<Animation>();
+        }
+
+        // Check if the animation clip is already added to the Animation component
+        if (animation.GetClip(useAnimation.name) == null)
+        {
+            // Add the clip to the Animation component
+            animation.AddClip(useAnimation, useAnimation.name);
+        }
+
+        // Now play the animation
+        if (animation.GetClip(useAnimation.name) != null)
+        {
             animation.Play(useAnimation.name);
+        }
+        else
+        {
+            Debug.LogWarning($"Failed to add animation clip '{useAnimation.name}' to Animation component on {gameObject.name}");
         }
     }
 
-    /// <summary>
-    /// Applies an audio effect to the specified GameObject.
-    /// </summary>
-    /// <param name="gameObject">The GameObject to apply the audio to.</param>
-    /// <param name="useAudioClip">The audio clip to play.</param>
     private static void ApplyAudio(GameObject gameObject, AudioClip useAudioClip)
     {
-        if (useAudioClip != null)
+        if (useAudioClip == null) return;
+
+        AudioSource audioSource = gameObject.GetComponent<AudioSource>();
+        if (audioSource == null)
         {
-            AudioSource audioSource = gameObject.GetComponent<AudioSource>();
+            // Try to get from Player component if available
+            var player = gameObject.GetComponent<Player>();
+            audioSource = player?.PlayerAudioSource;
+
+            // If still null, add one
             if (audioSource == null)
             {
                 audioSource = gameObject.AddComponent<AudioSource>();
             }
-            audioSource.clip = useAudioClip;
-            audioSource.Play();
         }
+
+        // Use PlayOneShot instead of setting clip and playing to avoid conflicts
+        audioSource.PlayOneShot(useAudioClip);
     }
 
-    /// <summary>
-    /// Applies a particle effect to the specified GameObject.
-    /// </summary>
-    /// <param name="gameObject">The GameObject to apply the particles to.</param>
-    /// <param name="useParticles">The particle system to play.</param>
     private static void ApplyParticles(GameObject gameObject, ParticleSystem useParticles)
     {
-        if (useParticles != null)
+        if (useParticles == null) return;
+
+        // Instantiate the particle system as a separate object instead of trying to copy it
+        var particles = Object.Instantiate(useParticles, gameObject.transform.position, gameObject.transform.rotation);
+        particles.transform.SetParent(gameObject.transform);
+        particles.Play();
+
+        // Optionally destroy the particle system after it finishes
+        if (!particles.main.loop)
         {
-            ParticleSystem prefabParticles = gameObject.GetComponent<ParticleSystem>();
-            if (prefabParticles == null)
-            {
-                prefabParticles = gameObject.AddComponent<ParticleSystem>();
-            }
-            prefabParticles.Play();
+            Object.Destroy(particles.gameObject, particles.main.duration + particles.main.startLifetime.constantMax);
         }
     }
 }

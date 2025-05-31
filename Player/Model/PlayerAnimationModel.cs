@@ -36,53 +36,266 @@ public class PlayerAnimationModel : MonoBehaviour
         InitializeAnimationHashes();
     }
 
-    private void InitializeAnimationHashes()
+    public void InitializeAnimationHashes()
     {
+        animationHashes.Clear();
+
         // Only cache parameters that actually exist in the Animator Controller
-        // This prevents errors when parameters don't exist
-        if (anim == null) return;
+        if (anim == null)
+        {
+            Debug.LogError("Animator is null in PlayerAnimationModel!");
+            return;
+        }
+
+        if (anim.runtimeAnimatorController == null)
+        {
+            Debug.LogWarning("No RuntimeAnimatorController assigned to Animator!");
+            return;
+        }
 
         string[] parameterNames = {
-            "IsWalking", "IsRunning", "IsCrouching", "IsDashing",
-            "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
-            "MovementX", "MovementZ", "MovementSpeed", "AirTime",
-            "AttackCombo", "AttackTrigger", "RollTrigger", "DashTrigger",
-            "JumpTrigger", "LandTrigger", "HitTrigger", "DeathTrigger"
-        };
+        // Movement parameters
+        "IsWalking", "IsRunning", "IsCrouching", "IsDashing",
+        "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
+        "MovementX", "MovementZ", "MovementSpeed", "AirTime",
+        
+        // Combat parameters
+        "AttackCombo", "AttackTrigger", "LightAttackTrigger",
+        "HeavyAttackTrigger", "ChargedAttackTrigger", "SpecialAttackTrigger",
+        
+        // Action parameters
+        "RollTrigger", "DashTrigger", "JumpTrigger", "LandTrigger",
+        "HitTrigger", "DeathTrigger",
+        
+        // State parameters
+        "IsInputLocked", "IsBlocking", "IsStunned"
+    };
 
+        int cachedCount = 0;
         foreach (string paramName in parameterNames)
         {
             if (HasParameter(paramName))
             {
                 animationHashes[paramName] = Animator.StringToHash(paramName);
+                cachedCount++;
             }
         }
-    }
 
+        if (debugAnimations)
+            Debug.Log($"Cached {cachedCount} animation parameters out of {parameterNames.Length} total parameters");
+    }
     private bool HasParameter(string paramName)
     {
-        if (anim == null) return false;
+        if (anim == null || anim.runtimeAnimatorController == null) return false;
 
-        foreach (AnimatorControllerParameter param in anim.parameters)
+        try
         {
-            if (param.name == paramName)
-                return true;
+            foreach (AnimatorControllerParameter param in anim.parameters)
+            {
+                if (param.name == paramName)
+                    return true;
+            }
         }
+        catch (System.Exception e)
+        {
+            if (debugAnimations)
+                Debug.LogWarning($"Error checking parameter '{paramName}': {e.Message}");
+        }
+
         return false;
     }
 
     public int GetAnimationHash(string parameterName)
     {
+        if (string.IsNullOrEmpty(parameterName)) return -1;
+
         if (animationHashes.TryGetValue(parameterName, out int hash))
         {
             return hash;
         }
 
-        if (debugAnimations)
-            Debug.LogWarning($"Animation parameter '{parameterName}' not found in hash cache or doesn't exist in Animator Controller!");
+        // Try to add the parameter if it exists but wasn't cached
+        if (HasParameter(parameterName))
+        {
+            hash = Animator.StringToHash(parameterName);
+            animationHashes[parameterName] = hash;
 
-        // Return -1 to indicate parameter doesn't exist
+            if (debugAnimations)
+                Debug.Log($"Late-cached animation parameter: {parameterName}");
+
+            return hash;
+        }
+
+        if (debugAnimations)
+            Debug.LogWarning($"Animation parameter '{parameterName}' not found in Animator Controller!");
+
         return -1;
+    }
+
+    public bool SetParameterSafe(string parameterName, object value)
+    {
+        int hash = GetAnimationHash(parameterName);
+        if (hash == -1) return false;
+
+        try
+        {
+            // Get the parameter type
+            AnimatorControllerParameter param = null;
+            foreach (var p in anim.parameters)
+            {
+                if (p.name == parameterName)
+                {
+                    param = p;
+                    break;
+                }
+            }
+
+            if (param == null) return false;
+
+            // Set based on parameter type
+            switch (param.type)
+            {
+                case AnimatorControllerParameterType.Bool:
+                    if (value is bool boolVal)
+                        anim.SetBool(hash, boolVal);
+                    else
+                        return false;
+                    break;
+
+                case AnimatorControllerParameterType.Float:
+                    if (value is float floatVal)
+                        anim.SetFloat(hash, floatVal);
+                    else if (value is int intVal)
+                        anim.SetFloat(hash, intVal);
+                    else
+                        return false;
+                    break;
+
+                case AnimatorControllerParameterType.Int:
+                    if (value is int integerVal)
+                        anim.SetInteger(hash, integerVal);
+                    else if (value is float floatAsInt)
+                        anim.SetInteger(hash, Mathf.RoundToInt(floatAsInt));
+                    else
+                        return false;
+                    break;
+
+                case AnimatorControllerParameterType.Trigger:
+                    anim.SetTrigger(hash);
+                    break;
+
+                default:
+                    return false;
+            }
+
+            return true;
+        }
+        catch (System.Exception e)
+        {
+            if (debugAnimations)
+                Debug.LogError($"Error setting parameter '{parameterName}': {e.Message}");
+            return false;
+        }
+    }
+
+    // NEW METHOD - Get parameter value safely
+    public T GetParameterSafe<T>(string parameterName, T defaultValue = default(T))
+    {
+        int hash = GetAnimationHash(parameterName);
+        if (hash == -1) return defaultValue;
+
+        try
+        {
+            if (typeof(T) == typeof(bool))
+            {
+                return (T)(object)anim.GetBool(hash);
+            }
+            else if (typeof(T) == typeof(float))
+            {
+                return (T)(object)anim.GetFloat(hash);
+            }
+            else if (typeof(T) == typeof(int))
+            {
+                return (T)(object)anim.GetInteger(hash);
+            }
+        }
+        catch (System.Exception e)
+        {
+            if (debugAnimations)
+                Debug.LogError($"Error getting parameter '{parameterName}': {e.Message}");
+        }
+
+        return defaultValue;
+    }
+
+    // NEW METHOD - Validate animation state
+    public bool ValidateAnimationState()
+    {
+        if (anim == null)
+        {
+            Debug.LogError("Animator component is missing!");
+            return false;
+        }
+
+        if (anim.runtimeAnimatorController == null)
+        {
+            Debug.LogError("RuntimeAnimatorController is missing!");
+            return false;
+        }
+
+        bool isValid = true;
+
+        // Check if critical parameters exist
+        string[] criticalParams = { "IsAttacking", "MovementX", "MovementZ" };
+        foreach (string param in criticalParams)
+        {
+            if (!HasAnimationParameter(param))
+            {
+                Debug.LogWarning($"Critical animation parameter '{param}' is missing!");
+                isValid = false;
+            }
+        }
+
+        return isValid;
+    }
+
+    // NEW METHOD - Reset all animation parameters to default
+    public void ResetAllParameters()
+    {
+        if (anim == null) return;
+
+        try
+        {
+            foreach (var param in anim.parameters)
+            {
+                switch (param.type)
+                {
+                    case AnimatorControllerParameterType.Bool:
+                        anim.SetBool(param.name, false);
+                        break;
+                    case AnimatorControllerParameterType.Float:
+                        anim.SetFloat(param.name, 0f);
+                        break;
+                    case AnimatorControllerParameterType.Int:
+                        anim.SetInteger(param.name, 0);
+                        break;
+                        // Note: Triggers reset automatically after being consumed
+                }
+            }
+
+            // Reset internal state
+            isAttacking = false;
+            isDashing = false;
+            isRolling = false;
+            isInputLocked = false;
+
+            if (debugAnimations)
+                Debug.Log("All animation parameters reset to default values");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error resetting animation parameters: {e.Message}");
+        }
     }
     public bool HasAnimationParameter(string parameterName)
     {
@@ -92,19 +305,78 @@ public class PlayerAnimationModel : MonoBehaviour
 
     public bool GetAnimationBool(string parameterName)
     {
-        if (HasAnimationParameter(parameterName))
-        {
-            int hash = GetAnimationHash(parameterName);
-            return anim.GetBool(hash);
-        }
-        return false;
+        return GetParameterSafe<bool>(parameterName, false);
     }
 
-    public bool IsAttacking { get => isAttacking; set => isAttacking = value; }
-    public bool IsDashing { get => isDashing; set => isDashing = value; }
-    public bool IsRolling { get => isRolling; set => isRolling = value; }
-    public bool IsInputLocked { get => isInputLocked; set => isInputLocked = value; }
+    public float GetAnimationFloat(string parameterName)
+    {
+        return GetParameterSafe<float>(parameterName, 0f);
+    }
+
+    // NEW METHOD - Get animation integer
+    public int GetAnimationInteger(string parameterName)
+    {
+        return GetParameterSafe<int>(parameterName, 0);
+    }
+
+    public bool IsAttacking
+    {
+        get => isAttacking;
+        set
+        {
+            if (isAttacking != value)
+            {
+                isAttacking = value;
+                if (debugAnimations)
+                    Debug.Log($"IsAttacking changed to: {value}");
+            }
+        }
+    }
+
+    public bool IsDashing
+    {
+        get => isDashing;
+        set
+        {
+            if (isDashing != value)
+            {
+                isDashing = value;
+                if (debugAnimations)
+                    Debug.Log($"IsDashing changed to: {value}");
+            }
+        }
+    }
+
+    public bool IsRolling
+    {
+        get => isRolling;
+        set
+        {
+            if (isRolling != value)
+            {
+                isRolling = value;
+                if (debugAnimations)
+                    Debug.Log($"IsRolling changed to: {value}");
+            }
+        }
+    }
+
+    public bool IsInputLocked
+    {
+        get => isInputLocked;
+        set
+        {
+            if (isInputLocked != value)
+            {
+                isInputLocked = value;
+                if (debugAnimations)
+                    Debug.Log($"IsInputLocked changed to: {value}");
+            }
+        }
+    }
+
     public float TransitionSpeed { get => transitionSpeed; set => transitionSpeed = value; }
     public bool DebugAnimations { get => debugAnimations; set => debugAnimations = value; }
     public Animator Anim { get => anim; set => anim = value; }
+
 }
