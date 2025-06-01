@@ -6,39 +6,22 @@ using UnityEngine.Assertions;
 
 public class PlayerStatusController : BaseStatusController
 {
-    [Header("Models")]
-    [Tooltip("Handles player movement mechanics.")]
     [SerializeField] private PlayerMovementModel movementModel;
-
-    [Tooltip("Manages the player's stamina.")]
     [SerializeField] private StaminaManager staminaManager;
-
-    [Tooltip("Manages the player's health.")]
     [SerializeField] private HealthManager hpManager;
-
-    [Tooltip("Tracks the player's food consumption and hunger levels.")]
     [SerializeField] private HungerManager hungerManager;
-
-    [Tooltip("Tracks the player's drink consumption and thirst levels.")]
     [SerializeField] private ThirstManager thirstManager;
-
-    [Tooltip("Tracks and manages the player's carried weight.")]
     [SerializeField] private WeightManager weightManager;
-
-    [Tooltip("Manages player experience and skill points.")]
     [SerializeField] private ExperienceManager xpManager;
-
-    [Tooltip("Manages the player's speed.")]
     [SerializeField] private SpeedManager speedManager;
-
-    [Header("Controllers")]
-    [Tooltip("Handles player rolling mechanics.")]
     [SerializeField] private PlayerRollModel rollModel;
-
-    [Tooltip("Handles player dashing mechanics.")]
     [SerializeField] private PlayerDashModel dashModel;
+    [SerializeField] private SleepManager sleepManager;
+    [SerializeField] private SanityManager sanityManager;
+    [SerializeField] private ManaManager manaManager;
+    [SerializeField] private BodyHeatManager bodyHeatManager;
+    [SerializeField] private OxygenManager oxygenManager;
 
-    [Tooltip("Controller for player rolling actions.")]
     //[SerializeField] private PlayerRollController rollController;
 
     //[Tooltip("Controller for player dashing actions.")]
@@ -82,6 +65,11 @@ public class PlayerStatusController : BaseStatusController
     public ThirstManager ThirstManager => thirstManager;
     public WeightManager WeightManager => weightManager;
     public SpeedManager SpeedManager => speedManager;
+    public SleepManager SleepManager => sleepManager;
+    public SanityManager SanityManager => sanityManager;
+    public ManaManager ManaManager => manaManager;
+    public BodyHeatManager BodyHeatManager => bodyHeatManager;
+    public OxygenManager OxygenManager => oxygenManager;
     public PlayerRollModel RollModel => rollModel;
     public PlayerDashModel DashModel => dashModel;
     //public PlayerRollController RollController => rollController;
@@ -99,6 +87,11 @@ public class PlayerStatusController : BaseStatusController
         speedManager = this.CheckComponent(speedManager, nameof(speedManager));
         rollModel = this.CheckComponent(rollModel, nameof(rollModel));
         dashModel = this.CheckComponent(dashModel, nameof(dashModel));
+        sleepManager = this.CheckComponent(sleepManager, nameof(sleepManager));
+        sanityManager = this.CheckComponent(sanityManager, nameof(sanityManager));
+        manaManager = this.CheckComponent(manaManager, nameof(manaManager));
+        bodyHeatManager = this.CheckComponent(bodyHeatManager, nameof(bodyHeatManager));
+        oxygenManager = this.CheckComponent(oxygenManager, nameof(oxygenManager));
         //rollController = this.CheckComponent(rollController, nameof(rollController));
         //dashController = this.CheckComponent(dashController, nameof(dashController));
     }
@@ -122,6 +115,10 @@ public class PlayerStatusController : BaseStatusController
         hungerManager?.UpdateFoodBar();
         thirstManager?.UpdateDrinkBar();
         weightManager?.UpdateWeightBar();
+        sleepManager?.UpdateSleepBar();
+        manaManager?.UpdateManaBar();
+        bodyHeatManager?.UpdateBodyHeatBar();
+        oxygenManager?.UpdateOxygenBar();
     }
 
     private void OnDestroy()
@@ -156,7 +153,7 @@ public class PlayerStatusController : BaseStatusController
 
         hpManager.MaxValue = PlayerClass.health;
         staminaManager.MaxValue = PlayerClass.stamina;
-        speedManager.BaseSpeed = PlayerClass.speed; // Now using SpeedManager
+        speedManager.BaseSpeed = PlayerClass.speed; 
         hungerManager.MaxValue = PlayerClass.hunger;
         thirstManager.MaxValue = PlayerClass.thirst;
     }
@@ -186,10 +183,15 @@ public class PlayerStatusController : BaseStatusController
         {
             { "health", () => hpManager.ModifyMaxValue(hpManager.StatusIncrementValue) },
             { "stamina", () => staminaManager.ModifyMaxValue(staminaManager.StatusIncrementValue) },
-            { "speed", () => speedManager.ModifyBaseSpeed(speedManager.StatusIncrementValue) }, // Now using SpeedManager
+            { "speed", () => speedManager.ModifyBaseSpeed(speedManager.StatusIncrementValue) },
             { "hunger", () => hungerManager.ModifyMaxValue(hungerManager.StatusIncrementValue) },
             { "thirst", () => thirstManager.ModifyMaxValue(thirstManager.StatusIncrementValue) },
-            { "weight", () => weightManager.ModifyMaxValue(weightManager.StatusIncrementValue) }
+            { "weight", () => weightManager.ModifyMaxValue(weightManager.StatusIncrementValue) },
+            { "sleep", () => sleepManager.ModifyMaxValue(sleepManager.StatusIncrementValue) },
+            { "sanity", () => sanityManager.ModifyMaxValue(sanityManager.StatusIncrementValue) },
+            { "mana", () => manaManager.ModifyMaxValue(manaManager.StatusIncrementValue) },
+            { "bodyheat", () => bodyHeatManager.ModifyMaxValue(bodyHeatManager.StatusIncrementValue) },
+            { "oxygen", () => oxygenManager.ModifyMaxValue(oxygenManager.StatusIncrementValue) }
         };
     }
 
@@ -211,6 +213,11 @@ public class PlayerStatusController : BaseStatusController
         hungerManager.StopAllEffectsByType(hungerManager.FoodEffectRoutines, isBuff);
         thirstManager.StopAllEffectsByType(thirstManager.DrinkEffectRoutines, isBuff);
         speedManager.StopAllEffectsByType(speedManager.SpeedEffectRoutines, isBuff);
+        sleepManager.StopAllEffectsByType(sleepManager.SleepEffectRoutines, isBuff);
+        sanityManager.StopAllEffectsByType(sanityManager.SanityEffectRoutines, isBuff);
+        manaManager.StopAllEffectsByType(manaManager.ManaEffectRoutines, isBuff);
+        bodyHeatManager.StopAllEffectsByType(bodyHeatManager.BodyHeatEffectRoutines, isBuff);
+        oxygenManager.StopAllEffectsByType(oxygenManager.OxygenEffectRoutines, isBuff);
     }
 
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
@@ -242,7 +249,20 @@ public class PlayerStatusController : BaseStatusController
             { AttackEffectType.StaminaRegeneration, (effect, amount, time, cooldown) => staminaManager.AddStaminaRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.HpRegeneration, (effect, amount, time, cooldown) => hpManager.AddHpRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.SpeedFactor, (effect, amount, time, cooldown) => speedManager.AddSpeedFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }, // Added Speed factor effect
-            { AttackEffectType.SpeedMultiplier, (effect, amount, time, cooldown) => speedManager.AddSpeedMultiplierEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) } // Added Speed multiplier effect
+            { AttackEffectType.SpeedMultiplier, (effect, amount, time, cooldown) => speedManager.AddSpeedMultiplierEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }, // Added Speed multiplier effect
+            { AttackEffectType.Sleep, CreateHandler(sleepManager.AddCurrentValue, sleepManager.AddSleepEffect) },
+            { AttackEffectType.SleepFactor, (effect, amount, time, cooldown) => sleepManager.AddSleepEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.Sanity, CreateHandler(sanityManager.AddCurrentValue, sanityManager.AddSanityEffect) },
+            { AttackEffectType.SanityHealFactor, (effect, amount, time, cooldown) => sanityManager.AddSanityHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.SanityDamageFactor, (effect, amount, time, cooldown) => sanityManager.AddSanityDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.Mana, CreateHandler(manaManager.AddCurrentValue, manaManager.AddManaEffect) },
+            { AttackEffectType.ManaRegeneration, (effect, amount, time, cooldown) => manaManager.AddManaRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.ManaHealFactor, (effect, amount, time, cooldown) => manaManager.AddManaHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.ManaDamageFactor, (effect, amount, time, cooldown) => manaManager.AddManaDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.BodyHeat, CreateHandler(bodyHeatManager.ModifyBodyHeat, bodyHeatManager.AddBodyHeatEffect) },
+            { AttackEffectType.BodyHeatFactor, (effect, amount, time, cooldown) => bodyHeatManager.AddBodyHeatEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.Oxygen, CreateHandler((amount) => oxygenManager.AddCurrentValue(amount), oxygenManager.AddOxygenEffect) },
+            { AttackEffectType.OxygenFactor, (effect, amount, time, cooldown) => oxygenManager.AddOxygenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }
         };
     }
 
@@ -295,5 +315,53 @@ public class PlayerStatusController : BaseStatusController
         {
             effectAction?.Invoke(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
         }
+    }
+
+    public void StartSleeping()
+    {
+        sleepManager?.StartSleeping();
+    }
+    public void StopSleeping()
+    {
+        sleepManager?.StopSleeping();
+    }
+    public void SetEnvironmentalTemperature(float temperature)
+    {
+        bodyHeatManager?.SetEnvironmentalTemperature(temperature);
+    }
+    public void SetUnderwater(bool underwater)
+    {
+        oxygenManager?.SetUnderwater(underwater);
+    }
+    public void SetHighAltitude(bool highAltitude)
+    {
+        oxygenManager?.SetHighAltitude(highAltitude);
+    }
+    public void SetPoorVentilation(bool poorVentilation)
+    {
+        oxygenManager?.SetPoorVentilation(poorVentilation);
+    }
+    public void SetOxygenTank(bool hasOxygen, float tankAmount = 0f)
+    {
+        oxygenManager?.SetOxygenTank(hasOxygen, tankAmount);
+    }
+
+    public SleepManager.SleepinessLevel GetSleepinessLevel()
+    {
+        return sleepManager?.CurrentSleepinessLevel ?? SleepManager.SleepinessLevel.Rested;
+    }
+
+    public SanityManager.SanityLevel GetSanityLevel()
+    {
+        return sanityManager?.CurrentSanityLevel ?? SanityManager.SanityLevel.Stable;
+    }
+    public BodyHeatManager.TemperatureLevel GetTemperatureLevel()
+    {
+        return bodyHeatManager?.CurrentTemperatureLevel ?? BodyHeatManager.TemperatureLevel.Normal;
+    }
+
+    public OxygenManager.OxygenEnvironment GetOxygenEnvironment()
+    {
+        return oxygenManager?.CurrentEnvironment ?? OxygenManager.OxygenEnvironment.Normal;
     }
 }

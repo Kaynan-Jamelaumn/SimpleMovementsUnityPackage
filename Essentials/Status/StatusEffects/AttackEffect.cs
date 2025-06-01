@@ -20,7 +20,22 @@ public enum AttackEffectType
     HpDamageFactor,
     StaminaDamageFactor,
     SpeedFactor,        // Modifies the increment/decrement factor for speed effects
-    SpeedMultiplier     // Modifies the running/crouching multipliers
+    SpeedMultiplier,    // Modifies the running/crouching multipliers
+
+    // New status effects
+    Sleep,
+    SleepFactor,
+    Sanity,
+    SanityHealFactor,
+    SanityDamageFactor,
+    Mana,
+    ManaRegeneration,
+    ManaHealFactor,
+    ManaDamageFactor,
+    BodyHeat,
+    BodyHeatFactor,
+    Oxygen,
+    OxygenFactor
 }
 
 /// <summary>
