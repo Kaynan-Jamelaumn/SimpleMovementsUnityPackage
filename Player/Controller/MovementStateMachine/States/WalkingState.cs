@@ -9,8 +9,7 @@ public class WalkingState : MovementState
     }
     public override void EnterState()
     {
-        Context.MovementModel.CurrentSpeed = Context.MovementModel.Speed;
-
+        Context.MovementModel.CurrentSpeed = Context.StatusController.SpeedManager.Speed;
     }
     public override void ExitState()
 

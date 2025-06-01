@@ -8,7 +8,8 @@ public class RunningState : MovementState
     }
     public override void EnterState()
     {
-        Context.MovementModel.CurrentSpeed = Context.MovementModel.Speed * Context.MovementModel.SpeedWhileRunningMultiplier;
+        Context.MovementModel.CurrentSpeed = Context.StatusController.SpeedManager.GetSpeedWithMultiplier(
+            Context.StatusController.SpeedManager.SpeedWhileRunningMultiplier);
 
         if (Context.MovementModel.ShouldConsumeStamina)
         {

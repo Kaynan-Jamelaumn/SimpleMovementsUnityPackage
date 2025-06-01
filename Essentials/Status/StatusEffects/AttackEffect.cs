@@ -19,6 +19,8 @@ public enum AttackEffectType
     StaminaHealFactor,
     HpDamageFactor,
     StaminaDamageFactor,
+    SpeedFactor,        // Modifies the increment/decrement factor for speed effects
+    SpeedMultiplier     // Modifies the running/crouching multipliers
 }
 
 /// <summary>

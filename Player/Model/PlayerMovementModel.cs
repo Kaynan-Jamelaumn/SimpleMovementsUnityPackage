@@ -18,10 +18,8 @@ public class PlayerMovementModel : MonoBehaviour
     [SerializeField] private PlayerState playerState = PlayerState.Idle;
 
     [Header("Movement Config")]
-    [SerializeField] private float speed;
     [SerializeField] public float SpeedIncrementFactor = 1;
-    [SerializeField] private float speedWhileRunningMultiplier;
-    [SerializeField] private float speedWhileCrouchingMultiplier;
+
     [SerializeField] private float amountOfSprintStaminaCost;
     [SerializeField] private float amountOfCrouchStaminaCost;
 
@@ -50,9 +48,7 @@ public class PlayerMovementModel : MonoBehaviour
         set => playerState = value;
     }
 
-    public float Speed { get => speed; set => speed = value; }
-    public float SpeedWhileRunningMultiplier { get => speedWhileRunningMultiplier; set => speedWhileRunningMultiplier = value; }
-    public float SpeedWhileCrouchingMultiplier { get => speedWhileCrouchingMultiplier; set => speedWhileCrouchingMultiplier = value; }
+
     public float AmountOfSprintStaminaCost { get => amountOfSprintStaminaCost; set => amountOfSprintStaminaCost = value; }
     public float AmountOfCrouchStaminaCost { get => amountOfCrouchStaminaCost; set => amountOfCrouchStaminaCost = value; }
     public float Gravity { get => gravity; set => gravity = value; }

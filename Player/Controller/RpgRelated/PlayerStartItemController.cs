@@ -17,15 +17,11 @@ public class PlayerStartItemController : MonoBehaviour
     [SerializeField] private List<ClassItem> classItemsList;
     [SerializeField] private InventoryManager inventoryManager;
 
-    private void Start() 
-    { 
-        ValidateAsignments();
+    private void Awake() 
+    {
+        inventoryManager = this.CheckComponent(inventoryManager, nameof(inventoryManager));
     }
 
-    private void ValidateAsignments()
-    {
-        Assert.IsNotNull(inventoryManager, "InventoryManager is not assigned in inventoryManager.");
-    }
 
 
 
