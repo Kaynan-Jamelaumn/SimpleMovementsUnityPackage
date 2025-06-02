@@ -74,7 +74,7 @@ public class EquippableSO : ItemSO
         effectActions = new Dictionary<EquippableEffectType, System.Action<float>>()
         {
             { EquippableEffectType.MaxWeight, amount => statusController.WeightManager.ModifyMaxWeight(amount) },
-            { EquippableEffectType.Speed, amount => statusController.ModifySpeed(amount) },
+            { EquippableEffectType.Speed, amount => statusController.SpeedManager.ModifyBaseSpeed(amount) },
             { EquippableEffectType.MaxStamina, amount => statusController.StaminaManager.ModifyMaxValue(amount) },
             { EquippableEffectType.StaminaRegeneration, amount => statusController.StaminaManager.ModifyIncrementValue(amount) },
             { EquippableEffectType.StaminaHealFactor, amount => statusController.StaminaManager.ModifyIncrementFactor(amount) },

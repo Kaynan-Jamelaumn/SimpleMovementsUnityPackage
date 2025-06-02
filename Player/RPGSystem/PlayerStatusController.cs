@@ -6,29 +6,37 @@ using UnityEngine.Assertions;
 
 public class PlayerStatusController : BaseStatusController
 {
+    [Header("Core References")]
     [SerializeField] private PlayerMovementModel movementModel;
+    [SerializeField] private PlayerRollModel rollModel;
+    [SerializeField] private PlayerDashModel dashModel;
+
+    [Header("Status Managers")]
     [SerializeField] private StaminaManager staminaManager;
     [SerializeField] private HealthManager hpManager;
     [SerializeField] private HungerManager hungerManager;
     [SerializeField] private ThirstManager thirstManager;
     [SerializeField] private WeightManager weightManager;
-    [SerializeField] private ExperienceManager xpManager;
     [SerializeField] private SpeedManager speedManager;
-    [SerializeField] private PlayerRollModel rollModel;
-    [SerializeField] private PlayerDashModel dashModel;
     [SerializeField] private SleepManager sleepManager;
     [SerializeField] private SanityManager sanityManager;
     [SerializeField] private ManaManager manaManager;
     [SerializeField] private BodyHeatManager bodyHeatManager;
     [SerializeField] private OxygenManager oxygenManager;
 
-    //[SerializeField] private PlayerRollController rollController;
+    [Header("System Managers")]
+    [SerializeField] private ExperienceManager xpManager;
+    [SerializeField] private TraitManager traitManager;
 
-    //[Tooltip("Controller for player dashing actions.")]
-    //[SerializeField] private PlayerDashController dashController;
+    [Header("Player Class")]
+    [SerializeField] private PlayerClass currentPlayerClass;
 
+    [Header("Starting Setup")]
+    [SerializeField] private bool autoApplyClassStats = true;
+    [SerializeField] private bool autoApplyStartingTraits = true;
+
+    // Effect handlers for attack effects
     private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> effectHandlers;
-
     private Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>> EffectHandlers
     {
         get
@@ -41,23 +49,14 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
-    private Dictionary<string, Action> upgradeStatHandlers;
+    // Events
+    public event Action<PlayerClass> OnPlayerClassChanged;
+    public event Action OnStatsInitialized;
 
-    private Dictionary<string, Action> UpgradeStatHandlers
-    {
-        get
-        {
-            if (upgradeStatHandlers == null)
-            {
-                InitializeUpgradeStatHandlers();
-            }
-            return upgradeStatHandlers;
-        }
-    }
-
-    public BasePlayerClass PlayerClass { get; private set; }
-
+    // Properties
+    public PlayerClass CurrentPlayerClass => currentPlayerClass;
     public ExperienceManager XPManager => xpManager;
+    public TraitManager TraitManager => traitManager;
     public PlayerMovementModel MovementModel => movementModel;
     public StaminaManager StaminaManager => staminaManager;
     public HealthManager HpManager => hpManager;
@@ -72,10 +71,53 @@ public class PlayerStatusController : BaseStatusController
     public OxygenManager OxygenManager => oxygenManager;
     public PlayerRollModel RollModel => rollModel;
     public PlayerDashModel DashModel => dashModel;
-    //public PlayerRollController RollController => rollController;
-    //public PlayerDashController DashController => dashController;
 
-    protected void Awake()
+    private void Awake()
+    {
+        // Cache components
+        CacheComponents();
+
+        // Initialize trait manager if not assigned
+        if (traitManager == null)
+            traitManager = GetComponent<TraitManager>();
+    }
+
+    private void Start()
+    {
+        // Subscribe to XP manager events
+        if (xpManager != null)
+        {
+            xpManager.OnLevelUp += HandleLevelUp;
+            xpManager.OnStatUpgraded += HandleStatUpgraded;
+        }
+
+        // Apply player class if assigned
+        if (currentPlayerClass != null)
+        {
+            ApplyPlayerClass(currentPlayerClass);
+        }
+
+        InitializeEffectHandlers();
+        OnStatsInitialized?.Invoke();
+    }
+
+    private void Update()
+    {
+        UpdateStatusBars();
+    }
+
+    private void OnDestroy()
+    {
+        // Unsubscribe from events
+        if (xpManager != null)
+        {
+            xpManager.OnLevelUp -= HandleLevelUp;
+            xpManager.OnStatUpgraded -= HandleStatUpgraded;
+        }
+    }
+
+    // Cache all required components
+    private void CacheComponents()
     {
         movementModel = this.CheckComponent(movementModel, nameof(movementModel));
         staminaManager = this.CheckComponent(staminaManager, nameof(staminaManager));
@@ -92,22 +134,9 @@ public class PlayerStatusController : BaseStatusController
         manaManager = this.CheckComponent(manaManager, nameof(manaManager));
         bodyHeatManager = this.CheckComponent(bodyHeatManager, nameof(bodyHeatManager));
         oxygenManager = this.CheckComponent(oxygenManager, nameof(oxygenManager));
-        //rollController = this.CheckComponent(rollController, nameof(rollController));
-        //dashController = this.CheckComponent(dashController, nameof(dashController));
     }
 
-    void Start()
-    {
-        xpManager.OnSkillPointGained += HandleSkillPointGained;
-        InitializePlayerClass();
-        InitializeEffectHandlers();
-    }
-    
-    private void Update()
-    {
-        UpdateStatusBars();
-    }
-
+    // Update all status bars
     private void UpdateStatusBars()
     {
         staminaManager?.UpdateStaminaBar();
@@ -121,105 +150,124 @@ public class PlayerStatusController : BaseStatusController
         oxygenManager?.UpdateOxygenBar();
     }
 
-    private void OnDestroy()
+    // Set player class with reference
+    public void SetPlayerClass(PlayerClass playerClass)
     {
+        if (playerClass == null)
+        {
+            Debug.LogWarning("Attempted to set null player class!");
+            return;
+        }
+
+        currentPlayerClass = playerClass;
+
+        if (autoApplyClassStats)
+        {
+            ApplyPlayerClass(playerClass);
+        }
+
+        // Set class in XP manager
         if (xpManager != null)
         {
-            xpManager.OnSkillPointGained -= HandleSkillPointGained;
-        }
-    }
-
-    public void SelectPlayerClass(string className)
-    {
-        PlayerClass = className.ToLower() switch
-        {
-            "warrior" => new WarriorClass(),
-            _ => null
-        };
-
-        if (PlayerClass == null)
-        {
-            Debug.LogWarning($"Invalid class name: {className}");
-        }
-    }
-
-    private void InitializePlayerClass()
-    {
-        if (PlayerClass == null)
-        {
-            Debug.LogWarning("PlayerClass is not initialized.");
-            return;
+            xpManager.SetPlayerClass(playerClass);
         }
 
-        hpManager.MaxValue = PlayerClass.health;
-        staminaManager.MaxValue = PlayerClass.stamina;
-        speedManager.BaseSpeed = PlayerClass.speed; 
-        hungerManager.MaxValue = PlayerClass.hunger;
-        thirstManager.MaxValue = PlayerClass.thirst;
+        OnPlayerClassChanged?.Invoke(playerClass);
+        Debug.Log($"Player class set to: {playerClass.GetClassName()}");
     }
 
-    public void UpgradeStat(string statType)
+    // Apply player class stats and traits
+    private void ApplyPlayerClass(PlayerClass playerClass)
     {
-        if (xpManager.SkillPoints <= 0)
+        if (playerClass == null) return;
+
+        // Apply base stats
+        hpManager.MaxValue = playerClass.health;
+        staminaManager.MaxValue = playerClass.stamina;
+        manaManager.MaxValue = playerClass.mana;
+        speedManager.BaseSpeed = playerClass.speed;
+        hungerManager.MaxValue = playerClass.hunger;
+        thirstManager.MaxValue = playerClass.thirst;
+        weightManager.MaxValue = playerClass.weight;
+        sleepManager.MaxValue = playerClass.sleep;
+        sanityManager.MaxValue = playerClass.sanity;
+        bodyHeatManager.MaxValue = playerClass.bodyHeat;
+        oxygenManager.MaxValue = playerClass.oxygen;
+
+        // Apply starting traits if enabled
+        if (autoApplyStartingTraits && traitManager != null)
         {
-            Debug.Log("Not enough skill points!");
-            return;
+            foreach (var trait in playerClass.startingTraits)
+            {
+                if (trait != null)
+                {
+                    traitManager.AddTrait(trait, true); // Skip cost for starting traits
+                }
+            }
+
+            // Add trait points from class
+            traitManager.AddTraitPoints(playerClass.traitPoints);
         }
 
-        if (upgradeStatHandlers.TryGetValue(statType.ToLower(), out var action))
+        Debug.Log($"Applied {playerClass.GetClassName()} class stats and traits");
+    }
+
+    // Handle level up event
+    private void HandleLevelUp(int newLevel)
+    {
+        Debug.Log($"Player reached level {newLevel}!");
+        // You can add level-up effects here (visual effects, sounds, etc.)
+    }
+
+    // Handle stat upgrade event
+    private void HandleStatUpgraded(string statName)
+    {
+        Debug.Log($"Player upgraded {statName}!");
+        // You can add upgrade effects here
+    }
+
+    // Manually upgrade a stat using XP system
+    public bool UpgradeStat(string statType)
+    {
+        if (xpManager == null)
         {
-            action();
-            xpManager.SkillPoints--;
+            Debug.LogError("No XP Manager found!");
+            return false;
         }
-        else
-        {
-            Debug.Log("Invalid stat type!");
-        }
+
+        return xpManager.UpgradeStat(statType);
     }
 
-    private void InitializeUpgradeStatHandlers()
+    // Get available stats for upgrading
+    public List<string> GetUpgradeableStats()
     {
-        upgradeStatHandlers = new Dictionary<string, Action>
-        {
-            { "health", () => hpManager.ModifyMaxValue(hpManager.StatusIncrementValue) },
-            { "stamina", () => staminaManager.ModifyMaxValue(staminaManager.StatusIncrementValue) },
-            { "speed", () => speedManager.ModifyBaseSpeed(speedManager.StatusIncrementValue) },
-            { "hunger", () => hungerManager.ModifyMaxValue(hungerManager.StatusIncrementValue) },
-            { "thirst", () => thirstManager.ModifyMaxValue(thirstManager.StatusIncrementValue) },
-            { "weight", () => weightManager.ModifyMaxValue(weightManager.StatusIncrementValue) },
-            { "sleep", () => sleepManager.ModifyMaxValue(sleepManager.StatusIncrementValue) },
-            { "sanity", () => sanityManager.ModifyMaxValue(sanityManager.StatusIncrementValue) },
-            { "mana", () => manaManager.ModifyMaxValue(manaManager.StatusIncrementValue) },
-            { "bodyheat", () => bodyHeatManager.ModifyMaxValue(bodyHeatManager.StatusIncrementValue) },
-            { "oxygen", () => oxygenManager.ModifyMaxValue(oxygenManager.StatusIncrementValue) }
-        };
+        if (xpManager == null) return new List<string>();
+        return xpManager.GetUpgradeableStats();
     }
 
-    private void HandleSkillPointGained()
+    // Get stat upgrade preview
+    public string GetStatUpgradePreview(string statType)
     {
-        Debug.Log("Skill point gained! Time to level up!");
+        if (xpManager == null) return "N/A";
+        return xpManager.GetStatUpgradePreview(statType);
     }
 
-    // Removed ApplySpeedEffectRoutine as it's now handled by SpeedManager
-    public void ModifySpeed(float amount)
-    {
-        speedManager.ModifySpeed(amount);
-    }
-
+    // Stop all effects by type
     public void StopAllEffects(bool isBuff)
     {
-        staminaManager.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, isBuff);
-        hpManager.StopAllEffectsByType(hpManager.HpEffectRoutines, isBuff);
-        hungerManager.StopAllEffectsByType(hungerManager.FoodEffectRoutines, isBuff);
-        thirstManager.StopAllEffectsByType(thirstManager.DrinkEffectRoutines, isBuff);
-        speedManager.StopAllEffectsByType(speedManager.SpeedEffectRoutines, isBuff);
-        sleepManager.StopAllEffectsByType(sleepManager.SleepEffectRoutines, isBuff);
-        sanityManager.StopAllEffectsByType(sanityManager.SanityEffectRoutines, isBuff);
-        manaManager.StopAllEffectsByType(manaManager.ManaEffectRoutines, isBuff);
-        bodyHeatManager.StopAllEffectsByType(bodyHeatManager.BodyHeatEffectRoutines, isBuff);
-        oxygenManager.StopAllEffectsByType(oxygenManager.OxygenEffectRoutines, isBuff);
+        staminaManager?.StopAllEffectsByType(staminaManager.StaminaEffectRoutines, isBuff);
+        hpManager?.StopAllEffectsByType(hpManager.HpEffectRoutines, isBuff);
+        hungerManager?.StopAllEffectsByType(hungerManager.FoodEffectRoutines, isBuff);
+        thirstManager?.StopAllEffectsByType(thirstManager.DrinkEffectRoutines, isBuff);
+        speedManager?.StopAllEffectsByType(speedManager.SpeedEffectRoutines, isBuff);
+        sleepManager?.StopAllEffectsByType(sleepManager.SleepEffectRoutines, isBuff);
+        sanityManager?.StopAllEffectsByType(sanityManager.SanityEffectRoutines, isBuff);
+        manaManager?.StopAllEffectsByType(manaManager.ManaEffectRoutines, isBuff);
+        bodyHeatManager?.StopAllEffectsByType(bodyHeatManager.BodyHeatEffectRoutines, isBuff);
+        oxygenManager?.StopAllEffectsByType(oxygenManager.OxygenEffectRoutines, isBuff);
     }
 
+    // Apply attack effects
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
         if (EffectHandlers.TryGetValue(effect.effectType, out var handler))
@@ -232,6 +280,7 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
+    // Initialize effect handlers
     private void InitializeEffectHandlers()
     {
         effectHandlers = new Dictionary<AttackEffectType, Action<AttackEffect, float, float, float>>
@@ -241,15 +290,15 @@ public class PlayerStatusController : BaseStatusController
             { AttackEffectType.Food, CreateHandler(hungerManager.AddCurrentValue, hungerManager.AddFoodEffect) },
             { AttackEffectType.Drink, CreateHandler(thirstManager.AddCurrentValue, thirstManager.AddDrinkEffect) },
             { AttackEffectType.Weight, (effect, amount, time, cooldown) => weightManager.AddWeightEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
-            { AttackEffectType.Speed, CreateSpeedHandler(speedManager.ModifySpeed, speedManager.AddSpeedEffect) }, // Custom handler for speed
+            { AttackEffectType.Speed, CreateSpeedHandler(speedManager.ModifySpeed, speedManager.AddSpeedEffect) },
             { AttackEffectType.HpHealFactor, (effect, amount, time, cooldown) => hpManager.AddHpHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.HpDamageFactor, (effect, amount, time, cooldown) => hpManager.AddHpDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.StaminaHealFactor, (effect, amount, time, cooldown) => staminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.StaminaDamageFactor, (effect, amount, time, cooldown) => staminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.StaminaRegeneration, (effect, amount, time, cooldown) => staminaManager.AddStaminaRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.HpRegeneration, (effect, amount, time, cooldown) => hpManager.AddHpRegenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
-            { AttackEffectType.SpeedFactor, (effect, amount, time, cooldown) => speedManager.AddSpeedFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }, // Added Speed factor effect
-            { AttackEffectType.SpeedMultiplier, (effect, amount, time, cooldown) => speedManager.AddSpeedMultiplierEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }, // Added Speed multiplier effect
+            { AttackEffectType.SpeedFactor, (effect, amount, time, cooldown) => speedManager.AddSpeedFactorEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
+            { AttackEffectType.SpeedMultiplier, (effect, amount, time, cooldown) => speedManager.AddSpeedMultiplierEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.Sleep, CreateHandler(sleepManager.AddCurrentValue, sleepManager.AddSleepEffect) },
             { AttackEffectType.SleepFactor, (effect, amount, time, cooldown) => sleepManager.AddSleepEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) },
             { AttackEffectType.Sanity, CreateHandler(sanityManager.AddCurrentValue, sanityManager.AddSanityEffect) },
@@ -264,6 +313,21 @@ public class PlayerStatusController : BaseStatusController
             { AttackEffectType.Oxygen, CreateHandler((amount) => oxygenManager.AddCurrentValue(amount), oxygenManager.AddOxygenEffect) },
             { AttackEffectType.OxygenFactor, (effect, amount, time, cooldown) => oxygenManager.AddOxygenEffect(effect.effectName, amount, time, cooldown, effect.isProcedural, effect.isStackable) }
         };
+    }
+
+    // Helper methods for creating effect handlers
+    private Action<AttackEffect, float, float, float> CreateHandler(
+        Action<float> directAction,
+        Action<string, float, float, float, bool, bool> effectAction)
+    {
+        return (effect, amount, time, cooldown) => HandleEffect(directAction, effectAction, effect, amount, time, cooldown);
+    }
+
+    private Action<AttackEffect, float, float, float> CreateSpeedHandler(
+        Action<float> directAction,
+        Action<string, float, float, float, bool, bool> effectAction)
+    {
+        return (effect, amount, time, cooldown) => HandleSpeedEffect(directAction, effectAction, effect, amount, time, cooldown);
     }
 
     private void HandleEffect(
@@ -284,21 +348,6 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
-    private Action<AttackEffect, float, float, float> CreateHandler(
-        Action<float> directAction,
-        Action<string, float, float, float, bool, bool> effectAction)
-    {
-        return (effect, amount, time, cooldown) => HandleEffect(directAction, effectAction, effect, amount, time, cooldown);
-    }
-
-
-    private Action<AttackEffect, float, float, float> CreateSpeedHandler(
-    Action<float> directAction,
-    Action<string, float, float, float, bool, bool> effectAction)
-    {
-        return (effect, amount, time, cooldown) => HandleSpeedEffect(directAction, effectAction, effect, amount, time, cooldown);
-    }
-
     private void HandleSpeedEffect(
         Action<float> directAction,
         Action<string, float, float, float, bool, bool> effectAction,
@@ -317,51 +366,25 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
-    public void StartSleeping()
-    {
-        sleepManager?.StartSleeping();
-    }
-    public void StopSleeping()
-    {
-        sleepManager?.StopSleeping();
-    }
-    public void SetEnvironmentalTemperature(float temperature)
-    {
-        bodyHeatManager?.SetEnvironmentalTemperature(temperature);
-    }
-    public void SetUnderwater(bool underwater)
-    {
-        oxygenManager?.SetUnderwater(underwater);
-    }
-    public void SetHighAltitude(bool highAltitude)
-    {
-        oxygenManager?.SetHighAltitude(highAltitude);
-    }
-    public void SetPoorVentilation(bool poorVentilation)
-    {
-        oxygenManager?.SetPoorVentilation(poorVentilation);
-    }
-    public void SetOxygenTank(bool hasOxygen, float tankAmount = 0f)
-    {
-        oxygenManager?.SetOxygenTank(hasOxygen, tankAmount);
-    }
+    // Environmental and state management methods
+    public void StartSleeping() => sleepManager?.StartSleeping();
+    public void StopSleeping() => sleepManager?.StopSleeping();
+    public void SetEnvironmentalTemperature(float temperature) => bodyHeatManager?.SetEnvironmentalTemperature(temperature);
+    public void SetUnderwater(bool underwater) => oxygenManager?.SetUnderwater(underwater);
+    public void SetHighAltitude(bool highAltitude) => oxygenManager?.SetHighAltitude(highAltitude);
+    public void SetPoorVentilation(bool poorVentilation) => oxygenManager?.SetPoorVentilation(poorVentilation);
+    public void SetOxygenTank(bool hasOxygen, float tankAmount = 0f) => oxygenManager?.SetOxygenTank(hasOxygen, tankAmount);
 
-    public SleepManager.SleepinessLevel GetSleepinessLevel()
-    {
-        return sleepManager?.CurrentSleepinessLevel ?? SleepManager.SleepinessLevel.Rested;
-    }
+    // Status level getters
+    public SleepManager.SleepinessLevel GetSleepinessLevel() => sleepManager?.CurrentSleepinessLevel ?? SleepManager.SleepinessLevel.Rested;
+    public SanityManager.SanityLevel GetSanityLevel() => sanityManager?.CurrentSanityLevel ?? SanityManager.SanityLevel.Stable;
+    public BodyHeatManager.TemperatureLevel GetTemperatureLevel() => bodyHeatManager?.CurrentTemperatureLevel ?? BodyHeatManager.TemperatureLevel.Normal;
+    public OxygenManager.OxygenEnvironment GetOxygenEnvironment() => oxygenManager?.CurrentEnvironment ?? OxygenManager.OxygenEnvironment.Normal;
 
-    public SanityManager.SanityLevel GetSanityLevel()
-    {
-        return sanityManager?.CurrentSanityLevel ?? SanityManager.SanityLevel.Stable;
-    }
-    public BodyHeatManager.TemperatureLevel GetTemperatureLevel()
-    {
-        return bodyHeatManager?.CurrentTemperatureLevel ?? BodyHeatManager.TemperatureLevel.Normal;
-    }
+    // Debug methods
+    [ContextMenu("Debug - Add 100 XP")]
+    private void DebugAddXP() => xpManager?.AddExperience(100);
 
-    public OxygenManager.OxygenEnvironment GetOxygenEnvironment()
-    {
-        return oxygenManager?.CurrentEnvironment ?? OxygenManager.OxygenEnvironment.Normal;
-    }
+    [ContextMenu("Debug - Add Trait Points")]
+    private void DebugAddTraitPoints() => traitManager?.AddTraitPoints(5);
 }
