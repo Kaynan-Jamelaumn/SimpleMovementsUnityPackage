@@ -12,6 +12,9 @@ public class OxygenManager : StatusManager
     [SerializeField] private float oxygenDepletedHealthDrainRate = 10f;
     [SerializeField] private float oxygenTankRestoreRate = 20f;
 
+    [Header("UI Settings")]
+    [SerializeField] private bool showUIWhenNormal = false; // Whether to show UI when oxygen consumption is normal
+
     [SerializeField] private bool isUnderwater = false;
     [SerializeField] private bool isAtHighAltitude = false;
     [SerializeField] private bool isInPoorVentilation = false;
@@ -44,13 +47,15 @@ public class OxygenManager : StatusManager
     private void Awake()
     {
         healthManager = this.CheckComponent(healthManager, nameof(healthManager));
-
     }
 
     private void Start()
     {
         currentValue = maxValue;
         oxygenConsumptionRoutine = StartCoroutine(OxygenConsumptionRoutine());
+
+        // Initially hide UI if in normal environment
+        UpdateUIVisibility();
     }
 
     private void Update()
@@ -73,6 +78,20 @@ public class OxygenManager : StatusManager
     {
         UpdateBar(currentValue, maxValue, uiImage);
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
+        UpdateUIVisibility();
+    }
+
+    private void UpdateUIVisibility()
+    {
+        if (uiImage == null) return;
+
+        bool shouldShowUI = showUIWhenNormal || IsInRestrictedEnvironment || currentValue < maxValue;
+
+        // Show/hide the UI based on oxygen consumption state
+        if (uiImage.gameObject.activeInHierarchy != shouldShowUI)
+        {
+            uiImage.gameObject.SetActive(shouldShowUI);
+        }
     }
 
     public OxygenEnvironment GetCurrentEnvironment()

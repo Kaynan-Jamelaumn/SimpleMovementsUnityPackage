@@ -136,18 +136,24 @@ public class PlayerStatusController : BaseStatusController
         oxygenManager = this.CheckComponent(oxygenManager, nameof(oxygenManager));
     }
 
-    // Update all status bars
+    // Update all status bars - only update if the UI is active
     private void UpdateStatusBars()
     {
+        // Always update core status bars
         staminaManager?.UpdateStaminaBar();
         hpManager?.UpdateHpBar();
         hungerManager?.UpdateFoodBar();
         thirstManager?.UpdateDrinkBar();
         weightManager?.UpdateWeightBar();
-        sleepManager?.UpdateSleepBar();
         manaManager?.UpdateManaBar();
+
+        // Conditional status bars update themselves and manage their own visibility
+        sleepManager?.UpdateSleepBar();
         bodyHeatManager?.UpdateBodyHeatBar();
         oxygenManager?.UpdateOxygenBar();
+
+        // Sanity doesn't have a UI bar by design, but we still call update for internal state management
+        sanityManager?.UpdateSanityBar();
     }
 
     // Set player class with reference
@@ -381,10 +387,17 @@ public class PlayerStatusController : BaseStatusController
     public BodyHeatManager.TemperatureLevel GetTemperatureLevel() => bodyHeatManager?.CurrentTemperatureLevel ?? BodyHeatManager.TemperatureLevel.Normal;
     public OxygenManager.OxygenEnvironment GetOxygenEnvironment() => oxygenManager?.CurrentEnvironment ?? OxygenManager.OxygenEnvironment.Normal;
 
-    // Debug methods
-    [ContextMenu("Debug - Add 100 XP")]
-    private void DebugAddXP() => xpManager?.AddExperience(100);
+    // Status monitoring methods - useful for UI and other systems
+    public bool IsPlayerSleepy() => sleepManager?.CurrentSleepinessLevel != SleepManager.SleepinessLevel.Rested;
+    public bool IsPlayerTemperatureAffected() => bodyHeatManager?.CurrentTemperatureLevel != BodyHeatManager.TemperatureLevel.Normal;
+    public bool IsPlayerConsumingOxygen() => oxygenManager?.IsInRestrictedEnvironment ?? false;
+    public bool IsPlayerSanityAffected() => sanityManager?.CurrentSanityLevel != SanityManager.SanityLevel.Stable;
 
-    [ContextMenu("Debug - Add Trait Points")]
-    private void DebugAddTraitPoints() => traitManager?.AddTraitPoints(5);
+    // Force update UI visibility - useful when you want to manually show/hide conditional UIs
+    public void ForceUpdateConditionalUIs()
+    {
+        sleepManager?.UpdateSleepBar();
+        bodyHeatManager?.UpdateBodyHeatBar();
+        oxygenManager?.UpdateOxygenBar();
+    }
 }

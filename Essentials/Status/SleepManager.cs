@@ -10,13 +10,14 @@ public class SleepManager : StatusManager
     [SerializeField] private float moderateSleepinessThreshold = 60f;
     [SerializeField] private float extremeSleepinessThreshold = 85f;
 
-    [SerializeField] private float sleepDeprivationSpeedPenalty = 0.8f; // 20% speed reduction
-    [SerializeField] private float moderateStaminaRegenPenalty = 0.7f; // 30% stamina regen reduction
     [SerializeField] private float moderateSanityDrainRate = 1f;
     [SerializeField] private float extremeSanityDrainRate = 3f;
     [SerializeField] private float extremeCollapseThreshold = 95f;
     [SerializeField] private float forcedNapDuration = 30f;
     [SerializeField] private float forcedNapRecoveryRate = 0.5f; // Poor sleep quality
+
+    [Header("UI Settings")]
+    [SerializeField] private bool showUIWhenRested = false; // Whether to show UI when fully rested
 
     [SerializeField] private bool isSleeping = false;
     [SerializeField] private bool hasCollapsed = false;
@@ -49,7 +50,6 @@ public class SleepManager : StatusManager
         speedManager = this.CheckComponent(speedManager, nameof(speedManager));
         staminaManager = this.CheckComponent(staminaManager, nameof(staminaManager));
         sanityManager = this.CheckComponent(sanityManager, nameof(sanityManager));
-
     }
 
     private void Start()
@@ -57,6 +57,9 @@ public class SleepManager : StatusManager
         currentValue = maxValue;
         sleepConsumptionRoutine = StartCoroutine(SleepConsumptionRoutine());
         sleepEffectsRoutine = StartCoroutine(SleepEffectsRoutine());
+
+        // Initially hide UI if fully rested
+        UpdateUIVisibility();
     }
 
     private void Update()
@@ -74,6 +77,21 @@ public class SleepManager : StatusManager
     {
         UpdateBar(currentValue, maxValue, uiImage);
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
+        UpdateUIVisibility();
+    }
+
+    private void UpdateUIVisibility()
+    {
+        if (uiImage == null) return;
+
+        SleepinessLevel level = GetSleepinessLevel();
+        bool shouldShowUI = showUIWhenRested || level != SleepinessLevel.Rested;
+
+        // Show/hide the UI based on sleepiness level
+        if (uiImage.gameObject.activeInHierarchy != shouldShowUI)
+        {
+            uiImage.gameObject.SetActive(shouldShowUI);
+        }
     }
 
     public SleepinessLevel GetSleepinessLevel()
@@ -190,17 +208,24 @@ public class SleepManager : StatusManager
 
         switch (level)
         {
+            case SleepinessLevel.Rested:
+                RemoveSleepEffects();
+                break;
+
             case SleepinessLevel.SlightlySleepy:
+                RemoveSleepEffects(); // Clean up first
                 ApplySpeedPenalty();
                 break;
 
             case SleepinessLevel.ModeratelySleepy:
+                RemoveSleepEffects(); // Clean up first
                 ApplySpeedPenalty();
                 ApplyStaminaRegenPenalty();
                 ApplySanityDrain(moderateSanityDrainRate);
                 break;
 
             case SleepinessLevel.ExtremelySleepy:
+                RemoveSleepEffects(); // Clean up first
                 ApplySpeedPenalty();
                 ApplyStaminaRegenPenalty();
                 ApplySanityDrain(extremeSanityDrainRate);
@@ -208,12 +233,24 @@ public class SleepManager : StatusManager
         }
     }
 
+    private void RemoveSleepEffects()
+    {
+        // Remove all sleep-related effects when well-rested
+        if (speedManager != null)
+        {
+            speedManager.RemoveSpeedEffect("SleepDeprivation");
+        }
+
+        if (staminaManager != null)
+        {
+            staminaManager.RemoveStaminaEffect("SleepStaminaPenalty");
+        }
+    }
+
     private void ApplySpeedPenalty()
     {
         if (speedManager != null)
         {
-            // This would need to be implemented as a temporary modifier
-            // For now, we'll add a speed debuff effect
             speedManager.AddSpeedFactorEffect("SleepDeprivation", -20f, 2f, 1f, false, false);
         }
     }

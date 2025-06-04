@@ -14,13 +14,15 @@ public class BodyHeatManager : StatusManager
 
     [Header("Cold Effects")]
     [SerializeField] private float coldFoodConsumptionMultiplier = 1.5f;
-    [SerializeField] private float coldSpeedPenalty = 0.8f; // 20% speed reduction
     [SerializeField] private float extremeColdHealthDrain = 2f;
 
     [Header("Hot Effects")]
     [SerializeField] private float hotThirstConsumptionMultiplier = 1.5f;
     [SerializeField] private float hotStaminaConsumptionMultiplier = 1.3f;
     [SerializeField] private float extremeHotHealthDrain = 2f;
+
+    [Header("UI Settings")]
+    [SerializeField] private bool showUIWhenNormal = false; // Whether to show UI when temperature is normal
 
     [SerializeField] private float environmentalTemperature = 50f; // Current environmental temperature
     [SerializeField] private float temperatureChangeRate = 1f;
@@ -63,6 +65,9 @@ public class BodyHeatManager : StatusManager
         currentValue = normalTemperature;
         temperatureEffectsRoutine = StartCoroutine(TemperatureEffectsRoutine());
         environmentalTemperatureRoutine = StartCoroutine(EnvironmentalTemperatureRoutine());
+
+        // Initially hide UI if temperature is normal
+        UpdateUIVisibility();
     }
 
     private void Update()
@@ -74,6 +79,21 @@ public class BodyHeatManager : StatusManager
     {
         UpdateBar(currentValue, maxValue, uiImage);
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
+        UpdateUIVisibility();
+    }
+
+    private void UpdateUIVisibility()
+    {
+        if (uiImage == null) return;
+
+        TemperatureLevel level = GetTemperatureLevel();
+        bool shouldShowUI = showUIWhenNormal || level != TemperatureLevel.Normal;
+
+        // Show/hide the UI based on temperature level
+        if (uiImage.gameObject.activeInHierarchy != shouldShowUI)
+        {
+            uiImage.gameObject.SetActive(shouldShowUI);
+        }
     }
 
     public TemperatureLevel GetTemperatureLevel()
@@ -153,23 +173,55 @@ public class BodyHeatManager : StatusManager
 
         switch (level)
         {
+            case TemperatureLevel.Normal:
+                RemoveTemperatureEffects();
+                break;
+
             case TemperatureLevel.Cold:
+                RemoveTemperatureEffects(); // Clean up first
                 ApplyColdEffects();
                 break;
 
             case TemperatureLevel.ExtremelyCold:
+                RemoveTemperatureEffects(); // Clean up first
                 ApplyColdEffects();
                 ApplyExtremeColdEffects();
                 break;
 
             case TemperatureLevel.Hot:
+                RemoveTemperatureEffects(); // Clean up first
                 ApplyHotEffects();
                 break;
 
             case TemperatureLevel.ExtremelyHot:
+                RemoveTemperatureEffects(); // Clean up first
                 ApplyHotEffects();
                 ApplyExtremeHotEffects();
                 break;
+        }
+    }
+
+    private void RemoveTemperatureEffects()
+    {
+        // Remove all temperature-related effects when returning to normal
+        if (speedManager != null)
+        {
+            speedManager.RemoveSpeedEffect("ColdSpeed");
+        }
+
+        if (hungerManager != null)
+        {
+            hungerManager.RemoveFoodEffect("ColdHunger");
+        }
+
+        if (thirstManager != null)
+        {
+            thirstManager.RemoveDrinkEffect("HotThirst");
+        }
+
+        if (staminaManager != null)
+        {
+            staminaManager.RemoveStaminaEffect("HotStamina");
         }
     }
 
@@ -181,7 +233,7 @@ public class BodyHeatManager : StatusManager
             hungerManager.AddFoodRemoveFactorEffect("ColdHunger", coldFoodConsumptionMultiplier * 10f, 2f, 1f, false, false);
         }
 
-        // Reduce speed
+        // Apply speed reduction through speed manager
         if (speedManager != null)
         {
             speedManager.AddSpeedFactorEffect("ColdSpeed", -20f, 2f, 1f, false, false);
@@ -243,5 +295,4 @@ public class BodyHeatManager : StatusManager
             _ => currentValue = Mathf.Clamp(currentValue, 0, maxValue)
         );
     }
-
 }

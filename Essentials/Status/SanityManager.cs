@@ -8,11 +8,6 @@ public class SanityManager : StatusManager
     [SerializeField] private float lowSanityThreshold = 30f;
     [SerializeField] private float criticalSanityThreshold = 10f;
 
-    [SerializeField] private float lowSanitySpeedPenalty = 0.9f; // 10% speed reduction
-    [SerializeField] private float lowSanityStaminaRegenPenalty = 0.8f; // 20% stamina regen reduction
-    [SerializeField] private float criticalSanitySpeedPenalty = 0.7f; // 30% speed reduction
-    [SerializeField] private float criticalSanityStaminaRegenPenalty = 0.5f; // 50% stamina regen reduction
-
     [SerializeField] private float sanityRegenRate = 0.1f;
     [SerializeField] private bool shouldRegenerateSanity = true;
 
@@ -60,8 +55,7 @@ public class SanityManager : StatusManager
 
     public void UpdateSanityBar()
     {
-        // Sanity doesn't require a UI icon as per requirements
-        // But we keep the method for consistency and potential future use
+        // Sanity doesn't require a UI bar as per requirements
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
     }
 
@@ -119,26 +113,49 @@ public class SanityManager : StatusManager
     {
         SanityLevel level = GetSanityLevel();
 
-        // Apply effects based on sanity level
+        // Apply effects based on sanity level using the actual effect system
         switch (level)
         {
+            case SanityLevel.Stable:
+                RemoveSanityEffects();
+                break;
+
             case SanityLevel.Stressed:
+                RemoveSanityEffects(); // Clean up first
                 ApplyLowSanityEffects();
                 break;
 
             case SanityLevel.Unstable:
+                RemoveSanityEffects(); // Clean up first
                 ApplyLowSanityEffects();
                 break;
 
             case SanityLevel.Critical:
+                RemoveSanityEffects(); // Clean up first
                 ApplyCriticalSanityEffects();
                 break;
         }
     }
 
+    private void RemoveSanityEffects()
+    {
+        // Remove all sanity-related effects when stable
+        if (speedManager != null)
+        {
+            speedManager.RemoveSpeedEffect("LowSanity");
+            speedManager.RemoveSpeedEffect("CriticalSanity");
+        }
+
+        if (staminaManager != null)
+        {
+            staminaManager.RemoveStaminaEffect("LowSanity");
+            staminaManager.RemoveStaminaEffect("CriticalSanity");
+        }
+    }
+
     private void ApplyLowSanityEffects()
     {
-        // Apply temporary debuffs for low sanity
+        // Apply temporary debuffs for low sanity using the effect system
         if (speedManager != null)
         {
             speedManager.AddSpeedFactorEffect("LowSanity", -10f, 2f, 1f, false, false);
@@ -152,7 +169,7 @@ public class SanityManager : StatusManager
 
     private void ApplyCriticalSanityEffects()
     {
-        // Apply severe debuffs for critical sanity
+        // Apply severe debuffs for critical sanity using the effect system
         if (speedManager != null)
         {
             speedManager.AddSpeedFactorEffect("CriticalSanity", -30f, 2f, 1f, false, false);
