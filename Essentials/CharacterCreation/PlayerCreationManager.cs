@@ -27,25 +27,39 @@ public class PlayerCreationManager
         var selectedClass = mainUI.SelectedClass;
         if (selectedClass == null)
         {
-            mainUI.DebugLogError("Cannot create player: no class selected");
+            mainUI.OnCreationError("Cannot create player: no class selected");
             return;
         }
 
         if (characterNameInput == null || string.IsNullOrEmpty(characterNameInput.text.Trim()))
         {
-            mainUI.DebugLogError("Cannot create player: no name entered");
+            mainUI.OnCreationError("Cannot create player: no name entered");
             return;
         }
 
-        // Spawn player prefab
-        Vector3 spawnPosition = references.spawnPoint != null ? references.spawnPoint.position : Vector3.zero;
-        GameObject playerObj = Object.Instantiate(references.playerPrefab, spawnPosition, Quaternion.identity);
+        if (references.playerPrefab == null)
+        {
+            mainUI.OnCreationError("Cannot create player: player prefab is not assigned");
+            return;
+        }
 
-        // Configure player components
-        ConfigurePlayerComponents(playerObj, characterNameInput.text.Trim());
+        try
+        {
+            // Spawn player prefab
+            Vector3 spawnPosition = references.spawnPoint != null ? references.spawnPoint.position : Vector3.zero;
+            GameObject playerObj = Object.Instantiate(references.playerPrefab, spawnPosition, Quaternion.identity);
 
-        // Notify main UI of successful creation
-        mainUI.OnPlayerCreatedSuccess(playerObj);
+            // Configure player components
+            ConfigurePlayerComponents(playerObj, characterNameInput.text.Trim());
+
+            // Notify main UI of successful creation
+            mainUI.DebugLog($"Successfully created player: {characterNameInput.text.Trim()}");
+            mainUI.OnPlayerCreatedSuccess(playerObj);
+        }
+        catch (System.Exception e)
+        {
+            mainUI.OnCreationError($"Error creating player: {e.Message}");
+        }
     }
 
     private void ConfigurePlayerComponents(GameObject playerObj, string characterName)
@@ -58,39 +72,86 @@ public class PlayerCreationManager
         var nameComponent = GetPlayerComponent<PlayerNameComponent>(playerObj, references.prefabNameComponent);
         var traitManager = GetPlayerComponent<TraitManager>(playerObj, references.prefabTraitManager);
 
+        bool configurationSuccessful = true;
+
+        // Configure status controller and class
         if (statusController != null)
         {
-            // Set player class
-            statusController.SetPlayerClass(selectedClass);
-
-            // Apply selected traits
-            if (traitManager != null)
+            try
             {
-                foreach (var trait in selectedTraits)
+                // Set player class
+                statusController.SetPlayerClass(selectedClass);
+                mainUI.DebugLog($"Set player class: {CharacterCreationValidator.GetClassNameSafe(selectedClass)}");
+
+                // Apply selected traits
+                if (traitManager != null)
                 {
-                    traitManager.AddTrait(trait, true);
+                    int traitsApplied = 0;
+                    foreach (var trait in selectedTraits)
+                    {
+                        try
+                        {
+                            traitManager.AddTrait(trait, true);
+                            traitsApplied++;
+                        }
+                        catch (System.Exception e)
+                        {
+                            mainUI.DebugLogWarning($"Failed to apply trait {trait.Name}: {e.Message}");
+                            configurationSuccessful = false;
+                        }
+                    }
+                    mainUI.DebugLog($"Applied {traitsApplied}/{selectedTraits.Count} traits");
+                }
+                else
+                {
+                    mainUI.DebugLogWarning("TraitManager not found - traits not applied");
+                    configurationSuccessful = false;
                 }
             }
-            else
+            catch (System.Exception e)
             {
-                mainUI.DebugLogWarning("TraitManager not found - traits not applied");
+                mainUI.DebugLogError($"Error configuring status controller: {e.Message}");
+                configurationSuccessful = false;
             }
         }
         else
         {
             mainUI.DebugLogError("PlayerStatusController not found - player class not set");
+            configurationSuccessful = false;
         }
 
         // Set character name
         if (nameComponent != null)
         {
-            nameComponent.SetPlayerName(characterName);
+            try
+            {
+                nameComponent.SetPlayerName(characterName);
+                mainUI.DebugLog($"Set player name: {characterName}");
+            }
+            catch (System.Exception e)
+            {
+                mainUI.DebugLogWarning($"Error setting player name: {e.Message}");
+                // Fallback: just set GameObject name
+                playerObj.name = $"Player_{characterName}";
+                configurationSuccessful = false;
+            }
         }
         else
         {
             // Fallback: just set GameObject name
             playerObj.name = $"Player_{characterName}";
             mainUI.DebugLogWarning("PlayerNameComponent not found - only GameObject name set");
+            configurationSuccessful = false;
+        }
+
+        // Log configuration result
+        if (configurationSuccessful)
+        {
+            mainUI.DebugLog("Player configuration completed successfully");
+        }
+        else
+        {
+            mainUI.DebugLogWarning("Player configuration completed with some issues");
         }
     }
 
@@ -121,6 +182,7 @@ public class PlayerCreationManager
                     }
                 }
                 // If no exact match, return the first one
+                mainUI.DebugLogWarning($"Multiple {typeof(T).Name} components found, using first one");
                 return components[0];
             }
         }
@@ -130,6 +192,11 @@ public class PlayerCreationManager
         if (fallbackComponent == null)
         {
             fallbackComponent = playerObj.GetComponentInChildren<T>();
+        }
+
+        if (fallbackComponent == null)
+        {
+            mainUI.DebugLogError($"No {typeof(T).Name} component found on player object!");
         }
 
         return fallbackComponent;

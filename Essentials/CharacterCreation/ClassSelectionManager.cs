@@ -100,10 +100,13 @@ public class ClassSelectionManager
         // Store reference
         references.classButtons[buttonObj] = playerClass;
 
-        // Setup click listener
+        // Setup click listener with audio feedback
         var classReference = playerClass;
         button.onClick.RemoveAllListeners();
         button.onClick.AddListener(() => {
+            // Play button click sound first
+            mainUI.PlayButtonClickSound();
+            // Then select the class (which will play the class selection sound)
             SelectClass(classReference);
         });
     }
@@ -113,10 +116,14 @@ public class ClassSelectionManager
         if (playerClass == null)
         {
             mainUI.DebugLogError("Cannot select null PlayerClass!");
+            mainUI.PlayErrorSound();
             return;
         }
 
-        mainUI.SetSelectedClass(playerClass);
+        // Update visual selection state
+        UpdateClassButtonStates(playerClass);
+
+        mainUI.SetSelectedClass(playerClass); // This already plays the class select sound
         UpdateClassSummary();
         ShowTraitSelectionPanel();
 
@@ -131,6 +138,35 @@ public class ClassSelectionManager
         {
             displayManager.UpdateTraitPointsDisplay();
             displayManager.UpdateCreateButtonState();
+        }
+
+        mainUI.DebugLog($"Selected class: {CharacterCreationValidator.GetClassNameSafe(playerClass)}");
+    }
+
+    private void UpdateClassButtonStates(PlayerClass selectedClass)
+    {
+        // Update visual state of class buttons to show selection
+        foreach (var buttonPair in references.classButtons)
+        {
+            var button = buttonPair.Key.GetComponent<Button>();
+            var playerClass = buttonPair.Value;
+
+            if (button != null)
+            {
+                // Visual feedback for selected class
+                var colors = button.colors;
+                if (playerClass == selectedClass)
+                {
+                    colors.normalColor = Color.green;
+                    colors.highlightedColor = Color.green * 0.8f;
+                }
+                else
+                {
+                    colors.normalColor = Color.white;
+                    colors.highlightedColor = Color.gray;
+                }
+                button.colors = colors;
+            }
         }
     }
 
@@ -205,6 +241,7 @@ public class ClassSelectionManager
         {
             mainUI.DebugLogError($"Error displaying unique traits: {e.Message}");
             references.uniqueTraitsText.text = "Error loading unique traits";
+            mainUI.PlayErrorSound();
         }
     }
 

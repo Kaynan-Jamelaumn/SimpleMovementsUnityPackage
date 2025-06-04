@@ -48,6 +48,16 @@ public class CharacterCreationUI : MonoBehaviour
     [Header("Database References")]
     [SerializeField] private List<PlayerClass> availableClasses = new List<PlayerClass>();
 
+    [Header("Audio Settings")]
+    [SerializeField] private bool enableAudioFeedback = true;
+    [SerializeField] private string buttonClickSoundName = "UI_ButtonClick";
+    [SerializeField] private string classSelectSoundName = "UI_ClassSelect";
+    [SerializeField] private string traitSelectSoundName = "UI_TraitSelect";
+    [SerializeField] private string traitAddSoundName = "UI_TraitAdd";
+    [SerializeField] private string traitRemoveSoundName = "UI_TraitRemove";
+    [SerializeField] private string characterCreateSoundName = "UI_CharacterCreate";
+    [SerializeField] private string errorSoundName = "UI_Error";
+
     [Header("Debug Settings")]
     [SerializeField] private bool enableDebugLogs = true;
 
@@ -84,6 +94,7 @@ public class CharacterCreationUI : MonoBehaviour
         InitializeComponents();
         validator.ValidateSetup();
         SetupUI();
+        PlayUISound(buttonClickSoundName); // Welcome sound
     }
 
     private void InitializeComponents()
@@ -110,13 +121,22 @@ public class CharacterCreationUI : MonoBehaviour
     private void SetupButtonListeners()
     {
         if (addTraitButton != null)
-            addTraitButton.onClick.AddListener(() => traitManager.AddSelectedTrait());
+            addTraitButton.onClick.AddListener(() => {
+                PlayUISound(traitAddSoundName);
+                traitManager.AddSelectedTrait();
+            });
 
         if (removeTraitButton != null)
-            removeTraitButton.onClick.AddListener(() => traitManager.RemoveSelectedTrait());
+            removeTraitButton.onClick.AddListener(() => {
+                PlayUISound(traitRemoveSoundName);
+                traitManager.RemoveSelectedTrait();
+            });
 
         if (createPlayerButton != null)
-            createPlayerButton.onClick.AddListener(() => playerManager.CreatePlayer());
+            createPlayerButton.onClick.AddListener(() => {
+                PlayUISound(characterCreateSoundName);
+                playerManager.CreatePlayer();
+            });
 
         if (characterNameInput != null)
             characterNameInput.onValueChanged.AddListener(OnCharacterNameChanged);
@@ -128,11 +148,16 @@ public class CharacterCreationUI : MonoBehaviour
         selectedClass = playerClass;
         currentTraitPoints = playerClass != null ? playerClass.traitPoints : 0;
         selectedTraits.Clear();
+
+        if (playerClass != null)
+            PlayUISound(classSelectSoundName);
     }
 
     public void SetSelectedTrait(Trait trait)
     {
         selectedTrait = trait;
+        if (trait != null)
+            PlayUISound(traitSelectSoundName);
     }
 
     public void ModifyTraitPoints(int amount)
@@ -154,6 +179,31 @@ public class CharacterCreationUI : MonoBehaviour
     public void ClearSelectedTraits()
     {
         selectedTraits.Clear();
+    }
+
+    // Audio system integration
+    public void PlayUISound(string soundName)
+    {
+        if (!enableAudioFeedback || string.IsNullOrEmpty(soundName)) return;
+
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.PlayUISound(soundName);
+        }
+        else
+        {
+            DebugLogWarning("SoundManager.Instance is null - cannot play UI sound: " + soundName);
+        }
+    }
+
+    public void PlayErrorSound()
+    {
+        PlayUISound(errorSoundName);
+    }
+
+    public void PlayButtonClickSound()
+    {
+        PlayUISound(buttonClickSoundName);
     }
 
     // UI reference getters for managers
@@ -253,6 +303,13 @@ public class CharacterCreationUI : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    // Handle creation errors with audio feedback
+    public void OnCreationError(string errorMessage)
+    {
+        PlayErrorSound();
+        DebugLogError(errorMessage);
+    }
+
     // Public methods for external control and testing
     public void ResetCharacterCreation()
     {
@@ -268,6 +325,8 @@ public class CharacterCreationUI : MonoBehaviour
         displayManager.ClearAllContainers();
         displayManager.UpdateTraitPointsDisplay();
         displayManager.UpdateCreateButtonState();
+
+        PlayButtonClickSound();
     }
 
     public void SetAvailableClasses(List<PlayerClass> classes)
@@ -323,6 +382,19 @@ public class CharacterCreationUI : MonoBehaviour
     public void ValidatePrefabSetupManual()
     {
         validator.ValidatePrefabReferences();
+    }
+
+    [ContextMenu("Test Audio Integration")]
+    public void TestAudioIntegration()
+    {
+        if (SoundManager.Instance == null)
+        {
+            Debug.LogError("[CharacterCreationUI] SoundManager.Instance is null! Make sure SoundManager is in the scene.");
+            return;
+        }
+
+        Debug.Log("[CharacterCreationUI] Testing audio integration...");
+        PlayButtonClickSound();
     }
 
     // Utility methods for managers

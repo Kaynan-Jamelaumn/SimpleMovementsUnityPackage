@@ -17,6 +17,9 @@ public class CharacterCreationUIHelpers : MonoBehaviour
     // Close trait details panel - call this from Close button
     public void CloseTraitDetails()
     {
+        if (mainUI != null)
+            mainUI.PlayButtonClickSound();
+
         var traitDetailPanel = GameObject.Find("TraitDetailPanel");
         if (traitDetailPanel != null)
             traitDetailPanel.SetActive(false);
@@ -26,7 +29,10 @@ public class CharacterCreationUIHelpers : MonoBehaviour
     public void ResetCharacterCreation()
     {
         if (mainUI != null)
+        {
+            mainUI.PlayButtonClickSound();
             mainUI.ResetCharacterCreation();
+        }
     }
 
     // Cancel character creation - call this from Cancel button
@@ -34,9 +40,17 @@ public class CharacterCreationUIHelpers : MonoBehaviour
     {
         if (mainUI != null)
         {
+            mainUI.PlayButtonClickSound();
             mainUI.ResetCharacterCreation();
             mainUI.gameObject.SetActive(false);
         }
+    }
+
+    // Generic button click sound for any UI button
+    public void PlayButtonClick()
+    {
+        if (mainUI != null)
+            mainUI.PlayButtonClickSound();
     }
 }
 
@@ -49,11 +63,17 @@ public class ConfirmationDialog : MonoBehaviour
     [SerializeField] private Button confirmButton;
     [SerializeField] private Button cancelButton;
 
+    [Header("Audio Integration")]
+    [SerializeField] private CharacterCreationUI mainUI;
+
     private System.Action onConfirm;
     private System.Action onCancel;
 
     private void Awake()
     {
+        if (mainUI == null)
+            mainUI = FindFirstObjectByType<CharacterCreationUI>();
+
         if (confirmButton != null)
             confirmButton.onClick.AddListener(Confirm);
 
@@ -73,6 +93,10 @@ public class ConfirmationDialog : MonoBehaviour
 
         if (dialogPanel != null)
             dialogPanel.SetActive(true);
+
+        // Play sound when showing dialog
+        if (mainUI != null)
+            mainUI.PlayButtonClickSound();
     }
 
     public void Hide()
@@ -86,12 +110,18 @@ public class ConfirmationDialog : MonoBehaviour
 
     private void Confirm()
     {
+        if (mainUI != null)
+            mainUI.PlayButtonClickSound();
+
         onConfirm?.Invoke();
         Hide();
     }
 
     private void Cancel()
     {
+        if (mainUI != null)
+            mainUI.PlayButtonClickSound();
+
         onCancel?.Invoke();
         Hide();
     }
@@ -105,7 +135,18 @@ public class TraitTooltip : MonoBehaviour
     [SerializeField] private TMP_Text tooltipText;
     [SerializeField] private float showDelay = 0.5f;
 
+    [Header("Audio Integration")]
+    [SerializeField] private CharacterCreationUI mainUI;
+    [SerializeField] private bool playHoverSound = false;
+    [SerializeField] private string hoverSoundName = "UI_Hover";
+
     private Coroutine showCoroutine;
+
+    private void Awake()
+    {
+        if (mainUI == null)
+            mainUI = FindFirstObjectByType<CharacterCreationUI>();
+    }
 
     public void ShowTooltip(string text, Vector3 position)
     {
@@ -138,6 +179,12 @@ public class TraitTooltip : MonoBehaviour
         {
             tooltipPanel.transform.position = position;
             tooltipPanel.SetActive(true);
+        }
+
+        // Play hover sound if enabled
+        if (playHoverSound && mainUI != null && !string.IsNullOrEmpty(hoverSoundName))
+        {
+            mainUI.PlayUISound(hoverSoundName);
         }
 
         showCoroutine = null;
@@ -189,60 +236,130 @@ public static class UIAnimationExtensions
     }
 }
 
-// Audio feedback for UI interactions
+// Enhanced audio feedback for UI interactions - now works with SoundManager
 public class UIAudioFeedback : MonoBehaviour
 {
-    [Header("Audio Clips")]
-    [SerializeField] private AudioClip buttonClickSound;
-    [SerializeField] private AudioClip traitSelectSound;
-    [SerializeField] private AudioClip traitAddSound;
-    [SerializeField] private AudioClip traitRemoveSound;
-    [SerializeField] private AudioClip characterCreateSound;
-    [SerializeField] private AudioClip errorSound;
+    [Header("Sound Names (must exist in SoundManager)")]
+    [SerializeField] private string buttonClickSoundName = "UI_ButtonClick";
+    [SerializeField] private string traitSelectSoundName = "UI_TraitSelect";
+    [SerializeField] private string traitAddSoundName = "UI_TraitAdd";
+    [SerializeField] private string traitRemoveSoundName = "UI_TraitRemove";
+    [SerializeField] private string characterCreateSoundName = "UI_CharacterCreate";
+    [SerializeField] private string errorSoundName = "UI_Error";
+    [SerializeField] private string classSelectSoundName = "UI_ClassSelect";
+
+    [Header("Fallback Audio Clips (if SoundManager unavailable)")]
+    [SerializeField] private AudioClip buttonClickClip;
+    [SerializeField] private AudioClip traitSelectClip;
+    [SerializeField] private AudioClip traitAddClip;
+    [SerializeField] private AudioClip traitRemoveClip;
+    [SerializeField] private AudioClip characterCreateClip;
+    [SerializeField] private AudioClip errorClip;
+    [SerializeField] private AudioClip classSelectClip;
 
     [Header("Settings")]
-    [SerializeField] private float volume = 1f;
+    [SerializeField] private float fallbackVolume = 1f;
+    [SerializeField] private bool enableDebugLogs = false;
 
     public void PlayButtonClick()
     {
-        PlaySound(buttonClickSound);
+        PlaySound(buttonClickSoundName, buttonClickClip);
     }
 
     public void PlayTraitSelect()
     {
-        PlaySound(traitSelectSound);
+        PlaySound(traitSelectSoundName, traitSelectClip);
     }
 
     public void PlayTraitAdd()
     {
-        PlaySound(traitAddSound);
+        PlaySound(traitAddSoundName, traitAddClip);
     }
 
     public void PlayTraitRemove()
     {
-        PlaySound(traitRemoveSound);
+        PlaySound(traitRemoveSoundName, traitRemoveClip);
     }
 
     public void PlayCharacterCreate()
     {
-        PlaySound(characterCreateSound);
+        PlaySound(characterCreateSoundName, characterCreateClip);
     }
 
     public void PlayError()
     {
-        PlaySound(errorSound);
+        PlaySound(errorSoundName, errorClip);
     }
 
-    private void PlaySound(AudioClip clip)
+    public void PlayClassSelect()
     {
-        if (clip != null && SoundManager.Instance != null)
+        PlaySound(classSelectSoundName, classSelectClip);
+    }
+
+    private void PlaySound(string soundName, AudioClip fallbackClip)
+    {
+        // Try SoundManager first
+        if (!string.IsNullOrEmpty(soundName) && SoundManager.Instance != null)
         {
-            SoundManager.Instance.PlayUISound(clip.name);
+            try
+            {
+                SoundManager.Instance.PlayUISound(soundName);
+                if (enableDebugLogs)
+                    Debug.Log($"[UIAudioFeedback] Played sound via SoundManager: {soundName}");
+                return;
+            }
+            catch (System.Exception e)
+            {
+                if (enableDebugLogs)
+                    Debug.LogWarning($"[UIAudioFeedback] SoundManager failed to play {soundName}: {e.Message}");
+            }
         }
-        else if (clip != null)
+
+        // Fallback to AudioSource.PlayClipAtPoint
+        if (fallbackClip != null)
         {
-            // Fallback to AudioSource.PlayClipAtPoint if no SoundManager
-            AudioSource.PlayClipAtPoint(clip, Camera.main.transform.position, volume);
+            var cameraTransform = Camera.main != null ? Camera.main.transform : transform;
+            AudioSource.PlayClipAtPoint(fallbackClip, cameraTransform.position, fallbackVolume);
+
+            if (enableDebugLogs)
+                Debug.Log($"[UIAudioFeedback] Played fallback clip: {fallbackClip.name}");
         }
+        else
+        {
+            if (enableDebugLogs)
+                Debug.LogWarning($"[UIAudioFeedback] No audio available for: {soundName}");
+        }
+    }
+
+    // Utility method for testing all sounds
+    [ContextMenu("Test All Sounds")]
+    public void TestAllSounds()
+    {
+        StartCoroutine(TestSoundsSequence());
+    }
+
+    private System.Collections.IEnumerator TestSoundsSequence()
+    {
+        var sounds = new System.Collections.Generic.Dictionary<string, System.Action>
+        {
+            { "Button Click", PlayButtonClick },
+            { "Class Select", PlayClassSelect },
+            { "Trait Select", PlayTraitSelect },
+            { "Trait Add", PlayTraitAdd },
+            { "Trait Remove", PlayTraitRemove },
+            { "Character Create", PlayCharacterCreate },
+            { "Error", PlayError }
+        };
+
+        Debug.Log("[UIAudioFeedback] Testing all sounds...");
+
+        foreach (var soundPair in sounds)
+        {
+            Debug.Log($"[UIAudioFeedback] Testing: {soundPair.Key}");
+            soundPair.Value.Invoke();
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        Debug.Log("[UIAudioFeedback] Sound testing complete!");
     }
 }

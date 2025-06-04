@@ -17,7 +17,6 @@ public class MusicManager
     private Queue<AudioClip> musicPlaylist;
     private bool shufflePlaylist = false;
     private bool loopPlaylist = true;
-    private int currentPlaylistIndex = 0;
 
     // Music management
     private Coroutine musicFadeCoroutine;
@@ -150,6 +149,37 @@ public class MusicManager
             foreach (var clip in playlistList)
                 musicPlaylist.Enqueue(clip);
         }
+    }
+
+    // Additional playlist management methods
+    public void ClearPlaylist()
+    {
+        musicPlaylist.Clear();
+    }
+
+    public int GetPlaylistCount()
+    {
+        return musicPlaylist.Count;
+    }
+
+    public bool IsPlaylistEmpty()
+    {
+        return musicPlaylist.Count == 0;
+    }
+
+    public void SetLoopPlaylist(bool loop)
+    {
+        loopPlaylist = loop;
+    }
+
+    public bool IsPlaylistLooping()
+    {
+        return loopPlaylist;
+    }
+
+    public bool IsPlaylistShuffled()
+    {
+        return shufflePlaylist;
     }
 
     // Pause system integration

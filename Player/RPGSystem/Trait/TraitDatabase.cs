@@ -9,7 +9,6 @@ public class TraitDatabase : ScriptableObject
     [Header("All Available Traits")]
     [SerializeField] private List<Trait> allTraits = new List<Trait>();
 
-    // Singleton pattern for easy access
     private static TraitDatabase instance;
     public static TraitDatabase Instance
     {
@@ -17,10 +16,30 @@ public class TraitDatabase : ScriptableObject
         {
             if (instance == null)
             {
+                // First try Resources folder
                 instance = Resources.Load<TraitDatabase>("TraitDatabase");
+
+                // If not found in Resources, search entire project
                 if (instance == null)
                 {
-                    Debug.LogError("TraitDatabase not found in Resources folder! Please create one.");
+#if UNITY_EDITOR
+                    string[] guids = AssetDatabase.FindAssets("t:TraitDatabase");
+                    if (guids.Length > 0)
+                    {
+                        string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                        instance = AssetDatabase.LoadAssetAtPath<TraitDatabase>(path);
+
+                        if (instance != null)
+                        {
+                            Debug.Log($"TraitDatabase found at: {path}. Consider moving it to Resources folder for runtime access.");
+                        }
+                    }
+#endif
+                }
+
+                if (instance == null)
+                {
+                    Debug.LogError("TraitDatabase not found! Please create one using 'Create > Scriptable Objects > Trait Database'");
                 }
             }
             return instance;
