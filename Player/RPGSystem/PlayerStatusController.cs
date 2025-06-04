@@ -197,7 +197,7 @@ public class PlayerStatusController : BaseStatusController
         // Apply starting traits if enabled
         if (autoApplyStartingTraits && traitManager != null)
         {
-            foreach (var trait in playerClass.startingTraits)
+            foreach (var trait in playerClass.GetStartingTraits())
             {
                 if (trait != null)
                 {

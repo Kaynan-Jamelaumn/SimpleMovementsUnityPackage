@@ -171,7 +171,6 @@ public class WeaponController : MonoBehaviour
         if (!debugMode) return;
 
         if (isError) Debug.LogError($"[WeaponController] {message}");
-        else Debug.Log($"[WeaponController] {message}");
     }
 
     // Getters for components (used by other systems)

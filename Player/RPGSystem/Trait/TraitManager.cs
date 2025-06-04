@@ -103,11 +103,11 @@ public class TraitManager : MonoBehaviour
         }
     }
 
-    // Enhanced trait validation
+    // Enhanced trait validation - SIMPLIFIED VERSION
     public bool CanAddTrait(Trait trait)
     {
         if (trait == null) return false;
-        if (!traitDatabase.IsValidTrait(trait)) return false;
+        if (traitDatabase != null && !traitDatabase.IsValidTrait(trait)) return false;
         if (HasTrait(trait)) return false;
 
         // Check trait points
@@ -116,34 +116,23 @@ public class TraitManager : MonoBehaviour
         // Check negative trait permission
         if (!allowNegativeTraits && trait.IsNegative) return false;
 
-        // Check class restrictions
+        // SIMPLIFIED: Check class restrictions using PlayerClass as source of truth
         if (enforceClassRestrictions && playerController?.CurrentPlayerClass != null)
         {
-            if (!trait.IsAvailableForClass(playerController.CurrentPlayerClass))
+            if (!playerController.CurrentPlayerClass.CanSelectTrait(trait))
                 return false;
         }
-
-        // Check level restrictions
-        if (experienceManager != null)
-        {
-            if (!trait.IsAvailableForLevel(experienceManager.CurrentLevel))
-                return false;
-        }
-
-        // Check stat requirements
-        if (!trait.MeetsStatRequirements(playerController))
-            return false;
 
         // Check trait type limits
         var traitsOfSameType = GetTraitsByType(trait.type);
         if (traitsOfSameType.Count >= maxTraitsPerType)
             return false;
 
-        // Check incompatible traits
+        // Check incompatible traits using TraitDatabase methods
         var activeTraits = ActiveTraits;
         foreach (var activeTrait in activeTraits)
         {
-            if (!traitDatabase.AreTraitsCompatible(trait, activeTrait))
+            if (traitDatabase != null && !traitDatabase.AreTraitsCompatible(trait, activeTrait))
                 return false;
         }
 
@@ -157,8 +146,8 @@ public class TraitManager : MonoBehaviour
             }
         }
 
-        // Check required traits
-        if (!traitDatabase.HasRequiredTraits(trait, activeTraits))
+        // Check required traits using TraitDatabase methods
+        if (traitDatabase != null && !traitDatabase.HasRequiredTraits(trait, activeTraits))
             return false;
 
         return true;
@@ -177,7 +166,11 @@ public class TraitManager : MonoBehaviour
         activeTraits.Add(traitInfo);
 
         if (!skipCost)
-            availableTraitPoints -= trait.cost;
+        {
+            // Use PlayerClass to get the actual cost (considering class modifiers)
+            int actualCost = playerController?.CurrentPlayerClass?.GetTraitCost(trait) ?? trait.cost;
+            availableTraitPoints -= actualCost;
+        }
 
         ApplyTraitEffects(trait);
         PlayTraitSound(trait);
@@ -213,7 +206,8 @@ public class TraitManager : MonoBehaviour
         }
 
         // Calculate refund (partial for non-starting traits)
-        int refund = traitInfo.isTemporary ? 0 : Mathf.RoundToInt(trait.cost * traitRemovalCostMultiplier);
+        int actualCost = playerController?.CurrentPlayerClass?.GetTraitCost(trait) ?? trait.cost;
+        int refund = traitInfo.isTemporary ? 0 : Mathf.RoundToInt(actualCost * traitRemovalCostMultiplier);
 
         traitInfo.isActive = false;
         availableTraitPoints += refund;
@@ -251,28 +245,30 @@ public class TraitManager : MonoBehaviour
         return ActiveTraits.Where(t => t.rarity == rarity).ToList();
     }
 
+    // SIMPLIFIED: Get available traits from PlayerClass instead of complex validation
     public List<Trait> GetAvailableTraitsForClass(PlayerClass playerClass)
     {
         if (!enforceClassRestrictions || playerClass == null)
             return GetAvailableTraits();
 
-        return traitDatabase.GetAllTraits()
-            .Where(t => t.IsAvailableForClass(playerClass) && CanAddTrait(t))
-            .ToList();
+        return playerClass.GetSelectableTraits().Where(CanAddTrait).ToList();
     }
 
     public List<Trait> GetAvailableTraits()
     {
+        if (traitDatabase == null) return new List<Trait>();
         return traitDatabase.GetAllTraits().Where(CanAddTrait).ToList();
     }
 
     public List<Trait> GetAvailableTraitsByType(TraitType type)
     {
+        if (traitDatabase == null) return new List<Trait>();
         return traitDatabase.GetTraitsByType(type).Where(CanAddTrait).ToList();
     }
 
     public List<Trait> GetAffordableTraits()
     {
+        if (traitDatabase == null) return new List<Trait>();
         return traitDatabase.GetTraitsByCostRange(int.MinValue, availableTraitPoints)
             .Where(CanAddTrait).ToList();
     }
