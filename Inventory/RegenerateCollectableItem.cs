@@ -1,28 +1,43 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections;
 using UnityEngine;
+
 public class RegenerateCollectableItem : MonoBehaviour
 {
-    [SerializeField] private float regenerationTime;
+    [SerializeField] private float regenerationTime = 5f;
     [SerializeField] private GameObject regeneratedItemObjectPrefab;
     [SerializeField] private GameObject collectedItemObjectPrefab;
-    
+
     private bool isRegenerating = false;
+    private WaitForSeconds regenerationWait;
+
+    private void Awake()
+    {
+        // Cache the WaitForSeconds to avoid garbage collection
+        regenerationWait = new WaitForSeconds(regenerationTime);
+    }
+
     private void Update()
     {
-        if (isRegenerating == false)
-            if (HasCollectableItemObject() == false)
-                StartCoroutine(RegenerateItem());
+        // Only check if we're not already regenerating
+        if (!isRegenerating && !HasCollectableItemObject())
+        {
+            StartCoroutine(RegenerateItem());
+        }
     }
 
     private bool HasCollectableItemObject()
     {
-        // Check if there is any child corresponding to the collectedItemObjectPrefab
+        // Check if there is any child with the same name as the prefab
+        // Fixed: Compare names instead of object references since prefab != instance
+        string prefabName = collectedItemObjectPrefab.name;
+
         foreach (Transform child in transform)
-            if (child.gameObject == collectedItemObjectPrefab)
+        {
+            // Remove "(Clone)" suffix for comparison if present
+            string childName = child.gameObject.name.Replace("(Clone)", "").Trim();
+            if (childName == prefabName)
                 return true;
+        }
         return false;
     }
 
@@ -30,19 +45,19 @@ public class RegenerateCollectableItem : MonoBehaviour
     {
         isRegenerating = true;
 
-        // Instantiate regeneration object
-        GameObject collectedItemObject = Instantiate(collectedItemObjectPrefab, transform.position, Quaternion.identity);
+        // Instantiate regeneration object as child
+        GameObject collectedItemObject = Instantiate(collectedItemObjectPrefab, transform.position, Quaternion.identity, transform);
 
-        // Wait for the regeneration time
-        yield return new WaitForSeconds(regenerationTime);
+        // Wait for the regeneration time using cached WaitForSeconds
+        yield return regenerationWait;
 
         // Destroy the regeneration object
-        Destroy(collectedItemObject);
+        if (collectedItemObject != null)
+            Destroy(collectedItemObject);
 
-        // Instantiate the collectable object
-        Instantiate(regeneratedItemObjectPrefab, transform.position, Quaternion.identity);
+        // Instantiate the collectable object as child
+        Instantiate(regeneratedItemObjectPrefab, transform.position, Quaternion.identity, transform);
 
         isRegenerating = false;
     }
 }
-
