@@ -219,7 +219,7 @@ public class Player : MonoBehaviour
     {
         if (inventoryManager == null) return;
 
-        if (inventoryManager.isStorageOpened)
+        if (inventoryManager.IsStorageOpened)
         {
             inventoryManager.CloseStorage(storage);
         }

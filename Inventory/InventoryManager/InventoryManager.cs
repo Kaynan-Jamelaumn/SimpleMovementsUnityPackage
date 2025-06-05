@@ -1,121 +1,118 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Assertions;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
-    [HideInInspector] public bool isStorageOpened;
+    // Core inventory configuration
+    [SerializeField] private GameObject[] hotbarSlots = new GameObject[4];
+    [SerializeField] private GameObject[] slots = new GameObject[20];
+    [SerializeField] private GameObject itemPrefab;
 
-    [SerializeField] GameObject[] hotbarSlots = new GameObject[4];
-    [SerializeField] GameObject[] slots = new GameObject[20];
+    // UI References
+    [SerializeField] private GameObject inventoryParent;
+    [SerializeField] private GameObject equippableInventory;
+    [SerializeField] private GameObject storageParent;
+    [SerializeField] private Transform handParent;
+    [SerializeField] private ItemInfo itemInfo;
+    [SerializeField] private Camera cam;
 
-    [Tooltip("Inventory UI parent for when I open the inventory or close")]
-    [SerializeField] GameObject inventoryParent;
+    // Player References
+    [SerializeField] private GameObject player;
+    [SerializeField] private PlayerStatusController playerStatusController;
+    [SerializeField] private WeaponController weaponController;
 
-    [Tooltip("Equippable inventory UI to be equipped when Inventory opened or closed")]
-    [SerializeField] GameObject equippableInventory;
+    // Dragging State
+    private GameObject draggedObject;
+    private GameObject lastItemSlotObject;
+    private bool isDragging;
 
-    [SerializeField] GameObject storageParent;
+    // Inventory State
+    private bool isInventoryOpened;
+    private bool isStorageOpened;
+    private Storage lastStorage;
 
-    [Tooltip("The player hand transform for when the item to be spawned when equipped in hotbar")]
-    [SerializeField] Transform handParent;
-
-    [SerializeField] public GameObject itemPrefab;
-    [SerializeField] Camera cam;
-
-    [Tooltip("The item info box")]
-    [SerializeField] ItemInfo itemInfo;
-
-    // Dragging state
-    GameObject draggedObject;
-    GameObject lastItemSlotObject;
-    bool isDragging;
-
-    // Player references - cached for performance
-    [SerializeField] GameObject player;
-    [SerializeField] PlayerStatusController playerStatusController;
-    [SerializeField] WeaponController weaponController;
-    [SerializeField] PlayerAnimationController animController;
-
-    // Inventory state
-    bool isInventoryOpened;
-    Storage lastStorage;
-
-    // Input references
+    // Input
     private Mouse mouse;
 
-    // Cached UI state to avoid redundant updates
+    // Cached UI states for performance
     private bool lastInventoryState;
     private bool lastStorageState;
 
     // Properties
-    public Transform HandParent { get => handParent; set => handParent = value; }
-    public GameObject InventoryParent { get => inventoryParent; set => inventoryParent = value; }
-    public GameObject StorageParent { get => storageParent; set => storageParent = value; }
-    public GameObject[] Slots { get => slots; }
-    public GameObject Player { get => player; }
+    public Transform HandParent => handParent;
+    public GameObject[] Slots => slots;
+    public GameObject Player => player;
+    public bool IsStorageOpened { get => isStorageOpened; set => isStorageOpened = value; }
 
-    void Awake()
+    private void Awake()
     {
-        InitializeUI();
-
         playerStatusController = this.CheckComponent(playerStatusController, nameof(playerStatusController));
         weaponController = this.CheckComponent(weaponController, nameof(weaponController));
-        animController = this.CheckComponent(animController, nameof(animController));
 
+        if (cam == null) cam = Camera.main;
+
+        InitializeUI();
         mouse = Mouse.current;
     }
 
-    void Start()
+    private void Start()
     {
-
         HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
+        CacheUIStates();
+    }
 
-        // Initialize cached states
+    private void Update()
+    {
+        HandleHotbarInput();
+        HandleUIStateChanges();
+        UpdateDraggedObjectPosition();
+    }
+
+
+    // UI Management
+    private void InitializeUI()
+    {
+        SetUIState(storageParent, false);
+        SetUIState(inventoryParent, false);
+        SetUIState(equippableInventory, false);
+    }
+
+    private void CacheUIStates()
+    {
         lastInventoryState = isInventoryOpened;
         lastStorageState = isStorageOpened;
     }
 
-    void Update()
+    private void SetUIState(GameObject uiElement, bool active)
     {
-        HandleHotbarInput();
-        HandleUIStateChanges();
-        HandleDraggedObjectPosition();
-    }
-
-    private void InitializeUI()
-    {
-        storageParent.SetActive(false);
-        inventoryParent.SetActive(false);
-    }
-
-
-
-    private void HandleHotbarInput()
-    {
-        HotbarHandler.CheckForHotbarInput(hotbarSlots, handParent);
+        if (uiElement != null) uiElement.SetActive(active);
     }
 
     private void HandleUIStateChanges()
     {
-        // Only update UI when state actually changes to avoid redundant operations
         if (lastStorageState != isStorageOpened)
         {
-            storageParent.SetActive(isStorageOpened);
+            SetUIState(storageParent, isStorageOpened);
             lastStorageState = isStorageOpened;
         }
 
         if (lastInventoryState != isInventoryOpened)
         {
-            inventoryParent.SetActive(isInventoryOpened);
-            equippableInventory.SetActive(isInventoryOpened);
+            SetUIState(inventoryParent, isInventoryOpened);
+            SetUIState(equippableInventory, isInventoryOpened);
             lastInventoryState = isInventoryOpened;
         }
     }
 
-    private void HandleDraggedObjectPosition()
+    // Input Handling
+    private void HandleHotbarInput()
+    {
+        HotbarHandler.CheckForHotbarInput(hotbarSlots, handParent);
+    }
+
+    private void UpdateDraggedObjectPosition()
     {
         if (draggedObject != null && mouse != null)
         {
@@ -123,79 +120,61 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         }
     }
 
-
     public void OnInventory(InputAction.CallbackContext value)
     {
-        if (!value.started) return;
-
-        ToggleInventory();
+        if (value.started) ToggleInventory();
     }
 
+    public void OnUseItem(InputAction.CallbackContext value)
+    {
+        if (!value.started || isDragging) return;
+
+        var selectedSlot = GetSelectedHotbarSlot();
+        var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
+
+        if (heldItem == null || !ItemUsageHandler.HandleCooldown(heldItem)) return;
+
+        ItemUsageHandler.UseHeldItem(player, playerStatusController, weaponController, heldItem);
+        ItemUsageHandler.HandleItemDurabilityAndStack(player, handParent, selectedSlot, heldItem);
+    }
+
+    // Inventory Operations
     private void ToggleInventory()
     {
-        if (isInventoryOpened)
-        {
-            CloseInventory();
-        }
-        else
-        {
-            OpenInventory();
-        }
+        if (isInventoryOpened) CloseInventory();
+        else OpenInventory();
     }
 
     private void OpenInventory()
     {
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        SetCursorState(CursorLockMode.None, true);
         isInventoryOpened = true;
     }
 
     private void CloseInventory()
     {
-        Cursor.lockState = CursorLockMode.Locked;
+        SetCursorState(CursorLockMode.Locked, false);
         isInventoryOpened = false;
         isStorageOpened = false;
 
-        if (lastStorage != null)
-            CloseStorage(lastStorage);
+        if (lastStorage != null) CloseStorage(lastStorage);
     }
 
-    public void OnUseItem(InputAction.CallbackContext value)
+    private void SetCursorState(CursorLockMode lockMode, bool visible)
     {
-        if (!value.started || isDragging) return; // Prevent OnUseItem while dragging
-
-        Debug.Log("OnUseItem called");
-
-        var selectedSlot = GetSelectedHotbarSlot();
-        if (selectedSlot == null) return;
-
-        var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
-        if (heldItem == null) return;
-
-        Debug.Log($"Using item: {heldItem.itemScriptableObject.Name}");
-
-        if (!ItemUsageHandler.HandleCooldown(heldItem)) return;
-
-        ItemUsageHandler.UseHeldItem(Player, playerStatusController, weaponController, heldItem);
-        ItemUsageHandler.HandleItemDurabilityAndStack(Player, handParent, selectedSlot, heldItem);
+        Cursor.lockState = lockMode;
+        Cursor.visible = visible;
     }
 
     private InventorySlot GetSelectedHotbarSlot()
     {
-        var selectedSlot = hotbarSlots[HotbarHandler.SelectedHotbarSlot].GetComponent<InventorySlot>();
-        if (selectedSlot == null)
-        {
-            Debug.LogWarning("Selected slot is null or does not have an InventorySlot component.");
-        }
-        return selectedSlot;
+        if (hotbarSlots == null || HotbarHandler.SelectedHotbarSlot >= hotbarSlots.Length)
+            return null;
+
+        return hotbarSlots[HotbarHandler.SelectedHotbarSlot]?.GetComponent<InventorySlot>();
     }
 
-    public void InstantiateClassItems(List<GameObject> classItems)
-    {
-        foreach (GameObject item in classItems)
-            ItemPicked(item);
-    }
-
+    // Pointer Event Handling
     public void OnPointerClick(PointerEventData eventData)
     {
         if (eventData.button != PointerEventData.InputButton.Right)
@@ -204,46 +183,37 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             return;
         }
 
-        if (itemInfo.gameObject.activeSelf)
-        {
-            HideItemInfo();
-            return;
-        }
-
-        GameObject clickedObject = eventData.pointerCurrentRaycast.gameObject;
-        InventorySlot slot = clickedObject.GetComponent<InventorySlot>();
-        ShowItemInfo(slot);
-    }
-
-    private void ShowItemInfo(InventorySlot slot)
-    {
-        if (slot != null && slot.heldItem != null)
-        {
-            itemInfo.ShowItemInfo(slot.heldItem.GetComponent<InventoryItem>());
-        }
-        else
-        {
-            HideItemInfo();
-        }
-    }
-
-    private void HideItemInfo()
-    {
-        itemInfo.gameObject.SetActive(false);
+        var slot = eventData.pointerCurrentRaycast.gameObject?.GetComponent<InventorySlot>();
+        if (itemInfo.gameObject.activeSelf) HideItemInfo();
+        else ShowItemInfo(slot);
     }
 
     public void OnPointerDown(PointerEventData eventData)
     {
         if (eventData.button != PointerEventData.InputButton.Left) return;
 
-        GameObject clickedObject = eventData.pointerCurrentRaycast.gameObject;
-        InventorySlot slot = clickedObject.GetComponent<InventorySlot>();
+        var slot = eventData.pointerCurrentRaycast.gameObject?.GetComponent<InventorySlot>();
+        if (slot?.heldItem != null) StartDragging(slot, eventData.pointerCurrentRaycast.gameObject);
+    }
 
-        // There is an item in the slot - pick it up
-        if (slot != null && slot.heldItem != null)
+    public void OnPointerUp(PointerEventData eventData)
+    {
+        if (!ValidateDragOperation(eventData)) return;
+
+        HandleItemDrop(eventData);
+        CleanupDragging();
+    }
+
+    // Dragging Operations
+    private bool ValidateDragOperation(PointerEventData eventData)
+    {
+        if (draggedObject == null || eventData.pointerCurrentRaycast.gameObject == null ||
+            eventData.button != PointerEventData.InputButton.Left)
         {
-            StartDragging(slot, clickedObject);
+            isDragging = false;
+            return false;
         }
+        return true;
     }
 
     private void StartDragging(InventorySlot slot, GameObject clickedObject)
@@ -254,42 +224,22 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         lastItemSlotObject = clickedObject;
     }
 
-    public void OnPointerUp(PointerEventData eventData)
-    {
-        if (draggedObject == null || eventData.pointerCurrentRaycast.gameObject == null ||
-            eventData.button != PointerEventData.InputButton.Left)
-        {
-            isDragging = false;
-            return;
-        }
-
-        HandleItemDrop(eventData);
-        CleanupDragging();
-    }
-
     private void HandleItemDrop(PointerEventData eventData)
     {
-        GameObject clickedObject = eventData.pointerCurrentRaycast.gameObject;
-        InventorySlot slot = clickedObject.GetComponent<InventorySlot>();
+        var clickedObject = eventData.pointerCurrentRaycast.gameObject;
+        var slot = clickedObject?.GetComponent<InventorySlot>();
+        var itemType = draggedObject.GetComponent<InventoryItem>().itemScriptableObject.ItemType;
 
-        // Get the ItemType of the held item
-        ItemType itemType = draggedObject.GetComponent<InventoryItem>().itemScriptableObject.ItemType;
-
-        // Check if the slot is compatible
         if (slot != null && IsSlotCompatible(slot, itemType))
         {
             if (slot.heldItem == null)
-            {
                 ItemHandler.PlaceItemInSlot(slot, draggedObject, playerStatusController);
-            }
             else
-            {
                 ItemHandler.SwitchOrFillStack(slot, draggedObject, lastItemSlotObject, playerStatusController);
-            }
         }
-        else if (clickedObject.name == "DropItem")
+        else if (clickedObject?.name == "DropItem")
         {
-            DropItem();
+            ItemHandler.DropItem(draggedObject, lastItemSlotObject, playerStatusController, cam, player);
         }
         else
         {
@@ -299,160 +249,184 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
     }
 
-    private bool IsSlotCompatible(InventorySlot slot, ItemType itemType)
-    {
-        return slot.SlotType == SlotType.Common || slot.SlotType == (SlotType)itemType;
-    }
-
     private void CleanupDragging()
     {
         draggedObject = null;
         isDragging = false;
     }
 
-    private void DropItem()
+    private bool IsSlotCompatible(InventorySlot slot, ItemType itemType)
     {
-        ItemHandler.DropItem(draggedObject, lastItemSlotObject, playerStatusController, cam, player);
+        return slot.SlotType == SlotType.Common || slot.SlotType == (SlotType)itemType;
     }
 
+    // Item Info Management
+    private void ShowItemInfo(InventorySlot slot)
+    {
+        if (slot?.heldItem != null)
+            itemInfo.ShowItemInfo(slot.heldItem.GetComponent<InventoryItem>());
+        else
+            HideItemInfo();
+    }
+
+    private void HideItemInfo()
+    {
+        if (itemInfo?.gameObject != null) itemInfo.gameObject.SetActive(false);
+    }
+
+    // Item Management
     public void ItemPicked(GameObject pickedItem)
     {
-        ItemPickUpHandler.AddItemToInventory(this, pickedItem, Slots, itemPrefab, Player);
+        ItemPickUpHandler.AddItemToInventory(this, pickedItem, slots, itemPrefab, player);
+    }
+
+    public void InstantiateClassItems(List<GameObject> classItems)
+    {
+        foreach (var item in classItems)
+            ItemPicked(item);
     }
 
     public void InstantiateNewItem(GameObject emptySlot, GameObject pickedItem)
     {
-        GameObject newItem = Instantiate(itemPrefab);
-        InventoryItem newItemComponent = newItem.GetComponent<InventoryItem>();
-        ItemPickable pickedItemProperties = pickedItem.GetComponent<ItemPickable>();
-
-        SetupNewInventoryItem(newItemComponent, pickedItemProperties);
-        SetupItemTransform(newItem, emptySlot);
-        UpdatePlayerWeight(newItemComponent);
-        AssignItemToSlot(emptySlot, newItem);
+        var newItem = CreateInventoryItem(pickedItem);
+        SetupItemInSlot(newItem, emptySlot, pickedItem);
     }
 
-    private void SetupNewInventoryItem(InventoryItem newItemComponent, ItemPickable pickedItemProperties)
+    private GameObject CreateInventoryItem(GameObject pickedItem)
     {
-        ItemSO pickedItemSO = pickedItemProperties.itemScriptableObject;
-        newItemComponent.itemScriptableObject = pickedItemSO;
-        newItemComponent.stackCurrent = pickedItemProperties.quantity;
-        newItemComponent.stackMax = pickedItemSO.StackMax;
-        newItemComponent.durability = pickedItemProperties.DurabilityList[pickedItemProperties.DurabilityList.Count - 1];
-        newItemComponent.DurabilityList = pickedItemProperties.DurabilityList;
+        var newItem = Instantiate(itemPrefab);
+        var newItemComponent = newItem.GetComponent<InventoryItem>();
+        var pickedItemProperties = pickedItem.GetComponent<ItemPickable>();
+
+        SetupInventoryItemData(newItemComponent, pickedItemProperties);
+        return newItem;
     }
 
-    private void SetupItemTransform(GameObject newItem, GameObject emptySlot)
+    private void SetupInventoryItemData(InventoryItem newItem, ItemPickable pickedItem)
     {
-        Transform parentTransform = emptySlot.transform.parent.parent.GetChild(2);
+        var itemSO = pickedItem.itemScriptableObject;
+        newItem.itemScriptableObject = itemSO;
+        newItem.stackCurrent = pickedItem.quantity;
+        newItem.stackMax = itemSO.StackMax;
+        newItem.DurabilityList = pickedItem.DurabilityList;
+
+        if (pickedItem.DurabilityList?.Count > 0)
+            newItem.durability = pickedItem.DurabilityList[pickedItem.DurabilityList.Count - 1];
+    }
+
+    private void SetupItemInSlot(GameObject newItem, GameObject emptySlot, GameObject pickedItem)
+    {
+        // Setup transform
+        var parentTransform = emptySlot.transform.parent.parent.GetChild(2);
         newItem.transform.SetParent(parentTransform);
         newItem.transform.localScale = Vector3.one;
-    }
 
-    private void UpdatePlayerWeight(InventoryItem newItemComponent)
-    {
-        float itemWeight = newItemComponent.itemScriptableObject.Weight * newItemComponent.stackCurrent;
-        newItemComponent.totalWeight = itemWeight;
-        Player.GetComponent<PlayerStatusController>().WeightManager.AddWeight(itemWeight);
-    }
+        // Update weight
+        var itemComponent = newItem.GetComponent<InventoryItem>();
+        var totalWeight = itemComponent.itemScriptableObject.Weight * itemComponent.stackCurrent;
+        itemComponent.totalWeight = totalWeight;
 
-    private void AssignItemToSlot(GameObject emptySlot, GameObject newItem)
-    {
+        playerStatusController?.WeightManager?.AddWeight(totalWeight);
+
+        // Assign to slot
         emptySlot.GetComponent<InventorySlot>().SetHeldItem(newItem);
     }
 
+    // Storage Management
     public void OpenStorage(Storage storage)
     {
         lastStorage = storage;
-        Cursor.lockState = CursorLockMode.None;
+        SetCursorState(CursorLockMode.None, true);
         isStorageOpened = true;
 
-        SetupStorageSlots(storage);
-        SetupStorageBackground(storage);
+        ConfigureStorageUI(storage);
         PopulateStorageItems(storage);
-    }
-
-    private void SetupStorageSlots(Storage storage)
-    {
-        Transform slotsParent = storageParent.transform.GetChild(1);
-
-        // Set all slots to inactive
-        for (int i = 0; i < slotsParent.childCount; i++)
-        {
-            slotsParent.GetChild(i).gameObject.SetActive(false);
-        }
-
-        // Set some of the slots to active
-        for (int i = 0; i < storage.size; i++)
-        {
-            slotsParent.GetChild(i).gameObject.SetActive(true);
-        }
-    }
-
-    private void SetupStorageBackground(Storage storage)
-    {
-        float sizeY = (float)Mathf.CeilToInt(storage.size / 4f) / 4;
-        storageParent.transform.GetChild(0).localScale = new Vector2(1, sizeY);
-
-        float posY = (1 - sizeY) * 230;
-        storageParent.transform.GetChild(0).localPosition = new Vector2(-615, 130 + posY);
-    }
-
-    private void PopulateStorageItems(Storage storage)
-    {
-        // Destroy all existing items
-        Transform itemsParent = storageParent.transform.GetChild(2);
-        for (int i = 0; i < itemsParent.childCount; i++)
-        {
-            Destroy(itemsParent.GetChild(i).gameObject);
-        }
-
-        // Create new items
-        int index = 0;
-        foreach (StorageItem storageItem in storage.items)
-        {
-            if (storageItem.itemScriptableObject != null)
-            {
-                CreateStorageItem(storageItem, index);
-            }
-            index++;
-        }
-    }
-
-    private void CreateStorageItem(StorageItem storageItem, int index)
-    {
-        GameObject newItem = Instantiate(itemPrefab);
-        InventoryItem item = newItem.GetComponent<InventoryItem>();
-        item.itemScriptableObject = storageItem.itemScriptableObject;
-        item.stackCurrent = storageItem.currentStack;
-
-        Transform slot = storageParent.transform.GetChild(1).GetChild(index);
-        newItem.transform.SetParent(slot.parent.parent.GetChild(2));
-        slot.GetComponent<InventorySlot>().SetHeldItem(newItem);
-        newItem.transform.localScale = Vector3.one;
     }
 
     public void CloseStorage(Storage storage)
     {
-        lastStorage = null;
-        Cursor.lockState = CursorLockMode.Locked;
-        isStorageOpened = false;
-
         SaveStorageItems(storage);
+        lastStorage = null;
+        SetCursorState(CursorLockMode.Locked, false);
+        isStorageOpened = false;
+    }
+
+    private void ConfigureStorageUI(Storage storage)
+    {
+        SetupStorageSlots(storage);
+        SetupStorageBackground(storage);
+    }
+
+    private void SetupStorageSlots(Storage storage)
+    {
+        var slotsParent = storageParent.transform.GetChild(1);
+
+        // Deactivate all slots
+        for (int i = 0; i < slotsParent.childCount; i++)
+            slotsParent.GetChild(i).gameObject.SetActive(false);
+
+        // Activate required slots
+        for (int i = 0; i < storage.size; i++)
+            slotsParent.GetChild(i).gameObject.SetActive(true);
+    }
+
+    private void SetupStorageBackground(Storage storage)
+    {
+        var backgroundTransform = storageParent.transform.GetChild(0);
+        float sizeY = (float)Mathf.CeilToInt(storage.size / 4f) / 4;
+        float posY = (1 - sizeY) * 230;
+
+        backgroundTransform.localScale = new Vector2(1, sizeY);
+        backgroundTransform.localPosition = new Vector2(-615, 130 + posY);
+    }
+
+    private void PopulateStorageItems(Storage storage)
+    {
+        ClearExistingStorageItems();
+
+        for (int i = 0; i < storage.items.Count; i++)
+        {
+            var storageItem = storage.items[i];
+            if (storageItem?.itemScriptableObject != null)
+                CreateStorageItem(storageItem, i);
+        }
+    }
+
+    private void ClearExistingStorageItems()
+    {
+        var itemsParent = storageParent.transform.GetChild(2);
+        for (int i = itemsParent.childCount - 1; i >= 0; i--)
+            Destroy(itemsParent.GetChild(i).gameObject);
+    }
+
+    private void CreateStorageItem(StorageItem storageItem, int index)
+    {
+        var newItem = Instantiate(itemPrefab);
+        var itemComponent = newItem.GetComponent<InventoryItem>();
+
+        itemComponent.itemScriptableObject = storageItem.itemScriptableObject;
+        itemComponent.stackCurrent = storageItem.currentStack;
+
+        var slot = storageParent.transform.GetChild(1).GetChild(index);
+        newItem.transform.SetParent(slot.parent.parent.GetChild(2));
+        newItem.transform.localScale = Vector3.one;
+
+        slot.GetComponent<InventorySlot>().SetHeldItem(newItem);
     }
 
     private void SaveStorageItems(Storage storage)
     {
-        Transform slotsParent = storageParent.transform.GetChild(1);
+        var slotsParent = storageParent.transform.GetChild(1);
         storage.items.Clear();
 
         for (int i = 0; i < slotsParent.childCount; i++)
         {
-            Transform slot = slotsParent.GetChild(i);
+            var slot = slotsParent.GetChild(i);
+            var slotComponent = slot.GetComponent<InventorySlot>();
 
-            if (slot.gameObject.activeInHierarchy && slot.GetComponent<InventorySlot>().heldItem != null)
+            if (slot.gameObject.activeInHierarchy && slotComponent?.heldItem != null)
             {
-                InventoryItem inventoryItem = slot.GetComponent<InventorySlot>().heldItem.GetComponent<InventoryItem>();
+                var inventoryItem = slotComponent.heldItem.GetComponent<InventoryItem>();
                 storage.items.Add(new StorageItem(inventoryItem.stackCurrent, inventoryItem.itemScriptableObject));
             }
             else
