@@ -1,4 +1,3 @@
-
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
@@ -20,12 +19,12 @@ public class InventoryItem : MonoBehaviour
     {
         get { return durabilityList; }
         set { durabilityList = value; }
-    }  
+    }
     public Image IconImage
     {
         get { return iconImage; }
         set { iconImage = value; }
-    }    
+    }
     public Text StackText
     {
         get { return stackText; }
@@ -50,5 +49,3 @@ public class InventoryItem : MonoBehaviour
         }
     }
 }
-
-

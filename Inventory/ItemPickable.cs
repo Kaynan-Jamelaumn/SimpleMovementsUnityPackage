@@ -1,5 +1,4 @@
-
-using System;
+ï»¿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -26,16 +25,16 @@ public class ItemPickable : Interactable
     void Start()
     {
         InteractionTime = itemScriptableObject.PickUpTime;
-        // Salva a posição original do objeto
+        // Salva a posiÐ·Ð³o original do objeto
         //originalPosition = transform.position;
     }
 
     void Update()
     {
-        // Aplica a rotação ao objeto
+        // Aplica a rotaÐ·Ð³o ao objeto
         transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime);
 
-        // Aplica a pulsação (bounce) ao objeto
+        // Aplica a pulsaÐ·Ð³o (bounce) ao objeto
         //float bounceY = originalPosition.y + Mathf.Sin(Time.time * bounceSpeed) * bounceHeight;
         //transform.position = new Vector3(transform.position.x, bounceY, transform.position.z);
     }
