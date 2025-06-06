@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-// Centralized utility class for inventory operations - cleaner and more maintainable
+// Centralized utility class for inventory operations
 public static class InventoryUtils
 {
     // Slot compatibility checking
@@ -10,6 +10,17 @@ public static class InventoryUtils
     {
         if (slot == null) return false;
         return slot.SlotType == SlotType.Common || slot.SlotType == (SlotType)itemType;
+    }
+
+    // slot validation
+    public static bool IsValidDropTarget(InventorySlot slot, ItemType itemType)
+    {
+        return slot != null && IsCompatibleSlot(slot, itemType);
+    }
+
+    public static bool IsValidSlotIndex(GameObject[] slots, int index)
+    {
+        return slots != null && index >= 0 && index < slots.Length && slots[index] != null;
     }
 
     // Find empty slots in inventory
@@ -54,7 +65,7 @@ public static class InventoryUtils
         return stackableSlots;
     }
 
-    // Enhanced: Find first available slot (stackable or empty)
+    //  Find first available slot (stackable or empty)
     public static InventorySlot FindFirstAvailableSlot(GameObject[] slots, ItemSO itemSO)
     {
         // First try to find stackable slots
@@ -67,7 +78,7 @@ public static class InventoryUtils
         return emptySlots.Count > 0 ? emptySlots[0] : null;
     }
 
-    // Enhanced: Find empty slot (GameObject version for backward compatibility)
+    //  Find empty slot (GameObject version for backward compatibility)
     public static GameObject FindEmptySlot(GameObject[] slots)
     {
         var emptySlot = FindEmptySlots(slots);
@@ -131,7 +142,7 @@ public static class InventoryUtils
         return count;
     }
 
-    // Enhanced: Get available space for specific item
+    //  Get available space for specific item
     public static int GetAvailableSpace(GameObject[] slots, ItemSO itemSO)
     {
         int availableSpace = 0;
@@ -151,13 +162,13 @@ public static class InventoryUtils
         return availableSpace;
     }
 
-    // Enhanced: Check if enough space exists
+    //  Check if enough space exists
     public static bool HasEnoughSpace(GameObject[] slots, ItemSO itemSO, int requiredQuantity)
     {
         return GetAvailableSpace(slots, itemSO) >= requiredQuantity;
     }
 
-    // Enhanced: Check if enough items exist
+    // Check if enough items exist
     public static bool HasEnoughItems(GameObject[] slots, ItemSO itemSO, int requiredAmount)
     {
         return GetItemCount(slots, itemSO) >= requiredAmount;
@@ -187,7 +198,7 @@ public static class InventoryUtils
                     if (item.IsEmpty())
                     {
                         slot.heldItem = null;
-                        Object.Destroy(item.gameObject);
+                        SafeDestroy(item.gameObject);
                     }
                 }
             }
@@ -214,7 +225,7 @@ public static class InventoryUtils
         }
     }
 
-    // Enhanced: Durability utilities
+    //  Durability utilities
     public static int GetAverageDurability(List<int> durabilityList)
     {
         if (durabilityList == null || durabilityList.Count == 0) return 0;
@@ -239,7 +250,7 @@ public static class InventoryUtils
         if (obj != null) Object.Destroy(obj);
     }
 
-    // Enhanced: Slot utilities
+    //  Slot utilities
     public static bool IsSlotEmpty(InventorySlot slot)
     {
         return slot?.heldItem == null;
@@ -251,7 +262,7 @@ public static class InventoryUtils
         return item?.itemScriptableObject == itemSO;
     }
 
-    // Enhanced: Validation helpers
+    //  Validation helpers
     public static bool ValidateInventoryParameters(InventoryManager inventoryManager, GameObject item, GameObject[] slots, GameObject player)
     {
         if (inventoryManager == null)
@@ -281,7 +292,115 @@ public static class InventoryUtils
         return true;
     }
 
-    // Enhanced: Debug helpers
+    public static bool ValidateItemCreationParameters(GameObject emptySlot, GameObject pickedItem, GameObject itemPrefab)
+    {
+        if (emptySlot == null)
+        {
+            Debug.LogError("Empty slot is null");
+            return false;
+        }
+
+        if (pickedItem == null)
+        {
+            Debug.LogError("Picked item is null");
+            return false;
+        }
+
+        if (itemPrefab == null)
+        {
+            Debug.LogError("Item prefab is null");
+            return false;
+        }
+
+        var pickedItemComponent = pickedItem.GetComponent<ItemPickable>();
+        if (pickedItemComponent?.itemScriptableObject == null)
+        {
+            Debug.LogError("ItemPickable component or ScriptableObject is missing");
+            return false;
+        }
+
+        return true;
+    }
+
+
+
+
+    // Inventory state utilities
+    public static int CountItemsOfType(GameObject[] slots, ItemType itemType)
+    {
+        int count = 0;
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (item?.itemScriptableObject?.ItemType == itemType)
+                count += item.stackCurrent;
+        }
+        return count;
+    }
+
+    public static List<InventoryItem> GetAllItemsOfType(GameObject[] slots, ItemType itemType)
+    {
+        var items = new List<InventoryItem>();
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (item?.itemScriptableObject?.ItemType == itemType)
+                items.Add(item);
+        }
+        return items;
+    }
+
+    // Performance utilities
+    public static void ClearEmptySlots(GameObject[] slots)
+    {
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (item != null && item.IsEmpty())
+            {
+                slot.heldItem = null;
+                SafeDestroy(item.gameObject);
+            }
+        }
+    }
+
+    // Batch operations
+    public static Dictionary<ItemSO, int> GetInventorySummary(GameObject[] slots)
+    {
+        var summary = new Dictionary<ItemSO, int>();
+
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (item?.itemScriptableObject != null)
+            {
+                if (summary.ContainsKey(item.itemScriptableObject))
+                    summary[item.itemScriptableObject] += item.stackCurrent;
+                else
+                    summary[item.itemScriptableObject] = item.stackCurrent;
+            }
+        }
+
+        return summary;
+    }
+
+    //  Debug helpers
     public static void LogInventoryState(GameObject[] slots, string context = "")
     {
         Debug.Log($"=== Inventory State {context} ===");
@@ -300,5 +419,62 @@ public static class InventoryUtils
                 Debug.Log($"Slot {i}: Empty");
             }
         }
+    }
+
+    public static void LogInventorySummary(GameObject[] slots)
+    {
+        var summary = GetInventorySummary(slots);
+        Debug.Log("=== Inventory Summary ===");
+
+        foreach (var kvp in summary)
+        {
+            Debug.Log($"{kvp.Key.Name}: {kvp.Value}");
+        }
+
+        Debug.Log($"Total unique items: {summary.Count}");
+        Debug.Log($"Total weight: {CalculateInventoryWeight(slots):F2}");
+    }
+
+    // Quick access methods for common operations
+    public static bool TryGetFirstItemOfType(GameObject[] slots, ItemType itemType, out InventoryItem item)
+    {
+        item = null;
+
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var slotItem = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (slotItem?.itemScriptableObject?.ItemType == itemType)
+            {
+                item = slotItem;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool TryGetItemBySO(GameObject[] slots, ItemSO itemSO, out InventoryItem item)
+    {
+        item = null;
+
+        foreach (var slotObj in slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            var slotItem = slot?.heldItem?.GetComponent<InventoryItem>();
+
+            if (slotItem?.itemScriptableObject == itemSO)
+            {
+                item = slotItem;
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -2,13 +2,22 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
+using System.Collections;
 
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
+    // Dynamic slot configuration
+    [Header("Dynamic Slot Configuration")]
+    [SerializeField] private int numberOfHotBarSlots = 4;
+    [SerializeField] private int numberOfInventorySlots = 20;
+
     // Core inventory configuration
-    [SerializeField] private GameObject[] hotbarSlots = new GameObject[4];
-    [SerializeField] private GameObject[] slots = new GameObject[20];
     [SerializeField] private GameObject itemPrefab;
+
+    // Slot Manager
+    [Header("Slot Manager")]
+    [SerializeField] private SlotManager slotManager;
 
     // UI References
     [SerializeField] private GameObject inventoryParent;
@@ -31,21 +40,55 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // Input
     private Mouse mouse;
 
+    // Previous slot counts for change detection
+    private int previousHotbarSlots;
+    private int previousInventorySlots;
+
     // Properties
     public Transform HandParent => handParent;
-    public GameObject[] Slots => slots;
+    public GameObject[] Slots => slotManager?.InventorySlots;
+    public GameObject[] HotbarSlots => slotManager?.HotbarSlots;
     public GameObject Player => player;
     public bool IsStorageOpened => storageManager.IsStorageOpened;
+    public int NumberOfHotBarSlots
+    {
+        get => numberOfHotBarSlots;
+        set
+        {
+            if (value != numberOfHotBarSlots)
+            {
+                numberOfHotBarSlots = value;
+                slotManager?.UpdateHotbarSlots(value);
+            }
+        }
+    }
+    public int NumberOfInventorySlots
+    {
+        get => numberOfInventorySlots;
+        set
+        {
+            if (value != numberOfInventorySlots)
+            {
+                numberOfInventorySlots = value;
+                slotManager?.UpdateInventorySlots(value);
+            }
+        }
+    }
 
     private void Awake()
     {
         InitializeComponents();
         InitializeSubSystems();
+
+        // Store initial values for change detection
+        previousHotbarSlots = numberOfHotBarSlots;
+        previousInventorySlots = numberOfInventorySlots;
     }
 
     private void Start()
     {
-        HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
+        InitializeSlotManager();
+        HotbarHandler.HotbarItemChanged(slotManager.HotbarSlots, handParent);
     }
 
     private void Update()
@@ -53,6 +96,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         HandleHotbarInput();
         uiStateManager.UpdateUI();
         dragHandler.UpdateDraggedObjectPosition();
+
+        // Check for slot count changes in editor
+        CheckForSlotCountChanges();
     }
 
     // Initialization
@@ -63,6 +109,16 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         if (cam == null) cam = Camera.main;
         mouse = Mouse.current;
+
+        // Validate required UI components
+        ValidateUIComponents();
+    }
+
+    private void ValidateUIComponents()
+    {
+        // SlotManager will handle its own validation
+        if (slotManager == null)
+            Debug.LogError("SlotManager is not assigned in InventoryManager");
     }
 
     private void InitializeSubSystems()
@@ -70,6 +126,44 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         dragHandler = new DragHandler(mouse);
         uiStateManager = new UIStateManager(inventoryParent, equippableInventory, storageParent);
         storageManager = new StorageManager(storageParent, itemPrefab);
+    }
+
+    private void InitializeSlotManager()
+    {
+        if (slotManager == null)
+        {
+            Debug.LogError("SlotManager is not assigned in InventoryManager!");
+            return;
+        }
+
+        slotManager.Initialize(playerStatusController, player);
+
+        // Subscribe to slot changes
+        slotManager.OnSlotsChanged += OnSlotsChanged;
+
+        // Create initial slots
+        slotManager.CreateAllSlots(numberOfHotBarSlots, numberOfInventorySlots);
+    }
+
+    private void OnSlotsChanged()
+    {
+        // Refresh hotbar when slots change
+        HotbarHandler.ForceRefresh(slotManager.HotbarSlots, handParent);
+    }
+
+    private void CheckForSlotCountChanges()
+    {
+        if (numberOfHotBarSlots != previousHotbarSlots)
+        {
+            slotManager?.UpdateHotbarSlots(numberOfHotBarSlots);
+            previousHotbarSlots = numberOfHotBarSlots;
+        }
+
+        if (numberOfInventorySlots != previousInventorySlots)
+        {
+            slotManager?.UpdateInventorySlots(numberOfInventorySlots);
+            previousInventorySlots = numberOfInventorySlots;
+        }
     }
 
     // Input handling
@@ -93,7 +187,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void HandleHotbarInput()
     {
-        HotbarHandler.CheckForHotbarInput(hotbarSlots, handParent);
+        HotbarHandler.CheckForHotbarInput(slotManager.HotbarSlots, handParent);
     }
 
     // Inventory operations
@@ -124,7 +218,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private InventorySlot GetSelectedHotbarSlot()
     {
-        if (hotbarSlots == null || HotbarHandler.SelectedHotbarSlot >= hotbarSlots.Length)
+        var hotbarSlots = slotManager.HotbarSlots;
+        if (hotbarSlots == null || hotbarSlots.Length == 0 || HotbarHandler.SelectedHotbarSlot >= hotbarSlots.Length)
             return null;
 
         return hotbarSlots[HotbarHandler.SelectedHotbarSlot]?.GetComponent<InventorySlot>();
@@ -163,7 +258,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         dragHandler.CleanupDragging();
     }
 
-    //  item management
+    // Item management
     private void HandleItemDrop(PointerEventData eventData)
     {
         var clickedObject = eventData.pointerCurrentRaycast.gameObject;
@@ -187,7 +282,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             ItemHandler.ReturnItemToLastSlot(dragHandler.LastItemSlotObject, dragHandler.DraggedObject);
         }
 
-        HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
+        HotbarHandler.HotbarItemChanged(slotManager.HotbarSlots, handParent);
     }
 
     // Item info management
@@ -207,7 +302,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // Item pickup and creation
     public void ItemPicked(GameObject pickedItem)
     {
-        ItemPickUpHandler.AddItemToInventory(this, pickedItem, slots, itemPrefab, player);
+        ItemPickUpHandler.AddItemToInventory(this, pickedItem, slotManager.InventorySlots, itemPrefab, player);
     }
 
     public void InstantiateClassItems(List<GameObject> classItems)
@@ -265,35 +360,77 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         uiStateManager.SetStorageOpened(false);
     }
 
+    // Public utility methods
     public int GetItemCount(ItemSO itemSO)
     {
-        return InventoryUtils.GetItemCount(slots, itemSO);
+        return InventoryUtils.GetItemCount(slotManager.InventorySlots, itemSO);
     }
 
     public bool HasEnoughSpace(ItemSO itemSO, int requiredQuantity)
     {
-        return InventoryUtils.HasEnoughSpace(slots, itemSO, requiredQuantity);
+        return InventoryUtils.HasEnoughSpace(slotManager.InventorySlots, itemSO, requiredQuantity);
     }
 
     public bool HasEnoughItems(ItemSO itemSO, int requiredAmount)
     {
-        return InventoryUtils.HasEnoughItems(slots, itemSO, requiredAmount);
+        return InventoryUtils.HasEnoughItems(slotManager.InventorySlots, itemSO, requiredAmount);
     }
 
     public int RemoveItems(ItemSO itemSO, int amountToRemove)
     {
-        return InventoryUtils.RemoveItems(slots, itemSO, amountToRemove);
+        return InventoryUtils.RemoveItems(slotManager.InventorySlots, itemSO, amountToRemove);
     }
 
     public float GetTotalInventoryWeight()
     {
-        return InventoryUtils.CalculateInventoryWeight(slots);
+        return InventoryUtils.CalculateInventoryWeight(slotManager.InventorySlots);
+    }
+
+    // Manual slot management methods for runtime use
+    public void AddHotbarSlots(int count)
+    {
+        NumberOfHotBarSlots += count;
+    }
+
+    public void RemoveHotbarSlots(int count)
+    {
+        NumberOfHotBarSlots = Mathf.Max(1, NumberOfHotBarSlots - count);
+    }
+
+    public void AddInventorySlots(int count)
+    {
+        NumberOfInventorySlots += count;
+    }
+
+    public void RemoveInventorySlots(int count)
+    {
+        NumberOfInventorySlots = Mathf.Max(1, NumberOfInventorySlots - count);
+    }
+
+    // Slot manager utility methods
+    public void SetSlotSizeConstraints(float minSize, float maxSize, float spacing)
+    {
+        slotManager?.SetSlotSizeConstraints(minSize, maxSize, spacing);
+    }
+
+    public void RefreshGridLayout()
+    {
+        slotManager?.RefreshGridLayout(numberOfInventorySlots);
     }
 
     // Debug method
     [System.Diagnostics.Conditional("UNITY_EDITOR")]
     public void LogInventoryState()
     {
-        InventoryUtils.LogInventoryState(slots, "Current State");
+        InventoryUtils.LogInventoryState(slotManager.InventorySlots, $"Hotbar: {numberOfHotBarSlots}, Inventory: {numberOfInventorySlots}");
+    }
+
+    private void OnDestroy()
+    {
+        // Unsubscribe from events
+        if (slotManager != null)
+        {
+            slotManager.OnSlotsChanged -= OnSlotsChanged;
+        }
     }
 }
