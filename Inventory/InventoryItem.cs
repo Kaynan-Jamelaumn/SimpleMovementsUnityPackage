@@ -24,18 +24,25 @@ public class InventoryItem : MonoBehaviour
     // Durability system
     private List<int> durabilityList = new List<int>();
 
-    // Cached values for performance
-    private bool hasValidStackMax;
-    private bool shouldShowStackText;
+    // Cached UI state for performance
+    private UICache uiCache;
 
     // Properties
     public List<int> DurabilityList { get => durabilityList; set => durabilityList = value ?? new List<int>(); }
     public Image IconImage { get => iconImage; set => iconImage = value; }
     public Text StackText { get => stackText; set => stackText = value; }
 
+    private void Awake()
+    {
+        uiCache = new UICache();
+    }
+
     private void Start()
     {
-        InitializeItem();
+        if (itemScriptableObject != null)
+        {
+            InitializeFromScriptableObject();
+        }
     }
 
     private void Update()
@@ -43,60 +50,73 @@ public class InventoryItem : MonoBehaviour
         UpdateUI();
     }
 
-    // Initialize item with cached values for performance
-    private void InitializeItem()
+    // Initialize item from ItemPickable data
+    public void Initialize(ItemPickable pickedItem)
     {
-        if (itemScriptableObject != null)
-        {
-            stackMax = itemScriptableObject.StackMax;
-            hasValidStackMax = stackMax >= 1;
-            UpdateTotalWeight();
-        }
-        else
-        {
-            Debug.LogWarning($"ItemSO is null on {gameObject.name}");
-        }
+        if (pickedItem?.itemScriptableObject == null) return;
+
+        itemScriptableObject = pickedItem.itemScriptableObject;
+        stackCurrent = pickedItem.quantity;
+        stackMax = itemScriptableObject.StackMax;
+        DurabilityList = pickedItem.DurabilityList ?? new List<int>();
+
+        if (DurabilityList.Count > 0)
+            durability = DurabilityList[DurabilityList.Count - 1];
+
+        UpdateTotalWeight();
+        uiCache.MarkForUpdate();
+    }
+
+    // Initialize from ScriptableObject (for existing items)
+    private void InitializeFromScriptableObject()
+    {
+        stackMax = itemScriptableObject.StackMax;
+        UpdateTotalWeight();
+        uiCache.MarkForUpdate();
     }
 
     // Optimized UI update with caching
     private void UpdateUI()
     {
+        if (!uiCache.NeedsUpdate()) return;
+
         UpdateIcon();
         UpdateStackDisplay();
+        uiCache.ClearUpdateFlag();
     }
 
     private void UpdateIcon()
     {
-        if (iconImage != null && itemScriptableObject?.Icon != null)
+        if (iconImage == null || itemScriptableObject?.Icon == null) return;
+
+        if (uiCache.LastSprite != itemScriptableObject.Icon)
         {
-            // Only update if the sprite has changed
-            if (iconImage.sprite != itemScriptableObject.Icon)
-                iconImage.sprite = itemScriptableObject.Icon;
+            iconImage.sprite = itemScriptableObject.Icon;
+            uiCache.LastSprite = itemScriptableObject.Icon;
         }
     }
 
     private void UpdateStackDisplay()
     {
-        if (stackText != null && hasValidStackMax)
-        {
-            bool shouldShow = stackMax > 1;
+        if (stackText == null) return;
 
-            // Only update text if visibility changed or stack count changed
-            if (shouldShow != shouldShowStackText || shouldShow)
-            {
-                stackText.text = shouldShow ? stackCurrent.ToString() : "";
-                shouldShowStackText = shouldShow;
-            }
+        bool shouldShow = stackMax > 1;
+        string currentText = shouldShow ? stackCurrent.ToString() : "";
+
+        if (uiCache.LastStackText != currentText)
+        {
+            stackText.text = currentText;
+            uiCache.LastStackText = currentText;
         }
     }
 
     // Stack management
     public bool CanStackWith(InventoryItem other)
     {
-        if (other == null || itemScriptableObject == null || other.itemScriptableObject == null)
-            return false;
-
-        return itemScriptableObject == other.itemScriptableObject &&
+        return other != null &&
+               itemScriptableObject != null &&
+               other.itemScriptableObject != null &&
+               itemScriptableObject == other.itemScriptableObject &&
                stackCurrent < stackMax;
     }
 
@@ -115,8 +135,9 @@ public class InventoryItem : MonoBehaviour
         int amountToAdd = Mathf.Min(amount, availableSpace);
         stackCurrent += amountToAdd;
         UpdateTotalWeight();
+        uiCache.MarkForUpdate();
 
-        return amountToAdd == amount; // Returns true if all items were added
+        return amountToAdd == amount;
     }
 
     public bool RemoveFromStack(int amount)
@@ -125,6 +146,7 @@ public class InventoryItem : MonoBehaviour
 
         stackCurrent -= amount;
         UpdateTotalWeight();
+        uiCache.MarkForUpdate();
 
         return true;
     }
@@ -147,7 +169,6 @@ public class InventoryItem : MonoBehaviour
         int lastIndex = durabilityList.Count - 1;
         durabilityList.RemoveAt(lastIndex);
 
-        // Update current durability if there are more items
         if (durabilityList.Count > 0)
             durability = durabilityList[durabilityList.Count - 1];
         else
@@ -191,33 +212,16 @@ public class InventoryItem : MonoBehaviour
     }
 
     // Utility methods
-    public bool IsEmpty()
-    {
-        return stackCurrent <= 0;
-    }
-
-    public bool IsFull()
-    {
-        return stackCurrent >= stackMax;
-    }
-
-    public float GetWeightPerItem()
-    {
-        return itemScriptableObject?.Weight ?? 0f;
-    }
-
-    // Item validation
-    public bool IsValid()
-    {
-        return itemScriptableObject != null && stackCurrent > 0 && stackCurrent <= stackMax;
-    }
+    public bool IsEmpty() => stackCurrent <= 0;
+    public bool IsFull() => stackCurrent >= stackMax;
+    public float GetWeightPerItem() => itemScriptableObject?.Weight ?? 0f;
+    public bool IsValid() => itemScriptableObject != null && stackCurrent > 0 && stackCurrent <= stackMax;
 
     // Split item functionality
     public InventoryItem CreateSplitItem(int amountToSplit, GameObject itemPrefab)
     {
         if (amountToSplit <= 0 || amountToSplit >= stackCurrent) return null;
 
-        // Create new item
         GameObject newItemObject = Instantiate(itemPrefab);
         InventoryItem newItem = newItemObject.GetComponent<InventoryItem>();
 
@@ -269,9 +273,20 @@ public class InventoryItem : MonoBehaviour
                $"Weight: {totalWeight:F2}, Durability: {durability}, Equipped: {isEquipped}";
     }
 
-    // Cleanup
     private void OnDestroy()
     {
         durabilityList?.Clear();
+    }
+
+    // UI caching helper class
+    private class UICache
+    {
+        public Sprite LastSprite { get; set; }
+        public string LastStackText { get; set; } = "";
+        private bool needsUpdate = true;
+
+        public bool NeedsUpdate() => needsUpdate;
+        public void MarkForUpdate() => needsUpdate = true;
+        public void ClearUpdateFlag() => needsUpdate = false;
     }
 }

@@ -1,10 +1,10 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
-// Utility class to reduce redundancy across inventory system
+// Centralized utility class for inventory operations - cleaner and more maintainable
 public static class InventoryUtils
 {
-
     // Slot compatibility checking
     public static bool IsCompatibleSlot(InventorySlot slot, ItemType itemType)
     {
@@ -54,6 +54,26 @@ public static class InventoryUtils
         return stackableSlots;
     }
 
+    // Enhanced: Find first available slot (stackable or empty)
+    public static InventorySlot FindFirstAvailableSlot(GameObject[] slots, ItemSO itemSO)
+    {
+        // First try to find stackable slots
+        var stackableSlots = FindStackableSlots(slots, itemSO);
+        if (stackableSlots.Count > 0)
+            return stackableSlots[0];
+
+        // Then find empty slots
+        var emptySlots = FindEmptySlots(slots);
+        return emptySlots.Count > 0 ? emptySlots[0] : null;
+    }
+
+    // Enhanced: Find empty slot (GameObject version for backward compatibility)
+    public static GameObject FindEmptySlot(GameObject[] slots)
+    {
+        var emptySlot = FindEmptySlots(slots);
+        return emptySlot.Count > 0 ? emptySlot[0].gameObject : null;
+    }
+
     // Weight management helpers
     public static void UpdatePlayerWeight(GameObject player, float weightChange)
     {
@@ -64,7 +84,7 @@ public static class InventoryUtils
         {
             if (weightChange > 0)
                 weightManager.AddWeight(weightChange);
-            else
+            else if (weightChange < 0)
                 weightManager.ConsumeWeight(-weightChange);
         }
         else
@@ -111,6 +131,38 @@ public static class InventoryUtils
         return count;
     }
 
+    // Enhanced: Get available space for specific item
+    public static int GetAvailableSpace(GameObject[] slots, ItemSO itemSO)
+    {
+        int availableSpace = 0;
+
+        // Count space in existing stacks
+        var stackableSlots = FindStackableSlots(slots, itemSO);
+        foreach (var slot in stackableSlots)
+        {
+            var item = slot.heldItem.GetComponent<InventoryItem>();
+            availableSpace += (item.stackMax - item.stackCurrent);
+        }
+
+        // Count empty slots
+        var emptySlots = FindEmptySlots(slots);
+        availableSpace += emptySlots.Count * itemSO.StackMax;
+
+        return availableSpace;
+    }
+
+    // Enhanced: Check if enough space exists
+    public static bool HasEnoughSpace(GameObject[] slots, ItemSO itemSO, int requiredQuantity)
+    {
+        return GetAvailableSpace(slots, itemSO) >= requiredQuantity;
+    }
+
+    // Enhanced: Check if enough items exist
+    public static bool HasEnoughItems(GameObject[] slots, ItemSO itemSO, int requiredAmount)
+    {
+        return GetItemCount(slots, itemSO) >= requiredAmount;
+    }
+
     // Remove items from inventory
     public static int RemoveItems(GameObject[] slots, ItemSO itemSO, int amountToRemove)
     {
@@ -154,37 +206,52 @@ public static class InventoryUtils
         for (int i = 0; i < transferCount; i++)
         {
             int lastIndex = fromList.Count - 1;
-            toList.Add(fromList[lastIndex]);
-            fromList.RemoveAt(lastIndex);
+            if (lastIndex >= 0)
+            {
+                toList.Add(fromList[lastIndex]);
+                fromList.RemoveAt(lastIndex);
+            }
         }
     }
 
-    // Safe GameObject destruction
+    // Enhanced: Durability utilities
+    public static int GetAverageDurability(List<int> durabilityList)
+    {
+        if (durabilityList == null || durabilityList.Count == 0) return 0;
+        return Mathf.RoundToInt((float)durabilityList.Average());
+    }
+
+    public static int GetLowestDurability(List<int> durabilityList)
+    {
+        if (durabilityList == null || durabilityList.Count == 0) return 0;
+        return durabilityList.Min();
+    }
+
+    public static int GetHighestDurability(List<int> durabilityList)
+    {
+        if (durabilityList == null || durabilityList.Count == 0) return 0;
+        return durabilityList.Max();
+    }
+
+    // Safe operations
     public static void SafeDestroy(GameObject obj)
     {
-        if (obj != null)
-            Object.Destroy(obj);
+        if (obj != null) Object.Destroy(obj);
     }
 
-    // UI state management
-    public static void SetUIActive(GameObject uiElement, bool active)
+    // Enhanced: Slot utilities
+    public static bool IsSlotEmpty(InventorySlot slot)
     {
-        if (uiElement != null && uiElement.activeSelf != active)
-            uiElement.SetActive(active);
+        return slot?.heldItem == null;
     }
 
-    // Transform utilities
-    public static void SetupItemTransform(Transform itemTransform, Transform parentTransform, Vector3 localPosition, Vector3 localScale)
+    public static bool SlotHasItem(InventorySlot slot, ItemSO itemSO)
     {
-        if (itemTransform == null || parentTransform == null) return;
-
-        itemTransform.SetParent(parentTransform);
-        itemTransform.localPosition = localPosition;
-        itemTransform.localScale = localScale;
-        itemTransform.localRotation = Quaternion.identity;
+        var item = slot?.heldItem?.GetComponent<InventoryItem>();
+        return item?.itemScriptableObject == itemSO;
     }
 
-    // Inventory validation
+    // Enhanced: Validation helpers
     public static bool ValidateInventoryParameters(InventoryManager inventoryManager, GameObject item, GameObject[] slots, GameObject player)
     {
         if (inventoryManager == null)
@@ -214,26 +281,7 @@ public static class InventoryUtils
         return true;
     }
 
-    // Get available inventory space for specific item
-    public static int GetAvailableSpace(GameObject[] slots, ItemSO itemSO)
-    {
-        int availableSpace = 0;
-
-        // Count space in existing stacks
-        foreach (var slot in FindStackableSlots(slots, itemSO))
-        {
-            var item = slot.heldItem.GetComponent<InventoryItem>();
-            availableSpace += item.GetAvailableStackSpace();
-        }
-
-        // Count empty slots
-        int emptySlots = FindEmptySlots(slots).Count;
-        availableSpace += emptySlots * itemSO.StackMax;
-
-        return availableSpace;
-    }
-
-    // Debug helpers
+    // Enhanced: Debug helpers
     public static void LogInventoryState(GameObject[] slots, string context = "")
     {
         Debug.Log($"=== Inventory State {context} ===");
@@ -253,5 +301,4 @@ public static class InventoryUtils
             }
         }
     }
-
 }
