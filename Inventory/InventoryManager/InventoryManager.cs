@@ -163,7 +163,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         dragHandler.CleanupDragging();
     }
 
-    // Item management
+    //  item management
     private void HandleItemDrop(PointerEventData eventData)
     {
         var clickedObject = eventData.pointerCurrentRaycast.gameObject;
@@ -171,9 +171,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         var draggedItem = dragHandler.DraggedObject.GetComponent<InventoryItem>();
         var itemType = draggedItem.itemScriptableObject.ItemType;
 
-        if (slot != null && IsSlotCompatible(slot, itemType))
+        if (slot != null && InventoryUtils.IsCompatibleSlot(slot, itemType))
         {
-            if (slot.heldItem == null)
+            if (InventoryUtils.IsSlotEmpty(slot))
                 ItemHandler.PlaceItemInSlot(slot, dragHandler.DraggedObject, playerStatusController);
             else
                 ItemHandler.SwitchOrFillStack(slot, dragHandler.DraggedObject, dragHandler.LastItemSlotObject, playerStatusController);
@@ -188,11 +188,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         }
 
         HotbarHandler.HotbarItemChanged(hotbarSlots, handParent);
-    }
-
-    private bool IsSlotCompatible(InventorySlot slot, ItemType itemType)
-    {
-        return slot.SlotType == SlotType.Common || slot.SlotType == (SlotType)itemType;
     }
 
     // Item info management
@@ -244,12 +239,12 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         newItem.transform.SetParent(parentTransform);
         newItem.transform.localScale = Vector3.one;
 
-        // Update weight
+        // Update weight using InventoryUtils
         var itemComponent = newItem.GetComponent<InventoryItem>();
         var totalWeight = itemComponent.itemScriptableObject.Weight * itemComponent.stackCurrent;
         itemComponent.totalWeight = totalWeight;
 
-        playerStatusController?.WeightManager?.AddWeight(totalWeight);
+        InventoryUtils.UpdatePlayerWeight(player, totalWeight);
 
         // Assign to slot
         emptySlot.GetComponent<InventorySlot>().SetHeldItem(newItem);
@@ -269,5 +264,36 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         SetCursorState(CursorLockMode.Locked, false);
         uiStateManager.SetStorageOpened(false);
     }
-}
 
+    public int GetItemCount(ItemSO itemSO)
+    {
+        return InventoryUtils.GetItemCount(slots, itemSO);
+    }
+
+    public bool HasEnoughSpace(ItemSO itemSO, int requiredQuantity)
+    {
+        return InventoryUtils.HasEnoughSpace(slots, itemSO, requiredQuantity);
+    }
+
+    public bool HasEnoughItems(ItemSO itemSO, int requiredAmount)
+    {
+        return InventoryUtils.HasEnoughItems(slots, itemSO, requiredAmount);
+    }
+
+    public int RemoveItems(ItemSO itemSO, int amountToRemove)
+    {
+        return InventoryUtils.RemoveItems(slots, itemSO, amountToRemove);
+    }
+
+    public float GetTotalInventoryWeight()
+    {
+        return InventoryUtils.CalculateInventoryWeight(slots);
+    }
+
+    // Debug method
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    public void LogInventoryState()
+    {
+        InventoryUtils.LogInventoryState(slots, "Current State");
+    }
+}
