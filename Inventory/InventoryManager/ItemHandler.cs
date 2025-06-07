@@ -13,8 +13,14 @@ public static class ItemHandler
     // Core slot operations
     private static void SetItemInSlot(InventorySlot slot, GameObject draggedObject)
     {
+        if (slot == null)
+        {
+            Debug.LogError("Cannot set item in null slot");
+            return;
+        }
+
+        // Use the slot's SetHeldItem method instead of manual transform manipulation
         slot.SetHeldItem(draggedObject);
-        draggedObject.transform.SetParent(slot.transform.parent.parent.GetChild(2));
     }
 
     // Equipment handling
@@ -84,7 +90,7 @@ public static class ItemHandler
                slotHeldItem.itemScriptableObject == draggedItem.itemScriptableObject;
     }
 
-    // Item switching logic
+    // Item switching logic 
     public static void SwitchItems(InventorySlot slot, GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController)
     {
         var draggedItem = draggedObject.GetComponent<InventoryItem>();
@@ -121,20 +127,36 @@ public static class ItemHandler
         }
     }
 
+    // Updated SwapItems method 
     private static void SwapItems(InventorySlot slot, InventorySlot lastSlot, GameObject draggedObject)
     {
-        lastSlot.SetHeldItem(slot.heldItem);
-        slot.heldItem.transform.SetParent(lastSlot.transform.parent.parent.GetChild(2));
+        if (slot == null || lastSlot == null)
+        {
+            Debug.LogError("Cannot swap items: one or both slots are null");
+            return;
+        }
 
+        GameObject currentSlotItem = slot.heldItem;
+
+        // Use the slot's SetHeldItem method instead of manual transform manipulation
+        lastSlot.SetHeldItem(currentSlotItem);
         slot.SetHeldItem(draggedObject);
-        draggedObject.transform.SetParent(slot.transform.parent.parent.GetChild(2));
     }
 
-    // Utility methods
+    // Utility methods 
     public static void ReturnItemToLastSlot(GameObject lastItemSlotObject, GameObject draggedObject)
     {
-        lastItemSlotObject.GetComponent<InventorySlot>().SetHeldItem(draggedObject);
-        draggedObject.transform.SetParent(lastItemSlotObject.transform);
+        var lastSlot = lastItemSlotObject.GetComponent<InventorySlot>();
+        if (lastSlot != null)
+        {
+            lastSlot.SetHeldItem(draggedObject);
+        }
+        else
+        {
+            Debug.LogError("LastItemSlotObject does not have InventorySlot component");
+            // Fallback to old method if slot component is missing
+            draggedObject.transform.SetParent(lastItemSlotObject.transform);
+        }
     }
 
     // Item dropping
@@ -181,56 +203,5 @@ public static class ItemHandler
 
         player.GetComponent<PlayerStatusController>().WeightManager.ConsumeWeight(
             itemPickableComponent.itemScriptableObject.Weight * itemPickableComponent.quantity);
-    }
-}
-
-// Separate class for stack operations to improve organization
-public static class StackOperations
-{
-    public static void FillStack(InventorySlot slot, InventoryItem slotHeldItem, InventoryItem draggedItem, GameObject lastItemSlotObject)
-    {
-        int itemsToFillStack = slotHeldItem.stackMax - slotHeldItem.stackCurrent;
-
-        if (itemsToFillStack >= draggedItem.stackCurrent)
-        {
-            FillEntireStack(slotHeldItem, draggedItem);
-        }
-        else
-        {
-            FillPartialStack(slotHeldItem, draggedItem, itemsToFillStack, lastItemSlotObject);
-        }
-    }
-
-    private static void FillEntireStack(InventoryItem slotHeldItem, InventoryItem draggedItem)
-    {
-        slotHeldItem.stackCurrent += draggedItem.stackCurrent;
-        slotHeldItem.DurabilityList.AddRange(draggedItem.DurabilityList);
-        slotHeldItem.totalWeight += draggedItem.totalWeight;
-
-        Object.Destroy(draggedItem.gameObject);
-    }
-
-    private static void FillPartialStack(InventoryItem slotHeldItem, InventoryItem draggedItem, int itemsToFillStack, GameObject lastItemSlotObject)
-    {
-        // Transfer durability items
-        for (int j = 0; j < itemsToFillStack; j++)
-        {
-            if (draggedItem.DurabilityList.Count > 0)
-            {
-                slotHeldItem.DurabilityList.Add(draggedItem.DurabilityList[^1]);
-                draggedItem.DurabilityList.RemoveAt(draggedItem.DurabilityList.Count - 1);
-            }
-        }
-
-        // Update weights and stacks
-        float weightPerItem = draggedItem.itemScriptableObject.Weight;
-        slotHeldItem.totalWeight += weightPerItem * itemsToFillStack;
-        draggedItem.totalWeight -= weightPerItem * itemsToFillStack;
-
-        slotHeldItem.stackCurrent += itemsToFillStack;
-        draggedItem.stackCurrent -= itemsToFillStack;
-
-        // Return remaining items to last slot
-        lastItemSlotObject.GetComponent<InventorySlot>().SetHeldItem(draggedItem.gameObject);
     }
 }
