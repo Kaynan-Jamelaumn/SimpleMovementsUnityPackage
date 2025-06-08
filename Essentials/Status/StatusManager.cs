@@ -123,7 +123,7 @@ public abstract class StatusManager : MonoBehaviour
     {
         if (barImage == null)
         {
-            Debug.LogError("Bar image cannot be null.");
+            //Debug.LogError("Bar image cannot be null.");
             return;
         }
 
