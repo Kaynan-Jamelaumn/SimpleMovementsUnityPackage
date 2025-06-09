@@ -105,7 +105,7 @@ public class SlotConfigurationManager
     private Vector2 hotbarSlotSpacing = new Vector2(5f, 5f);
 
     // Runtime hotbar padding - initialized in Initialize()
-    private RectOffset hotbarPadding;
+    [System.NonSerialized] private RectOffset hotbarPadding;
 
     // Enums
     public enum LayoutMode
@@ -180,45 +180,105 @@ public class SlotConfigurationManager
     {
         // Initialize RectOffset during runtime to avoid serialization issues
         hotbarPadding = new RectOffset(10, 10, 10, 10);
+        ValidateConfiguration();
+    }
+
+    private void ValidateConfiguration()
+    {
+        // Ensure minimum constraints
+        minSlotSize = Mathf.Max(10f, minSlotSize);
+        maxSlotSize = Mathf.Max(minSlotSize + 1f, maxSlotSize);
+        minSpacing = Mathf.Max(0f, minSpacing);
+        maxSpacing = Mathf.Max(minSpacing, maxSpacing);
+        preferredSpacing = Mathf.Clamp(preferredSpacing, minSpacing, maxSpacing);
+
+        // Validate grid constraints
+        maxColumns = Mathf.Max(1, maxColumns);
+        maxRows = Mathf.Max(1, maxRows);
+        forcedColumns = Mathf.Max(1, forcedColumns);
+        forcedRows = Mathf.Max(1, forcedRows);
+
+        // Validate padding
+        paddingLeft = Mathf.Max(0, paddingLeft);
+        paddingRight = Mathf.Max(0, paddingRight);
+        paddingTop = Mathf.Max(0, paddingTop);
+        paddingBottom = Mathf.Max(0, paddingBottom);
+        paddingPercentage = Mathf.Clamp(paddingPercentage, 0f, 20f);
+
+        // Validate aspect ratio
+        if (slotAspectRatio.x <= 0) slotAspectRatio.x = 1f;
+        if (slotAspectRatio.y <= 0) slotAspectRatio.y = 1f;
+
+        // Validate multipliers
+        oversizeMultiplier = Mathf.Clamp(oversizeMultiplier, 1f, 3f);
+        minPanelUtilization = Mathf.Clamp(minPanelUtilization, 0.1f, 1f);
     }
 
     // Configuration Methods
     public void SetLayoutMode(LayoutMode mode)
     {
         layoutMode = mode;
+        ApplyLayoutModeDefaults(mode);
+    }
+
+    private void ApplyLayoutModeDefaults(LayoutMode mode)
+    {
+        switch (mode)
+        {
+            case LayoutMode.Compact:
+                SetSpacingRange(2f, 8f, 4f);
+                spaceDistribution = SpaceDistribution.LargerSlots;
+                break;
+            case LayoutMode.Spacious:
+                SetSpacingRange(8f, 20f, 12f);
+                spaceDistribution = SpaceDistribution.EvenSpacing;
+                break;
+            case LayoutMode.Adaptive:
+                SetSpacingRange(5f, 15f, 8f);
+                spaceDistribution = SpaceDistribution.Balanced;
+                break;
+            case LayoutMode.FillPanel:
+                spaceDistribution = SpaceDistribution.Balanced;
+                break;
+            case LayoutMode.Custom:
+                // Don't change existing values
+                break;
+        }
     }
 
     public void SetSpacingRange(float min, float max, float preferred)
     {
-        minSpacing = min;
-        maxSpacing = max;
-        preferredSpacing = preferred;
+        minSpacing = Mathf.Max(0f, min);
+        maxSpacing = Mathf.Max(minSpacing, max);
+        preferredSpacing = Mathf.Clamp(preferred, minSpacing, maxSpacing);
     }
 
     public void SetSlotSizeConstraints(float minSize, float maxSize)
     {
-        minSlotSize = minSize;
-        maxSlotSize = maxSize;
+        minSlotSize = Mathf.Max(10f, minSize);
+        maxSlotSize = Mathf.Max(minSlotSize + 1f, maxSize);
     }
 
     public void SetCustomSpacing(Vector2 spacing)
     {
-        customSpacing = spacing;
+        customSpacing = new Vector2(Mathf.Max(0f, spacing.x), Mathf.Max(0f, spacing.y));
         useUniformSpacing = false;
     }
 
     public void SetCustomPadding(RectOffset padding)
     {
-        paddingLeft = padding.left;
-        paddingRight = padding.right;
-        paddingTop = padding.top;
-        paddingBottom = padding.bottom;
+        paddingLeft = Mathf.Max(0, padding.left);
+        paddingRight = Mathf.Max(0, padding.right);
+        paddingTop = Mathf.Max(0, padding.top);
+        paddingBottom = Mathf.Max(0, padding.bottom);
         useCustomPadding = true;
     }
 
     public void SetGridConstraints(GridConstraintMode mode, int constraintValue = 5)
     {
         constraintMode = mode;
+        constraintValue = Mathf.Max(1, constraintValue);
+
         switch (mode)
         {
             case GridConstraintMode.FixedColumns:
@@ -242,16 +302,183 @@ public class SlotConfigurationManager
 
     public void SetHotbarSlotSize(Vector2 size)
     {
-        hotbarSlotSize = size;
+        hotbarSlotSize = new Vector2(Mathf.Max(20f, size.x), Mathf.Max(20f, size.y));
     }
 
     public void SetHotbarSpacing(Vector2 spacing)
     {
-        hotbarSlotSpacing = spacing;
+        hotbarSlotSpacing = new Vector2(Mathf.Max(0f, spacing.x), Mathf.Max(0f, spacing.y));
     }
 
     public void SetHotbarPadding(RectOffset padding)
     {
-        hotbarPadding = padding;
+        hotbarPadding = new RectOffset(
+            Mathf.Max(0, padding.left),
+            Mathf.Max(0, padding.right),
+            Mathf.Max(0, padding.top),
+            Mathf.Max(0, padding.bottom)
+        );
+    }
+
+    // Advanced configuration methods
+    public void SetAspectRatio(Vector2 ratio)
+    {
+        slotAspectRatio = new Vector2(Mathf.Max(0.1f, ratio.x), Mathf.Max(0.1f, ratio.y));
+    }
+
+    public void SetPanelUtilizationTarget(float target)
+    {
+        minPanelUtilization = Mathf.Clamp(target, 0.1f, 1f);
+    }
+
+    public void SetOversizeSettings(bool allowOversize, float multiplier)
+    {
+        allowOversizedSlots = allowOversize;
+        oversizeMultiplier = Mathf.Clamp(multiplier, 1f, 3f);
+    }
+
+    public void SetDynamicResize(bool enabled)
+    {
+        dynamicResize = enabled;
+    }
+
+    public void EnableSquareSlots(bool enabled)
+    {
+        maintainSquareSlots = enabled;
+        if (enabled)
+        {
+            slotAspectRatio = Vector2.one;
+        }
+    }
+
+    public void SetPreserveAspectRatio(bool preserve)
+    {
+        preserveAspectRatio = preserve;
+    }
+
+    public void SetAdaptivePadding(bool adaptive, float percentage = 5f)
+    {
+        adaptivePadding = adaptive;
+        paddingPercentage = Mathf.Clamp(percentage, 0f, 20f);
+    }
+
+    // Preset application methods
+    public void ApplyCompactPreset()
+    {
+        SetLayoutMode(LayoutMode.Compact);
+        SetSlotSizeConstraints(50f, 80f);
+        SetSpacingRange(2f, 8f, 4f);
+        SetSpaceDistribution(SpaceDistribution.LargerSlots);
+        SetContentAlignment(ContentAlignment.TopLeft);
+        maintainSquareSlots = true;
+    }
+
+    public void ApplyBalancedPreset()
+    {
+        SetLayoutMode(LayoutMode.Adaptive);
+        SetSlotSizeConstraints(60f, 120f);
+        SetSpacingRange(5f, 15f, 8f);
+        SetSpaceDistribution(SpaceDistribution.Balanced);
+        SetContentAlignment(ContentAlignment.Center);
+        maintainSquareSlots = true;
+    }
+
+    public void ApplySpeciousPreset()
+    {
+        SetLayoutMode(LayoutMode.Spacious);
+        SetSlotSizeConstraints(80f, 150f);
+        SetSpacingRange(10f, 25f, 15f);
+        SetSpaceDistribution(SpaceDistribution.EvenSpacing);
+        SetContentAlignment(ContentAlignment.Center);
+        maintainSquareSlots = true;
+    }
+
+    public void ApplyMobilePreset()
+    {
+        SetLayoutMode(LayoutMode.Adaptive);
+        SetSlotSizeConstraints(70f, 140f);
+        SetSpacingRange(8f, 20f, 12f);
+        SetSpaceDistribution(SpaceDistribution.EvenSpacing);
+        SetContentAlignment(ContentAlignment.Center);
+        maintainSquareSlots = true;
+        SetGridConstraints(GridConstraintMode.FixedColumns, 3);
+    }
+
+    public void ApplyFillScreenPreset()
+    {
+        SetLayoutMode(LayoutMode.FillPanel);
+        SetSlotSizeConstraints(60f, 200f);
+        SetSpacingRange(5f, 20f, 10f);
+        SetSpaceDistribution(SpaceDistribution.Balanced);
+        SetContentAlignment(ContentAlignment.Center);
+        allowOversizedSlots = true;
+        oversizeMultiplier = 1.5f;
+    }
+
+    // Utility methods
+    public bool IsValidConfiguration()
+    {
+        return minSlotSize > 0 && maxSlotSize > minSlotSize &&
+               minSpacing >= 0 && maxSpacing >= minSpacing &&
+               preferredSpacing >= minSpacing && preferredSpacing <= maxSpacing &&
+               maxColumns > 0 && maxRows > 0;
+    }
+
+    public void ResetToDefaults()
+    {
+        minSlotSize = 60f;
+        maxSlotSize = 120f;
+        maintainSquareSlots = true;
+        slotAspectRatio = Vector2.one;
+
+        minSpacing = 2f;
+        maxSpacing = 15f;
+        preferredSpacing = 5f;
+        useUniformSpacing = true;
+        customSpacing = new Vector2(5f, 5f);
+
+        useCustomPadding = false;
+        paddingLeft = paddingRight = paddingTop = paddingBottom = 10;
+        paddingPercentage = 5f;
+        adaptivePadding = true;
+
+        layoutMode = LayoutMode.Adaptive;
+        spaceDistribution = SpaceDistribution.EvenSpacing;
+        minPanelUtilization = 0.7f;
+        preserveAspectRatio = true;
+
+        constraintMode = GridConstraintMode.Adaptive;
+        forcedColumns = 5;
+        forcedRows = 4;
+        maxColumns = 10;
+        maxRows = 8;
+
+        dynamicResize = true;
+        contentAlignment = ContentAlignment.Center;
+        allowOversizedSlots = false;
+        oversizeMultiplier = 1.5f;
+
+        hotbarSlotSize = new Vector2(80f, 80f);
+        hotbarSlotSpacing = new Vector2(5f, 5f);
+    }
+
+    public string GetConfigurationSummary()
+    {
+        return $"Layout Mode: {layoutMode} | " +
+               $"Slot Size: {minSlotSize:F0}-{maxSlotSize:F0} | " +
+               $"Spacing: {minSpacing:F1}-{maxSpacing:F1} (pref: {preferredSpacing:F1}) | " +
+               $"Grid: {constraintMode} | " +
+               $"Alignment: {contentAlignment} | " +
+               $"Square Slots: {maintainSquareSlots}";
+    }
+
+    // Debug methods
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    public void LogConfiguration()
+    {
+        Debug.Log($"SlotConfiguration Summary:\n{GetConfigurationSummary()}");
+        Debug.Log($"Panel Utilization Target: {minPanelUtilization:P1}");
+        Debug.Log($"Dynamic Resize: {dynamicResize}");
+        Debug.Log($"Oversize Allowed: {allowOversizedSlots} (x{oversizeMultiplier:F1})");
     }
 }

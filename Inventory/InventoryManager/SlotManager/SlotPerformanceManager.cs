@@ -1,416 +1,344 @@
-﻿using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
+using System.Collections.Generic;
+using System.Text;
 
 [System.Serializable]
 public class SlotPerformanceManager
 {
-    [Header("Performance Monitoring")]
+    [Header("Performance Tracking Settings")]
     [SerializeField, Tooltip("Enable performance monitoring")]
-    private bool enableMonitoring = true;
+    private bool enablePerformanceTracking = true;
 
-    [SerializeField, Tooltip("Log performance warnings when operations exceed threshold")]
-    private bool logPerformanceWarnings = true;
+    [SerializeField, Tooltip("Maximum number of operation records to keep")]
+    private int maxOperationRecords = 1000;
 
-    [SerializeField, Tooltip("Maximum time (ms) for slot creation before warning")]
-    private float slotCreationWarningThreshold = 5f;
+    [SerializeField, Tooltip("Log performance warnings when operations exceed this threshold (ms)")]
+    private float performanceWarningThreshold = 50f;
 
-    [SerializeField, Tooltip("Maximum time (ms) for layout calculation before warning")]
-    private float layoutCalculationWarningThreshold = 10f;
+    [SerializeField, Tooltip("Log detailed performance info")]
+    private bool logDetailedInfo = false;
 
-    [SerializeField, Tooltip("Maximum time (ms) for layout refresh before warning")]
-    private float layoutRefreshWarningThreshold = 15f;
+    // Performance data
+    [SerializeField] private int totalOperations;
+    [SerializeField] private float totalTime;
+    [SerializeField] private float peakTime;
+    [SerializeField] private string peakOperation = "";
+    [SerializeField] private int operationsThisFrame;
+    [SerializeField] private float timeThisFrame;
 
-    [SerializeField, Tooltip("Keep performance history for analysis")]
-    private bool keepPerformanceHistory = false;
-
-    [SerializeField, Tooltip("Maximum number of performance records to keep")]
-    private int maxPerformanceRecords = 100;
-
-    // Performance tracking
-    private Dictionary<string, PerformanceMetric> performanceMetrics;
-    private List<PerformanceRecord> performanceHistory;
-    private System.Diagnostics.Stopwatch stopwatch;
-
-    // Performance statistics
-    private int totalOperations;
-    private float totalTime;
-    private float peakTime;
-    private string peakOperation;
-
-    [System.Serializable]
-    public class PerformanceMetric
-    {
-        public string operationName;
-        public int executionCount;
-        public float totalTime;
-        public float averageTime;
-        public float minTime;
-        public float maxTime;
-        public float lastExecutionTime;
-
-        public PerformanceMetric(string name)
-        {
-            operationName = name;
-            executionCount = 0;
-            totalTime = 0f;
-            averageTime = 0f;
-            minTime = float.MaxValue;
-            maxTime = 0f;
-            lastExecutionTime = 0f;
-        }
-
-        public void RecordExecution(float executionTime)
-        {
-            executionCount++;
-            totalTime += executionTime;
-            averageTime = totalTime / executionCount;
-            minTime = Mathf.Min(minTime, executionTime);
-            maxTime = Mathf.Max(maxTime, executionTime);
-            lastExecutionTime = executionTime;
-        }
-    }
-
-    [System.Serializable]
-    public class PerformanceRecord
-    {
-        public string operationName;
-        public float executionTime;
-        public System.DateTime timestamp;
-        public string additionalInfo;
-
-        public PerformanceRecord(string operation, float time, string info = "")
-        {
-            operationName = operation;
-            executionTime = time;
-            timestamp = System.DateTime.Now;
-            additionalInfo = info;
-        }
-    }
+    // Operation tracking (runtime only)
+    [System.NonSerialized] private List<OperationRecord> operationHistory;
+    [System.NonSerialized] private Dictionary<string, OperationStats> operationStats;
+    [System.NonSerialized] private float lastFrameTime;
 
     // Properties
-    public bool EnableMonitoring => enableMonitoring;
+    public bool EnablePerformanceTracking => enablePerformanceTracking;
     public int TotalOperations => totalOperations;
     public float TotalTime => totalTime;
     public float AverageTime => totalOperations > 0 ? totalTime / totalOperations : 0f;
     public float PeakTime => peakTime;
     public string PeakOperation => peakOperation;
+    public int OperationsThisFrame => operationsThisFrame;
+    public float TimeThisFrame => timeThisFrame;
+
+    [System.Serializable]
+    private struct OperationRecord
+    {
+        public string operationName;
+        public float duration;
+        public float timestamp;
+        public string details;
+    }
+
+    [System.Serializable]
+    private struct OperationStats
+    {
+        public int count;
+        public float totalTime;
+        public float minTime;
+        public float maxTime;
+        public float lastTime;
+    }
 
     public void Initialize()
     {
-        if (!enableMonitoring) return;
+        operationHistory = new List<OperationRecord>();
+        operationStats = new Dictionary<string, OperationStats>();
+        lastFrameTime = Time.realtimeSinceStartup;
+        ClearFrameStats();
 
-        performanceMetrics = new Dictionary<string, PerformanceMetric>();
-        performanceHistory = new List<PerformanceRecord>();
-        stopwatch = new System.Diagnostics.Stopwatch();
-
-        ResetPerformanceStats();
+        if (enablePerformanceTracking && logDetailedInfo)
+        {
+            Debug.Log("SlotPerformanceManager initialized with tracking enabled");
+        }
     }
 
-    private void ResetPerformanceStats()
+    public void Update()
+    {
+        // Reset frame stats if we're on a new frame
+        float currentTime = Time.realtimeSinceStartup;
+        if (currentTime - lastFrameTime > 0.016f) // ~60fps threshold
+        {
+            ClearFrameStats();
+            lastFrameTime = currentTime;
+        }
+    }
+
+    private void ClearFrameStats()
+    {
+        operationsThisFrame = 0;
+        timeThisFrame = 0f;
+    }
+
+    public System.IDisposable MeasureOperation(string operationName, string details = "")
+    {
+        if (!enablePerformanceTracking)
+            return new NullMeasurer();
+
+        return new PerformanceMeasurer(this, operationName, details);
+    }
+
+    internal void RecordOperation(string operationName, float duration, string details = "")
+    {
+        if (!enablePerformanceTracking) return;
+
+        // Update totals
+        totalOperations++;
+        totalTime += duration;
+        operationsThisFrame++;
+        timeThisFrame += duration;
+
+        // Update peak
+        if (duration > peakTime)
+        {
+            peakTime = duration;
+            peakOperation = operationName;
+        }
+
+        // Add to history
+        if (operationHistory.Count >= maxOperationRecords)
+        {
+            operationHistory.RemoveAt(0);
+        }
+
+        operationHistory.Add(new OperationRecord
+        {
+            operationName = operationName,
+            duration = duration,
+            timestamp = Time.realtimeSinceStartup,
+            details = details
+        });
+
+        // Update operation-specific stats
+        UpdateOperationStats(operationName, duration);
+
+        // Log warning if operation is slow
+        if (duration > performanceWarningThreshold)
+        {
+            Debug.LogWarning($"Slow operation detected: {operationName} took {duration:F2}ms (threshold: {performanceWarningThreshold}ms)");
+        }
+
+        // Log detailed info if enabled
+        if (logDetailedInfo)
+        {
+            Debug.Log($"Performance: {operationName} completed in {duration:F2}ms{(!string.IsNullOrEmpty(details) ? $" ({details})" : "")}");
+        }
+    }
+
+    private void UpdateOperationStats(string operationName, float duration)
+    {
+        if (operationStats.TryGetValue(operationName, out OperationStats stats))
+        {
+            stats.count++;
+            stats.totalTime += duration;
+            stats.minTime = Mathf.Min(stats.minTime, duration);
+            stats.maxTime = Mathf.Max(stats.maxTime, duration);
+            stats.lastTime = duration;
+            operationStats[operationName] = stats;
+        }
+        else
+        {
+            operationStats[operationName] = new OperationStats
+            {
+                count = 1,
+                totalTime = duration,
+                minTime = duration,
+                maxTime = duration,
+                lastTime = duration
+            };
+        }
+    }
+
+    public void ClearPerformanceData()
     {
         totalOperations = 0;
         totalTime = 0f;
         peakTime = 0f;
         peakOperation = "";
-    }
+        operationsThisFrame = 0;
+        timeThisFrame = 0f;
 
-    // Performance Measurement
-    public void StartOperation(string operationName)
-    {
-        if (!enableMonitoring) return;
+        operationHistory?.Clear();
+        operationStats?.Clear();
 
-        stopwatch.Restart();
-    }
-
-    public void EndOperation(string operationName, string additionalInfo = "")
-    {
-        if (!enableMonitoring) return;
-
-        stopwatch.Stop();
-        float executionTime = (float)stopwatch.Elapsed.TotalMilliseconds;
-
-        RecordPerformance(operationName, executionTime, additionalInfo);
-    }
-
-    private void RecordPerformance(string operationName, float executionTime, string additionalInfo = "")
-    {
-        // Update global statistics
-        totalOperations++;
-        totalTime += executionTime;
-
-        if (executionTime > peakTime)
+        if (logDetailedInfo)
         {
-            peakTime = executionTime;
-            peakOperation = operationName;
-        }
-
-        // Update or create metric for this operation
-        if (!performanceMetrics.ContainsKey(operationName))
-        {
-            performanceMetrics[operationName] = new PerformanceMetric(operationName);
-        }
-
-        performanceMetrics[operationName].RecordExecution(executionTime);
-
-        // Add to history if enabled
-        if (keepPerformanceHistory)
-        {
-            AddToHistory(operationName, executionTime, additionalInfo);
-        }
-
-        // Check for performance warnings
-        CheckPerformanceWarnings(operationName, executionTime);
-    }
-
-    private void AddToHistory(string operationName, float executionTime, string additionalInfo)
-    {
-        var record = new PerformanceRecord(operationName, executionTime, additionalInfo);
-        performanceHistory.Add(record);
-
-        // Limit history size
-        if (performanceHistory.Count > maxPerformanceRecords)
-        {
-            performanceHistory.RemoveAt(0);
+            Debug.Log("Performance data cleared");
         }
     }
 
-    private void CheckPerformanceWarnings(string operationName, float executionTime)
+    public void LogOptimizationRecommendations()
     {
-        if (!logPerformanceWarnings) return;
+        var recommendations = new StringBuilder();
+        recommendations.AppendLine("🔧 Performance Optimization Recommendations:");
 
-        float threshold = GetWarningThreshold(operationName);
-        if (executionTime > threshold)
+        if (peakTime > 100f)
         {
-            Debug.LogWarning($"[SlotPerformance] {operationName} took {executionTime:F2}ms (threshold: {threshold:F2}ms)");
+            recommendations.AppendLine($"• Critical: {peakOperation} is very slow ({peakTime:F2}ms). Consider optimization.");
+        }
+        else if (peakTime > 50f)
+        {
+            recommendations.AppendLine($"• Warning: {peakOperation} is slow ({peakTime:F2}ms). May need optimization.");
+        }
+
+        if (totalOperations > 10000)
+        {
+            recommendations.AppendLine("• Consider implementing operation pooling to reduce memory allocations.");
+        }
+
+        if (AverageTime > 10f)
+        {
+            recommendations.AppendLine("• Average operation time is high. Review frequently called operations.");
+        }
+
+        // Analyze operation-specific recommendations
+        if (operationStats != null)
+        {
+            foreach (var kvp in operationStats)
+            {
+                var stats = kvp.Value;
+                if (stats.count > 100 && stats.totalTime / stats.count > 20f)
+                {
+                    recommendations.AppendLine($"• Optimize '{kvp.Key}': called {stats.count} times, avg {stats.totalTime / stats.count:F2}ms");
+                }
+            }
+        }
+
+        if (recommendations.Length > 50) // More than just the header
+        {
+            Debug.Log(recommendations.ToString());
+        }
+        else
+        {
+            Debug.Log("✅ No specific optimization recommendations at this time.");
         }
     }
 
-    private float GetWarningThreshold(string operationName)
+    public void LogPerformanceReport()
     {
-        return operationName.ToLower() switch
-        {
-            var name when name.Contains("slot") && name.Contains("creation") => slotCreationWarningThreshold,
-            var name when name.Contains("layout") && name.Contains("calculation") => layoutCalculationWarningThreshold,
-            var name when name.Contains("layout") && name.Contains("refresh") => layoutRefreshWarningThreshold,
-            _ => 20f // Default threshold
-        };
-    }
-
-    // Convenient measurement methods
-    public System.IDisposable MeasureOperation(string operationName, string additionalInfo = "")
-    {
-        if (!enableMonitoring) return new NullDisposable();
-
-        return new PerformanceMeasurement(this, operationName, additionalInfo);
-    }
-
-    private class PerformanceMeasurement : System.IDisposable
-    {
-        private SlotPerformanceManager manager;
-        private string operationName;
-        private string additionalInfo;
-
-        public PerformanceMeasurement(SlotPerformanceManager manager, string operationName, string additionalInfo)
-        {
-            this.manager = manager;
-            this.operationName = operationName;
-            this.additionalInfo = additionalInfo;
-            manager.StartOperation(operationName);
-        }
-
-        public void Dispose()
-        {
-            manager.EndOperation(operationName, additionalInfo);
-        }
-    }
-
-    private class NullDisposable : System.IDisposable
-    {
-        public void Dispose() { }
-    }
-
-    // Performance Analysis
-    public PerformanceMetric GetMetric(string operationName)
-    {
-        return performanceMetrics.ContainsKey(operationName) ? performanceMetrics[operationName] : null;
-    }
-
-    public List<PerformanceMetric> GetAllMetrics()
-    {
-        return new List<PerformanceMetric>(performanceMetrics.Values);
-    }
-
-    public List<PerformanceMetric> GetSlowestOperations(int count = 5)
-    {
-        var metrics = GetAllMetrics();
-        metrics.Sort((a, b) => b.averageTime.CompareTo(a.averageTime));
-        return metrics.GetRange(0, Mathf.Min(count, metrics.Count));
-    }
-
-    public List<PerformanceMetric> GetMostFrequentOperations(int count = 5)
-    {
-        var metrics = GetAllMetrics();
-        metrics.Sort((a, b) => b.executionCount.CompareTo(a.executionCount));
-        return metrics.GetRange(0, Mathf.Min(count, metrics.Count));
-    }
-
-    public string GetPerformanceReport()
-    {
-        if (!enableMonitoring)
-            return "Performance monitoring is disabled.";
-
-        var report = new System.Text.StringBuilder();
-        report.AppendLine("=== Slot Performance Report ===");
+        var report = new StringBuilder();
+        report.AppendLine("📊 Slot Performance Report");
+        report.AppendLine("========================");
         report.AppendLine($"Total Operations: {totalOperations}");
         report.AppendLine($"Total Time: {totalTime:F2}ms");
         report.AppendLine($"Average Time: {AverageTime:F2}ms");
         report.AppendLine($"Peak Time: {peakTime:F2}ms ({peakOperation})");
-        report.AppendLine();
+        report.AppendLine($"Current Frame: {operationsThisFrame} ops, {timeThisFrame:F2}ms");
 
-        // Top 5 slowest operations
-        var slowest = GetSlowestOperations(5);
-        if (slowest.Count > 0)
+        if (operationStats != null && operationStats.Count > 0)
         {
-            report.AppendLine("=== Slowest Operations (Average) ===");
-            foreach (var metric in slowest)
+            report.AppendLine("\n🔍 Operation Breakdown:");
+            foreach (var kvp in operationStats)
             {
-                report.AppendLine($"{metric.operationName}: {metric.averageTime:F2}ms avg, {metric.maxTime:F2}ms max ({metric.executionCount} executions)");
-            }
-            report.AppendLine();
-        }
-
-        // Most frequent operations
-        var frequent = GetMostFrequentOperations(5);
-        if (frequent.Count > 0)
-        {
-            report.AppendLine("=== Most Frequent Operations ===");
-            foreach (var metric in frequent)
-            {
-                report.AppendLine($"{metric.operationName}: {metric.executionCount} executions, {metric.averageTime:F2}ms avg");
-            }
-            report.AppendLine();
-        }
-
-        return report.ToString();
-    }
-
-    public string GetDetailedMetricReport(string operationName)
-    {
-        var metric = GetMetric(operationName);
-        if (metric == null)
-            return $"No performance data found for operation: {operationName}";
-
-        return $"=== {operationName} Performance Details ===\n" +
-               $"Execution Count: {metric.executionCount}\n" +
-               $"Total Time: {metric.totalTime:F2}ms\n" +
-               $"Average Time: {metric.averageTime:F2}ms\n" +
-               $"Min Time: {metric.minTime:F2}ms\n" +
-               $"Max Time: {metric.maxTime:F2}ms\n" +
-               $"Last Execution: {metric.lastExecutionTime:F2}ms";
-    }
-
-    // Performance Optimization Recommendations
-    public List<string> GetOptimizationRecommendations()
-    {
-        var recommendations = new List<string>();
-
-        if (!enableMonitoring)
-        {
-            recommendations.Add("Enable performance monitoring to get optimization recommendations.");
-            return recommendations;
-        }
-
-        var slowest = GetSlowestOperations(3);
-        foreach (var metric in slowest)
-        {
-            if (metric.averageTime > 10f)
-            {
-                recommendations.Add($"Consider optimizing '{metric.operationName}' - averaging {metric.averageTime:F2}ms per execution");
+                var stats = kvp.Value;
+                float avgTime = stats.totalTime / stats.count;
+                report.AppendLine($"• {kvp.Key}: {stats.count}x, avg {avgTime:F2}ms (min: {stats.minTime:F2}ms, max: {stats.maxTime:F2}ms)");
             }
         }
 
-        var frequent = GetMostFrequentOperations(3);
-        foreach (var metric in frequent)
+        if (operationHistory != null && operationHistory.Count > 0)
         {
-            if (metric.executionCount > 100 && metric.averageTime > 2f)
+            report.AppendLine($"\n📈 Recent Operations (last {Mathf.Min(5, operationHistory.Count)}):");
+            for (int i = Mathf.Max(0, operationHistory.Count - 5); i < operationHistory.Count; i++)
             {
-                recommendations.Add($"'{metric.operationName}' is called frequently ({metric.executionCount} times) - consider caching or batching");
+                var record = operationHistory[i];
+                report.AppendLine($"• {record.operationName}: {record.duration:F2}ms{(!string.IsNullOrEmpty(record.details) ? $" ({record.details})" : "")}");
             }
         }
 
-        if (peakTime > 50f)
-        {
-            recommendations.Add($"Peak operation time is very high ({peakTime:F2}ms for '{peakOperation}') - investigate for potential blocking operations");
-        }
-
-        if (recommendations.Count == 0)
-        {
-            recommendations.Add("Performance looks good! No specific recommendations at this time.");
-        }
-
-        return recommendations;
+        Debug.Log(report.ToString());
     }
 
-    // Configuration
-    public void SetMonitoringEnabled(bool enabled)
+    public string GetPerformanceReport()
     {
-        enableMonitoring = enabled;
-        if (enabled && performanceMetrics == null)
-        {
-            Initialize();
-        }
+        return $"Performance Report:\n" +
+               $"- Total Operations: {totalOperations}\n" +
+               $"- Total Time: {totalTime:F2}ms\n" +
+               $"- Average Time: {AverageTime:F2}ms\n" +
+               $"- Peak Time: {peakTime:F2}ms ({peakOperation})\n" +
+               $"- Current Frame: {operationsThisFrame} ops, {timeThisFrame:F2}ms";
     }
 
-    public void SetWarningThresholds(float slotCreation, float layoutCalculation, float layoutRefresh)
+    public void SetPerformanceTracking(bool enabled)
     {
-        slotCreationWarningThreshold = slotCreation;
-        layoutCalculationWarningThreshold = layoutCalculation;
-        layoutRefreshWarningThreshold = layoutRefresh;
-    }
-
-    public void SetHistoryEnabled(bool enabled, int maxRecords = 100)
-    {
-        keepPerformanceHistory = enabled;
-        maxPerformanceRecords = maxRecords;
-
-        if (!enabled && performanceHistory != null)
+        enablePerformanceTracking = enabled;
+        if (!enabled)
         {
-            performanceHistory.Clear();
+            ClearPerformanceData();
         }
     }
 
-    // Clear and Reset
-    public void ClearPerformanceData()
+    public void SetWarningThreshold(float thresholdMs)
     {
-        if (performanceMetrics != null)
-            performanceMetrics.Clear();
-
-        if (performanceHistory != null)
-            performanceHistory.Clear();
-
-        ResetPerformanceStats();
+        performanceWarningThreshold = Mathf.Max(0f, thresholdMs);
     }
 
-    public void ClearHistory()
+    public void SetDetailedLogging(bool enabled)
     {
-        if (performanceHistory != null)
-            performanceHistory.Clear();
+        logDetailedInfo = enabled;
     }
 
-    // Debug Methods
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void LogPerformanceReport()
+    // Get specific operation stats
+    public bool TryGetOperationStats(string operationName, out float averageTime, out int callCount)
     {
-        Debug.Log(GetPerformanceReport());
-    }
-
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void LogOptimizationRecommendations()
-    {
-        var recommendations = GetOptimizationRecommendations();
-        foreach (var recommendation in recommendations)
+        if (operationStats != null && operationStats.TryGetValue(operationName, out OperationStats stats))
         {
-            Debug.Log($"[SlotPerformance Recommendation] {recommendation}");
+            averageTime = stats.totalTime / stats.count;
+            callCount = stats.count;
+            return true;
         }
+
+        averageTime = 0f;
+        callCount = 0;
+        return false;
+    }
+
+    // Performance measurer implementation
+    private class PerformanceMeasurer : System.IDisposable
+    {
+        private SlotPerformanceManager manager;
+        private string operationName;
+        private string details;
+        private float startTime;
+
+        public PerformanceMeasurer(SlotPerformanceManager manager, string operationName, string details)
+        {
+            this.manager = manager;
+            this.operationName = operationName;
+            this.details = details;
+            this.startTime = Time.realtimeSinceStartup * 1000f; // Convert to milliseconds
+        }
+
+        public void Dispose()
+        {
+            float duration = (Time.realtimeSinceStartup * 1000f) - startTime;
+            manager.RecordOperation(operationName, duration, details);
+        }
+    }
+
+    // Null measurer for when performance tracking is disabled
+    private class NullMeasurer : System.IDisposable
+    {
+        public void Dispose() { }
     }
 }

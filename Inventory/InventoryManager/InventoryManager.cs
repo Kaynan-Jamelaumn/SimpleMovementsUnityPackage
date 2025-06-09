@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
-using UnityEngine.UI;
 
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
@@ -18,9 +17,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     [Header("UI Management Components")]
     [SerializeField, Tooltip("Manages slot creation and layout calculations")]
-    private SlotManager slotManager;
+    private SlotManager slotManager = new SlotManager();
     [SerializeField, Tooltip("Handles layout presets and screen adaptation")]
-    private UILayoutManager uiLayoutManager;
+    private UILayoutManager uiLayoutManager = new UILayoutManager();
 
     [Header("UI Panel References")]
     [SerializeField, Tooltip("Main inventory panel container")]
@@ -44,25 +43,27 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     [SerializeField, Tooltip("Player weapon handling controller")]
     private WeaponController weaponController;
 
-    // State management components
-    private DragHandler dragHandler;
-    private UIStateManager uiStateManager;
-    private StorageManager storageManager;
+    // Force serialization helper
+    [SerializeField, HideInInspector]
+    private bool _forceSerialize = true;
 
-    // Input reference
-    private Mouse mouse;
+    // State management components (runtime only)
+    [System.NonSerialized] private DragHandler dragHandler;
+    [System.NonSerialized] private UIStateManager uiStateManager;
+    [System.NonSerialized] private StorageManager storageManager;
+    [System.NonSerialized] private Mouse mouse;
 
-    // Change detection for editor
-    private int previousHotbarSlots;
-    private int previousInventorySlots;
+    // Change detection for editor (runtime only)
+    [System.NonSerialized] private int previousHotbarSlots;
+    [System.NonSerialized] private int previousInventorySlots;
 
     // Properties - UI Access
     public Transform HandParent => handParent;
     public GameObject[] Slots => slotManager?.InventorySlots;
     public GameObject[] HotbarSlots => slotManager?.HotbarSlots;
     public GameObject Player => player;
-    public bool IsStorageOpened => storageManager.IsStorageOpened;
-    public SlotManager.LayoutData CurrentLayout => slotManager?.LegacyCurrentLayout; // Use legacy property for compatibility
+    public bool IsStorageOpened => storageManager?.IsStorageOpened ?? false;
+    public SlotManager.LayoutData CurrentLayout => slotManager?.LegacyCurrentLayout;
     public UILayoutManager LayoutManager => uiLayoutManager;
 
     public int NumberOfHotBarSlots
@@ -94,8 +95,13 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // Unity Lifecycle
     private void Awake()
     {
+        // Initialize serialized objects if they're null
+        if (slotManager == null) slotManager = new SlotManager();
+        if (uiLayoutManager == null) uiLayoutManager = new UILayoutManager();
+
         InitializeComponents();
         InitializeSubSystems();
+
         // Store initial values for change detection
         previousHotbarSlots = numberOfHotBarSlots;
         previousInventorySlots = numberOfInventorySlots;
@@ -110,10 +116,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     private void Update()
     {
         HandleHotbarInput();
-        uiStateManager.UpdateUI();
-        dragHandler.UpdateDraggedObjectPosition();
-        uiLayoutManager.Update();
-        // Check for slot count changes in editor
+        uiStateManager?.UpdateUI();
+        dragHandler?.UpdateDraggedObjectPosition();
+        uiLayoutManager?.Update();
         CheckForSlotCountChanges();
     }
 
@@ -140,15 +145,27 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             Debug.LogError("UILayoutManager is not assigned in InventoryManager");
         if (handParent == null)
             Debug.LogError("HandParent transform is not assigned in InventoryManager");
-        if (itemInfo == null)
-            Debug.LogWarning("ItemInfo component is not assigned in InventoryManager");
     }
 
     private void InitializeSubSystems()
     {
         dragHandler = new DragHandler(mouse);
-        uiStateManager = new UIStateManager(inventoryParent, equippableInventory, storageParent);
-        storageManager = new StorageManager(storageParent, itemPrefab);
+
+        if (inventoryParent == null)
+        {
+            Debug.LogError("InventoryManager: inventoryParent is not assigned!");
+            return;
+        }
+
+        try
+        {
+            uiStateManager = new UIStateManager(inventoryParent, equippableInventory, storageParent);
+            storageManager = new StorageManager(storageParent, itemPrefab);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Failed to initialize UI systems: {e.Message}");
+        }
     }
 
     private void InitializeManagers()
@@ -159,28 +176,18 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void InitializeSlotManager()
     {
-        if (slotManager == null)
-        {
-            Debug.LogError("SlotManager is not assigned in InventoryManager!");
-            return;
-        }
+        if (slotManager == null) return;
 
         slotManager.Initialize(playerStatusController, player);
         slotManager.OnSlotsChanged += OnSlotsChanged;
-
-        // Subscribe to layout changed events - handle both new and legacy format
         slotManager.OnLayoutChanged += OnLayoutChanged;
-
         slotManager.CreateAllSlots(numberOfHotBarSlots, numberOfInventorySlots);
     }
 
     private void InitializeUILayoutManager()
     {
-        if (uiLayoutManager == null)
-        {
-            Debug.LogError("UILayoutManager is not assigned in InventoryManager!");
-            return;
-        }
+        if (uiLayoutManager == null) return;
+        
         uiLayoutManager.Initialize(slotManager);
         uiLayoutManager.OnPresetChanged += OnLayoutPresetChanged;
     }
@@ -207,12 +214,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     private void OnLayoutChanged(SlotLayoutCalculator.LayoutData layoutData)
     {
         // Handle layout changes if needed
-        //Debug.Log($"Layout changed: {layoutData.columns}x{layoutData.rows}, Utilization: {layoutData.panelUtilization:P1}");
     }
 
     private void OnLayoutPresetChanged(UILayoutManager.LayoutPreset preset)
     {
-        Debug.Log($"Layout preset changed to: {preset}");
+        // Handle preset changes if needed
     }
 
     // Slot Count Management
@@ -327,7 +333,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     public void OnUseItem(InputAction.CallbackContext value)
     {
-        if (!value.started || dragHandler.IsDragging) return;
+        if (!value.started || (dragHandler?.IsDragging ?? false)) return;
         var selectedSlot = GetSelectedHotbarSlot();
         var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
         if (heldItem == null || !ItemUsageHandler.HandleCooldown(heldItem)) return;
@@ -343,21 +349,60 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // Inventory Operations
     private void ToggleInventory()
     {
-        if (uiStateManager.IsInventoryOpened) CloseInventory();
-        else OpenInventory();
+        if (uiStateManager?.IsInventoryOpened ?? false)
+        {
+            CloseInventory();
+        }
+        else
+        {
+            OpenInventory();
+        }
     }
 
     private void OpenInventory()
     {
+        // Try to reinitialize UIStateManager if it's null
+        if (uiStateManager == null && inventoryParent != null)
+        {
+            try
+            {
+                uiStateManager = new UIStateManager(inventoryParent, equippableInventory, storageParent);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"Failed to reinitialize UIStateManager: {e.Message}");
+                return;
+            }
+        }
+
+        if (inventoryParent == null)
+        {
+            Debug.LogError("Cannot open inventory - inventoryParent is null!");
+            return;
+        }
+
         SetCursorState(CursorLockMode.None, true);
         uiStateManager.SetInventoryOpened(true);
+        uiStateManager.UpdateUI();
     }
 
     private void CloseInventory()
     {
         SetCursorState(CursorLockMode.Locked, false);
-        uiStateManager.SetInventoryOpened(false);
-        storageManager.CloseCurrentStorage();
+
+        if (uiStateManager != null)
+        {
+            uiStateManager.SetInventoryOpened(false);
+            uiStateManager.UpdateUI();
+        }
+        else
+        {
+            // Fallback: directly close the panel if UIStateManager is null
+            if (inventoryParent != null) inventoryParent.SetActive(false);
+            if (equippableInventory != null) equippableInventory.SetActive(false);
+        }
+
+        storageManager?.CloseCurrentStorage();
     }
 
     private void SetCursorState(CursorLockMode lockMode, bool visible)
@@ -368,7 +413,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private InventorySlot GetSelectedHotbarSlot()
     {
-        var hotbarSlots = slotManager.HotbarSlots;
+        var hotbarSlots = slotManager?.HotbarSlots;
         if (hotbarSlots == null || hotbarSlots.Length == 0 || HotbarHandler.SelectedHotbarSlot >= hotbarSlots.Length)
             return null;
         return hotbarSlots[HotbarHandler.SelectedHotbarSlot]?.GetComponent<InventorySlot>();
@@ -383,7 +428,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             return;
         }
         var slot = eventData.pointerCurrentRaycast.gameObject?.GetComponent<InventorySlot>();
-        if (itemInfo.gameObject.activeSelf) HideItemInfo();
+        if (itemInfo?.gameObject?.activeSelf ?? false) HideItemInfo();
         else ShowItemInfo(slot);
     }
 
@@ -393,15 +438,15 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         var slot = eventData.pointerCurrentRaycast.gameObject?.GetComponent<InventorySlot>();
         if (slot?.heldItem != null)
         {
-            dragHandler.StartDragging(slot, eventData.pointerCurrentRaycast.gameObject);
+            dragHandler?.StartDragging(slot, eventData.pointerCurrentRaycast.gameObject);
         }
     }
 
     public void OnPointerUp(PointerEventData eventData)
     {
-        if (!dragHandler.ValidateDragOperation(eventData)) return;
+        if (!(dragHandler?.ValidateDragOperation(eventData) ?? false)) return;
         HandleItemDrop(eventData);
-        dragHandler.CleanupDragging();
+        dragHandler?.CleanupDragging();
     }
 
     // Item Management
@@ -409,7 +454,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         var clickedObject = eventData.pointerCurrentRaycast.gameObject;
         var slot = clickedObject?.GetComponent<InventorySlot>();
-        var draggedItem = dragHandler.DraggedObject.GetComponent<InventoryItem>();
+        var draggedItem = dragHandler?.DraggedObject?.GetComponent<InventoryItem>();
+        if (draggedItem == null) return;
+
         var itemType = draggedItem.itemScriptableObject.ItemType;
         if (slot != null && InventoryUtils.IsCompatibleSlot(slot, itemType))
         {
@@ -431,7 +478,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void ShowItemInfo(InventorySlot slot)
     {
-        if (slot?.heldItem != null)
+        if (slot?.heldItem != null && itemInfo != null)
             itemInfo.ShowItemInfo(slot.heldItem.GetComponent<InventoryItem>());
         else
             HideItemInfo();
@@ -471,28 +518,19 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void SetupItemInSlot(GameObject newItem, GameObject emptySlot, GameObject pickedItem)
     {
-        if (newItem == null || emptySlot == null)
-        {
-            Debug.LogError("Cannot setup item: newItem or emptySlot is null");
-            return;
-        }
+        if (newItem == null || emptySlot == null) return;
+        
         var slotComponent = emptySlot.GetComponent<InventorySlot>();
-        if (slotComponent == null)
-        {
-            Debug.LogError("EmptySlot does not have InventorySlot component");
-            return;
-        }
         var itemComponent = newItem.GetComponent<InventoryItem>();
-        if (itemComponent?.itemScriptableObject == null)
-        {
-            Debug.LogError("NewItem does not have valid InventoryItem component");
-            return;
-        }
+        if (slotComponent == null || itemComponent?.itemScriptableObject == null) return;
+
         // Calculate weight
         var totalWeight = itemComponent.itemScriptableObject.Weight * itemComponent.stackCurrent;
         itemComponent.totalWeight = totalWeight;
+
         // Update player weight
         InventoryUtils.UpdatePlayerWeight(player, totalWeight);
+
         // Use the slot's SetHeldItem method
         slotComponent.SetHeldItem(newItem);
     }
@@ -501,15 +539,15 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void OpenStorage(Storage storage)
     {
         SetCursorState(CursorLockMode.None, true);
-        uiStateManager.SetStorageOpened(true);
-        storageManager.OpenStorage(storage);
+        uiStateManager?.SetStorageOpened(true);
+        storageManager?.OpenStorage(storage);
     }
 
     public void CloseStorage(Storage storage)
     {
-        storageManager.CloseStorage(storage);
+        storageManager?.CloseStorage(storage);
         SetCursorState(CursorLockMode.Locked, false);
-        uiStateManager.SetStorageOpened(false);
+        uiStateManager?.SetStorageOpened(false);
     }
 
     // Public Utility Methods
@@ -538,7 +576,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         return InventoryUtils.CalculateInventoryWeight(slotManager.InventorySlots);
     }
 
-    // Debug Methods
+    // Debug Methods (only in editor)
     [System.Diagnostics.Conditional("UNITY_EDITOR")]
     public void LogInventoryState()
     {
@@ -549,8 +587,5 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void LogLayoutInfo()
     {
         uiLayoutManager?.LogLayoutInfo();
-        Debug.Log($"Current Layout Summary: {GetLayoutSummary()}");
-        Debug.Log($"Panel Utilization: {GetPanelUtilization():P1}");
-        Debug.Log($"Layout Optimal: {IsLayoutOptimal()}");
     }
 }

@@ -130,10 +130,10 @@ public class InventoryManagerEditor : Editor
         }
     }
 
-    private void DrawHeader()
+    private new void DrawHeader()
     {
         EditorGUILayout.Space(10);
-        EditorGUILayout.LabelField("🎒 Enhanced Inventory Manager", styles.HeaderStyle);
+        EditorGUILayout.LabelField("🎒Inventory Manager", styles.HeaderStyle);
         EditorGUILayout.LabelField("Advanced Setup & Management Tools", styles.CenteredStyle);
         EditorGUILayout.Space(10);
 

@@ -16,19 +16,19 @@ public class SlotManager
     private GridLayoutGroup hotbarGridLayout;
 
     [Header("Component Managers")]
-    [SerializeField] private SlotConfigurationManager configManager;
-    [SerializeField] private SlotCreationManager creationManager;
-    [SerializeField] private SlotLayoutCalculator layoutCalculator;
-    [SerializeField] private SlotUtilityManager utilityManager;
-    [SerializeField] private SlotValidationManager validationManager;
-    [SerializeField] private SlotPerformanceManager performanceManager;
+    [SerializeField] private SlotConfigurationManager configManager = new SlotConfigurationManager();
+    [SerializeField] private SlotCreationManager creationManager = new SlotCreationManager();
+    [SerializeField] private SlotLayoutCalculator layoutCalculator = new SlotLayoutCalculator();
+    [SerializeField] private SlotUtilityManager utilityManager = new SlotUtilityManager();
+    [SerializeField] private SlotValidationManager validationManager = new SlotValidationManager();
+    [SerializeField] private SlotPerformanceManager performanceManager = new SlotPerformanceManager();
 
-    // Cached layout data
-    private SlotLayoutCalculator.LayoutData cachedLayoutData;
+    // Cached layout data (runtime only)
+    [System.NonSerialized] private SlotLayoutCalculator.LayoutData cachedLayoutData;
 
-    // Events
-    public System.Action OnSlotsChanged;
-    public System.Action<SlotLayoutCalculator.LayoutData> OnLayoutChanged;
+    // Events (runtime only)
+    [System.NonSerialized] public System.Action OnSlotsChanged;
+    [System.NonSerialized] public System.Action<SlotLayoutCalculator.LayoutData> OnLayoutChanged;
 
     // Properties
     public GameObject[] HotbarSlots => creationManager?.HotbarSlots;

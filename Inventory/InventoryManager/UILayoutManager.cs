@@ -27,21 +27,20 @@ public class UILayoutManager
         Custom          // Use manual SlotManager configuration
     }
 
-    // Private state
-    private SlotManager slotManager;
-    private LayoutPreset previousPreset;
-    private Vector2 lastScreenSize;
+    // Private state (runtime only)
+    [System.NonSerialized] private SlotManager slotManager;
+    [System.NonSerialized] private LayoutPreset previousPreset;
+    [System.NonSerialized] private Vector2 lastScreenSize;
 
     // Properties
     public LayoutPreset CurrentPreset => currentPreset;
     public bool UseLayoutPresets => useLayoutPresets;
     public bool AutoAdjustForScreenSize => autoAdjustForScreenSize;
 
-    // Events
-    public System.Action<LayoutPreset> OnPresetChanged;
+    // Events (runtime only)
+    [System.NonSerialized] public System.Action<LayoutPreset> OnPresetChanged;
 
     // Initialization and Updates
-
     public void Initialize(SlotManager manager)
     {
         slotManager = manager;
@@ -83,7 +82,6 @@ public class UILayoutManager
     }
 
     // Layout Preset Management
-
     public void SetLayoutPreset(LayoutPreset preset)
     {
         currentPreset = preset;
@@ -125,7 +123,6 @@ public class UILayoutManager
     }
 
     // Preset Implementations
-
     private void ApplyCompactLayout()
     {
         slotManager.SetLayoutMode(SlotManager.LayoutMode.Compact);
@@ -177,7 +174,6 @@ public class UILayoutManager
     }
 
     // Screen Size Adaptation
-
     private void AdjustForScreenSize()
     {
         if (slotManager == null || currentPreset == LayoutPreset.Custom) return;
@@ -230,7 +226,6 @@ public class UILayoutManager
     }
 
     // Public Configuration Methods (Delegates to SlotManager)
-
     public void ConfigureCustomLayout(
         SlotManager.LayoutMode layoutMode = SlotManager.LayoutMode.Adaptive,
         float minSlotSize = 60f,
@@ -285,7 +280,6 @@ public class UILayoutManager
     }
 
     // Layout Information Methods (Delegates to SlotManager)
-
     public bool IsLayoutOptimal()
     {
         return slotManager?.IsLayoutOptimal() ?? false;
@@ -315,7 +309,6 @@ public class UILayoutManager
     }
 
     // Configuration Properties
-
     public void SetLayoutPresetsEnabled(bool enabled)
     {
         useLayoutPresets = enabled;
@@ -339,8 +332,39 @@ public class UILayoutManager
         debugLayoutInfo = enabled;
     }
 
-    // Debug Methods
+    // Additional utility methods
+    public void RefreshCurrentLayout()
+    {
+        if (useLayoutPresets)
+        {
+            ApplyLayoutPreset(currentPreset);
+        }
+    }
 
+    public void ResetToDefaults()
+    {
+        currentPreset = LayoutPreset.Balanced;
+        useLayoutPresets = true;
+        autoAdjustForScreenSize = true;
+        debugLayoutInfo = false;
+
+        if (slotManager != null)
+        {
+            ApplyLayoutPreset(currentPreset);
+        }
+    }
+
+    public bool IsCustomLayout()
+    {
+        return currentPreset == LayoutPreset.Custom;
+    }
+
+    public void OptimizeForCurrentScreen()
+    {
+        AdjustForScreenSize();
+    }
+
+    // Debug Methods
     [System.Diagnostics.Conditional("UNITY_EDITOR")]
     public void LogLayoutInfo()
     {
@@ -353,5 +377,52 @@ public class UILayoutManager
 
         var recommendedSize = GetRecommendedPanelSize(20); // Default slot count for testing
         Debug.Log($"Recommended Panel Size: {recommendedSize.x:F0} x {recommendedSize.y:F0}");
+
+        if (slotManager != null)
+        {
+            Debug.Log($"Layout Optimal: {IsLayoutOptimal()}");
+            Debug.Log($"Panel Utilization: {GetPanelUtilization():P1}");
+        }
+    }
+
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    public void LogDetailedLayoutAnalysis()
+    {
+        if (slotManager == null)
+        {
+            Debug.LogWarning("Cannot perform detailed layout analysis: SlotManager is null");
+            return;
+        }
+
+        Debug.Log("=== Detailed Layout Analysis ===");
+
+        var layout = slotManager.CurrentLayout;
+        if (layout != null)
+        {
+            Debug.Log($"Grid Configuration: {layout.columns}x{layout.rows}");
+            Debug.Log($"Cell Size: {layout.cellSize.x:F1} x {layout.cellSize.y:F1}");
+            Debug.Log($"Spacing: {layout.spacing.x:F1} x {layout.spacing.y:F1}");
+            Debug.Log($"Padding: L:{layout.padding.left} R:{layout.padding.right} T:{layout.padding.top} B:{layout.padding.bottom}");
+            Debug.Log($"Total Content Size: {layout.totalContentSize.x:F1} x {layout.totalContentSize.y:F1}");
+            Debug.Log($"Panel Utilization: {layout.panelUtilization:P2}");
+            Debug.Log($"Layout Optimal: {layout.isOptimal}");
+        }
+
+        Debug.Log($"Current Preset: {currentPreset}");
+        Debug.Log($"Use Layout Presets: {useLayoutPresets}");
+        Debug.Log($"Auto Adjust for Screen: {autoAdjustForScreenSize}");
+
+        float aspectRatio = Screen.width / (float)Screen.height;
+        string screenCategory = GetScreenCategory(aspectRatio, Screen.width);
+        Debug.Log($"Screen Category: {screenCategory} ({Screen.width}x{Screen.height}, {aspectRatio:F2} ratio)");
+    }
+
+    private string GetScreenCategory(float aspectRatio, float screenWidth)
+    {
+        if (aspectRatio > 2.0f) return "Ultra-wide";
+        if (aspectRatio < 1.0f) return "Portrait/Mobile";
+        if (screenWidth < 1024) return "Small Screen";
+        if (screenWidth > 2560) return "Large/4K Screen";
+        return "Standard";
     }
 }

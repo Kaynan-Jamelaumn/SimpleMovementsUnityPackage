@@ -37,7 +37,17 @@ public class InventoryEditorValidation
         GUI.color = Color.white;
         EditorGUILayout.EndHorizontal();
 
+        // Progress bar for completeness
+        Rect progressRect = EditorGUILayout.GetControlRect();
+        EditorGUI.ProgressBar(progressRect, completeness, $"Setup Progress: {completeness:P0}");
+
+        EditorGUILayout.Space(5);
+
+        // Component status overview
+        DrawComponentStatusOverview();
+
         // Validation buttons
+        EditorGUILayout.Space(5);
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("🔍 Full Validation", styles.ButtonStyle))
         {
@@ -80,68 +90,172 @@ public class InventoryEditorValidation
         EditorGUILayout.EndVertical();
     }
 
+    private void DrawComponentStatusOverview()
+    {
+        EditorGUILayout.LabelField("📋 Component Status", EditorStyles.boldLabel);
+
+        // Core components
+        DrawStatusLine("Item Prefab", utils.IsSerializedPropertyConfigured(utils.ItemPrefabProp));
+        DrawStatusLine("Hand Parent", utils.IsSerializedPropertyConfigured(utils.HandParentProp));
+        DrawStatusLine("Player", utils.IsSerializedPropertyConfigured(utils.PlayerProp));
+        DrawStatusLine("Camera", utils.IsSerializedPropertyConfigured(utils.CamProp));
+
+        // Management components
+        DrawStatusLine("Slot Manager", utils.SlotManagerProp != null);
+        DrawStatusLine("UI Layout Manager", utils.UILayoutManagerProp != null);
+
+        // UI components
+        DrawStatusLine("Inventory Panel", utils.IsSerializedPropertyConfigured(utils.InventoryParentProp));
+        DrawStatusLine("Equipment Panel", utils.IsSerializedPropertyConfigured(utils.EquippableInventoryProp));
+
+        // Controllers
+        DrawStatusLine("Player Status Controller", utils.IsSerializedPropertyConfigured(utils.PlayerStatusControllerProp));
+        DrawStatusLine("Weapon Controller", utils.IsSerializedPropertyConfigured(utils.WeaponControllerProp));
+    }
+
+    private void DrawStatusLine(string componentName, bool isConfigured)
+    {
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField(componentName, GUILayout.Width(150));
+
+        GUI.color = isConfigured ? Color.green : Color.red;
+        EditorGUILayout.LabelField(isConfigured ? "✓ OK" : "✗ Missing", GUILayout.Width(60));
+        GUI.color = Color.white;
+
+        EditorGUILayout.EndHorizontal();
+    }
+
     public float CalculateSetupCompleteness()
     {
-        int totalComponents = 8;
-        int assignedComponents = 0;
-
-        // Check all properties using the helper method
-        if (utils.IsSerializedPropertyConfigured(utils.SlotManagerProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.UILayoutManagerProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.ItemPrefabProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.HandParentProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.PlayerProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.PlayerStatusControllerProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.WeaponControllerProp))
-            assignedComponents++;
-        if (utils.IsSerializedPropertyConfigured(utils.CamProp))
-            assignedComponents++;
-
-        return (float)assignedComponents / totalComponents;
+        // Use the utility method that properly checks all components
+        return utils.CalculateCompleteness();
     }
 
     public bool ValidateInventorySetup()
     {
         List<string> issues = new List<string>();
+        List<string> warnings = new List<string>();
 
         // Check critical components using helper method
-        if (!utils.IsSerializedPropertyConfigured(utils.SlotManagerProp))
-            issues.Add("Slot Manager not properly configured");
         if (!utils.IsSerializedPropertyConfigured(utils.ItemPrefabProp))
             issues.Add("Item Prefab not assigned");
         if (!utils.IsSerializedPropertyConfigured(utils.HandParentProp))
             issues.Add("Hand Parent not assigned");
         if (!utils.IsSerializedPropertyConfigured(utils.PlayerProp))
             issues.Add("Player not assigned");
+        if (!utils.IsSerializedPropertyConfigured(utils.CamProp))
+            issues.Add("Camera not assigned");
 
-        if (issues.Count == 0)
+        // Check management components
+        if (utils.SlotManagerProp == null)
+            issues.Add("Slot Manager not properly configured");
+        if (utils.UILayoutManagerProp == null)
+            warnings.Add("UI Layout Manager not properly configured");
+
+        // Check UI panels
+        if (!utils.IsSerializedPropertyConfigured(utils.InventoryParentProp))
+            warnings.Add("Inventory Panel not assigned");
+
+        // Check controllers
+        if (!utils.IsSerializedPropertyConfigured(utils.PlayerStatusControllerProp))
+            warnings.Add("Player Status Controller not assigned");
+        if (!utils.IsSerializedPropertyConfigured(utils.WeaponControllerProp))
+            warnings.Add("Weapon Controller not assigned");
+
+        // Report results
+        if (issues.Count == 0 && warnings.Count == 0)
         {
             Debug.Log("✅ Inventory setup validation passed!");
             return true;
         }
         else
         {
-            Debug.LogWarning($"⚠️ Validation found {issues.Count} issues:\n" + string.Join("\n", issues));
-            return false;
+            if (issues.Count > 0)
+            {
+                Debug.LogError($"❌ Validation found {issues.Count} critical issues:\n• " + string.Join("\n• ", issues));
+            }
+            if (warnings.Count > 0)
+            {
+                Debug.LogWarning($"⚠️ Validation found {warnings.Count} warnings:\n• " + string.Join("\n• ", warnings));
+            }
+            return issues.Count == 0; // Return true if only warnings, false if there are errors
         }
     }
 
     private void RunFullValidation()
     {
         Debug.Log("🔍 Running full validation...");
-        ValidateInventorySetup();
+        bool isValid = ValidateInventorySetup();
+
+        // Additional validation checks
+        ValidateSerializationIntegrity();
+        ValidateComponentReferences();
 
         if (Application.isPlaying)
         {
             inventoryManager.LogLayoutInfo();
             var slotManager = utils.GetSlotManager();
             slotManager?.LogValidationReport();
+        }
+
+        string status = isValid ? "✅ PASSED" : "❌ FAILED";
+        Debug.Log($"🔍 Full validation {status}");
+    }
+
+    private void ValidateSerializationIntegrity()
+    {
+        Debug.Log("🔍 Validating serialization integrity...");
+
+        // Check if serializable classes are properly initialized
+        if (utils.SlotManagerProp != null)
+        {
+            Debug.Log("✅ SlotManager serialization OK");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ SlotManager serialization issue detected");
+        }
+
+        if (utils.UILayoutManagerProp != null)
+        {
+            Debug.Log("✅ UILayoutManager serialization OK");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ UILayoutManager serialization issue detected");
+        }
+    }
+
+    private void ValidateComponentReferences()
+    {
+        Debug.Log("🔍 Validating component references...");
+
+        // Check for broken references in object references only
+        var objectRefProperties = new SerializedProperty[]
+        {
+            utils.ItemPrefabProp, utils.HandParentProp, utils.PlayerProp,
+            utils.PlayerStatusControllerProp, utils.WeaponControllerProp, utils.CamProp,
+            utils.InventoryParentProp, utils.EquippableInventoryProp, utils.StorageParentProp,
+            utils.ItemInfoProp
+        };
+
+        int brokenRefs = 0;
+        foreach (var prop in objectRefProperties)
+        {
+            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceInstanceIDValue != 0)
+            {
+                Debug.LogWarning($"Broken reference detected in {prop.displayName}");
+                brokenRefs++;
+            }
+        }
+
+        if (brokenRefs == 0)
+        {
+            Debug.Log("✅ No broken references found");
+        }
+        else
+        {
+            Debug.LogWarning($"⚠️ Found {brokenRefs} broken references");
         }
     }
 
@@ -150,10 +264,10 @@ public class InventoryEditorValidation
         List<string> issues = new List<string>();
 
         // Check object references for common issues
-        if (utils.ItemPrefabProp.objectReferenceValue == null)
+        if (utils.ItemPrefabProp?.objectReferenceValue == null)
             issues.Add("Item Prefab not assigned");
 
-        if (utils.HandParentProp.objectReferenceValue == null)
+        if (utils.HandParentProp?.objectReferenceValue == null)
             issues.Add("Hand Parent not assigned");
 
         // Check for broken references in object references only
@@ -172,13 +286,13 @@ public class InventoryEditorValidation
         }
 
         // Check for player-related issues
-        if (utils.PlayerProp != null && utils.PlayerProp.objectReferenceValue != null)
+        if (utils.PlayerProp?.objectReferenceValue != null)
         {
             var player = utils.PlayerProp.objectReferenceValue as GameObject;
             if (player != null)
             {
                 if (player.GetComponent<PlayerStatusController>() == null &&
-                    utils.PlayerStatusControllerProp.objectReferenceValue == null)
+                    utils.PlayerStatusControllerProp?.objectReferenceValue == null)
                     issues.Add("Player has no PlayerStatusController component and none assigned");
             }
         }
@@ -200,6 +314,10 @@ public class InventoryEditorValidation
         // Run auto-detection and assignment
         detection.RunAutoDetection();
         autoSetup.AutoLinkDetectedComponents();
+
+        // Force serialized object update
+        serializedObject.ApplyModifiedProperties();
+        EditorUtility.SetDirty(inventoryManager);
 
         // Validate again
         if (ValidateInventorySetup())
