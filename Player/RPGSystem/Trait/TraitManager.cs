@@ -31,6 +31,7 @@ public class TraitManager : MonoBehaviour
     [SerializeField] private bool allowNegativeTraits = true;
     [SerializeField] private int maxTraitsPerType = 10;
 
+
     [Header("Starting Traits")]
     [SerializeField] private List<Trait> startingTraits = new List<Trait>();
 
@@ -47,6 +48,20 @@ public class TraitManager : MonoBehaviour
     public event Action<Trait> OnTraitRemoved;
     public event Action<int> OnTraitPointsChanged;
     public event Action<Trait> OnTraitExpired;
+
+    [Header("Armor Set Integration")]
+    [SerializeField] private ArmorSetManager armorSetManager;
+    [SerializeField] private Dictionary<Trait, float> traitMultipliers = new Dictionary<Trait, float>();
+    [SerializeField] private List<Trait> armorAppliedTraits = new List<Trait>();
+
+    // Events for trait enhancement
+    public event Action<Trait, float> OnTraitMultiplierChanged;
+    public event Action<Trait, List<TraitEffect>> OnTraitEffectsAdded;
+
+    // Properties for armor set integration
+    public ArmorSetManager ArmorSetManager => armorSetManager;
+    public Dictionary<Trait, float> TraitMultipliers => new Dictionary<Trait, float>(traitMultipliers);
+
 
     // Properties
     public List<Trait> ActiveTraits => activeTraits.Where(t => t.isActive).Select(t => t.trait).ToList();
@@ -536,5 +551,386 @@ public class TraitManager : MonoBehaviour
     private void DebugClearTraits()
     {
         ClearAllTraits();
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Enhanced trait validation that considers armor sets
+    public bool CanAddTraitWithArmorSets(Trait trait)
+    {
+        if (!CanAddTrait(trait)) return false;
+
+        // Check if this trait would conflict with any active armor set enhancements
+        if (armorSetManager != null)
+        {
+            var activeSets = armorSetManager.GetActiveSets();
+            foreach (var armorSet in activeSets)
+            {
+                var activeEffects = armorSetManager.GetActiveSetEffects(armorSet);
+                foreach (var effect in activeEffects)
+                {
+                    // Check if this trait conflicts with any set enhancements
+                    var affectedTraits = effect.GetAffectedTraits();
+                    if (affectedTraits.Contains(trait))
+                    {
+                        // Allow it if it's being enhanced, deny if it conflicts
+                        var enhancement = effect.traitEnhancements.FirstOrDefault(e => e.originalTrait == trait);
+                        if (enhancement != null && enhancement.enhancementType == TraitEnhancementType.Replace)
+                        {
+                            return false; // Can't add trait that's being replaced
+                        }
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // Add trait with armor consideration
+    public bool AddTraitFromArmor(Trait trait, ArmorSO armor = null)
+    {
+        if (trait == null) return false;
+
+        // Armor traits are always free and don't count against limits
+        var traitInfo = new ActiveTraitInfo(trait, false, 0f);
+        activeTraits.Add(traitInfo);
+        armorAppliedTraits.Add(trait);
+
+        ApplyTraitEffects(trait);
+
+        OnTraitAdded?.Invoke(trait);
+
+        Debug.Log($"Added armor trait: {trait.Name}" + (armor != null ? $" from {armor.name}" : ""));
+        return true;
+    }
+
+    // Remove trait applied by armor
+    public bool RemoveArmorTrait(Trait trait)
+    {
+        if (!armorAppliedTraits.Contains(trait)) return false;
+
+        var traitInfo = activeTraits.FirstOrDefault(t => t.trait == trait && t.isActive);
+        if (traitInfo == null) return false;
+
+        traitInfo.isActive = false;
+        armorAppliedTraits.Remove(trait);
+
+        RemoveTraitEffects(trait);
+
+        OnTraitRemoved?.Invoke(trait);
+
+        Debug.Log($"Removed armor trait: {trait.Name}");
+        return true;
+    }
+
+    // Set trait multiplier (for armor set enhancements)
+    public void SetTraitMultiplier(Trait trait, float multiplier)
+    {
+        if (trait == null) return;
+
+        if (multiplier == 1f)
+        {
+            traitMultipliers.Remove(trait);
+        }
+        else
+        {
+            traitMultipliers[trait] = multiplier;
+        }
+
+        OnTraitMultiplierChanged?.Invoke(trait, multiplier);
+
+        // Reapply trait effects with new multiplier
+        if (HasTrait(trait))
+        {
+            RefreshTraitEffects(trait);
+        }
+    }
+
+    // Get effective trait multiplier
+    public float GetTraitMultiplier(Trait trait)
+    {
+        if (trait == null) return 1f;
+        return traitMultipliers.TryGetValue(trait, out float multiplier) ? multiplier : 1f;
+    }
+
+    // Refresh trait effects (useful when multipliers change)
+    public void RefreshTraitEffects(Trait trait)
+    {
+        if (!HasTrait(trait)) return;
+
+        // Remove and reapply effects
+        RemoveTraitEffects(trait);
+        ApplyTraitEffects(trait);
+    }
+
+    // Check if trait is applied by armor
+    public bool IsArmorTrait(Trait trait)
+    {
+        return armorAppliedTraits.Contains(trait);
+    }
+
+    // Get all armor-applied traits
+    public List<Trait> GetArmorTraits()
+    {
+        return new List<Trait>(armorAppliedTraits);
+    }
+
+    // Enhanced trait effect application that considers multipliers
+    private void ApplyTraitEffectWithMultiplier(TraitEffect effect, Trait trait)
+    {
+        float multiplier = GetTraitMultiplier(trait);
+        float adjustedValue = effect.value * multiplier;
+
+        switch (effect.targetStat.ToLower())
+        {
+            case "health":
+                ApplyHealthEffectWithValue(effect, adjustedValue);
+                break;
+            case "stamina":
+                ApplyStaminaEffectWithValue(effect, adjustedValue);
+                break;
+            case "mana":
+                ApplyManaEffectWithValue(effect, adjustedValue);
+                break;
+            case "speed":
+                ApplySpeedEffectWithValue(effect, adjustedValue);
+                break;
+            default:
+                Debug.LogWarning($"Trait effect for {effect.targetStat} not implemented yet");
+                break;
+        }
+    }
+
+    // Helper methods for applying effects with custom values
+    private void ApplyHealthEffectWithValue(TraitEffect effect, float value)
+    {
+        switch (effect.effectType)
+        {
+            case TraitEffectType.StatMultiplier:
+                float bonus = playerController.HpManager.MaxValue * (value - 1f);
+                playerController.HpManager.ModifyMaxValue(bonus);
+                break;
+            case TraitEffectType.StatAddition:
+                playerController.HpManager.ModifyMaxValue(value);
+                break;
+            case TraitEffectType.RegenerationRate:
+                playerController.HpManager.ModifyIncrementFactor(value - 1f);
+                break;
+        }
+    }
+
+    private void ApplyStaminaEffectWithValue(TraitEffect effect, float value)
+    {
+        switch (effect.effectType)
+        {
+            case TraitEffectType.StatMultiplier:
+                float bonus = playerController.StaminaManager.MaxValue * (value - 1f);
+                playerController.StaminaManager.ModifyMaxValue(bonus);
+                break;
+            case TraitEffectType.StatAddition:
+                playerController.StaminaManager.ModifyMaxValue(value);
+                break;
+            case TraitEffectType.RegenerationRate:
+                playerController.StaminaManager.ModifyIncrementFactor(value - 1f);
+                break;
+        }
+    }
+
+    private void ApplyManaEffectWithValue(TraitEffect effect, float value)
+    {
+        switch (effect.effectType)
+        {
+            case TraitEffectType.StatMultiplier:
+                float bonus = playerController.ManaManager.MaxValue * (value - 1f);
+                playerController.ManaManager.ModifyMaxValue(bonus);
+                break;
+            case TraitEffectType.StatAddition:
+                playerController.ManaManager.ModifyMaxValue(value);
+                break;
+        }
+    }
+
+    private void ApplySpeedEffectWithValue(TraitEffect effect, float value)
+    {
+        switch (effect.effectType)
+        {
+            case TraitEffectType.StatMultiplier:
+                float bonus = playerController.SpeedManager.BaseSpeed * (value - 1f);
+                playerController.SpeedManager.ModifyBaseSpeed(bonus);
+                break;
+            case TraitEffectType.StatAddition:
+                playerController.SpeedManager.ModifyBaseSpeed(value);
+                break;
+        }
+    }
+
+    // Override the existing ApplyTraitEffects method to use multipliers
+    private void ApplyTraitEffectsEnhanced(Trait trait)
+    {
+        if (playerController == null) return;
+
+        foreach (var effect in trait.effects)
+        {
+            ApplyTraitEffectWithMultiplier(effect, trait);
+        }
+    }
+
+    // Add validation for armor set trait conflicts
+    public List<string> ValidateTraitCompatibilityWithArmorSets()
+    {
+        var issues = new List<string>();
+
+        if (armorSetManager == null) return issues;
+
+        var activeSets = armorSetManager.GetActiveSets();
+        var activeTraits = ActiveTraits;
+
+        foreach (var armorSet in activeSets)
+        {
+            var activeEffects = armorSetManager.GetActiveSetEffects(armorSet);
+
+            foreach (var effect in activeEffects)
+            {
+                // Check for trait conflicts
+                foreach (var enhancement in effect.traitEnhancements)
+                {
+                    if (enhancement.originalTrait == null) continue;
+
+                    bool hasOriginalTrait = activeTraits.Contains(enhancement.originalTrait);
+
+                    if (enhancement.enhancementType == TraitEnhancementType.Replace && !hasOriginalTrait)
+                    {
+                        issues.Add($"Set {armorSet.SetName} wants to replace trait {enhancement.originalTrait.Name} but player doesn't have it");
+                    }
+
+                    if (enhancement.enhancementType == TraitEnhancementType.Upgrade && enhancement.enhancedTrait == null)
+                    {
+                        issues.Add($"Set {armorSet.SetName} enhancement for {enhancement.originalTrait.Name} has no enhanced trait specified");
+                    }
+                }
+
+                // Check for conflicting trait applications
+                foreach (var newTrait in effect.traitsToApply)
+                {
+                    if (newTrait == null) continue;
+
+                    var conflicts = activeTraits.Where(t =>
+                        t.incompatibleTraits?.Contains(newTrait) == true ||
+                        newTrait.incompatibleTraits?.Contains(t) == true
+                    ).ToList();
+
+                    if (conflicts.Count > 0)
+                    {
+                        issues.Add($"Set {armorSet.SetName} trait {newTrait.Name} conflicts with: {string.Join(", ", conflicts.Select(t => t.Name))}");
+                    }
+                }
+            }
+        }
+
+        return issues;
+    }
+
+    // Get enhanced trait description (includes multipliers and enhancements)
+    public string GetEnhancedTraitDescription(Trait trait)
+    {
+        if (trait == null) return "";
+
+        string description = trait.GetFormattedDescription();
+
+        float multiplier = GetTraitMultiplier(trait);
+        if (multiplier != 1f)
+        {
+            description += $"\n\n[SET BONUS] Effects multiplied by {multiplier:F1}x";
+        }
+
+        // Check if this trait is enhanced by any armor sets
+        if (armorSetManager != null)
+        {
+            bool hasEnhancements = false;
+            var activeSets = armorSetManager.GetActiveSets();
+
+            foreach (var armorSet in activeSets)
+            {
+                var activeEffects = armorSetManager.GetActiveSetEffects(armorSet);
+
+                foreach (var effect in activeEffects)
+                {
+                    var enhancement = effect.traitEnhancements.FirstOrDefault(e => e.originalTrait == trait);
+                    if (enhancement != null)
+                    {
+                        if (!hasEnhancements)
+                        {
+                            description += "\n\n[SET ENHANCEMENTS]";
+                            hasEnhancements = true;
+                        }
+
+                        string enhancementDesc = enhancement.enhancementType switch
+                        {
+                            TraitEnhancementType.Multiply => $"Enhanced by {armorSet.SetName} (x{enhancement.effectMultiplier})",
+                            TraitEnhancementType.AddEffects => $"Additional effects from {armorSet.SetName}",
+                            TraitEnhancementType.Replace => $"Temporarily replaced by {armorSet.SetName}",
+                            TraitEnhancementType.Upgrade => $"Upgraded by {armorSet.SetName}",
+                            _ => $"Modified by {armorSet.SetName}"
+                        };
+
+                        description += $"\n• {enhancementDesc}";
+                    }
+                }
+            }
+        }
+
+        return description;
+    }
+
+    // Clear all armor-applied traits (useful when removing all armor)
+    public void ClearAllArmorTraits()
+    {
+        var armorTraitsToRemove = new List<Trait>(armorAppliedTraits);
+
+        foreach (var trait in armorTraitsToRemove)
+        {
+            RemoveArmorTrait(trait);
+        }
+
+        Debug.Log($"Cleared {armorTraitsToRemove.Count} armor traits");
+    }
+
+    // Debug method to show trait enhancement status
+    [ContextMenu("Log Trait Enhancement Status")]
+    private void LogTraitEnhancementStatus()
+    {
+        Debug.Log("=== Trait Enhancement Status ===");
+
+        foreach (var trait in ActiveTraits)
+        {
+            float multiplier = GetTraitMultiplier(trait);
+            bool isArmorTrait = IsArmorTrait(trait);
+
+            string status = $"{trait.Name}: ";
+            if (isArmorTrait) status += "[ARMOR] ";
+            if (multiplier != 1f) status += $"[ENHANCED x{multiplier:F1}] ";
+
+            Debug.Log(status);
+        }
+
+        if (traitMultipliers.Count > 0)
+        {
+            Debug.Log("\nActive Multipliers:");
+            foreach (var kvp in traitMultipliers)
+            {
+                Debug.Log($"  {kvp.Key.Name}: {kvp.Value:F1}x");
+            }
+        }
     }
 }

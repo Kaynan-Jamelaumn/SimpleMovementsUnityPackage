@@ -3,13 +3,24 @@ using UnityEngine;
 
 public static class ItemHandler
 {
-    // Main item placement method
+    // Main item placement method - enhanced for armor set system
     public static void PlaceItemInSlot(InventorySlot slot, GameObject draggedObject, PlayerStatusController playerStatusController)
     {
         SetItemInSlot(slot, draggedObject);
-        HandleItemEquipping(slot, draggedObject.GetComponent<InventoryItem>(), playerStatusController);
-    }
 
+        var draggedItem = draggedObject.GetComponent<InventoryItem>();
+        if (draggedItem?.itemScriptableObject is ArmorSO armorSO)
+        {
+            // Use specialized armor equipment handler
+            ArmorEquipmentHandler.EquipArmor(slot, draggedItem, playerStatusController);
+            // Note: ArmorSO.ApplyEquippedStats will automatically notify the ArmorSetManager
+        }
+        else
+        {
+            // Use existing equipment handling for non-armor items
+            HandleItemEquipping(slot, draggedItem, playerStatusController);
+        }
+    }
     // Core slot operations
     private static void SetItemInSlot(InventorySlot slot, GameObject draggedObject)
     {
@@ -23,9 +34,17 @@ public static class ItemHandler
         slot.SetHeldItem(draggedObject);
     }
 
-    // Equipment handling
+    // Equipment handling - enhanced for armor detection
     private static void HandleItemEquipping(InventorySlot slot, InventoryItem draggedItem, PlayerStatusController playerStatusController)
     {
+        // Handle armor separately
+        if (draggedItem?.itemScriptableObject is ArmorSO)
+        {
+            // Armor handling is done in PlaceItemInSlot
+            return;
+        }
+
+        // Handle non-armor equipment
         if (IsEquippable(slot, draggedItem))
         {
             EquipItem(draggedItem, playerStatusController);
@@ -38,6 +57,8 @@ public static class ItemHandler
 
     private static bool IsEquippable(InventorySlot slot, InventoryItem item)
     {
+        if (item?.itemScriptableObject is ArmorSO) return false; // Armor handled separately
+
         return slot.SlotType != SlotType.Common &&
                slot.SlotType == (SlotType)item.itemScriptableObject.ItemType &&
                !item.isEquipped;
@@ -45,6 +66,8 @@ public static class ItemHandler
 
     private static bool ShouldUnequip(InventorySlot slot, InventoryItem item)
     {
+        if (item?.itemScriptableObject is ArmorSO) return false; // Armor handled separately
+
         return item.isEquipped &&
                slot.SlotType == SlotType.Common &&
                slot.SlotType != (SlotType)item.itemScriptableObject.ItemType;
@@ -62,7 +85,7 @@ public static class ItemHandler
         item.isEquipped = false;
     }
 
-    // Stack operations
+    // Stack operations - enhanced for armor compatibility
     public static void SwitchOrFillStack(InventorySlot slot, GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController)
     {
         var slotHeldItem = slot.heldItem.GetComponent<InventoryItem>();
@@ -86,11 +109,15 @@ public static class ItemHandler
 
     private static bool CanStackItems(InventoryItem slotHeldItem, InventoryItem draggedItem)
     {
+        // Armor cannot be stacked
+        if (slotHeldItem.itemScriptableObject is ArmorSO || draggedItem.itemScriptableObject is ArmorSO)
+            return false;
+
         return slotHeldItem.stackCurrent < slotHeldItem.stackMax &&
                slotHeldItem.itemScriptableObject == draggedItem.itemScriptableObject;
     }
 
-    // Item switching logic 
+    // Item switching logic - enhanced for armor handling
     public static void SwitchItems(InventorySlot slot, GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController)
     {
         var draggedItem = draggedObject.GetComponent<InventoryItem>();
@@ -103,18 +130,73 @@ public static class ItemHandler
             return;
         }
 
+        // Handle armor equipment states before switching
+        HandleArmorSwitching(slot, lastSlot, currentItem, draggedItem, playerStatusController);
+
+        // Handle non-armor equipment states
         UpdateEquippedStates(slot, lastSlot, currentItem, draggedItem, playerStatusController);
+
+        // Perform the actual item swap
         SwapItems(slot, lastSlot, draggedObject);
+    }
+
+    private static void HandleArmorSwitching(InventorySlot slot, InventorySlot lastSlot, InventoryItem currentItem, InventoryItem draggedItem, PlayerStatusController playerStatusController)
+    {
+        var currentArmor = currentItem?.itemScriptableObject as ArmorSO;
+        var draggedArmor = draggedItem?.itemScriptableObject as ArmorSO;
+
+        // Unequip current armor if it's equipped
+        if (currentArmor != null && currentItem.isEquipped)
+        {
+            ArmorEquipmentHandler.UnequipArmor(currentItem, playerStatusController);
+        }
+
+        // Unequip dragged armor if it's equipped
+        if (draggedArmor != null && draggedItem.isEquipped)
+        {
+            ArmorEquipmentHandler.UnequipArmor(draggedItem, playerStatusController);
+        }
+
+        // Re-equip in new slots if appropriate
+        if (currentArmor != null && ArmorEquipmentHandler.IsSlotCompatibleWithArmor(lastSlot, currentArmor))
+        {
+            // Will be equipped after swap in SwapItems completion
+        }
+
+        if (draggedArmor != null && ArmorEquipmentHandler.IsSlotCompatibleWithArmor(slot, draggedArmor))
+        {
+            // Will be equipped after swap in SwapItems completion
+        }
     }
 
     private static bool CanSwitchItems(InventorySlot slot, InventorySlot lastSlot, InventoryItem currentItem, InventoryItem draggedItem)
     {
+        // Enhanced compatibility check for armor
+        var currentArmor = currentItem?.itemScriptableObject as ArmorSO;
+        var draggedArmor = draggedItem?.itemScriptableObject as ArmorSO;
+
+        // Check armor slot compatibility
+        if (currentArmor != null && !ArmorEquipmentHandler.IsSlotCompatibleWithArmor(lastSlot, currentArmor))
+        {
+            return false;
+        }
+
+        if (draggedArmor != null && !ArmorEquipmentHandler.IsSlotCompatibleWithArmor(slot, draggedArmor))
+        {
+            return false;
+        }
+
+        // Original compatibility check for non-armor items
         return !((currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType && slot.SlotType != SlotType.Common) ||
                 (lastSlot.SlotType != SlotType.Common && currentItem.itemScriptableObject.ItemType != draggedItem.itemScriptableObject.ItemType));
     }
 
     private static void UpdateEquippedStates(InventorySlot slot, InventorySlot lastSlot, InventoryItem currentItem, InventoryItem draggedItem, PlayerStatusController playerStatusController)
     {
+        // Skip armor items as they're handled separately
+        if (currentItem?.itemScriptableObject is ArmorSO || draggedItem?.itemScriptableObject is ArmorSO)
+            return;
+
         if (slot.SlotType != SlotType.Common)
         {
             UnequipItem(currentItem, playerStatusController);
@@ -127,7 +209,7 @@ public static class ItemHandler
         }
     }
 
-    // Updated SwapItems method 
+    // Updated SwapItems method with post-swap armor equipping
     private static void SwapItems(InventorySlot slot, InventorySlot lastSlot, GameObject draggedObject)
     {
         if (slot == null || lastSlot == null)
@@ -137,10 +219,33 @@ public static class ItemHandler
         }
 
         GameObject currentSlotItem = slot.heldItem;
+        var playerStatusController = Object.FindFirstObjectByType<PlayerStatusController>();
 
         // Use the slot's SetHeldItem method instead of manual transform manipulation
         lastSlot.SetHeldItem(currentSlotItem);
         slot.SetHeldItem(draggedObject);
+
+        // Handle post-swap armor equipping
+        if (playerStatusController != null)
+        {
+            // Check if items should be equipped in their new slots
+            var draggedItem = draggedObject?.GetComponent<InventoryItem>();
+            var currentItem = currentSlotItem?.GetComponent<InventoryItem>();
+
+            if (draggedItem?.itemScriptableObject is ArmorSO draggedArmor &&
+                ArmorEquipmentHandler.IsSlotCompatibleWithArmor(slot, draggedArmor) &&
+                SlotTypeHelper.IsArmorSlot(slot.SlotType))
+            {
+                ArmorEquipmentHandler.EquipArmor(slot, draggedItem, playerStatusController);
+            }
+
+            if (currentItem?.itemScriptableObject is ArmorSO currentArmor &&
+                ArmorEquipmentHandler.IsSlotCompatibleWithArmor(lastSlot, currentArmor) &&
+                SlotTypeHelper.IsArmorSlot(lastSlot.SlotType))
+            {
+                ArmorEquipmentHandler.EquipArmor(lastSlot, currentItem, playerStatusController);
+            }
+        }
     }
 
     // Utility methods 
@@ -159,13 +264,21 @@ public static class ItemHandler
         }
     }
 
-    // Item dropping
+    // Item dropping - enhanced for armor
     public static void DropItem(GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController, Camera cam, GameObject player)
     {
         var lastSlot = lastItemSlotObject.GetComponent<InventorySlot>();
         var draggedItem = draggedObject.GetComponent<InventoryItem>();
 
-        if (lastSlot.SlotType != SlotType.Common)
+        // Handle armor unequipping
+        if (draggedItem?.itemScriptableObject is ArmorSO)
+        {
+            if (draggedItem.isEquipped)
+            {
+                ArmorEquipmentHandler.UnequipArmor(draggedItem, playerStatusController);
+            }
+        }
+        else if (lastSlot.SlotType != SlotType.Common)
         {
             UnequipItem(draggedItem, playerStatusController);
         }

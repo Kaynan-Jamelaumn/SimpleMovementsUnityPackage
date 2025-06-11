@@ -8,8 +8,17 @@ public enum ItemType
     Helmet,
     Armor,
     Boots,
+    Gloves,
+    Shield,
+    Trinket,
+    Cloak,
+    Belt,
+    Shoulders,
+    Bracers,
+    Ring,
+    Leggings,
+    Amulet
 }
-
 [CreateAssetMenu(fileName = "Item", menuName = "Scriptable Objects/Item/ItemSO")]
 public abstract class ItemSO : ScriptableObject
 {
@@ -151,5 +160,25 @@ public abstract class ItemSO : ScriptableObject
                 Debug.Log($"Playing item use animation: {useAnimation.name}");
             }
         }
+    }
+
+
+    protected virtual void OnValidate()
+    {
+        // Ensure name is not empty
+        if (string.IsNullOrEmpty(name))
+            name = this.name;
+
+        // Ensure stack max is at least 1
+        if (stackMax < 1)
+            stackMax = 1;
+
+        // Ensure durability is valid
+        if (maxDurability < 1)
+            maxDurability = 1;
+        if (durability < 0)
+            durability = 0;
+        if (durability > maxDurability)
+            durability = maxDurability;
     }
 }

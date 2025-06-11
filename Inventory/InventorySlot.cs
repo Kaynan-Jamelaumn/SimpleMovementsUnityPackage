@@ -8,6 +8,16 @@ public enum SlotType
     Helmet,
     Armor,
     Boots,
+    Ring,
+    Trinket,
+    Wrist,     // Bracers
+    Gloves,
+    Shield,
+    Belt,
+    Cloak,
+    Amulet,    // Necklace/Trinket alternative
+    Shoulders,
+    Leggings   
 }
 
 public class InventorySlot : MonoBehaviour

@@ -199,7 +199,7 @@ public class InventoryManagerEditor : Editor
         {
             EditorGUILayout.BeginVertical(styles.BoxStyle);
 
-            // Draw properties with enhanced UI
+            // Draw properties with  UI
             var props = new InventoryEditorUtilities(inventoryManager, serializedObject);
             props.DrawEnhancedProperties(styles);
 

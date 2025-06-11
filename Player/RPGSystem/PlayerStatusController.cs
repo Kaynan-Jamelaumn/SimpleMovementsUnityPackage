@@ -27,6 +27,8 @@ public class PlayerStatusController : BaseStatusController
     [Header("System Managers")]
     [SerializeField] private ExperienceManager xpManager;
     [SerializeField] private TraitManager traitManager;
+    [SerializeField] private ArmorSetManager armorSetManager;
+
 
     [Header("Player Class")]
     [SerializeField] private PlayerClass currentPlayerClass;
@@ -57,6 +59,8 @@ public class PlayerStatusController : BaseStatusController
     public PlayerClass CurrentPlayerClass => currentPlayerClass;
     public ExperienceManager XPManager => xpManager;
     public TraitManager TraitManager => traitManager;
+    public ArmorSetManager ArmorSetManager => armorSetManager;
+
     public PlayerMovementModel MovementModel => movementModel;
     public StaminaManager StaminaManager => staminaManager;
     public HealthManager HpManager => hpManager;
