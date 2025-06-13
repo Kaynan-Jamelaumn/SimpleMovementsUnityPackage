@@ -3,7 +3,6 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-// Enhanced InventoryManager with armor set system integration
 public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
     [Header("Dynamic Slot Configuration")]
@@ -134,6 +133,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         // Initialize armor system after all managers are ready
         PostInitializeArmorSystem();
+        if (armorSetManager != null)
+        {
+            armorSetManager.OnSetCompleted += OnArmorSetCompleted;
+            armorSetManager.OnSetBroken += OnArmorSetBroken;
+        }
     }
 
     private void Update()
@@ -150,10 +154,13 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void OnDestroy()
     {
-        UnsubscribeFromEvents();
+        if (armorSetManager != null)
+        {
+            armorSetManager.OnSetCompleted -= OnArmorSetCompleted;
+            armorSetManager.OnSetBroken -= OnArmorSetBroken;
+        }
     }
-
-    // Enhanced initialization with armor system
+    //  initialization with armor system
     private void InitializeComponents()
     {
         playerStatusController = this.CheckComponent(playerStatusController, nameof(playerStatusController));
@@ -285,14 +292,19 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
 
     // Armor set event handlers
-    private void OnArmorSetCompleted(ArmorSet armorSet)
+    private void OnArmorSetCompleted(ArmorSet set, bool isComplete)
     {
-        if (showArmorSetNotifications)
+        if (isComplete)
         {
-            Debug.Log($"Armor Set Completed: {armorSet.SetName}!");
-            // You could show a UI notification here
+            Debug.Log($"Armor set completed: {set.SetName}");
+            // Add any UI updates or effects here
+        }
+        else
+        {
+            Debug.Log($"Armor set incomplete: {set.SetName}");
         }
     }
+
 
     private void OnArmorSetBroken(ArmorSet armorSet)
     {
@@ -300,6 +312,10 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         {
             Debug.Log($"Armor Set Broken: {armorSet.SetName}");
         }
+    }
+    private void RefreshArmorSets()
+    {
+        armorSetManager.ScanEquippedArmor();
     }
 
     private void OnArmorSetEffectActivated(ArmorSetEffect effect)
@@ -309,7 +325,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             Debug.Log($"Set Effect Activated: {effect.effectName}");
         }
     }
-
+    private void DebugArmorSets()
+    {
+        string report = armorSetManager.GetSetStatusReport();
+        Debug.Log(report);
+    }
     // Armor cache management
     private void UpdateArmorCache()
     {
@@ -331,7 +351,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         }
     }
 
-    // Enhanced Input Handling
+    //  Input Handling
     public void OnInventory(InputAction.CallbackContext value)
     {
         if (value.started) ToggleInventory();
@@ -361,7 +381,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         HotbarHandler.CheckForHotbarInput(slotManager.HotbarSlots, handParent);
     }
 
-    // Enhanced Inventory Operations
+    //  Inventory Operations
     private void ToggleInventory()
     {
         if (uiStateManager?.IsInventoryOpened ?? false)
@@ -437,7 +457,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         return hotbarSlots[HotbarHandler.SelectedHotbarSlot]?.GetComponent<InventorySlot>();
     }
 
-    // Enhanced Pointer Event Handling with armor awareness
+    //  Pointer Event Handling with armor awareness
     public void OnPointerClick(PointerEventData eventData)
     {
         if (eventData.button != PointerEventData.InputButton.Right)
@@ -467,7 +487,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         dragHandler?.CleanupDragging();
     }
 
-    // Enhanced Item Management with armor support
+    //  Item Management with armor support
     private void HandleItemDrop(PointerEventData eventData)
     {
         var clickedObject = eventData.pointerCurrentRaycast.gameObject;
@@ -597,7 +617,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         uiStateManager?.SetStorageOpened(false);
     }
 
-    // Enhanced Public Utility Methods with armor support
+    //  Public Utility Methods with armor support
     public int GetItemCount(ItemSO itemSO)
     {
         return InventoryUtils.GetItemCount(slotManager.InventorySlots, itemSO);
@@ -623,7 +643,6 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         return InventoryUtils.CalculateInventoryWeight(slotManager.InventorySlots);
     }
 
-    // New armor-specific utility methods
     public float GetTotalArmorWeight()
     {
         return InventoryUtils.CalculateArmorWeight(slotManager.InventorySlots);

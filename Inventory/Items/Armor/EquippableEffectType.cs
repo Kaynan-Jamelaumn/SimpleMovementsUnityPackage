@@ -70,19 +70,11 @@ public enum EquippableEffectType
     CriticalChance,
     CriticalDamage,
     AttackSpeed,
-    CastingSpeed,
+    CastingSpeed
 
-    // Special Mechanics (for future implementation)
-    GravityReduction,
-    DoubleJump,
-    WaterWalking,
-    FireResistance,
-    IceResistance,
-    PoisonResistance,
-    MovementSilence,
-    NightVision,
-    BetterLoot,
-    ExperienceBonus
+    // REMOVED: Special Mechanics - these should be handled via SpecialMechanic system
+    // GravityReduction, DoubleJump, WaterWalking, FireResistance, IceResistance, 
+    // PoisonResistance, MovementSilence, NightVision, BetterLoot, ExperienceBonus
 }
 
 // Represents a single equippable effect that can be applied by equipment
@@ -155,11 +147,6 @@ public class EquippableEffect
             EquippableEffectType.MagicResistance => $"{sign}{amount} Magic Resistance",
             EquippableEffectType.CriticalChance => $"{sign}{amount:F1}% Critical Chance",
             EquippableEffectType.CriticalDamage => $"{sign}{amount:F0}% Critical Damage",
-            EquippableEffectType.GravityReduction => $"{amount * 100f:F0}% Gravity Reduction",
-            EquippableEffectType.DoubleJump => "Double Jump",
-            EquippableEffectType.WaterWalking => "Water Walking",
-            EquippableEffectType.NightVision => "Night Vision",
-            EquippableEffectType.ExperienceBonus => $"{sign}{(amount * 100f):F0}% Experience",
             _ => $"{effectType}: {sign}{amount}"
         };
     }
@@ -176,19 +163,6 @@ public class EquippableEffect
         return randomValue <= applicationChance;
     }
 
-    // Check if this effect is a special mechanic
-    public bool IsSpecialMechanic()
-    {
-        return effectType switch
-        {
-            EquippableEffectType.GravityReduction or
-            EquippableEffectType.DoubleJump or
-            EquippableEffectType.WaterWalking or
-            EquippableEffectType.MovementSilence or
-            EquippableEffectType.NightVision => true,
-            _ => false
-        };
-    }
 
     // Check if this effect modifies a core stat
     public bool IsCoreStat()
@@ -203,14 +177,11 @@ public class EquippableEffect
         };
     }
 
-    // Check if this effect is a resistance
+    // Check if this effect is a resistance (basic resistances only - special ones via SpecialMechanic)
     public bool IsResistance()
     {
         return effectType switch
         {
-            EquippableEffectType.FireResistance or
-            EquippableEffectType.IceResistance or
-            EquippableEffectType.PoisonResistance or
             EquippableEffectType.MagicResistance => true,
             _ => false
         };

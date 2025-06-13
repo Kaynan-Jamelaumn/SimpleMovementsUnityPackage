@@ -3,6 +3,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+// Base class for special mechanic handlers
 public abstract class SpecialMechanicHandlerBase : MonoBehaviour, ISpecialMechanicHandler
 {
     [Header("Supported Mechanics")]
@@ -14,10 +15,13 @@ public abstract class SpecialMechanicHandlerBase : MonoBehaviour, ISpecialMechan
     protected PlayerStatusController playerController;
     protected bool isInitialized = false;
 
+    public abstract string MechanicId { get; }
+
     protected virtual void Awake()
     {
         playerController = GetComponent<PlayerStatusController>();
         InitializeMechanics();
+        RegisterToEffectRegistry();
     }
 
     protected virtual void InitializeMechanics()
@@ -25,9 +29,21 @@ public abstract class SpecialMechanicHandlerBase : MonoBehaviour, ISpecialMechan
         isInitialized = true;
     }
 
+    protected virtual void RegisterToEffectRegistry()
+    {
+        var registry = EffectRegistry.Instance;
+        if (registry != null)
+        {
+            foreach (var mechanic in supportedMechanics)
+            {
+                registry.RegisterMechanicHandler(mechanic, this);
+            }
+        }
+    }
+
     public virtual bool CanHandleMechanic(string mechanicId)
     {
-        return supportedMechanics.Contains(mechanicId);
+        return supportedMechanics.Contains(mechanicId.ToLower());
     }
 
     public abstract void ApplyMechanic(SpecialMechanic mechanic, bool enable);
@@ -58,9 +74,6 @@ public abstract class SpecialMechanicHandlerBase : MonoBehaviour, ISpecialMechan
         return activeMechanics.TryGetValue(mechanicId, out bool active) && active;
     }
 }
-
-
-
 
 
 

@@ -1,22 +1,17 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Extended EquippableSO class with armor set support
 [CreateAssetMenu(fileName = "Equippable", menuName = "Scriptable Objects/Item/Equippable")]
 public class EquippableSO : ItemSO
 {
     [Header("Equippable Effect")]
     [SerializeField]
-    private List<EquippableEffect> effects; // List of effects this equippable item provides.
+    private List<EquippableEffect> effects;
 
     [Header("Armor Set Information")]
     [SerializeField]
     [Tooltip("Armor set this piece belongs to (if any)")]
-    private ArmorSet belongsToArmorSet; // Single field for armor set reference
-
-    [SerializeField]
-    [Tooltip("Unique identifier for this piece within the set")]
-    private string setPieceId;
+    private ArmorSet belongsToArmorSet;
 
     [SerializeField]
     [Tooltip("Visual indicator when part of an active set")]
@@ -26,16 +21,13 @@ public class EquippableSO : ItemSO
     [Tooltip("Material override when set effects are active")]
     private Material setActiveMaterial;
 
-    private Dictionary<EquippableEffectType, System.Action<float>> effectActions; // Maps effect types to actions that apply them.
-
-    // Properties - Clear naming to avoid confusion
+    // Properties
     public List<EquippableEffect> Effects => effects;
-    public ArmorSet BelongsToArmorSet => belongsToArmorSet; // Main armor set reference
-    public string SetPieceId => setPieceId;
+    public ArmorSet BelongsToArmorSet => belongsToArmorSet;
     public GameObject SetVisualEffect => setVisualEffect;
     public Material SetActiveMaterial => setActiveMaterial;
 
-    // Armor set related methods - renamed for clarity
+    // Armor set related methods
     public bool IsPartOfArmorSet()
     {
         return belongsToArmorSet != null;
@@ -57,24 +49,42 @@ public class EquippableSO : ItemSO
         return armorSet.ContainsPiece(this as ArmorSO);
     }
 
-    // Apply or remove equipment stats
+    // Generate set piece ID dynamically when needed (replaces the removed setPieceId field)
+    public virtual string GetSetPieceId()
+    {
+        if (!IsPartOfArmorSet()) return "";
+        return $"{belongsToArmorSet.name}_{name}";
+    }
+
+    // Apply or remove equipment stats - UPDATED to remove hardcoded special mechanic handling
     public override void ApplyEquippedStats(bool shouldApply, PlayerStatusController statusController)
     {
-        // Initialize the effect actions dictionary before applying effects.
-        InitializeEffectActions(statusController);
+        if (statusController == null)
+        {
+            Debug.LogError("PlayerStatusController is null when applying equipped stats");
+            return;
+        }
 
-        // Iterate through each effect and apply/remove it based on the 'shouldApply' flag.
+        // Apply each effect through the proper system
         foreach (EquippableEffect effect in effects)
         {
-            ApplyEffect(effect, shouldApply, statusController);
+            if (effect == null) continue;
+
+            // All effects go through the hardcoded stat system since we removed special mechanics from EquippableEffectType
+            ApplyStatEffect(effect, shouldApply, statusController);
         }
     }
 
-    // Initialize the effect actions dictionary with functions that modify player stats.
-    private void InitializeEffectActions(PlayerStatusController statusController)
+    // Apply stat effects using hardcoded mappings (for status-modifying traits only)
+    private void ApplyStatEffect(EquippableEffect effect, bool shouldApply, PlayerStatusController statusController)
     {
-        effectActions = new Dictionary<EquippableEffectType, System.Action<float>>
+        float amount = effect.amount;
+        if (!shouldApply) amount *= -1;
+
+        // Initialize the effect actions dictionary with hardcoded mappings for STATUS effects only
+        var effectActions = new Dictionary<EquippableEffectType, System.Action<float>>
         {
+            // Core stats
             { EquippableEffectType.MaxWeight, amount => statusController.WeightManager.ModifyMaxWeight(amount) },
             { EquippableEffectType.Speed, amount => statusController.SpeedManager.ModifyBaseSpeed(amount) },
             { EquippableEffectType.MaxStamina, amount => statusController.StaminaManager.ModifyMaxValue(amount) },
@@ -84,54 +94,92 @@ public class EquippableSO : ItemSO
             { EquippableEffectType.MaxHp, amount => statusController.HpManager.ModifyMaxValue(amount) },
             { EquippableEffectType.HpRegeneration, amount => statusController.HpManager.ModifyIncrementValue(amount) },
             { EquippableEffectType.HpHealFactor, amount => statusController.HpManager.ModifyIncrementFactor(amount) },
-            { EquippableEffectType.HpDamageFactor, amount => statusController.HpManager.ModifyDecrementFactor(amount) }
+            { EquippableEffectType.HpDamageFactor, amount => statusController.HpManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.MaxMana, amount => statusController.ManaManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.ManaRegeneration, amount => statusController.ManaManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.ManaHealFactor, amount => statusController.ManaManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.ManaDamageFactor, amount => statusController.ManaManager.ModifyDecrementFactor(amount) },
+            
+            // Survival stats
+            { EquippableEffectType.MaxHunger, amount => statusController.HungerManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.MaxThirst, amount => statusController.ThirstManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.MaxSleep, amount => statusController.SleepManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.MaxSanity, amount => statusController.SanityManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.MaxBodyHeat, amount => statusController.BodyHeatManager.ModifyMaxValue(amount) },
+            { EquippableEffectType.MaxOxygen, amount => statusController.OxygenManager.ModifyMaxValue(amount) },
+            
+            // Survival regeneration
+            { EquippableEffectType.HungerRegeneration, amount => statusController.HungerManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.ThirstRegeneration, amount => statusController.ThirstManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.SleepRegeneration, amount => statusController.SleepManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.SanityRegeneration, amount => statusController.SanityManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.BodyHeatRegeneration, amount => statusController.BodyHeatManager.ModifyIncrementValue(amount) },
+            { EquippableEffectType.OxygenRegeneration, amount => statusController.OxygenManager.ModifyIncrementValue(amount) },
+            
+            // Survival factors
+            { EquippableEffectType.HungerHealFactor, amount => statusController.HungerManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.ThirstHealFactor, amount => statusController.ThirstManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.SleepHealFactor, amount => statusController.SleepManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.SanityHealFactor, amount => statusController.SanityManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.BodyHeatHealFactor, amount => statusController.BodyHeatManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.OxygenHealFactor, amount => statusController.OxygenManager.ModifyIncrementFactor(amount) },
+            { EquippableEffectType.HungerDamageFactor, amount => statusController.HungerManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.ThirstDamageFactor, amount => statusController.ThirstManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.SleepDamageFactor, amount => statusController.SleepManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.SanityDamageFactor, amount => statusController.SanityManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.BodyHeatDamageFactor, amount => statusController.BodyHeatManager.ModifyDecrementFactor(amount) },
+            { EquippableEffectType.OxygenDamageFactor, amount => statusController.OxygenManager.ModifyDecrementFactor(amount) },
+
+            // Speed modifiers
+            { EquippableEffectType.SpeedFactor, amount => statusController.SpeedManager.ModifyBaseSpeed(statusController.SpeedManager.BaseSpeed * amount) },
+            { EquippableEffectType.SpeedMultiplier, amount => statusController.SpeedManager.ModifyBaseSpeed(statusController.SpeedManager.BaseSpeed * (amount - 1f)) },
+
+            // Combat stats (if you have them in your status controller - add as needed)
+            { EquippableEffectType.Strength, amount => Debug.Log($"Strength modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.Agility, amount => Debug.Log($"Agility modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.Intelligence, amount => Debug.Log($"Intelligence modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.Endurance, amount => Debug.Log($"Endurance modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.Defense, amount => Debug.Log($"Defense modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.MagicResistance, amount => Debug.Log($"Magic Resistance modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.CriticalChance, amount => Debug.Log($"Critical Chance modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.CriticalDamage, amount => Debug.Log($"Critical Damage modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.AttackSpeed, amount => Debug.Log($"Attack Speed modified by {amount} - implement when combat system is ready") },
+            { EquippableEffectType.CastingSpeed, amount => Debug.Log($"Casting Speed modified by {amount} - implement when combat system is ready") }
         };
-    }
 
-    // Apply a specific effect to the player stats.
-    private void ApplyEffect(EquippableEffect effect, bool shouldApply, PlayerStatusController statusController)
-    {
-        // Reverse the effect amount if the effect is to be removed (shouldApply is false).
-        float amount = effect.amount;
-        if (!shouldApply) amount *= -1;
-
-        // Try to find the corresponding action for the effect type and invoke it.
         if (effectActions.TryGetValue(effect.effectType, out var action))
         {
             action.Invoke(amount);
         }
         else
         {
-            Debug.LogWarning($"Effect type {effect.effectType} is not supported.");
+            Debug.LogWarning($"Effect type {effect.effectType} is not supported in stat effects system");
         }
     }
 
-    // Get formatted description including set information
-    public override string ToString()
-    {
-        string description = $"{Name}";
-
-        if (IsPartOfArmorSet())
-        {
-            description += $" ({GetSetName()})";
-        }
-
-        return description;
-    }
-
-    // Validation and setup
+    // Validation in editor
     private new void OnValidate()
     {
-        // Auto-generate setPieceId if empty and part of a set
-        if (IsPartOfArmorSet() && string.IsNullOrEmpty(setPieceId))
+        // Validate effects
+        if (effects != null)
         {
-            setPieceId = $"{itemType}_{name}";
+            foreach (var effect in effects)
+            {
+                if (effect == null) continue;
+
+                // No more validation for special mechanics since they're removed from EquippableEffectType
+                // All remaining effects are valid status effects
+            }
         }
 
-        // Validate that this piece is actually in the armor set's piece list
-        if (belongsToArmorSet != null && this is ArmorSO armorSO && !belongsToArmorSet.ContainsPiece(armorSO))
+        // Validate set relationship if part of a set
+        if (IsPartOfArmorSet() && belongsToArmorSet != null)
         {
-            Debug.LogWarning($"Armor piece '{name}' claims to belong to set '{belongsToArmorSet.SetName}' but is not in the set's piece list!");
+            // Check if this piece is actually in the set's piece list
+            if (!belongsToArmorSet.ContainsPiece(this as ArmorSO))
+            {
+                Debug.LogWarning($"Armor piece '{name}' claims to belong to set '{belongsToArmorSet.SetName}' but is not in the set's piece list! Please add this piece to the armor set or remove the set reference.");
+            }
         }
     }
 }

@@ -71,7 +71,7 @@ public class ArmorSetEditor : Editor
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("Add New Effect"))
         {
-            AddNewArmorSetEffect();
+            AddNewArmorSetEffectProperly();
         }
         if (GUILayout.Button("Create Sample Effects"))
         {
@@ -123,12 +123,15 @@ public class ArmorSetEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 
-    private void AddNewArmorSetEffect()
+    private void AddNewArmorSetEffectProperly()
     {
-        setEffectsProp.InsertArrayElementAtIndex(setEffectsProp.arraySize);
-        var newEffect = setEffectsProp.GetArrayElementAtIndex(setEffectsProp.arraySize - 1);
+        // Add new element to array
+        int newIndex = setEffectsProp.arraySize;
+        setEffectsProp.InsertArrayElementAtIndex(newIndex);
 
-        // Initialize the new effect with proper default values
+        var newEffect = setEffectsProp.GetArrayElementAtIndex(newIndex);
+
+        // PROPERLY initialize all properties with correct default values
         var piecesRequired = newEffect.FindPropertyRelative("piecesRequired");
         var effectName = newEffect.FindPropertyRelative("effectName");
         var effectDescription = newEffect.FindPropertyRelative("effectDescription");
@@ -136,11 +139,17 @@ public class ArmorSetEditor : Editor
         var traitEnhancements = newEffect.FindPropertyRelative("traitEnhancements");
         var statBonuses = newEffect.FindPropertyRelative("statBonuses");
         var specialMechanics = newEffect.FindPropertyRelative("specialMechanics");
+        var canStack = newEffect.FindPropertyRelative("canStack");
+        var priority = newEffect.FindPropertyRelative("priority");
+        var persistDuration = newEffect.FindPropertyRelative("persistDuration");
 
-        // Set default values
+        // Set proper default values (matching the class defaults)
         piecesRequired.intValue = 2;
-        effectName.stringValue = $"Set Bonus ({piecesRequired.intValue} pieces)";
-        effectDescription.stringValue = "Describe the set bonus effect here.";
+        effectName.stringValue = "New Set Bonus";
+        effectDescription.stringValue = "Enter effect description here";
+        canStack.boolValue = false;
+        priority.intValue = 0;
+        persistDuration.floatValue = 0f;
 
         // Clear any existing arrays to start fresh
         traitsToApply.ClearArray();
@@ -148,17 +157,13 @@ public class ArmorSetEditor : Editor
         statBonuses.ClearArray();
         specialMechanics.ClearArray();
 
-        // Add a default stat bonus as an example
-        statBonuses.InsertArrayElementAtIndex(0);
-        var defaultBonus = statBonuses.GetArrayElementAtIndex(0);
-        var effectType = defaultBonus.FindPropertyRelative("effectType");
-        var amount = defaultBonus.FindPropertyRelative("amount");
-
-        effectType.enumValueIndex = 0; // First enum value (usually MaxHp)
-        amount.floatValue = 50f;
-
+        // Apply changes immediately
         serializedObject.ApplyModifiedProperties();
+
+        // Mark as dirty to ensure Unity saves the changes
         EditorUtility.SetDirty(target);
+
+        Debug.Log($"Added new set effect '{effectName.stringValue}' requiring {piecesRequired.intValue} pieces. Remember to configure the effect by adding stat bonuses, traits, or special mechanics!");
     }
 
     private void DrawEffectsPreview(ArmorSet armorSet)
@@ -179,7 +184,7 @@ public class ArmorSetEditor : Editor
                 string effectTitle = !string.IsNullOrEmpty(effect.effectName) ? effect.effectName : "Unnamed Effect";
                 EditorGUILayout.LabelField($"{effect.piecesRequired} Pieces: {effectTitle}", EditorStyles.boldLabel);
 
-                if (!string.IsNullOrEmpty(effect.effectDescription))
+                if (!string.IsNullOrEmpty(effect.effectDescription) && effect.effectDescription != "Enter effect description here")
                 {
                     EditorGUILayout.LabelField(effect.effectDescription, EditorStyles.wordWrappedLabel);
                 }
@@ -188,7 +193,11 @@ public class ArmorSetEditor : Editor
                 var effectIssues = effect.ValidateConfiguration();
                 if (effectIssues.Count > 0)
                 {
-                    EditorGUILayout.HelpBox($"Issues: {string.Join(", ", effectIssues)}", MessageType.Warning);
+                    EditorGUILayout.HelpBox($"Issues: {string.Join("\n", effectIssues)}", MessageType.Warning);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("✓ Effect properly configured", MessageType.Info);
                 }
 
                 // Show effect details
@@ -415,72 +424,6 @@ public class ArmorSetEditor : Editor
         {
             EditorUtility.DisplayDialog("Validation Complete",
                 $"Found {totalIssues} total issues across {armorSets.Count} armor sets. Check console for details.", "OK");
-        }
-    }
-
-    [MenuItem("Tools/Armor System/Find Orphaned Armor Pieces")]
-    public static void FindOrphanedArmorPieces()
-    {
-        var allArmor = AssetDatabase.FindAssets("t:ArmorSO")
-            .Select(guid => AssetDatabase.LoadAssetAtPath<ArmorSO>(AssetDatabase.GUIDToAssetPath(guid)))
-            .Where(armor => armor != null)
-            .ToList();
-
-        var orphanedPieces = allArmor.Where(armor => armor.BelongsToSet == null).ToList();
-
-        if (orphanedPieces.Count == 0)
-        {
-            EditorUtility.DisplayDialog("No Orphaned Pieces",
-                "All armor pieces belong to a set!", "OK");
-        }
-        else
-        {
-            Debug.Log($"Found {orphanedPieces.Count} orphaned armor pieces:");
-            foreach (var piece in orphanedPieces)
-            {
-                Debug.Log($"  • {piece.name}");
-            }
-            EditorUtility.DisplayDialog("Orphaned Pieces Found",
-                $"Found {orphanedPieces.Count} armor pieces without sets. Check console for details.", "OK");
-        }
-    }
-
-    [MenuItem("Tools/Armor System/Generate Set Report")]
-    public static void GenerateSetReport()
-    {
-        var armorSets = AssetDatabase.FindAssets("t:ArmorSet")
-            .Select(guid => AssetDatabase.LoadAssetAtPath<ArmorSet>(AssetDatabase.GUIDToAssetPath(guid)))
-            .Where(set => set != null)
-            .ToList();
-
-        string report = "=== ARMOR SET REPORT ===\n\n";
-        report += $"Total Sets: {armorSets.Count}\n\n";
-
-        foreach (var set in armorSets)
-        {
-            report += $"SET: {set.SetName}\n";
-            report += $"  Pieces: {set.SetPieces.Count}/{set.MaximumSetPieces}\n";
-            report += $"  Effects: {set.SetEffects.Count}\n";
-            report += $"  Min Pieces: {set.MinimumPiecesForSet}\n";
-
-            if (set.SetEffects.Count > 0)
-            {
-                report += "  Effect Thresholds: ";
-                var thresholds = set.SetEffects.Select(e => e.piecesRequired).OrderBy(p => p);
-                report += string.Join(", ", thresholds) + "\n";
-            }
-
-            report += "\n";
-        }
-
-        Debug.Log(report);
-
-        // Optionally save to file
-        string path = EditorUtility.SaveFilePanel("Save Armor Set Report", "", "ArmorSetReport.txt", "txt");
-        if (!string.IsNullOrEmpty(path))
-        {
-            System.IO.File.WriteAllText(path, report);
-            Debug.Log($"Report saved to: {path}");
         }
     }
 }

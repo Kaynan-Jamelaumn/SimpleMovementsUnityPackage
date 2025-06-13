@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public enum ArmorSlotType
@@ -27,7 +28,8 @@ public class ArmorSO : EquippableSO
     [SerializeField] private float magicDefenseValue;
     [SerializeField] private float durabilityModifier = 1f;
 
-    [Header("Armor Traits")]
+    [Header("Armor Traits (Optional)")]
+    [Tooltip("Optional traits applied when this armor is equipped - NOT required for armor set effects")]
     [SerializeField] private List<Trait> inherentTraits = new List<Trait>();
     [SerializeField] private bool applyTraitsWhenEquipped = true;
 
@@ -96,8 +98,8 @@ public class ArmorSO : EquippableSO
         return BelongsToArmorSet != null;
     }
 
-    // Get set piece identifier
-    public string GetSetPieceId()
+    // Override the base GetSetPieceId to include armor slot type for better uniqueness
+    public override string GetSetPieceId()
     {
         if (!IsPartOfSet()) return "";
         return $"{BelongsToArmorSet.name}_{armorSlotType}";
@@ -151,38 +153,125 @@ public class ArmorSO : EquippableSO
         }
     }
 
-    // Validation method
+    // Validation method - SPECIFIC AND EXACT
     private new void OnValidate()
     {
-        // Ensure item type is set correctly to Armor only (not subtypes)
+        List<string> errors = new List<string>();
+        List<string> warnings = new List<string>();
+
+        // CRITICAL CHECKS (will prevent armor set effects from working)
+
+        // 1. Item Type Check
         if (itemType != ItemType.Armor)
         {
-            itemType = ItemType.Armor;
+            errors.Add($"CRITICAL: Item Type is '{itemType}'. Must be 'Armor' for armor set system to work.");
+            itemType = ItemType.Armor; // Auto-fix
         }
 
-        // Validate that inherent traits don't have costs (armor traits are free)
-        if (inherentTraits != null)
+        // 2. Armor Set Reference Check
+        if (BelongsToArmorSet == null)
         {
-            foreach (var trait in inherentTraits)
+            warnings.Add($"INFO: This armor is not part of any armor set. If you want set bonuses, assign 'Belongs To Armor Set' field.");
+        }
+        else
+        {
+            // 3. Bidirectional Reference Check
+            if (!BelongsToArmorSet.ContainsPiece(this))
             {
-                if (trait != null && trait.cost > 0)
-                {
-                    Debug.LogWarning($"Armor {name} has trait {trait.Name} with cost > 0. Armor traits should be free.");
-                }
+                errors.Add($"CRITICAL: Armor set '{BelongsToArmorSet.SetName}' does not include this armor in its 'Set Pieces' list.\n" +
+                          $"FIX: Open the armor set '{BelongsToArmorSet.name}' and add this armor to its 'Set Pieces' list, OR remove the 'Belongs To Armor Set' reference from this armor.");
             }
         }
 
-        // Auto-generate setPieceId if empty and part of a set
-        if (IsPartOfArmorSet() && string.IsNullOrEmpty(SetPieceId))
+        // OPTIONAL CHECKS (won't prevent armor set effects, just best practices)
+
+        // 4. Name Check
+        if (string.IsNullOrEmpty(name) || name == "New Armor" || name.StartsWith("Armor"))
         {
-            // Update the inherited setPieceId through reflection or make it accessible
-            // For now, we'll validate the set reference
+            warnings.Add($"OPTIONAL: Armor name is '{name}'. Consider a more descriptive name like 'Iron Helmet' or 'Dragon Scale Boots'.");
         }
 
-        // Validate that this piece is actually in the armor set's piece list
-        if (BelongsToArmorSet != null && !BelongsToArmorSet.ContainsPiece(this))
+        // 5. Defense Values Check
+        if (defenseValue <= 0 && magicDefenseValue <= 0)
         {
-            Debug.LogWarning($"Armor piece '{name}' claims to belong to set '{BelongsToArmorSet.SetName}' but is not in the set's piece list!");
+            warnings.Add($"OPTIONAL: Both Defense Value and Magic Defense Value are {defenseValue}/{magicDefenseValue}. Consider adding defensive stats.");
         }
+
+        // 6. Inherent Traits Check (CLARIFIED AS OPTIONAL)
+        if (inherentTraits != null)
+        {
+            int nullTraitCount = 0;
+            int costlyTraitCount = 0;
+
+            foreach (var trait in inherentTraits)
+            {
+                if (trait == null)
+                {
+                    nullTraitCount++;
+                }
+                else if (trait.cost > 0)
+                {
+                    costlyTraitCount++;
+                }
+            }
+
+            if (nullTraitCount > 0)
+            {
+                warnings.Add($"OPTIONAL: {nullTraitCount} empty inherent trait slot(s). Remove empty slots or assign traits. Note: Inherent traits are NOT required for armor set effects.");
+            }
+
+            if (costlyTraitCount > 0)
+            {
+                warnings.Add($"OPTIONAL: {costlyTraitCount} inherent trait(s) have cost > 0. Armor traits are usually free (cost = 0).");
+            }
+        }
+
+        // Log errors and warnings
+        foreach (string error in errors)
+        {
+            Debug.LogError($"ARMOR '{name}': {error}", this);
+        }
+
+        foreach (string warning in warnings)
+        {
+            Debug.LogWarning($"ARMOR '{name}': {warning}", this);
+        }
+
+        // Call base validation
+        base.OnValidate();
+    }
+
+    // Get validation status for external systems
+    public bool IsValidForArmorSets()
+    {
+        return itemType == ItemType.Armor &&
+               BelongsToArmorSet != null &&
+               BelongsToArmorSet.ContainsPiece(this);
+    }
+
+    // Get specific validation errors for debugging
+    public List<string> GetValidationErrors()
+    {
+        var errors = new List<string>();
+
+        if (itemType != ItemType.Armor)
+            errors.Add($"Item Type is '{itemType}', must be 'Armor'");
+
+        if (BelongsToArmorSet == null)
+            errors.Add("Not assigned to any armor set");
+        else if (!BelongsToArmorSet.ContainsPiece(this))
+            errors.Add($"Armor set '{BelongsToArmorSet.SetName}' doesn't include this piece in its list");
+
+        return errors;
+    }
+
+    // Get validation summary for UI display
+    public string GetValidationSummary()
+    {
+        var errors = GetValidationErrors();
+        if (errors.Count == 0)
+            return "✓ Valid for armor set effects";
+
+        return $"⚠️ Issues preventing armor set effects:\n" + string.Join("\n", errors.Select(e => $"• {e}"));
     }
 }

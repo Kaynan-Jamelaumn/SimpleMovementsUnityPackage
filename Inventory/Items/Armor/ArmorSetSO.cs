@@ -5,6 +5,9 @@ using UnityEngine;
 
 
 
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 
 [CreateAssetMenu(fileName = "New Armor Set", menuName = "Scriptable Objects/Armor Set")]
 public class ArmorSet : ScriptableObject
@@ -31,6 +34,24 @@ public class ArmorSet : ScriptableObject
     [Header("Audio & Visual")]
     [SerializeField] private AudioClip setCompleteSound;
     [SerializeField] private GameObject setCompleteEffect;
+
+    public int RequiredPiecesForFullSet
+    {
+        get
+        {
+            // Use the highest pieces required from effects
+            int maxRequired = 0;
+            if (SetEffects != null)
+            {
+                foreach (var effect in SetEffects)
+                {
+                    if (effect.piecesRequired > maxRequired)
+                        maxRequired = effect.piecesRequired;
+                }
+            }
+            return maxRequired > 0 ? maxRequired : 3; // Default to 3
+        }
+    }
 
     // Properties
     public string SetName => string.IsNullOrEmpty(setName) ? name : setName;
@@ -161,23 +182,7 @@ public class ArmorSet : ScriptableObject
         return info;
     }
 
-    // Get missing slot types for this set
-    public List<ArmorSlotType> GetMissingSlotTypes(List<ArmorSO> equippedPieces)
-    {
-        var equippedSlotTypes = equippedPieces.Where(p => p != null).Select(p => p.ArmorSlotType).ToList();
-        return setPieces.Where(p => p != null)
-                       .Select(p => p.ArmorSlotType)
-                       .Except(equippedSlotTypes)
-                       .ToList();
-    }
-
-    // Get pieces by slot type
-    public ArmorSO GetPieceBySlotType(ArmorSlotType slotType)
-    {
-        return setPieces.FirstOrDefault(piece => piece != null && piece.ArmorSlotType == slotType);
-    }
-
-    // Validation
+    // Validation with much more specific messages
     private void OnValidate()
     {
         // Auto-set set name
@@ -201,10 +206,10 @@ public class ArmorSet : ScriptableObject
         // Ensure set pieces don't exceed maximum
         if (setPieces.Count > maximumSetPieces)
         {
-            Debug.LogWarning($"Set {setName} has more pieces ({setPieces.Count}) than maximum ({maximumSetPieces})");
+            Debug.LogWarning($"Set '{setName}' has more pieces ({setPieces.Count}) than maximum ({maximumSetPieces})");
         }
 
-        // Validate set effects
+        // Validate set effects with detailed messages
         if (setEffects != null)
         {
             for (int i = setEffects.Count - 1; i >= 0; i--)
@@ -212,24 +217,42 @@ public class ArmorSet : ScriptableObject
                 var effect = setEffects[i];
                 if (effect == null)
                 {
-                    Debug.LogWarning($"Removing null effect at index {i} in set {setName}");
+                    Debug.LogWarning($"Set '{setName}': Removing null effect at index {i}");
                     setEffects.RemoveAt(i);
                     continue;
                 }
 
+                // Check pieces required
                 if (effect.piecesRequired > setPieces.Count)
                 {
-                    Debug.LogWarning($"Set effect '{effect.effectName}' requires {effect.piecesRequired} pieces but set only has {setPieces.Count}");
+                    Debug.LogError($"Set '{setName}': Effect '{effect.effectName}' requires {effect.piecesRequired} pieces but set only has {setPieces.Count} pieces. Reduce pieces required or add more armor pieces to the set.");
                 }
 
                 if (effect.piecesRequired < 1)
                 {
-                    Debug.LogWarning($"Set effect '{effect.effectName}' requires less than 1 piece");
+                    Debug.LogError($"Set '{setName}': Effect '{effect.effectName}' requires {effect.piecesRequired} pieces. Must be at least 1.");
                 }
 
+                // Check effect name
+                if (string.IsNullOrEmpty(effect.effectName) || effect.effectName == "Set Bonus")
+                {
+                    Debug.LogError($"Set '{setName}': Effect at index {i} needs a descriptive name. Current name: '{effect.effectName}'");
+                }
+
+                // Check if effect has actual content - WITH SPECIFIC GUIDANCE
                 if (!effect.HasEffects())
                 {
-                    Debug.LogWarning($"Set effect '{effect.effectName}' has no actual effects defined");
+                    Debug.LogError($"Set '{setName}': Effect '{effect.effectName}' has no effects defined!\n" +
+                                 "TO FIX: Open the armor set and expand the effect. You need to add at least ONE of the following:\n" +
+                                 "• Traits to Apply (add traits that will be given to the player)\n" +
+                                 "• Stat Bonuses (add stat modifications like +50 Health)\n" +
+                                 "• Trait Enhancements (enhance existing traits)\n" +
+                                 "• Special Mechanics (add special abilities)");
+                }
+                else
+                {
+                    // Validate individual effect components
+                    ValidateEffectComponents(effect, setName);
                 }
             }
         }
@@ -248,9 +271,78 @@ public class ArmorSet : ScriptableObject
         {
             setPieces.RemoveAll(piece => piece == null);
         }
+
+        // Validate set piece relationships
+        foreach (var piece in setPieces)
+        {
+            if (piece != null && piece.BelongsToSet != this)
+            {
+                Debug.LogWarning($"Set '{setName}': Armor piece '{piece.name}' is in this set's piece list but doesn't reference this set. Fix by setting the armor's 'Belongs To Armor Set' field to this set.");
+            }
+        }
     }
 
-    // Editor helper methods
+    // Detailed validation for effect components
+    private void ValidateEffectComponents(ArmorSetEffect effect, string setName)
+    {
+        // Validate traits to apply
+        if (effect.traitsToApply != null && effect.traitsToApply.Count > 0)
+        {
+            foreach (var trait in effect.traitsToApply)
+            {
+                if (trait == null)
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has null trait in 'Traits to Apply' list");
+                }
+            }
+        }
+
+        // Validate trait enhancements
+        if (effect.traitEnhancements != null && effect.traitEnhancements.Count > 0)
+        {
+            foreach (var enhancement in effect.traitEnhancements)
+            {
+                if (enhancement.originalTrait == null)
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has trait enhancement with no original trait specified");
+                }
+                else if (enhancement.enhancementType == TraitEnhancementType.Upgrade && enhancement.enhancedTrait == null)
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has trait enhancement for '{enhancement.originalTrait.Name}' set to Upgrade but no enhanced trait specified");
+                }
+            }
+        }
+
+        // Validate stat bonuses
+        if (effect.statBonuses != null && effect.statBonuses.Count > 0)
+        {
+            foreach (var bonus in effect.statBonuses)
+            {
+                if (bonus.amount == 0)
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has stat bonus '{bonus.effectType}' with 0 amount");
+                }
+            }
+        }
+
+        // Validate special mechanics
+        if (effect.specialMechanics != null && effect.specialMechanics.Count > 0)
+        {
+            foreach (var mechanic in effect.specialMechanics)
+            {
+                if (string.IsNullOrEmpty(mechanic.mechanicId))
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has special mechanic with no ID specified");
+                }
+                if (string.IsNullOrEmpty(mechanic.mechanicName))
+                {
+                    Debug.LogWarning($"Set '{setName}': Effect '{effect.effectName}' has special mechanic '{mechanic.mechanicId}' with no name specified");
+                }
+            }
+        }
+    }
+
+    // Context menu helpers
     [ContextMenu("Auto-populate Required Slot Types")]
     private void AutoPopulateSlotTypes()
     {

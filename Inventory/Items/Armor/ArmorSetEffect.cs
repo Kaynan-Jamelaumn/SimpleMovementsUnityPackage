@@ -3,63 +3,6 @@ using System.Linq;
 using UnityEngine;
 
 [System.Serializable]
-public class TraitEnhancement
-{
-    [Header("Trait Enhancement Configuration")]
-    public Trait originalTrait;
-    public Trait enhancedTrait;
-
-    [Header("Enhancement Type")]
-    public TraitEnhancementType enhancementType;
-
-    [Header("Value Modifications")]
-    [Tooltip("Multiplier for existing trait effects (1.5 = 50% stronger)")]
-    public float effectMultiplier = 1.5f;
-
-    [Tooltip("Additional effects to add to the trait")]
-    public List<TraitEffect> additionalEffects = new List<TraitEffect>();
-
-    [Tooltip("Custom description for the enhanced version")]
-    [TextArea(2, 3)]
-    public string enhancedDescription;
-}
-
-public enum TraitEnhancementType
-{
-    Multiply,      // Multiply existing effects by a factor
-    AddEffects,    // Add new effects to existing trait
-    Replace,       // Replace with entirely different trait
-    Upgrade        // Use a completely different enhanced trait
-}
-
-[System.Serializable]
-public class SpecialMechanic
-{
-    [Header("Basic Info")]
-    public string mechanicId;
-    public string mechanicName = "Special Mechanic";
-    [TextArea(2, 3)]
-    public string mechanicDescription;
-
-    [Header("Handler Configuration")]
-    public SpecialMechanicHandlerBase handlerPrefab;
-    public List<SpecialMechanicParameter> parameters = new List<SpecialMechanicParameter>();
-
-    [Header("Activation Settings")]
-    public bool activateOnEquip = true;
-    public bool deactivateOnUnequip = true;
-    public float cooldownDuration = 0f;
-}
-
-[System.Serializable]
-public class SpecialMechanicParameter
-{
-    public string parameterName;
-    public float value;
-    public string description;
-}
-
-[System.Serializable]
 public class ArmorSetEffect
 {
     [Header("Set Bonus Configuration")]
@@ -67,11 +10,11 @@ public class ArmorSetEffect
     public int piecesRequired = 2;
 
     [Tooltip("Name of this set bonus")]
-    public string effectName = "Set Bonus";
+    public string effectName = "New Set Bonus";
 
     [TextArea(2, 4)]
     [Tooltip("Description of what this set bonus does")]
-    public string effectDescription = "";
+    public string effectDescription = "Enter effect description here";
 
     [Header("Trait Effects")]
     [Tooltip("New traits that are applied when this set bonus is active")]
@@ -103,16 +46,28 @@ public class ArmorSetEffect
     public AudioClip setActivationSound;
     public ParticleSystem setActivationParticles;
 
-    // Constructor to ensure proper initialization
-    public ArmorSetEffect()
+    // Unity serialization callback - ensures proper initialization
+    private void OnAfterDeserialize()
     {
-        piecesRequired = 2;
-        effectName = "Set Bonus";
-        effectDescription = "";
-        traitsToApply = new List<Trait>();
-        traitEnhancements = new List<TraitEnhancement>();
-        statBonuses = new List<EquippableEffect>();
-        specialMechanics = new List<SpecialMechanic>();
+        // Ensure minimum values are set if they're invalid
+        if (piecesRequired < 1)
+            piecesRequired = 2;
+
+        if (string.IsNullOrEmpty(effectName))
+            effectName = "New Set Bonus";
+
+        if (string.IsNullOrEmpty(effectDescription))
+            effectDescription = "Enter effect description here";
+
+        // Initialize lists if null
+        if (traitsToApply == null)
+            traitsToApply = new List<Trait>();
+        if (traitEnhancements == null)
+            traitEnhancements = new List<TraitEnhancement>();
+        if (statBonuses == null)
+            statBonuses = new List<EquippableEffect>();
+        if (specialMechanics == null)
+            specialMechanics = new List<SpecialMechanic>();
     }
 
     // Check if this effect should be active
@@ -126,7 +81,7 @@ public class ArmorSetEffect
     {
         string description = $"({piecesRequired} pieces) {effectName}";
 
-        if (!string.IsNullOrEmpty(effectDescription))
+        if (!string.IsNullOrEmpty(effectDescription) && effectDescription != "Enter effect description here")
         {
             description += $"\n{effectDescription}";
         }
@@ -162,6 +117,16 @@ public class ArmorSetEffect
             }
         }
 
+        // Add stat bonus information
+        if (statBonuses.Count > 0)
+        {
+            description += "\nStat Bonuses:";
+            foreach (var bonus in statBonuses)
+            {
+                description += $"\n• {bonus.GetFormattedDescription()}";
+            }
+        }
+
         // Add special mechanics information
         if (specialMechanics.Count > 0)
         {
@@ -175,13 +140,15 @@ public class ArmorSetEffect
         return description;
     }
 
-    // Check if this effect has any content
+    // Check if this effect has any content - IMPROVED VERSION
     public bool HasEffects()
     {
-        return traitsToApply.Count > 0 ||
-               traitEnhancements.Count > 0 ||
-               statBonuses.Count > 0 ||
-               specialMechanics.Count > 0;
+        bool hasTraits = traitsToApply != null && traitsToApply.Count > 0 && traitsToApply.Any(t => t != null);
+        bool hasEnhancements = traitEnhancements != null && traitEnhancements.Count > 0 && traitEnhancements.Any(e => e.originalTrait != null);
+        bool hasStatBonuses = statBonuses != null && statBonuses.Count > 0 && statBonuses.Any(s => s.amount != 0);
+        bool hasSpecialMechanics = specialMechanics != null && specialMechanics.Count > 0 && specialMechanics.Any(m => !string.IsNullOrEmpty(m.mechanicId));
+
+        return hasTraits || hasEnhancements || hasStatBonuses || hasSpecialMechanics;
     }
 
     // Get all traits that would be affected by this effect (for validation)
@@ -218,37 +185,58 @@ public class ArmorSetEffect
         return specialMechanics.FirstOrDefault(m => m.mechanicId == mechanicId);
     }
 
-    // Validate this effect configuration
+    // Validate this effect configuration - ENHANCED VERSION with specific guidance
     public List<string> ValidateConfiguration()
     {
         var issues = new List<string>();
 
         if (piecesRequired < 1)
-            issues.Add("Pieces required must be at least 1");
+            issues.Add($"PIECES REQUIRED is {piecesRequired}. Change it to at least 1 (recommended: 2 for partial set, 3-4 for full set)");
 
-        if (string.IsNullOrEmpty(effectName) || effectName == "Set Bonus")
-            issues.Add("Effect name should be more descriptive");
+        if (string.IsNullOrEmpty(effectName) || effectName == "Set Bonus" || effectName == "New Set Bonus")
+            issues.Add($"EFFECT NAME is '{effectName}'. Change it to something descriptive like 'Warrior's Strength' or 'Mage's Focus'");
 
         if (!HasEffects())
-            issues.Add("Effect has no actual effects defined");
+        {
+            issues.Add("NO EFFECTS CONFIGURED: You must add at least ONE of the following:\n" +
+                      "1. STAT BONUSES: Click the '+' next to 'Stat Bonuses', choose an effect type (like MaxHp), set amount (like 50)\n" +
+                      "2. TRAITS TO APPLY: Click the '+' next to 'Traits to Apply', drag a Trait ScriptableObject into the slot\n" +
+                      "3. TRAIT ENHANCEMENTS: Enhance existing traits the player has\n" +
+                      "4. SPECIAL MECHANICS: Add abilities like double jump or water walking");
+        }
+
+        //  validation for each component
+        if (traitsToApply != null && traitsToApply.Count > 0)
+        {
+            int nullTraits = traitsToApply.Count(t => t == null);
+            if (nullTraits > 0)
+                issues.Add($"TRAITS TO APPLY: {nullTraits} empty slot(s) found. Either drag traits into these slots or remove the empty slots");
+        }
+
+        if (statBonuses != null && statBonuses.Count > 0)
+        {
+            int zeroAmountBonuses = statBonuses.Count(s => s.amount == 0);
+            if (zeroAmountBonuses > 0)
+                issues.Add($"STAT BONUSES: {zeroAmountBonuses} bonus(es) have 0 amount. Set non-zero values (like 50 for +50 health) or remove them");
+        }
 
         // Validate trait enhancements
         foreach (var enhancement in traitEnhancements)
         {
             if (enhancement.originalTrait == null)
             {
-                issues.Add("Trait enhancement has no original trait specified");
+                issues.Add("TRAIT ENHANCEMENT: Missing original trait. Select which trait you want to enhance");
                 continue;
             }
 
             if (enhancement.enhancementType == TraitEnhancementType.Upgrade && enhancement.enhancedTrait == null)
             {
-                issues.Add($"Trait enhancement for {enhancement.originalTrait.Name} is set to Upgrade but no enhanced trait specified");
+                issues.Add($"TRAIT ENHANCEMENT for '{enhancement.originalTrait.Name}': Set to Upgrade but no enhanced trait selected");
             }
 
             if (enhancement.enhancementType == TraitEnhancementType.Multiply && enhancement.effectMultiplier <= 0)
             {
-                issues.Add($"Trait enhancement for {enhancement.originalTrait.Name} has invalid multiplier");
+                issues.Add($"TRAIT ENHANCEMENT for '{enhancement.originalTrait.Name}': Invalid multiplier {enhancement.effectMultiplier}. Use values like 1.5 for 50% stronger");
             }
         }
 
@@ -256,12 +244,24 @@ public class ArmorSetEffect
         foreach (var mechanic in specialMechanics)
         {
             if (string.IsNullOrEmpty(mechanic.mechanicId))
-                issues.Add("Special mechanic has no ID specified");
+                issues.Add("SPECIAL MECHANIC: Missing Mechanic ID. Enter something like 'double_jump' or 'water_walking'");
 
             if (string.IsNullOrEmpty(mechanic.mechanicName))
-                issues.Add($"Special mechanic {mechanic.mechanicId} has no name specified");
+                issues.Add($"SPECIAL MECHANIC '{mechanic.mechanicId}': Missing Mechanic Name. Enter a display name like 'Double Jump'");
         }
 
         return issues;
+    }
+
+    // Get debug info about what this effect contains
+    public string GetDebugInfo()
+    {
+        var info = $"Effect: {effectName} ({piecesRequired} pieces)\n";
+        info += $"• Traits to Apply: {(traitsToApply?.Count(t => t != null) ?? 0)}\n";
+        info += $"• Trait Enhancements: {(traitEnhancements?.Count(e => e.originalTrait != null) ?? 0)}\n";
+        info += $"• Stat Bonuses: {(statBonuses?.Count(s => s.amount != 0) ?? 0)}\n";
+        info += $"• Special Mechanics: {(specialMechanics?.Count(m => !string.IsNullOrEmpty(m.mechanicId)) ?? 0)}\n";
+        info += $"• Has Effects: {HasEffects()}";
+        return info;
     }
 }

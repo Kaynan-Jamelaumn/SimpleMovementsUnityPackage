@@ -114,11 +114,11 @@ public class ArmorSetUIManager : MonoBehaviour
     {
         if (armorSetManager != null)
         {
-            armorSetManager.OnSetPiecesChanged += OnSetPiecesChanged;
-            armorSetManager.OnSetCompleted += OnSetCompleted;
-            armorSetManager.OnSetBroken += OnSetBroken;
-            armorSetManager.OnSetEffectActivated += OnSetEffectActivated;
-            armorSetManager.OnSetEffectDeactivated += OnSetEffectDeactivated;
+            armorSetManager.OnSetPiecesChanged += HandleSetPiecesChanged;
+            armorSetManager.OnSetCompleted += HandleSetCompleted;
+            armorSetManager.OnSetBroken += HandleSetBroken;
+            armorSetManager.OnSetEffectActivated += HandleSetEffectActivated;
+            armorSetManager.OnSetEffectDeactivated += HandleSetEffectDeactivated;
         }
     }
 
@@ -126,16 +126,16 @@ public class ArmorSetUIManager : MonoBehaviour
     {
         if (armorSetManager != null)
         {
-            armorSetManager.OnSetPiecesChanged -= OnSetPiecesChanged;
-            armorSetManager.OnSetCompleted -= OnSetCompleted;
-            armorSetManager.OnSetBroken -= OnSetBroken;
-            armorSetManager.OnSetEffectActivated -= OnSetEffectActivated;
-            armorSetManager.OnSetEffectDeactivated -= OnSetEffectDeactivated;
+            armorSetManager.OnSetPiecesChanged -= HandleSetPiecesChanged;
+            armorSetManager.OnSetCompleted -= HandleSetCompleted;
+            armorSetManager.OnSetBroken -= HandleSetBroken;
+            armorSetManager.OnSetEffectActivated -= HandleSetEffectActivated;
+            armorSetManager.OnSetEffectDeactivated -= HandleSetEffectDeactivated;
         }
     }
 
-    // Event handlers
-    private void OnSetPiecesChanged(ArmorSet armorSet, int newCount)
+    // Event handlers - Fixed signatures
+    private void HandleSetPiecesChanged(ArmorSet armorSet, int newCount)
     {
         RefreshSetList();
 
@@ -148,23 +148,37 @@ public class ArmorSetUIManager : MonoBehaviour
         UpdateEquipmentSlots();
     }
 
-    private void OnSetCompleted(ArmorSet armorSet)
+    private void HandleSetCompleted(ArmorSet armorSet, bool isComplete)
     {
-        if (enableSetNotifications)
+        if (isComplete)
         {
-            ShowSetCompletionNotification(armorSet);
-        }
+            if (enableSetNotifications)
+            {
+                ShowSetCompletionNotification(armorSet);
+            }
 
-        if (showUIOnSetCompletion)
+            if (showUIOnSetCompletion)
+            {
+                DisplaySet(armorSet);
+                ShowUI();
+            }
+
+            PlaySound(setCompleteSound);
+        }
+        else
         {
-            DisplaySet(armorSet);
-            ShowUI();
-        }
+            // Handle when set is no longer complete
+            RefreshSetList();
 
-        PlaySound(setCompleteSound);
+            if (currentlyDisplayedSet == armorSet)
+            {
+                UpdateSetInfo();
+                UpdateSetEffects();
+            }
+        }
     }
 
-    private void OnSetBroken(ArmorSet armorSet)
+    private void HandleSetBroken(ArmorSet armorSet)
     {
         RefreshSetList();
 
@@ -175,7 +189,7 @@ public class ArmorSetUIManager : MonoBehaviour
         }
     }
 
-    private void OnSetEffectActivated(ArmorSetEffect effect)
+    private void HandleSetEffectActivated(ArmorSetEffect effect)
     {
         PlaySound(effectActivatedSound);
 
@@ -185,7 +199,7 @@ public class ArmorSetUIManager : MonoBehaviour
         }
     }
 
-    private void OnSetEffectDeactivated(ArmorSetEffect effect)
+    private void HandleSetEffectDeactivated(ArmorSetEffect effect)
     {
         // Update UI if necessary
         if (currentlyDisplayedSet != null)
