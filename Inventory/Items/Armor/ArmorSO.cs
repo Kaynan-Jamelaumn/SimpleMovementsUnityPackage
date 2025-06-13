@@ -226,16 +226,16 @@ public class ArmorSO : EquippableSO
             }
         }
 
-        // Log errors and warnings
-        foreach (string error in errors)
-        {
-            Debug.LogError($"ARMOR '{name}': {error}", this);
-        }
+        //// Log errors and warnings
+        //foreach (string error in errors)
+        //{
+        //    Debug.LogError($"ARMOR '{name}': {error}", this);
+        //}
 
-        foreach (string warning in warnings)
-        {
-            Debug.LogWarning($"ARMOR '{name}': {warning}", this);
-        }
+        //foreach (string warning in warnings)
+        //{
+        //    Debug.LogWarning($"ARMOR '{name}': {warning}", this);
+        //}
 
         // Call base validation
         base.OnValidate();
