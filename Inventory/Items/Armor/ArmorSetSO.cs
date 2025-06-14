@@ -3,12 +3,6 @@ using System.Linq;
 using UnityEngine;
 
 
-
-
-using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
-
 [CreateAssetMenu(fileName = "New Armor Set", menuName = "Scriptable Objects/Armor Set")]
 public class ArmorSet : ScriptableObject
 {
