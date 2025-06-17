@@ -22,29 +22,29 @@ public class ArmorSOEditor : Editor
     private SerializedProperty belongsToArmorSetProp;
     private SerializedProperty descProp;
 
-    // Validation state
+    // Validation state - reuse collections
     private bool hasValidationErrors = false;
     private readonly List<string> validationErrors = new List<string>(4);
     private readonly List<string> validationWarnings = new List<string>(4);
 
-    // Cache for expensive operations
-    private static readonly Dictionary<string, ArmorSO[]> armorCache = new Dictionary<string, ArmorSO[]>(10);
-    private static float lastCacheTime = 0f;
-    private const float CACHE_DURATION = 2f;
+    // Cache with proper cleanup
+    private static ArmorSO[] cachedArmors;
+    private static double lastCacheTime;
+    private const double CACHE_DURATION = 5.0; // Increased cache duration
 
-    // GUI content cache
+    // Reusable GUI content
     private static readonly GUIContent slotTypeContent = new GUIContent("Armor Slot Type");
     private static readonly GUIContent defenseContent = new GUIContent("Physical Defense");
     private static readonly GUIContent magicDefenseContent = new GUIContent("Magic Defense");
     private static readonly GUIContent durabilityContent = new GUIContent("Durability Modifier");
     private static readonly GUIContent descriptionContent = new GUIContent("Description (Optional)");
 
-    // String builder for efficiency
-    private static readonly StringBuilder stringBuilder = new StringBuilder(256);
+    // Single shared StringBuilder instance
+    private static readonly StringBuilder sharedStringBuilder = new StringBuilder(256);
 
     // Validation timing
-    private float lastValidationTime = 0f;
-    private const float VALIDATION_INTERVAL = 0.5f;
+    private double lastValidationTime;
+    private const double VALIDATION_INTERVAL = 1.0; // Increased interval
 
     // Pre-allocated arrays for GUI
     private static readonly GUILayoutOption[] boxOptions = new GUILayoutOption[0];
@@ -80,7 +80,7 @@ public class ArmorSOEditor : Editor
         ArmorSO armor = (ArmorSO)target;
 
         // Throttled validation
-        float currentTime = Time.realtimeSinceStartup;
+        double currentTime = EditorApplication.timeSinceStartup;
         if (currentTime - lastValidationTime > VALIDATION_INTERVAL)
         {
             ValidateArmor(armor);
@@ -132,7 +132,7 @@ public class ArmorSOEditor : Editor
                 else
                 {
                     var amount = effect.FindPropertyRelative("amount");
-                    if (amount != null && amount.floatValue == 0)
+                    if (amount != null && Mathf.Approximately(amount.floatValue, 0f))
                     {
                         zeroAmountEffects++;
                     }
@@ -141,22 +141,22 @@ public class ArmorSOEditor : Editor
 
             if (nullEffects > 0)
             {
-                stringBuilder.Clear();
-                stringBuilder.Append("Found ").Append(nullEffects).Append(" empty effect slot(s). Remove empty slots or configure them.");
-                validationErrors.Add(stringBuilder.ToString());
+                sharedStringBuilder.Clear();
+                sharedStringBuilder.Append("Found ").Append(nullEffects).Append(" empty effect slot(s). Remove empty slots or configure them.");
+                validationErrors.Add(sharedStringBuilder.ToString());
                 hasValidationErrors = true;
             }
 
             if (zeroAmountEffects > 0)
             {
-                stringBuilder.Clear();
-                stringBuilder.Append("Found ").Append(zeroAmountEffects).Append(" effect(s) with 0 amount. Effects with 0 amount have no gameplay impact.");
-                validationWarnings.Add(stringBuilder.ToString());
+                sharedStringBuilder.Clear();
+                sharedStringBuilder.Append("Found ").Append(zeroAmountEffects).Append(" effect(s) with 0 amount. Effects with 0 amount have no gameplay impact.");
+                validationWarnings.Add(sharedStringBuilder.ToString());
             }
         }
 
         // Check defense values
-        if (defenseValueProp.floatValue == 0 && magicDefenseValueProp.floatValue == 0)
+        if (Mathf.Approximately(defenseValueProp.floatValue, 0f) && Mathf.Approximately(magicDefenseValueProp.floatValue, 0f))
         {
             validationWarnings.Add("OPTIONAL: Both defense values are 0. Consider adding some defense unless this is intentional.");
         }
@@ -167,20 +167,21 @@ public class ArmorSOEditor : Editor
 
     private void ValidateArmorNameUniqueness(ArmorSO armor)
     {
-        // Use cached armor list
-        float currentTime = Time.realtimeSinceStartup;
-        if (currentTime - lastCacheTime > CACHE_DURATION)
+        // Refresh cache if needed
+        double currentTime = EditorApplication.timeSinceStartup;
+        if (cachedArmors == null || currentTime - lastCacheTime > CACHE_DURATION)
         {
             RefreshArmorCache();
-            lastCacheTime = currentTime;
         }
 
-        if (armorCache.TryGetValue("all", out ArmorSO[] allArmor))
+        if (cachedArmors != null)
         {
             int duplicateCount = 0;
-            for (int i = 0; i < allArmor.Length; i++)
+            string armorName = armor.name;
+
+            for (int i = 0; i < cachedArmors.Length; i++)
             {
-                if (allArmor[i] != null && allArmor[i] != armor && allArmor[i].name == armor.name)
+                if (cachedArmors[i] != null && cachedArmors[i] != armor && cachedArmors[i].name == armorName)
                 {
                     duplicateCount++;
                 }
@@ -188,10 +189,10 @@ public class ArmorSOEditor : Editor
 
             if (duplicateCount > 0)
             {
-                stringBuilder.Clear();
-                stringBuilder.Append("REQUIRED: Armor name '").Append(armor.name).Append("' is already used by ")
+                sharedStringBuilder.Clear();
+                sharedStringBuilder.Append("REQUIRED: Armor name '").Append(armorName).Append("' is already used by ")
                     .Append(duplicateCount).Append(" other armor piece(s). Each armor must have a unique name!");
-                validationErrors.Add(stringBuilder.ToString());
+                validationErrors.Add(sharedStringBuilder.ToString());
                 hasValidationErrors = true;
             }
         }
@@ -200,15 +201,15 @@ public class ArmorSOEditor : Editor
     private static void RefreshArmorCache()
     {
         var guids = AssetDatabase.FindAssets("t:ArmorSO");
-        var allArmor = new ArmorSO[guids.Length];
+        cachedArmors = new ArmorSO[guids.Length];
 
         for (int i = 0; i < guids.Length; i++)
         {
             string path = AssetDatabase.GUIDToAssetPath(guids[i]);
-            allArmor[i] = AssetDatabase.LoadAssetAtPath<ArmorSO>(path);
+            cachedArmors[i] = AssetDatabase.LoadAssetAtPath<ArmorSO>(path);
         }
 
-        armorCache["all"] = allArmor;
+        lastCacheTime = EditorApplication.timeSinceStartup;
     }
 
     private void DrawValidationSection()
@@ -292,7 +293,7 @@ public class ArmorSOEditor : Editor
         EditorGUILayout.PropertyField(magicDefenseValueProp, magicDefenseContent);
         EditorGUILayout.PropertyField(durabilityModifierProp, durabilityContent);
 
-        if (defenseValueProp.floatValue == 0 && magicDefenseValueProp.floatValue == 0)
+        if (Mathf.Approximately(defenseValueProp.floatValue, 0f) && Mathf.Approximately(magicDefenseValueProp.floatValue, 0f))
         {
             EditorGUILayout.HelpBox("This armor provides no protection.", MessageType.Info);
         }
@@ -318,7 +319,7 @@ public class ArmorSOEditor : Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Effect Summary:", EditorStyles.miniBoldLabel);
 
-            stringBuilder.Clear();
+            sharedStringBuilder.Clear();
             for (int i = 0; i < effectsProp.arraySize; i++)
             {
                 var effect = effectsProp.GetArrayElementAtIndex(i);
@@ -328,12 +329,12 @@ public class ArmorSOEditor : Editor
                 if (type != null && amount != null)
                 {
                     var effectType = (EquippableEffectType)type.enumValueIndex;
-                    stringBuilder.Append("• ").Append(effectType).Append(": ");
-                    if (amount.floatValue > 0) stringBuilder.Append("+");
-                    stringBuilder.Append(amount.floatValue).AppendLine();
+                    sharedStringBuilder.Append("• ").Append(effectType).Append(": ");
+                    if (amount.floatValue > 0) sharedStringBuilder.Append("+");
+                    sharedStringBuilder.Append(amount.floatValue).AppendLine();
                 }
             }
-            EditorGUILayout.HelpBox(stringBuilder.ToString(), MessageType.None);
+            EditorGUILayout.HelpBox(sharedStringBuilder.ToString(), MessageType.None);
         }
 
         EditorGUILayout.EndVertical();
@@ -353,16 +354,17 @@ public class ArmorSOEditor : Editor
             {
                 EditorGUILayout.Space();
 
-                stringBuilder.Clear();
-                stringBuilder.Append("Set: ").AppendLine(armorSet.SetName);
-                stringBuilder.Append("Pieces in set: ").AppendLine(armorSet.SetPieces.Count.ToString());
-                stringBuilder.Append("This armor included: ").Append(armorSet.ContainsPiece(armor) ? "✓ Yes" : "✗ No");
-                EditorGUILayout.HelpBox(stringBuilder.ToString(), MessageType.None);
+                sharedStringBuilder.Clear();
+                sharedStringBuilder.Append("Set: ").AppendLine(armorSet.SetName);
+                sharedStringBuilder.Append("Pieces in set: ").AppendLine(armorSet.SetPieces.Count.ToString());
+                sharedStringBuilder.Append("This armor included: ").Append(armorSet.ContainsPiece(armor) ? "✓ Yes" : "✗ No");
+                EditorGUILayout.HelpBox(sharedStringBuilder.ToString(), MessageType.None);
 
                 if (!armorSet.ContainsPiece(armor))
                 {
                     EditorGUILayout.HelpBox("⚠️ This armor references the set but isn't in its piece list!", MessageType.Warning);
-                    if (GUILayout.Button("Add to Set"))
+
+                    if (GUILayout.Button("Add to Set", buttonWidth50))
                     {
                         AddArmorToSet(armor, armorSet);
                     }
@@ -375,7 +377,7 @@ public class ArmorSOEditor : Editor
 
     private void DrawOptionalTraitsSection()
     {
-        EditorGUILayout.LabelField("Inherent Traits (Optional)", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Optional Armor Traits", EditorStyles.boldLabel);
         EditorGUILayout.BeginVertical(GUI.skin.box, boxOptions);
 
         EditorGUILayout.PropertyField(applyTraitsWhenEquippedProp);
@@ -386,7 +388,7 @@ public class ArmorSOEditor : Editor
 
             if (inherentTraitsProp.arraySize == 0)
             {
-                EditorGUILayout.HelpBox("No traits assigned. This is optional - traits can come from armor sets instead.", MessageType.Info);
+                EditorGUILayout.HelpBox("No traits. This is optional - traits can come from armor sets instead.", MessageType.Info);
             }
         }
         else
@@ -439,10 +441,18 @@ public class ArmorSOEditor : Editor
 
             EditorUtility.SetDirty(armorSet);
 
-            stringBuilder.Clear();
-            stringBuilder.Append("Added ").Append(armor.name).Append(" to ").Append(armorSet.SetName).Append(" set pieces");
-            Debug.Log(stringBuilder.ToString());
+            sharedStringBuilder.Clear();
+            sharedStringBuilder.Append("Added ").Append(armor.name).Append(" to ").Append(armorSet.SetName).Append(" set pieces");
+            Debug.Log(sharedStringBuilder.ToString());
         }
+    }
+
+    // Clean up static cache when domain reloads
+    [UnityEditor.Callbacks.DidReloadScripts]
+    private static void OnScriptsReloaded()
+    {
+        cachedArmors = null;
+        lastCacheTime = 0;
     }
 }
 #endif

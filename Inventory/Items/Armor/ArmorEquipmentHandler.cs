@@ -257,7 +257,7 @@ public static class ArmorEquipmentHandler
                 }
             }
 
-            Debug.Log($"Optimized equipment for {bestSet.Key.SetName} set ({bestSet.Value.Count} pieces)");
+            Debug.Log($"equipment for {bestSet.Key.SetName} set ({bestSet.Value.Count} pieces)");
         }
     }
 
