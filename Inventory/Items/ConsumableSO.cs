@@ -2,297 +2,560 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Enumerates the different types of effects that a consumable can apply.
-/// </summary>
 public enum ConsumableEffectType
 {
-    Hp,                    // Affects health points.
-    Stamina,               // Affects stamina.
-    Food,                  // Affects food consumption or hunger level.
-    Drink,                 // Affects drink consumption or thirst level.
-    Weight,                // Affects the player's weight capacity.
-    Speed,                 // Affects movement speed.
-    HpRegeneration,        // Regenerates health points over time.
-    StaminaRegeneration,   // Regenerates stamina over time.
-    HpHealFactor,          // Boosts healing effects on health points.
-    StaminaHealFactor,     // Boosts healing effects on stamina.
-    HpDamageFactor,        // Increases damage received to health.
-    StaminaDamageFactor    // Increases stamina drain or damage.
+    // Core status effects
+    Hp,
+    Stamina,
+    Food,
+    Drink,
+    Weight,
+    Speed,
+    HpRegeneration,
+    StaminaRegeneration,
+    HpHealFactor,
+    StaminaHealFactor,
+    HpDamageFactor,
+    StaminaDamageFactor,
+
+    // Speed modifiers
+    SpeedFactor,
+    SpeedMultiplier,
+
+    // Extended status effects
+    Sleep,
+    SleepFactor,
+    Sanity,
+    SanityHealFactor,
+    SanityDamageFactor,
+    Mana,
+    ManaRegeneration,
+    ManaHealFactor,
+    ManaDamageFactor,
+    BodyHeat,
+    BodyHeatFactor,
+    Oxygen,
+    OxygenFactor,
+
+    // Max value modifiers
+    MaxHp,
+    MaxStamina,
+    MaxMana,
+    MaxHunger,
+    MaxThirst,
+    MaxWeight,
+    MaxSleep,
+    MaxSanity,
+    MaxBodyHeat,
+    MaxOxygen,
+
+    // Survival regeneration
+    HungerRegeneration,
+    ThirstRegeneration,
+    SleepRegeneration,
+    SanityRegeneration,
+    BodyHeatRegeneration,
+    OxygenRegeneration,
+
+    // Survival factors
+    HungerHealFactor,
+    ThirstHealFactor,
+    SleepHealFactor,
+    BodyHeatHealFactor,
+    OxygenHealFactor,
+    HungerDamageFactor,
+    ThirstDamageFactor,
+    SleepDamageFactor, 
+    BodyHeatDamageFactor,
+    OxygenDamageFactor
 }
 
-/// <summary>
-/// Enumerates the types of consumable items available.
-/// </summary>
 public enum ConsumableType
 {
-    Potion,  // Consumable is a potion.
-    Food     // Consumable is food.
+    Potion,
+    Food
 }
 
-/// <summary>
-/// Defines the properties and behaviors of a consumable effect.
-/// </summary>
 [System.Serializable]
 public class ConsumableEffect
 {
-    // Basic Effect Information
     [Header("Effect Information")]
-    public ConsumableEffectType effectType;  // Type of effect (e.g., Hp, Stamina).
-    public ConsumableType itemType;          // Type of consumable item (e.g., Potion, Food).
-    public string effectName;                // Name of the effect.
-    public float amount;                     // Magnitude of the effect.
+    public ConsumableEffectType effectType;
+    public ConsumableType itemType;
+    public string effectName;
+    public float amount;
 
-    // Effect Timers
     [Header("Effect Timing")]
     [Tooltip("The duration of the effect.")]
-    public float timeBuffEffect;             // Duration of the effect.
+    public float timeBuffEffect;
     [Tooltip("How much time for the effect to tick again.")]
-    public float tickCooldown;               // Time interval for periodic effects.
+    public float tickCooldown;
     [Tooltip("The amount will be divided by the time.")]
-    public bool isProcedural;                // Whether the effect applies incrementally.
+    public bool isProcedural;
     [Tooltip("If the same effect is being applied, can it stack or only reset the time?")]
-    public bool isStackable;                 // Whether the effect can stack.
+    public bool isStackable;
 
-    // Randomization
     [Header("Random Effect Values")]
-    public bool randomAmount;                // Whether to randomize the effect amount.
-    public bool randomTimeBuffEffect;        // Whether to randomize the duration.
-    public bool randomTickCooldown;          // Whether to randomize the tick cooldown.
-    public float minAmount;                  // Minimum effect amount.
-    public float maxAmount;                  // Maximum effect amount.
-    public float minTimeBuffEffect;          // Minimum duration.
-    public float maxTimeBuffEffect;          // Maximum duration.
-    public float minTickCooldown;            // Minimum tick cooldown.
-    public float maxTickCooldown;            // Maximum tick cooldown.
-}
+    public bool randomAmount;
+    public bool randomTimeBuffEffect;
+    public bool randomTickCooldown;
+    public float minAmount;
+    public float maxAmount;
+    public float minTimeBuffEffect;
+    public float maxTimeBuffEffect;
+    public float minTickCooldown;
+    public float maxTickCooldown;
 
-/// <summary>
-/// Scriptable Object that represents a consumable item and its associated effects.
-/// </summary>
+    [Header("Application Conditions")]
+    [Tooltip("Probability of applying the effect (0-1)")]
+    [Range(0f, 1f)]
+    public float applicationChance = 1f;
+
+    [Tooltip("Minimum player level required for this effect")]
+    public int minimumLevel = 1;
+
+    public float GetRandomizedAmount()
+    {
+        return randomAmount ? UnityEngine.Random.Range(minAmount, maxAmount) : amount;
+    }
+
+    public float GetRandomizedDuration()
+    {
+        return randomTimeBuffEffect ? UnityEngine.Random.Range(minTimeBuffEffect, maxTimeBuffEffect) : timeBuffEffect;
+    }
+
+    public float GetRandomizedTickCooldown()
+    {
+        return randomTickCooldown ? UnityEngine.Random.Range(minTickCooldown, maxTickCooldown) : tickCooldown;
+    }
+
+    public bool ShouldApplyEffect(int playerLevel = 1)
+    {
+        return playerLevel >= minimumLevel && UnityEngine.Random.value <= applicationChance;
+    }
+}
 
 [CreateAssetMenu(fileName = "Consumable", menuName = "Scriptable Objects/Item/Consumable")]
 public class ConsumableSO : ItemSO
 {
-    [Header("Consumable Buff")]
+    [Header("Consumable Effects")]
     [SerializeField]
     private List<ConsumableEffect> effects;
 
-    /// <summary>Gets the list of effects associated with this consumable.</summary>
+    [Header("Consumable Settings")]
+    [Tooltip("Play sound effect when consumed")]
+    public bool playSoundOnUse = true;
+
+    [Tooltip("Show visual effect when consumed")]
+    public bool showVisualEffectOnUse = true;
+
+    [Tooltip("Delay before effects are applied (in seconds)")]
+    public float effectDelay = 0f;
+
     public List<ConsumableEffect> Effects => effects;
 
-    /// <summary>Initializes a new instance of the <see cref="ConsumableSO"/> class with default settings.</summary>
+    private static readonly Dictionary<ConsumableEffectType, Func<PlayerStatusController, bool>> StatusManagerChecks =
+        new Dictionary<ConsumableEffectType, Func<PlayerStatusController, bool>>
+        {
+            { ConsumableEffectType.Hp, controller => controller.HpManager != null },
+            { ConsumableEffectType.Stamina, controller => controller.StaminaManager != null },
+            { ConsumableEffectType.Food, controller => controller.HungerManager != null },
+            { ConsumableEffectType.Drink, controller => controller.ThirstManager != null },
+            { ConsumableEffectType.Weight, controller => controller.WeightManager != null },
+            { ConsumableEffectType.Speed, controller => controller.SpeedManager != null },
+            { ConsumableEffectType.Sleep, controller => controller.SleepManager != null },
+            { ConsumableEffectType.Sanity, controller => controller.SanityManager != null },
+            { ConsumableEffectType.Mana, controller => controller.ManaManager != null },
+            { ConsumableEffectType.BodyHeat, controller => controller.BodyHeatManager != null },
+            { ConsumableEffectType.Oxygen, controller => controller.OxygenManager != null }
+        };
+
     public ConsumableSO()
     {
         durabilityReductionPerUse = 1;
     }
 
-    // Dictionary to map consumable effect types to their corresponding actions
-    private Dictionary<ConsumableEffectType, Action<ConsumableEffect, PlayerStatusController>> effectActions;
-
-    // Lazy initialization of effect actions
-    private Dictionary<ConsumableEffectType, Action<ConsumableEffect, PlayerStatusController>> EffectActions
-    {
-        get
-        {
-            if (effectActions == null)
-            {
-                InitializeEffectActions();
-            }
-            return effectActions;
-        }
-    }
-    /// <summary>
-    /// Uses the consumable item and applies all associated effects to the player.
-    /// </summary>
-    /// <param name="playerObject">The player game object.</param>
-    /// <param name="statusController">The player's status controller. Can be null if not required.</param>
     public override void UseItem(GameObject playerObject, PlayerStatusController statusController = null)
     {
         base.UseItem(playerObject, statusController);
 
-        // Iterate through each effect and attempt to apply it using the corresponding action.
-        foreach (var effect in effects)
+        if (statusController == null)
         {
-            if (EffectActions.TryGetValue(effect.effectType, out var action))
-            {
-                action.Invoke(effect, statusController);
-            }
-            else
-            {
-                Debug.LogWarning($"Effect type {effect.effectType} is not supported.");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Initializes the dictionary that maps <see cref="ConsumableEffectType"/> to their corresponding actions.
-    /// </summary>
-    private void InitializeEffectActions()
-    {
-        effectActions = new Dictionary<ConsumableEffectType, Action<ConsumableEffect, PlayerStatusController>>
-    {
-        { ConsumableEffectType.Hp, CreateHandler((controller) => controller.HpManager.AddCurrentValue, (controller) => controller.HpManager.AddHpEffect) },
-        { ConsumableEffectType.Stamina, CreateHandler((controller) => controller.StaminaManager.AddCurrentValue, (controller) => controller.StaminaManager.AddStaminaEffect) },
-        { ConsumableEffectType.Food, CreateHandler((controller) => controller.HungerManager.AddCurrentValue, (controller) => controller.HungerManager.AddFoodEffect) },
-        { ConsumableEffectType.Drink, CreateHandler((controller) => controller.ThirstManager.AddCurrentValue, (controller) => controller.ThirstManager.AddDrinkEffect) },
-        { ConsumableEffectType.Weight, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.WeightManager.AddWeightEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.HpHealFactor, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.HpManager.AddHpHealFactorEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.HpDamageFactor, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.HpManager.AddHpDamageFactorEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.StaminaHealFactor, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.StaminaDamageFactor, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.StaminaRegeneration, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) },
-        { ConsumableEffectType.HpRegeneration, (effect, controller) => ApplyEffect(effect, controller,
-            (amount) => controller.HpManager.AddHpRegenEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable), null) }
-    };
-    }
-
-    /// <summary>
-    /// Creates a handler to manage the immediate and procedural effects of a consumable.
-    /// </summary>
-    /// <param name="getDirectAction">A function that retrieves the action for an immediate effect.</param>
-    /// <param name="getEffectAction">A function that retrieves the action for a procedural effect.</param>
-    /// <returns>An action to handle the consumable effect.</returns>
-    private Action<ConsumableEffect, PlayerStatusController> CreateHandler(
-        Func<PlayerStatusController, Action<float>> getDirectAction,
-        Func<PlayerStatusController, Action<string, float, float, float, bool, bool>> getEffectAction)
-    {
-        return (effect, controller) =>
-        {
-            var directAction = getDirectAction?.Invoke(controller);
-            var effectAction = getEffectAction?.Invoke(controller);
-
-            // Determine whether to apply an immediate or procedural effect.
-            if (effect.timeBuffEffect == 0)
-            {
-                ApplyEffect(effect, controller, directAction, null); // Immediate effect only.
-            }
-            else
-            {
-                ApplyEffect(effect, controller, null, effectAction); // Procedural effect only.
-            }
-        };
-    }
-
-    /// <summary>
-    /// Applies a consumable effect to the player.
-    /// </summary>
-    /// <param name="effect">The consumable effect to be applied.</param>
-    /// <param name="statusController">The player's status controller.</param>
-    /// <param name="applyImmediateEffect">The action to apply an immediate effect.</param>
-    /// <param name="applyBuffEffect">The action to apply a procedural (buff) effect.</param>
-    private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController,
-        Action<float> applyImmediateEffect, Action<string, float, float, float, bool, bool> applyBuffEffect)
-    {
-        // Calculate the amount of the effect, applying randomization if enabled.
-        float amount = GenericMethods.GetRandomValue(effect.amount, effect.randomAmount, effect.minAmount, effect.maxAmount);
-
-        // Apply the immediate effect if provided.
-        if (applyImmediateEffect != null)
-        {
-            applyImmediateEffect(amount);
+            Debug.LogWarning("PlayerStatusController is null. Cannot apply consumable effects.");
+            return;
         }
 
-        // Apply the procedural (buff) effect if provided.
-        if (applyBuffEffect != null)
+        if (effectDelay > 0f)
         {
-            applyBuffEffect(effect.effectName, amount, effect.timeBuffEffect, effect.tickCooldown, effect.isProcedural, effect.isStackable);
-        }
-    }
-
-
-
-
-
-}
-
-/*
-
-
-
-
-
-
-
-
-public override void UseItem(GameObject playerObject, PlayerStatusController statusController = null)
-{
-    base.UseItem(playerObject, statusController);
-
-    //foreach (var effect in effects)
-    //{
-    //    ApplyEffect(effect, statusController);
-
-    //}
-
-    // Ensure effect actions are initialized
-    if (effectActions == null)
-    {
-        InitializeEffectActions();
-    }
-
-    foreach (var effect in effects)
-    {
-        if (effectActions.TryGetValue(effect.effectType, out var action))
-        {
-            action.Invoke(effect, statusController);
+            statusController.StartCoroutine(ApplyEffectsWithDelay(statusController, effectDelay));
         }
         else
         {
-            Debug.LogWarning($"Effect type {effect.effectType} is not supported.");
+            ApplyAllEffects(statusController);
         }
     }
-}
 
-private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController)
-{
-    float amount = GenericMethods.GetRandomValue(effect.amount, effect.randomAmount, effect.minAmount, effect.maxAmount);
-    float timeBuffEffect = GenericMethods.GetRandomValue(effect.timeBuffEffect, effect.randomTimeBuffEffect, effect.minTimeBuffEffect, effect.maxTimeBuffEffect);
-    float tickCooldown = GenericMethods.GetRandomValue(effect.tickCooldown, effect.randomTickCooldown, effect.minTickCooldown, effect.maxTickCooldown);
-
-    switch (effect.effectType)
+    private System.Collections.IEnumerator ApplyEffectsWithDelay(PlayerStatusController statusController, float delay)
     {
-        case ConsumableEffectType.Stamina:
-            if (effect.timeBuffEffect == 0) statusController.StaminaManager.AddStamina(effect.amount);
-            else statusController.StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.Hp:
-            if (effect.timeBuffEffect == 0) statusController.HpManager.AddHp(effect.amount);
-            else statusController.HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.Food:
-            if (effect.timeBuffEffect == 0) statusController.FoodManager.AddFood(effect.amount);
-            else statusController.FoodManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.Drink:
-            if (effect.timeBuffEffect == 0) statusController.DrinkManager.AddDrink(effect.amount);
-            else statusController.DrinkManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.Weight:
-            statusController.WeightManager.AddWeightEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.HpHealFactor:
-            statusController.HpManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.HpDamageFactor:
-            statusController.HpManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.StaminaHealFactor:
-            statusController.StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.StaminaDamageFactor:
-            statusController.StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.StaminaRegeneration:
-            statusController.StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-        case ConsumableEffectType.HpRegeneration:
-            statusController.HpManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-            break;
-    }*/
+        yield return new UnityEngine.WaitForSeconds(delay);
+        ApplyAllEffects(statusController);
+    }
+
+    private void ApplyAllEffects(PlayerStatusController statusController)
+    {
+        int playerLevel = statusController.XPManager?.CurrentLevel ?? 1;
+
+        foreach (var effect in effects)
+        {
+            if (!effect.ShouldApplyEffect(playerLevel))
+                continue;
+
+            if (!IsStatusManagerAvailable(effect.effectType, statusController))
+            {
+                Debug.LogWarning($"Status manager for effect type {effect.effectType} is not available.");
+                continue;
+            }
+
+            ApplyEffect(effect, statusController);
+        }
+    }
+
+    private bool IsStatusManagerAvailable(ConsumableEffectType effectType, PlayerStatusController statusController)
+    {
+        return !StatusManagerChecks.TryGetValue(effectType, out var check) || check(statusController);
+    }
+
+    private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController)
+    {
+        float amount = effect.GetRandomizedAmount();
+        float duration = effect.GetRandomizedDuration();
+        float cooldown = effect.GetRandomizedTickCooldown();
+
+        try
+        {
+            switch (effect.effectType)
+            {
+                // Core status effects
+                case ConsumableEffectType.Hp:
+                    ApplyStatusEffect(effect, statusController.HpManager.AddCurrentValue,
+                        statusController.HpManager.AddHpEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.Stamina:
+                    ApplyStatusEffect(effect, statusController.StaminaManager.AddCurrentValue,
+                        statusController.StaminaManager.AddStaminaEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.Food:
+                    ApplyStatusEffect(effect, statusController.HungerManager.AddCurrentValue,
+                        statusController.HungerManager.AddFoodEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.Drink:
+                    ApplyStatusEffect(effect, statusController.ThirstManager.AddCurrentValue,
+                        statusController.ThirstManager.AddDrinkEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.Weight:
+                    statusController.WeightManager.AddWeightEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.Speed:
+                    ApplyStatusEffect(effect, statusController.SpeedManager.ModifySpeed,
+                        statusController.SpeedManager.AddSpeedEffect, amount, duration, cooldown);
+                    break;
+
+                // Regeneration effects
+                case ConsumableEffectType.HpRegeneration:
+                    statusController.HpManager.AddHpRegenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.StaminaRegeneration:
+                    statusController.StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ManaRegeneration:
+                    statusController.ManaManager.AddManaRegenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.HungerRegeneration:
+                    statusController.HungerManager.AddFoodEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ThirstRegeneration:
+                    statusController.ThirstManager.AddDrinkEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SleepRegeneration:
+                    statusController.SleepManager.AddSleepEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SanityRegeneration:
+                    statusController.SanityManager.AddSanityEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.BodyHeatRegeneration:
+                    statusController.BodyHeatManager.AddBodyHeatEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.OxygenRegeneration:
+                    statusController.OxygenManager.AddOxygenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                // Heal factor effects
+                case ConsumableEffectType.HpHealFactor:
+                    statusController.HpManager.AddHpHealFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.StaminaHealFactor:
+                    statusController.StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ManaHealFactor:
+                    statusController.ManaManager.AddManaHealFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.HungerHealFactor:
+                    statusController.HungerManager.AddFoodEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ThirstHealFactor:
+                    statusController.ThirstManager.AddDrinkEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SleepHealFactor:
+                    statusController.SleepManager.AddSleepEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SanityHealFactor:
+                    statusController.SanityManager.AddSanityHealFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.BodyHeatHealFactor:
+                    statusController.BodyHeatManager.AddBodyHeatEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.OxygenHealFactor:
+                    statusController.OxygenManager.AddOxygenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                // Damage factor effects
+                case ConsumableEffectType.HpDamageFactor:
+                    statusController.HpManager.AddHpDamageFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.StaminaDamageFactor:
+                    statusController.StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ManaDamageFactor:
+                    statusController.ManaManager.AddManaDamageFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.HungerDamageFactor:
+                    statusController.HungerManager.AddFoodEffect(effect.effectName, -amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.ThirstDamageFactor:
+                    statusController.ThirstManager.AddDrinkEffect(effect.effectName, -amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SleepDamageFactor:
+                    statusController.SleepManager.AddSleepEffect(effect.effectName, -amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SanityDamageFactor:
+                    statusController.SanityManager.AddSanityDamageFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.BodyHeatDamageFactor:
+                    statusController.BodyHeatManager.AddBodyHeatEffect(effect.effectName, -amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.OxygenDamageFactor:
+                    statusController.OxygenManager.AddOxygenEffect(effect.effectName, -amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                // Extended status effects
+                case ConsumableEffectType.Sleep:
+                    ApplyStatusEffect(effect, statusController.SleepManager.AddCurrentValue,
+                        statusController.SleepManager.AddSleepEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.SleepFactor:
+                    statusController.SleepManager.AddSleepEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.Sanity:
+                    ApplyStatusEffect(effect, statusController.SanityManager.AddCurrentValue,
+                        statusController.SanityManager.AddSanityEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.Mana:
+                    ApplyStatusEffect(effect, statusController.ManaManager.AddCurrentValue,
+                        statusController.ManaManager.AddManaEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.BodyHeat:
+                    ApplyStatusEffect(effect, (amt) => statusController.BodyHeatManager.ModifyBodyHeat(amt),
+                        statusController.BodyHeatManager.AddBodyHeatEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.BodyHeatFactor:
+                    statusController.BodyHeatManager.AddBodyHeatEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.Oxygen:
+                    ApplyStatusEffect(effect, statusController.OxygenManager.AddCurrentValue,
+                        statusController.OxygenManager.AddOxygenEffect, amount, duration, cooldown);
+                    break;
+
+                case ConsumableEffectType.OxygenFactor:
+                    statusController.OxygenManager.AddOxygenEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                // Speed modifiers
+                case ConsumableEffectType.SpeedFactor:
+                    statusController.SpeedManager.AddSpeedFactorEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                case ConsumableEffectType.SpeedMultiplier:
+                    statusController.SpeedManager.AddSpeedMultiplierEffect(effect.effectName, amount, duration, cooldown,
+                        effect.isProcedural, effect.isStackable);
+                    break;
+
+                // Max value modifiers
+                case ConsumableEffectType.MaxHp:
+                    statusController.HpManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxStamina:
+                    statusController.StaminaManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxMana:
+                    statusController.ManaManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxHunger:
+                    statusController.HungerManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxThirst:
+                    statusController.ThirstManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxWeight:
+                    statusController.WeightManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxSleep:
+                    statusController.SleepManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxSanity:
+                    statusController.SanityManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxBodyHeat:
+                    statusController.BodyHeatManager.ModifyMaxValue(amount);
+                    break;
+
+                case ConsumableEffectType.MaxOxygen:
+                    statusController.OxygenManager.ModifyMaxValue(amount);
+                    break;
+
+                default:
+                    Debug.LogWarning($"Effect type {effect.effectType} is not implemented in the consumable system.");
+                    break;
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"Error applying consumable effect {effect.effectType}: {ex.Message}");
+        }
+    }
+
+    private void ApplyStatusEffect(ConsumableEffect effect, Action<float> immediateAction,
+        Action<string, float, float, float, bool, bool> timedAction, float amount, float duration, float cooldown)
+    {
+        if (duration <= 0)
+        {
+            immediateAction?.Invoke(amount);
+        }
+        else
+        {
+            timedAction?.Invoke(effect.effectName, amount, duration, cooldown, effect.isProcedural, effect.isStackable);
+        }
+    }
+
+    public bool HasEffect(ConsumableEffectType effectType)
+    {
+        return effects.Exists(effect => effect.effectType == effectType);
+    }
+
+    public List<ConsumableEffect> GetEffectsOfType(ConsumableEffectType effectType)
+    {
+        return effects.FindAll(effect => effect.effectType == effectType);
+    }
+
+    public float GetTotalEffectAmount(ConsumableEffectType effectType)
+    {
+        float total = 0f;
+        foreach (var effect in effects)
+        {
+            if (effect.effectType == effectType)
+            {
+                total += effect.GetRandomizedAmount();
+            }
+        }
+        return total;
+    }
+
+    public string GetEffectDescription()
+    {
+        if (effects.Count == 0)
+            return "No effects";
+
+        var descriptions = new List<string>();
+        foreach (var effect in effects)
+        {
+            string sign = effect.amount >= 0 ? "+" : "";
+            descriptions.Add($"{sign}{effect.amount} {effect.effectType}");
+        }
+
+        return string.Join(", ", descriptions);
+    }
+}
