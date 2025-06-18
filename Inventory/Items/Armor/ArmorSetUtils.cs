@@ -1,446 +1,535 @@
-﻿#if UNITY_EDITOR
-using UnityEditor;
-using UnityEngine;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Collections.Generic;
-using System.Text;
+using UnityEngine;
 
-[CustomEditor(typeof(ArmorSet))]
-public class ArmorSetEditor : Editor
+public static class ArmorSetUtils
 {
-    private SerializedProperty setNameProp;
-    private SerializedProperty setDescriptionProp;
-    private SerializedProperty setIconProp;
-    private SerializedProperty setColorProp;
-    private SerializedProperty setPiecesProp;
-    private SerializedProperty requiredSlotTypesProp;
-    private SerializedProperty setEffectsProp;
-    private SerializedProperty minimumPiecesProp;
-    private SerializedProperty maximumPiecesProp;
-    private SerializedProperty setCompleteSoundProp;
-    private SerializedProperty setCompleteEffectProp;
-
-    private Dictionary<int, List<string>> effectValidationErrors = new Dictionary<int, List<string>>(8);
-    private List<string> setValidationErrors = new List<string>(8);
-    private List<string> setValidationWarnings = new List<string>(8);
-    private bool hasValidationErrors = false;
-
-    private bool[] effectFoldouts;
-    private bool showDetailedEffectValidation = true;
-
-    private static Dictionary<string, ArmorSet[]> setCache;
-    private static Dictionary<string, ArmorSO[]> armorCache;
-    private static double lastCacheTime = 0;
-    private const double CACHE_DURATION = 5.0;
-
-    private static readonly StringBuilder stringBuilder = new StringBuilder(512);
-
-    private static readonly GUIContent setNameContent = new GUIContent("Set Name (Required)");
-    private static readonly GUIContent descriptionContent = new GUIContent("Description (Optional)");
-    private static readonly GUIContent effectNameContent = new GUIContent("Effect Name");
-    private static readonly GUIContent piecesReqContent = new GUIContent("Pieces Required");
-
-    private double lastValidationTime = 0;
-    private const double VALIDATION_INTERVAL = 1.0;
-
-    static ArmorSetEditor()
+    // Get all equipped armor sets from inventory
+    public static Dictionary<ArmorSet, List<ArmorSO>> GetEquippedArmorSets(InventoryManager inventoryManager)
     {
-        setCache = new Dictionary<string, ArmorSet[]>(16);
-        armorCache = new Dictionary<string, ArmorSO[]>(16);
-    }
+        var equippedSets = new Dictionary<ArmorSet, List<ArmorSO>>();
 
-    private void OnEnable()
-    {
-        setNameProp = serializedObject.FindProperty("setName");
-        setDescriptionProp = serializedObject.FindProperty("setDescription");
-        setIconProp = serializedObject.FindProperty("setIcon");
-        setColorProp = serializedObject.FindProperty("setColor");
-        setPiecesProp = serializedObject.FindProperty("setPieces");
-        requiredSlotTypesProp = serializedObject.FindProperty("requiredSlotTypes");
-        setEffectsProp = serializedObject.FindProperty("setEffects");
-        minimumPiecesProp = serializedObject.FindProperty("minimumPiecesForSet");
-        maximumPiecesProp = serializedObject.FindProperty("maximumSetPieces");
-        setCompleteSoundProp = serializedObject.FindProperty("setCompleteSound");
-        setCompleteEffectProp = serializedObject.FindProperty("setCompleteEffect");
+        if (inventoryManager?.Slots == null) return equippedSets;
 
-        if (setEffectsProp != null)
+        var equippedArmor = InventoryUtils.FindAllArmor(inventoryManager.Slots);
+
+        foreach (var armor in equippedArmor)
         {
-            int effectCount = setEffectsProp.arraySize;
-            if (effectFoldouts == null || effectFoldouts.Length != effectCount)
+            var armorSO = armor.itemScriptableObject as ArmorSO;
+            if (armorSO?.BelongsToSet != null && armor.isEquipped)
             {
-                effectFoldouts = new bool[effectCount];
-            }
-        }
-    }
-
-    private void OnDisable()
-    {
-        effectValidationErrors.Clear();
-        setValidationErrors.Clear();
-        setValidationWarnings.Clear();
-    }
-
-    public override void OnInspectorGUI()
-    {
-        serializedObject.Update();
-        ArmorSet armorSet = (ArmorSet)target;
-
-        double currentTime = EditorApplication.timeSinceStartup;
-        if (currentTime - lastValidationTime > VALIDATION_INTERVAL)
-        {
-            PerformValidation(armorSet);
-            lastValidationTime = currentTime;
-        }
-
-        DrawHeader(armorSet);
-        DrawValidationSection();
-
-        EditorGUILayout.Space();
-
-        DrawBasicInfoSection();
-        EditorGUILayout.Space();
-        DrawSetPiecesSection(armorSet);
-        EditorGUILayout.Space();
-        DrawSetEffectsSection(armorSet);
-        EditorGUILayout.Space();
-        DrawAdvancedProperties();
-
-        if (serializedObject.ApplyModifiedProperties())
-        {
-            InvalidateCache();
-        }
-    }
-
-    private void DrawBasicInfoSection()
-    {
-        EditorGUILayout.LabelField("Basic Information", EditorStyles.boldLabel);
-        EditorGUILayout.BeginVertical(GUI.skin.box);
-
-        EditorGUILayout.PropertyField(setNameProp, setNameContent);
-        EditorGUILayout.PropertyField(setDescriptionProp, descriptionContent);
-        EditorGUILayout.PropertyField(setIconProp);
-        EditorGUILayout.PropertyField(setColorProp);
-
-        EditorGUILayout.EndVertical();
-    }
-
-    private void DrawSetPiecesSection(ArmorSet armorSet)
-    {
-        EditorGUILayout.LabelField("Set Pieces (Required: At least 1)", EditorStyles.boldLabel);
-        EditorGUILayout.BeginVertical(GUI.skin.box);
-
-        if (setPiecesProp.arraySize == 0)
-        {
-            EditorGUILayout.HelpBox("⚠️ No armor pieces! Add at least ONE armor piece to this set.", MessageType.Error);
-        }
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Find Armor Referencing This Set"))
-        {
-            FindAndAssignArmorPieces(armorSet);
-        }
-        if (GUILayout.Button("Clean Null References"))
-        {
-            CleanNullReferences();
-        }
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.PropertyField(setPiecesProp, true);
-        EditorGUILayout.PropertyField(requiredSlotTypesProp, true);
-
-        EditorGUILayout.EndVertical();
-    }
-
-    private void DrawSetEffectsSection(ArmorSet armorSet)
-    {
-        EditorGUILayout.LabelField("Set Effects (Required: At least 1)", EditorStyles.boldLabel);
-        EditorGUILayout.BeginVertical(GUI.skin.box);
-
-        if (setEffectsProp.arraySize == 0)
-        {
-            EditorGUILayout.HelpBox("⚠️ No set effects! Add at least ONE effect.", MessageType.Error);
-        }
-
-        if (effectFoldouts == null || effectFoldouts.Length != setEffectsProp.arraySize)
-        {
-            effectFoldouts = new bool[setEffectsProp.arraySize];
-        }
-
-        for (int i = 0; i < setEffectsProp.arraySize; i++)
-        {
-            DrawSetEffect(i, armorSet);
-        }
-
-        EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("Add Effect"))
-        {
-            setEffectsProp.arraySize++;
-            System.Array.Resize(ref effectFoldouts, setEffectsProp.arraySize);
-            effectFoldouts[setEffectsProp.arraySize - 1] = true;
-        }
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.EndVertical();
-    }
-
-    private void DrawSetEffect(int index, ArmorSet armorSet)
-    {
-        SerializedProperty effectProp = setEffectsProp.GetArrayElementAtIndex(index);
-        SerializedProperty nameProp = effectProp.FindPropertyRelative("effectName");
-        SerializedProperty piecesReqProp = effectProp.FindPropertyRelative("piecesRequired");
-
-        bool hasErrors = effectValidationErrors.ContainsKey(index) && effectValidationErrors[index].Count > 0;
-
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        EditorGUILayout.BeginHorizontal();
-
-        stringBuilder.Clear();
-        stringBuilder.Append(hasErrors ? "❌ " : "✓ ");
-        stringBuilder.Append(string.IsNullOrEmpty(nameProp.stringValue) ? $"Effect #{index + 1}" : nameProp.stringValue);
-        stringBuilder.Append(" (").Append(piecesReqProp.intValue).Append(" pieces)");
-
-        effectFoldouts[index] = EditorGUILayout.Foldout(effectFoldouts[index], stringBuilder.ToString(), true);
-
-        if (GUILayout.Button("X", GUILayout.Width(20)))
-        {
-            setEffectsProp.DeleteArrayElementAtIndex(index);
-            if (effectFoldouts.Length > setEffectsProp.arraySize)
-            {
-                System.Array.Resize(ref effectFoldouts, setEffectsProp.arraySize);
-            }
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.EndVertical();
-            return;
-        }
-
-        EditorGUILayout.EndHorizontal();
-
-        if (effectFoldouts[index])
-        {
-            EditorGUI.indentLevel++;
-            EditorGUILayout.PropertyField(nameProp, effectNameContent);
-            EditorGUILayout.PropertyField(piecesReqProp, piecesReqContent);
-            EditorGUILayout.PropertyField(effectProp.FindPropertyRelative("effectDescription"));
-            EditorGUILayout.PropertyField(effectProp.FindPropertyRelative("statusModifiers"), true);
-            EditorGUILayout.PropertyField(effectProp.FindPropertyRelative("grantedTraits"), true);
-            EditorGUILayout.PropertyField(effectProp.FindPropertyRelative("specialMechanics"), true);
-            EditorGUI.indentLevel--;
-        }
-
-        EditorGUILayout.EndVertical();
-    }
-
-    private void DrawHeader(ArmorSet armorSet)
-    {
-        EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField($"Armor Set: {armorSet.SetName}", EditorStyles.boldLabel);
-        showDetailedEffectValidation = EditorGUILayout.Toggle("Detailed Validation", showDetailedEffectValidation);
-        EditorGUILayout.EndHorizontal();
-
-        if (hasValidationErrors)
-        {
-            EditorGUILayout.HelpBox("⚠️ This armor set has validation errors that need to be fixed!", MessageType.Error);
-        }
-    }
-
-    private void DrawAdvancedProperties()
-    {
-        EditorGUILayout.LabelField("Advanced Configuration", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(minimumPiecesProp);
-        EditorGUILayout.PropertyField(maximumPiecesProp);
-        EditorGUILayout.PropertyField(setCompleteSoundProp);
-        EditorGUILayout.PropertyField(setCompleteEffectProp);
-        EditorGUILayout.Space();
-    }
-
-    private void DrawValidationSection()
-    {
-        if (hasValidationErrors || setValidationWarnings.Count > 0)
-        {
-            EditorGUILayout.LabelField("Validation", EditorStyles.boldLabel);
-
-            if (hasValidationErrors)
-            {
-                EditorGUILayout.HelpBox($"Found {setValidationErrors.Count} validation errors", MessageType.Error);
-                foreach (string error in setValidationErrors)
+                var armorSet = armorSO.BelongsToSet;
+                if (!equippedSets.ContainsKey(armorSet))
                 {
-                    EditorGUILayout.HelpBox(error, MessageType.Error);
+                    equippedSets[armorSet] = new List<ArmorSO>();
                 }
+                equippedSets[armorSet].Add(armorSO);
             }
+        }
 
-            if (setValidationWarnings.Count > 0)
+        return equippedSets;
+    }
+
+    // Get equipped armor pieces
+    public static List<ArmorSO> GetEquippedArmor(InventoryManager inventoryManager)
+    {
+        var equippedArmor = new List<ArmorSO>();
+
+        if (inventoryManager?.Slots == null) return equippedArmor;
+
+        var allArmor = InventoryUtils.FindAllArmor(inventoryManager.Slots);
+
+        foreach (var armor in allArmor)
+        {
+            if (armor.isEquipped && armor.itemScriptableObject is ArmorSO armorSO)
             {
-                foreach (string warning in setValidationWarnings)
-                {
-                    EditorGUILayout.HelpBox(warning, MessageType.Warning);
-                }
+                equippedArmor.Add(armorSO);
             }
+        }
 
-            showDetailedEffectValidation = EditorGUILayout.Toggle("Show Detailed Effect Validation", showDetailedEffectValidation);
+        return equippedArmor;
+    }
 
-            if (showDetailedEffectValidation && effectValidationErrors.Count > 0)
+    // Get missing pieces for a set
+    public static List<ArmorSO> GetMissingPieces(this ArmorSet armorSet, List<ArmorSO> equippedPieces)
+    {
+        if (armorSet?.SetPieces == null) return new List<ArmorSO>();
+        return armorSet.SetPieces.Where(piece => piece != null && !equippedPieces.Contains(piece)).ToList();
+    }
+
+    // Check if a piece belongs to any equipped set
+    public static bool IsPartOfEquippedSet(ArmorSO armor, Dictionary<ArmorSet, List<ArmorSO>> equippedSets)
+    {
+        if (armor?.BelongsToSet == null) return false;
+        return equippedSets.ContainsKey(armor.BelongsToSet) && equippedSets[armor.BelongsToSet].Contains(armor);
+    }
+
+    // Get all active set effects from equipped armor
+    public static List<ArmorSetEffect> GetActiveSetEffects(InventoryManager inventoryManager)
+    {
+        var activeEffects = new List<ArmorSetEffect>();
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+
+        foreach (var kvp in equippedSets)
+        {
+            var armorSet = kvp.Key;
+            var equippedCount = kvp.Value.Count;
+            activeEffects.AddRange(armorSet.GetActiveEffects(equippedCount));
+        }
+
+        return activeEffects;
+    }
+
+    // Calculate total stat bonuses from all active set effects
+    public static Dictionary<EquippableEffectType, float> CalculateSetBonuses(InventoryManager inventoryManager)
+    {
+        var totalBonuses = new Dictionary<EquippableEffectType, float>();
+        var activeEffects = GetActiveSetEffects(inventoryManager);
+
+        foreach (var effect in activeEffects)
+        {
+            foreach (var bonus in effect.statBonuses)
             {
-                foreach (var kvp in effectValidationErrors)
+                if (totalBonuses.ContainsKey(bonus.effectType))
+                    totalBonuses[bonus.effectType] += bonus.amount;
+                else
+                    totalBonuses[bonus.effectType] = bonus.amount;
+            }
+        }
+
+        return totalBonuses;
+    }
+
+    // Get formatted summary of equipped armor and sets
+    public static string GetEquipmentSummary(InventoryManager inventoryManager)
+    {
+        string summary = "=== EQUIPPED ARMOR ===\n";
+
+        var equippedArmor = InventoryUtils.FindAllArmor(inventoryManager.Slots)
+                                         .Where(item => item.isEquipped).ToList();
+        var armorBySlot = equippedArmor.GroupBy(item => (item.itemScriptableObject as ArmorSO)?.ArmorSlotType)
+                                      .ToDictionary(g => g.Key, g => g.First());
+
+        foreach (ArmorSlotType slotType in System.Enum.GetValues(typeof(ArmorSlotType)))
+        {
+            if (armorBySlot.TryGetValue(slotType, out var inventoryItem))
+            {
+                var armor = inventoryItem.itemScriptableObject as ArmorSO;
+                string setInfo = armor?.IsPartOfSet() == true ? $" ({armor.BelongsToSet.SetName})" : "";
+                summary += $"  {slotType}: {armor.name}{setInfo}\n";
+            }
+        }
+
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+        if (equippedSets.Count > 0)
+        {
+            summary += "\nSet Bonuses:\n";
+            foreach (var kvp in equippedSets)
+            {
+                var armorSet = kvp.Key;
+                var equippedCount = kvp.Value.Count;
+                var activeEffects = armorSet.GetActiveEffects(equippedCount);
+
+                summary += $"  {armorSet.SetName} ({equippedCount}/{armorSet.SetPieces.Count}):\n";
+
+                if (activeEffects.Count > 0)
                 {
-                    foreach (string error in kvp.Value)
+                    foreach (var effect in activeEffects)
                     {
-                        EditorGUILayout.HelpBox($"Effect {kvp.Key + 1}: {error}", MessageType.Warning);
+                        summary += $"    • {effect.effectName}\n";
+                    }
+                }
+                else
+                {
+                    summary += "    • No active bonuses\n";
+                }
+            }
+        }
+
+        return summary;
+    }
+
+    // Validate armor set configuration (useful for debugging)
+    public static List<string> ValidateArmorSet(ArmorSet armorSet)
+    {
+        var issues = new List<string>();
+
+        if (armorSet == null)
+        {
+            issues.Add("ArmorSet is null");
+            return issues;
+        }
+
+        // Basic information validation
+        if (string.IsNullOrEmpty(armorSet.SetName))
+        {
+            issues.Add("Set name is empty");
+        }
+
+        // Set pieces validation
+        if (armorSet.SetPieces == null || armorSet.SetPieces.Count == 0)
+        {
+            issues.Add("No set pieces defined");
+        }
+        else
+        {
+            // Check for null pieces
+            var nullPieces = armorSet.SetPieces.Count(p => p == null);
+            if (nullPieces > 0)
+            {
+                issues.Add($"{nullPieces} null armor piece(s) in set");
+            }
+
+            // Check for duplicate slot types
+            var validPieces = armorSet.SetPieces.Where(p => p != null).ToList();
+            var slotTypes = validPieces.Select(p => p.ArmorSlotType).ToList();
+            var duplicates = slotTypes.GroupBy(s => s).Where(g => g.Count() > 1).Select(g => g.Key);
+            foreach (var duplicate in duplicates)
+            {
+                issues.Add($"Duplicate slot type: {duplicate}");
+            }
+
+            // Check if pieces reference this set
+            foreach (var piece in validPieces)
+            {
+                if (piece.BelongsToSet != armorSet)
+                {
+                    issues.Add($"Piece '{piece.name}' doesn't reference this set");
+                }
+            }
+        }
+
+        // Set effects validation
+        if (armorSet.SetEffects != null)
+        {
+            for (int i = 0; i < armorSet.SetEffects.Count; i++)
+            {
+                var effect = armorSet.SetEffects[i];
+                if (effect == null)
+                {
+                    issues.Add($"Set effect at index {i} is null");
+                    continue;
+                }
+
+                // Validate effect configuration
+                var effectIssues = effect.ValidateConfiguration();
+                foreach (var effectIssue in effectIssues)
+                {
+                    issues.Add($"Effect '{effect.effectName}': {effectIssue}");
+                }
+
+                // Additional validations
+                if (effect.piecesRequired > armorSet.SetPieces.Count)
+                {
+                    issues.Add($"Effect '{effect.effectName}' requires {effect.piecesRequired} pieces but set only has {armorSet.SetPieces.Count}");
+                }
+
+                if (effect.piecesRequired < 1)
+                {
+                    issues.Add($"Effect '{effect.effectName}' requires less than 1 piece");
+                }
+
+                if (!effect.HasEffects())
+                {
+                    issues.Add($"Effect '{effect.effectName}' has no actual effects defined");
+                }
+
+                // Check for duplicate piece requirements
+                var duplicateRequirement = armorSet.SetEffects
+                    .Where(e => e != effect && e.piecesRequired == effect.piecesRequired)
+                    .FirstOrDefault();
+                if (duplicateRequirement != null)
+                {
+                    issues.Add($"Multiple effects require {effect.piecesRequired} pieces: '{effect.effectName}' and '{duplicateRequirement.effectName}'");
+                }
+            }
+        }
+
+        // Configuration validation
+        if (armorSet.MinimumPiecesForSet < 1)
+        {
+            issues.Add("Minimum pieces for set must be at least 1");
+        }
+
+        if (armorSet.MaximumSetPieces < armorSet.MinimumPiecesForSet)
+        {
+            issues.Add("Maximum set pieces cannot be less than minimum pieces");
+        }
+
+        if (armorSet.SetPieces.Count > armorSet.MaximumSetPieces)
+        {
+            issues.Add($"Set has {armorSet.SetPieces.Count} pieces but maximum is {armorSet.MaximumSetPieces}");
+        }
+
+        return issues;
+    }
+
+    // Check if a specific armor piece is equipped
+    public static bool IsArmorEquipped(InventoryManager inventoryManager, ArmorSO armor)
+    {
+        if (inventoryManager?.Slots == null || armor == null) return false;
+
+        foreach (var slotObj in inventoryManager.Slots)
+        {
+            if (slotObj == null) continue;
+
+            var slot = slotObj.GetComponent<InventorySlot>();
+            if (slot?.heldItem == null) continue;
+
+            var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
+            if (inventoryItem?.itemScriptableObject == armor && inventoryItem.isEquipped)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Get equipped armor piece for a specific slot type
+    public static ArmorSO GetEquippedArmorForSlot(InventoryManager inventoryManager, ArmorSlotType slotType)
+    {
+        var equippedArmor = GetEquippedArmor(inventoryManager);
+        return equippedArmor.FirstOrDefault(armor => armor.ArmorSlotType == slotType);
+    }
+
+    // Calculate total defense from equipped armor
+    public static float CalculateTotalDefense(InventoryManager inventoryManager)
+    {
+        var equippedArmor = GetEquippedArmor(inventoryManager);
+        return equippedArmor.Sum(armor => armor.GetEffectiveDefense());
+    }
+
+    // Calculate total magic defense from equipped armor
+    public static float CalculateTotalMagicDefense(InventoryManager inventoryManager)
+    {
+        var equippedArmor = GetEquippedArmor(inventoryManager);
+        return equippedArmor.Sum(armor => armor.GetEffectiveMagicDefense());
+    }
+
+    // Get all unique armor sets from equipped armor
+    public static List<ArmorSet> GetUniqueEquippedSets(InventoryManager inventoryManager)
+    {
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+        return equippedSets.Keys.ToList();
+    }
+
+    // Get complete armor sets (where all pieces are equipped)
+    public static List<ArmorSet> GetCompleteSets(InventoryManager inventoryManager)
+    {
+        var result = new List<ArmorSet>();
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+
+        foreach (var kvp in equippedSets)
+        {
+            var armorSet = kvp.Key;
+            var equippedCount = kvp.Value.Count;
+            if (armorSet.IsSetComplete(equippedCount))
+            {
+                result.Add(armorSet);
+            }
+        }
+
+        return result;
+    }
+
+    // Get all active set effects from equipped armor
+    public static List<ArmorSetEffect> GetAllActiveSetEffects(InventoryManager inventoryManager)
+    {
+        var result = new List<ArmorSetEffect>();
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+
+        foreach (var kvp in equippedSets)
+        {
+            var armorSet = kvp.Key;
+            var equippedCount = kvp.Value.Count;
+            result.AddRange(armorSet.GetActiveEffects(equippedCount));
+        }
+
+        return result;
+    }
+
+    // Create a summary of all equipped armor and set bonuses
+    public static string CreateArmorSummary(InventoryManager inventoryManager)
+    {
+        var summary = "=== Equipped Armor Summary ===\n\n";
+
+        var equippedArmor = GetEquippedArmor(inventoryManager);
+        var totalDefense = CalculateTotalDefense(inventoryManager);
+        var totalMagicDefense = CalculateTotalMagicDefense(inventoryManager);
+
+        summary += $"Total Defense: {totalDefense:F1}\n";
+        summary += $"Total Magic Defense: {totalMagicDefense:F1}\n\n";
+
+        summary += "Equipped Pieces:\n";
+        var armorBySlot = equippedArmor.ToDictionary(a => a.ArmorSlotType, a => a);
+        foreach (ArmorSlotType slotType in System.Enum.GetValues(typeof(ArmorSlotType)))
+        {
+            if (armorBySlot.TryGetValue(slotType, out ArmorSO armor))
+            {
+                string setInfo = armor.IsPartOfSet() ? $" ({armor.BelongsToSet.SetName})" : "";
+                summary += $"  {slotType}: {armor.name}{setInfo}\n";
+            }
+            else
+            {
+                summary += $"  {slotType}: (empty)\n";
+            }
+        }
+
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
+        if (equippedSets.Count > 0)
+        {
+            summary += "\nActive Set Bonuses:\n";
+            foreach (var kvp in equippedSets)
+            {
+                var armorSet = kvp.Key;
+                var equippedCount = kvp.Value.Count;
+                var activeEffects = armorSet.GetActiveEffects(equippedCount);
+
+                summary += $"  {armorSet.SetName} ({equippedCount}/{armorSet.SetPieces.Count}):\n";
+
+                if (activeEffects.Count > 0)
+                {
+                    foreach (var effect in activeEffects)
+                    {
+                        summary += $"    • {effect.effectName}\n";
+                    }
+                }
+                else
+                {
+                    int nextThreshold = armorSet.GetNextEffectThreshold(equippedCount);
+                    if (nextThreshold > 0)
+                    {
+                        summary += $"    • Next bonus at {nextThreshold} pieces\n";
+                    }
+                    else
+                    {
+                        summary += $"    • No more bonuses available\n";
                     }
                 }
             }
         }
+
+        return summary;
     }
 
-    private void PerformValidation(ArmorSet armorSet)
+    // Get armor upgrade recommendations based on equipped sets
+    public static List<string> GetUpgradeRecommendations(InventoryManager inventoryManager)
     {
-        setValidationErrors.Clear();
-        setValidationWarnings.Clear();
-        effectValidationErrors.Clear();
-        hasValidationErrors = false;
+        var recommendations = new List<string>();
+        var equippedSets = GetEquippedArmorSets(inventoryManager);
 
-        if (string.IsNullOrEmpty(setNameProp.stringValue))
+        foreach (var kvp in equippedSets)
         {
-            setValidationErrors.Add("REQUIRED: Set must have a name!");
-            hasValidationErrors = true;
-        }
+            var armorSet = kvp.Key;
+            var equippedCount = kvp.Value.Count;
+            var nextThreshold = armorSet.GetNextEffectThreshold(equippedCount);
 
-        if (setPiecesProp.arraySize == 0)
-        {
-            setValidationErrors.Add("REQUIRED: Set must contain at least ONE armor piece!");
-            hasValidationErrors = true;
-        }
-
-        if (setEffectsProp.arraySize == 0)
-        {
-            setValidationErrors.Add("REQUIRED: Set must have at least ONE set effect!");
-            hasValidationErrors = true;
-        }
-        else
-        {
-            ValidateSetEffects(armorSet);
-        }
-
-        if (string.IsNullOrEmpty(setDescriptionProp.stringValue))
-        {
-            setValidationWarnings.Add("OPTIONAL: Consider adding a description for better player experience.");
-        }
-    }
-
-    private void ValidateSetEffects(ArmorSet armorSet)
-    {
-        for (int i = 0; i < setEffectsProp.arraySize; i++)
-        {
-            var effectProp = setEffectsProp.GetArrayElementAtIndex(i);
-            var errors = ValidateEffect(effectProp, i, armorSet);
-
-            if (errors.Count > 0)
+            if (nextThreshold > 0)
             {
-                if (!effectValidationErrors.ContainsKey(i))
+                var missingPieces = armorSet.GetMissingPieces(kvp.Value);
+                var piecesNeeded = nextThreshold - equippedCount;
+
+                recommendations.Add($"Equip {piecesNeeded} more {armorSet.SetName} piece(s) to unlock next bonus");
+
+                if (missingPieces.Count > 0)
                 {
-                    effectValidationErrors[i] = new List<string>(4);
+                    var suggestedSlots = missingPieces.Take(piecesNeeded);
+                    recommendations.Add($"  Suggested slots: {string.Join(", ", suggestedSlots)}");
                 }
-                effectValidationErrors[i].Clear();
-                effectValidationErrors[i].AddRange(errors);
             }
         }
+
+        return recommendations;
     }
 
-    private List<string> ValidateEffect(SerializedProperty effectProp, int index, ArmorSet armorSet)
+    // Helper method to get armor set pieces in inventory
+    private static List<ArmorSO> GetArmorSetPiecesInInventory(InventoryManager inventoryManager, ArmorSet armorSet)
     {
-        var errors = new List<string>(4);
+        var pieces = new List<ArmorSO>();
 
-        var nameProp = effectProp.FindPropertyRelative("effectName");
-        var piecesProp = effectProp.FindPropertyRelative("piecesRequired");
+        if (inventoryManager?.Slots == null) return pieces;
 
-        if (string.IsNullOrEmpty(nameProp.stringValue))
+        foreach (var slot in inventoryManager.Slots)
         {
-            errors.Add($"Effect #{index + 1} needs a name");
-        }
+            var inventorySlot = slot?.GetComponent<InventorySlot>();
+            var item = inventorySlot?.heldItem?.GetComponent<InventoryItem>();
+            var armorSO = item?.itemScriptableObject as ArmorSO;
 
-        int piecesReq = piecesProp.intValue;
-        if (piecesReq < 1)
-        {
-            errors.Add("Pieces required must be at least 1");
-        }
-        else if (piecesReq > setPiecesProp.arraySize)
-        {
-            errors.Add($"Requires {piecesReq} pieces but set only has {setPiecesProp.arraySize}");
-        }
-
-        return errors;
-    }
-
-    private void FindAndAssignArmorPieces(ArmorSet armorSet)
-    {
-        ArmorSO[] allArmors = GetAllArmors();
-        int foundCount = 0;
-
-        foreach (ArmorSO armor in allArmors)
-        {
-            if (armor.BelongsToArmorSet == armorSet && !armorSet.SetPieces.Contains(armor))
+            if (armorSO?.BelongsToSet == armorSet)
             {
-                int newIndex = setPiecesProp.arraySize;
-                setPiecesProp.InsertArrayElementAtIndex(newIndex);
-                setPiecesProp.GetArrayElementAtIndex(newIndex).objectReferenceValue = armor;
-                foundCount++;
+                pieces.Add(armorSO);
             }
         }
 
-        if (foundCount > 0)
-        {
-            serializedObject.ApplyModifiedProperties();
-            Debug.Log($"Found and assigned {foundCount} armor pieces to {armorSet.SetName}");
-        }
-        else
-        {
-            Debug.Log($"No unassigned armor pieces found referencing {armorSet.SetName}");
-        }
+        return pieces;
     }
 
-    private void CleanNullReferences()
+    // Get set completion percentage for UI
+    public static float GetSetCompletionPercentage(ArmorSet armorSet, List<ArmorSO> equippedPieces)
     {
-        for (int i = setPiecesProp.arraySize - 1; i >= 0; i--)
-        {
-            if (setPiecesProp.GetArrayElementAtIndex(i).objectReferenceValue == null)
-            {
-                setPiecesProp.DeleteArrayElementAtIndex(i);
-            }
-        }
+        if (armorSet?.SetPieces == null || armorSet.SetPieces.Count == 0) return 0f;
+        return (float)equippedPieces.Count / armorSet.SetPieces.Count;
     }
 
-    private static void InvalidateCache()
+    // Check if a specific effect threshold is met
+    public static bool IsEffectThresholdMet(ArmorSet armorSet, int requiredPieces, List<ArmorSO> equippedPieces)
     {
-        setCache.Clear();
-        armorCache.Clear();
-        lastCacheTime = 0;
+        return equippedPieces.Count >= requiredPieces;
     }
 
-    private static ArmorSet[] GetAllArmorSets()
+    // Get next milestone for set completion
+    public static string GetNextMilestone(ArmorSet armorSet, List<ArmorSO> equippedPieces)
     {
-        double currentTime = EditorApplication.timeSinceStartup;
-        string cacheKey = "all_sets";
+        var nextThreshold = armorSet.GetNextEffectThreshold(equippedPieces.Count);
+        if (nextThreshold <= 0) return "Set Complete";
 
-        if (currentTime - lastCacheTime > CACHE_DURATION || !setCache.ContainsKey(cacheKey))
+        var nextEffect = armorSet.SetEffects.FirstOrDefault(e => e.piecesRequired == nextThreshold);
+        if (nextEffect != null)
         {
-            setCache[cacheKey] = Resources.FindObjectsOfTypeAll<ArmorSet>();
-            lastCacheTime = currentTime;
+            return $"{nextThreshold - equippedPieces.Count} more pieces for: {nextEffect.effectName}";
         }
 
-        return setCache[cacheKey];
+        return $"{nextThreshold - equippedPieces.Count} more pieces for next bonus";
     }
 
-    private static ArmorSO[] GetAllArmors()
+    // Performance helper: Cache equipped armor for multiple queries
+    public class ArmorCache
     {
-        double currentTime = EditorApplication.timeSinceStartup;
-        string cacheKey = "all_armors";
+        private Dictionary<ArmorSlotType, ArmorSO> equippedBySlot;
+        private Dictionary<ArmorSet, List<ArmorSO>> equippedSets;
+        private float totalDefense;
+        private float totalMagicDefense;
+        private float lastUpdateTime;
+        private const float CACHE_DURATION = 1f; // Cache for 1 second
 
-        if (currentTime - lastCacheTime > CACHE_DURATION || !armorCache.ContainsKey(cacheKey))
+        public void UpdateCache(InventoryManager inventoryManager)
         {
-            armorCache[cacheKey] = Resources.FindObjectsOfTypeAll<ArmorSO>();
-            lastCacheTime = currentTime;
+            if (Time.time - lastUpdateTime < CACHE_DURATION) return;
+
+            // Get equipped armor using the static method from ArmorSetUtils
+            var equippedArmor = ArmorSetUtils.GetEquippedArmor(inventoryManager);
+
+            // Create dictionary mapping slot types to armor
+            equippedBySlot = equippedArmor.ToDictionary(a => a.ArmorSlotType, a => a);
+
+            // Get equipped sets using the static method from ArmorSetUtils
+            equippedSets = ArmorSetUtils.GetEquippedArmorSets(inventoryManager);
+
+            // Calculate total defense and magic defense
+            totalDefense = equippedArmor.Sum(armor => armor.GetEffectiveDefense());
+            totalMagicDefense = equippedArmor.Sum(armor => armor.GetEffectiveMagicDefense());
+
+            lastUpdateTime = Time.time;
         }
 
-        return armorCache[cacheKey];
+        public ArmorSO GetArmorForSlot(ArmorSlotType slotType)
+        {
+            return equippedBySlot?.TryGetValue(slotType, out ArmorSO armor) == true ? armor : null;
+        }
+
+        public float GetTotalDefense() => totalDefense;
+        public float GetTotalMagicDefense() => totalMagicDefense;
+        public Dictionary<ArmorSet, List<ArmorSO>> GetEquippedSets() => equippedSets ?? new Dictionary<ArmorSet, List<ArmorSO>>();
     }
 }
-#endif

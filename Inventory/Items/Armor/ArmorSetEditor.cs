@@ -625,7 +625,6 @@ public class ArmorSetEditor : Editor
         }
     }
 
-
     private void CleanNullReferences()
     {
         int removed = 0;
