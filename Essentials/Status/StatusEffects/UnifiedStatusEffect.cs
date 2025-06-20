@@ -5,80 +5,36 @@ using UnityEngine;
 public enum UnifiedStatusType
 {
     // Core Stats
-    Hp,
-    Stamina,
-    Mana,
-    Speed,
-    Weight,
+    Hp, Stamina, Mana, Speed, Weight,
 
     // Survival Stats
-    Food,
-    Drink,
-    Sleep,
-    Sanity,
-    BodyHeat,
-    Oxygen,
+    Food, Drink, Sleep, Sanity, BodyHeat, Oxygen,
 
     // Max Values
-    MaxHp,
-    MaxStamina,
-    MaxMana,
-    MaxHunger,
-    MaxThirst,
-    MaxWeight,
-    MaxSleep,
-    MaxSanity,
-    MaxBodyHeat,
-    MaxOxygen,
+    MaxHp, MaxStamina, MaxMana, MaxHunger, MaxThirst, MaxWeight,
+    MaxSleep, MaxSanity, MaxBodyHeat, MaxOxygen,
 
     // Regeneration Effects
-    HpRegeneration,
-    StaminaRegeneration,
-    ManaRegeneration,
-    HungerRegeneration,
-    ThirstRegeneration,
-    SleepRegeneration,
-    SanityRegeneration,
-    BodyHeatRegeneration,
-    OxygenRegeneration,
+    HpRegeneration, StaminaRegeneration, ManaRegeneration,
+    HungerRegeneration, ThirstRegeneration, SleepRegeneration,
+    SanityRegeneration, BodyHeatRegeneration, OxygenRegeneration,
 
     // Heal Factor Effects
-    HpHealFactor,
-    StaminaHealFactor,
-    ManaHealFactor,
-    HungerHealFactor,
-    ThirstHealFactor,
-    SleepHealFactor,
-    SanityHealFactor,
-    BodyHeatHealFactor,
-    OxygenHealFactor,
+    HpHealFactor, StaminaHealFactor, ManaHealFactor,
+    HungerHealFactor, ThirstHealFactor, SleepHealFactor,
+    SanityHealFactor, BodyHeatHealFactor, OxygenHealFactor,
 
     // Damage Factor Effects
-    HpDamageFactor,
-    StaminaDamageFactor,
-    ManaDamageFactor,
-    HungerDamageFactor,
-    ThirstDamageFactor,
-    SleepDamageFactor,
-    SanityDamageFactor,
-    BodyHeatDamageFactor,
-    OxygenDamageFactor,
+    HpDamageFactor, StaminaDamageFactor, ManaDamageFactor,
+    HungerDamageFactor, ThirstDamageFactor, SleepDamageFactor,
+    SanityDamageFactor, BodyHeatDamageFactor, OxygenDamageFactor,
 
     // Speed Modifiers
-    SpeedFactor,
-    SpeedMultiplier,
+    SpeedFactor, SpeedMultiplier,
 
     // Combat Stats
-    Strength,
-    Agility,
-    Intelligence,
-    Endurance,
-    Defense,
-    MagicResistance,
-    CriticalChance,
-    CriticalDamage,
-    AttackSpeed,
-    CastingSpeed
+    Strength, Agility, Intelligence, Endurance, Defense,
+    MagicResistance, CriticalChance, CriticalDamage, AttackSpeed, CastingSpeed
 }
 
 // Unified status effect class
