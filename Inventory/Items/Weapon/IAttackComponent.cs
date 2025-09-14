@@ -10,6 +10,7 @@ public interface IAttackComponent
     float ActiveFrames { get; }
     float RecoveryFrames { get; }
     float AnimationSpeed { get; }
+    float StaminaCost { get; }  // Added this
     bool LockMovement { get; }
     float MovementSpeedMultiplier { get; }
     Vector3 ForwardMovement { get; }

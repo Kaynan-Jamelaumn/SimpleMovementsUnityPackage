@@ -10,6 +10,7 @@ public class AttackVariation : IAttackComponent
     [Header("Variation Configuration")]
     public string variationName;
 
+
     [Header("Animation & Timing")]
     [SerializeField] private AnimationClip animationClip;
     [SerializeField] private float animationSpeed = 1.0f;
@@ -18,7 +19,9 @@ public class AttackVariation : IAttackComponent
     [SerializeField] private float recoveryFrames = 0.3f;
 
     [Header("Combat Properties")]
-    public float staminaCost;
+    public float StaminaCost => staminaCost;
+    private float staminaCost;
+
     [SerializeField] private bool lockMovement = false;
     [SerializeField] private float movementSpeedMultiplier = 1.0f;
     [SerializeField] private Vector3 forwardMovement = Vector3.zero;
