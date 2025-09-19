@@ -4,7 +4,6 @@ using System.Collections;
 using Unity.AI.Navigation;
 using System.Drawing;
 using static DataStructure;
-
 /// <summary>
 /// Manages the creation and updating of an infinite terrain system around the viewer's position.
 /// This system generates terrain chunks dynamically based on proximity, ensuring performance optimization 
@@ -17,24 +16,20 @@ using static DataStructure;
 /// </example>
 public class EndlessTerrain : MonoBehaviour
 {
+    [Tooltip("Enable to show debug messages in the console")]
+    [SerializeField]
+    public bool enableDebugging = false;
 
     [Tooltip("If Should use HDRP Shader if not, will use URP Shaders(Lighter)")]
     [SerializeField]
     public bool shouldUseHDRPShaders = false;
 
-    /// <summary>
-    /// The maximum distance (in world units) from the viewer within which terrain chunks are displayed.
-    /// </summary>
     [Tooltip("Maximum distance (in world units) from the viewer within which terrain chunks are displayed.")]
     [SerializeField]
     public const float maxViewDst = 250;
 
-    /// <summary>
-    /// The object (e.g., player or camera) whose position determines the visibility of terrain chunks.
-    /// </summary>
     [Tooltip("The object (e.g., player or camera) whose position determines terrain visibility.")]
     public Transform viewer;
-
     /// <summary>
     /// The viewer's position in world space, represented as a 2D coordinate (x, z).
     /// Used for efficient distance calculations, ignoring the y-axis (height).
@@ -42,66 +37,34 @@ public class EndlessTerrain : MonoBehaviour
     [Tooltip("Viewer's position in world space (x, z), ignoring height.")]
     public static Vector2 viewerPosition;
 
-    /// <summary>
-    /// Reference to the terrain generator, which creates terrain features such as height maps and textures.
-    /// </summary>
     [Tooltip("Reference to the terrain generator responsible for creating terrain data.")]
     static TerrainGenerator mapGenerator;
 
-    /// <summary>
-    /// Scale factor affecting terrain features, such as size and spacing.
-    /// </summary>
     [Tooltip("Scale factor affecting terrain features (size, spacing, etc.).")]
-    float scaleFactor = 1.0f;
+    [SerializeField] float scaleFactor = 1.0f;
 
-    /// <summary>
-    /// The size of each terrain chunk in world units.
-    /// </summary>
     [Tooltip("The size of each terrain chunk in world units.")]
     int chunkSize;
 
-    /// <summary>
-    /// Number of terrain chunks visible within the maximum viewing distance.
-    /// </summary>
     [Tooltip("Number of terrain chunks visible within the maximum viewing distance.")]
     int chunksVisibleInViewDst;
 
-    /// <summary>
-    /// Enables or disables limiting the number of visible chunks per side.
-    /// Helps optimize performance by reducing terrain generation beyond a certain limit.
-    /// </summary>
     [Tooltip("Enable to limit the number of visible chunks per side.")]
     public bool shouldHaveMaxChunkPerSide = true;
 
-    /// <summary>
-    /// The maximum number of terrain chunks generated per side if limiting is enabled.
-    /// </summary>
     [Tooltip("Maximum number of terrain chunks generated per side.")]
     public int maxChunksPerSide = 5;
 
-    /// <summary>
-    /// Dictionary storing terrain chunks, keyed by their 2D coordinates.
-    /// </summary>
     [Tooltip("Dictionary storing terrain chunks, keyed by their 2D coordinates.")]
     Dictionary<Vector2, TerrainChunk> terrainChunkDictionary = new Dictionary<Vector2, TerrainChunk>();
 
-    /// <summary>
-    /// List of terrain chunks that were visible during the last frame update.
-    /// Used to hide chunks no longer in the viewing area.
-    /// </summary>
     [Tooltip("List of terrain chunks visible during the last frame update.")]
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
 
-    /// <summary>
-    /// Settings for spawning portals in the terrain system.
-    /// </summary>
     [Tooltip("Configuration settings for spawning portals.")]
     [SerializeField]
     PortalSettings portalSettings;
 
-    /// <summary>
-    /// Settings for spawning mobs in the terrain system.
-    /// </summary>
     [Tooltip("Configuration settings for spawning mobs.")]
     [SerializeField]
     MobSettings mobSettings;
@@ -113,31 +76,43 @@ public class EndlessTerrain : MonoBehaviour
     {
         mapGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
 
-        chunkSize = TerrainGenerator.chunkSize - 1;  // Adjust for overlap at edges.
+        if (mapGenerator == null)
+        {
+            Debug.LogError("TerrainGenerator not found! Please add a TerrainGenerator to the scene.");
+            return;
+        }
+
+        chunkSize = TerrainGenerator.chunkSize - 1;
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
+
+        // Get scaleFactor and ensure it's not 0
         scaleFactor = mapGenerator.ScaleFactor;
+        if (scaleFactor <= 0)
+        {
+            if (enableDebugging)
+                Debug.LogWarning($"TerrainGenerator ScaleFactor was {scaleFactor}, setting to 1.0");
+            scaleFactor = 1.0f;
+            mapGenerator.ScaleFactor = 1.0f;
+        }
+
+        if (enableDebugging)
+            Debug.Log($"EndlessTerrain initialized - ChunkSize: {chunkSize}, ScaleFactor: {scaleFactor}, ChunksVisible: {chunksVisibleInViewDst}");
     }
 
-    /// <summary>
-    /// Updates the viewer's position and recalculates visible chunks each frame.
-    /// </summary>
     void Update()
     {
+        if (mapGenerator == null) return;
+
         viewerPosition = new Vector2(viewer.position.x, viewer.position.z);
         UpdateVisibleChunks();
     }
-
-
-
     /// <summary>
     /// Updates the visibility of terrain chunks based on the viewer's current position.
     /// This method ensures only chunks within the viewing distance are active,
     /// dynamically hiding or creating chunks as necessary.
     /// </summary>
-
     void UpdateVisibleChunks()
     {
-
         // Calculate the viewer's current chunk coordinates in the chunk grid.
         // Each chunk is `chunkSize` units wide, so we divide the viewer's position by `chunkSize`
         // and round to the nearest integer to get the chunk's grid coordinates.
@@ -145,8 +120,8 @@ public class EndlessTerrain : MonoBehaviour
         int currentChunkCoordY = Mathf.RoundToInt(viewerPosition.y / chunkSize);
 
         HashSet<Vector2> chunksToBeVisible = new HashSet<Vector2>();
-
         // Iterate through chunks in view distance
+
         for (int yOffset = -chunksVisibleInViewDst; yOffset <= chunksVisibleInViewDst; yOffset++)
         {
             for (int xOffset = -chunksVisibleInViewDst; xOffset <= chunksVisibleInViewDst; xOffset++)
@@ -154,7 +129,6 @@ public class EndlessTerrain : MonoBehaviour
                 // Calculate the coordinates of the chunk being considered.
                 Vector2 viewedChunkCoord = new Vector2(currentChunkCoordX + xOffset, currentChunkCoordY + yOffset);
 
-                // Limit the number of chunks if maximum chunks per side is enabled.
                 if (shouldHaveMaxChunkPerSide &&
                 // This condition ensures that the number of chunks generated or rendered does not exceed the maximum allowed per side.
                 // It checks if the absolute value of either the x or y coordinate of the chunk exceeds the limit set by 'maxChunksPerSide'.
@@ -168,7 +142,6 @@ public class EndlessTerrain : MonoBehaviour
 
                 chunksToBeVisible.Add(viewedChunkCoord);
 
-                // Check if chunk exists, otherwise create it
                 if (!terrainChunkDictionary.TryGetValue(viewedChunkCoord, out TerrainChunk chunk))
                 {
                     chunk = CreateNewChunk(viewedChunkCoord);
@@ -178,21 +151,20 @@ public class EndlessTerrain : MonoBehaviour
             }
         }
 
-        // Update visibility for chunks not in `chunksToBeVisible`
         UpdateChunkVisibility(chunksToBeVisible);
     }
 
-    //Create a new chunk
     TerrainChunk CreateNewChunk(Vector2 coord)
     {
         count++;
-        int scaledChunkSize = Mathf.RoundToInt(chunkSize * scaleFactor);
-        TerrainChunk newChunk = new TerrainChunk(coord, scaledChunkSize, transform, portalSettings, mobSettings, count, shouldUseHDRPShaders);
+        if (enableDebugging)
+            Debug.Log($"Creating new chunk {count} at coord {coord}, chunkSize: {chunkSize}, scaleFactor: {scaleFactor}");
+
+        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, scaleFactor, transform, portalSettings, mobSettings, count, shouldUseHDRPShaders, enableDebugging);
         terrainChunkDictionary.Add(coord, newChunk);
         return newChunk;
     }
 
-    // Update visibility for old and new chunks
     void UpdateChunkVisibility(HashSet<Vector2> chunksToBeVisible)
     {
         for (int i = terrainChunksVisibleLastUpdate.Count - 1; i >= 0; i--)
@@ -222,15 +194,14 @@ public class EndlessTerrain : MonoBehaviour
         if (terrainChunksVisibleLastUpdate.Count == 0) return null;
         return terrainChunksVisibleLastUpdate[Random.Range(0, terrainChunksVisibleLastUpdate.Count)];
     }
-
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
     /// Manages its mesh, texture, collision, navigation mesh, and spawner systems dynamically.
     /// </summary>
-
     public class TerrainChunk
     {
         bool shouldUseHDRPShaders = false;
+        bool enableDebugging = false;
 
         GameObject meshObject;
         Vector2 position;
@@ -249,23 +220,21 @@ public class EndlessTerrain : MonoBehaviour
         int maxMobs;
         public Vector2 Position { get { return position; } }
 
-        /// <summary>
-        /// Creates a new terrain chunk at the specified coordinates.
-        /// </summary>
-        /// <param name="coord">The coordinate of the chunk in chunk space.</param>
-        /// <param name="size">The size of the chunk in world units.</param>
-        /// <param name="parent">The parent transform for the chunk.</param>
-
-        public TerrainChunk(Vector2 coord, int size, Transform parent, PortalSettings portalSettings, MobSettings mobSettings,  int count, bool shouldUseHDRPShaders)
+        public TerrainChunk(Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count, bool shouldUseHDRPShaders, bool enableDebugging)
         {
             this.shouldUseHDRPShaders |= shouldUseHDRPShaders;
+            this.enableDebugging = enableDebugging;
 
-            position = coord * size; // The chunk's world position is its grid coordinate multiplied by its size.
-            bounds = new Bounds(position, Vector2.one * size);  // The chunk's bounding box.
-            Vector3 positionV3 = new Vector3(position.x, 0, position.y); // Convert 2D position to 3D for the GameObject.
-            globalOffset = new Vector2(position.x, position.y); // Store the global offset for terrain data.
+            position = coord * size;
+            bounds = new Bounds(position, Vector2.one * size);
+            Vector3 positionV3 = new Vector3(position.x, 0, position.y);
 
-            // Create the chunk GameObject and components.
+            // Fix: Use position directly for globalOffset, not position * scaleFactor
+            globalOffset = position;
+
+            if (enableDebugging)
+                Debug.Log($"Creating TerrainChunk {count} at coord: {coord}, position: {position}, size: {size}, scaleFactor: {scaleFactor}, globalOffset: {globalOffset}");
+
             meshObject = new GameObject("Terrain Chunk" + count);
             meshObject.tag = "Ground";
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
@@ -273,12 +242,10 @@ public class EndlessTerrain : MonoBehaviour
             meshCollider = meshObject.AddComponent<MeshCollider>();
 
 
-            // Add NavMeshSurface component to the terrain chunk
             navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
             navMeshSurface.collectObjects = CollectObjects.Children;
 
 
-            // PortalManager Initialization
             PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
             portalSpawner.spawnablePrefabs = portalSettings.prefabs;
             portalSpawner.globalMaxInstances = portalSettings.maxNumberOfPortals;
@@ -305,20 +272,16 @@ public class EndlessTerrain : MonoBehaviour
             SetVisible(false);
 
 
-            // Request map data from the terrain generator.
-            mapGenerator.RequestMapData(OnMapDataReceived, globalOffset);
+            mapGenerator.RequestMapData(OnMapDataReceived, globalOffset, enableDebugging);
             this.shouldUseHDRPShaders = shouldUseHDRPShaders;
         }
 
-        /// <summary>
-        /// Receives map data and requests terrain data for the chunk.
-        /// </summary>
         void OnMapDataReceived(MapData mapData)
         {
-            // Request terrain data using the received map data.
-            mapGenerator.RequestTerrainData(mapData, OnTerrainDataReceived, globalOffset);
+            if (enableDebugging)
+                Debug.Log($"OnMapDataReceived for chunk at {globalOffset}");
+            mapGenerator.RequestTerrainData(mapData, OnTerrainDataReceived, globalOffset, enableDebugging);
         }
-
         /// <summary>
         /// Receives biome object data, initializes the biome spawner, and bakes the NavMesh for AI navigation.
         /// </summary>
@@ -326,8 +289,9 @@ public class EndlessTerrain : MonoBehaviour
 
         void OnBiomeObjectDataReceived(BiomeObjectData biomeObjectData)
         {
+            if (enableDebugging)
+                Debug.Log($"OnBiomeObjectDataReceived for chunk at {globalOffset}");
 
-            // Bake the NavMesh for AI navigation and start spawning mobs.
             BakeNavMesh();
 
             MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
@@ -335,41 +299,45 @@ public class EndlessTerrain : MonoBehaviour
 
             PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
             portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform, biomeObjectData.biomeMap);
-            
-
-
-
         }
 
-        /// <summary>
-        /// Receives terrain da ta and applies it to the chunk.
-        /// </summary>
         void OnTerrainDataReceived(DataStructure.TerrainData terrainData)
         {
-            // Apply terrain data to the chunk's components.
+            if (enableDebugging)
+                Debug.Log($"OnTerrainDataReceived for chunk at {globalOffset}");
+
             terrainGenerator = terrainData.terrainGenerator;
             TextureGenerator textureGenerator = new TextureGenerator();
             textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer, shouldUseHDRPShaders);
-            //TextureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer);   
             heightmap = terrainData.heightMap;
 
-            // Update the mesh and collider.
             Mesh mesh = terrainData.meshData.UpdateMesh();
-            meshFilter.mesh = mesh;
-            meshCollider.sharedMesh = mesh;
 
-            // Request biome object data to populate the chunk.
+            if (enableDebugging)
+                Debug.Log($"Mesh stats - Vertices: {mesh.vertexCount}, Triangles: {mesh.triangles.Length / 3}, Bounds: {mesh.bounds}");
+
+            if (mesh != null && mesh.vertexCount > 0 && mesh.triangles.Length > 0)
+            {
+                meshFilter.mesh = mesh;
+
+                if (enableDebugging)
+                    Debug.Log("Setting MeshCollider...");
+                meshCollider.sharedMesh = mesh;
+                if (enableDebugging)
+                    Debug.Log("MeshCollider set successfully");
+            }
+            else
+            {
+                Debug.LogError($"Invalid mesh generated for chunk at {globalOffset}");
+            }
+
             mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
         }
 
-        /// <summary>
-        /// Builds the NavMesh for this chunk, allowing AI navigation.
-        /// </summary>
         void BakeNavMesh()
         {
-            navMeshSurface.BuildNavMesh(); // Bake the NavMesh for the chunk
+            navMeshSurface.BuildNavMesh();
         }
-
         /// <summary>
         /// Updates the visibility of this chunk based on its distance to the viewer.
         /// </summary>
@@ -378,7 +346,6 @@ public class EndlessTerrain : MonoBehaviour
         /// Visible chunks are determined by checking their distance from the viewer.
         /// Chunks outside the viewing distance are hidden but not destroyed for faster reactivation.
         /// </remarks>
-
         public void UpdateTerrainChunk()
         {
             float viewerDstFromNearestEdge = Mathf.Sqrt(bounds.SqrDistance(viewerPosition));
@@ -386,23 +353,15 @@ public class EndlessTerrain : MonoBehaviour
 
             SetVisible(visible);
         }
-        /// <summary>
-        /// Sets the visibility of the chunk.
-        /// </summary>
-        /// <param name="visible">True to make the chunk visible, false to hide it.</param>
+
         public void SetVisible(bool visible)
         {
-
             meshObject.SetActive(visible);
         }
-        /// <summary>
-        /// Checks if the chunk is currently visible.
-        /// </summary>
-        /// <returns>True if visible, false otherwise.</returns>
+
         public bool IsVisible()
         {
             return meshObject.activeSelf;
         }
-
     }
 }

@@ -101,32 +101,23 @@ public static class ObjectSpawner
           out Vector3 normal
       )
     {
-        // Always use the original height map for Y position (maximum precision)
-        float height = heightMap[x, y];
-        spawnPosition = new Vector3(worldPosition.x, height, worldPosition.z);
+        // Get the terrain generator from the chunk
+        TerrainGenerator terrainGen = chunkTransform.GetComponentInParent<TerrainGenerator>();
+        float scaleFactor = terrainGen != null ? terrainGen.ScaleFactor : 1f;
 
-        // Calculate normals from the simplified mesh (for surface alignment)
-        if (lodFactor == 0)
-        {
-            normal = CalculateTerrainNormal(heightMap, x, y);
-        }
-        else
-        {
-            // Get vertex index from the simplified mesh
-            int meshX = Mathf.Clamp(x / lodFactor, 0, meshData.width);
-            int meshY = Mathf.Clamp(y / lodFactor, 0, meshData.depth);
-            int vertexIndex = meshY * (meshData.width + 1) + meshX;
+        // Always use the exact heightmap position for accurate height
+        float exactHeight = heightMap[Mathf.Clamp(x, 0, heightMap.GetLength(0) - 1),
+                                     Mathf.Clamp(y, 0, heightMap.GetLength(1) - 1)];
 
-            if (vertexIndex >= 0 && vertexIndex < meshData.vertices.Length)
-            {
-                // Calculate normal from the simplified mesh's vertices
-                normal = CalculateTerrainNormalFromMesh(meshData, meshX, meshY);
-            }
-            else
-            {
-                normal = Vector3.up;
-            }
-        }
+        // Calculate the exact world position including the scale factor
+        spawnPosition = new Vector3(
+            chunkTransform.position.x + (x * scaleFactor),
+            exactHeight + chunkTransform.position.y,
+            chunkTransform.position.z + (y * scaleFactor)
+        );
+
+        // Calculate normal from heightmap for accurate surface alignment
+        normal = CalculateTerrainNormal(heightMap, x, y);
 
         return true;
     }
@@ -224,7 +215,10 @@ public static class ObjectSpawner
 
         // Calculate the size of the object (bounds size) and derive half of it to perform the overlap check
         Vector3 halfExtents = collider.bounds.extents;
-        Collider[] overlaps = Physics.OverlapBox(position, halfExtents, Quaternion.identity);
+
+        // Add a small offset to position to avoid being inside the terrain
+        Vector3 checkPosition = position + Vector3.up * 0.1f;
+        Collider[] overlaps = Physics.OverlapBox(checkPosition, halfExtents, Quaternion.identity);
 
         foreach (Collider overlap in overlaps)
         {

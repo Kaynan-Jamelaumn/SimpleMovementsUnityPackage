@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -105,7 +104,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Level of detail for terrain generation, controlling mesh resolution.
     /// </summary>
     [Tooltip("Level of detail for terrain generation, controlling mesh resolution.")]
-    [SerializeField][Range(0, 6)] private int levelOfDetail=6;
+    [SerializeField][Range(0, 6)] private int levelOfDetail = 6;
 
     [Header("Biomes")]
     /// <summary>
@@ -137,7 +136,7 @@ public class TerrainGenerator : MonoBehaviour
     /// Intensity of object clustering, controlling grouping strength.
     /// </summary>
     [Tooltip("Intensity of object clustering, controlling grouping strength.")]
-   // [SerializeField] private float clusteringIntensity = 1f;
+    // [SerializeField] private float clusteringIntensity = 1f;
 
     // Private fields
     private float[,] heightMap;
@@ -257,10 +256,11 @@ public class TerrainGenerator : MonoBehaviour
     /// </summary>
     /// <param name="callback">The callback to execute when the map data is ready.</param>
     /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    public void RequestMapData(Action<MapData> callback, Vector2 globalOffset)
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
+    public void RequestMapData(Action<MapData> callback, Vector2 globalOffset, bool enableDebugging = false)
     {
         ThreadStart threadStart = delegate {
-            MapDataThread(callback, globalOffset);
+            MapDataThread(callback, globalOffset, enableDebugging);
         };
 
         new Thread(threadStart).Start();
@@ -271,7 +271,8 @@ public class TerrainGenerator : MonoBehaviour
     /// </summary>
     /// <param name="callback">The callback to execute with the generated map data.</param>
     /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    void MapDataThread(Action<MapData> callback, Vector2 globalOffset)
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
+    void MapDataThread(Action<MapData> callback, Vector2 globalOffset, bool enableDebugging)
     {
         MapData mapData = GenerateTerrain(globalOffset);
 
@@ -287,11 +288,12 @@ public class TerrainGenerator : MonoBehaviour
     /// <param name="mapData">The input map data for terrain generation.</param>
     /// <param name="callback">The callback to execute when the terrain data is ready.</param>
     /// <param name="globalOffset">The global offset for the terrain generation.</param>
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
     /// <param name="lod">The level of detail for the terrain mesh.</param>
-    public void RequestTerrainData(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, int lod = 0)
+    public void RequestTerrainData(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, bool enableDebugging = false, int lod = 0)
     {
         ThreadStart threadStart = delegate {
-            TerrainDataThread(mapData, callback, globalOffset, lod);
+            TerrainDataThread(mapData, callback, globalOffset, enableDebugging, lod);
         };
 
         new Thread(threadStart).Start();
@@ -303,10 +305,11 @@ public class TerrainGenerator : MonoBehaviour
     /// <param name="mapData">The input map data for terrain generation.</param>
     /// <param name="callback">The callback to execute with the generated terrain data.</param>
     /// <param name="globalOffset">The global offset for the terrain generation.</param>
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
     /// <param name="lod">The level of detail for the terrain mesh.</param>
-    void TerrainDataThread(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, int lod = 0)
+    void TerrainDataThread(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, bool enableDebugging, int lod = 0)
     {
-        MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap, levelOfDetail);
+        MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap, levelOfDetail, enableDebugging);
         Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
 
         DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap);
@@ -348,7 +351,7 @@ public class TerrainGenerator : MonoBehaviour
             return;
         }
 
-        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform,  meshData);
+        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform, meshData);
 
         lock (biomeObjectDataThreadInfoQueue)
         {

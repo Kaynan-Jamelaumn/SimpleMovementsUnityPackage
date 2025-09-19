@@ -10,32 +10,79 @@ public class MeshData
     public int[] triangles;
     public Vector2[] uvs;
 
+    private bool enableDebugging;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="MeshData"/> class with the given width and depth.
     /// </summary>
     /// <param name="width">The width of the mesh (number of vertices along the x-axis).</param>
     /// <param name="depth">The depth of the mesh (number of vertices along the z-axis).</param>
-    public MeshData(int width, int depth)
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
+    public MeshData(int width, int depth, bool enableDebugging = false)
     {
         this.width = width;
         this.depth = depth;
+        this.enableDebugging = enableDebugging;
         vertices = new Vector3[(width + 1) * (depth + 1)];
         triangles = new int[width * depth * 6];
         uvs = new Vector2[(width + 1) * (depth + 1)];
+
+        if (enableDebugging)
+            Debug.Log($"MeshData created - Width: {width}, Depth: {depth}, Vertices array: {vertices.Length}, Triangles array: {triangles.Length}");
     }
 
     public Mesh UpdateMesh()
     {
-        Mesh mesh = new Mesh
+        if (enableDebugging)
+            Debug.Log($"UpdateMesh called - Vertices: {vertices.Length}, Triangles: {triangles.Length}");
+
+        // Validate vertices
+        int invalidVertices = 0;
+        for (int i = 0; i < vertices.Length; i++)
         {
-            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
-        };
-        mesh.MarkDynamic();
-        mesh.Clear();
+            if (float.IsNaN(vertices[i].x) || float.IsNaN(vertices[i].y) || float.IsNaN(vertices[i].z) ||
+                float.IsInfinity(vertices[i].x) || float.IsInfinity(vertices[i].y) || float.IsInfinity(vertices[i].z))
+            {
+                Debug.LogError($"Invalid vertex at index {i}: {vertices[i]}");
+                vertices[i] = Vector3.zero;
+                invalidVertices++;
+            }
+        }
+
+        if (invalidVertices > 0)
+        {
+            Debug.LogError($"Found {invalidVertices} invalid vertices!");
+        }
+
+        // Validate triangles
+        int invalidTriangles = 0;
+        for (int i = 0; i < triangles.Length; i++)
+        {
+            if (triangles[i] < 0 || triangles[i] >= vertices.Length)
+            {
+                Debug.LogError($"Invalid triangle index at {i}: {triangles[i]} (max should be {vertices.Length - 1})");
+                triangles[i] = 0;
+                invalidTriangles++;
+            }
+        }
+
+        if (invalidTriangles > 0)
+        {
+            Debug.LogError($"Found {invalidTriangles} invalid triangle indices!");
+        }
+
+        Mesh mesh = new Mesh();
+        mesh.name = "Terrain Mesh";
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         mesh.vertices = vertices;
         mesh.triangles = triangles;
         mesh.uv = uvs;
         mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+
+        if (enableDebugging)
+            Debug.Log($"Mesh created - Bounds: {mesh.bounds}, Vertex Count: {mesh.vertexCount}, Triangle Count: {mesh.triangles.Length / 3}");
+
         return mesh;
     }
 }
@@ -52,60 +99,106 @@ public static class MeshGenerator
     /// <param name="terrainGenerator">An instance of the <see cref="TerrainGenerator"/> containing terrain parameters.</param>
     /// <param name="heightMap">A 2D array representing the height values of the terrain.</param>
     /// <param name="lod">The level of detail, where higher values simplify the mesh.</param>
+    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
     /// <returns>A <see cref="MeshData"/> object containing the generated mesh data.</returns>
-    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0)
+    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0, bool enableDebugging = false)
     {
-        int width = terrainGenerator.ChunkSize;
-        int depth = terrainGenerator.ChunkSize;
+        // HeightMap is (ChunkSize+1) x (ChunkSize+1) = 242x242
+        int mapWidth = heightMap.GetLength(0);
+        int mapHeight = heightMap.GetLength(1);
+
+        if (enableDebugging)
+            Debug.Log($"GenerateTerrainMesh - HeightMap size: {mapWidth}x{mapHeight}, ChunkSize: {terrainGenerator.ChunkSize}, LOD: {lod}, ScaleFactor: {terrainGenerator.ScaleFactor}");
 
         // LOD factor determines the step size for vertices. Higher LOD skips more vertices.
         // LOD factor é calculado como um múltiplo de 2 para LODs acima de 1, e 1 caso contrário.
         int lodFactor = lod > 0 ? lod * 2 : 1;
-        int verticesPerLine = (width - 1) / lodFactor + 1;
 
-        MeshData meshData = new MeshData(verticesPerLine, verticesPerLine);
+        // Use the actual heightmap dimensions for mesh generation
+        int meshWidth = (mapWidth - 1) / lodFactor;
+        int meshHeight = (mapHeight - 1) / lodFactor;
+
+        if (enableDebugging)
+            Debug.Log($"Mesh dimensions: {meshWidth}x{meshHeight}, LOD Factor: {lodFactor}");
+
+        MeshData meshData = new MeshData(meshWidth, meshHeight, enableDebugging);
 
         int vertexIndex = 0;
         int triangleIndex = 0;
 
-        // Generate vertices and UV coordinates based on the height map.
-        for (int y = 0; y < depth; y += lodFactor)
-        {
-            for (int x = 0; x < width; x += lodFactor)
-            {
-                // Ensure heightMap access is within bounds
-                int clampedX = Mathf.Clamp(x, 0, width - 1);
-                int clampedY = Mathf.Clamp(y, 0, depth - 1);
+        float minHeight = float.MaxValue;
+        float maxHeight = float.MinValue;
 
-                meshData.vertices[vertexIndex] = new Vector3(x * terrainGenerator.ScaleFactor, heightMap[clampedX, clampedY], y * terrainGenerator.ScaleFactor);
+        // Generate vertices and UV coordinates based on the height map.
+        for (int y = 0; y <= meshHeight; y++)
+        {
+            for (int x = 0; x <= meshWidth; x++)
+            {
+                // Map mesh coordinates to heightmap coordinates
+                int heightMapX = Mathf.Min(x * lodFactor, mapWidth - 1);
+                int heightMapY = Mathf.Min(y * lodFactor, mapHeight - 1);
+
+                // Get height value, check for invalid values
+                float heightValue = heightMap[heightMapX, heightMapY];
+                if (float.IsNaN(heightValue) || float.IsInfinity(heightValue))
+                {
+                    if (enableDebugging)
+                        Debug.LogWarning($"Invalid height at [{heightMapX},{heightMapY}]: {heightValue}, setting to 0");
+                    heightValue = 0f;
+                }
+
+                minHeight = Mathf.Min(minHeight, heightValue);
+                maxHeight = Mathf.Max(maxHeight, heightValue);
+
+                meshData.vertices[vertexIndex] = new Vector3(
+                    heightMapX * terrainGenerator.ScaleFactor,
+                    heightValue,
+                    heightMapY * terrainGenerator.ScaleFactor
+                );
 
                 meshData.uvs[vertexIndex] = new Vector2(
-                    (float)x / (width - 1),
-                    (float)y / (depth - 1)
+                    (float)x / meshWidth,
+                    (float)y / meshHeight
                 );
+
                 // Add triangles if within bounds of the mesh grid.
                 // Verify if we're still in the bounds of the mesh
-                if (x < width - lodFactor && y < depth - lodFactor)
+                if (x < meshWidth && y < meshHeight)
                 {
-                    int currentVertex = vertexIndex;
-                    int nextVertex = currentVertex + verticesPerLine;
-                    // Create two triangles (as a quad) per iteration
+                    int topLeft = y * (meshWidth + 1) + x;
+                    int topRight = topLeft + 1;
+                    int bottomLeft = (y + 1) * (meshWidth + 1) + x;
+                    int bottomRight = bottomLeft + 1;
 
-                    // Each quad is divided into two triangles:
-                    // Triangle 1: vertices (vert, vert + lodWidth, vert + 1)
-                    //First Triangle : vertexes(vert, vert + lodWidth, vert + 1)
-                    meshData.triangles[triangleIndex++] = currentVertex;
-                    meshData.triangles[triangleIndex++] = nextVertex;
-                    meshData.triangles[triangleIndex++] = currentVertex + 1;
-                    // Triangle 2: vertices (vert + 1, vert + lodWidth, vert + lodWidth + 1)
-                    //Second Triangle 2: vertexes(vert + 1, vert + lodWidth, vert + lodWidth + 1)
-                    meshData.triangles[triangleIndex++] = currentVertex + 1;
-                    meshData.triangles[triangleIndex++] = nextVertex;
-                    meshData.triangles[triangleIndex++] = nextVertex + 1;
+                    // Validate indices
+                    int maxIndex = (meshWidth + 1) * (meshHeight + 1) - 1;
+                    if (bottomRight > maxIndex)
+                    {
+                        Debug.LogError($"Triangle index out of bounds! bottomRight: {bottomRight}, maxIndex: {maxIndex}");
+                        Debug.LogError($"At position x:{x}, y:{y}, meshWidth:{meshWidth}, meshHeight:{meshHeight}");
+                    }
+                    else
+                    {
+                        // First Triangle : vertexes(topLeft, bottomLeft, topRight)
+                        meshData.triangles[triangleIndex++] = topLeft;
+                        meshData.triangles[triangleIndex++] = bottomLeft;
+                        meshData.triangles[triangleIndex++] = topRight;
+
+                        // Second Triangle: vertexes(topRight, bottomLeft, bottomRight)
+                        meshData.triangles[triangleIndex++] = topRight;
+                        meshData.triangles[triangleIndex++] = bottomLeft;
+                        meshData.triangles[triangleIndex++] = bottomRight;
+                    }
                 }
 
                 vertexIndex++;
             }
+        }
+
+        if (enableDebugging)
+        {
+            Debug.Log($"Mesh generation complete - Vertices: {vertexIndex}, Triangles: {triangleIndex / 3}, Height range: [{minHeight}, {maxHeight}]");
+            Debug.Log($"First vertex: {meshData.vertices[0]}, Last vertex: {meshData.vertices[vertexIndex - 1]}");
         }
 
         return meshData;
