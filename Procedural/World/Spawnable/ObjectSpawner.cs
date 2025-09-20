@@ -101,26 +101,239 @@ public static class ObjectSpawner
           out Vector3 normal
       )
     {
-        // Get the terrain generator from the chunk
-        TerrainGenerator terrainGen = chunkTransform.GetComponentInParent<TerrainGenerator>();
-        float scaleFactor = terrainGen != null ? terrainGen.ScaleFactor : 1f;
+        float height;
 
-        // Always use the exact heightmap position for accurate height
-        float exactHeight = heightMap[Mathf.Clamp(x, 0, heightMap.GetLength(0) - 1),
-                                     Mathf.Clamp(y, 0, heightMap.GetLength(1) - 1)];
+        // ===========================================================================================
+        // ===========================================================================================
+        // When LOD (Level of Detail) is used, the terrain mesh is simplified. 
+        // For example, with LOD 6:
+        //   - lodFactor = 12 (calculated as lod * 2)
+        //   - Instead of using ALL 241x241 heightmap points, the mesh only uses every 12th point
+        //   - So it samples at positions: 0, 12, 24, 36, 48... creating a simplified mesh
+        //
+        // THE ORIGINAL PROBLEM:
+        // - heightmap has heights at EVERY position: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14...]
+        // -  LOD mesh only uses heights at positions: [0, 12, 24, 36, 48...]
+        // - When placing an object at position (6, 6), using heightMap[6,6] directly gives the
+        //   EXACT height at that position - but the mesh doesn't have a vertex there!
+        // - The mesh only has vertices at corners like (0,0), (12,0), (0,12), (12,12) and draws
+        //   flat triangles between them.
+        // ===========================================================================================
 
-        // Calculate the exact world position including the scale factor
-        spawnPosition = new Vector3(
-            chunkTransform.position.x + (x * scaleFactor),
-            exactHeight + chunkTransform.position.y,
-            chunkTransform.position.z + (y * scaleFactor)
-        );
+        if (lodFactor > 1)
+        {
+            // When LOD is active, we MUST calculate the height that matches the simplified mesh
+            // This uses triangle interpolation to match exactly what the player sees
+            height = GetLODInterpolatedHeight(heightMap, x, y, lodFactor);
+            normal = GetLODInterpolatedNormal(heightMap, x, y, lodFactor);
+        }
+        else
+        {
+            // No LOD (lodFactor = 1), the mesh uses every heightmap point, 
+            // so we can use the exact height from heightmap
+            height = heightMap[x, y];
+            normal = CalculateTerrainNormal(heightMap, x, y);
+        }
 
-        // Calculate normal from heightmap for accurate surface alignment
-        normal = CalculateTerrainNormal(heightMap, x, y);
-
+        spawnPosition = new Vector3(worldPosition.x, height, worldPosition.z);
         return true;
     }
+
+    /// <summary>
+    /// Gets the interpolated height that matches the LOD mesh triangulation.
+    /// This matches the exact calculation used by MeshGenerator when creating the simplified mesh.
+    /// </summary>
+    private static float GetLODInterpolatedHeight(float[,] heightMap, int x, int y, int lodFactor)
+    {
+        // ===========================================================================================
+        // For a single LOD cell from (0,0) to (12,12), the mesh creates:
+        //
+        //   (0,12) ●─────────● (12,12)
+        //          │\        │
+        //          │ \       │
+        //          │  \      │
+        //          │   \     │
+        //          │    \    │
+        //          │     \   │
+        //          │      \  │
+        //          │       \ │
+        //          │        \│
+        //   (0,0)  ●─────────● (12,0)
+        //
+        // Triangle 1 (Lower-left): Connects points (0,0), (0,12), (12,0)
+        // Triangle 2 (Upper-right): Connects points (12,0), (0,12), (12,12)
+        // ===========================================================================================
+
+        int mapWidth = heightMap.GetLength(0);
+        int mapHeight = heightMap.GetLength(1);
+
+        // ===========================================================================================
+        // STEP 1: Find which LOD grid cell contains this point
+        // ===========================================================================================
+        // Example: For position (6, 6) with lodFactor = 12:
+        //   x0 = (6 / 12) * 12 = 0 * 12 = 0    (lower bound)
+        //   y0 = (6 / 12) * 12 = 0 * 12 = 0    (lower bound)
+        //   x1 = 0 + 12 = 12                   (upper bound)
+        //   y1 = 0 + 12 = 12                   (upper bound)
+        // So we're in the cell from (0,0) to (12,12)
+        // ===========================================================================================
+        int x0 = (x / lodFactor) * lodFactor;  // Lower-left corner X
+        int y0 = (y / lodFactor) * lodFactor;  // Lower-left corner Y
+        int x1 = Mathf.Min(x0 + lodFactor, mapWidth - 1);   // Upper-right corner X
+        int y1 = Mathf.Min(y0 + lodFactor, mapHeight - 1);   // Upper-right corner Y
+
+        // ===========================================================================================
+        // STEP 2: Get the four corner heights from the heightmap
+        // ===========================================================================================
+        // These are the ACTUAL heights that the mesh uses for its vertices
+        // Example heights:
+        //   h00 = heightMap[0, 0]   = 10.0  (bottom-left)
+        //   h10 = heightMap[12, 0]  = 14.0  (bottom-right)  
+        //   h01 = heightMap[0, 12]  = 12.0  (top-left)
+        //   h11 = heightMap[12, 12] = 18.0  (top-right)
+        // ===========================================================================================
+        float h00 = heightMap[x0, y0];  // bottom-left corner height
+        float h10 = heightMap[x1, y0];  // bottom-right corner height
+        float h01 = heightMap[x0, y1];  // top-left corner height
+        float h11 = heightMap[x1, y1];  // top-right corner height
+
+        // ===========================================================================================
+        // STEP 3: Calculate position within the LOD cell (normalized to 0-1 range)
+        // ===========================================================================================
+        // This tells us where we are within the cell as a fraction
+        // Example: For position (6, 6) in a cell from (0,0) to (12,12):
+        //   fx = (6 - 0) / (12 - 0) = 6/12 = 0.5  (halfway across horizontally)
+        //   fy = (6 - 0) / (12 - 0) = 6/12 = 0.5  (halfway up vertically)
+        // ===========================================================================================
+        float fx = (x1 > x0) ? (float)(x - x0) / (float)(x1 - x0) : 0f;
+        float fy = (y1 > y0) ? (float)(y - y0) / (float)(y1 - y0) : 0f;
+
+        // ===========================================================================================
+        // STEP 4: Determine which triangle we're in
+        // ===========================================================================================
+        // The diagonal line from (0,1) to (1,0) divides the square:
+        //   - If fx + fy <= 1.0: We're in Triangle 1 (lower-left triangle)
+        //   - If fx + fy > 1.0:  We're in Triangle 2 (upper-right triangle)
+        //
+        // Example: Position (6,6) has fx=0.5, fy=0.5
+        //   fx + fy = 0.5 + 0.5 = 1.0 (on the edge, counts as Triangle 1)
+        //
+        // Another example: Position (9,9) has fx=0.75, fy=0.75
+        //   fx + fy = 0.75 + 0.75 = 1.5 > 1.0 (in Triangle 2)
+        // ===========================================================================================
+
+        if (fx + fy <= 1.0f)
+        {
+            // =====================================================================================
+            // TRIANGLE 1 (Lower-left triangle)
+            // =====================================================================================
+            // This triangle uses vertices: (x0,y0), (x1,y0), (x0,y1)
+            // Or in our example: (0,0), (12,0), (0,12)
+            //
+            // The height is calculated using barycentric interpolation:
+            // We start from h00 (bottom-left) and add:
+            //   - Horizontal contribution: fx * (h10 - h00)
+            //   - Vertical contribution:   fy * (h01 - h00)
+            //
+            // EXAMPLE CALCULATION for position (6,6):
+            //   height = 10.0 + 0.5 * (14.0 - 10.0) + 0.5 * (12.0 - 10.0)
+            //   height = 10.0 + 0.5 * 4.0 + 0.5 * 2.0
+            //   height = 10.0 + 2.0 + 1.0
+            //   height = 13.0
+            //
+            // This gives us the EXACT height on the flat triangle surface!
+            // =====================================================================================
+            return h00 + fx * (h10 - h00) + fy * (h01 - h00);
+        }
+        else
+        {
+            // =====================================================================================
+            // TRIANGLE 2 (Upper-right triangle)
+            // =====================================================================================
+            // This triangle uses vertices: (x1,y0), (x0,y1), (x1,y1)
+            // Or in our example: (12,0), (0,12), (12,12)
+            //
+            // For this triangle, we need to remap our coordinates:
+            // We measure from the opposite corner (1,1) back towards (0,0)
+            //   u = 1.0 - fx  (horizontal distance from right edge)
+            //   v = 1.0 - fy  (vertical distance from top edge)
+            //
+            // EXAMPLE CALCULATION for position (9,9) where fx=0.75, fy=0.75:
+            //   u = 1.0 - 0.75 = 0.25
+            //   v = 1.0 - 0.75 = 0.25
+            //   height = 18.0 + 0.25 * (12.0 - 18.0) + 0.25 * (14.0 - 18.0)
+            //   height = 18.0 + 0.25 * (-6.0) + 0.25 * (-4.0)
+            //   height = 18.0 - 1.5 - 1.0
+            //   height = 15.5
+            // =====================================================================================
+            float u = 1.0f - fx;
+            float v = 1.0f - fy;
+            return h11 + u * (h01 - h11) + v * (h10 - h11);
+        }
+
+        // ===========================================================================================
+        // WHY THIS WORKS - THE KEY INSIGHT:
+        // ===========================================================================================
+        // The mesh is made of FLAT TRIANGLES, not smooth surfaces!
+        // Each triangle is a flat plane in 3D space.
+        //
+        // VISUAL COMPARISON:
+        // What your heightmap has (lots of detail):
+        //      *
+        //     * *
+        //    *   *     <- Many height values
+        //   *     *
+        //  *       *
+        // *         *
+        //
+        // What LOD 6 mesh shows (simplified triangles):
+        //          /\
+        //         /  \
+        //        /    \      <- Just flat triangles!
+        //       /      \
+        //      /        \
+        //     /          \
+        //
+        // THE PROBLEM WE SOLVED:
+        // - Before: Objects were placed at the * height (exact heightmap value)
+        // - But: The mesh only shows the triangle surface /\
+        // - Result: Objects appeared floating above or sinking below the visible terrain!
+        // - Now: We calculate the exact height ON the triangle that players see
+        // ===========================================================================================
+    }
+
+    /// <summary>
+    /// Gets the interpolated normal that matches the LOD mesh triangulation.
+    /// </summary>
+    private static Vector3 GetLODInterpolatedNormal(float[,] heightMap, int x, int y, int lodFactor)
+    {
+        // ===========================================================================================
+        // CALCULATING NORMALS FOR LOD TERRAIN
+        // ===========================================================================================
+        // The normal vector tells us which direction the surface is facing.
+        // For LOD terrain, we need to calculate normals based on the interpolated heights,
+        // not the raw heightmap, to ensure objects are aligned with the visible surface.
+        //
+        // We sample the interpolated heights at neighboring positions and calculate
+        // the normal from those samples.
+        // ===========================================================================================
+
+        int mapWidth = heightMap.GetLength(0);
+        int mapHeight = heightMap.GetLength(1);
+
+        // Sample neighboring points using the LOD interpolation
+        // This ensures our normals match the actual triangle surfaces
+        float center = GetLODInterpolatedHeight(heightMap, x, y, lodFactor);
+        float left = (x > 0) ? GetLODInterpolatedHeight(heightMap, x - 1, y, lodFactor) : center;
+        float right = (x < mapWidth - 1) ? GetLODInterpolatedHeight(heightMap, x + 1, y, lodFactor) : center;
+        float down = (y > 0) ? GetLODInterpolatedHeight(heightMap, x, y - 1, lodFactor) : center;
+        float up = (y < mapHeight - 1) ? GetLODInterpolatedHeight(heightMap, x, y + 1, lodFactor) : center;
+
+        // Calculate normal from the interpolated heights
+        // The normal points perpendicular to the surface
+        return new Vector3(left - right, 2f, down - up).normalized;
+    }
+
     /// <summary>
     /// Calculates the surface normal using mesh data.
     /// </summary>
@@ -215,10 +428,7 @@ public static class ObjectSpawner
 
         // Calculate the size of the object (bounds size) and derive half of it to perform the overlap check
         Vector3 halfExtents = collider.bounds.extents;
-
-        // Add a small offset to position to avoid being inside the terrain
-        Vector3 checkPosition = position + Vector3.up * 0.1f;
-        Collider[] overlaps = Physics.OverlapBox(checkPosition, halfExtents, Quaternion.identity);
+        Collider[] overlaps = Physics.OverlapBox(position, halfExtents, Quaternion.identity);
 
         foreach (Collider overlap in overlaps)
         {
