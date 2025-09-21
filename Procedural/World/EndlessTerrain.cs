@@ -26,7 +26,7 @@ public class EndlessTerrain : MonoBehaviour
 
     [Tooltip("Maximum distance (in world units) from the viewer within which terrain chunks are displayed.")]
     [SerializeField]
-    public const float maxViewDst = 250;
+    public float maxViewDst = 250;
 
     [Tooltip("The object (e.g., player or camera) whose position determines terrain visibility.")]
     public Transform viewer;
@@ -82,7 +82,7 @@ public class EndlessTerrain : MonoBehaviour
             return;
         }
 
-        chunkSize = TerrainGenerator.chunkSize - 1;
+        chunkSize = mapGenerator.ChunkSize - 1;
         chunksVisibleInViewDst = Mathf.RoundToInt(maxViewDst / chunkSize);
 
         // Get scaleFactor and ensure it's not 0
@@ -96,7 +96,7 @@ public class EndlessTerrain : MonoBehaviour
         }
 
         if (enableDebugging)
-            Debug.Log($"EndlessTerrain initialized - ChunkSize: {chunkSize}, ScaleFactor: {scaleFactor}, ChunksVisible: {chunksVisibleInViewDst}");
+            Debug.Log($"EndlessTerrain initialized - ChunkSize: {chunkSize}, ScaleFactor: {scaleFactor}, ChunksVisible: {chunksVisibleInViewDst}, MaxViewDistance: {maxViewDst}");
     }
 
     void Update()
@@ -119,26 +119,25 @@ public class EndlessTerrain : MonoBehaviour
         int currentChunkCoordX = Mathf.RoundToInt(viewerPosition.x / chunkSize);
         int currentChunkCoordY = Mathf.RoundToInt(viewerPosition.y / chunkSize);
 
-        HashSet<Vector2> chunksToBeVisible = new HashSet<Vector2>();
-        // Iterate through chunks in view distance
+        // Calculate the effective chunk range based on both view distance and max chunks per side setting
+        int effectiveChunkRange = shouldHaveMaxChunkPerSide ?
+            Mathf.Min(chunksVisibleInViewDst, maxChunksPerSide) :
+            chunksVisibleInViewDst;
 
-        for (int yOffset = -chunksVisibleInViewDst; yOffset <= chunksVisibleInViewDst; yOffset++)
+        if (enableDebugging && Time.frameCount % 60 == 0) // Log every 60 frames to avoid spam
         {
-            for (int xOffset = -chunksVisibleInViewDst; xOffset <= chunksVisibleInViewDst; xOffset++)
+            Debug.Log($"Effective chunk range: {effectiveChunkRange} (chunksVisibleInViewDst: {chunksVisibleInViewDst}, maxChunksPerSide: {maxChunksPerSide}, shouldHaveMaxChunkPerSide: {shouldHaveMaxChunkPerSide})");
+        }
+
+        HashSet<Vector2> chunksToBeVisible = new HashSet<Vector2>();
+        // Iterate through chunks in effective range
+
+        for (int yOffset = -effectiveChunkRange; yOffset <= effectiveChunkRange; yOffset++)
+        {
+            for (int xOffset = -effectiveChunkRange; xOffset <= effectiveChunkRange; xOffset++)
             {
                 // Calculate the coordinates of the chunk being considered.
                 Vector2 viewedChunkCoord = new Vector2(currentChunkCoordX + xOffset, currentChunkCoordY + yOffset);
-
-                if (shouldHaveMaxChunkPerSide &&
-                // This condition ensures that the number of chunks generated or rendered does not exceed the maximum allowed per side.
-                // It checks if the absolute value of either the x or y coordinate of the chunk exceeds the limit set by 'maxChunksPerSide'.
-                // If either coordinate is outside the allowed range (greater than 'maxChunksPerSide'), the chunk is skipped to optimize performance,
-                // preventing the generation or rendering of chunks that are too far from the viewer's position.
-                // For example, if 'maxChunksPerSide' is 3, the system will only generate chunks within a 7x7 grid centered on the viewer (from -3 to 3 on both axes).
-                (Mathf.Abs(viewedChunkCoord.x) > maxChunksPerSide || Mathf.Abs(viewedChunkCoord.y) > maxChunksPerSide))
-                {
-                    continue;
-                }
 
                 chunksToBeVisible.Add(viewedChunkCoord);
 
@@ -160,7 +159,7 @@ public class EndlessTerrain : MonoBehaviour
         if (enableDebugging)
             Debug.Log($"Creating new chunk {count} at coord {coord}, chunkSize: {chunkSize}, scaleFactor: {scaleFactor}");
 
-        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, scaleFactor, transform, portalSettings, mobSettings, count, shouldUseHDRPShaders, enableDebugging);
+        TerrainChunk newChunk = new TerrainChunk(coord, chunkSize, scaleFactor, transform, portalSettings, mobSettings, count, shouldUseHDRPShaders, enableDebugging, maxViewDst);
         terrainChunkDictionary.Add(coord, newChunk);
         return newChunk;
     }
@@ -215,15 +214,16 @@ public class EndlessTerrain : MonoBehaviour
         private TerrainGenerator terrainGenerator;
         public float[,] heightmap;
 
-
         Vector2 globalOffset;
         int maxMobs;
+        float maxViewDistance;
         public Vector2 Position { get { return position; } }
 
-        public TerrainChunk(Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count, bool shouldUseHDRPShaders, bool enableDebugging)
+        public TerrainChunk(Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count, bool shouldUseHDRPShaders, bool enableDebugging, float maxViewDistance)
         {
             this.shouldUseHDRPShaders |= shouldUseHDRPShaders;
             this.enableDebugging = enableDebugging;
+            this.maxViewDistance = maxViewDistance;
 
             position = coord * size;
             bounds = new Bounds(position, Vector2.one * size);
@@ -298,7 +298,7 @@ public class EndlessTerrain : MonoBehaviour
             mobSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, terrainGenerator.ChunkSize, meshObject.transform, biomeObjectData.biomeMap);
 
             PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
-            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, TerrainGenerator.chunkSize, meshObject.transform, biomeObjectData.biomeMap);
+            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, mapGenerator.ChunkSize, meshObject.transform, biomeObjectData.biomeMap);
         }
 
         void OnTerrainDataReceived(DataStructure.TerrainData terrainData)
@@ -349,7 +349,7 @@ public class EndlessTerrain : MonoBehaviour
         public void UpdateTerrainChunk()
         {
             float viewerDstFromNearestEdge = Mathf.Sqrt(bounds.SqrDistance(viewerPosition));
-            bool visible = viewerDstFromNearestEdge <= maxViewDst;
+            bool visible = viewerDstFromNearestEdge <= maxViewDistance;
 
             SetVisible(visible);
         }

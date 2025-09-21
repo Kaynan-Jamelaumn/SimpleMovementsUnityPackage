@@ -5,24 +5,49 @@ using UnityEngine;
 using System.Threading;
 using System.Linq;
 using static DataStructure;
+
+/// <summary>
+/// Available terrain sizes for chunk generation.
+/// Values follow the pattern of (divisible number) + 1 for optimal LOD performance.
+/// </summary>
+public enum TerrainSize
+{
+    Small = 61,    // 60 + 1
+    Medium = 121,  // 120 + 1
+    Large = 181,   // 180 + 1
+    ExtraLarge = 241  // 240 + 1 (maximum size)
+}
+
 /// <summary>
 /// Generates terrain with customizable noise, textures, biomes, and objects.
 /// Supports multithreading for map, terrain, and biome object generation.
 /// </summary>
 public class TerrainGenerator : MonoBehaviour
 {
-    // Constants
+    [Header("Terrain Configuration")]
     /// <summary>
-    /// Fixed size of a terrain chunk.
+    /// Configurable size of a terrain chunk.
     /// </summary>
-    [Tooltip("Fixed size of a terrain chunk.")]
-    public const int chunkSize = 241;
+    [Tooltip("Size of the terrain chunk. Larger sizes provide more detail but require more processing.")]
+    [SerializeField] private TerrainSize terrainSize = TerrainSize.ExtraLarge;
 
     /// <summary>
-    /// Gets the size of a terrain chunk.
+    /// Fixed maximum size of a terrain chunk for backward compatibility.
     /// </summary>
-    [Tooltip("Property to get the terrain chunk size.")]
-    public int ChunkSize => chunkSize;
+    [Tooltip("Fixed maximum size of a terrain chunk for backward compatibility.")]
+    public static readonly int maxChunkSize = 241;
+
+    /// <summary>
+    /// Gets the current size of a terrain chunk based on the selected terrain size.
+    /// </summary>
+    [Tooltip("Property to get the current terrain chunk size.")]
+    public int ChunkSize => (int)terrainSize;
+
+    /// <summary>
+    /// Gets the maximum chunk size (for backward compatibility).
+    /// </summary>
+    [Tooltip("Property to get the maximum terrain chunk size.")]
+    public static int MaxChunkSize => maxChunkSize;
 
     [Header("Noise Configuration")]
     /// <summary>
@@ -157,6 +182,7 @@ public class TerrainGenerator : MonoBehaviour
     public float MinHeight { get => minHeight; set => minHeight = value; }
     public float MaxHeight { get => maxHeight; set => maxHeight = value; }
     public int LevelOfDetail { get => levelOfDetail; set => levelOfDetail = value; }
+    public TerrainSize TerrainSizeValue { get => terrainSize; set => terrainSize = value; }
 
     /// <summary>
     /// Updates the minimum and maximum height values based on the given height.
@@ -200,7 +226,7 @@ public class TerrainGenerator : MonoBehaviour
                 if (biomeObject.densityMap == null)
                 {
                     biomeObject.densityMap = ObjectSpawner.GenerateClusteredDensityMap(
-                        chunkSize, chunkSize,                          // Dimensions of the density map
+                        ChunkSize, ChunkSize,                          // Dimensions of the density map
                         biomeObject.clusterCount, biomeObject.clusterRadius,  // Cluster properties
                         clusterBaseFrequency, clusterAmplitude, scaleFactor // Frequency, amplitude, and scale for clustering
                     );
@@ -229,11 +255,11 @@ public class TerrainGenerator : MonoBehaviour
     /// <returns>A 2D array of Biome objects.</returns>
     public Biome[,] GenerateBiomeMap(Vector2 globalOffset, float[,] heightMap)
     {
-        Biome[,] biomeMap = new Biome[chunkSize, chunkSize];
+        Biome[,] biomeMap = new Biome[ChunkSize, ChunkSize];
 
-        for (int y = 0; y < chunkSize; y++)
+        for (int y = 0; y < ChunkSize; y++)
         {
-            for (int x = 0; x < chunkSize; x++)
+            for (int x = 0; x < ChunkSize; x++)
             {
                 Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
                 Biome chosenBiome = VoronoiBiomeGenerator.GetBiomeAtPosition(
@@ -463,3 +489,4 @@ public class TerrainGenerator : MonoBehaviour
     }
 
 }
+
