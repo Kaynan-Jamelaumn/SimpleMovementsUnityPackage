@@ -34,4 +34,30 @@ public class BiomeObject
 
     [Tooltip("Radius of each cluster of this object.")]
     public float clusterRadius = 50f;
+
+    [Header("Height Preferences")]
+    [Tooltip("Should this object use custom height preferences instead of biome defaults?")]
+    public bool useCustomHeightPreference = false;
+
+    [Tooltip("Preferred minimum height for this object (in world units).")]
+    public float preferredMinHeight = 0f;
+
+    [Tooltip("Optimal height where this object spawns most frequently (in world units).")]
+    public float preferredOptimalHeight = 50f;
+
+    [Tooltip("Preferred maximum height for this object (in world units).")]
+    public float preferredMaxHeight = 100f;
+
+    [Tooltip("How strict the height preference is. Higher values = more strict preference.")]
+    [Range(0.1f, 5f)]
+    public float heightPreferenceStrength = 1f;
+
+    [Header("Environmental Preferences")]
+    [Tooltip("Preferred distance from biome edges (0 = edge, 1 = center).")]
+    [Range(0f, 1f)]
+    public float biomeCenterPreference = 0.5f;
+
+    [Tooltip("How much this object avoids steep terrain (multiplier on slope threshold).")]
+    [Range(0.1f, 2f)]
+    public float slopeAvoidance = 1f;
 }

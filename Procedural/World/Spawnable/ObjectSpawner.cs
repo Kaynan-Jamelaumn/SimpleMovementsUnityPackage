@@ -35,7 +35,7 @@ public static class ObjectSpawner
                 continue;
 
             // Check if an object should be spawned based on a random probability roll
-            float adjustedProbability = AdjustSpawnProbability(biomeObject, x, y);
+            float adjustedProbability = AdjustSpawnProbability(biomeObject, x, y, worldPosition, heightMap, biomeDefinition);
             if (UnityEngine.Random.value * 100 >= adjustedProbability)
                 continue;
 
@@ -66,16 +66,94 @@ public static class ObjectSpawner
     /// If clustering is enabled for the given biome object, the spawn probability is adjusted using the density weight at the specified (x, y) position.
     /// The probability is amplified based on the square of the density weight.
     /// </remarks>
-    private static float AdjustSpawnProbability(BiomeObject biomeObject, int x, int y)
+    private static float AdjustSpawnProbability(BiomeObject biomeObject, int x, int y, Vector3 worldPosition, float[,] heightMap, BiomeInstance biomeDefinition)
     {
+        float baseProbability = biomeObject.probabilityToSpawn;
+
         if (!biomeObject.isClusterable)
-            return biomeObject.probabilityToSpawn;
-        // Adjust the probability to spawn based on clustering (if enabled)
+            return baseProbability;
+
+        // Existing clustering density
         float densityWeight = biomeObject.densityMap[x, y];
 
-        // Increase spawn probability near cluster centers by amplifying the density weight
-        return biomeObject.probabilityToSpawn * Mathf.Pow(densityWeight, 2);
+        // Height-based modulation - now uses per-object preferences
+        float heightModulation = CalculateHeightPreference(worldPosition.y, biomeObject, biomeDefinition.BiomePrefab);
+
+        // Biome edge distance modulation - uses object's center preference
+        float edgeModulation = CalculateBiomeEdgeModulation(worldPosition, heightMap.GetLength(0), biomeObject.biomeCenterPreference);
+
+        // Environmental noise for natural variation
+        float environmentalNoise = CalculateEnvironmentalNoise(worldPosition.x, worldPosition.z);
+
+        // Combine all modulation factors
+        float finalDensity = densityWeight * heightModulation * edgeModulation * environmentalNoise;
+
+        return baseProbability * Mathf.Pow(finalDensity, 1.5f);
     }
+
+    private static float CalculateHeightPreference(float currentHeight, BiomeObject biomeObject, Biome biome)
+    {
+        float optimalHeight, heightRange, preferenceStrength;
+
+        if (biomeObject.useCustomHeightPreference)
+        {
+            // Use object-specific height preferences
+            optimalHeight = biomeObject.preferredOptimalHeight;
+            float minHeight = biomeObject.preferredMinHeight;
+            float maxHeight = biomeObject.preferredMaxHeight;
+            heightRange = maxHeight - minHeight;
+            preferenceStrength = biomeObject.heightPreferenceStrength;
+        }
+        else
+        {
+            // Fall back to biome-based height preferences
+            optimalHeight = (biome.minHeight + biome.maxHeight) * 0.5f;
+            heightRange = biome.maxHeight - biome.minHeight;
+            preferenceStrength = 1f;
+        }
+
+        if (heightRange <= 0) return 1f;
+
+        // Gaussian distribution around optimal height with configurable strength
+        float normalizedDistance = Mathf.Abs(currentHeight - optimalHeight) / (heightRange * 0.5f);
+        return Mathf.Exp(-normalizedDistance * normalizedDistance * preferenceStrength);
+    }
+
+    private static float CalculateBiomeEdgeModulation(Vector3 worldPosition, int chunkSize, float centerPreference)
+    {
+        // Distance from chunk edges - objects avoid edges based on their center preference
+        float edgeDistance = Mathf.Min(
+            worldPosition.x % chunkSize,
+            worldPosition.z % chunkSize,
+            chunkSize - (worldPosition.x % chunkSize),
+            chunkSize - (worldPosition.z % chunkSize)
+        );
+
+        float normalizedDistance = edgeDistance / (chunkSize * 0.25f);
+
+        // Apply center preference: 0 = loves edges, 1 = loves center
+        float edgeModulation = Mathf.Lerp(1f, Mathf.Clamp01(normalizedDistance), centerPreference);
+
+        return edgeModulation;
+    }
+
+    private static float CalculateEnvironmentalNoise(float x, float z)
+    {
+        // Multi-octave noise for natural environmental variation
+        float noise = 0f;
+        float amplitude = 1f;
+        float frequency = 0.01f;
+
+        for (int i = 0; i < 3; i++)
+        {
+            noise += Mathf.PerlinNoise(x * frequency, z * frequency) * amplitude;
+            frequency *= 2f;
+            amplitude *= 0.5f;
+        }
+
+        return Mathf.Clamp01(0.5f + noise * 0.5f);
+    }
+
     /// <summary>
     /// Attempts to calculate the spawn position and surface normal for an object.
     /// </summary>
@@ -278,7 +356,7 @@ public static class ObjectSpawner
         // Each triangle is a flat plane in 3D space.
         //
         // VISUAL COMPARISON:
-        // What your heightmap has (lots of detail):
+        // the heightmap has (lots of detail):
         //      *
         //     * *
         //    *   *     <- Many height values
@@ -404,7 +482,10 @@ public static class ObjectSpawner
     /// </remarks>
     private static bool IsValidSpawnPosition(Vector3 position, Vector3 normal, BiomeObject biomeObject)
     {
-        return Vector3.Angle(Vector3.up, normal) <= biomeObject.slopeThreshold &&
+        // Apply slope avoidance modifier to the slope threshold
+        float adjustedSlopeThreshold = biomeObject.slopeThreshold * biomeObject.slopeAvoidance;
+
+        return Vector3.Angle(Vector3.up, normal) <= adjustedSlopeThreshold &&
                IsPositionFree(position, biomeObject.terrainObject);
     }
 
@@ -473,14 +554,15 @@ public static class ObjectSpawner
         NativeArray<float> densityMap = new NativeArray<float>(width * height, Allocator.TempJob);
 
         // Create and schedule the job
-        DensityMapJob densityMapJob = new DensityMapJob
+        EnhancedDensityMapJob densityMapJob = new EnhancedDensityMapJob
         {
             DensityMap = densityMap,
             ClusterCenters = clusterCenters,
             ClusterRadii = clusterRadii,
             BaseFrequency = baseFrequency,
             Amplitude = amplitude,
-            Width = width
+            Width = width,
+            Height = height
         };
 
         // The DensityMapJob struct is designed to calculate the density map by:
@@ -531,6 +613,102 @@ public static class ObjectSpawner
     /// </item>
     /// </list>
     /// </remarks>
+    public struct EnhancedDensityMapJob : IJobParallelFor
+    {
+        /// <summary>
+        /// The output density map, stored as a 1D array.
+        /// </summary>
+        [WriteOnly] public NativeArray<float> DensityMap;
+
+        /// <summary>
+        /// The coordinates of cluster centers, which define areas of increased density.
+        /// </summary>
+        [ReadOnly] public NativeArray<Vector2> ClusterCenters;
+
+        /// <summary>
+        /// The radii of influence for each cluster.
+        /// </summary>
+        [ReadOnly] public NativeArray<float> ClusterRadii;
+
+        /// <summary>
+        /// The frequency of Perlin noise for generating base density patterns. Higher values create finer noise details.
+        /// </summary>
+        public float BaseFrequency;
+
+        /// <summary>
+        /// The amplitude of Perlin noise, scaling its impact on density values. Larger values result in greater variations.
+        /// </summary>
+        public float Amplitude;
+
+        /// <summary>
+        /// The width of the density map, used for converting between 1D and 2D indexing.
+        /// </summary>
+        public int Width;
+
+        /// <summary>
+        /// The height of the density map.
+        /// </summary>
+        public int Height;
+
+        /// <summary>
+        /// Executes the job for each cell in the density map.
+        /// </summary>
+        /// <param name="index">The linear index of the cell in the 1D array.</param>
+        public void Execute(int index)
+        {
+            int x = index % Width; // Calculate x-coordinate
+            int y = index / Width; // Calculate y-coordinate
+
+            float maxDensity = 0f;
+
+            // Calculate density contribution from each cluster
+            for (int i = 0; i < ClusterCenters.Length; i++)
+            {
+                float distance = Vector2.Distance(new Vector2(x, y), ClusterCenters[i]);
+                if (distance < ClusterRadii[i]) //if the distance from the cluster center is less than the cluster radius(is inside the cluster area then...)
+                {
+                    // Enhanced clustering with multiple falloff curves for more natural distribution
+                    float normalizedDistance = distance / ClusterRadii[i];
+
+                    // Primary cluster density (quadratic falloff)
+                    float primaryDensity = math.pow(1 - normalizedDistance, 2);
+
+                    // Secondary density ring for more natural edges
+                    float secondaryDensity = math.sin((1 - normalizedDistance) * math.PI) * 0.3f;
+
+                    float combinedDensity = primaryDensity + secondaryDensity;
+                    maxDensity = math.max(maxDensity, combinedDensity);
+                }
+            }
+
+            // Multi-octave Perlin noise for more natural base terrain density
+            float baseDensity = 0f;
+            float currentAmplitude = Amplitude;
+            float currentFrequency = BaseFrequency;
+
+            for (int octave = 0; octave < 4; octave++)
+            {
+                float noiseValue = Mathf.PerlinNoise(x * currentFrequency, y * currentFrequency);
+                baseDensity += noiseValue * currentAmplitude;
+
+                currentFrequency *= 2.1f;  // Slightly non-integer for less regular patterns
+                currentAmplitude *= 0.6f;   // Reduce amplitude for each octave
+            }
+
+            // Add ridged noise for more varied terrain features
+            float ridgedNoise = 1.0f - math.abs(Mathf.PerlinNoise(x * BaseFrequency * 0.5f, y * BaseFrequency * 0.5f) * 2.0f - 1.0f);
+            baseDensity += ridgedNoise * Amplitude * 0.3f;
+
+            // Distance-based modulation for edge softening
+            float edgeDistance = math.min(math.min(x, Width - x), math.min(y, Height - y));
+            float edgeModulation = math.smoothstep(0, Width * 0.1f, edgeDistance);
+
+            // Calculate the final density value and clamp it between 0 and 1
+            float finalDensity = (maxDensity + baseDensity * 0.4f) * edgeModulation;
+            DensityMap[index] = 1 + math.clamp(finalDensity, 0, 1);
+        }
+    }
+
     public struct DensityMapJob : IJobParallelFor
     {
         /// <summary>
