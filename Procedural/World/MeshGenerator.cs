@@ -129,6 +129,10 @@ public static class MeshGenerator
         float minHeight = float.MaxValue;
         float maxHeight = float.MinValue;
 
+        // Calculate UV scale based on world size to maintain consistent texture density
+        // This ensures textures don't get stretched when terrain size changes
+        float uvScale = GetTextureScale(terrainGenerator);
+
         // Generate vertices and UV coordinates based on the height map.
         for (int y = 0; y <= meshHeight; y++)
         {
@@ -156,9 +160,11 @@ public static class MeshGenerator
                     heightMapY * terrainGenerator.ScaleFactor
                 );
 
+                // Fixed UV calculation: Use world coordinates scaled by uvScale instead of normalized mesh coordinates
+                // This prevents texture stretching and maintains consistent texture density across different terrain sizes
                 meshData.uvs[vertexIndex] = new Vector2(
-                    (float)x / meshWidth,
-                    (float)y / meshHeight
+                    (heightMapX * terrainGenerator.ScaleFactor) * uvScale,
+                    (heightMapY * terrainGenerator.ScaleFactor) * uvScale
                 );
 
                 // Add triangles if within bounds of the mesh grid.
@@ -197,10 +203,30 @@ public static class MeshGenerator
 
         if (enableDebugging)
         {
-            Debug.Log($"Mesh generation complete - Vertices: {vertexIndex}, Triangles: {triangleIndex / 3}, Height range: [{minHeight}, {maxHeight}]");
+            Debug.Log($"Mesh generation complete - Vertices: {vertexIndex}, Triangles: {triangleIndex / 3}, Height range: [{minHeight}, {maxHeight}], UV Scale: {uvScale}");
             Debug.Log($"First vertex: {meshData.vertices[0]}, Last vertex: {meshData.vertices[vertexIndex - 1]}");
         }
 
         return meshData;
+    }
+
+    /// <summary>
+    /// Calculates the appropriate texture scale based on terrain size to maintain consistent texture density.
+    /// Smaller terrains get higher UV scale (more texture repetition), larger terrains get lower UV scale.
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing size information.</param>
+    /// <returns>UV scale factor for texture coordinates.</returns>
+    private static float GetTextureScale(TerrainGenerator terrainGenerator)
+    {
+        // Base texture scale - adjust this value to control overall texture density
+        // Higher values = more texture repetition (smaller texture appearance)
+        // Lower values = less texture repetition (larger texture appearance)
+        float baseTextureScale = 0.01f;
+
+        // Scale factor based on terrain size to maintain consistent texture density
+        // Larger terrains need smaller UV scale to prevent over-repetition
+        float sizeScale = (float)TerrainGenerator.MaxChunkSize / (float)terrainGenerator.ChunkSize;
+
+        return baseTextureScale * sizeScale;
     }
 }

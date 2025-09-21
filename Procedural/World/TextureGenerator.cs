@@ -5,14 +5,14 @@
 /// This class supports different approaches for texture assignment and ensures that the correct shaders and materials are used.
 /// </summary>
 public class TextureGenerator
-{    
+{
     /// <summary>
-     /// Assigns four individual textures (for different biome layers) and a splat map to a material on a mesh renderer.
-     /// This method is useful for assigning a set of textures to a terrain material using a specific shader.
-     /// </summary>
-     /// <param name="splatMap">A <see cref="Texture2D"/> representing the splat map used for terrain blending.</param>
-     /// <param name="terrainGenerator">An instance of <see cref="TerrainGenerator"/> containing biome definitions and terrain data.</param>
-     /// <param name="meshRenderer">The <see cref="MeshRenderer"/> to which the textures will be applied.</param>
+    /// Assigns four individual textures (for different biome layers) and a splat map to a material on a mesh renderer.
+    /// This method is useful for assigning a set of textures to a terrain material using a specific shader.
+    /// </summary>
+    /// <param name="splatMap">A <see cref="Texture2D"/> representing the splat map used for terrain blending.</param>
+    /// <param name="terrainGenerator">An instance of <see cref="TerrainGenerator"/> containing biome definitions and terrain data.</param>
+    /// <param name="meshRenderer">The <see cref="MeshRenderer"/> to which the textures will be applied.</param>
     public static void AssignTexture4Textures(Texture2D splatMap, TerrainGenerator terrainGenerator, MeshRenderer meshRenderer)
     {
         Material mat = new Material(Shader.Find("Custom/TerrainSplatMapShader"));
@@ -37,7 +37,7 @@ public class TextureGenerator
         string shaderToUse = shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP";
         // Find the shader used for terrain splat maps
         Shader cachedShader = Shader.Find("Custom/TerrainSplat" + shaderToUse);
-           // "MapShaderHDRP"); ;
+        // "MapShaderHDRP"); ;
         if (cachedShader == null)
         {
             Debug.LogError("Failed to find shader: Custom/TerrainSplatMapShaderHDRP");
@@ -60,8 +60,11 @@ public class TextureGenerator
             biomeTextures[i] = terrainGenerator.BiomeDefinitions[i].BiomePrefab.texture;
         }
 
-        // Create a texture array for the biome textures with specified dimensions and format
-        Texture2DArray textureArray = CreateTextureArray(biomeTextures, 1024, 1024, TextureFormat.RGBA32);
+        // Calculate texture resolution based on terrain size for consistent quality
+        int textureResolution = GetOptimalTextureResolution(terrainGenerator);
+
+        // Create a texture array for the biome textures with calculated dimensions and format
+        Texture2DArray textureArray = CreateTextureArray(biomeTextures, textureResolution, textureResolution, TextureFormat.RGBA32);
 
         // Create a texture array for the splat maps using the provided splat maps array
         Texture2DArray splatMapArray = CreateTextureArray(splatMaps, splatMaps[0].width, splatMaps[0].height, TextureFormat.RGBA32, false);
@@ -77,6 +80,27 @@ public class TextureGenerator
         // Apply the material to the mesh renderer
         meshRenderer.sharedMaterial = mat;
     }
+
+    /// <summary>
+    /// Calculates the optimal texture resolution based on terrain size to prevent stretching.
+    /// Larger terrains get higher resolution textures to maintain visual quality.
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing size information.</param>
+    /// <returns>Optimal texture resolution for the current terrain size.</returns>
+    private int GetOptimalTextureResolution(TerrainGenerator terrainGenerator)
+    {
+        // Base resolution for the largest terrain size
+        int baseResolution = 1024;
+
+        // Scale resolution based on terrain size
+        // Larger terrains get higher resolution to prevent stretching
+        float sizeRatio = (float)terrainGenerator.ChunkSize / (float)TerrainGenerator.MaxChunkSize;
+
+        // Calculate resolution (minimum 512, maximum 2048)
+        int calculatedResolution = Mathf.RoundToInt(baseResolution * Mathf.Sqrt(sizeRatio));
+        return Mathf.Clamp(calculatedResolution, 512, 2048);
+    }
+
     /// <summary>
     /// Creates a <see cref="Texture2DArray"/> from an array of textures. This method standardizes the textures and copies them into a texture array.
     /// </summary>
@@ -136,8 +160,4 @@ public class TextureGenerator
 
         return standardizedTexture;
     }
-
-
-
-
 }
