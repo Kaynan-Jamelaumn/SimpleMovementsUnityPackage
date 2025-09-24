@@ -21,8 +21,16 @@ public class Biome : ScriptableObject
     /// <summary>Maximum height value for the biome. Used to define its elevation range.</summary>
     public float maxHeight;
 
-    /// <summary>Texture associated with this biome, used for rendering its appearance.</summary>
+    /// <summary>Primary texture associated with this biome, used for rendering its appearance.</summary>
     public Texture2D texture;
+
+    /// <summary>
+    /// Optional: Additional texture variations for this biome to reduce repetition. 
+    /// Leave empty to use only the primary texture (original behavior).
+    /// Only used when EnableTextureVariations is enabled in TerrainGenerator.
+    /// </summary>
+    [Tooltip("Optional: Additional texture variations for this biome. Leave empty for original behavior.")]
+    public Texture2D[] textureVariations;
 
     /// <summary>Amplitude of height variations within the biome.</summary>
     public float amplitude;
@@ -40,5 +48,60 @@ public class Biome : ScriptableObject
     [Range(0, 1)]
     public float persistence = 1;
 
+    /// <summary>
+    /// Gets a random texture variation for this biome, including the primary texture.
+    /// Returns the primary texture if no variations are defined or texture variations are disabled.
+    /// Only used internally when texture variations are enabled.
+    /// </summary>
+    /// <param name="seed">Seed for consistent random selection per chunk.</param>
+    /// <returns>A texture variation for this biome.</returns>
+    public Texture2D GetRandomTextureVariation(int seed = 0)
+    {
+        // If no variations array exists or is empty, return primary texture (original behavior)
+        if (textureVariations == null || textureVariations.Length == 0)
+        {
+            return texture;
+        }
 
+        // Create a list including the primary texture and all variations
+        List<Texture2D> allTextures = new List<Texture2D> { texture };
+        foreach (var variation in textureVariations)
+        {
+            if (variation != null)
+            {
+                allTextures.Add(variation);
+            }
+        }
+
+        // If only primary texture exists, return it
+        if (allTextures.Count == 1)
+        {
+            return texture;
+        }
+
+        // Use seed for consistent random selection
+        System.Random random = new System.Random(seed);
+        int randomIndex = random.Next(0, allTextures.Count);
+        return allTextures[randomIndex];
+    }
+
+    /// <summary>
+    /// Gets the total number of texture variations including the primary texture.
+    /// Returns 1 if no variations are defined (original behavior).
+    /// </summary>
+    /// <returns>Total number of available textures for this biome.</returns>
+    public int GetTextureVariationCount()
+    {
+        int count = 1; // Primary texture always counts
+
+        if (textureVariations != null)
+        {
+            foreach (var variation in textureVariations)
+            {
+                if (variation != null) count++;
+            }
+        }
+
+        return count;
+    }
 }

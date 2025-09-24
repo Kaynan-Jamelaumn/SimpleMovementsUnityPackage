@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System.Collections.Generic;
 /// <summary>
 /// The <see cref="TextureGenerator"/> class is responsible for managing texture assignments for terrain rendering.
 /// It handles the creation and assignment of texture arrays to materials, including biome textures and splat maps.
@@ -28,19 +29,21 @@ public class TextureGenerator
     /// <summary>
     /// This method assigns texture arrays to a material, including biome textures and splat maps, to a mesh renderer.
     /// It ensures that the correct shader is used, and creates texture arrays for both the biome textures and splat maps.
+    /// Supports texture variations when enabled in TerrainGenerator.
     /// </summary>
     /// <param name="splatMaps">An array of <see cref="Texture2D"/> representing the splat maps used for terrain blending.</param>
     /// <param name="terrainGenerator">An instance of <see cref="TerrainGenerator"/> containing biome definitions and terrain data.</param>
     /// <param name="meshRenderer">The <see cref="MeshRenderer"/> to which the textures will be applied.</param>
+    /// <param name="shouldUseHDRPShader">Whether to use HDRP or URP shader.</param>
     public void AssignTexture(Texture2D[] splatMaps, TerrainGenerator terrainGenerator, MeshRenderer meshRenderer, bool shouldUseHDRPShader)
     {
         string shaderToUse = shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP";
         // Find the shader used for terrain splat maps
         Shader cachedShader = Shader.Find("Custom/TerrainSplat" + shaderToUse);
-        // "MapShaderHDRP"); ;
+
         if (cachedShader == null)
         {
-            Debug.LogError("Failed to find shader: Custom/TerrainSplatMapShaderHDRP");
+            Debug.LogError("Failed to find shader: Custom/TerrainSplat" + shaderToUse);
             return;
         }
 
@@ -52,19 +55,25 @@ public class TextureGenerator
             mat = new Material(cachedShader);
         }
 
-        // Create texture array for biome textures based on terrain generator's biome definitions
-        Texture2D[] biomeTextures = new Texture2D[terrainGenerator.BiomeDefinitions.Length];
-        for (int i = 0; i < terrainGenerator.BiomeDefinitions.Length; i++)
+        // Create texture array - use variations if enabled, otherwise use original approach
+        List<Texture2D> biomeTextures;
+
+        if (terrainGenerator.EnableTextureVariations)
         {
-            // Populate the biomeTextures array with textures from the terrain generator's biome definitions
-            biomeTextures[i] = terrainGenerator.BiomeDefinitions[i].BiomePrefab.texture;
+            // ENHANCED PATH: Include texture variations
+            biomeTextures = CreateBiomeTextureListWithVariations(terrainGenerator);
+        }
+        else
+        {
+            // ORIGINAL PATH: Only primary textures
+            biomeTextures = CreateBiomeTextureListOriginal(terrainGenerator);
         }
 
         // Calculate texture resolution based on terrain size for consistent quality
         int textureResolution = GetOptimalTextureResolution(terrainGenerator);
 
         // Create a texture array for the biome textures with calculated dimensions and format
-        Texture2DArray textureArray = CreateTextureArray(biomeTextures, textureResolution, textureResolution, TextureFormat.RGBA32);
+        Texture2DArray textureArray = CreateTextureArray(biomeTextures.ToArray(), textureResolution, textureResolution, TextureFormat.RGBA32);
 
         // Create a texture array for the splat maps using the provided splat maps array
         Texture2DArray splatMapArray = CreateTextureArray(splatMaps, splatMaps[0].width, splatMaps[0].height, TextureFormat.RGBA32, false);
@@ -74,11 +83,81 @@ public class TextureGenerator
         mat.SetTexture("_SplatMaps", splatMapArray);
 
         // Set the length of the texture array and the count of splat maps as material properties
-        mat.SetInt("_TextureArrayLength", terrainGenerator.BiomeDefinitions.Length);
+        mat.SetInt("_TextureArrayLength", biomeTextures.Count);
         mat.SetInt("_SplatMapCount", splatMaps.Length);
+        mat.SetInt("_BiomeCount", terrainGenerator.BiomeDefinitions.Length);
+
+        // Set shader enhancement properties only if enabled
+        if (terrainGenerator.EnableShaderEnhancements)
+        {
+            mat.SetFloat("_UVRotationStrength", terrainGenerator.ShaderUVRotationStrength);
+            mat.SetFloat("_UVScaleVariation", terrainGenerator.ShaderUVScaleVariation);
+            mat.SetFloat("_TextureBlendSharpness", terrainGenerator.ShaderTextureBlendSharpness);
+        }
+        else
+        {
+            // Set default values for shader properties when enhancements are disabled
+            mat.SetFloat("_UVRotationStrength", 0f);
+            mat.SetFloat("_UVScaleVariation", 1f);
+            mat.SetFloat("_TextureBlendSharpness", 1f);
+        }
 
         // Apply the material to the mesh renderer
         meshRenderer.sharedMaterial = mat;
+    }
+
+    /// <summary>
+    /// Creates the original biome texture list (primary textures only).
+    /// Used when texture variations are disabled.
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing biome definitions.</param>
+    /// <returns>List of primary biome textures.</returns>
+    private List<Texture2D> CreateBiomeTextureListOriginal(TerrainGenerator terrainGenerator)
+    {
+        List<Texture2D> textures = new List<Texture2D>();
+
+        foreach (var biomeDefinition in terrainGenerator.BiomeDefinitions)
+        {
+            textures.Add(biomeDefinition.BiomePrefab.texture);
+        }
+
+        return textures;
+    }
+
+    /// <summary>
+    /// Creates a comprehensive list of all biome textures including variations.
+    /// Used when texture variations are enabled.
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing biome definitions.</param>
+    /// <returns>List of all textures including variations.</returns>
+    private List<Texture2D> CreateBiomeTextureListWithVariations(TerrainGenerator terrainGenerator)
+    {
+        List<Texture2D> allTextures = new List<Texture2D>();
+
+        // First pass: Add primary textures to maintain base biome mapping
+        foreach (var biomeDefinition in terrainGenerator.BiomeDefinitions)
+        {
+            Biome biome = biomeDefinition.BiomePrefab;
+            allTextures.Add(biome.texture);
+        }
+
+        // Second pass: Add texture variations if they exist
+        foreach (var biomeDefinition in terrainGenerator.BiomeDefinitions)
+        {
+            Biome biome = biomeDefinition.BiomePrefab;
+            if (biome.textureVariations != null)
+            {
+                foreach (var variation in biome.textureVariations)
+                {
+                    if (variation != null)
+                    {
+                        allTextures.Add(variation);
+                    }
+                }
+            }
+        }
+
+        return allTextures;
     }
 
     /// <summary>

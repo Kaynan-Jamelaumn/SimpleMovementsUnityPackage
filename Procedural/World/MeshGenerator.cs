@@ -100,8 +100,9 @@ public static class MeshGenerator
     /// <param name="heightMap">A 2D array representing the height values of the terrain.</param>
     /// <param name="lod">The level of detail, where higher values simplify the mesh.</param>
     /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
+    /// <param name="globalOffset">Global offset of the chunk for UV variation calculations (only used if texture variations enabled).</param>
     /// <returns>A <see cref="MeshData"/> object containing the generated mesh data.</returns>
-    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0, bool enableDebugging = false)
+    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0, bool enableDebugging = false, Vector2 globalOffset = default)
     {
         // HeightMap is (ChunkSize+1) x (ChunkSize+1) = 242x242
         int mapWidth = heightMap.GetLength(0);
@@ -111,7 +112,6 @@ public static class MeshGenerator
             Debug.Log($"GenerateTerrainMesh - HeightMap size: {mapWidth}x{mapHeight}, ChunkSize: {terrainGenerator.ChunkSize}, LOD: {lod}, ScaleFactor: {terrainGenerator.ScaleFactor}");
 
         // LOD factor determines the step size for vertices. Higher LOD skips more vertices.
-        // LOD factor é calculado como um múltiplo de 2 para LODs acima de 1, e 1 caso contrário.
         int lodFactor = lod > 0 ? lod * 2 : 1;
 
         // Use the actual heightmap dimensions for mesh generation
@@ -130,8 +130,16 @@ public static class MeshGenerator
         float maxHeight = float.MinValue;
 
         // Calculate UV scale based on world size to maintain consistent texture density
-        // This ensures textures don't get stretched when terrain size changes
         float uvScale = GetTextureScale(terrainGenerator);
+
+        // Calculate chunk-specific UV variations only if texture variations are enabled
+        UVVariationData uvVariation = default;
+        bool useVariations = terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
+
+        if (useVariations)
+        {
+            uvVariation = CalculateUVVariation(terrainGenerator, globalOffset);
+        }
 
         // Generate vertices and UV coordinates based on the height map.
         for (int y = 0; y <= meshHeight; y++)
@@ -160,15 +168,46 @@ public static class MeshGenerator
                     heightMapY * terrainGenerator.ScaleFactor
                 );
 
-                // Fixed UV calculation: Use world coordinates scaled by uvScale instead of normalized mesh coordinates
-                // This prevents texture stretching and maintains consistent texture density across different terrain sizes
-                meshData.uvs[vertexIndex] = new Vector2(
-                    (heightMapX * terrainGenerator.ScaleFactor) * uvScale,
-                    (heightMapY * terrainGenerator.ScaleFactor) * uvScale
-                );
+                // Calculate UV coordinates - with or without variations based on toggle
+                Vector2 finalUV;
+
+                if (useVariations)
+                {
+                    // ENHANCED PATH: Apply all texture variation features
+                    Vector2 baseUV = new Vector2(
+                        (heightMapX * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier,
+                        (heightMapY * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier
+                    );
+
+                    // Apply noise-based UV offset for natural variation
+                    if (terrainGenerator.EnableUVNoise)
+                    {
+                        float worldX = globalOffset.x + heightMapX;
+                        float worldY = globalOffset.y + heightMapY;
+                        Vector2 noiseOffset = CalculateUVNoiseOffset(worldX, worldY, terrainGenerator.UVNoiseScale, terrainGenerator.UVNoiseStrength);
+                        baseUV += noiseOffset;
+                    }
+
+                    // Apply chunk-specific UV rotation to reduce repetition
+                    if (terrainGenerator.EnableUVRotation)
+                    {
+                        baseUV = RotateUV(baseUV, uvVariation.rotationAngle, uvVariation.rotationCenter);
+                    }
+
+                    finalUV = baseUV;
+                }
+                else
+                {
+                    // ORIGINAL PATH: Standard UV calculation without variations
+                    finalUV = new Vector2(
+                        (heightMapX * terrainGenerator.ScaleFactor) * uvScale,
+                        (heightMapY * terrainGenerator.ScaleFactor) * uvScale
+                    );
+                }
+
+                meshData.uvs[vertexIndex] = finalUV;
 
                 // Add triangles if within bounds of the mesh grid.
-                // Verify if we're still in the bounds of the mesh
                 if (x < meshWidth && y < meshHeight)
                 {
                     int topLeft = y * (meshWidth + 1) + x;
@@ -204,10 +243,92 @@ public static class MeshGenerator
         if (enableDebugging)
         {
             Debug.Log($"Mesh generation complete - Vertices: {vertexIndex}, Triangles: {triangleIndex / 3}, Height range: [{minHeight}, {maxHeight}], UV Scale: {uvScale}");
+            if (useVariations)
+            {
+                Debug.Log($"UV Variation - Rotation: {uvVariation.rotationAngle}, Scale: {uvVariation.scaleMultiplier}");
+            }
             Debug.Log($"First vertex: {meshData.vertices[0]}, Last vertex: {meshData.vertices[vertexIndex - 1]}");
         }
 
         return meshData;
+    }
+
+    /// <summary>
+    /// Calculates UV variation parameters for a chunk to reduce texture repetition.
+    /// Only called when texture variations are enabled.
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing settings.</param>
+    /// <param name="globalOffset">Global offset of the chunk.</param>
+    /// <returns>UV variation data for the chunk.</returns>
+    private static UVVariationData CalculateUVVariation(TerrainGenerator terrainGenerator, Vector2 globalOffset)
+    {
+        UVVariationData variation = new UVVariationData();
+
+        // Use global offset to create consistent but varied values per chunk
+        int chunkSeed = Mathf.FloorToInt(globalOffset.x * 0.1f) + Mathf.FloorToInt(globalOffset.y * 0.1f) * 1000;
+        System.Random chunkRandom = new System.Random(chunkSeed);
+
+        // Calculate random rotation angle for this chunk
+        if (terrainGenerator.EnableUVRotation)
+        {
+            variation.rotationAngle = (float)(chunkRandom.NextDouble() * 360.0);
+            variation.rotationCenter = new Vector2(0.5f, 0.5f); // Center of UV space
+        }
+
+        // Calculate random scale multiplier for this chunk
+        if (terrainGenerator.EnableTextureScaleVariation)
+        {
+            float scaleRange = terrainGenerator.TextureScaleVariationRange;
+            variation.scaleMultiplier = 1.0f + ((float)chunkRandom.NextDouble() - 0.5f) * 2.0f * scaleRange;
+            variation.scaleMultiplier = Mathf.Clamp(variation.scaleMultiplier, 0.1f, 3.0f);
+        }
+        else
+        {
+            variation.scaleMultiplier = 1.0f;
+        }
+
+        return variation;
+    }
+
+    /// <summary>
+    /// Calculates noise-based UV offset for natural texture variation.
+    /// </summary>
+    /// <param name="worldX">World X coordinate.</param>
+    /// <param name="worldY">World Y coordinate.</param>
+    /// <param name="noiseScale">Scale of the noise pattern.</param>
+    /// <param name="noiseStrength">Strength of the offset.</param>
+    /// <returns>UV offset vector.</returns>
+    private static Vector2 CalculateUVNoiseOffset(float worldX, float worldY, float noiseScale, float noiseStrength)
+    {
+        float offsetX = (Mathf.PerlinNoise(worldX * noiseScale, worldY * noiseScale) - 0.5f) * noiseStrength;
+        float offsetY = (Mathf.PerlinNoise(worldX * noiseScale + 100f, worldY * noiseScale + 100f) - 0.5f) * noiseStrength;
+        return new Vector2(offsetX, offsetY);
+    }
+
+    /// <summary>
+    /// Rotates UV coordinates around a center point.
+    /// </summary>
+    /// <param name="uv">Original UV coordinates.</param>
+    /// <param name="angleDegrees">Rotation angle in degrees.</param>
+    /// <param name="center">Center point for rotation.</param>
+    /// <returns>Rotated UV coordinates.</returns>
+    private static Vector2 RotateUV(Vector2 uv, float angleDegrees, Vector2 center)
+    {
+        float angleRadians = angleDegrees * Mathf.Deg2Rad;
+        float cos = Mathf.Cos(angleRadians);
+        float sin = Mathf.Sin(angleRadians);
+
+        // Translate to origin
+        Vector2 translated = uv - center;
+
+        // Rotate
+        Vector2 rotated = new Vector2(
+            translated.x * cos - translated.y * sin,
+            translated.x * sin + translated.y * cos
+        );
+
+        // Translate back
+        return rotated + center;
     }
 
     /// <summary>
@@ -228,5 +349,22 @@ public static class MeshGenerator
         float sizeScale = (float)TerrainGenerator.MaxChunkSize / (float)terrainGenerator.ChunkSize;
 
         return baseTextureScale * sizeScale;
+    }
+
+    /// <summary>
+    /// Data structure for UV variation parameters per chunk.
+    /// </summary>
+    private struct UVVariationData
+    {
+        public float rotationAngle;
+        public Vector2 rotationCenter;
+        public float scaleMultiplier;
+
+        public UVVariationData(float rotationAngle = 0f, Vector2 rotationCenter = default, float scaleMultiplier = 1f)
+        {
+            this.rotationAngle = rotationAngle;
+            this.rotationCenter = rotationCenter;
+            this.scaleMultiplier = scaleMultiplier;
+        }
     }
 }

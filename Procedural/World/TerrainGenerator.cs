@@ -99,6 +99,77 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Determines if terrain textures are based on Voronoi points.")]
     [SerializeField] private bool terrainTextureBasedOnVoronoiPoints = true;
 
+    [Header("Texture Variation Settings")]
+    /// <summary>
+    /// Master toggle for all texture variation features. When OFF, uses original code path.
+    /// </summary>
+    [Tooltip("Master toggle for all texture variation features. When OFF, uses original code path exactly as before.")]
+    [SerializeField] private bool enableTextureVariations = false;
+
+    [Header("UV Rotation (Requires Texture Variations)")]
+    /// <summary>
+    /// Enable random UV rotation per chunk to reduce texture repetition.
+    /// </summary>
+    [Tooltip("Enable random UV rotation per chunk to reduce texture repetition.")]
+    [SerializeField] private bool enableUVRotation = false;
+
+    [Header("UV Noise Offset (Requires Texture Variations)")]
+    /// <summary>
+    /// Enable noise-based UV offset for additional texture variation.
+    /// </summary>
+    [Tooltip("Enable noise-based UV offset for additional texture variation.")]
+    [SerializeField] private bool enableUVNoise = false;
+
+    /// <summary>
+    /// Strength of the noise-based UV offset.
+    /// </summary>
+    [Tooltip("Strength of the noise-based UV offset.")]
+    [SerializeField][Range(0f, 1f)] private float uvNoiseStrength = 0.3f;
+
+    /// <summary>
+    /// Scale of the noise pattern used for UV offset.
+    /// </summary>
+    [Tooltip("Scale of the noise pattern used for UV offset.")]
+    [SerializeField] private float uvNoiseScale = 0.1f;
+
+    [Header("Texture Scale Variation (Requires Texture Variations)")]
+    /// <summary>
+    /// Enable random texture scale variation per chunk.
+    /// </summary>
+    [Tooltip("Enable random texture scale variation per chunk.")]
+    [SerializeField] private bool enableTextureScaleVariation = false;
+
+    /// <summary>
+    /// Range of texture scale variation (multiplier).
+    /// </summary>
+    [Tooltip("Range of texture scale variation (multiplier).")]
+    [SerializeField][Range(0.1f, 2f)] private float textureScaleVariationRange = 0.3f;
+
+    [Header("Shader-Based Enhancements (Requires Texture Variations)")]
+    /// <summary>
+    /// Enable advanced shader-based texture blending and variations.
+    /// </summary>
+    [Tooltip("Enable advanced shader-based texture blending and variations.")]
+    [SerializeField] private bool enableShaderEnhancements = false;
+
+    /// <summary>
+    /// Strength of UV rotation in shader (0-1).
+    /// </summary>
+    [Tooltip("Strength of UV rotation in shader (0-1).")]
+    [SerializeField][Range(0f, 1f)] private float shaderUVRotationStrength = 0.5f;
+
+    /// <summary>
+    /// Scale variation for textures in shader.
+    /// </summary>
+    [Tooltip("Scale variation for textures in shader.")]
+    [SerializeField][Range(0.1f, 3f)] private float shaderUVScaleVariation = 1.2f;
+
+    /// <summary>
+    /// Texture blend sharpness in shader.
+    /// </summary>
+    [Tooltip("Texture blend sharpness in shader.")]
+    [SerializeField][Range(1f, 10f)] private float shaderTextureBlendSharpness = 4f;
+
     [Header("Voronoi Noise Configuration")]
     /// <summary>
     /// Number of Voronoi points to generate for terrain features.
@@ -157,12 +228,6 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Amplitude for object clustering, affecting density variations.")]
     [SerializeField] private float clusterAmplitude = 1f;
 
-    /// <summary>
-    /// Intensity of object clustering, controlling grouping strength.
-    /// </summary>
-    [Tooltip("Intensity of object clustering, controlling grouping strength.")]
-    // [SerializeField] private float clusteringIntensity = 1f;
-
     // Private fields
     private float[,] heightMap;
 
@@ -183,6 +248,19 @@ public class TerrainGenerator : MonoBehaviour
     public float MaxHeight { get => maxHeight; set => maxHeight = value; }
     public int LevelOfDetail { get => levelOfDetail; set => levelOfDetail = value; }
     public TerrainSize TerrainSizeValue { get => terrainSize; set => terrainSize = value; }
+
+    // Texture Variation Properties (only active when enableTextureVariations is true)
+    public bool EnableTextureVariations => enableTextureVariations;
+    public bool EnableUVRotation => enableTextureVariations && enableUVRotation;
+    public bool EnableUVNoise => enableTextureVariations && enableUVNoise;
+    public float UVNoiseStrength => uvNoiseStrength;
+    public float UVNoiseScale => uvNoiseScale;
+    public bool EnableTextureScaleVariation => enableTextureVariations && enableTextureScaleVariation;
+    public float TextureScaleVariationRange => textureScaleVariationRange;
+    public bool EnableShaderEnhancements => enableTextureVariations && enableShaderEnhancements;
+    public float ShaderUVRotationStrength => shaderUVRotationStrength;
+    public float ShaderUVScaleVariation => shaderUVScaleVariation;
+    public float ShaderTextureBlendSharpness => shaderTextureBlendSharpness;
 
     /// <summary>
     /// Updates the minimum and maximum height values based on the given height.
@@ -213,9 +291,6 @@ public class TerrainGenerator : MonoBehaviour
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
         terrainDataThreadInfoQueue = new Queue<MapThreadInfo<DataStructure.TerrainData>>();
         biomeObjectDataThreadInfoQueue = new Queue<MapThreadInfo<BiomeObjectData>>();
-
-        // Initialize Voronoi cache with a seed value.
-        //VoronoiCache.Instance.Initialize(VoronoiSeed);
 
         // Precompute density maps for each biome object in the biome definitions.
         foreach (BiomeInstance biomeInstance in biomeDefinitions)
@@ -335,7 +410,15 @@ public class TerrainGenerator : MonoBehaviour
     /// <param name="lod">The level of detail for the terrain mesh.</param>
     void TerrainDataThread(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, bool enableDebugging, int lod = 0)
     {
-        MeshData meshData = MeshGenerator.GenerateTerrainMesh(this, mapData.heightMap, levelOfDetail, enableDebugging);
+        // Pass globalOffset only if texture variations are enabled, otherwise pass Vector2.zero for original behavior
+        MeshData meshData = MeshGenerator.GenerateTerrainMesh(
+            this,
+            mapData.heightMap,
+            levelOfDetail,
+            enableDebugging,
+            enableTextureVariations ? globalOffset : Vector2.zero
+        );
+
         Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
 
         DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap);
@@ -414,7 +497,12 @@ public class TerrainGenerator : MonoBehaviour
                 Texture2D[] splatMap = null;
                 if (terrainTextureBasedOnVoronoiPoints)
                 {
-                    splatMap = SplatMapGenerator.GenerateSplatMaps(this, threadInfo.parameter.biomeMap);
+                    // Pass globalOffset only if texture variations are enabled
+                    splatMap = SplatMapGenerator.GenerateSplatMaps(
+                        this,
+                        threadInfo.parameter.biomeMap,
+                        enableTextureVariations ? threadInfo.parameter.globalOffset : Vector2.zero
+                    );
                 }
 
                 // Assign the generated splat map to the terrain data and trigger the callback.
@@ -489,4 +577,3 @@ public class TerrainGenerator : MonoBehaviour
     }
 
 }
-
