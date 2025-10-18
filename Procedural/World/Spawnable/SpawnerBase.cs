@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Base class for spawners in Unity, responsible for handling the spawning and despawning of prefab instances based on provided data.
+///  base class for spawners in Unity, responsible for handling the spawning and despawning 
+/// of prefab instances with improved error handling, validation, and configurable parameters.
 /// </summary>
 /// <typeparam name="TPrefab">The type of prefab to be spawned.</typeparam>
 /// <typeparam name="TData">The type of data that defines the properties of the prefab to be spawned.</typeparam>
 public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : class
 {
+    [Header("Spawner Configuration")]
     /// <summary>
     /// List of prefabs that can be spawned by this spawner.
     /// </summary>
@@ -21,6 +23,7 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     [Tooltip("Maximum number of instances allowed globally.")]
     public int globalMaxInstances;
 
+    [Header("Initialization Settings")]
     /// <summary>
     /// Whether spawning should wait until initialization is complete.
     /// </summary>
@@ -51,6 +54,7 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     [Tooltip("Whether the waiting time before spawning should be randomized.")]
     public bool shouldHaveRandomWaitingTime;
 
+    [Header("Retry and Error Handling")]
     /// <summary>
     /// Time to wait before retrying to spawn after a failed attempt.
     /// </summary>
@@ -58,9 +62,34 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     public float retryingSpawnTime = 2f;
 
     /// <summary>
+    /// Maximum number of consecutive spawn failures before temporarily disabling spawning.
+    /// </summary>
+    [Tooltip("Maximum consecutive spawn failures before temporarily disabling spawning.")]
+    [SerializeField] protected int maxConsecutiveFailures = 10;
+
+    /// <summary>
+    /// Time to wait after max failures before re-enabling spawning attempts.
+    /// </summary>
+    [Tooltip("Time to wait after max failures before re-enabling spawning attempts.")]
+    [SerializeField] protected float failureRecoveryTime = 30f;
+
+    [Header("Performance Settings")]
+    /// <summary>
+    /// Enable performance monitoring and logging for spawn operations.
+    /// </summary>
+    [Tooltip("Enable performance monitoring and logging for spawn operations.")]
+    [SerializeField] protected bool enablePerformanceLogging = false;
+
+    /// <summary>
+    /// Maximum time allowed for a single spawn operation before considering it slow.
+    /// </summary>
+    [Tooltip("Maximum time allowed for a single spawn operation before considering it slow.")]
+    [SerializeField] protected float maxSpawnTime = 0.1f;
+
+    /// <summary>
     /// Dictionary holding active instances of spawned objects, mapped by their associated data.
     /// </summary>
-    [HideInInspector] // Hide this field in the Unity inspector as it is internal to the class
+    [HideInInspector]
     protected Dictionary<TData, List<GameObject>> activeInstances = new Dictionary<TData, List<GameObject>>();
 
     /// <summary>
@@ -111,14 +140,25 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     [HideInInspector]
     protected Transform chunkParent;
 
+    //  error tracking
+    private int consecutiveFailures = 0;
+    private bool isTemporarilyDisabled = false;
+    private float lastFailureTime = 0f;
+
+    // Performance tracking
+    private float lastSpawnStartTime = 0f;
+    private int successfulSpawns = 0;
+    private int failedSpawns = 0;
+
     /// <summary>
-    /// Initializes the spawner with chunk data (position, height map, size, and parent).
+    /// Initializes the spawner with chunk data and  validation.
     /// </summary>
     /// <param name="chunkPosition">Position of the chunk.</param>
     /// <param name="heightMap">Height map used for determining spawn positions.</param>
     /// <param name="chunkSize">Size of the chunk.</param>
     /// <param name="parent">Parent transform for the spawned objects.</param>
-    public virtual void InitializeSpawner(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform parent, Biome[,] biomeMap )
+    /// <param name="biomeMap">Biome map for biome-aware spawning.</param>
+    public virtual void InitializeSpawner(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform parent, Biome[,] biomeMap)
     {
         this.chunkPosition = chunkPosition;
         this.heightMap = heightMap;
@@ -126,16 +166,65 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
         this.chunkParent = parent;
         this.biomeMap = biomeMap;
 
+        // ed validation
         if (chunkParent == null)
         {
-            Debug.LogWarning("ChunkParent is null in InitializeSpawner!");
+            Debug.LogError($"ChunkParent is null in InitializeSpawner for {gameObject.name}!");
+            return;
         }
 
-        // Initialize active instances list for each spawnable prefab
-        foreach (var prefab in spawnablePrefabs)
+        if (heightMap == null)
         {
-            activeInstances[prefab] = new List<GameObject>();
+            Debug.LogError($"HeightMap is null in InitializeSpawner for {gameObject.name}!");
+            return;
         }
+
+        if (biomeMap == null)
+        {
+            Debug.LogError($"BiomeMap is null in InitializeSpawner for {gameObject.name}!");
+            return;
+        }
+
+        // Initialize active instances list for each spawnable prefab with null checking
+        if (spawnablePrefabs != null)
+        {
+            foreach (var prefab in spawnablePrefabs)
+            {
+                if (prefab != null)
+                {
+                    activeInstances[prefab] = new List<GameObject>();
+                }
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"SpawnablePrefabs list is null for {gameObject.name}!");
+            spawnablePrefabs = new List<TData>();
+        }
+
+        // Validate configuration parameters
+        ValidateSpawnerParameters();
+
+        // Log initialization if performance logging is enabled
+        if (enablePerformanceLogging)
+        {
+            Debug.Log($"Spawner {gameObject.name} initialized at chunk {chunkPosition} with {spawnablePrefabs.Count} prefab types");
+        }
+    }
+
+    /// <summary>
+    /// Validates and clamps spawner parameters to safe ranges.
+    /// </summary>
+    private void ValidateSpawnerParameters()
+    {
+        globalMaxInstances = Mathf.Max(0, globalMaxInstances);
+        waitingTime = Mathf.Max(0f, waitingTime);
+        minWaitingTime = Mathf.Max(0f, minWaitingTime);
+        maxWaitingTime = Mathf.Max(minWaitingTime, maxWaitingTime);
+        retryingSpawnTime = Mathf.Max(0.1f, retryingSpawnTime);
+        maxConsecutiveFailures = Mathf.Max(1, maxConsecutiveFailures);
+        failureRecoveryTime = Mathf.Max(1f, failureRecoveryTime);
+        maxSpawnTime = Mathf.Max(0.01f, maxSpawnTime);
     }
 
     /// <summary>
@@ -147,7 +236,7 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     }
 
     /// <summary>
-    /// Stops spawn routine and destroys all spawned instances when the object is disabled. 
+    /// Stops spawn routine and destroys all spawned instances when the object is disabled.
     /// </summary>
     private void OnDisable()
     {
@@ -167,24 +256,47 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     }
 
     /// <summary>
-    /// Coroutine that waits for initialization conditions to be met (e.g., heightMap, chunkParent, etc.).
-    /// If conditions are met and spawning should be delayed, it waits for a specified time.
+    ///  coroutine that waits for initialization with better error handling.
     /// </summary>
     /// <returns>IEnumerator for coroutine.</returns>
     protected virtual IEnumerator WaitForInitialization()
     {
-        // Wait until all initialization conditions are met
-        while (heightMap == null || chunkParent == null || chunkSize == 0 || chunkPosition == Vector2.zero)
+        float initStartTime = Time.time;
+        const float maxInitWaitTime = 60f; // Maximum time to wait for initialization
+
+        // Wait until all initialization conditions are met with timeout
+        while ((heightMap == null || chunkParent == null || chunkSize == 0 || chunkPosition == Vector2.zero)
+               && (Time.time - initStartTime) < maxInitWaitTime)
         {
             yield return new WaitForSeconds(1f);
+        }
+
+        // Check if initialization timed out
+        if (Time.time - initStartTime >= maxInitWaitTime)
+        {
+            Debug.LogError($"Spawner {gameObject.name} initialization timed out after {maxInitWaitTime} seconds!");
+            yield break;
+        }
+
+        // Final validation before proceeding
+        if (!IsProperlyInitialized())
+        {
+            Debug.LogError($"Spawner {gameObject.name} failed final initialization validation!");
+            yield break;
         }
 
         // If spawning should wait, introduce a delay before starting the spawn routine
         if (shouldWaitToStartSpawning)
         {
             float waitTime = shouldHaveRandomWaitingTime
-                ? Random.Range(minWaitingTime, maxWaitingTime) // Randomize waiting time if enabled
+                ? Random.Range(minWaitingTime, maxWaitingTime)
                 : waitingTime;
+
+            if (enablePerformanceLogging)
+            {
+                Debug.Log($"Spawner {gameObject.name} waiting {waitTime} seconds before starting spawn routine");
+            }
+
             yield return new WaitForSeconds(waitTime);
         }
 
@@ -193,11 +305,44 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     }
 
     /// <summary>
-    /// Starts the spawn routine if it's not already running.
+    /// Checks if the spawner is properly initialized.
+    /// </summary>
+    /// <returns>True if properly initialized.</returns>
+    private bool IsProperlyInitialized()
+    {
+        return heightMap != null &&
+               chunkParent != null &&
+               chunkSize > 0 &&
+               chunkPosition != Vector2.zero &&
+               biomeMap != null &&
+               spawnablePrefabs != null;
+    }
+
+    /// <summary>
+    /// Starts the spawn routine if it's not already running and conditions are met.
     /// </summary>
     protected void StartSpawnRoutine()
     {
-        if (spawnRoutine == null)
+        // Don't start if temporarily disabled due to failures
+        if (isTemporarilyDisabled)
+        {
+            if (Time.time - lastFailureTime > failureRecoveryTime)
+            {
+                isTemporarilyDisabled = false;
+                consecutiveFailures = 0;
+
+                if (enablePerformanceLogging)
+                {
+                    Debug.Log($"Spawner {gameObject.name} recovered from failure state");
+                }
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        if (spawnRoutine == null && IsProperlyInitialized())
         {
             spawnRoutine = StartCoroutine(SpawnRoutine());
         }
@@ -240,46 +385,156 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     protected abstract Vector3 GetRandomSpawnPosition(TData data = null);
 
     /// <summary>
-    /// Spawns a new instance of the prefab associated with the given data.
+    ///  spawning method with error tracking and performance monitoring.
     /// </summary>
     /// <param name="data">Data representing the prefab to spawn.</param>
     protected virtual void SpawnInstance(TData data)
     {
-        // Prevent spawning if max instances have been reached
-        if (totalActiveInstances >= globalMaxInstances) return;
-
-        // Prevent spawning if the prefab's max instances have been reached
-        if (data is ISpawbleBySpawner spawnableData && spawnableData.CurrentInstances >= spawnableData.MaxInstances) return;
-
-        // Determine the spawn position
-        Vector3 spawnPosition = GetRandomSpawnPosition(data);
-
-        // Only spawn if the position is valid
-        if (IsValidSpawnPosition(spawnPosition) && spawnPosition != Vector3.negativeInfinity)
+        if (enablePerformanceLogging)
         {
-            // Instantiate the prefab and parent it to the chunk's parent transform
-            GameObject instance = Instantiate(GetPrefab(data), spawnPosition, Quaternion.identity);
-            instance.transform.parent = chunkParent;
+            lastSpawnStartTime = Time.time;
+        }
 
-            // Track the instance
-            activeInstances[data].Add(instance);
-            totalActiveInstances++;
-
-            // Update the prefab's instance count if it implements ISpawbleBySpawner
-            if (data is ISpawbleBySpawner spawnablePrefab)
+        try
+        {
+            // Prevent spawning if max instances have been reached
+            if (totalActiveInstances >= globalMaxInstances)
             {
-                spawnablePrefab.CurrentInstances++;
+                RecordSpawnFailure("Global max instances reached");
+                return;
             }
 
-            // Subscribe to the instance's destruction event, if it has one
-            if (instance.TryGetComponent(out Portal portal))
+            // Prevent spawning if the prefab's max instances have been reached
+            if (data is ISpawbleBySpawner spawnableData && spawnableData.CurrentInstances >= spawnableData.MaxInstances)
             {
-                portal.OnPortalDestroyed += () => DecrementInstanceCount(instance);
+                RecordSpawnFailure("Prefab max instances reached");
+                return;
             }
-            else if (instance.TryGetComponent(out Mob mob))
+
+            // Validate data
+            if (data == null)
             {
-                mob.OnMobDestroyed += () => DecrementInstanceCount(instance);
+                RecordSpawnFailure("Spawn data is null");
+                return;
             }
+
+            GameObject prefab = GetPrefab(data);
+            if (prefab == null)
+            {
+                RecordSpawnFailure("Prefab is null");
+                return;
+            }
+
+            // Determine the spawn position
+            Vector3 spawnPosition = GetRandomSpawnPosition(data);
+
+            // Only spawn if the position is valid
+            if (IsValidSpawnPosition(spawnPosition) && spawnPosition != Vector3.negativeInfinity)
+            {
+                // Instantiate the prefab and parent it to the chunk's parent transform
+                GameObject instance = Instantiate(prefab, spawnPosition, Quaternion.identity);
+
+                if (instance == null)
+                {
+                    RecordSpawnFailure("Failed to instantiate prefab");
+                    return;
+                }
+
+                instance.transform.parent = chunkParent;
+
+                // Track the instance
+                if (!activeInstances.ContainsKey(data))
+                {
+                    activeInstances[data] = new List<GameObject>();
+                }
+
+                activeInstances[data].Add(instance);
+                totalActiveInstances++;
+
+                // Update the prefab's instance count if it implements ISpawbleBySpawner
+                if (data is ISpawbleBySpawner spawnablePrefab)
+                {
+                    spawnablePrefab.CurrentInstances++;
+                }
+
+                // Subscribe to the instance's destruction event, if it has one
+                RegisterDestructionCallbacks(instance);
+
+                RecordSpawnSuccess();
+
+                if (enablePerformanceLogging)
+                {
+                    float spawnTime = Time.time - lastSpawnStartTime;
+                    if (spawnTime > maxSpawnTime)
+                    {
+                        Debug.LogWarning($"Slow spawn detected for {gameObject.name}: {spawnTime:F3}s (max: {maxSpawnTime:F3}s)");
+                    }
+                }
+            }
+            else
+            {
+                RecordSpawnFailure("Invalid spawn position");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            RecordSpawnFailure($"Exception during spawn: {ex.Message}");
+            Debug.LogException(ex);
+        }
+    }
+
+    /// <summary>
+    /// Registers destruction callbacks for spawned instances.
+    /// </summary>
+    /// <param name="instance">The spawned instance.</param>
+    private void RegisterDestructionCallbacks(GameObject instance)
+    {
+        if (instance.TryGetComponent(out Portal portal))
+        {
+            portal.OnPortalDestroyed += () => DecrementInstanceCount(instance);
+        }
+        else if (instance.TryGetComponent(out Mob mob))
+        {
+            mob.OnMobDestroyed += () => DecrementInstanceCount(instance);
+        }
+    }
+
+    /// <summary>
+    /// Records a successful spawn for performance tracking.
+    /// </summary>
+    private void RecordSpawnSuccess()
+    {
+        successfulSpawns++;
+        consecutiveFailures = 0;
+
+        if (enablePerformanceLogging && successfulSpawns % 10 == 0)
+        {
+            Debug.Log($"Spawner {gameObject.name} stats - Success: {successfulSpawns}, Failed: {failedSpawns}, Active: {totalActiveInstances}");
+        }
+    }
+
+    /// <summary>
+    /// Records a spawn failure and handles consecutive failure logic.
+    /// </summary>
+    /// <param name="reason">Reason for the failure.</param>
+    private void RecordSpawnFailure(string reason)
+    {
+        failedSpawns++;
+        consecutiveFailures++;
+        lastFailureTime = Time.time;
+
+        if (enablePerformanceLogging)
+        {
+            Debug.LogWarning($"Spawn failure for {gameObject.name}: {reason} (consecutive: {consecutiveFailures})");
+        }
+
+        // Temporarily disable spawning if too many consecutive failures
+        if (consecutiveFailures >= maxConsecutiveFailures)
+        {
+            isTemporarilyDisabled = true;
+            StopSpawnRoutine();
+
+            Debug.LogWarning($"Spawner {gameObject.name} temporarily disabled due to {consecutiveFailures} consecutive failures. Will retry in {failureRecoveryTime} seconds.");
         }
     }
 
@@ -291,50 +546,134 @@ public abstract class SpawnerBase<TPrefab, TData> : MonoBehaviour where TData : 
     protected abstract GameObject GetPrefab(TData data);
 
     /// <summary>
-    /// Destroys all currently active instances and resets the total active instance count.
+    /// Destroys all currently active instances and resets counters with  cleanup.
     /// </summary>
     protected void DespawnAllInstances()
     {
+        int destroyedCount = 0;
+
         foreach (var kvp in activeInstances)
         {
-            foreach (GameObject instance in kvp.Value)
+            for (int i = kvp.Value.Count - 1; i >= 0; i--)
             {
-                Destroy(instance);
-                totalActiveInstances--;
+                GameObject instance = kvp.Value[i];
+                if (instance != null)
+                {
+                    Destroy(instance);
+                    destroyedCount++;
+                }
             }
             kvp.Value.Clear();
+
+            // Reset instance count for spawnable data
+            if (kvp.Key is ISpawbleBySpawner spawnableData)
+            {
+                spawnableData.CurrentInstances = 0;
+            }
+        }
+
+        totalActiveInstances = 0;
+
+        if (enablePerformanceLogging && destroyedCount > 0)
+        {
+            Debug.Log($"Spawner {gameObject.name} despawned {destroyedCount} instances");
         }
     }
 
     /// <summary>
-    /// Decreases the instance count when an instance is destroyed, and restarts the spawn routine if needed.
+    /// 
+    /// instance count decrementing with better error handling.
     /// </summary>
     /// <param name="instance">The instance to decrement.</param>
     public virtual void DecrementInstanceCount(GameObject instance)
     {
+        if (instance == null) return;
+
+        bool instanceFound = false;
+
         // Loop through the active instances dictionary to find and remove the destroyed instance
         foreach (var kvp in activeInstances)
         {
-            if (kvp.Value.Remove(instance))
+            if (kvp.Value != null && kvp.Value.Remove(instance))
             {
-                totalActiveInstances--; // Decrease the active instance count
+                totalActiveInstances = Mathf.Max(0, totalActiveInstances - 1);
 
                 // Update the prefab's instance count if it implements ISpawbleBySpawner
                 if (kvp.Key is ISpawbleBySpawner spawnablePrefab)
                 {
-                    spawnablePrefab.CurrentInstances--;
+                    spawnablePrefab.CurrentInstances = Mathf.Max(0, spawnablePrefab.CurrentInstances - 1);
                 }
 
-                Destroy(instance); // Destroy the instance
-
-                // Restart the spawn routine if there are still spots available
-                if (spawnRoutine == null)
-                {
-                    StartSpawnRoutine();
-                }
-
-                break; // Exit the loop once the instance is found and removed
+                instanceFound = true;
+                break;
             }
         }
+
+        if (!instanceFound && enablePerformanceLogging)
+        {
+            Debug.LogWarning($"Attempted to decrement instance count for {instance.name}, but instance was not found in active instances");
+        }
+
+        // Clean up the instance
+        if (instance != null)
+        {
+            Destroy(instance);
+        }
+
+        // Restart the spawn routine if there are still spots available and spawner is not disabled
+        if (spawnRoutine == null && !isTemporarilyDisabled && totalActiveInstances < globalMaxInstances)
+        {
+            StartSpawnRoutine();
+        }
+    }
+
+    /// <summary>
+    /// Gets current spawn statistics for debugging and monitoring.
+    /// </summary>
+    /// <returns>A formatted string with spawn statistics.</returns>
+    public virtual string GetSpawnStatistics()
+    {
+        return $"Spawner {gameObject.name}: Active: {totalActiveInstances}/{globalMaxInstances}, " +
+               $"Success: {successfulSpawns}, Failed: {failedSpawns}, " +
+               $"Consecutive Failures: {consecutiveFailures}, " +
+               $"Disabled: {isTemporarilyDisabled}";
+    }
+
+    /// <summary>
+    /// Manual method to reset failure state and re-enable spawning.
+    /// </summary>
+    [ContextMenu("Reset Failure State")]
+    public void ResetFailureState()
+    {
+        consecutiveFailures = 0;
+        isTemporarilyDisabled = false;
+
+        if (enablePerformanceLogging)
+        {
+            Debug.Log($"Manually reset failure state for spawner {gameObject.name}");
+        }
+
+        StartSpawnRoutine();
+    }
+
+    /// <summary>
+    /// Gets the current number of active instances.
+    /// </summary>
+    /// <returns>Number of currently active instances.</returns>
+    public int GetActiveInstanceCount()
+    {
+        return totalActiveInstances;
+    }
+
+    /// <summary>
+    /// Checks if the spawner is currently active and able to spawn.
+    /// </summary>
+    /// <returns>True if spawner can currently spawn instances.</returns>
+    public bool IsSpawnerActive()
+    {
+        return !isTemporarilyDisabled &&
+               IsProperlyInitialized() &&
+               totalActiveInstances < globalMaxInstances &&
+               gameObject.activeInHierarchy;
     }
 }

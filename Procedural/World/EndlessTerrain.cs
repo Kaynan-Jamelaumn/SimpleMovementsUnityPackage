@@ -247,6 +247,7 @@ public class EndlessTerrain : MonoBehaviour
 
 
             PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
+            portalSpawner.SetSettings(portalSettings); // Pass the entire settings object
             portalSpawner.spawnablePrefabs = portalSettings.prefabs;
             portalSpawner.globalMaxInstances = portalSettings.maxNumberOfPortals;
             portalSpawner.shouldWaitToStartSpawning = portalSettings.shouldWaitToStartSpawning;
@@ -257,6 +258,7 @@ public class EndlessTerrain : MonoBehaviour
             portalSpawner.retryingSpawnTime = portalSettings.retryingSpawnTime;
 
             MobSpawner mobSpawner = meshObject.AddComponent<MobSpawner>();
+            mobSpawner.SetSettings(mobSettings); // Pass the entire settings object
             mobSpawner.spawnablePrefabs = mobSettings.prefabs;
             mobSpawner.globalMaxInstances = mobSettings.maxNumberOfMobs;
             mobSpawner.shouldWaitToStartSpawning = mobSettings.shouldWaitToStartSpawning;
