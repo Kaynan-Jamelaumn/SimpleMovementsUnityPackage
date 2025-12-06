@@ -1,11 +1,17 @@
 ﻿using UnityEngine;
 using System.Collections;
+using UnityEngine.AI;
 
 /// <summary>
 /// Represents the chasing state of the mob in the movement state machine.
+///  with predictive movement, tactical positioning, and intelligent combat behaviors.
 /// </summary>
 public class MobChasingState : MobMovementState
 {
+    private Vector3 lastTargetPosition;
+    private Vector3 predictedTargetPosition;
+    private float predictionTime = 0.5f; // How far ahead to predict target movement
+
     /// <summary>
     /// Constructor for the MobChasingState.
     /// </summary>
@@ -24,9 +30,18 @@ public class MobChasingState : MobMovementState
     {
         Context.MobReference.StopAllCoroutines();
         Context.Anim?.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        lastTargetPosition = Context.MobReference.CurrentChaseTarget != null ? 
+            Context.MobReference.CurrentChaseTarget.transform.position : 
+            Context.MobReference.CurrentPlayerTarget?.transform.position ?? Vector3.zero;
         HandleChaseState();
     }
-    public override void ExitState() { }
+    
+    public override void ExitState() 
+    { 
+        lastTargetPosition = Vector3.zero;
+        predictedTargetPosition = Vector3.zero;
+    }
+    
     public override void UpdateState() { }
     public override void LateUpdateState() { }
 
@@ -49,13 +64,57 @@ public class MobChasingState : MobMovementState
         }
         return StateKey;
     }
+    
     public override void OnTriggerEnter(Collider other) { }
     public override void OnTriggerStay(Collider other) { }
     public override void OnTriggerExit(Collider other) { }
+    
+    /// <summary>
+    /// Predicts target's future position based on current velocity.
+    /// </summary>
+    /// <param name="currentPosition">Current position of target.</param>
+    /// <param name="previousPosition">Previous position of target.</param>
+    /// <returns>Predicted future position.</returns>
+    private Vector3 PredictTargetPosition(Vector3 currentPosition, Vector3 previousPosition)
+    {
+        Vector3 velocity = (currentPosition - previousPosition) / Time.deltaTime;
+        Vector3 prediction = currentPosition + velocity * predictionTime;
+        
+        // Ensure predicted position is on NavMesh
+        if (NavMesh.SamplePosition(prediction, out NavMeshHit hit, 10f, NavMesh.AllAreas))
+        {
+            return hit.position;
+        }
+        
+        return currentPosition;
+    }
+
+    /// <summary>
+    /// Calculates an intercept position to cut off the target's path.
+    /// </summary>
+    /// <param name="targetPosition">Current target position.</param>
+    /// <param name="targetVelocity">Target's movement velocity.</param>
+    /// <returns>Optimal intercept position.</returns>
+    private Vector3 CalculateInterceptPosition(Vector3 targetPosition, Vector3 targetVelocity)
+    {
+        float interceptTime = Vector3.Distance(Context.MobReference.TransformReference.position, targetPosition) / Context.NavMeshAgentReference.speed;
+        Vector3 interceptPosition = targetPosition + targetVelocity * interceptTime;
+        
+        // Validate and adjust intercept position
+        if (NavMesh.SamplePosition(interceptPosition, out NavMeshHit hit, 15f, NavMesh.AllAreas))
+        {
+            return hit.position;
+        }
+        
+        return targetPosition;
+    }
+
     private IEnumerator ChasePrey()
     {
         // Record the start time of the chase to measure the duration.
         float startTime = Time.time;
+        float pathUpdateInterval = 0.2f; // Update path 5 times per second
+        float lastPathUpdate = 0f;
 
         // Continue chasing the prey while it exists and is outside the stopping distance.
         while (Context.MobReference.CurrentChaseTarget != null && Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.CurrentChaseTarget.transform.position) > Context.NavMeshAgentReference.stoppingDistance)
@@ -68,7 +127,20 @@ public class MobChasingState : MobMovementState
             }
 
             shouldChangeToChasingState = true;
-            Context.NavMeshAgentReference.SetDestination(Context.MobReference.CurrentChaseTarget.transform.position);
+            
+            // Update path periodically with prediction
+            if (Time.time - lastPathUpdate >= pathUpdateInterval)
+            {
+                Vector3 currentTargetPos = Context.MobReference.CurrentChaseTarget.transform.position;
+                Vector3 targetVelocity = (currentTargetPos - lastTargetPosition) / pathUpdateInterval;
+                
+                // Use interception for faster, smarter chasing
+                Vector3 interceptPos = CalculateInterceptPosition(currentTargetPos, targetVelocity);
+                Context.NavMeshAgentReference.SetDestination(interceptPos);
+                
+                lastTargetPosition = currentTargetPos;
+                lastPathUpdate = Time.time;
+            }
 
             // Check if the target is within attack distance and perform an attack if possible.
             if (Context.MobReference.CurrentChaseTarget != null && Context.MobReference.CurrentChaseTarget.isActiveAndEnabled)
@@ -83,15 +155,25 @@ public class MobChasingState : MobMovementState
                     // Wait for the bite cooldown before attempting another attack.
                     yield return new WaitForSeconds(Context.MobReference.BiteCooldown);
 
-                    // Reset the chase target and handle the chase state again.
+                    // Evaluate if should continue chasing or find new target
                     Context.MobReference.CurrentChaseTarget = null;
-                    HandleChaseState();
-                    CheckChaseConditions();
-                }
-                else
-                {
-                    // Continue chasing the target if it is not within attack distance.
-                    Context.NavMeshAgentReference.SetDestination(Context.MobReference.CurrentChaseTarget.transform.position);
+                    
+                    // Look for new targets immediately
+                    Transform newTarget = Context.ActionsController.AvailableTarget();
+                    if (newTarget != null)
+                    {
+                        MobActionsController newPrey = newTarget.GetComponent<MobActionsController>();
+                        if (newPrey != null)
+                        {
+                            Context.MobReference.CurrentChaseTarget = newPrey;
+                            lastTargetPosition = newPrey.transform.position;
+                        }
+                    }
+                    else
+                    {
+                        HandleChaseState();
+                        CheckChaseConditions();
+                    }
                 }
             }
             yield return null;
@@ -110,7 +192,7 @@ public class MobChasingState : MobMovementState
     }
 
     /// <summary>
-    /// Coroutine to chase the player.
+    /// Coroutine to chase the player with predictive movement.
     /// </summary>
     /// <returns>An IEnumerator for the coroutine.</returns>
     private IEnumerator ChasePlayerCoroutine()
@@ -118,6 +200,8 @@ public class MobChasingState : MobMovementState
         // Record the start time of the chase to measure the duration.
         float startTime = Time.time;
         float timeSinceLastBit = Time.time;
+        float pathUpdateInterval = 0.15f; // More frequent updates for player
+        float lastPathUpdate = 0f;
 
         // Continue chasing the player while they exist and are outside the stopping distance.
         while (Context.MobReference.CurrentPlayerTarget != null && Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.CurrentPlayerTarget.transform.position) > Context.NavMeshAgentReference.stoppingDistance)
@@ -130,14 +214,26 @@ public class MobChasingState : MobMovementState
             }
 
             shouldChangeToChasingState = true;
-            Context.NavMeshAgentReference.SetDestination(Context.MobReference.CurrentPlayerTarget.transform.position);
+            
+            // Update path with prediction
+            if (Time.time - lastPathUpdate >= pathUpdateInterval)
+            {
+                Vector3 currentPlayerPos = Context.MobReference.CurrentPlayerTarget.transform.position;
+                predictedTargetPosition = PredictTargetPosition(currentPlayerPos, lastTargetPosition);
+                
+                // Set destination to predicted position for better interception
+                Context.NavMeshAgentReference.SetDestination(predictedTargetPosition);
+                
+                lastTargetPosition = currentPlayerPos;
+                lastPathUpdate = Time.time;
+            }
 
             // Check if enough time has passed since the last bite attempt.
             if (Time.time - timeSinceLastBit >= Context.MobReference.BiteCooldown)
             {
                 Vector3 boxPosition = Context.ActionsController.MobTransform.position + Context.ActionsController.OffSetDetectionDistance;
                 Vector3 size = new Vector3(Context.ActionsController.DetectionDistance.x, Context.ActionsController.DetectionDistance.y, Context.ActionsController.DetectionDistance.z);
-                Collider[] hits = Physics.OverlapBox(boxPosition, size, Context.ActionsController.MobTransform.rotation, LayerMask.NameToLayer("player"));
+                Collider[] hits = Physics.OverlapBox(boxPosition, size / 2f, Context.ActionsController.MobTransform.rotation);
 
                 foreach (Collider hit in hits)
                 {
@@ -150,6 +246,7 @@ public class MobChasingState : MobMovementState
                         // Wait for the bite cooldown before attempting another attack.
                         if (!Context.MobReference.IsPartialWait) yield return new WaitForSeconds(Context.MobReference.BiteCooldown);
 
+                        // Re-evaluate targets after attack
                         Context.MobReference.CurrentPlayerTarget = null;
                         CheckChaseConditions();
                         break;
@@ -182,6 +279,7 @@ public class MobChasingState : MobMovementState
         }
         shouldChangeToIdleState = true;
     }
+    
     /// <summary>
     /// Handles the chase state logic.
     /// </summary>
@@ -190,6 +288,7 @@ public class MobChasingState : MobMovementState
         // If there is a current player target, start the coroutine to chase the player.
         if (Context.MobReference.CurrentPlayerTarget != null)
         {
+            lastTargetPosition = Context.MobReference.CurrentPlayerTarget.transform.position;
             Context.MobReference.StartCoroutine(ChasePlayerCoroutine());
             return;
         }
@@ -197,6 +296,7 @@ public class MobChasingState : MobMovementState
         // If there is a current chase target, alert the prey and start the coroutine to chase the prey.
         if (Context.MobReference.CurrentChaseTarget != null)
         {
+            lastTargetPosition = Context.MobReference.CurrentChaseTarget.transform.position;
             AlertPrey(Context.ActionsController);
             Context.MobReference.StartCoroutine(ChasePrey());
         }
@@ -218,11 +318,14 @@ public class MobChasingState : MobMovementState
     }
 
     /// <summary>
-    /// Coroutine to run away from the predator.
+    /// Coroutine to run away from the predator with intelligent pathfinding.
     /// </summary>
     /// <returns>An IEnumerator for the coroutine.</returns>
     private IEnumerator RunFromPredator()
     {
+        float pathUpdateInterval = 0.3f;
+        float lastPathUpdate = 0f;
+        
         // Wait until a predator is detected within the detection range.
         while (Context.MobReference.CurrentPredator == null || Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.CurrentPredator.transform.position) > Context.MobReference.DetectionRange)
         {
@@ -232,7 +335,13 @@ public class MobChasingState : MobMovementState
         // Continue running away from the predator while it is within detection range.
         while (Context.MobReference.CurrentPredator != null && Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.CurrentPredator.transform.position) <= Context.MobReference.DetectionRange)
         {
-            RunAwayFromPredator();
+            // Update escape path periodically
+            if (Time.time - lastPathUpdate >= pathUpdateInterval)
+            {
+                RunAwayFromPredator();
+                lastPathUpdate = Time.time;
+            }
+            
             yield return null;
         }
 
@@ -247,7 +356,7 @@ public class MobChasingState : MobMovementState
     }
 
     /// <summary>
-    /// Executes the logic to run away from the predator.
+    /// Executes the logic to run away from the predator using tactical positioning.
     /// </summary>
     private void RunAwayFromPredator()
     {
@@ -255,16 +364,15 @@ public class MobChasingState : MobMovementState
         if (Context.NavMeshAgentReference != null && Context.NavMeshAgentReference.isActiveAndEnabled)
         {
             // Check if the agent is not currently calculating a path and has reached its previous destination.
-            if (!Context.NavMeshAgentReference.pathPending && Context.NavMeshAgentReference.remainingDistance < Context.NavMeshAgentReference.stoppingDistance)
+            if (!Context.NavMeshAgentReference.pathPending && Context.NavMeshAgentReference.remainingDistance < Context.NavMeshAgentReference.stoppingDistance + 2f)
             {
-                // Calculate the direction away from the predator.
-                Vector3 runDirection = Context.MobReference.TransformReference.position - Context.MobReference.CurrentPredator.transform.position;
-
-                // Determine a random escape destination in the opposite direction.
-                Vector3 escapeDestination = Context.MobReference.TransformReference.position + runDirection.normalized * (Context.MobReference.EscapeMaxDistance * 2);
+                // Use the enhanced escape position calculation
+                Vector3 escapeDestination = Context.ActionsController.CalculateBestEscapePosition(
+                    Context.MobReference.CurrentPredator.transform.position, 
+                    Context.MobReference.EscapeMaxDistance);
 
                 // Set the new destination for the NavMeshAgent.
-                Context.NavMeshAgentReference.SetDestination(Context.MobReference.GetRandomNavMeshPosition(escapeDestination, Context.MobReference.EscapeMaxDistance));
+                Context.NavMeshAgentReference.SetDestination(escapeDestination);
             }
 
             // If the predator is no longer within detection range, stop the chase.
@@ -274,7 +382,4 @@ public class MobChasingState : MobMovementState
             }
         }
     }
-
-
-
 }

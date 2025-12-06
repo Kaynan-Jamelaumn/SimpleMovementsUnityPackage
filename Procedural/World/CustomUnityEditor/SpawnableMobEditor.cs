@@ -1,111 +1,188 @@
 ﻿using UnityEditor;
 using UnityEngine;
-using System.Linq;
+using System.Collections.Generic;
 
-[CustomPropertyDrawer(typeof(SpawnableMob))]
-public class SpawnableMobDrawer : PropertyDrawer
+/// <summary>
+/// Alternative approach: Custom Editor for objects containing SpawnableMob.
+/// Use this if the PropertyDrawer continues to have issues.
+/// This would need to be attached to the container class (e.g., MobSettings).
+/// </summary>
+public class SpawnableMobEditor : EditorWindow
 {
-    public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
+    [MenuItem("Tools/Spawnable Mob Helper")]
+    public static void ShowWindow()
     {
-        EditorGUI.BeginProperty(position, label, property);
-
-        // Calculate initial positions for fields
-        Rect rect = new Rect(position.x, position.y, position.width, EditorGUIUtility.singleLineHeight);
-
-        // Draw mobPrefab field
-        SerializedProperty mobPrefabProp = property.FindPropertyRelative("mobPrefab");
-        EditorGUI.PropertyField(rect, mobPrefabProp, new GUIContent("Mob Prefab"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        // Draw numeric fields for spawn configuration
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("maxInstances"), new GUIContent("Max Instances"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("spawnWeight"), new GUIContent("Spawn Weight"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("spawnTime"), new GUIContent("Spawn Time"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("minSpawnTime"), new GUIContent("Min Spawn Time"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("maxSpawnTime"), new GUIContent("Max Spawn Time"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("shouldHaveRandomSpawnTime"), new GUIContent("Random Spawn Time?"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        EditorGUI.PropertyField(rect, property.FindPropertyRelative("spawnWeight"), new GUIContent("Weight to Spawn Factor"));
-        rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-        // Draw allowedBiomes as checkboxes
-        TerrainGenerator terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
-        if (terrainGenerator != null && terrainGenerator.BiomeDefinitions != null)
-        {
-            BiomeInstance[] biomeDefinitions = terrainGenerator.BiomeDefinitions;
-
-            SerializedProperty allowedBiomesProp = property.FindPropertyRelative("allowedBiomes");
-
-            EditorGUI.LabelField(rect, "Allowed Biomes");
-            rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-
-            for (int i = 0; i < biomeDefinitions.Length; i++)
-            {
-                Biome biome = biomeDefinitions[i].BiomePrefab;
-                bool isSelected = false;
-
-                // Check if the biome is already in the allowedBiomes list
-                for (int j = 0; j < allowedBiomesProp.arraySize; j++)
-                {
-                    if (allowedBiomesProp.GetArrayElementAtIndex(j).objectReferenceValue == biome)
-                    {
-                        isSelected = true;
-                        break;
-                    }
-                }
-
-                Rect toggleRect = new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight);
-                bool newIsSelected = EditorGUI.ToggleLeft(toggleRect, biome.name, isSelected);
-
-                // Update allowedBiomes based on selection
-                if (newIsSelected && !isSelected)
-                {
-                    allowedBiomesProp.arraySize++;
-                    allowedBiomesProp.GetArrayElementAtIndex(allowedBiomesProp.arraySize - 1).objectReferenceValue = biome;
-                }
-                else if (!newIsSelected && isSelected)
-                {
-                    for (int j = 0; j < allowedBiomesProp.arraySize; j++)
-                    {
-                        if (allowedBiomesProp.GetArrayElementAtIndex(j).objectReferenceValue == biome)
-                        {
-                            allowedBiomesProp.DeleteArrayElementAtIndex(j);
-                            break;
-                        }
-                    }
-                }
-
-                rect.y += EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
-            }
-        }
-        else
-        {
-            EditorGUI.LabelField(rect, "No TerrainGenerator or BiomeDefinitions Found");
-        }
-
-        EditorGUI.EndProperty();
+        GetWindow<SpawnableMobEditor>("Mob Biome Helper");
     }
 
-    public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
-    {
-        float height = EditorGUIUtility.singleLineHeight * 9; // Fixed fields count
-        TerrainGenerator terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
+    private SerializedObject serializedObject;
+    private SerializedProperty mobsProperty;
+    private Vector2 scrollPosition;
+    private TerrainGenerator terrainGenerator;
+    private bool showHelp = true;
 
-        if (terrainGenerator != null && terrainGenerator.BiomeDefinitions != null)
+    private void OnEnable()
+    {
+        FindTerrainGenerator();
+    }
+
+    private void OnGUI()
+    {
+        EditorGUILayout.Space(10);
+
+        EditorGUILayout.LabelField("Spawnable Mob Biome Helper", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox("This tool helps you assign allowed biomes to your spawnable mobs. " +
+            "Select a GameObject with a component that has a 'prefabs' field (List<SpawnableMob>) to get started.",
+            MessageType.Info);
+
+        EditorGUILayout.Space(10);
+
+        // Object field to select the container
+        EditorGUI.BeginChangeCheck();
+        GameObject selectedObject = (GameObject)EditorGUILayout.ObjectField(
+            "Mob Container",
+            serializedObject?.targetObject as GameObject,
+            typeof(GameObject),
+            true);
+
+        if (EditorGUI.EndChangeCheck() && selectedObject != null)
         {
-            height += (terrainGenerator.BiomeDefinitions.Length + 1) * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing);
+            // Try to find MobSettings or any component with prefabs field
+            var components = selectedObject.GetComponents<Component>();
+            foreach (var component in components)
+            {
+                SerializedObject so = new SerializedObject(component);
+                SerializedProperty prop = so.FindProperty("prefabs");
+                if (prop != null && prop.isArray)
+                {
+                    serializedObject = so;
+                    mobsProperty = prop;
+                    break;
+                }
+            }
         }
-        return height;
+
+        if (serializedObject == null || mobsProperty == null)
+        {
+            EditorGUILayout.HelpBox("No valid mob container selected. Please select a GameObject with a component containing a 'prefabs' field (List<SpawnableMob>).",
+                MessageType.Warning);
+            return;
+        }
+
+        EditorGUILayout.Space(10);
+
+        // Refresh TerrainGenerator
+        if (GUILayout.Button("Refresh Terrain Generator", GUILayout.Height(30)))
+        {
+            FindTerrainGenerator();
+        }
+
+        if (terrainGenerator == null || terrainGenerator.BiomeDefinitions == null || terrainGenerator.BiomeDefinitions.Length == 0)
+        {
+            EditorGUILayout.HelpBox("No TerrainGenerator found in scene or no biomes defined!",
+                MessageType.Error);
+            return;
+        }
+
+        EditorGUILayout.Space(10);
+        EditorGUILayout.LabelField($"Found {terrainGenerator.BiomeDefinitions.Length} biomes", EditorStyles.miniLabel);
+        EditorGUILayout.Space(5);
+
+        // Scroll view for mobs
+        scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+
+        serializedObject.Update();
+
+        for (int mobIndex = 0; mobIndex < mobsProperty.arraySize; mobIndex++)
+        {
+            SerializedProperty mobProp = mobsProperty.GetArrayElementAtIndex(mobIndex);
+            SerializedProperty mobPrefabProp = mobProp.FindPropertyRelative("mobPrefab");
+            SerializedProperty allowedBiomesProp = mobProp.FindPropertyRelative("allowedBiomes");
+
+            if (mobPrefabProp.objectReferenceValue == null)
+                continue;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.LabelField(mobPrefabProp.objectReferenceValue.name, EditorStyles.boldLabel);
+
+            EditorGUI.indentLevel++;
+
+            // Draw biome checkboxes
+            EditorGUILayout.LabelField("Allowed Biomes:", EditorStyles.miniBoldLabel);
+
+            foreach (var biomeInstance in terrainGenerator.BiomeDefinitions)
+            {
+                if (biomeInstance == null || biomeInstance.BiomePrefab == null)
+                    continue;
+
+                Biome biome = biomeInstance.BiomePrefab;
+                bool isSelected = IsBiomeInList(allowedBiomesProp, biome);
+
+                EditorGUI.BeginChangeCheck();
+                bool newIsSelected = EditorGUILayout.ToggleLeft(biome.name, isSelected);
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    if (newIsSelected && !isSelected)
+                    {
+                        // Add biome
+                        int newIndex = allowedBiomesProp.arraySize;
+                        allowedBiomesProp.InsertArrayElementAtIndex(newIndex);
+                        allowedBiomesProp.GetArrayElementAtIndex(newIndex).objectReferenceValue = biome;
+                    }
+                    else if (!newIsSelected && isSelected)
+                    {
+                        // Remove biome
+                        RemoveBiomeFromList(allowedBiomesProp, biome);
+                    }
+                }
+            }
+
+            EditorGUI.indentLevel--;
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(5);
+        }
+
+        serializedObject.ApplyModifiedProperties();
+
+        EditorGUILayout.EndScrollView();
+    }
+
+    private void FindTerrainGenerator()
+    {
+#if UNITY_2023_1_OR_NEWER
+        terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
+#else
+            terrainGenerator = Object.FindObjectOfType<TerrainGenerator>();
+#endif
+    }
+
+    private bool IsBiomeInList(SerializedProperty listProp, Biome biome)
+    {
+        for (int i = 0; i < listProp.arraySize; i++)
+        {
+            if (listProp.GetArrayElementAtIndex(i).objectReferenceValue == biome)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void RemoveBiomeFromList(SerializedProperty listProp, Biome biome)
+    {
+        for (int i = listProp.arraySize - 1; i >= 0; i--)
+        {
+            if (listProp.GetArrayElementAtIndex(i).objectReferenceValue == biome)
+            {
+                listProp.DeleteArrayElementAtIndex(i);
+                if (i < listProp.arraySize && listProp.GetArrayElementAtIndex(i).objectReferenceValue == biome)
+                {
+                    listProp.DeleteArrayElementAtIndex(i);
+                }
+                break;
+            }
+        }
     }
 }
