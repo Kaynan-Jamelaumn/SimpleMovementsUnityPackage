@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.AI;
 
 /// <summary>
 /// Represents the idle state of the mob in the movement state machine.
@@ -29,8 +29,20 @@ public class MobIdleState : MobMovementState
     /// </summary>
     public override void EnterState()
     {
-        Context.Anim?.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
-        Context.ActionsController.WaitToMoveRoutine = Context.ActionsController.StartCoroutine(WaitToMoveRoutine());
+        if (Context.Anim != null)
+        {
+            Context.Anim.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        }
+
+        if (Context.ActionsController != null && Context.ActionsController.WaitToMoveRoutine != null)
+        {
+            Context.ActionsController.StopCoroutine(Context.ActionsController.WaitToMoveRoutine);
+        }
+
+        if (Context.ActionsController != null)
+        {
+            Context.ActionsController.WaitToMoveRoutine = Context.ActionsController.StartCoroutine(WaitToMoveRoutine());
+        }
     }
 
     public override void ExitState()
@@ -59,11 +71,15 @@ public class MobIdleState : MobMovementState
                 waitingForNavMesh = false;
 
                 // Restart the idle routine to trigger movement
-                if (Context.ActionsController.WaitToMoveRoutine != null)
+                if (Context.ActionsController != null && Context.ActionsController.WaitToMoveRoutine != null)
                 {
                     Context.ActionsController.StopCoroutine(Context.ActionsController.WaitToMoveRoutine);
                 }
-                Context.ActionsController.WaitToMoveRoutine = Context.ActionsController.StartCoroutine(WaitToMoveRoutine());
+
+                if (Context.ActionsController != null)
+                {
+                    Context.ActionsController.WaitToMoveRoutine = Context.ActionsController.StartCoroutine(WaitToMoveRoutine());
+                }
             }
         }
     }
@@ -102,17 +118,24 @@ public class MobIdleState : MobMovementState
     /// </summary>
     private void PerformPerceptionCheck()
     {
+        if (Context.MobReference == null || Context.MobReference.DetectionCast == null)
+            return;
+
         // Quick check for immediate threats or targets
         Collider[] nearbyObjects = Context.MobReference.DetectionCast.DetectObjects(Context.MobReference.TransformReference);
+        if (nearbyObjects == null) return;
 
         float highestThreatLevel = 0f;
         float bestOpportunity = 0f;
 
         foreach (var collider in nearbyObjects)
         {
+            if (collider == null) continue;
+
             // Check for predators (threats)
             MobActionsController potentialPredator = collider.GetComponent<MobActionsController>();
-            if (potentialPredator != null && potentialPredator.PreysReference.Contains(Context.MobReference.type))
+            if (potentialPredator != null && potentialPredator.PreysReference != null &&
+                potentialPredator.PreysReference.Contains(Context.MobReference.type))
             {
                 float distance = Vector3.Distance(Context.MobReference.TransformReference.position, potentialPredator.transform.position);
                 float threatLevel = 1f - Mathf.Clamp01(distance / Context.MobReference.DetectionRange);
@@ -120,12 +143,19 @@ public class MobIdleState : MobMovementState
                 if (threatLevel > highestThreatLevel)
                 {
                     highestThreatLevel = threatLevel;
+
+                    // Remember this threat
+                    if (!threatMemory.ContainsKey(potentialPredator.gameObject))
+                    {
+                        threatMemory[potentialPredator.gameObject] = Time.time;
+                    }
                 }
             }
 
             // Check for prey (opportunities)
             PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
-            if (player != null && Context.MobReference.PreysReference.Contains("Player"))
+            if (player != null && Context.MobReference.PreysReference != null &&
+                Context.MobReference.PreysReference.Contains("Player"))
             {
                 float distance = Vector3.Distance(Context.MobReference.TransformReference.position, player.transform.position);
                 float opportunity = 1f - Mathf.Clamp01(distance / Context.MobReference.DetectionRange);
@@ -165,18 +195,22 @@ public class MobIdleState : MobMovementState
         }
 
         // Check if the player is within the detection range.
-        if (Context.MobReference.CurrentPlayerTarget != null && Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.CurrentPlayerTarget.transform.position) <= Context.MobReference.DetectionRange)
+        if (Context.MobReference.CurrentPlayerTarget != null &&
+            Vector3.Distance(Context.MobReference.TransformReference.position,
+                           Context.MobReference.CurrentPlayerTarget.transform.position) <= Context.MobReference.DetectionRange)
         {
             // Set the destination to the player's position using safe method.
-            SafeSetDestination(Context.MobReference.CurrentPlayerTarget.transform.position);
-            shouldChangeToMovingState = true;
+            if (SafeSetDestination(Context.MobReference.CurrentPlayerTarget.transform.position))
+            {
+                shouldChangeToMovingState = true;
+            }
         }
         else
         {
             // Calculate wait time with some variation for natural behavior
             float baseWaitTime = Context.MobReference.IdleTime;
             float variation = Random.Range(-0.3f, 0.3f);
-            float waitTime = baseWaitTime * (1f + variation);
+            float waitTime = Mathf.Max(0.5f, baseWaitTime * (1f + variation));
 
             float elapsedTime = 0f;
 
@@ -227,7 +261,7 @@ public class MobIdleState : MobMovementState
     private float EvaluateWanderUtility()
     {
         // Wandering is good when there are no patrol points and we're not currently engaged
-        if (Context.MobReference.PatrolPoints.Length > 0)
+        if (Context.MobReference.PatrolPoints != null && Context.MobReference.PatrolPoints.Length > 0)
             return 0.3f; // Lower utility if patrol points exist
 
         // Check if we've been in same area too long
@@ -241,7 +275,7 @@ public class MobIdleState : MobMovementState
     private float EvaluatePatrolUtility()
     {
         // Patrolling is highly valuable when patrol points are set
-        if (Context.MobReference.PatrolPoints.Length == 0)
+        if (Context.MobReference.PatrolPoints == null || Context.MobReference.PatrolPoints.Length == 0)
             return 0f;
 
         return 0.8f; // High utility for patrol when points exist
@@ -281,7 +315,7 @@ public class MobIdleState : MobMovementState
         // Successfully set destination
         waitingForNavMesh = false;
 
-        if (!Context.MobReference.CurrentPlayerTarget)
+        if (Context.MobReference.CurrentPlayerTarget == null)
         {
             shouldChangeToMovingState = true;
             alreadyMoving = true;

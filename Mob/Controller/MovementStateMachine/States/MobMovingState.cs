@@ -1,10 +1,9 @@
 ﻿using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.InputSystem;
 
 /// <summary>
 /// Represents the moving state of the mob in the movement state machine.
-/// with dynamic path adjustment and obstacle avoidance.
+///  with dynamic path adjustment and obstacle avoidance.
 /// </summary>
 public class MobMovingState : MobMovementState
 {
@@ -18,10 +17,23 @@ public class MobMovingState : MobMovementState
 
     public override void EnterState()
     {
-        Context.Anim?.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        if (Context.Anim != null)
+        {
+            Context.Anim.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        }
+
         if (!alreadyMoving)
         {
-            Context.MobReference.WaitToReachDestinationRoutine = Context.MobReference.StartCoroutine(WaitToReachDestinationRoutine());
+            if (Context.MobReference != null && Context.MobReference.WaitToReachDestinationRoutine != null)
+            {
+                Context.MobReference.StopCoroutine(Context.MobReference.WaitToReachDestinationRoutine);
+            }
+
+            if (Context.MobReference != null)
+            {
+                Context.MobReference.WaitToReachDestinationRoutine =
+                    Context.MobReference.StartCoroutine(WaitToReachDestinationRoutine());
+            }
         }
         lastPathRecalculation = Time.time;
     }
@@ -43,8 +55,7 @@ public class MobMovingState : MobMovementState
         }
     }
 
-    public override
-    MobMovementStateMachine.EMobMovementState GetNextState()
+    public override MobMovementStateMachine.EMobMovementState GetNextState()
     {
         if (shouldChangeToIdleState)
         {
@@ -74,15 +85,26 @@ public class MobMovingState : MobMovementState
     /// </summary>
     private void OptimizePath()
     {
+        if (Context.NavMeshAgentReference == null) return;
+
         // Check if we're moving efficiently
         if (Context.NavMeshAgentReference.hasPath && !Context.NavMeshAgentReference.pathPending)
         {
             // If we're moving too slowly or path seems inefficient, recalculate
             if (Context.NavMeshAgentReference.velocity.magnitude < Context.NavMeshAgentReference.speed * 0.5f)
             {
-                // Try to find a better path
-                Vector3 currentDestination = Context.NavMeshAgentReference.destination;
-                Context.NavMeshAgentReference.SetDestination(currentDestination);
+                // Check if we're actually stuck or just starting/stopping
+                if (Context.NavMeshAgentReference.remainingDistance > Context.NavMeshAgentReference.stoppingDistance + 1f)
+                {
+                    // Try to find a better path
+                    Vector3 currentDestination = Context.NavMeshAgentReference.destination;
+
+                    // Validate the destination is still valid
+                    if (NavMesh.SamplePosition(currentDestination, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+                    {
+                        SafeSetDestination(hit.position);
+                    }
+                }
             }
         }
     }
@@ -93,8 +115,11 @@ public class MobMovingState : MobMovementState
     /// <returns>Utility score for current behavior.</returns>
     protected override float EvaluateCurrentBehavior()
     {
+        if (Context.NavMeshAgentReference == null) return 0.3f;
+
         // Moving towards a goal is generally productive
-        if (Context.NavMeshAgentReference.hasPath && Context.NavMeshAgentReference.remainingDistance > Context.NavMeshAgentReference.stoppingDistance)
+        if (Context.NavMeshAgentReference.hasPath &&
+            Context.NavMeshAgentReference.remainingDistance > Context.NavMeshAgentReference.stoppingDistance)
         {
             return 0.6f; // Good to continue moving when we have a valid destination
         }

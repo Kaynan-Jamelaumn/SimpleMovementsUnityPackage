@@ -3,7 +3,7 @@ using UnityEngine.AI;
 
 /// <summary>
 /// Represents the patrol state of the mob in the movement state machine.
-///  with  patrol point selection and threat awareness during patrol.
+///  with intelligent patrol point selection and threat awareness during patrol.
 /// </summary>
 public class MobPatrolState : MobMovementState
 {
@@ -26,18 +26,38 @@ public class MobPatrolState : MobMovementState
     /// </summary>
     public override void EnterState()
     {
-        if (Context.MobReference.PatrolPoints.Length == 0) return; // No patrol points set
+        if (Context.MobReference.PatrolPoints == null || Context.MobReference.PatrolPoints.Length == 0)
+        {
+            // No patrol points set, transition to idle
+            shouldChangeToIdleState = true;
+            return;
+        }
 
-        Context.Anim?.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        if (Context.Anim != null)
+        {
+            Context.Anim.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+        }
 
         // Select best patrol point considering current situation
         int targetPatrolPoint = SelectNextPatrolPoint();
         Context.MobReference.CurrentPatrolPoint = targetPatrolPoint;
 
+        // Validate patrol point exists
+        if (targetPatrolPoint >= Context.MobReference.PatrolPoints.Length)
+        {
+            Context.MobReference.CurrentPatrolPoint = 0;
+        }
+
         // Use safe method to set destination
         if (SafeSetDestination(Context.MobReference.PatrolPoints[Context.MobReference.CurrentPatrolPoint]))
         {
-            Context.MobReference.WaitToReachDestinationRoutine = Context.MobReference.StartCoroutine(WaitToReachDestinationRoutine());
+            if (Context.MobReference.WaitToReachDestinationRoutine != null)
+            {
+                Context.MobReference.StopCoroutine(Context.MobReference.WaitToReachDestinationRoutine);
+            }
+
+            Context.MobReference.WaitToReachDestinationRoutine =
+                Context.MobReference.StartCoroutine(WaitToReachDestinationRoutine());
         }
         else
         {
@@ -48,7 +68,8 @@ public class MobPatrolState : MobMovementState
 
         if (Context.MobReference.HasReachedDestinationWithMargin())
         {
-            Context.MobReference.CurrentPatrolPoint = (Context.MobReference.CurrentPatrolPoint + 1) % Context.MobReference.PatrolPoints.Length;
+            Context.MobReference.CurrentPatrolPoint =
+                (Context.MobReference.CurrentPatrolPoint + 1) % Context.MobReference.PatrolPoints.Length;
         }
 
         lastPatrolCheck = Time.time;
@@ -101,6 +122,9 @@ public class MobPatrolState : MobMovementState
     /// <returns>Index of the selected patrol point.</returns>
     private int SelectNextPatrolPoint()
     {
+        if (Context.MobReference.PatrolPoints == null || Context.MobReference.PatrolPoints.Length == 0)
+            return 0;
+
         // Default behavior: sequential patrol
         int nextPoint = (Context.MobReference.CurrentPatrolPoint + 1) % Context.MobReference.PatrolPoints.Length;
 
@@ -108,16 +132,33 @@ public class MobPatrolState : MobMovementState
         // This creates more dynamic and realistic patrol behavior
         float closestThreatDistance = float.MaxValue;
 
-        Collider[] nearbyObjects = Context.MobReference.DetectionCast.DetectObjects(Context.MobReference.TransformReference);
-        foreach (var collider in nearbyObjects)
+        if (Context.MobReference.DetectionCast != null)
         {
-            MobActionsController potentialThreat = collider.GetComponent<MobActionsController>();
-            if (potentialThreat != null && potentialThreat.PreysReference.Contains(Context.MobReference.type))
+            Collider[] nearbyObjects = Context.MobReference.DetectionCast.DetectObjects(Context.MobReference.TransformReference);
+
+            if (nearbyObjects != null)
             {
-                float distance = Vector3.Distance(Context.MobReference.TransformReference.position, potentialThreat.transform.position);
-                if (distance < closestThreatDistance)
+                foreach (var collider in nearbyObjects)
                 {
-                    closestThreatDistance = distance;
+                    if (collider == null) continue;
+
+                    MobActionsController potentialThreat = collider.GetComponent<MobActionsController>();
+                    if (potentialThreat != null && potentialThreat.PreysReference != null &&
+                        potentialThreat.PreysReference.Contains(Context.MobReference.type))
+                    {
+                        float distance = Vector3.Distance(Context.MobReference.TransformReference.position,
+                                                          potentialThreat.transform.position);
+                        if (distance < closestThreatDistance)
+                        {
+                            closestThreatDistance = distance;
+
+                            // Remember this threat
+                            if (!threatMemory.ContainsKey(potentialThreat.gameObject))
+                            {
+                                threatMemory[potentialThreat.gameObject] = Time.time;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -130,7 +171,8 @@ public class MobPatrolState : MobMovementState
 
             for (int i = 0; i < Context.MobReference.PatrolPoints.Length; i++)
             {
-                float distance = Vector3.Distance(Context.MobReference.TransformReference.position, Context.MobReference.PatrolPoints[i]);
+                float distance = Vector3.Distance(Context.MobReference.TransformReference.position,
+                                                  Context.MobReference.PatrolPoints[i]);
                 if (distance > maxDistance)
                 {
                     maxDistance = distance;
@@ -151,7 +193,7 @@ public class MobPatrolState : MobMovementState
     protected override float EvaluateCurrentBehavior()
     {
         // Patrolling is valuable for area coverage and threat detection
-        if (Context.MobReference.PatrolPoints.Length > 0)
+        if (Context.MobReference.PatrolPoints != null && Context.MobReference.PatrolPoints.Length > 0)
         {
             return 0.7f; // Good utility when patrol points are available
         }
