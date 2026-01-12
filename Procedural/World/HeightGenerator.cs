@@ -4,14 +4,12 @@ using System.Linq;
 
 /// <summary>
 /// Static class responsible for generating height maps for terrain based on Voronoi diagrams, Perlin noise, and biome-specific parameters.
+/// Height is blended across the two nearest biomes near their border (instead of cutting hard between them)
+/// so adjacent biomes with different amplitude/frequency don't produce a visible cliff, and the result is
+/// optionally weathered by thermal and hydraulic (water) erosion, itself modulated by the local climate.
 /// </summary>
 public static class HeightGenerator
 {
-    /// <summary>
-    /// List of available biomes used for height generation.
-    /// </summary>
-    private static List<Biome> availableBiomes;
-
     /// <summary>
     /// Generates a height map for a terrain chunk based on the provided terrain generator configuration and global offset.
     /// </summary>
@@ -20,30 +18,122 @@ public static class HeightGenerator
     /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
     public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset)
     {
-        // Initialize the height map with dimensions based on the chunk size.
-        float[,] heightMap = new float[terrainGenerator.ChunkSize + 1, terrainGenerator.ChunkSize + 1];
+        int chunkSize = terrainGenerator.ChunkSize;
+        int finalSize = chunkSize + 1;
 
-        // Get the Voronoi seed from the terrain generator.
+        bool erosionEnabled = terrainGenerator.EnableErosion;
+        int padding = erosionEnabled ? Mathf.Max(0, terrainGenerator.ErosionPadding) : 0;
+        int paddedSize = finalSize + padding * 2;
+
         int voronoiSeed = terrainGenerator.VoronoiSeed;
+        float inverseWidth = 1f / chunkSize;
+        float inverseDepth = 1f / chunkSize;
 
-        // Initialize height value and calculate inverse dimensions for normalization.
-        float height = 0;
-        float inverseWidth = 1f / terrainGenerator.ChunkSize;
-        float inverseDepth = 1f / terrainGenerator.ChunkSize;
-
-        // Populate the available biomes based on the terrain generator's definitions.
-        availableBiomes = terrainGenerator.BiomeDefinitions
+        List<Biome> availableBiomes = terrainGenerator.BiomeDefinitions
             .Select(biomeInstance => biomeInstance.BiomePrefab)
             .ToList();
 
-        // Iterate through each point in the chunk grid and calculate the height.
-        for (int y = 0; y <= terrainGenerator.ChunkSize; y++)
+        Vector2 paddedOrigin = globalOffset - new Vector2(padding, padding);
+
+        float[,] paddedHeights = new float[paddedSize, paddedSize];
+        float[,] resistanceMap = erosionEnabled ? new float[paddedSize, paddedSize] : null;
+        float[,] rainfallMap = erosionEnabled ? new float[paddedSize, paddedSize] : null;
+
+        for (int y = 0; y < paddedSize; y++)
         {
-            float worldPosY = globalOffset.y + y;
-            for (int x = 0; x <= terrainGenerator.ChunkSize; x++)
+            float worldPosY = paddedOrigin.y + y;
+            for (int x = 0; x < paddedSize; x++)
             {
-                float worldPosX = globalOffset.x + x;
-                heightMap[x, y] = CalculateHeight(terrainGenerator, worldPosX, worldPosY, voronoiSeed, height, availableBiomes, inverseWidth, inverseDepth);
+                float worldPosX = paddedOrigin.x + x;
+
+                List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.GetBiomeBlend(
+                    new Vector2(worldPosX, worldPosY),
+                    terrainGenerator.VoronoiScale,
+                    terrainGenerator.NumVoronoiPoints,
+                    availableBiomes,
+                    voronoiSeed,
+                    terrainGenerator.useWeightedBiome,
+                    terrainGenerator.UseNaturalClimatePlacement,
+                    terrainGenerator.ClimateNoiseScale,
+                    terrainGenerator.VoronoiWarpStrength,
+                    terrainGenerator.VoronoiWarpScale,
+                    terrainGenerator.BiomeBlendRange,
+                    terrainGenerator.BiomeClusterStrength,
+                    terrainGenerator.BiomeClusterRadius,
+                    terrainGenerator.BiomeRepeatPenalty
+                );
+
+                float height = 0f;
+                for (int i = 0; i < blend.Count; i++)
+                {
+                    height += blend[i].Weight * ComputeBiomeNoise(blend[i].Biome, worldPosX, worldPosY, terrainGenerator.Octaves, terrainGenerator.Lacunarity, inverseWidth, inverseDepth);
+                }
+
+                paddedHeights[x, y] = height;
+
+                if (erosionEnabled)
+                {
+                    float moisture = ClimateGenerator.GetMoisture(new Vector2(worldPosX, worldPosY), voronoiSeed, terrainGenerator.ClimateNoiseScale);
+
+                    float resistance = 0f;
+                    float rainfall = 0f;
+                    for (int i = 0; i < blend.Count; i++)
+                    {
+                        resistance += blend[i].Weight * blend[i].Biome.erosionResistance;
+                        rainfall += blend[i].Weight * blend[i].Biome.rainfallErosionMultiplier;
+                    }
+
+                    resistanceMap[x, y] = Mathf.Clamp01(resistance);
+                    // Rainfall-driven ("climate") erosion strength: how much water this cell's climate feeds into passing droplets.
+                    rainfallMap[x, y] = Mathf.Clamp01(moisture * rainfall);
+                }
+            }
+        }
+
+        if (erosionEnabled)
+        {
+            if (terrainGenerator.ThermalIterations > 0 && terrainGenerator.ThermalErosionRate > 0f)
+            {
+                ErosionGenerator.ThermalErode(paddedHeights, resistanceMap, terrainGenerator.ThermalIterations, terrainGenerator.TalusAngle, terrainGenerator.ThermalErosionRate);
+            }
+
+            if (terrainGenerator.HydraulicDropletDensity > 0f)
+            {
+                Vector2Int worldOrigin = new Vector2Int(Mathf.RoundToInt(paddedOrigin.x), Mathf.RoundToInt(paddedOrigin.y));
+                ErosionGenerator.HydraulicErode(
+                    paddedHeights,
+                    resistanceMap,
+                    rainfallMap,
+                    worldOrigin,
+                    voronoiSeed,
+                    terrainGenerator.HydraulicDropletDensity,
+                    terrainGenerator.DropletLifetime,
+                    terrainGenerator.DropletInertia,
+                    terrainGenerator.SedimentCapacityFactor,
+                    terrainGenerator.MinSedimentCapacity,
+                    terrainGenerator.ErodeSpeed,
+                    terrainGenerator.DepositSpeed,
+                    terrainGenerator.EvaporateSpeed,
+                    terrainGenerator.ErosionGravity,
+                    terrainGenerator.ErosionRadius
+                );
+            }
+        }
+
+        float[,] heightMap = new float[finalSize, finalSize];
+        bool trackMinMax = !terrainGenerator.TerrainTextureBasedOnVoronoiPoints;
+
+        for (int y = 0; y < finalSize; y++)
+        {
+            for (int x = 0; x < finalSize; x++)
+            {
+                float finalHeight = paddedHeights[x + padding, y + padding];
+                heightMap[x, y] = finalHeight;
+
+                if (trackMinMax)
+                {
+                    terrainGenerator.UpdateMinMaxHeight(finalHeight);
+                }
             }
         }
 
@@ -51,57 +141,33 @@ public static class HeightGenerator
     }
 
     /// <summary>
-    /// Calculates the height at a specific world position using biome parameters and noise functions.
+    /// Applies a biome's fractal/fBm Perlin noise (amplitude, frequency, persistence) at a world position.
     /// </summary>
-    /// <param name="terrainGenerator">The terrain generator containing noise and biome configurations.</param>
-    /// <param name="x">The x-coordinate of the world position.</param>
-    /// <param name="y">The y-coordinate of the world position.</param>
-    /// <param name="voronoiSeed">The seed for generating Voronoi diagrams.</param>
-    /// <param name="height">The initial height value (used for accumulation).</param>
-    /// <param name="availableBiomes">The list of available biomes.</param>
-    /// <param name="inverseWidth">The inverse width of the chunk, used for normalization.</param>
-    /// <param name="inverseDepth">The inverse depth of the chunk, used for normalization.</param>
-    /// <returns>The calculated height at the specified position.</returns>
-    private static float CalculateHeight(TerrainGenerator terrainGenerator, float x, float y, int voronoiSeed, float height, List<Biome> availableBiomes, float inverseWidth, float inverseDepth)
+    private static float ComputeBiomeNoise(Biome biome, float worldX, float worldY, int octaves, float lacunarity, float inverseWidth, float inverseDepth)
     {
-        // Determine the biome at the given position using Voronoi diagrams.
-        Biome biome = VoronoiBiomeGenerator.GetBiomeAtPosition(
-            new Vector2(x, y),
-            terrainGenerator.VoronoiScale,
-            terrainGenerator.NumVoronoiPoints,
-            availableBiomes,
-            voronoiSeed,
-            terrainGenerator.useWeightedBiome
-        );
-
-        // Retrieve biome-specific parameters for noise generation.
         float amplitude = biome.amplitude;
         float frequency = biome.frequency;
         float persistence = biome.persistence;
 
-        // Apply Perlin noise with multiple octaves for detailed height generation.
-        for (int o = 0; o < terrainGenerator.Octaves; o++)
-        {
-            float sampleX = (x * inverseWidth) * frequency;
-            float sampleY = (y * inverseDepth) * frequency;
+        // A small, stable per-biome phase offset keeps every biome from sampling the exact same
+        // noise field (which would otherwise make adjacent biomes' shapes line up suspiciously,
+        // and make every biome just look like a rescaled copy of the same terrain).
+        float phaseOffset = biome.name != null ? (biome.name.GetHashCode() % 1000) * 0.137f : 0f;
 
-            // Generate Perlin noise and adjust height accordingly.
+        float height = 0f;
+        for (int o = 0; o < octaves; o++)
+        {
+            float sampleX = (worldX * inverseWidth) * frequency + phaseOffset;
+            float sampleY = (worldY * inverseDepth) * frequency + phaseOffset;
+
             float perlinValue = Mathf.PerlinNoise(sampleX + 0.5f, sampleY + 0.5f) * 2 - 1;
             height += perlinValue * amplitude;
 
-            // Update frequency and amplitude for the next octave.
-            frequency *= terrainGenerator.Lacunarity;
+            frequency *= lacunarity;
             amplitude *= persistence;
 
-            // Early exit optimization to avoid unnecessary calculations.
             if (amplitude < 0.001f)
                 break;
-        }
-
-        // Update terrain generator's minimum and maximum height values if required.
-        if (!terrainGenerator.TerrainTextureBasedOnVoronoiPoints)
-        {
-            terrainGenerator.UpdateMinMaxHeight(height);
         }
 
         return height;

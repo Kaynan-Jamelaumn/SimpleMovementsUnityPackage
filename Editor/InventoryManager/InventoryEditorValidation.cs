@@ -242,7 +242,7 @@ public class InventoryEditorValidation
         int brokenRefs = 0;
         foreach (var prop in objectRefProperties)
         {
-            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceInstanceIDValue != 0)
+            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceEntityIdValue != default)
             {
                 Debug.LogWarning($"Broken reference detected in {prop.displayName}");
                 brokenRefs++;
@@ -279,7 +279,7 @@ public class InventoryEditorValidation
 
         foreach (var prop in objectRefProperties)
         {
-            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceInstanceIDValue != 0)
+            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceEntityIdValue != default)
             {
                 issues.Add($"Broken reference in {prop.displayName}");
             }

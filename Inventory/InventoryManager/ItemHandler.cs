@@ -219,7 +219,7 @@ public static class ItemHandler
         }
 
         GameObject currentSlotItem = slot.heldItem;
-        var playerStatusController = Object.FindFirstObjectByType<PlayerStatusController>();
+        var playerStatusController = Object.FindAnyObjectByType <PlayerStatusController>();
 
         // Use the slot's SetHeldItem method instead of manual transform manipulation
         lastSlot.SetHeldItem(currentSlotItem);

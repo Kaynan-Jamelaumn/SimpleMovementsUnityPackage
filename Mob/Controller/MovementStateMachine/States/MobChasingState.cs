@@ -4,7 +4,7 @@ using UnityEngine.AI;
 
 /// <summary>
 /// Represents the chasing state of the mob in the movement state machine.
-/// Enhanced with predictive movement, tactical positioning, and intelligent combat behaviors.
+///  with predictive movement, tactical positioning, and intelligent combat behaviors.
 /// </summary>
 public class MobChasingState : MobMovementState
 {
@@ -512,7 +512,7 @@ public class MobChasingState : MobMovementState
             if (!Context.NavMeshAgentReference.pathPending &&
                 Context.NavMeshAgentReference.remainingDistance < Context.NavMeshAgentReference.stoppingDistance + 2f)
             {
-                // Use the enhanced escape position calculation with zigzag
+                // Use the  escape position calculation with zigzag
                 Vector3 escapeDirection = Context.ActionsController.CalculateBestEscapePosition(
                     Context.MobReference.CurrentPredator.transform.position,
                     Context.MobReference.EscapeMaxDistance);

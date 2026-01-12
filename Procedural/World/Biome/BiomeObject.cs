@@ -60,4 +60,32 @@ public class BiomeObject
     [Tooltip("How much this object avoids steep terrain (multiplier on slope threshold).")]
     [Range(0.1f, 2f)]
     public float slopeAvoidance = 1f;
+
+    [Header("Spacing")]
+    [Tooltip("Minimum distance to another instance of this same object type within a chunk, used to avoid unnatural clumping/grid-aligned placement. Leave at 0 to auto-derive a sensible spacing from the object's collider bounds.")]
+    public float minSpacing = 0f;
+
+    [System.NonSerialized]
+    private float cachedEffectiveMinSpacing = -1f;
+
+    /// <summary>
+    /// Returns the minimum spacing to enforce between instances of this object within a chunk.
+    /// If <see cref="minSpacing"/> was left at 0, derives and caches a sensible default from the
+    /// prefab's collider bounds instead of requiring every object type to be hand-tuned.
+    /// </summary>
+    public float GetEffectiveMinSpacing()
+    {
+        if (cachedEffectiveMinSpacing >= 0f)
+            return cachedEffectiveMinSpacing;
+
+        if (minSpacing > 0f)
+        {
+            cachedEffectiveMinSpacing = minSpacing;
+            return cachedEffectiveMinSpacing;
+        }
+
+        Collider collider = terrainObject != null ? terrainObject.GetComponent<Collider>() : null;
+        cachedEffectiveMinSpacing = collider != null ? collider.bounds.extents.magnitude * 1.2f : 0f;
+        return cachedEffectiveMinSpacing;
+    }
 }

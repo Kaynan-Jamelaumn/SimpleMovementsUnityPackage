@@ -42,11 +42,53 @@ public class Biome : ScriptableObject
     public float weight = 1;
 
     /// <summary>
-    /// Persistence controls the detail added or removed at each noise octave. 
+    /// Persistence controls the detail added or removed at each noise octave.
     /// Ranges from 0 to 1, where higher values retain more detail.
     /// </summary>
     [Range(0, 1)]
     public float persistence = 1;
+
+    [Header("Climate (Natural Biome Placement)")]
+    /// <summary>Ideal temperature for this biome: 0 = coldest, 1 = hottest.</summary>
+    [Tooltip("Ideal temperature for this biome: 0 = coldest, 1 = hottest.")]
+    [Range(0f, 1f)] public float idealTemperature = 0.5f;
+
+    /// <summary>Ideal moisture/rainfall for this biome: 0 = driest, 1 = wettest.</summary>
+    [Tooltip("Ideal moisture/rainfall for this biome: 0 = driest, 1 = wettest.")]
+    [Range(0f, 1f)] public float idealMoisture = 0.5f;
+
+    /// <summary>How tolerant this biome is to temperature deviating from its ideal. Smaller values create a narrower, more distinct climate niche.</summary>
+    [Tooltip("How tolerant this biome is to temperature deviating from its ideal. Smaller values create a narrower, more distinct climate niche.")]
+    [Range(0.05f, 1f)] public float temperatureTolerance = 0.35f;
+
+    /// <summary>How tolerant this biome is to moisture deviating from its ideal.</summary>
+    [Tooltip("How tolerant this biome is to moisture deviating from its ideal.")]
+    [Range(0.05f, 1f)] public float moistureTolerance = 0.35f;
+
+    [Header("Erosion")]
+    /// <summary>Resistance to erosion: 0 = soft/erodes easily (sand, loose soil), 1 = hard rock that barely erodes.</summary>
+    [Tooltip("Resistance to erosion: 0 = soft/erodes easily (sand, loose soil), 1 = hard rock that barely erodes.")]
+    [Range(0f, 1f)] public float erosionResistance = 0.5f;
+
+    /// <summary>Multiplier applied to rainfall-driven water erosion strength within this biome. Wetter biomes (jungles, swamps) should generally use higher values; arid biomes (deserts) lower.</summary>
+    [Tooltip("Multiplier applied to rainfall-driven water erosion strength within this biome. Wetter biomes should generally use higher values; arid biomes lower.")]
+    [Range(0f, 3f)] public float rainfallErosionMultiplier = 1f;
+
+    /// <summary>
+    /// Scores how well a given climate matches this biome's ideal temperature/moisture niche.
+    /// Returns 1 when the climate exactly matches the ideal, falling off toward 0 the further away it is
+    /// (relative to the configured tolerances). Used to place biomes in climatically plausible locations.
+    /// </summary>
+    /// <param name="temperature">Temperature at the position being evaluated, in [0,1].</param>
+    /// <param name="moisture">Moisture at the position being evaluated, in [0,1].</param>
+    /// <returns>A fitness score in (0,1], higher is a better climate match.</returns>
+    public float ClimateFitness(float temperature, float moisture)
+    {
+        float tempDelta = (temperature - idealTemperature) / Mathf.Max(0.0001f, temperatureTolerance);
+        float moistDelta = (moisture - idealMoisture) / Mathf.Max(0.0001f, moistureTolerance);
+        float distanceSquared = tempDelta * tempDelta + moistDelta * moistDelta;
+        return Mathf.Exp(-distanceSquared);
+    }
 
     /// <summary>
     /// Gets a random texture variation for this biome, including the primary texture.

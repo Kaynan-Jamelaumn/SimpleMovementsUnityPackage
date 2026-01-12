@@ -404,7 +404,7 @@ public static class InventoryUtils
                         // Unequip if equipped
                         if (armor.isEquipped)
                         {
-                            var playerController = Object.FindFirstObjectByType<PlayerStatusController>();
+                            var playerController = Object.FindAnyObjectByType <PlayerStatusController>();
                             if (playerController != null)
                             {
                                 ArmorEquipmentHandler.UnequipArmor(armor, playerController);

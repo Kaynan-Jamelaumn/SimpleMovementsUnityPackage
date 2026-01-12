@@ -19,18 +19,20 @@ public class WallCollision : MonoBehaviour
                     Destroy(this.transform.parent.gameObject);
                 //else if //(collider.gameObject.name.Contains("Wall") && gameObject.name.Contains("Wall"))
                 //{
-                    // Check if the positions are close enough to be considered overlapping
-                    else if (Vector3.Distance(transform.position, collider.transform.position) < 0.1f) // Use a small threshold instead of ==
+                // Check if the positions are close enough to be considered overlapping
+                else if (Vector3.Distance(transform.position, collider.transform.position) < 0.1f) // Use a small threshold instead of ==
+                {
+                    // Determine the rule for which wall to destroy
+                    // As an example, we can use the hash code to decide (Object.GetInstanceID()
+                    // is obsolete; GetHashCode() gives the same "arbitrary but consistent
+                    // per-instance" tie-breaker this comparison needs)
+                    if (gameObject.GetHashCode() < collider.gameObject.GetHashCode())
                     {
-                        // Determine the rule for which wall to destroy
-                        // As an example, we can use the instance ID to decide
-                        if (gameObject.GetInstanceID() < collider.gameObject.GetInstanceID())
-                        {
-                            Destroy(gameObject);
-                        }
-                        // Otherwise, the other wall's script will destroy it
+                        Destroy(gameObject);
                     }
-               // }
+                    // Otherwise, the other wall's script will destroy it
+                }
+                // }
             }
         }
 

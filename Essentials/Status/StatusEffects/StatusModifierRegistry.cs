@@ -9,7 +9,9 @@ using UnityEngine;
 public class StatusModifierRegistry : MonoBehaviour
 {
     [Header("Registered Modifiers")]
-    [SerializeField] private Dictionary<string, IStatusModifier> registeredModifiers = new Dictionary<string, IStatusModifier>();
+    // Not [SerializeField]: Unity can't serialize a Dictionary whose value type is an interface
+    // (IStatusModifier) - this is populated at runtime via RegisterModifier(), never Inspector-edited.
+    private Dictionary<string, IStatusModifier> registeredModifiers = new Dictionary<string, IStatusModifier>();
     [SerializeField] private Dictionary<UnifiedStatusType, List<StatusModification>> activeModifications = new Dictionary<UnifiedStatusType, List<StatusModification>>();
 
     [Header("References")]

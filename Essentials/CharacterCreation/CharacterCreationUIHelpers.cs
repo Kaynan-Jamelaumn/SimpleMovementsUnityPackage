@@ -11,7 +11,7 @@ public class CharacterCreationUIHelpers : MonoBehaviour
     private void Awake()
     {
         if (mainUI == null)
-            mainUI = FindFirstObjectByType<CharacterCreationUI>();
+            mainUI = FindAnyObjectByType<CharacterCreationUI>();
     }
 
     // Close trait details panel - call this from Close button
@@ -72,7 +72,7 @@ public class ConfirmationDialog : MonoBehaviour
     private void Awake()
     {
         if (mainUI == null)
-            mainUI = FindFirstObjectByType<CharacterCreationUI>();
+            mainUI = FindAnyObjectByType<CharacterCreationUI>();
 
         if (confirmButton != null)
             confirmButton.onClick.AddListener(Confirm);
@@ -145,7 +145,7 @@ public class TraitTooltip : MonoBehaviour
     private void Awake()
     {
         if (mainUI == null)
-            mainUI = FindFirstObjectByType<CharacterCreationUI>();
+            mainUI = FindAnyObjectByType<CharacterCreationUI>();
     }
 
     public void ShowTooltip(string text, Vector3 position)

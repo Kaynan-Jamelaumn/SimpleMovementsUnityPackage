@@ -9,6 +9,13 @@ public class MeshData
     public Vector3[] vertices;
     public int[] triangles;
     public Vector2[] uvs;
+    // Dedicated splat-map UV: spans exactly [0,1] once across the whole chunk, completely
+    // independent of texture density/tiling. `uvs` above is deliberately stretched past [0,1]
+    // (see GetTextureScale) so the detail texture repeats several times per chunk - sampling
+    // the splat map with THAT uv wraps it the same number of times, tiling the entire biome
+    // layout within a single chunk instead of showing it once. This second channel is what
+    // the shader now uses to sample the splat map correctly.
+    public Vector2[] splatUVs;
 
     private bool enableDebugging;
 
@@ -26,6 +33,7 @@ public class MeshData
         vertices = new Vector3[(width + 1) * (depth + 1)];
         triangles = new int[width * depth * 6];
         uvs = new Vector2[(width + 1) * (depth + 1)];
+        splatUVs = new Vector2[(width + 1) * (depth + 1)];
 
         if (enableDebugging)
             Debug.Log($"MeshData created - Width: {width}, Depth: {depth}, Vertices array: {vertices.Length}, Triangles array: {triangles.Length}");
@@ -77,6 +85,7 @@ public class MeshData
         mesh.vertices = vertices;
         mesh.triangles = triangles;
         mesh.uv = uvs;
+        mesh.uv2 = splatUVs;
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
@@ -206,6 +215,13 @@ public static class MeshGenerator
                 }
 
                 meshData.uvs[vertexIndex] = finalUV;
+
+                // Dedicated splat-map UV: plain 0-1 across the chunk, deliberately untouched by
+                // uvScale/ScaleFactor/variations so it can never wrap/tile within one chunk.
+                meshData.splatUVs[vertexIndex] = new Vector2(
+                    (float)x / meshWidth,
+                    (float)y / meshHeight
+                );
 
                 // Add triangles if within bounds of the mesh grid.
                 if (x < meshWidth && y < meshHeight)
