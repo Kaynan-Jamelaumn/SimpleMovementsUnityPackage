@@ -193,6 +193,22 @@ public class EndlessTerrain : MonoBehaviour
         if (terrainChunksVisibleLastUpdate.Count == 0) return null;
         return terrainChunksVisibleLastUpdate[Random.Range(0, terrainChunksVisibleLastUpdate.Count)];
     }
+
+    /// <summary>
+    /// Draws the erosion debug overlay (see <see cref="TerrainGenerator.VisualizeErosionDebug"/>) for
+    /// every currently visible chunk. Terrain chunks only exist once generated at runtime, so this only
+    /// has anything to draw while in Play mode with the viewer having moved terrain into view.
+    /// </summary>
+    private void OnDrawGizmos()
+    {
+        if (mapGenerator == null || !mapGenerator.VisualizeErosionDebug || terrainChunksVisibleLastUpdate == null)
+            return;
+
+        foreach (TerrainChunk chunk in terrainChunksVisibleLastUpdate)
+        {
+            chunk?.DrawErosionGizmos(mapGenerator);
+        }
+    }
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
     /// Manages its mesh, texture, collision, navigation mesh, and spawner systems dynamically.
@@ -214,9 +230,17 @@ public class EndlessTerrain : MonoBehaviour
         private TerrainGenerator terrainGenerator;
         public float[,] heightmap;
 
+        /// <summary>
+        /// Debug-only: per-cell erosion delta captured alongside <see cref="heightmap"/> when
+        /// <see cref="TerrainGenerator.VisualizeErosionDebug"/> is enabled. Positive = erosion removed
+        /// material at that cell, negative = erosion deposited material. Null otherwise.
+        /// </summary>
+        public float[,] erosionDeltaMap;
+
         Vector2 globalOffset;
         int maxMobs;
         float maxViewDistance;
+        float scaleFactor = 1f;
         public Vector2 Position { get { return position; } }
 
         public TerrainChunk(Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count, bool shouldUseHDRPShaders, bool enableDebugging, float maxViewDistance)
@@ -224,6 +248,7 @@ public class EndlessTerrain : MonoBehaviour
             this.shouldUseHDRPShaders |= shouldUseHDRPShaders;
             this.enableDebugging = enableDebugging;
             this.maxViewDistance = maxViewDistance;
+            this.scaleFactor = scaleFactor;
 
             position = coord * size;
             bounds = new Bounds(position, Vector2.one * size);
@@ -312,6 +337,7 @@ public class EndlessTerrain : MonoBehaviour
             TextureGenerator textureGenerator = new TextureGenerator();
             textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer, shouldUseHDRPShaders);
             heightmap = terrainData.heightMap;
+            erosionDeltaMap = terrainData.erosionDeltaMap;
 
             Mesh mesh = terrainData.meshData.UpdateMesh();
 
@@ -364,6 +390,58 @@ public class EndlessTerrain : MonoBehaviour
         public bool IsVisible()
         {
             return meshObject.activeSelf;
+        }
+
+        /// <summary>
+        /// Draws one Scene-view gizmo cube per sampled cell where erosion changed this chunk's height
+        /// by more than <see cref="TerrainGenerator.ErosionDebugMinDelta"/>: red/orange where erosion
+        /// removed material, blue/cyan where it deposited material, with color intensity and cube size
+        /// both scaling toward <see cref="TerrainGenerator.ErosionDebugMaxDelta"/>. Only called when
+        /// <see cref="TerrainGenerator.VisualizeErosionDebug"/> is enabled (see <see cref="EndlessTerrain.OnDrawGizmos"/>).
+        /// </summary>
+        public void DrawErosionGizmos(TerrainGenerator generator)
+        {
+            if (erosionDeltaMap == null || heightmap == null || meshObject == null || !meshObject.activeSelf)
+                return;
+
+            int width = erosionDeltaMap.GetLength(0);
+            int depth = erosionDeltaMap.GetLength(1);
+            int stride = Mathf.Max(1, generator.ErosionDebugStride);
+            float minDelta = Mathf.Max(0f, generator.ErosionDebugMinDelta);
+            float maxDelta = Mathf.Max(0.0001f, generator.ErosionDebugMaxDelta);
+            float baseSize = Mathf.Max(0.01f, generator.ErosionDebugGizmoSize);
+            float heightOffset = generator.ErosionDebugHeightOffset;
+            int maxGizmos = Mathf.Max(0, generator.ErosionDebugMaxGizmosPerChunk);
+
+            Vector3 origin = meshObject.transform.position;
+            int drawn = 0;
+
+            for (int y = 0; y < depth && drawn < maxGizmos; y += stride)
+            {
+                for (int x = 0; x < width && drawn < maxGizmos; x += stride)
+                {
+                    float delta = erosionDeltaMap[x, y];
+                    float magnitude = Mathf.Abs(delta);
+                    if (magnitude < minDelta)
+                        continue;
+
+                    float t = Mathf.Clamp01(magnitude / maxDelta);
+
+                    // Erosion (material removed): orange -> red. Deposition (material added): cyan -> blue.
+                    // Fully qualified: this file also has a stray `using System.Drawing;`, whose Color type
+                    // would otherwise make the bare `Color` identifier ambiguous with UnityEngine.Color.
+                    Gizmos.color = delta > 0f
+                        ? UnityEngine.Color.Lerp(new UnityEngine.Color(1f, 0.75f, 0f, 0.55f), new UnityEngine.Color(1f, 0f, 0f, 0.95f), t)
+                        : UnityEngine.Color.Lerp(new UnityEngine.Color(0f, 0.85f, 1f, 0.55f), new UnityEngine.Color(0.1f, 0.1f, 1f, 0.95f), t);
+
+                    float worldHeight = heightmap[x, y];
+                    Vector3 worldPos = origin + new Vector3(x * scaleFactor, worldHeight + heightOffset, y * scaleFactor);
+                    float cubeSize = Mathf.Max(0.02f, Mathf.Lerp(baseSize * 0.35f, baseSize, t) * scaleFactor);
+
+                    Gizmos.DrawCube(worldPos, Vector3.one * cubeSize);
+                    drawn++;
+                }
+            }
         }
     }
 }

@@ -17,15 +17,20 @@ public static class DataStructure
         [Tooltip("Splatmap textures used for terrain texturing (optional).")]
         public Texture2D[] splatMap;
 
+        [Tooltip("Debug-only: how much erosion changed each cell (positive = eroded away, negative = deposited). Null unless the erosion debug visualization is enabled.")]
+        public readonly float[,] erosionDeltaMap;
+
         /// <summary>
         /// Constructor for MapData.
         /// </summary>
         /// <param name="heightMap">The heightmap array.</param>
         /// <param name="splatMap">An optional array of splatmaps for terrain texturing.</param>
-        public MapData(float[,] heightMap, Texture2D[] splatMap = null)
+        /// <param name="erosionDeltaMap">Optional per-cell erosion debug data - see <see cref="erosionDeltaMap"/>.</param>
+        public MapData(float[,] heightMap, Texture2D[] splatMap = null, float[,] erosionDeltaMap = null)
         {
             this.heightMap = heightMap;
             this.splatMap = splatMap;
+            this.erosionDeltaMap = erosionDeltaMap;
         }
     }
 
@@ -52,6 +57,9 @@ public static class DataStructure
         [Tooltip("Biome map that defines the biome layout across the terrain.")]
         public Biome[,] biomeMap;
 
+        [Tooltip("Debug-only: how much erosion changed each cell (positive = eroded away, negative = deposited). Null unless the erosion debug visualization is enabled.")]
+        public readonly float[,] erosionDeltaMap;
+
         /// <summary>
         /// Constructor for TerrainData.
         /// </summary>
@@ -61,13 +69,15 @@ public static class DataStructure
         /// <param name="terrainGenerator">The terrain generator used for creating the terrain.</param>
         /// <param name="globalOffset">Global offset for positioning the terrain.</param>
         /// <param name="biomeMap">Biome map representing the biome layout.</param>
+        /// <param name="erosionDeltaMap">Optional per-cell erosion debug data - see <see cref="erosionDeltaMap"/>.</param>
         public TerrainData(
             MeshData meshData,
             Texture2D[] splatMap,
             float[,] heightMap,
             TerrainGenerator terrainGenerator,
             Vector2 globalOffset,
-            Biome[,] biomeMap)
+            Biome[,] biomeMap,
+            float[,] erosionDeltaMap = null)
         {
             this.meshData = meshData;
             this.splatMap = splatMap;
@@ -75,6 +85,7 @@ public static class DataStructure
             this.terrainGenerator = terrainGenerator;
             this.globalOffset = globalOffset;
             this.biomeMap = biomeMap;
+            this.erosionDeltaMap = erosionDeltaMap;
         }
     }
 
