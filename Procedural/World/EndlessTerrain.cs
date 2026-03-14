@@ -237,6 +237,20 @@ public class EndlessTerrain : MonoBehaviour
         /// </summary>
         public float[,] erosionDeltaMap;
 
+        /// <summary>Per-cell water (surface, type, shoreline level). Null when <see cref="TerrainGenerator.EnableWater"/> is off. See <see cref="WaterGenerator"/>.</summary>
+        public WaterMapData waterData;
+
+        GameObject waterObject;
+        MeshFilter waterMeshFilter;
+        MeshRenderer waterMeshRenderer;
+        BoxCollider waterCollider;
+
+        // Built-in fallback water materials (one per water type), shared by every chunk - unlike the
+        // terrain material (which bakes per-chunk texture data into a unique Material instance), these
+        // have nothing chunk-specific in them, so one shared instance each is fine.
+        private static readonly Material[] fallbackWaterMaterials = new Material[WaterMeshData.SubmeshCount];
+        private static readonly bool[] fallbackWaterMaterialAttempted = new bool[WaterMeshData.SubmeshCount];
+
         Vector2 globalOffset;
         int maxMobs;
         float maxViewDistance;
@@ -338,6 +352,7 @@ public class EndlessTerrain : MonoBehaviour
             textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer, shouldUseHDRPShaders);
             heightmap = terrainData.heightMap;
             erosionDeltaMap = terrainData.erosionDeltaMap;
+            waterData = terrainData.waterData;
 
             Mesh mesh = terrainData.meshData.UpdateMesh();
 
@@ -359,7 +374,200 @@ public class EndlessTerrain : MonoBehaviour
                 Debug.LogError($"Invalid mesh generated for chunk at {globalOffset}");
             }
 
+            UpdateWaterMesh(terrainData);
+
             mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
+        }
+
+        /// <summary>
+        /// Builds (or updates) this chunk's water GameObject from the water map computed alongside its
+        /// heightmap - see <see cref="HeightGenerator"/>/<see cref="WaterGenerator"/>. One mesh, one
+        /// submesh (and material) per water type. A no-op if water is disabled or this chunk is dry.
+        /// </summary>
+        void UpdateWaterMesh(DataStructure.TerrainData terrainData)
+        {
+            if (!terrainGenerator.EnableWater || terrainData.waterData == null)
+                return;
+
+            WaterMeshData waterMeshData = MeshGenerator.GenerateWaterMesh(terrainGenerator, terrainData.heightMap, terrainData.waterData, terrainGenerator.LevelOfDetail, globalOffset);
+            if (waterMeshData == null)
+                return;
+
+            Mesh waterMesh = waterMeshData.BuildMesh();
+
+            if (waterObject == null)
+            {
+                waterObject = new GameObject("Water");
+                waterObject.transform.parent = meshObject.transform;
+                waterObject.transform.localPosition = Vector3.zero;
+                waterObject.transform.localRotation = Quaternion.identity;
+
+                waterMeshFilter = waterObject.AddComponent<MeshFilter>();
+                waterMeshRenderer = waterObject.AddComponent<MeshRenderer>();
+                waterMeshRenderer.sharedMaterials = GetWaterMaterials(terrainGenerator);
+
+                if (terrainGenerator.EnableSwimDetection)
+                {
+                    waterCollider = waterObject.AddComponent<BoxCollider>();
+                    waterCollider.isTrigger = true;
+                    waterObject.AddComponent<WaterVolume>();
+                }
+
+                // Best-effort: the consuming project may not have defined a "Water" tag, and an
+                // undefined tag throws rather than silently no-opping - water still works fine
+                // untagged, so this is guarded rather than allowed to abort chunk setup entirely.
+                try
+                {
+                    waterObject.tag = "Water";
+                }
+                catch (UnityException)
+                {
+                    if (enableDebugging)
+                        Debug.LogWarning("TerrainChunk: no 'Water' tag defined in this project - water objects will stay 'Untagged'. Add a 'Water' tag under Project Settings > Tags and Layers if you want to filter/query by it.");
+                }
+            }
+
+            waterMeshFilter.sharedMesh = waterMesh;
+
+            if (waterCollider != null)
+            {
+                UpdateWaterColliderBounds(waterCollider, terrainData.heightMap, terrainData.waterData);
+            }
+        }
+
+        /// <summary>
+        /// Sizes this chunk's water trigger volume as a single axis-aligned box spanning the chunk's
+        /// full XZ footprint and just tall enough (from the lowest water bed to the highest water
+        /// surface actually present) to contain every wet cell. This is a coarse approximation of the
+        /// water body's true shape, not an exact fit - see <see cref="WaterVolume"/>'s remarks for why
+        /// that's an acceptable tradeoff here (a universally trigger-compatible primitive collider
+        /// rather than a non-convex mesh collider, whose trigger support varies by Unity version).
+        /// </summary>
+        void UpdateWaterColliderBounds(BoxCollider collider, float[,] heightMap, WaterMapData water)
+        {
+            int width = water.Size;
+            int depth = water.Size;
+
+            float minY = float.MaxValue;
+            float maxY = float.MinValue;
+            bool anyWater = false;
+
+            for (int y = 0; y < depth; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (!water.IsWet(x, y))
+                        continue;
+
+                    anyWater = true;
+                    float surface = water.Surface[x, y];
+                    if (surface > maxY) maxY = surface;
+
+                    // A wet cell's terrain is always below its water surface - it's that cell's floor.
+                    float bed = heightMap[x, y];
+                    if (bed < minY) minY = bed;
+                }
+            }
+
+            if (!anyWater)
+            {
+                collider.enabled = false;
+                return;
+            }
+
+            collider.enabled = true;
+
+            float chunkWorldSize = (width - 1) * scaleFactor;
+            float centerY = (minY + maxY) * 0.5f;
+
+            collider.center = new Vector3(chunkWorldSize * 0.5f, centerY, chunkWorldSize * 0.5f);
+            collider.size = new Vector3(chunkWorldSize, Mathf.Max(0.1f, maxY - minY), chunkWorldSize);
+        }
+
+        /// <summary>
+        /// One material per water mesh submesh (ocean, lake, pond, river - see <see cref="WaterMeshData.SubmeshIndex"/>):
+        /// whatever the TerrainGenerator assigns for that type, otherwise a simple built-in transparent
+        /// fallback tinted per type (created once and shared by every chunk).
+        /// </summary>
+        static Material[] GetWaterMaterials(TerrainGenerator terrainGenerator)
+        {
+            Material[] materials = new Material[WaterMeshData.SubmeshCount];
+            for (int i = 0; i < materials.Length; i++)
+            {
+                WaterBodyType type = WaterMeshData.SubmeshType(i);
+                Material assigned = terrainGenerator.GetWaterMaterial(type);
+                materials[i] = assigned != null ? assigned : GetFallbackWaterMaterial(i);
+            }
+            return materials;
+        }
+
+        static Material GetFallbackWaterMaterial(int submesh)
+        {
+            if (fallbackWaterMaterials[submesh] == null && !fallbackWaterMaterialAttempted[submesh])
+            {
+                fallbackWaterMaterialAttempted[submesh] = true;
+                fallbackWaterMaterials[submesh] = CreateFallbackWaterMaterial(FallbackWaterColor(submesh));
+            }
+
+            return fallbackWaterMaterials[submesh];
+        }
+
+        // Fully qualified: this file also has a stray `using System.Drawing;`, whose Color type would
+        // otherwise make the bare `Color` identifier ambiguous with UnityEngine.Color (see the same fix in
+        // DrawErosionGizmos below).
+        static UnityEngine.Color FallbackWaterColor(int submesh)
+        {
+            switch (WaterMeshData.SubmeshType(submesh))
+            {
+                case WaterBodyType.Ocean: return new UnityEngine.Color(0.06f, 0.24f, 0.42f, 0.78f); // deep blue, most opaque
+                case WaterBodyType.Lake: return new UnityEngine.Color(0.10f, 0.34f, 0.42f, 0.62f);  // clear blue-teal
+                case WaterBodyType.Pond: return new UnityEngine.Color(0.20f, 0.34f, 0.24f, 0.66f);  // murky green
+                default: return new UnityEngine.Color(0.22f, 0.44f, 0.50f, 0.55f);                  // river: lighter, shallower
+            }
+        }
+
+        /// <summary>
+        /// Tries a small list of shaders, in order, that are likely to exist depending on the host
+        /// project's render pipeline (URP, Built-in/Standard, or an ancient/stripped project that only
+        /// has the truly universal legacy/unlit ones), so this works out of the box without knowing
+        /// which pipeline the consuming project uses - this package ships no shader assets of its own
+        /// (see how <see cref="TextureGenerator"/> already expects "Custom/TerrainSplatMapShaderURP" to
+        /// be provided by the host project; this fallback exists so water doesn't have that same
+        /// hard requirement). Assign materials on the TerrainGenerator for full control over the look
+        /// (reflections, flow, refraction, etc).
+        /// </summary>
+        static Material CreateFallbackWaterMaterial(UnityEngine.Color waterColor)
+        {
+            string[] candidateShaders =
+            {
+                "Universal Render Pipeline/Lit",
+                "Standard",
+                "Legacy Shaders/Transparent/Diffuse",
+                "Unlit/Transparent",
+                "Sprites/Default",
+            };
+
+            foreach (string shaderName in candidateShaders)
+            {
+                Shader shader = Shader.Find(shaderName);
+                if (shader == null)
+                    continue;
+
+                Material material = new Material(shader) { color = waterColor };
+
+                // Property names vary per shader/pipeline, so each is set only if actually present
+                // rather than assumed - these are best-effort transparency hints, not required for the
+                // material to work at all.
+                if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", waterColor);
+                if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f); // URP: 1 = Transparent
+                if (material.HasProperty("_Mode")) material.SetFloat("_Mode", 3f); // Standard shader: 3 = Transparent
+                material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+                return material;
+            }
+
+            Debug.LogWarning("TerrainChunk: none of the fallback shaders (URP/Standard/legacy/unlit/sprite) were found - water will render with Unity's default material. Assign water materials on the TerrainGenerator to fix this.");
+            return null;
         }
 
         void BakeNavMesh()
