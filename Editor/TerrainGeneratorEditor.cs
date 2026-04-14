@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -39,6 +40,7 @@ public partial class TerrainGeneratorEditor : Editor
     private bool showTextureVariations = false;
     private bool showVoronoi = true;
     private bool showLandforms = true;
+    private bool showVolcanoes = true;
     private bool showNaturalPlacement = true;
     private bool showClimate = true;
     private bool showBiomeClimateSummary = false;
@@ -210,6 +212,43 @@ public partial class TerrainGeneratorEditor : Editor
 
         showLandforms = Section("Terrain Shape (Landforms)", showLandforms, () => DrawLandformSection(generator));
 
+        showVolcanoes = Section("Volcanoes & Calderas", showVolcanoes, () =>
+        {
+            EditorGUILayout.HelpBox(
+                "Rare, very large landmarks: a stratovolcano (tall cone with a summit crater) or a caldera (a broad " +
+                "volcanic massif whose top collapsed into a wide, flat-floored depression with steep stepped walls, " +
+                "sometimes with a young cone inside). Both have radial gullies, lava-flow lobes and a wide apron of " +
+                "lava plains that buries the land around them. They are part of the base terrain, so rivers run down " +
+                "their flanks and lakes can settle in calderas, and they can rise out of the sea as volcanic islands.\n\n" +
+                "Give a biome Placement = Volcanic to paint volcanic rock/ash over them.",
+                MessageType.Info);
+            DrawProp("enableVolcanoes", "Enable Volcanoes");
+            using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("enableVolcanoes").boolValue))
+            {
+                DrawProp("volcanoSpacing", "Spacing (world units)");
+                DrawProp("volcanoChance", "Chance per Cell");
+                DrawProp("volcanoMinRadius", "Min Radius");
+                DrawProp("volcanoMaxRadius", "Max Radius");
+                DrawProp("volcanoMinHeight", "Min Height");
+                DrawProp("volcanoMaxHeight", "Max Height");
+                DrawProp("calderaChance", "Caldera Chance");
+                DrawVolcanoInfo(generator);
+            }
+            DrawVolcanoBiomeStatus(generator);
+
+            EditorGUILayout.Space(2);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Spacing, Chance, Min/Max Radius, Min/Max Height and Caldera Chance to their recommended values. Leaves Enable Volcanoes as it is.")))
+            {
+                ResetVolcanoesToRecommended();
+            }
+            if (GUILayout.Button(new GUIContent("Reset To Default", "Restores every volcano setting, including Enable Volcanoes (ON), to its original factory default.")))
+            {
+                ResetVolcanoesToDefault();
+            }
+            EditorGUILayout.EndHorizontal();
+        });
+
         showHeightAndTexture = Section("Height Range & Texture", showHeightAndTexture, () =>
         {
             Field(terrainTextureBasedOnVoronoiPointsProp, "Texture Based On Voronoi Points");
@@ -329,6 +368,7 @@ public partial class TerrainGeneratorEditor : Editor
                 Field(climateScaleMultiplierProp, "Climate Scale Multiplier");
                 EditorGUILayout.LabelField($"= {generator.ClimateNoiseScale:0.#} world units", EditorStyles.miniLabel);
                 EditorGUI.indentLevel--;
+                DrawClimateInfo(generator);
             }
 
             EditorGUILayout.HelpBox(
@@ -430,6 +470,7 @@ public partial class TerrainGeneratorEditor : Editor
                 "chunks reproduce identical droplets - and therefore identical erosion - wherever their " +
                 "padded regions overlap, keeping chunk seams consistent.",
                 MessageType.None);
+            DrawErosionInfo(generator);
         });
 
         showWater = Section("Water (Oceans, Lakes, Ponds, Rivers)", showWater, () =>
@@ -459,14 +500,22 @@ public partial class TerrainGeneratorEditor : Editor
                 DrawProp("lakeMaterial", "Lake");
                 DrawProp("pondMaterial", "Pond");
                 DrawProp("riverMaterial", "River");
+                DrawProp("waterfallMaterial", "Waterfall");
                 EditorGUI.indentLevel--;
 
                 DrawWaterGroup("Oceans", "enableOceans", WaterOceanFields);
+                DrawOceanBiomeStatus(generator);
+                using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("enableOceans").boolValue))
+                    DrawWaterGroup("Coasts (cliffs & sea stacks)", null, WaterCoastFields);
                 EditorGUILayout.LabelField($"Continent scale = {generator.ContinentScale:0} world units", EditorStyles.miniLabel);
                 DrawWaterGroup("Lakes", "enableLakes", WaterLakeFields);
                 DrawWaterGroup("Ponds", "enablePonds", WaterPondFields);
                 DrawWaterGroup("Shorelines (lakes & ponds)", null, WaterShoreFields);
                 DrawWaterGroup("Rivers", "enableRivers", WaterRiverFields);
+                using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("enableRivers").boolValue))
+                    DrawWaterGroup("Waterfalls", "enableWaterfalls", WaterWaterfallFields);
+
+                DrawWaterInfo(generator);
 
                 // Water can't be finer than the terrain mesh it sits in.
                 int lod = levelOfDetailProp.intValue;
@@ -667,7 +716,7 @@ public partial class TerrainGeneratorEditor : Editor
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Apply Preset...",
             "Overwrites this biome's Climate (Ideal Temperature/Moisture, tolerances), Erosion (Resistance, " +
-            "Rainfall Multiplier), Landform and noise shape (Amplitude, Frequency, Persistence) with a recommended " +
+            "Rainfall Multiplier), Landform, Placement (Land / Ocean / Volcanic) and noise shape (Amplitude, Frequency, Persistence) with a recommended " +
             "starting point for a common biome archetype. Does NOT touch Weight, Min/Max Height, or textures. " +
             "Amplitude/Frequency are relative starting points, not tied to your world's actual scale - rescale " +
             "them to match after applying."), EditorStyles.miniButton))
@@ -725,6 +774,7 @@ public partial class TerrainGeneratorEditor : Editor
         public float ErosionResistance, RainfallErosionMultiplier;
         public float Amplitude, Frequency, Persistence;
         public LandformType Landform;
+        public BiomePlacement Placement;
     }
 
     private static readonly BiomePresetDefinition[] BiomePresets =
@@ -737,6 +787,13 @@ public partial class TerrainGeneratorEditor : Editor
         new BiomePresetDefinition { Name = "Swamp",           IdealTemperature = 0.60f, IdealMoisture = 0.90f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.25f, ErosionResistance = 0.25f, RainfallErosionMultiplier = 1.4f, Amplitude = 2f,  Frequency = 1.0f, Persistence = 0.30f, Landform = LandformType.Wetland },
         new BiomePresetDefinition { Name = "Jungle",          IdealTemperature = 0.85f, IdealMoisture = 0.85f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.25f, ErosionResistance = 0.35f, RainfallErosionMultiplier = 1.6f, Amplitude = 14f, Frequency = 1.4f, Persistence = 0.50f, Landform = LandformType.Hills },
         new BiomePresetDefinition { Name = "Beach / Coastal", IdealTemperature = 0.65f, IdealMoisture = 0.55f, TemperatureTolerance = 0.35f, MoistureTolerance = 0.35f, ErosionResistance = 0.15f, RainfallErosionMultiplier = 1.2f, Amplitude = 3f,  Frequency = 0.9f, Persistence = 0.30f, Landform = LandformType.Plains },
+        new BiomePresetDefinition { Name = "Highland Forest",  IdealTemperature = 0.45f, IdealMoisture = 0.65f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.30f, ErosionResistance = 0.50f, RainfallErosionMultiplier = 1.1f, Amplitude = 16f, Frequency = 1.0f, Persistence = 0.45f, Landform = LandformType.Highlands },
+        new BiomePresetDefinition { Name = "Glacial Valleys",  IdealTemperature = 0.10f, IdealMoisture = 0.45f, TemperatureTolerance = 0.20f, MoistureTolerance = 0.35f, ErosionResistance = 0.80f, RainfallErosionMultiplier = 0.7f, Amplitude = 55f, Frequency = 1.2f, Persistence = 0.50f, Landform = LandformType.Glacial },
+        new BiomePresetDefinition { Name = "Ocean - Deep Plain", IdealTemperature = 0.50f, IdealMoisture = 0.50f, TemperatureTolerance = 0.50f, MoistureTolerance = 0.50f, ErosionResistance = 0.50f, RainfallErosionMultiplier = 1.0f, Amplitude = 10f, Frequency = 0.8f, Persistence = 0.50f, Landform = LandformType.SeaPlain, Placement = BiomePlacement.Ocean },
+        new BiomePresetDefinition { Name = "Ocean - Ravines", IdealTemperature = 0.40f, IdealMoisture = 0.50f, TemperatureTolerance = 0.50f, MoistureTolerance = 0.50f, ErosionResistance = 0.50f, RainfallErosionMultiplier = 1.0f, Amplitude = 22f, Frequency = 0.8f, Persistence = 0.50f, Landform = LandformType.SeaRavines, Placement = BiomePlacement.Ocean },
+        new BiomePresetDefinition { Name = "Ocean - Coral Reef", IdealTemperature = 0.85f, IdealMoisture = 0.50f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.50f, ErosionResistance = 0.50f, RainfallErosionMultiplier = 1.0f, Amplitude = 30f, Frequency = 0.8f, Persistence = 0.50f, Landform = LandformType.SeaReef, Placement = BiomePlacement.Ocean },
+        new BiomePresetDefinition { Name = "Ocean - Rocky Seabed", IdealTemperature = 0.30f, IdealMoisture = 0.50f, TemperatureTolerance = 0.50f, MoistureTolerance = 0.50f, ErosionResistance = 0.50f, RainfallErosionMultiplier = 1.0f, Amplitude = 8f, Frequency = 1.2f, Persistence = 0.50f, Landform = LandformType.SeaRocky, Placement = BiomePlacement.Ocean },
+        new BiomePresetDefinition { Name = "Volcanic", IdealTemperature = 0.60f, IdealMoisture = 0.30f, TemperatureTolerance = 0.50f, MoistureTolerance = 0.50f, ErosionResistance = 0.90f, RainfallErosionMultiplier = 0.5f, Amplitude = 10f, Frequency = 1.0f, Persistence = 0.50f, Landform = LandformType.Plains, Placement = BiomePlacement.Volcanic },
     };
 
     private static void ShowBiomePresetMenu(Biome biome)
@@ -763,6 +820,7 @@ public partial class TerrainGeneratorEditor : Editor
         biome.frequency = preset.Frequency;
         biome.persistence = preset.Persistence;
         biome.landform = preset.Landform;
+        biome.placement = preset.Placement;
         EditorUtility.SetDirty(biome);
         Debug.Log($"[TerrainGenerator] Applied '{preset.Name}' preset to biome '{biome.name}'. Amplitude/Frequency are relative starting points - rescale them to match your world's overall height scale.");
     }
@@ -783,6 +841,8 @@ public partial class TerrainGeneratorEditor : Editor
         public float lakeLikelihood, pondLikelihood, riverSpringLikelihood;
         // Version 2 adds the landform.
         public int landform;
+        // Version 3 adds the placement role.
+        public int placement;
     }
 
     private const string BiomeBackupFolder = "Assets/BiomeBackups";
@@ -822,8 +882,9 @@ public partial class TerrainGeneratorEditor : Editor
             moistureTolerance = biome.moistureTolerance,
             erosionResistance = biome.erosionResistance,
             rainfallErosionMultiplier = biome.rainfallErosionMultiplier,
-            version = 2,
+            version = 3,
             landform = (int)biome.landform,
+            placement = (int)biome.placement,
             baseElevation = biome.baseElevation,
             allowsWaterBodies = biome.allowsWaterBodies,
             lakeLikelihood = biome.lakeLikelihood,
@@ -877,6 +938,10 @@ public partial class TerrainGeneratorEditor : Editor
         if (snapshot.version >= 2)
         {
             biome.landform = (LandformType)snapshot.landform;
+        }
+        if (snapshot.version >= 3)
+        {
+            biome.placement = (BiomePlacement)snapshot.placement;
         }
         EditorUtility.SetDirty(biome);
         Debug.Log($"[TerrainGenerator] Loaded biome state for '{biome.name}' from {path}");
@@ -956,6 +1021,22 @@ public partial class TerrainGeneratorEditor : Editor
         { "shoreFreeboard", "Rim Freeboard" },
     };
 
+    private static readonly string[,] WaterCoastFields =
+    {
+        { "coastCliffFrequency", "Cliff Frequency" },
+        { "coastCliffHeight", "Cliff Height" },
+        { "coastCliffTerraces", "Cliff Terraces" },
+        { "seaStackChance", "Sea Stack Chance" },
+        { "seaStackSpacing", "Sea Stack Spacing" },
+        { "seaStackMaxHeight", "Sea Stack Max Height" },
+    };
+
+    private static readonly string[,] WaterWaterfallFields =
+    {
+        { "waterfallMinDrop", "Min Drop" },
+        { "waterfallTierHeight", "Max Tier Height" },
+    };
+
     private static readonly string[,] WaterRiverFields =
     {
         { "riverSpacing", "Spring Spacing" },
@@ -992,9 +1073,12 @@ public partial class TerrainGeneratorEditor : Editor
         { "riverMinLength", 350f }, { "riverMaxLength", 2600f }, { "riverSourceWidth", 5f }, { "riverMouthWidth", 26f },
         { "riverWidthVariation", 0.35f }, { "riverMeander", 0.55f }, { "riverMeanderWavelength", 180f }, { "riverDepth", 3f },
         { "riverValleySlope", 28f }, { "riverMaxValleyWidth", 150f }, { "riverBankFreeboard", 0.8f },
+        { "coastCliffFrequency", 0.35f }, { "coastCliffHeight", 26f }, { "coastCliffTerraces", 0.5f },
+        { "seaStackChance", 0.3f }, { "seaStackSpacing", 220f }, { "seaStackMaxHeight", 30f },
+        { "enableWaterfalls", 1f }, { "waterfallMinDrop", 4f }, { "waterfallTierHeight", 12f },
     };
 
-    private static readonly string[] WaterMaterialFields = { "waterMaterial", "oceanMaterial", "lakeMaterial", "pondMaterial", "riverMaterial" };
+    private static readonly string[] WaterMaterialFields = { "waterMaterial", "oceanMaterial", "lakeMaterial", "pondMaterial", "riverMaterial", "waterfallMaterial" };
 
     private void DrawProp(string field, string label)
     {
@@ -1092,6 +1176,233 @@ public partial class TerrainGeneratorEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 
+    private static readonly Dictionary<string, float> VolcanoRecommended = new Dictionary<string, float>
+    {
+        { "volcanoSpacing", 5000f }, { "volcanoChance", 0.35f },
+        { "volcanoMinRadius", 450f }, { "volcanoMaxRadius", 1000f },
+        { "volcanoMinHeight", 110f }, { "volcanoMaxHeight", 230f },
+        { "calderaChance", 0.4f },
+    };
+
+    /// <summary>Restores the volcano tuning values, leaving the Enable Volcanoes toggle as it is.</summary>
+    private void ResetVolcanoesToRecommended()
+    {
+        foreach (KeyValuePair<string, float> entry in VolcanoRecommended)
+            serializedObject.FindProperty(entry.Key).floatValue = entry.Value;
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    /// <summary>Restores every volcano setting, including the Enable Volcanoes toggle, to its factory default.</summary>
+    private void ResetVolcanoesToDefault()
+    {
+        ResetVolcanoesToRecommended();
+        serializedObject.FindProperty("enableVolcanoes").boolValue = true;
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    /// <summary>Plain-language numbers derived from the volcano settings, plus warnings for odd combinations.</summary>
+    private void DrawVolcanoInfo(TerrainGenerator generator)
+    {
+        float spacing = serializedObject.FindProperty("volcanoSpacing").floatValue;
+        float chance = serializedObject.FindProperty("volcanoChance").floatValue;
+        float minRadius = serializedObject.FindProperty("volcanoMinRadius").floatValue;
+        float maxRadius = serializedObject.FindProperty("volcanoMaxRadius").floatValue;
+        float minHeight = serializedObject.FindProperty("volcanoMinHeight").floatValue;
+        float maxHeight = serializedObject.FindProperty("volcanoMaxHeight").floatValue;
+        float caldera = serializedObject.FindProperty("calderaChance").floatValue;
+
+        var info = new StringBuilder();
+        if (chance > 0f)
+        {
+            info.AppendLine($"About one volcano every {spacing / Mathf.Sqrt(chance) / 1000f:0.#} km (one per {spacing * spacing / chance / 1e6f:0} km²); " +
+                            $"{caldera * 100f:0}% of them calderas, the rest cones.");
+            info.AppendLine($"Each one is {2f * minRadius:0}-{2f * maxRadius:0} units across and {minHeight:0}-{maxHeight:0} units tall above the land around it; " +
+                            $"its lava plain reaches {VolcanoFeature.ApronReach * minRadius:0}-{VolcanoFeature.ApronReach * maxRadius:0} units from the center.");
+            float gentle = Mathf.Atan(minHeight / Mathf.Max(1f, maxRadius)) * Mathf.Rad2Deg;
+            float steep = Mathf.Atan(maxHeight / Mathf.Max(1f, minRadius)) * Mathf.Rad2Deg;
+            info.Append($"Average flank slope {gentle:0}-{steep:0}° (steeper near the summit; caldera walls are near-vertical). " +
+                        $"The area within {minRadius * VolcanoFeature.ApronReach * 1.15f + 150f:0}-{maxRadius * VolcanoFeature.ApronReach * 1.15f + 150f:0} units of the world origin is kept clear so the spawn is never buried.");
+        }
+        else
+        {
+            info.Append("Chance per Cell is 0, so no volcanoes are generated.");
+        }
+        EditorGUILayout.HelpBox(info.ToString(), MessageType.None);
+
+        if (minRadius > maxRadius || minHeight > maxHeight)
+            EditorGUILayout.HelpBox("A Min value is larger than its Max value - sizes are picked between the two, so this effectively uses the Min.", MessageType.Warning);
+        if (maxRadius * VolcanoFeature.ApronReach * 1.15f > 0.45f * spacing)
+            EditorGUILayout.HelpBox(
+                $"Max Radius is large for this Spacing: a volcano plus its lava plain ({maxRadius * VolcanoFeature.ApronReach * 1.15f:0} units) needs about " +
+                $"{2.2f * maxRadius * VolcanoFeature.ApronReach * 1.15f:0} units of Spacing to fit in its cell. Volcanoes are kept inside their cell, so they " +
+                "will all sit near the middle of their cells (more regular placement). Raise Spacing or lower Max Radius.",
+                MessageType.Warning);
+        if (maxHeight / Mathf.Max(1f, minRadius) > 0.6f)
+            EditorGUILayout.HelpBox("Height is large compared to Radius, so small volcanoes will be very steep spikes. Raise Min Radius or lower Max Height for more natural cones.", MessageType.Info);
+        if (generator.EnableErosion && maxHeight > 150f)
+            EditorGUILayout.HelpBox("Thermal erosion softens slopes steeper than the Talus Angle, so very tall volcanoes lose some of their crater and caldera-wall sharpness. That's expected.", MessageType.None);
+    }
+
+    /// <summary>
+    /// Explains what the current biome setup means for volcanoes: whether a Volcanic biome exists to paint
+    /// them, and what they look like when none does.
+    /// </summary>
+    private void DrawVolcanoBiomeStatus(TerrainGenerator generator)
+    {
+        List<string> volcanic = BiomesWithPlacement(generator, BiomePlacement.Volcanic);
+        bool enabled = serializedObject.FindProperty("enableVolcanoes").boolValue;
+        if (!enabled)
+        {
+            if (volcanic.Count > 0)
+                EditorGUILayout.HelpBox($"Volcanoes are off, so the Volcanic biome ({string.Join(", ", volcanic)}) is never used.", MessageType.Warning);
+            return;
+        }
+        if (volcanic.Count == 0)
+        {
+            EditorGUILayout.HelpBox(
+                "No biome has Placement = Volcanic. Volcanoes are still generated with exactly the same shape (their height " +
+                "doesn't depend on biomes), but they are textured, and get objects, from whatever land biomes they stand on - " +
+                "e.g. a grassy or snowy volcano, possibly with several biomes' borders crossing it. " +
+                "To get lava rock/ash, add a biome, set its Placement to Volcanic and give it rock textures (its height settings are ignored).",
+                MessageType.Info);
+        }
+        else
+        {
+            string extra = volcanic.Count > 1 ? $" Only the first one ({volcanic[0]}) is used; the others ({string.Join(", ", volcanic.GetRange(1, volcanic.Count - 1))}) are ignored." : "";
+            EditorGUILayout.HelpBox(
+                $"Volcanic biome: {volcanic[0]}. It is painted over each volcano and most of its lava plain, fading out at an " +
+                "irregular edge, and its objects spawn there. Its height/landform settings are ignored - the volcano shapes the ground." + extra,
+                MessageType.None);
+        }
+    }
+
+    /// <summary>
+    /// Explains what the current biome setup means for oceans: whether Ocean biomes exist to shape and paint
+    /// the seafloor, and what the seafloor looks like when none do.
+    /// </summary>
+    private void DrawOceanBiomeStatus(TerrainGenerator generator)
+    {
+        List<string> ocean = BiomesWithPlacement(generator, BiomePlacement.Ocean);
+        if (!serializedObject.FindProperty("enableOceans").boolValue)
+        {
+            if (ocean.Count > 0)
+                EditorGUILayout.HelpBox($"Oceans are off, so the Ocean biomes ({string.Join(", ", ocean)}) are never used.", MessageType.Warning);
+            return;
+        }
+        if (ocean.Count == 0)
+        {
+            EditorGUILayout.HelpBox(
+                "No biome has Placement = Ocean. Oceans still generate: the seafloor is a plain shelf sloping down to Ocean Depth, " +
+                "with gentle bumps copied from the land biome above it, and it keeps the texture of whatever land biome's region " +
+                "it falls in - so you may see desert or grass under the water. Coasts, cliffs, sea stacks and islands still work.\n\n" +
+                "For a proper seabed, add biomes with Placement = Ocean and a Sea landform (Deep Plain, Ravines, Coral Reef, Rocky " +
+                "Seabed - the Ocean presets set this up). They form their own layout under the sea, in regions about 2.5x larger " +
+                "than land biome regions, shape the seafloor and take over texturing within about 10 units of the waterline.",
+                MessageType.Info);
+        }
+        else
+        {
+            EditorGUILayout.HelpBox(
+                $"Ocean biomes: {string.Join(", ", ocean)}. They shape and texture the seafloor in their own layout under the sea " +
+                "and take over from the land biomes within about 10 units of the waterline. Their Weight and Ideal Temperature/Moisture " +
+                "decide which ocean biome goes where, the same way as for land biomes.",
+                MessageType.None);
+        }
+    }
+
+    /// <summary>What the climate settings mean in world terms.</summary>
+    private void DrawClimateInfo(TerrainGenerator generator)
+    {
+        float scale = generator.ClimateNoiseScale;
+        EditorGUILayout.HelpBox(
+            $"Warm and cold / wet and dry patches are roughly {scale / 1000f:0.#}-{2f * scale / 1000f:0.#} km across " +
+            $"(about {scale / Mathf.Max(1f, generator.VoronoiScale):0.#} biome regions). On top of that, temperature drifts " +
+            $"warmer toward world Y = 0 and colder away from it, reaching its coldest {4f * scale / 1000f:0.#} km north or south " +
+            "(a gentle 18% pull, so noise still dominates locally).\n\n" +
+            "A biome's Ideal Temperature/Moisture (0-1) is where it is most likely: 0.5/0.5 is average, 0.85 temperature is " +
+            "hot, 0.15 is cold, 0.1 moisture is desert-dry. Biomes whose ideals are far from every other biome's get fewer, " +
+            "more distinct regions; biomes with identical ideals compete on Weight only. Ocean biomes use the same climate.",
+            MessageType.None);
+    }
+
+    /// <summary>What the erosion settings cost and imply, with warnings for combinations that cause seams.</summary>
+    private void DrawErosionInfo(TerrainGenerator generator)
+    {
+        if (!enableErosionProp.boolValue)
+        {
+            EditorGUILayout.HelpBox("Erosion is off: terrain keeps its raw shapes (sharper, noisier), and chunks generate roughly 40% faster.", MessageType.None);
+            return;
+        }
+        int chunk = generator.ChunkSize;
+        int padding = erosionPaddingProp.intValue;
+        int padded = chunk + 2 * padding;
+        float density = hydraulicDropletDensityProp.floatValue;
+        long droplets = (long)(padded * (long)padded * density);
+        float overhead = (float)padded * padded / Mathf.Max(1, chunk * chunk);
+        EditorGUILayout.HelpBox(
+            $"Per chunk: {padded} x {padded} cells are eroded ({overhead:0.#}x the chunk area, because of the {padding}-cell padding), " +
+            $"with about {droplets:N0} droplets of up to {dropletLifetimeProp.intValue} steps each, and {thermalIterationsProp.intValue} thermal passes. " +
+            "Droplets, lifetime and padding are what cost the most time.\n\n" +
+            $"Slopes steeper than {talusAngleProp.floatValue:0}° slide (per biome, Erosion Resistance raises or lowers this). " +
+            "Erosion runs after sea cliffs, sea stacks, caldera walls, waterfall lips and Highlands ledges are built, so those rock " +
+            "faces get softened a little (more with a low Talus Angle). Only the water guarantees (closed shores, river banks, " +
+            "coastline above the sea) are re-applied after erosion.",
+            MessageType.None);
+        if (padding < dropletLifetimeProp.intValue)
+            EditorGUILayout.HelpBox(
+                $"Erosion Padding ({padding}) is smaller than Droplet Lifetime ({dropletLifetimeProp.intValue}): droplets can travel from outside the padded " +
+                "area into the chunk, so neighbouring chunks erode their shared border differently and small steps (seams) can appear. " +
+                "Raise the padding to at least the lifetime.",
+                MessageType.Warning);
+    }
+
+    /// <summary>What the water settings mean in world terms.</summary>
+    private void DrawWaterInfo(TerrainGenerator generator)
+    {
+        var info = new StringBuilder();
+        if (serializedObject.FindProperty("enableOceans").boolValue)
+        {
+            float threshold = serializedObject.FindProperty("oceanThreshold").floatValue;
+            // The continent field is roughly normally distributed (spread ~0.19): -0.2 gives ~15% sea, 0 gives ~50%.
+            float z = threshold / 0.19f;
+            float oceanShare = 1f / (1f + Mathf.Exp(-1.702f * z));
+            float cliffs = serializedObject.FindProperty("coastCliffFrequency").floatValue;
+            info.AppendLine($"Oceans: continents and seas are roughly {generator.ContinentScale / 1000f:0.#}-{2f * generator.ContinentScale / 1000f:0.#} km across; " +
+                            $"about {oceanShare * 100f:0}% of the world is sea (rough estimate). Coasts: about {Mathf.Min(100f, cliffs * 100f):0}% cliffs or rocky shore, the rest beaches.");
+        }
+        if (serializedObject.FindProperty("enableLakes").boolValue)
+            info.AppendLine(Density("Lakes", "lakeSpacing", "lakeChance"));
+        if (serializedObject.FindProperty("enablePonds").boolValue)
+            info.AppendLine(Density("Ponds", "pondSpacing", "pondChance"));
+        if (serializedObject.FindProperty("enableRivers").boolValue)
+            info.AppendLine(Density("River springs", "riverSpacing", "riverChance") + " (many are discarded as too short, and lake outlets add more)");
+        info.Append("These are upper bounds: every candidate is then scaled by the biome's likelihood and rejected on unsuitable ground " +
+                    "(too steep, too low, under the sea), so the real count is lower.");
+        EditorGUILayout.HelpBox(info.ToString(), MessageType.None);
+    }
+
+    private string Density(string label, string spacingField, string chanceField)
+    {
+        float spacing = serializedObject.FindProperty(spacingField).floatValue;
+        float chance = serializedObject.FindProperty(chanceField).floatValue;
+        if (chance <= 0f || spacing <= 0f)
+            return $"{label}: none (chance is 0).";
+        return $"{label}: at most about {chance * 1e6f / (spacing * spacing):0.#} per km² (one every {spacing / Mathf.Sqrt(chance):0} units)";
+    }
+
+    private static List<string> BiomesWithPlacement(TerrainGenerator generator, BiomePlacement placement)
+    {
+        var names = new List<string>();
+        if (generator.BiomeDefinitions == null)
+            return names;
+        foreach (BiomeInstance instance in generator.BiomeDefinitions)
+        {
+            if (instance != null && instance.BiomePrefab != null && instance.BiomePrefab.placement == placement)
+                names.Add(instance.BiomePrefab.name);
+        }
+        return names;
+    }
+
     /// <summary>
     /// Flags parameter combinations that are individually valid (won't throw/crash) but are documented -
     /// in this class or its collaborators - to produce visible artifacts, so misconfigurations surface
@@ -1132,12 +1443,15 @@ public partial class TerrainGeneratorEditor : Editor
             return;
 
         EditorGUILayout.Space(4);
-        EditorGUILayout.LabelField(new GUIContent("Biome Landforms",
-            "Each biome's own Landform setting, and the landform it actually uses under the current Terrain Shape Mode."),
+        EditorGUILayout.LabelField(new GUIContent("Biome Landforms & Placement",
+            "Each biome's Landform (the shape of its ground) and Placement (Land = normal biome layout, Ocean = only on the " +
+            "seafloor, Volcanic = only painted over volcanoes), and the landform it actually uses under the current Terrain Shape Mode."),
             EditorStyles.miniBoldLabel);
 
         bool anyClassic = false;
         bool anyMountain = false;
+        bool anyOcean = false;
+        bool anyVolcanic = false;
         foreach (BiomeInstance instance in biomes)
         {
             Biome biome = instance != null ? instance.BiomePrefab : null;
@@ -1154,6 +1468,14 @@ public partial class TerrainGeneratorEditor : Editor
                 biome.landform = chosen;
                 EditorUtility.SetDirty(biome);
             }
+            EditorGUI.BeginChangeCheck();
+            BiomePlacement placement = (BiomePlacement)EditorGUILayout.EnumPopup(biome.placement, GUILayout.Width(80));
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(biome, "Change Biome Placement");
+                biome.placement = placement;
+                EditorUtility.SetDirty(biome);
+            }
 
             LandformType effective = LandformGenerator.Effective(biome, mode);
             string note = effective == biome.landform ? ""
@@ -1163,15 +1485,27 @@ public partial class TerrainGeneratorEditor : Editor
             EditorGUILayout.EndHorizontal();
 
             anyClassic |= biome.landform == LandformType.Classic;
-            anyMountain |= effective == LandformType.Mountains || effective == LandformType.Plateau;
+            anyMountain |= effective == LandformType.Mountains || effective == LandformType.Plateau || effective == LandformType.Glacial;
+            anyOcean |= biome.placement == BiomePlacement.Ocean;
+            anyVolcanic |= biome.placement == BiomePlacement.Volcanic;
         }
+
+        if (anyOcean && !generator.EnableOceans)
+            EditorGUILayout.HelpBox("Some biomes are Ocean biomes, but Oceans are turned off (Water section), so they are never used.", MessageType.Warning);
+        if (anyVolcanic && !generator.EnableVolcanoes)
+            EditorGUILayout.HelpBox("A biome is set to Volcanic, but Volcanoes are turned off, so it is never used.", MessageType.Warning);
+        bool anyLand = false;
+        foreach (BiomeInstance instance in biomes)
+            anyLand |= instance != null && instance.BiomePrefab != null && instance.BiomePrefab.placement == BiomePlacement.Land;
+        if (!anyLand)
+            EditorGUILayout.HelpBox("No biome has Placement = Land, so all biomes are used for land as a fallback.", MessageType.Warning);
 
         using (new EditorGUI.DisabledScope(!anyClassic))
         {
             if (GUILayout.Button(new GUIContent("Set Classic Biomes To Suggested Landforms",
-                "Gives every biome still set to Classic the landform suggested from its settings (hot and dry = Dunes, " +
-                "very wet and flat = Wetland, amplitude 35+ = Mountains, 9+ = Hills, otherwise Plains). Biomes that " +
-                "already have a landform are left alone. Undoable.")))
+                "Gives every biome still set to Classic the landform suggested from its settings (Ocean biomes = Sea Plain, " +
+                "hot and dry = Dunes, very wet and flat = Wetland, amplitude 35+ = Mountains (Glacial if cold), 18+ = Highlands, " +
+                "9+ = Hills, otherwise Plains). Biomes that already have a landform are left alone. Undoable.")))
             {
                 foreach (BiomeInstance instance in biomes)
                 {

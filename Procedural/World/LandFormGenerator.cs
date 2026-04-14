@@ -21,6 +21,29 @@ public enum LandformType
     Wetland = 5,
     /// <summary>Flat-topped tablelands with stepped cliffs, cut by narrow canyons.</summary>
     Plateau = 6,
+    /// <summary>Rugged uplands: big rolling relief broken by rock ledges and ravines you have to walk around (e.g. forests).</summary>
+    Highlands = 7,
+    /// <summary>High mountain terrain carved by glaciers: broad, flat-floored U-shaped valleys with steep walls and hanging side valleys.</summary>
+    Glacial = 8,
+    /// <summary>Ocean biomes: deep, gently rolling seafloor with scattered seamounts.</summary>
+    SeaPlain = 9,
+    /// <summary>Ocean biomes: seafloor cut by deep submarine ravines and canyons.</summary>
+    SeaRavines = 10,
+    /// <summary>Ocean biomes: shallow reef banks and atoll rings rising to just below the surface, with lagoons.</summary>
+    SeaReef = 11,
+    /// <summary>Ocean biomes: rough rocky seabed with ledges and boulder fields.</summary>
+    SeaRocky = 12,
+}
+
+/// <summary>Where a biome may be placed (see <see cref="Biome.placement"/>).</summary>
+public enum BiomePlacement
+{
+    /// <summary>A normal land biome, placed by the Voronoi biome layout.</summary>
+    Land = 0,
+    /// <summary>Only used on the ocean floor (textures, objects, and a seafloor landform). Needs Oceans enabled.</summary>
+    Ocean = 1,
+    /// <summary>Only used on volcanoes: painted over the volcano's cone, caldera and lava fields.</summary>
+    Volcanic = 2,
 }
 
 /// <summary>How the terrain generator decides each biome's landform (see <see cref="TerrainGenerator"/>).</summary>
@@ -52,6 +75,15 @@ public sealed class LandformSettings
     /// <summary>How far (smoothed gap, world units) nearby biomes are listed before they blend in - see <see cref="NearbyReachFor"/>.</summary>
     public float NearbyReach;
 
+    public bool VolcanoesEnabled;
+    public float VolcanoSpacing;
+    public float VolcanoChance;
+    public float VolcanoMinRadius;
+    public float VolcanoMaxRadius;
+    public float VolcanoMinHeight;
+    public float VolcanoMaxHeight;
+    public float CalderaChance;
+
     /// <summary>
     /// Reach used for <see cref="VoronoiBiomeGenerator.LayoutOptions.NearbyReach"/>: about 1.5 biome-point
     /// spacings, so landform borders start adjusting toward a neighbor before its weight begins. Capped at
@@ -79,6 +111,15 @@ public sealed class LandformSettings
             ClassicOctaves = tg.Octaves,
             ClassicLacunarity = tg.Lacunarity,
             NearbyReach = NearbyReachFor(tg),
+
+            VolcanoesEnabled = tg.EnableVolcanoes && tg.VolcanoChance > 0f,
+            VolcanoSpacing = Mathf.Max(500f, tg.VolcanoSpacing),
+            VolcanoChance = Mathf.Clamp01(tg.VolcanoChance),
+            VolcanoMinRadius = Mathf.Max(50f, tg.VolcanoMinRadius),
+            VolcanoMaxRadius = Mathf.Max(Mathf.Max(50f, tg.VolcanoMinRadius), tg.VolcanoMaxRadius),
+            VolcanoMinHeight = Mathf.Max(5f, tg.VolcanoMinHeight),
+            VolcanoMaxHeight = Mathf.Max(Mathf.Max(5f, tg.VolcanoMinHeight), tg.VolcanoMaxHeight),
+            CalderaChance = Mathf.Clamp01(tg.CalderaChance),
         };
     }
 }
@@ -116,12 +157,16 @@ public static class LandformGenerator
     /// </summary>
     public static LandformType Suggest(Biome biome)
     {
+        if (biome.placement == BiomePlacement.Ocean)
+            return LandformType.SeaPlain;
         if (biome.idealMoisture <= 0.2f && biome.idealTemperature >= 0.7f)
             return LandformType.Dunes;
         if (biome.idealMoisture >= 0.8f && biome.amplitude <= 5f)
             return LandformType.Wetland;
         if (biome.amplitude >= 35f)
-            return LandformType.Mountains;
+            return biome.idealTemperature <= 0.2f ? LandformType.Glacial : LandformType.Mountains;
+        if (biome.amplitude >= 18f)
+            return LandformType.Highlands;
         if (biome.amplitude >= 9f)
             return LandformType.Hills;
         return LandformType.Plains;
@@ -134,7 +179,13 @@ public static class LandformGenerator
         switch (landform)
         {
             case LandformType.Mountains: return 1.3f * a;
+            case LandformType.Glacial: return 1.3f * a;
             case LandformType.Plateau: return 1.2f * a;
+            case LandformType.Highlands: return 1.2f * a;
+            case LandformType.SeaPlain:
+            case LandformType.SeaRavines:
+            case LandformType.SeaReef:
+            case LandformType.SeaRocky: return 0.5f * a;
             case LandformType.Hills: return 0.9f * a;
             case LandformType.Dunes: return 0.7f * a;
             case LandformType.Plains: return 0.5f * a;
@@ -256,7 +307,7 @@ public static class LandformGenerator
         float typical = TypicalRelief(landform, biome, s.ClassicOctaves);
         // Mountains and plateaus are meant to be hard to cross: their front may rise more steeply than
         // walkable ground (valleys reaching the edge still give walkable ways in).
-        float frontSlope = landform == LandformType.Mountains || landform == LandformType.Plateau
+        float frontSlope = landform == LandformType.Mountains || landform == LandformType.Plateau || landform == LandformType.Glacial
             ? Mathf.Max(s.TransitionSlopeTangent, MountainFrontSlope)
             : s.TransitionSlopeTangent;
         float foothill = Mathf.Max(2f, 0.12f * s.PointSpacing);
@@ -313,6 +364,12 @@ public static class LandformGenerator
             case LandformType.Dunes: return Dunes(x, y, wavelength, amplitude, seed);
             case LandformType.Wetland: return Wetland(x, y, wavelength, amplitude, seed);
             case LandformType.Plateau: return Plateau(x, y, wavelength, amplitude, roughness, seed);
+            case LandformType.Highlands: return Highlands(x, y, wavelength, amplitude, roughness, seed);
+            case LandformType.Glacial: return Glacial(x, y, wavelength, amplitude, roughness, seed);
+            case LandformType.SeaPlain: return SeaPlain(x, y, wavelength, amplitude, seed);
+            case LandformType.SeaRavines: return SeaRavines(x, y, wavelength, amplitude, seed);
+            case LandformType.SeaReef: return SeaReef(x, y, wavelength, amplitude, seed);
+            case LandformType.SeaRocky: return SeaRocky(x, y, wavelength, amplitude, roughness, seed);
             default: return 0f;
         }
     }
@@ -329,9 +386,9 @@ public static class LandformGenerator
     ///    rounded summits, and bending (domain warping) makes ridges curve and peaks lopsided.
     ///  - Small: rock detail, stronger on high ground.
     /// </summary>
-    // Mountain shaping constants, tuned against slope statistics (median ~29 degrees, ~20% of faces steeper
+    // Mountain shaping constants, tuned against slope statistics (median ~30 degrees, ~20% of faces steeper
     // than 50) and peak counts on typical mountain biome settings (amplitude 60, frequency 1.5).
-    private const float PeakSpacing = 1.7f;          // ridge-noise wavelength, in biome feature sizes
+    private const float PeakSpacing = 1.4f;          // ridge-noise wavelength, in biome feature sizes
     private const float LayerFalloff = 0.5f;         // extra per-layer falloff on top of persistence (keeps fine layers from making cliffs)
     private const float MountainHeight = 2.5f;       // relief scale, in biome amplitudes
     private const float PeakContrast = 1.2f;         // >1 deepens valleys and narrows summits
@@ -340,6 +397,7 @@ public static class LandformGenerator
     private const float SmallestFeature = 6f;        // world units
     private const float RidgeFeedback = 2f;          // how strongly each layer follows the ridges of the one below
     private const float CrestSharpness = 2.3f;
+    private const float RangeNarrow = 1.5f;          // how narrow range crest lines are (higher = narrower ranges, wider valleys)
     private const float MountainFrontSlope = 1.19f;  // tan(50 degrees): steepest a mountain front may rise from its border
 
     private static float Mountains(float x, float y, float wavelength, float amplitude, float roughness, int seed)
@@ -357,7 +415,7 @@ public static class LandformGenerator
         // Large scale: range crest lines and the valleys between ranges.
         float rangeInv = peakInv / RangeSpacing;
         float rangeNoise = Fbm(qx * rangeInv, qy * rangeInv, Key(seed, T, 3), 2, 0.5f);
-        float range = 1f - Mathf.Abs(rangeNoise) * 2f;
+        float range = 1f - Mathf.Abs(rangeNoise) * RangeNarrow;
         float rangeMask = 0.1f + 0.9f * SmoothStep(0f, 0.8f, range);
         float uplift = 0.55f + 0.45f * Noise01(x * rangeInv / 2.5f, y * rangeInv / 2.5f, Key(seed, T, 4));
 
@@ -498,6 +556,152 @@ public static class LandformGenerator
         return relief;
     }
 
+    /// <summary>
+    /// Highlands: big rolling uplands (larger than Hills) broken by bands of rock ledges - steep risers of
+    /// several metres that follow the contours - and narrow ravines. Ledges and ravines only occur in
+    /// patches, and taper out at their ends, so there is always a way around rather than a wall.
+    /// </summary>
+    private static float Highlands(float x, float y, float wavelength, float amplitude, float roughness, int seed)
+    {
+        const int T = (int)LandformType.Highlands;
+        float inv = 1f / wavelength;
+
+        float warpX = Fbm(x * inv * 0.5f, y * inv * 0.5f, Key(seed, T, 1), 2, 0.5f);
+        float warpY = Fbm(x * inv * 0.5f, y * inv * 0.5f, Key(seed, T, 2), 2, 0.5f);
+        float qx = x + warpX * 0.3f * wavelength;
+        float qy = y + warpY * 0.3f * wavelength;
+
+        // Large rounded uplands.
+        float shape = Fbm01(qx * inv / 1.6f, qy * inv / 1.6f, Key(seed, T, 3), 3, Mathf.Min(roughness, 0.5f));
+        float uplands = SmoothStep(0.22f, 1.1f, shape);
+        float size = 0.6f + 0.4f * Noise01(x * inv / 5f, y * inv / 5f, Key(seed, T, 4));
+        float relief = amplitude * 2.2f * size * uplands;
+
+        // Rock ledges: the contour lines of a slow field become steep risers, only inside ledge zones,
+        // whose soft edges shrink the risers to walkable ramps.
+        float zone = SmoothStep(0.45f, 0.62f, Noise01(x * inv / 2.2f, y * inv / 2.2f, Key(seed, T, 5)));
+        if (zone > 0f)
+        {
+            const float tiers = 3f;
+            float field = Fbm01(qx * inv / 0.9f, qy * inv / 0.9f, Key(seed, T, 6), 2, 0.5f) * tiers;
+            float tier = Mathf.Floor(field);
+            float riser = SmoothStep(0.8f, 0.9f, field - tier);
+            float ledgeHeight = Mathf.Max(3.5f, 0.5f * Mathf.Abs(amplitude));
+            relief += zone * ledgeHeight * (tier + riser - 0.5f * tiers);
+        }
+
+        // Narrow ravines in their own patches.
+        float ravineZone = SmoothStep(0.5f, 0.65f, Noise01(x * inv / 3f, y * inv / 3f, Key(seed, T, 7)));
+        if (ravineZone > 0f)
+        {
+            float line = 1f - Mathf.Abs(Noise(qx * inv / 1.3f, qy * inv / 1.3f, Key(seed, T, 8), 0));
+            float ravine = Mathf.Pow(Mathf.Clamp01(line), 14f);
+            relief -= ravineZone * ravine * Mathf.Max(3f, 0.7f * Mathf.Abs(amplitude));
+        }
+
+        relief += amplitude * 0.03f * Fbm(x * 0.2f, y * 0.2f, Key(seed, T, 9), 2, 0.5f);
+        return relief;
+    }
+
+    /// <summary>
+    /// Glacial valleys: high mountain terrain (see <see cref="Mountains"/>) with broad, flat-floored,
+    /// steep-walled U-shaped troughs carved along long winding lines, plus smaller hanging side valleys
+    /// whose floors sit high on the main valley walls. Trough floors carry low moraine hummocks and
+    /// differ in height from valley to valley; walls get extra rock detail.
+    /// </summary>
+    private static float Glacial(float x, float y, float wavelength, float amplitude, float roughness, int seed)
+    {
+        const int T = (int)LandformType.Glacial;
+        float mountains = 1.1f * Mountains(x, y, wavelength, amplitude, roughness, seed ^ 0x5F3759DF);
+
+        float troughScale = 4f * wavelength;
+        float inv = 1f / troughScale;
+        float warpX = Fbm(x * inv * 0.5f, y * inv * 0.5f, Key(seed, T, 1), 2, 0.5f);
+        float warpY = Fbm(x * inv * 0.5f, y * inv * 0.5f, Key(seed, T, 2), 2, 0.5f);
+        float qx = x + warpX * 0.4f * troughScale;
+        float qy = y + warpY * 0.4f * troughScale;
+
+        // Main troughs: flat floor across the middle ~45% of the width, steep walls, open above.
+        float across = Mathf.Abs(Fbm(qx * inv, qy * inv, Key(seed, T, 3), 2, 0.5f)) / 0.11f;
+        float trough = 1f - SmoothStep(0.45f, 1f, across);
+        float floor = amplitude * (0.1f + 0.35f * Noise01(x * inv / 2.5f, y * inv / 2.5f, Key(seed, T, 4)))
+                      + amplitude * 0.03f * Fbm(x / 70f, y / 70f, Key(seed, T, 5), 2, 0.5f);
+
+        // Hanging side valleys: narrower troughs whose floors sit about halfway up.
+        float sideInv = 1f / (1.3f * wavelength);
+        float sideAcross = Mathf.Abs(Fbm(qx * sideInv, qy * sideInv, Key(seed, T, 6), 2, 0.5f)) / 0.09f;
+        float sideTrough = 1f - SmoothStep(0.45f, 1f, sideAcross);
+        float sideFloor = Mathf.Lerp(floor, mountains, 0.5f);
+
+        float relief = mountains;
+        relief = Mathf.Lerp(relief, Mathf.Min(relief, sideFloor), sideTrough * 0.9f);
+        relief = Mathf.Lerp(relief, Mathf.Min(relief, floor), trough);
+
+        // Rugged rock around the valley walls.
+        float wall = trough * (1f - trough) * 4f;
+        relief += amplitude * 0.04f * Fbm(x * 0.15f, y * 0.15f, Key(seed, T, 7), 3, 0.5f) * (0.3f + wall);
+        return relief;
+    }
+
+    /// <summary>Ocean biomes: deep rolling seafloor with scattered seamounts (relief relative to the normal seafloor).</summary>
+    private static float SeaPlain(float x, float y, float wavelength, float amplitude, int seed)
+    {
+        const int T = (int)LandformType.SeaPlain;
+        float inv = 1f / wavelength;
+        float roll = Fbm(x * inv / 2.5f, y * inv / 2.5f, Key(seed, T, 1), 2, 0.5f) * 0.25f;
+        float seamount = Mathf.Pow(SmoothStep(0.72f, 0.98f, Noise01(x * inv / 1.6f, y * inv / 1.6f, Key(seed, T, 2))), 1.5f) * 1.2f;
+        return amplitude * (-0.25f + roll + seamount);
+    }
+
+    /// <summary>Ocean biomes: seafloor cut by deep, branching submarine ravines (relief relative to the normal seafloor).</summary>
+    private static float SeaRavines(float x, float y, float wavelength, float amplitude, int seed)
+    {
+        const int T = (int)LandformType.SeaRavines;
+        float inv = 1f / wavelength;
+        float warpX = Fbm(x * inv * 0.4f, y * inv * 0.4f, Key(seed, T, 1), 2, 0.5f);
+        float warpY = Fbm(x * inv * 0.4f, y * inv * 0.4f, Key(seed, T, 2), 2, 0.5f);
+        float qx = x + warpX * 0.5f * wavelength;
+        float qy = y + warpY * 0.5f * wavelength;
+
+        float main = Mathf.Pow(Mathf.Clamp01(1f - Mathf.Abs(Noise(qx * inv / 1.8f, qy * inv / 1.8f, Key(seed, T, 3), 0))), 10f);
+        float branch = Mathf.Pow(Mathf.Clamp01(1f - Mathf.Abs(Noise(qx * inv / 0.7f, qy * inv / 0.7f, Key(seed, T, 4), 0))), 14f);
+        float zone = 0.4f + 0.6f * SmoothStep(0.3f, 0.6f, Noise01(x * inv / 4f, y * inv / 4f, Key(seed, T, 5)));
+        float base0 = Fbm(x * inv / 3f, y * inv / 3f, Key(seed, T, 6), 2, 0.5f) * 0.2f;
+        return amplitude * (base0 - (main + 0.5f * branch) * zone);
+    }
+
+    /// <summary>Ocean biomes: reef banks and atoll rings rising toward the surface, with lagoons and coral heads.</summary>
+    private static float SeaReef(float x, float y, float wavelength, float amplitude, int seed)
+    {
+        const int T = (int)LandformType.SeaReef;
+        float inv = 1f / wavelength;
+        float bank = SmoothStep(0.58f, 0.72f, Fbm01(x * inv, y * inv, Key(seed, T, 1), 3, 0.5f));
+        // Lagoons: the middle of the larger banks sits lower, leaving a reef ring (an atoll) around it.
+        float lagoon = SmoothStep(0.72f, 0.82f, Fbm01(x * inv, y * inv, Key(seed, T, 1), 3, 0.5f));
+        float heads = SmoothStep(0.55f, 0.9f, Noise01(x / 9f, y / 9f, Key(seed, T, 3)));
+        return amplitude * (bank * (1f - 0.55f * lagoon) + 0.08f * heads * bank);
+    }
+
+    /// <summary>Ocean biomes: rough rocky seabed with stepped ledges and boulder fields.</summary>
+    private static float SeaRocky(float x, float y, float wavelength, float amplitude, float roughness, int seed)
+    {
+        const int T = (int)LandformType.SeaRocky;
+        float inv = 1f / wavelength;
+        float sum = 0f, norm = 0f, a = 1f, f = inv;
+        for (int o = 0; o < 3; o++)
+        {
+            float ridge = 1f - Mathf.Abs(Noise(x * f, y * f, Key(seed, T, 1 + o), 0));
+            sum += ridge * ridge * a;
+            norm += a;
+            a *= roughness;
+            f *= 2f;
+        }
+        float rock = sum / norm;
+        float stepped = Mathf.Lerp(rock, Mathf.Round(rock * 4f) / 4f, 0.5f);
+        float boulders = SmoothStep(0.6f, 0.9f, Noise01(x / 6f, y / 6f, Key(seed, T, 5))) * 0.15f;
+        return amplitude * (0.6f * stepped - 0.3f + boulders);
+    }
+
     // ------------------------------------------------------------------ placement
 
     /// <summary>
@@ -523,10 +727,12 @@ public static class LandformGenerator
         switch (landform)
         {
             case LandformType.Mountains:
+            case LandformType.Glacial:
             case LandformType.Plateau:
                 affinity = 0.1f + 3f * belt;
                 break;
             case LandformType.Hills:
+            case LandformType.Highlands:
                 affinity = 0.6f + 1.2f * Mathf.Sqrt(belt);
                 break;
             case LandformType.Plains:
@@ -601,7 +807,7 @@ public static class LandformGenerator
         return p;
     }
 
-    /// <summary>2D Perlin gradient noise, scaled to about [-1,1]; repeats every 256 units.</summary>
+    /// <summary>2D Perlin gradient noise, scaled to about [-1,1] (99% within +/-0.9); repeats every 256 units.</summary>
     private static float Gradient(float x, float y)
     {
         float fx = Mathf.Floor(x), fy = Mathf.Floor(y);
@@ -615,22 +821,19 @@ public static class LandformGenerator
         float n01 = Dot(p[a + 1], x, y - 1f), n11 = Dot(p[b + 1], x - 1f, y - 1f);
         float nx0 = n00 + u * (n10 - n00);
         float nx1 = n01 + u * (n11 - n01);
-        return Mathf.Clamp((nx0 + v * (nx1 - nx0)) * 1.4f, -1f, 1f);
+        return Mathf.Clamp((nx0 + v * (nx1 - nx0)) * 1.96f, -1f, 1f);
     }
+
+    // Eight unit gradient directions at 22.5 + k * 45 degrees. None is parallel to a grid axis: with
+    // axis-aligned gradients the noise is exactly zero along some whole cell edges, which ridged shapes
+    // (1 - |noise|) turn into straight lines.
+    private static readonly float[] GradientX = { 0.9239f, 0.3827f, -0.3827f, -0.9239f, -0.9239f, -0.3827f, 0.3827f, 0.9239f };
+    private static readonly float[] GradientY = { 0.3827f, 0.9239f, 0.9239f, 0.3827f, -0.3827f, -0.9239f, -0.9239f, -0.3827f };
 
     private static float Dot(int hash, float x, float y)
     {
-        switch (hash & 7)
-        {
-            case 0: return x + y;
-            case 1: return -x + y;
-            case 2: return x - y;
-            case 3: return -x - y;
-            case 4: return x * 1.4142f;
-            case 5: return -x * 1.4142f;
-            case 6: return y * 1.4142f;
-            default: return -y * 1.4142f;
-        }
+        int h = hash & 7;
+        return GradientX[h] * x + GradientY[h] * y;
     }
 
     private static float Noise01(float x, float y, int key)

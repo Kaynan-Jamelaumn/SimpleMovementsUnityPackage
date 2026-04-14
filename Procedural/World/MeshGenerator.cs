@@ -100,13 +100,13 @@ public class MeshData
 /// <summary>
 /// Data structure for a chunk's water mesh - see <see cref="MeshGenerator.GenerateWaterMesh"/>. Uses the
 /// exact same vertex grid (width/depth/LOD sampling) as <see cref="MeshData"/>, so water vertices always
-/// line up with the terrain mesh underneath, and one submesh per water type (ocean, lake, pond, river)
-/// so each type can get its own material. Vertices of dry grid points no quad uses stay in the buffer
+/// line up with the terrain mesh underneath, and one submesh per water type (ocean, lake, pond, river,
+/// plus waterfalls - the steep sheets where a river drops) so each type can get its own material. Vertices of dry grid points no quad uses stay in the buffer
 /// unreferenced - a little memory, in exchange for trivially correct indexing.
 /// </summary>
 public class WaterMeshData
 {
-    public const int SubmeshCount = 4;
+    public const int SubmeshCount = 5;
 
     public Vector3[] vertices;
     public Vector2[] uvs;
@@ -124,7 +124,7 @@ public class WaterMeshData
             submeshTriangles[i] = new List<int>();
     }
 
-    /// <summary>Submesh (and material slot) of a water type: 0 = ocean, 1 = lake, 2 = pond, 3 = river.</summary>
+    /// <summary>Submesh (and material slot) of a water type: 0 = ocean, 1 = lake, 2 = pond, 3 = river, 4 = waterfall.</summary>
     public static int SubmeshIndex(WaterBodyType type)
     {
         return Mathf.Clamp((int)type - 1, 0, SubmeshCount - 1);
@@ -476,6 +476,9 @@ public static class MeshGenerator
         int lastOwnedY = mapHeight - 2;
 
         WaterMeshData meshData = new WaterMeshData(meshWidth, meshHeight);
+        // A quad whose wet corners differ in water height by more than this is a waterfall sheet (steeper
+        // than ~50 degrees at this vertex spacing); gentler rapids stay river.
+        float waterfallRise = 1.2f * lodFactor;
         float scaleFactor = terrainGenerator.ScaleFactor;
         const float uvScale = 1f / 20f;
         bool anyQuad = false;
@@ -522,6 +525,9 @@ public static class MeshGenerator
 
                         if (type != WaterBodyType.None)
                         {
+                            if (IsWaterfall(water, heightMapX, heightMapY, nextHeightMapX, nextHeightMapY, waterfallRise))
+                                type = WaterBodyType.Waterfall;
+
                             int topLeft = y * (meshWidth + 1) + x;
                             int topRight = topLeft + 1;
                             int bottomLeft = (y + 1) * (meshWidth + 1) + x;
@@ -546,6 +552,26 @@ public static class MeshGenerator
         }
 
         return anyQuad ? meshData : null;
+    }
+
+    /// <summary>True when the quad's wet corners span more than <paramref name="rise"/> in water height.</summary>
+    private static bool IsWaterfall(WaterMapData water, int x0, int y0, int x1, int y1, float rise)
+    {
+        float min = float.MaxValue, max = float.MinValue;
+        Consider(water, x0, y0, ref min, ref max);
+        Consider(water, x1, y0, ref min, ref max);
+        Consider(water, x0, y1, ref min, ref max);
+        Consider(water, x1, y1, ref min, ref max);
+        return max - min > rise;
+    }
+
+    private static void Consider(WaterMapData water, int x, int y, ref float min, ref float max)
+    {
+        if (!water.IsWet(x, y))
+            return;
+        float surface = water.Surface[x, y];
+        if (surface < min) min = surface;
+        if (surface > max) max = surface;
     }
 
     /// <summary>

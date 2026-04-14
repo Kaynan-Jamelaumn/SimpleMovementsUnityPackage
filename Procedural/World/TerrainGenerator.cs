@@ -322,6 +322,24 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Spacing of mountain belts = Voronoi Scale x this. Larger = fewer, longer, more widely separated ranges.")]
     [SerializeField] private float mountainBeltScaleMultiplier = 6f;
 
+    [Header("Volcanoes")]
+    [Tooltip("Generate volcanoes and calderas: rare, very large landmarks (a cone or a collapsed caldera with a wide apron of lava plains) that reshape a big area around them. Rivers run down their flanks and lakes can form in calderas. A biome with Placement = Volcanic, if you have one, is painted over them.")]
+    [SerializeField] private bool enableVolcanoes = true;
+    [Tooltip("Size (world units) of the grid volcanoes are placed on - at most one per cell. Larger = rarer volcanoes, further apart.")]
+    [SerializeField] private float volcanoSpacing = 5000f;
+    [Tooltip("Chance a grid cell gets a volcano. With the default spacing, 0.35 means roughly one volcano every 8 km.")]
+    [SerializeField][Range(0f, 1f)] private float volcanoChance = 0.35f;
+    [Tooltip("Smallest volcano radius (world units) - the main cone; its lava apron reaches about twice as far.")]
+    [SerializeField] private float volcanoMinRadius = 450f;
+    [Tooltip("Largest volcano radius (world units).")]
+    [SerializeField] private float volcanoMaxRadius = 1000f;
+    [Tooltip("Lowest summit/rim height above the surrounding land.")]
+    [SerializeField] private float volcanoMinHeight = 110f;
+    [Tooltip("Highest summit/rim height above the surrounding land.")]
+    [SerializeField] private float volcanoMaxHeight = 230f;
+    [Tooltip("Chance a volcano is a caldera (a wide collapsed crater with steep stepped walls, a flat floor and sometimes a young cone inside) instead of a cone with a summit crater.")]
+    [SerializeField][Range(0f, 1f)] private float calderaChance = 0.4f;
+
     [Header("Water")]
     /// <summary>
     /// Master toggle for oceans, lakes, ponds and rivers. When off, terrain generates exactly as it did
@@ -348,6 +366,8 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] private Material pondMaterial;
     [Tooltip("Optional material for rivers (falls back to the default water material).")]
     [SerializeField] private Material riverMaterial;
+    [Tooltip("Optional material for waterfalls - the steep sheets of water where a river drops (falls back to the river material, then the default).")]
+    [SerializeField] private Material waterfallMaterial;
 
     [Tooltip("Whether water bodies get a trigger volume that drives OxygenManager.SetUnderwater for anything with an OxygenManager (player, mobs, etc). Water rendering/geometry is unaffected either way.")]
     [SerializeField] private bool enableSwimDetection = true;
@@ -381,6 +401,20 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] private float islandPeakHeight = 14f;
     [Tooltip("Radius (world units) around the world origin kept on land, so the player never spawns at sea. 0 disables.")]
     [SerializeField] private float spawnLandRadius = 700f;
+
+    [Header("Water - Coasts")]
+    [Tooltip("How much of the coastline is cliffs (0 = all beaches). Coasts alternate naturally between beaches, rocky shores and cliffs along their length.")]
+    [SerializeField][Range(0f, 1f)] private float coastCliffFrequency = 0.35f;
+    [Tooltip("Height of the tallest sea cliffs (world units). Cliff height varies along the coast up to this.")]
+    [SerializeField] private float coastCliffHeight = 26f;
+    [Tooltip("How often cliffs are stepped into terraces (up to three faces with ledges between them) instead of one sheer face.")]
+    [SerializeField][Range(0f, 1f)] private float coastCliffTerraces = 0.5f;
+    [Tooltip("Chance of sea stacks (isolated rock towers in the sea) off a stretch of cliff coast. 0 = none.")]
+    [SerializeField][Range(0f, 1f)] private float seaStackChance = 0.3f;
+    [Tooltip("Grid size (world units) sea stacks are placed on - at most one small group per cell. Larger = rarer.")]
+    [SerializeField] private float seaStackSpacing = 220f;
+    [Tooltip("Tallest a sea stack can rise above the water (world units).")]
+    [SerializeField] private float seaStackMaxHeight = 30f;
 
     [Header("Water - Lakes")]
     [Tooltip("Generate lakes: inland bodies of water sitting in a basin, with their own water level.")]
@@ -453,6 +487,14 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] private float riverMaxValleyWidth = 150f;
     [Tooltip("How far river banks stay above the river's water.")]
     [SerializeField] private float riverBankFreeboard = 0.8f;
+
+    [Header("Water - Waterfalls")]
+    [Tooltip("Where a river drops steeply (over a cliff, off a volcano or plateau, down into a valley), turn the drop into a real waterfall: a flat pool, a rock lip, a sheer fall and a plunge pool, instead of steep rapids.")]
+    [SerializeField] private bool enableWaterfalls = true;
+    [Tooltip("Smallest drop (world units) that becomes a waterfall.")]
+    [SerializeField] private float waterfallMinDrop = 4f;
+    [Tooltip("Tallest single fall; bigger drops become several falls with pools between them (a multi-tier waterfall).")]
+    [SerializeField] private float waterfallTierHeight = 12f;
 
     [Header("Erosion")]
     /// <summary>
@@ -691,6 +733,16 @@ public class TerrainGenerator : MonoBehaviour
     public float MountainBeltStrength => mountainBeltStrength;
     public float MountainBeltScale => VoronoiScale * Mathf.Max(0.5f, mountainBeltScaleMultiplier);
 
+    // Volcano Properties
+    public bool EnableVolcanoes => enableVolcanoes;
+    public float VolcanoSpacing => volcanoSpacing;
+    public float VolcanoChance => volcanoChance;
+    public float VolcanoMinRadius => volcanoMinRadius;
+    public float VolcanoMaxRadius => volcanoMaxRadius;
+    public float VolcanoMinHeight => volcanoMinHeight;
+    public float VolcanoMaxHeight => volcanoMaxHeight;
+    public float CalderaChance => calderaChance;
+
     /// <summary>
     /// Biome layout options passed to every <see cref="VoronoiBiomeGenerator"/> query. Null (the original
     /// behavior) when neither order-independent layout nor landform placement is in use.
@@ -732,6 +784,7 @@ public class TerrainGenerator : MonoBehaviour
             case WaterBodyType.Lake: specific = lakeMaterial; break;
             case WaterBodyType.Pond: specific = pondMaterial != null ? pondMaterial : lakeMaterial; break;
             case WaterBodyType.River: specific = riverMaterial; break;
+            case WaterBodyType.Waterfall: specific = waterfallMaterial != null ? waterfallMaterial : riverMaterial; break;
         }
         return specific != null ? specific : waterMaterial;
     }
@@ -751,6 +804,12 @@ public class TerrainGenerator : MonoBehaviour
     public float IslandScale => VoronoiScale * islandScaleMultiplier;
     public float IslandPeakHeight => islandPeakHeight;
     public float SpawnLandRadius => spawnLandRadius;
+    public float CoastCliffFrequency => coastCliffFrequency;
+    public float CoastCliffHeight => coastCliffHeight;
+    public float CoastCliffTerraces => coastCliffTerraces;
+    public float SeaStackChance => seaStackChance;
+    public float SeaStackSpacing => seaStackSpacing;
+    public float SeaStackMaxHeight => seaStackMaxHeight;
 
     public bool EnableLakes => enableWater && enableLakes;
     public float LakeSpacing => lakeSpacing;
@@ -787,6 +846,9 @@ public class TerrainGenerator : MonoBehaviour
     public float RiverValleySlope => riverValleySlope;
     public float RiverMaxValleyWidth => riverMaxValleyWidth;
     public float RiverBankFreeboard => riverBankFreeboard;
+    public bool EnableWaterfalls => enableWaterfalls;
+    public float WaterfallMinDrop => waterfallMinDrop;
+    public float WaterfallTierHeight => waterfallTierHeight;
 
     // Erosion Properties
     public bool EnableErosion => enableErosion;
@@ -905,29 +967,14 @@ public class TerrainGenerator : MonoBehaviour
     public Biome[,] GenerateBiomeMap(Vector2 globalOffset, float[,] heightMap)
     {
         Biome[,] biomeMap = new Biome[ChunkSize, ChunkSize];
+        // The same sampler the terrain is built with, so ocean and volcanic biomes land where the terrain has them.
+        TerrainHeightSampler sampler = new TerrainHeightSampler(this, EnableWater ? WaterSettings.From(this) : null);
 
         for (int y = 0; y < ChunkSize; y++)
         {
             for (int x = 0; x < ChunkSize; x++)
             {
-                Vector2 worldPos = new Vector2(globalOffset.x + x, globalOffset.y + y);
-                Biome chosenBiome = VoronoiBiomeGenerator.GetBiomeAtPosition(
-                    worldPos,
-                    VoronoiScale,
-                    NumVoronoiPoints,
-                    biomeDefinitions.Select(b => b.BiomePrefab).ToList(),
-                    VoronoiSeed,
-                    useWeightedBiome,
-                    UseNaturalClimatePlacement,
-                    ClimateNoiseScale,
-                    VoronoiWarpStrength,
-                    VoronoiWarpScale,
-                    BiomeClusterStrength,
-                    BiomeClusterRadius,
-                    BiomeRepeatPenalty,
-                    BiomeLayout
-                );
-                biomeMap[x, y] = chosenBiome;
+                biomeMap[x, y] = sampler.SampleBiome(globalOffset.x + x, globalOffset.y + y);
             }
         }
 

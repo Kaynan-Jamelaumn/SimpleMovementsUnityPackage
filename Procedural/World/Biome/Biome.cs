@@ -52,10 +52,17 @@ public class Biome : ScriptableObject
     public float baseElevation = 0f;
 
     /// <summary>
+    /// Where this biome can appear: on land (the normal Voronoi layout), only on the ocean floor, or
+    /// only on volcanoes. Ocean and Volcanic biomes are never picked for ordinary land.
+    /// </summary>
+    [Tooltip("Where this biome can appear.\n\nLand: a normal biome, placed by the Voronoi biome layout.\nOcean: only on the ocean floor - gives the sea its own textures, objects and seafloor shape (use a Sea... landform: Sea Plain, Sea Ravines, Sea Reef or Sea Rocky). Several ocean biomes form their own layout under the sea.\nVolcanic: only painted over volcanoes (cone, caldera, lava fields).\n\nIf no biome has a role, oceans and volcanoes keep whatever land biome is there.")]
+    public BiomePlacement placement = BiomePlacement.Land;
+
+    /// <summary>
     /// The shape of the ground in this biome (see <see cref="LandformType"/>). Classic keeps the original
     /// terrain. Which setting is actually used also depends on the Terrain Generator's Terrain Shape Mode.
     /// </summary>
-    [Tooltip("The shape of the ground in this biome.\n\nClassic: the original layered-noise terrain.\nPlains: broad, low swells and shallow basins.\nHills: rounded, rolling hills with gentle slopes.\nMountains: ranges of connected peaks and ridges of varied height, with valleys between them.\nDunes: wind-aligned sand dunes in fields.\nWetland: flat, low ground with hummocks and hollows.\nPlateau: flat-topped tablelands with cliff steps and canyons.\n\nAmplitude sets the relief height, Frequency the feature size (e.g. peak spacing), Persistence the roughness. Only used when the Terrain Generator's Terrain Shape Mode is not Classic Only.")]
+    [Tooltip("The shape of the ground in this biome.\n\nClassic: the original layered-noise terrain.\nPlains: broad, low swells and shallow basins.\nHills: rounded, rolling hills with gentle slopes.\nMountains: ranges of connected peaks and ridges of varied height, with valleys between them.\nDunes: wind-aligned sand dunes in fields.\nWetland: flat, low ground with hummocks and hollows.\nPlateau: flat-topped tablelands with cliff steps and canyons.\nHighlands: rugged uplands with rock ledges and ravines you must walk around (good for forests).\nGlacial: high mountains with broad U-shaped glacier valleys and hanging side valleys.\nSea Plain / Sea Ravines / Sea Reef / Sea Rocky: seafloor shapes for Ocean biomes.\n\nAmplitude sets the relief height, Frequency the feature size (e.g. peak spacing), Persistence the roughness. Only used when the Terrain Generator's Terrain Shape Mode is not Classic Only.")]
     public LandformType landform = LandformType.Classic;
 
     /// <summary>Frequency of height details within the biome. Higher values result in more details.</summary>
