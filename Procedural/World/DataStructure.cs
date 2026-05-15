@@ -67,6 +67,9 @@ public static class DataStructure
         [Tooltip("Per-cell water (surface height, water body type, shoreline level). Null when EnableWater is off.")]
         public readonly WaterMapData waterData;
 
+        [Tooltip("Per-pixel biome blend for the splat maps, computed on the worker thread (null when blended texturing is off).")]
+        public SplatBlendData splatBlend;
+
         /// <summary>
         /// Constructor for TerrainData.
         /// </summary>
@@ -96,6 +99,7 @@ public static class DataStructure
             this.biomeMap = biomeMap;
             this.erosionDeltaMap = erosionDeltaMap;
             this.waterData = waterData;
+            this.splatBlend = null;
         }
     }
 
