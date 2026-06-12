@@ -324,7 +324,7 @@ public static partial class MeshGenerator
     /// </summary>
     /// <param name="terrainGenerator">The terrain generator containing size information.</param>
     /// <returns>UV scale factor for texture coordinates.</returns>
-    private static float GetTextureScale(TerrainGenerator terrainGenerator)
+    public static float GetTextureScale(TerrainGenerator terrainGenerator)
     {
         // Base texture scale - adjust this value to control overall texture density
         // Higher values = more texture repetition (smaller texture appearance)

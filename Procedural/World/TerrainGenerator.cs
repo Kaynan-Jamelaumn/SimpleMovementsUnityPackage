@@ -719,21 +719,51 @@ public partial class TerrainGenerator : MonoBehaviour
     [SerializeField] private bool shouldSpawnObjects = true;
 
     /// <summary>
-    /// Base frequency for clustering spawned objects.
+    /// Base frequency for clustering spawned objects. No longer used (see <see cref="BiomeObject.densityNoise"/>).
     /// </summary>
-    [Tooltip("Base frequency for clustering spawned objects.")]
-    [SerializeField] private float clusterBaseFrequency = 1f;
+    [Tooltip("Not used by the current object placement (each object has its own Density Noise and Clustering settings); kept for older setups.")]
+    [HideInInspector][SerializeField] private float clusterBaseFrequency = 1f;
 
     /// <summary>
-    /// Amplitude for object clustering, affecting density variations.
+    /// Amplitude for object clustering, affecting density variations. No longer used (see <see cref="BiomeObject.clustering"/>).
     /// </summary>
-    [Tooltip("Amplitude for object clustering, affecting density variations.")]
-    [SerializeField] private float clusterAmplitude = 1f;
+    [Tooltip("Not used by the current object placement (each object has its own Density Noise and Clustering settings); kept for older setups.")]
+    [HideInInspector][SerializeField] private float clusterAmplitude = 1f;
 
-    // Thread-safe queues
-    private Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue;
-    private Queue<MapThreadInfo<DataStructure.TerrainData>> terrainDataThreadInfoQueue;
-    private Queue<MapThreadInfo<BiomeObjectData>> biomeObjectDataThreadInfoQueue;
+    [Tooltip("Ground steeper than this (degrees) counts as a cliff for objects' 'Cliff' distance rules.")]
+    [SerializeField][Range(20f, 85f)] private float objectCliffAngle = 45f;
+    [Tooltip("Most time (milliseconds) spent creating objects per frame. Objects of newly generated chunks appear over a few frames instead of in one hitch.")]
+    [SerializeField] private float objectSpawnBudgetMs = 2f;
+    [Tooltip("Most objects created per frame (whatever the time budget).")]
+    [SerializeField] private int maxObjectsPerFrame = 300;
+
+    [Header("Terrain Material")]
+    [Tooltip("Which shader draws the terrain.\n\nPackage (Tri-Planar): the package's own terrain shader (URP and Built-in). Biome textures blended by the splat maps, projected from the sides on steep ground - cliffs, mountains, abrupt rises and drops - so they don't stretch; wet ground near water darker and glossier.\nProject Shader: your project's 'Custom/TerrainSplatMapShaderURP' (or HDRP) shader, as before.\nCustom Material: a copy of Custom Terrain Material, whose shader reads the same properties (_TextureArray, _SplatMaps, _SplatMapCount...).\n\nUnder HDRP the package shader isn't available, so the project shader is used.")]
+    [SerializeField] private TerrainShaderMode terrainShader = TerrainShaderMode.PackageTriplanar;
+    [Tooltip("Custom Material mode: the material each chunk's material is copied from.")]
+    [SerializeField] private Material customTerrainMaterial;
+    [Tooltip("Package shader: world units one biome texture covers before it repeats. 0 = the same size as the mesh's texture coordinates (about 100 units at the largest chunk size).")]
+    [SerializeField] private float terrainTextureSize = 0f;
+    [Tooltip("Package shader: how much steep ground uses tri-planar projection (textures projected from the sides instead of from above). 0 = never (textures stretch on cliffs), 1 = fully.")]
+    [SerializeField][Range(0f, 1f)] private float triplanarStrength = 1f;
+    [Tooltip("Package shader: slope (degrees) where tri-planar projection starts to fade in.")]
+    [SerializeField][Range(0f, 90f)] private float triplanarSlopeStart = 25f;
+    [Tooltip("Package shader: slope (degrees) from which ground is fully tri-planar.")]
+    [SerializeField][Range(0f, 90f)] private float triplanarSlopeEnd = 45f;
+    [Tooltip("Package shader: how sharply the three projections blend where they meet. Higher = narrower, crisper transitions; lower = softer, blurrier ones.")]
+    [SerializeField][Range(1f, 16f)] private float triplanarSharpness = 6f;
+    [Tooltip("Package shader: how glossy dry ground is.")]
+    [SerializeField][Range(0f, 1f)] private float terrainSmoothness = 0.08f;
+    [Tooltip("Package shader: how much darker the wettest ground near water is.")]
+    [SerializeField][Range(0f, 1f)] private float wetnessDarkening = 0.35f;
+    [Tooltip("Package shader: how glossy the wettest ground near water is.")]
+    [SerializeField][Range(0f, 1f)] private float wetnessSmoothness = 0.55f;
+
+    [Header("Threading")]
+    [Tooltip("Background threads generating chunks (heights, meshes, object placement). 0 = automatic: one less than the CPU's cores, at most 8. Nearest chunks are always generated first.")]
+    [SerializeField][Range(0, 16)] private int workerThreads = 0;
+    [Tooltip("Most time (milliseconds) spent per frame applying finished chunk data on the main thread (textures, meshes, colliders). At least one result is applied every frame.")]
+    [SerializeField] private float mainThreadBudgetMs = 4f;
 
     // Guards minHeight/maxHeight, which UpdateMinMaxHeight below mutates from multiple
     // concurrent per-chunk worker threads (all sharing this one TerrainGenerator instance).
@@ -765,7 +795,7 @@ public partial class TerrainGenerator : MonoBehaviour
     }
 
     /// <summary>
-    /// Initializes the system by setting up thread-safe queues, Voronoi cache, and precomputing density maps for biome objects.
+    /// Resets the caches of world features that outlive a Play session (see below) before anything is generated.
     /// </summary>
     private void Awake()
     {
@@ -779,26 +809,7 @@ public partial class TerrainGenerator : MonoBehaviour
         // Same reasoning for the globally cached lakes, ponds and river paths.
         WaterGenerator.ClearCaches();
 
-        // Initialize thread-safe queues for handling map data, terrain data, and biome object data from worker threads.
-        mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
-        terrainDataThreadInfoQueue = new Queue<MapThreadInfo<DataStructure.TerrainData>>();
-        biomeObjectDataThreadInfoQueue = new Queue<MapThreadInfo<BiomeObjectData>>();
-
-        // Precompute density maps for each biome object in the biome definitions.
-        foreach (BiomeInstance biomeInstance in biomeDefinitions)
-        {
-            foreach (BiomeObject biomeObject in biomeInstance.runtimeObjects)
-            {
-                // If the density map for a biome object is not already computed, generate one.
-                if (biomeObject.densityMap == null)
-                {
-                    biomeObject.densityMap = ObjectSpawner.GenerateClusteredDensityMap(
-                        ChunkSize, ChunkSize,                          // Dimensions of the density map
-                        biomeObject.clusterCount, biomeObject.clusterRadius,  // Cluster properties
-                        clusterBaseFrequency, clusterAmplitude, scaleFactor // Frequency, amplitude, and scale for clustering
-                    );
-                }
-            }
-        }
+        // And the compiled object rules, measured prefabs and landmark choices.
+        RefreshGenerationCaches();
     }
 }

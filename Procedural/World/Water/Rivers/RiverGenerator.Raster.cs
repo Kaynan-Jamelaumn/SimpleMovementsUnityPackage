@@ -108,6 +108,8 @@ public static partial class RiverGenerator
                             raster.HintDistance[index] = distance;
                             raster.Hint[index] = surface;
                             raster.HintEdgeDistance[index] = distance - halfWidth;
+                            raster.HintDirX[index] = segmentLength > 1e-4f ? ab.x / segmentLength : 0f;
+                            raster.HintDirY[index] = segmentLength > 1e-4f ? ab.y / segmentLength : 0f;
                         }
                     }
                 }

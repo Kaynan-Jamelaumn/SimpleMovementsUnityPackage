@@ -125,6 +125,41 @@ public partial class TerrainGenerator : MonoBehaviour
 
     // Water Properties
     public bool EnableWater => enableWater;
+
+    // Objects & threading
+    public bool ShouldSpawnObjects => shouldSpawnObjects;
+    public float ObjectCliffAngle => objectCliffAngle;
+    public float ObjectSpawnBudgetMs => Mathf.Max(0.1f, objectSpawnBudgetMs);
+    public int MaxObjectsPerFrame => Mathf.Max(1, maxObjectsPerFrame);
+    public int WorkerThreads => workerThreads > 0 ? workerThreads : TerrainWorkerPool.DefaultThreadCount;
+    public float MainThreadBudgetMs => Mathf.Max(0.1f, mainThreadBudgetMs);
+
+    // Terrain material
+    public TerrainShaderMode TerrainShader => terrainShader;
+    public Material CustomTerrainMaterial => customTerrainMaterial;
+    /// <summary>World units one biome texture covers (package shader); the mesh UVs' size when Terrain Texture Size is 0.</summary>
+    public float TerrainTextureWorldSize => terrainTextureSize > 0f ? terrainTextureSize : 1f / Mathf.Max(1e-5f, MeshGenerator.GetTextureScale(this));
+    public float TriplanarStrength => triplanarStrength;
+    public float TriplanarSlopeStart => Mathf.Min(triplanarSlopeStart, triplanarSlopeEnd);
+    public float TriplanarSlopeEnd => Mathf.Max(triplanarSlopeStart, triplanarSlopeEnd);
+    public float TriplanarSharpness => triplanarSharpness;
+    public float TerrainSmoothness => terrainSmoothness;
+    public float WetnessDarkening => wetnessDarkening;
+    public float WetnessSmoothness => wetnessSmoothness;
+
+    /// <summary>True when chunks need object placement data (objects enabled and some biome lists objects).</summary>
+    public bool NeedsObjectPlacement
+    {
+        get
+        {
+            if (!shouldSpawnObjects || biomeDefinitions == null)
+                return false;
+            foreach (BiomeInstance instance in biomeDefinitions)
+                if (instance != null && instance.runtimeObjects != null && instance.runtimeObjects.Count > 0)
+                    return true;
+            return false;
+        }
+    }
     public float SeaLevel => waterLevel;
     public bool EnableSwimDetection => enableSwimDetection;
 

@@ -27,6 +27,9 @@ public sealed class RiverRaster
     public readonly float[] HintDistance;
     /// <summary>Distance from that nearest river's channel edge (negative inside the channel).</summary>
     public readonly float[] HintEdgeDistance;
+    /// <summary>Direction of that nearest river's course here (unit vector, downstream).</summary>
+    public readonly float[] HintDirX;
+    public readonly float[] HintDirY;
 
     public RiverRaster(int count)
     {
@@ -40,6 +43,8 @@ public sealed class RiverRaster
         Hint = Filled(count, float.NaN);
         HintDistance = Filled(count, float.PositiveInfinity);
         HintEdgeDistance = Filled(count, float.PositiveInfinity);
+        HintDirX = new float[count];
+        HintDirY = new float[count];
     }
 
     private static float[] Filled(int count, float value)

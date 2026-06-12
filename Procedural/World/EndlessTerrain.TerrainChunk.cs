@@ -1,25 +1,34 @@
 ﻿using UnityEngine;
+using UnityEngine.AI;
 using System.Collections.Generic;
-using System.Collections;
 using Unity.AI.Navigation;
-using System.Drawing;
+using Unity.Jobs;
 using static DataStructure;
 
-// EndlessTerrain, part 2 of 2: one terrain chunk - its meshes, water, objects and visibility (see EndlessTerrain.cs).
+// EndlessTerrain, part 2 of 2: one terrain chunk - its meshes, water, objects, NavMesh and visibility, and
+// freeing all of it when it is unloaded (see EndlessTerrain.cs).
 public partial class EndlessTerrain : MonoBehaviour
 {
     /// <summary>
     /// Represents a single terrain chunk in the endless terrain system.
-    /// Manages its mesh, texture, collision, navigation mesh, and spawner systems dynamically.
+    /// Manages its mesh, texture, collision, navigation mesh, objects and spawner systems.
+    ///
+    /// Its life: generated on a worker thread (heights, water, mesh data, biomes, splat pixels) -> applied on the
+    /// main thread (material, mesh, water; the collider is cooked on a job thread) -> objects decided on a worker
+    /// thread and created a few per frame -> NavMesh built in the background once it is near the viewer -> mob and
+    /// portal spawners started. <see cref="Unload"/> cancels whatever is still pending and destroys everything it made.
     /// </summary>
     public class TerrainChunk
     {
         bool shouldUseHDRPShaders = false;
         bool enableDebugging = false;
 
+        readonly EndlessTerrain owner;
+        readonly Vector2 coord;
         GameObject meshObject;
         Vector2 position;
-        Bounds bounds;
+        // The area the chunk covers (its mesh spans position .. position + size), for distances and visibility.
+        Vector2 boundsMin, boundsMax;
 
         MeshRenderer meshRenderer;
         MeshFilter meshFilter;
@@ -42,8 +51,6 @@ public partial class EndlessTerrain : MonoBehaviour
         // Distance LOD (see TerrainGenerator.LodForDistance): this chunk's mesh at each level of detail
         // (0-6) once built, and which one is showing. The full-detail mesh is also the collider's.
         Mesh baseMesh;
-        // The area the mesh actually covers (bounds above is centered on the chunk's corner), for LOD distances.
-        Bounds meshBounds;
         readonly Mesh[] lodMeshes = new Mesh[7];
         readonly bool[] lodRequested = new bool[7];
         int currentLod = -1;
@@ -52,6 +59,7 @@ public partial class EndlessTerrain : MonoBehaviour
         MeshFilter waterMeshFilter;
         MeshRenderer waterMeshRenderer;
         BoxCollider waterCollider;
+        Mesh waterMesh;
 
         // Built-in fallback water materials (one per water type), shared by every chunk - unlike the
         // terrain material (which bakes per-chunk texture data into a unique Material instance), these
@@ -60,21 +68,52 @@ public partial class EndlessTerrain : MonoBehaviour
         private static readonly bool[] fallbackWaterMaterialAttempted = new bool[WaterMeshData.SubmeshCount];
 
         Vector2 globalOffset;
-        int maxMobs;
         float maxViewDistance;
         float scaleFactor = 1f;
-        public Vector2 Position { get { return position; } }
 
-        public TerrainChunk(Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count, bool shouldUseHDRPShaders, bool enableDebugging, float maxViewDistance)
+        // Lifecycle: pending work is cancelled through the token when the chunk is unloaded.
+        readonly WorkToken token = new WorkToken();
+        bool unloaded;
+        DataStructure.TerrainData generatedData;
+        bool hasGeneratedData;
+        PlacementResult placements;
+        GameObject[] objects;
+        Dictionary<GameObject, int> objectIndices;
+        bool objectsReady;
+        Material terrainMaterial;
+        JobHandle colliderBake;
+        bool colliderBaking;
+        NavMeshData navMeshData;
+        AsyncOperation navMeshBuild;
+        bool navMeshBuilt;
+        bool spawnersStarted;
+        LoadedTerrain.Chunk loaded;
+
+        public Vector2 Position { get { return position; } }
+        /// <summary>The chunk's coordinate in the chunk grid.</summary>
+        public Vector2 Coord { get { return coord; } }
+        /// <summary>True once its objects exist (see <see cref="Objects"/>).</summary>
+        public bool ObjectsReady { get { return objectsReady; } }
+        /// <summary>The created objects by placement index (null until created, and where removed).</summary>
+        public IReadOnlyList<GameObject> Objects { get { return objects; } }
+        /// <summary>The chunk's GameObject (the parent of its water and objects).</summary>
+        public GameObject GameObject { get { return meshObject; } }
+
+        /// <param name="cachedData">The chunk's data from a previous visit (skips generating it again); null to generate it.</param>
+        /// <param name="cachedPlacements">Its object placements from that visit.</param>
+        public TerrainChunk(EndlessTerrain owner, Vector2 coord, int size, float scaleFactor, Transform parent, PortalSettings portalSettings, MobSettings mobSettings, int count,
+            bool shouldUseHDRPShaders, bool enableDebugging, float maxViewDistance, DataStructure.TerrainData? cachedData = null, PlacementResult cachedPlacements = null)
         {
-            this.shouldUseHDRPShaders |= shouldUseHDRPShaders;
+            this.owner = owner;
+            this.coord = coord;
+            this.shouldUseHDRPShaders = shouldUseHDRPShaders;
             this.enableDebugging = enableDebugging;
             this.maxViewDistance = maxViewDistance;
             this.scaleFactor = scaleFactor;
 
             position = coord * size;
-            bounds = new Bounds(position, Vector2.one * size);
-            meshBounds = new Bounds(position + Vector2.one * (size * scaleFactor * 0.5f), Vector2.one * (size * scaleFactor));
+            boundsMin = position;
+            boundsMax = position + Vector2.one * (size * scaleFactor);
             Vector3 positionV3 = new Vector3(position.x, 0, position.y);
 
             // Fix: Use position directly for globalOffset, not position * scaleFactor
@@ -89,10 +128,8 @@ public partial class EndlessTerrain : MonoBehaviour
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
 
-
             navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
             navMeshSurface.collectObjects = CollectObjects.Children;
-
 
             PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
             portalSpawner.SetSettings(portalSettings); // Pass the entire settings object
@@ -116,72 +153,74 @@ public partial class EndlessTerrain : MonoBehaviour
             mobSpawner.shouldHaveRandomWaitingTime = mobSettings.shouldHaveRandomWaitingTime;
             mobSpawner.retryingSpawnTime = mobSettings.retryingSpawnTime;
 
-
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
             SetVisible(false);
 
-
-            mapGenerator.RequestMapData(OnMapDataReceived, globalOffset, enableDebugging);
-            this.shouldUseHDRPShaders = shouldUseHDRPShaders;
+            if (cachedData.HasValue)
+            {
+                // Back from the data cache: only the main-thread part is left (still within the per-frame budget).
+                DataStructure.TerrainData data = cachedData.Value;
+                mapGenerator.RunOnMainThread(() =>
+                {
+                    if (!unloaded)
+                        OnTerrainDataReceived(data, cachedPlacements);
+                });
+            }
+            else
+            {
+                mapGenerator.RequestChunkData(data => OnTerrainDataReceived(data, null), globalOffset, DistanceToViewer, token);
+            }
         }
 
-        void OnMapDataReceived(MapData mapData)
-        {
-            if (enableDebugging)
-                Debug.Log($"OnMapDataReceived for chunk at {globalOffset}");
-            mapGenerator.RequestTerrainData(mapData, OnTerrainDataReceived, globalOffset, enableDebugging);
-        }
         /// <summary>
-        /// Receives biome object data, initializes the biome spawner, and bakes the NavMesh for AI navigation.
+        /// The chunk's generated data arrived (main thread): material, mesh, collider, water - then its objects
+        /// are decided (or taken from <paramref name="cachedPlacements"/>).
         /// </summary>
-        /// <param name="biomeObjectData">The data containing biome object information, including biome map and height map.</param>
-
-        void OnBiomeObjectDataReceived(BiomeObjectData biomeObjectData)
+        void OnTerrainDataReceived(DataStructure.TerrainData terrainData, PlacementResult cachedPlacements)
         {
-            if (enableDebugging)
-                Debug.Log($"OnBiomeObjectDataReceived for chunk at {globalOffset}");
-
-            BakeNavMesh();
-
-            MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
-            mobSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, terrainGenerator.ChunkSize, meshObject.transform, biomeObjectData.biomeMap);
-
-            PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
-            portalSpawner.InitializeSpawner(globalOffset, biomeObjectData.heightMap, mapGenerator.ChunkSize, meshObject.transform, biomeObjectData.biomeMap);
-        }
-
-        void OnTerrainDataReceived(DataStructure.TerrainData terrainData)
-        {
+            if (unloaded)
+                return;
             if (enableDebugging)
                 Debug.Log($"OnTerrainDataReceived for chunk at {globalOffset}");
 
             terrainGenerator = terrainData.terrainGenerator;
-            TextureGenerator textureGenerator = new TextureGenerator();
-            textureGenerator.AssignTexture(terrainData.splatMap, terrainGenerator, meshRenderer, shouldUseHDRPShaders);
-            ApplyWetnessMap(terrainData.waterData);
             heightmap = terrainData.heightMap;
             erosionDeltaMap = terrainData.erosionDeltaMap;
             waterData = terrainData.waterData;
 
+            // Material: the biome textures every chunk shares, plus this chunk's splat maps and wetness map.
+            if (terrainData.splatPixels != null)
+            {
+                terrainMaterial = TextureGenerator.CreateChunkMaterial(terrainData.splatPixels, terrainGenerator.ChunkSize, terrainGenerator, shouldUseHDRPShaders);
+                if (terrainMaterial != null)
+                {
+                    meshRenderer.sharedMaterial = terrainMaterial;
+                    ApplyWetnessMap(terrainData.waterData);
+                }
+            }
+
             Mesh mesh = terrainData.meshData.UpdateMesh();
 
             if (enableDebugging)
-                Debug.Log($"Mesh stats - Vertices: {mesh.vertexCount}, Triangles: {mesh.triangles.Length / 3}, Bounds: {mesh.bounds}");
+                Debug.Log($"Mesh stats - Vertices: {mesh.vertexCount}, Bounds: {mesh.bounds}");
 
-            if (mesh != null && mesh.vertexCount > 0 && mesh.triangles.Length > 0)
+            if (mesh != null && mesh.vertexCount > 0)
             {
-                meshFilter.mesh = mesh;
+                meshFilter.sharedMesh = mesh;
                 baseMesh = mesh;
                 currentLod = Mathf.Clamp(terrainGenerator.LevelOfDetail, 0, lodMeshes.Length - 1);
                 lodMeshes[currentLod] = mesh;
                 lodRequested[currentLod] = true;
 
-                if (enableDebugging)
-                    Debug.Log("Setting MeshCollider...");
-                meshCollider.sharedMesh = mesh;
-                if (enableDebugging)
-                    Debug.Log("MeshCollider set successfully");
+                // Cooking the collider is the slowest part of applying a chunk, so it runs on a job thread;
+                // the collider is assigned the cooked mesh once it is done (see UpdateTerrainChunk).
+#if UNITY_6000_3_OR_NEWER
+                colliderBake = new BakeColliderJob { MeshId = mesh.GetEntityId() }.Schedule();
+#else
+                colliderBake = new BakeColliderJob { MeshId = mesh.GetInstanceID() }.Schedule();
+#endif
+                colliderBaking = true;
             }
             else
             {
@@ -192,18 +231,105 @@ public partial class EndlessTerrain : MonoBehaviour
             if (IsVisible())
                 UpdateLod(LodDistance());
 
-            mapGenerator.RequestBiomeObjectData(OnBiomeObjectDataReceived, terrainData, globalOffset, meshObject.transform);
+            // Kept for the data cache (see EndlessTerrain) - without what is only needed once.
+            generatedData = terrainData;
+            generatedData.splatBlend = null;
+            hasGeneratedData = true;
+
+            loaded = new LoadedTerrain.Chunk
+            {
+                Coord = new Vector2Int((int)coord.x, (int)coord.y),
+                OriginX = Mathf.RoundToInt(globalOffset.x),
+                OriginZ = Mathf.RoundToInt(globalOffset.y),
+                Span = terrainGenerator.ChunkSize - 1,
+                LodFactor = terrainGenerator.LevelOfDetail > 0 ? terrainGenerator.LevelOfDetail * 2 : 1,
+                Heights = heightmap,
+                Water = waterData,
+                Biomes = terrainData.biomeMap,
+                Root = meshObject.transform,
+            };
+            loaded.IsRemoved = index => owner.IsRemoved(coord, index);
+            LoadedTerrain.Register(loaded);
+
+            if (cachedPlacements != null)
+                OnPlacementsReady(cachedPlacements);
+            else
+                mapGenerator.RequestObjectPlacement(OnPlacementsReady, terrainData, DistanceToViewer, token);
+            // The placement job has what it needs; the environment it reads is dropped with it.
+            generatedData.placementFields = null;
         }
 
-        float DistanceToViewer()
+        /// <summary>The chunk's objects were decided: create them a few per frame, nearest chunks first.</summary>
+        void OnPlacementsReady(PlacementResult result)
         {
-            return Mathf.Sqrt(bounds.SqrDistance(viewerPosition));
+            if (unloaded)
+                return;
+            placements = result;
+            if (loaded != null)
+            {
+                loaded.Placements = result;
+                loaded.Plan = result.Plan;
+            }
+            mapGenerator.ObjectInstantiator.Enqueue(meshObject.transform, result.Plan, result, DistanceToViewer, token,
+                index => owner.IsRemoved(coord, index), OnObjectsCreated);
+        }
+
+        void OnObjectsCreated(PlacementInstantiator.Batch batch)
+        {
+            if (unloaded)
+                return;
+            objects = batch.Created;
+            objectIndices = new Dictionary<GameObject, int>(objects.Length);
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (objects[i] != null)
+                    objectIndices[objects[i]] = i;
+            }
+            if (loaded != null)
+                loaded.Objects = objects;
+            objectsReady = true;
+            if (enableDebugging)
+                Debug.Log($"Chunk at {globalOffset}: {objectIndices.Count} objects created");
+        }
+
+        /// <summary>The generated data of a fully generated chunk (for the data cache).</summary>
+        public bool TryGetGeneratedData(out DataStructure.TerrainData data, out PlacementResult placementResult)
+        {
+            data = generatedData;
+            placementResult = placements;
+            return hasGeneratedData && placements != null;
+        }
+
+        /// <summary>The placement index of one of this chunk's objects.</summary>
+        public bool TryGetObjectIndex(GameObject placedObject, out int index)
+        {
+            index = -1;
+            return objectIndices != null && objectIndices.TryGetValue(placedObject, out index);
+        }
+
+        /// <summary>Forgets an object that is being destroyed (see <see cref="EndlessTerrain.RemovePlacedObject"/>).</summary>
+        public void ForgetObject(int index)
+        {
+            if (objects == null || index < 0 || index >= objects.Length)
+                return;
+            if (objects[index] != null)
+                objectIndices.Remove(objects[index]);
+            objects[index] = null;
+        }
+
+        /// <summary>Distance from the viewer to the nearest point of the chunk (thread-safe: plain arithmetic, used as the chunk's work priority).</summary>
+        public float DistanceToViewer()
+        {
+            Vector2 viewer = viewerPosition;
+            float dx = Mathf.Max(0f, Mathf.Max(boundsMin.x - viewer.x, viewer.x - boundsMax.x));
+            float dy = Mathf.Max(0f, Mathf.Max(boundsMin.y - viewer.y, viewer.y - boundsMax.y));
+            return Mathf.Sqrt(dx * dx + dy * dy);
         }
 
         /// <summary>Distance from the viewer to the nearest point of the chunk's mesh, which decides its level of detail.</summary>
         float LodDistance()
         {
-            return Mathf.Sqrt(meshBounds.SqrDistance(viewerPosition));
+            return DistanceToViewer();
         }
 
         /// <summary>
@@ -227,12 +353,14 @@ public partial class EndlessTerrain : MonoBehaviour
             else if (!lodRequested[lod])
             {
                 lodRequested[lod] = true;
-                terrainGenerator.RequestLodMesh(meshData => OnLodMeshReceived(lod, meshData), heightmap, waterData, lod, globalOffset);
+                terrainGenerator.RequestLodMesh(meshData => OnLodMeshReceived(lod, meshData), heightmap, waterData, lod, globalOffset, LodDistance, token);
             }
         }
 
         void OnLodMeshReceived(int lod, MeshData meshData)
         {
+            if (unloaded)
+                return;
             Mesh mesh = meshData.UpdateMesh();
             mesh.name = "Terrain Mesh LOD " + lod;
             lodMeshes[lod] = mesh;
@@ -241,36 +369,48 @@ public partial class EndlessTerrain : MonoBehaviour
         }
 
         /// <summary>
-        /// Gives the terrain material a "_WetnessMap" texture (grayscale, one texel per height map cell, laid out
-        /// like the splat maps - sample it with the same UV) from the chunk's ground wetness near water, for a
-        /// terrain shader that darkens and adds gloss to wet ground. The same value is also in the terrain mesh's
-        /// vertex color (red). Shaders that don't declare _WetnessMap simply ignore it.
+        /// Gives the terrain material a "_WetnessMap" texture (one texel per height map cell, laid out like the
+        /// splat maps - sample it with the same UV) from the chunk's ground wetness near water, for a terrain shader
+        /// that darkens and adds gloss to wet ground (the package shader does). The same value is also in the
+        /// terrain mesh's vertex color (red). Only created when the material's shader has _WetnessMap.
         /// </summary>
         void ApplyWetnessMap(WaterMapData water)
         {
             Material material = meshRenderer.sharedMaterial;
-            if (material == null || water == null)
+            if (material == null || water == null || !material.HasProperty("_WetnessMap"))
                 return;
 
             int size = water.Size;
-            var pixels = new Color32[size * size];
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(water.Wetness[x, y]) * 255f);
-                    pixels[y * size + x] = new Color32(value, value, value, 255);
-                }
-            }
-
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            bool r8 = SystemInfo.SupportsTextureFormat(TextureFormat.R8);
+            var texture = new Texture2D(size, size, r8 ? TextureFormat.R8 : TextureFormat.RGBA32, false, true)
             {
                 name = "Wetness",
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear,
             };
-            texture.SetPixels32(pixels);
-            texture.Apply();
+            if (r8)
+            {
+                var values = new byte[size * size];
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                        values[y * size + x] = (byte)Mathf.RoundToInt(Mathf.Clamp01(water.Wetness[x, y]) * 255f);
+                texture.SetPixelData(values, 0);
+            }
+            else
+            {
+                var pixels = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(water.Wetness[x, y]) * 255f);
+                        pixels[y * size + x] = new Color32(value, value, value, 255);
+                    }
+                }
+                texture.SetPixels32(pixels);
+            }
+            texture.Apply(false, true);
+            // Freed with the material (see TextureGenerator.ReleaseChunkMaterial).
             material.SetTexture("_WetnessMap", texture);
         }
 
@@ -284,11 +424,12 @@ public partial class EndlessTerrain : MonoBehaviour
             if (!terrainGenerator.EnableWater || terrainData.waterData == null)
                 return;
 
-            WaterMeshData waterMeshData = MeshGenerator.GenerateWaterMesh(terrainGenerator, terrainData.heightMap, terrainData.waterData, terrainGenerator.LevelOfDetail, globalOffset);
+            // Normally built on the worker thread with the rest of the chunk.
+            WaterMeshData waterMeshData = terrainData.waterMeshData ?? MeshGenerator.GenerateWaterMesh(terrainGenerator, terrainData.heightMap, terrainData.waterData, terrainGenerator.LevelOfDetail, globalOffset);
             if (waterMeshData == null)
                 return;
 
-            Mesh waterMesh = waterMeshData.BuildMesh();
+            waterMesh = waterMeshData.BuildMesh();
 
             if (waterObject == null)
             {
@@ -501,41 +642,185 @@ public partial class EndlessTerrain : MonoBehaviour
             return null;
         }
 
-        void BakeNavMesh()
+        /// <summary>
+        /// Builds the chunk's NavMesh in the background once its objects exist and it is near the viewer (see
+        /// EndlessTerrain's NavMesh settings), then starts its mob and portal spawners.
+        /// </summary>
+        void UpdateNavMesh()
         {
-            // Always from the full-detail mesh, whatever level distance LOD is showing right now.
+            if (!objectsReady || spawnersStarted)
+                return;
+            if (!owner.bakeNavMesh || navMeshSurface == null)
+            {
+                StartSpawners();
+                return;
+            }
+
+            if (navMeshBuild != null)
+            {
+                if (!navMeshBuild.isDone)
+                    return;
+                navMeshBuild = null;
+                navMeshBuilt = true;
+                if (loaded != null)
+                    loaded.HasNavMesh = true;
+                StartSpawners();
+                return;
+            }
+
+            float limit = owner.navMeshDistance > 0f ? owner.navMeshDistance : maxViewDistance;
+            if (navMeshBuilt || !IsVisible() || DistanceToViewer() > limit)
+                return;
+
+            if (navMeshSurface.navMeshData == null)
+            {
+                navMeshData = new NavMeshData(navMeshSurface.agentTypeID)
+                {
+                    name = meshObject.name + " NavMesh",
+                    position = meshObject.transform.position,
+                    rotation = meshObject.transform.rotation,
+                };
+                navMeshSurface.navMeshData = navMeshData;
+                navMeshSurface.AddData();
+            }
+
+            // Always from the full-detail mesh, whatever level distance LOD is showing (the sources are gathered
+            // right here; the build itself runs in the background).
             Mesh shown = meshFilter.sharedMesh;
             if (baseMesh != null)
                 meshFilter.sharedMesh = baseMesh;
-            navMeshSurface.BuildNavMesh();
+            navMeshBuild = navMeshSurface.UpdateNavMesh(navMeshSurface.navMeshData);
             meshFilter.sharedMesh = shown;
         }
+
+        void StartSpawners()
+        {
+            spawnersStarted = true;
+            if (enableDebugging)
+                Debug.Log($"Starting spawners for chunk at {globalOffset}");
+
+            MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
+            mobSpawner.InitializeSpawner(globalOffset, generatedData.heightMap, terrainGenerator.ChunkSize, meshObject.transform, generatedData.biomeMap);
+
+            PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
+            portalSpawner.InitializeSpawner(globalOffset, generatedData.heightMap, mapGenerator.ChunkSize, meshObject.transform, generatedData.biomeMap);
+        }
+
         /// <summary>
-        /// Updates the visibility of this chunk based on its distance to the viewer.
+        /// Updates the visibility of this chunk based on its distance to the viewer, and moves along its pending
+        /// work (level of detail, collider, NavMesh).
         /// </summary>
-        /// /// <remarks>
-        /// Chunks are dynamically created or re-used to reduce overhead. 
-        /// Visible chunks are determined by checking their distance from the viewer.
-        /// Chunks outside the viewing distance are hidden but not destroyed for faster reactivation.
-        /// </remarks>
         public void UpdateTerrainChunk()
         {
-            float viewerDstFromNearestEdge = DistanceToViewer();
-            bool visible = viewerDstFromNearestEdge <= maxViewDistance;
+            if (unloaded)
+                return;
 
+            bool visible = DistanceToViewer() <= maxViewDistance;
             SetVisible(visible);
             if (visible)
                 UpdateLod(LodDistance());
+
+            if (colliderBaking && colliderBake.IsCompleted)
+            {
+                colliderBake.Complete();
+                colliderBaking = false;
+                if (baseMesh != null)
+                    meshCollider.sharedMesh = baseMesh;   // already cooked: no cooking on the main thread
+            }
+
+            UpdateNavMesh();
         }
 
         public void SetVisible(bool visible)
         {
-            meshObject.SetActive(visible);
+            if (meshObject != null && meshObject.activeSelf != visible)
+                meshObject.SetActive(visible);
         }
 
         public bool IsVisible()
         {
-            return meshObject.activeSelf;
+            return meshObject != null && meshObject.activeSelf;
+        }
+
+        /// <summary>
+        /// Destroys the chunk and frees everything it made: its GameObject with its objects, water and spawners,
+        /// every mesh (all levels of detail and the water), its material with its splat and wetness maps, and
+        /// its NavMesh. Pending background work for it is cancelled and its results are dropped.
+        /// </summary>
+        public void Unload()
+        {
+            if (unloaded)
+                return;
+            unloaded = true;
+            token.Cancel();
+            LoadedTerrain.Unregister(new Vector2Int((int)coord.x, (int)coord.y));
+
+            if (colliderBaking)
+            {
+                colliderBake.Complete();
+                colliderBaking = false;
+            }
+
+            if (navMeshSurface != null)
+            {
+                if (navMeshBuild != null && !navMeshBuild.isDone && navMeshSurface.navMeshData != null)
+                    NavMeshBuilder.Cancel(navMeshSurface.navMeshData);
+                navMeshSurface.RemoveData();
+                navMeshSurface.navMeshData = null;
+            }
+            DestroyAsset(navMeshData);
+            navMeshData = null;
+            navMeshBuild = null;
+
+            if (meshCollider != null)
+                meshCollider.sharedMesh = null;
+            for (int i = 0; i < lodMeshes.Length; i++)
+            {
+                if (lodMeshes[i] != null && lodMeshes[i] != baseMesh)
+                    DestroyAsset(lodMeshes[i]);
+                lodMeshes[i] = null;
+            }
+            DestroyAsset(baseMesh);
+            baseMesh = null;
+            DestroyAsset(waterMesh);
+            waterMesh = null;
+
+            TextureGenerator.ReleaseChunkMaterial(terrainMaterial);
+            terrainMaterial = null;
+
+            if (meshObject != null)
+                Object.Destroy(meshObject);
+            meshObject = null;
+
+            objects = null;
+            objectIndices = null;
+            heightmap = null;
+            erosionDeltaMap = null;
+            waterData = null;
+            generatedData = default;
+            placements = null;
+            loaded = null;
+        }
+
+        static void DestroyAsset(Object asset)
+        {
+            if (asset != null)
+                Object.Destroy(asset);
+        }
+
+        /// <summary>Cooks a mesh's collision data on a job thread, so assigning it to the MeshCollider costs nothing.</summary>
+        struct BakeColliderJob : IJob
+        {
+#if UNITY_6000_3_OR_NEWER
+            public EntityId MeshId;
+#else
+            public int MeshId;
+#endif
+
+            public void Execute()
+            {
+                Physics.BakeMesh(MeshId, false);
+            }
         }
 
         /// <summary>

@@ -1,12 +1,33 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
+
+/// <summary>Which shader draws the terrain (see <see cref="TerrainGenerator"/> > Terrain Material).</summary>
+public enum TerrainShaderMode
+{
+    /// <summary>The package's "SimpleMovements/Terrain" shader (URP and Built-in): tri-planar on steep ground, wetness near water.</summary>
+    PackageTriplanar,
+    /// <summary>The project's "Custom/TerrainSplatMapShaderURP" (or HDRP) shader.</summary>
+    ProjectShader,
+    /// <summary>A copy of the generator's Custom Terrain Material (its shader reads the same properties).</summary>
+    CustomMaterial,
+}
+
 /// <summary>
 /// The <see cref="TextureGenerator"/> class is responsible for managing texture assignments for terrain rendering.
 /// It handles the creation and assignment of texture arrays to materials, including biome textures and splat maps.
-/// This class supports different approaches for texture assignment and ensures that the correct shaders and materials are used.
+///
+/// Memory: the biome textures are copied into one texture array that every chunk shares (built the first time
+/// a chunk needs it); each chunk only owns its material, its splat maps and its wetness map, which
+/// <see cref="ReleaseChunkMaterial"/> frees when the chunk is unloaded.
 /// </summary>
 public class TextureGenerator
 {
+    public const string PackageShaderName = "SimpleMovements/Terrain";
+
+    // Biome texture arrays shared by every chunk, by the textures they hold and their resolution.
+    private static readonly List<KeyValuePair<Texture2D[], Texture2DArray>> SharedBiomeArrays = new List<KeyValuePair<Texture2D[], Texture2DArray>>();
+    private static readonly List<int> SharedBiomeArrayResolutions = new List<int>();
+
     /// <summary>
     /// Assigns four individual textures (for different biome layers) and a splat map to a material on a mesh renderer.
     /// This method is useful for assigning a set of textures to a terrain material using a specific shader.
@@ -37,58 +58,47 @@ public class TextureGenerator
     /// <param name="shouldUseHDRPShader">Whether to use HDRP or URP shader.</param>
     public void AssignTexture(Texture2D[] splatMaps, TerrainGenerator terrainGenerator, MeshRenderer meshRenderer, bool shouldUseHDRPShader)
     {
-        string shaderToUse = shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP";
-        // Find the shader used for terrain splat maps
-        Shader cachedShader = Shader.Find("Custom/TerrainSplat" + shaderToUse);
-
-        if (cachedShader == null)
-        {
-            Debug.LogError("Failed to find shader: Custom/TerrainSplat" + shaderToUse);
+        if (splatMaps == null || splatMaps.Length == 0)
             return;
-        }
 
-        // Check if the mesh renderer already has the correct material and shader
-        Material mat = meshRenderer.sharedMaterial;
-        if (mat == null || mat.shader != cachedShader)
-        {
-            // Create a new material if the existing one is invalid or doesn't use the correct shader
-            mat = new Material(cachedShader);
-        }
+        var pixels = new Color32[splatMaps.Length][];
+        for (int i = 0; i < splatMaps.Length; i++)
+            pixels[i] = splatMaps[i].GetPixels32();
 
-        // Create texture array - use variations if enabled, otherwise use original approach
-        List<Texture2D> biomeTextures;
+        Material material = CreateChunkMaterial(pixels, splatMaps[0].width, terrainGenerator, shouldUseHDRPShader);
+        if (material != null)
+            meshRenderer.sharedMaterial = material;
+    }
 
-        if (terrainGenerator.EnableTextureVariations)
-        {
-            // ENHANCED PATH: Include texture variations
-            biomeTextures = CreateBiomeTextureListWithVariations(terrainGenerator);
-        }
-        else
-        {
-            // ORIGINAL PATH: Only primary textures
-            biomeTextures = CreateBiomeTextureListOriginal(terrainGenerator);
-        }
+    /// <summary>
+    /// A chunk's terrain material: the biome textures (a texture array shared by every chunk), the chunk's splat
+    /// maps built straight from <paramref name="splatPixels"/> (one RGBA array per splat map, 4 biomes each, as
+    /// computed on a worker thread by <see cref="SplatMapGenerator.GenerateSplatPixels"/>), and the texturing
+    /// settings. Null if no usable shader was found. Free it with <see cref="ReleaseChunkMaterial"/>.
+    /// </summary>
+    public static Material CreateChunkMaterial(Color32[][] splatPixels, int splatSize, TerrainGenerator terrainGenerator, bool shouldUseHDRPShader)
+    {
+        if (splatPixels == null || splatPixels.Length == 0)
+            return null;
 
-        // Calculate texture resolution based on terrain size for consistent quality
+        Material mat = CreateMaterial(terrainGenerator, shouldUseHDRPShader, out bool packageShader);
+        if (mat == null)
+            return null;
+
+        List<Texture2D> biomeTextures = terrainGenerator.EnableTextureVariations
+            ? CreateBiomeTextureListWithVariations(terrainGenerator)
+            : CreateBiomeTextureListOriginal(terrainGenerator);
         int textureResolution = GetOptimalTextureResolution(terrainGenerator);
+        Texture2DArray textureArray = GetSharedBiomeArray(biomeTextures, textureResolution);
 
-        // Create a texture array for the biome textures with calculated dimensions and format
-        Texture2DArray textureArray = CreateTextureArray(biomeTextures.ToArray(), textureResolution, textureResolution, TextureFormat.RGBA32);
+        // The package shader reads the weights as plain numbers (linear); project shaders get the sRGB array
+        // they always had, so they look exactly as before.
+        Texture2DArray splatMapArray = CreateSplatArray(splatPixels, splatSize, packageShader);
 
-        // Create a texture array for the splat maps using the provided splat maps array
-        Texture2DArray splatMapArray = CreateTextureArray(splatMaps, splatMaps[0].width, splatMaps[0].height, TextureFormat.RGBA32, false);
-        // Clamp, not Repeat: the splat map is sampled with a dedicated 0-1 UV that should never
-        // wrap within a chunk. This is a defensive guard against float rounding at uv=1.0 only -
-        // the real fix is MeshGenerator's separate, untiled splat UV channel (mesh.uv2).
-        splatMapArray.wrapMode = TextureWrapMode.Clamp;
-
-        // Assign the created texture arrays to the material
         mat.SetTexture("_TextureArray", textureArray);
         mat.SetTexture("_SplatMaps", splatMapArray);
-
-        // Set the length of the texture array and the count of splat maps as material properties
         mat.SetInt("_TextureArrayLength", biomeTextures.Count);
-        mat.SetInt("_SplatMapCount", splatMaps.Length);
+        mat.SetInt("_SplatMapCount", splatPixels.Length);
         mat.SetInt("_BiomeCount", terrainGenerator.BiomeDefinitions.Length);
 
         // Set shader enhancement properties only if enabled
@@ -116,8 +126,127 @@ public class TextureGenerator
         // worlds/seeds instead of always producing the exact same pattern at the same world position.
         mat.SetFloat("_NoiseSeedOffset", terrainGenerator.VoronoiSeed * 0.6180339887f);
 
-        // Apply the material to the mesh renderer
-        meshRenderer.sharedMaterial = mat;
+        // The package shader's own settings (other shaders ignore properties they don't have).
+        mat.SetFloat("_TextureTiling", 1f / terrainGenerator.TerrainTextureWorldSize);
+        mat.SetFloat("_TriplanarStrength", terrainGenerator.TriplanarStrength);
+        mat.SetFloat("_TriplanarSharpness", terrainGenerator.TriplanarSharpness);
+        mat.SetFloat("_TriplanarSlopeStart", terrainGenerator.TriplanarSlopeStart);
+        mat.SetFloat("_TriplanarSlopeEnd", terrainGenerator.TriplanarSlopeEnd);
+        mat.SetFloat("_Smoothness", terrainGenerator.TerrainSmoothness);
+        mat.SetFloat("_WetnessDarkening", terrainGenerator.WetnessDarkening);
+        mat.SetFloat("_WetnessSmoothness", terrainGenerator.WetnessSmoothness);
+        return mat;
+    }
+
+    /// <summary>
+    /// Frees what a chunk's terrain material owns - the material, its splat maps and its wetness map - leaving the
+    /// shared biome texture array alone. Call when the chunk is unloaded.
+    /// </summary>
+    public static void ReleaseChunkMaterial(Material material)
+    {
+        if (material == null)
+            return;
+
+        if (material.HasProperty("_SplatMaps"))
+            DestroyObject(material.GetTexture("_SplatMaps"));
+        if (material.HasProperty("_WetnessMap"))
+            DestroyObject(material.GetTexture("_WetnessMap"));
+        DestroyObject(material);
+    }
+
+    /// <summary>Destroys the shared biome texture arrays (when the terrain is destroyed or its biomes change).</summary>
+    public static void ReleaseSharedTextures()
+    {
+        foreach (KeyValuePair<Texture2D[], Texture2DArray> entry in SharedBiomeArrays)
+            DestroyObject(entry.Value);
+        SharedBiomeArrays.Clear();
+        SharedBiomeArrayResolutions.Clear();
+    }
+
+    /// <summary>
+    /// A material for the chosen terrain shader (see <see cref="TerrainShaderMode"/>), falling back to the other
+    /// shader when the chosen one isn't available (the package shader under HDRP, or a missing project shader).
+    /// </summary>
+    private static Material CreateMaterial(TerrainGenerator terrainGenerator, bool shouldUseHDRPShader, out bool packageShader)
+    {
+        packageShader = false;
+        TerrainShaderMode mode = terrainGenerator.TerrainShader;
+        if (mode == TerrainShaderMode.CustomMaterial && terrainGenerator.CustomTerrainMaterial != null)
+        {
+            Material template = terrainGenerator.CustomTerrainMaterial;
+            packageShader = template.shader != null && template.shader.name == PackageShaderName;
+            return new Material(template) { name = "Terrain (" + template.name + ")" };
+        }
+
+        Shader package = FindPackageShader(shouldUseHDRPShader);
+        string projectShaderName = "Custom/TerrainSplat" + (shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP");
+        Shader project = Shader.Find(projectShaderName);
+
+        Shader shader = mode == TerrainShaderMode.PackageTriplanar ? (package != null ? package : project) : (project != null ? project : package);
+        if (shader == null)
+        {
+            Debug.LogError("TextureGenerator: no terrain shader found - neither '" + PackageShaderName + "' (URP / Built-in) nor '" + projectShaderName + "'.");
+            return null;
+        }
+
+        packageShader = shader == package;
+        return new Material(shader) { name = "Terrain" };
+    }
+
+    /// <summary>The package's terrain shader, or null under HDRP (not supported) or if it is missing.</summary>
+    private static Shader FindPackageShader(bool shouldUseHDRPShader)
+    {
+        var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+        if (shouldUseHDRPShader || (pipeline != null && !pipeline.GetType().Name.Contains("Universal")))
+            return null;
+        Shader shader = Shader.Find(PackageShaderName);
+        return shader != null && shader.isSupported ? shader : null;
+    }
+
+    /// <summary>The biome texture array for these textures - built once, then shared by every chunk.</summary>
+    private static Texture2DArray GetSharedBiomeArray(List<Texture2D> textures, int resolution)
+    {
+        for (int i = 0; i < SharedBiomeArrays.Count; i++)
+        {
+            KeyValuePair<Texture2D[], Texture2DArray> entry = SharedBiomeArrays[i];
+            if (entry.Value != null && SharedBiomeArrayResolutions[i] == resolution && SameTextures(entry.Key, textures))
+                return entry.Value;
+        }
+
+        Texture2DArray array = CreateTextureArray(textures.ToArray(), resolution, resolution, TextureFormat.RGBA32);
+        array.name = "Biome Textures (shared)";
+        SharedBiomeArrays.Add(new KeyValuePair<Texture2D[], Texture2DArray>(textures.ToArray(), array));
+        SharedBiomeArrayResolutions.Add(resolution);
+        return array;
+    }
+
+    private static bool SameTextures(Texture2D[] a, List<Texture2D> b)
+    {
+        if (a.Length != b.Count)
+            return false;
+        for (int i = 0; i < a.Length; i++)
+            if (!ReferenceEquals(a[i], b[i]))
+                return false;
+        return true;
+    }
+
+    /// <summary>A chunk's splat maps as a texture array, written directly from their pixels.</summary>
+    private static Texture2DArray CreateSplatArray(Color32[][] pixels, int size, bool linear)
+    {
+        var array = new Texture2DArray(size, size, pixels.Length, TextureFormat.RGBA32, false, linear)
+        {
+            name = "Splat Maps",
+            // Clamp, not Repeat: the splat map is sampled with a dedicated 0-1 UV that should never
+            // wrap within a chunk. This is a defensive guard against float rounding at uv=1.0 only -
+            // the real fix is MeshGenerator's separate, untiled splat UV channel (mesh.uv2).
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+        };
+        for (int i = 0; i < pixels.Length; i++)
+            array.SetPixels32(pixels[i], i);
+        // Upload, then drop the CPU copy - nothing reads it back.
+        array.Apply(false, true);
+        return array;
     }
 
     /// <summary>
@@ -126,7 +255,7 @@ public class TextureGenerator
     /// </summary>
     /// <param name="terrainGenerator">The terrain generator containing biome definitions.</param>
     /// <returns>List of primary biome textures.</returns>
-    private List<Texture2D> CreateBiomeTextureListOriginal(TerrainGenerator terrainGenerator)
+    private static List<Texture2D> CreateBiomeTextureListOriginal(TerrainGenerator terrainGenerator)
     {
         List<Texture2D> textures = new List<Texture2D>();
 
@@ -144,7 +273,7 @@ public class TextureGenerator
     /// </summary>
     /// <param name="terrainGenerator">The terrain generator containing biome definitions.</param>
     /// <returns>List of all textures including variations.</returns>
-    private List<Texture2D> CreateBiomeTextureListWithVariations(TerrainGenerator terrainGenerator)
+    private static List<Texture2D> CreateBiomeTextureListWithVariations(TerrainGenerator terrainGenerator)
     {
         List<Texture2D> allTextures = new List<Texture2D>();
 
@@ -180,7 +309,7 @@ public class TextureGenerator
     /// </summary>
     /// <param name="terrainGenerator">The terrain generator containing size information.</param>
     /// <returns>Optimal texture resolution for the current terrain size.</returns>
-    private int GetOptimalTextureResolution(TerrainGenerator terrainGenerator)
+    private static int GetOptimalTextureResolution(TerrainGenerator terrainGenerator)
     {
         // Base resolution for the largest terrain size
         int baseResolution = 1024;
@@ -196,6 +325,7 @@ public class TextureGenerator
 
     /// <summary>
     /// Creates a <see cref="Texture2DArray"/> from an array of textures. This method standardizes the textures and copies them into a texture array.
+    /// The resized copies are destroyed once copied, and the array's CPU copy is dropped after uploading.
     /// </summary>
     /// <param name="textures">An array of <see cref="Texture2D"/> objects that will be copied into the texture array.</param>
     /// <param name="width">The width of the texture array (all textures will be resized to this width).</param>
@@ -203,7 +333,7 @@ public class TextureGenerator
     /// <param name="format">The texture format to be used for the texture array.</param>
     /// <param name="mipmaps">Whether mipmaps should be generated for the texture array (default is true).</param>
     /// <returns>A <see cref="Texture2DArray"/> containing the standardized textures.</returns>
-    private Texture2DArray CreateTextureArray(Texture2D[] textures, int width, int height, TextureFormat format, bool mipmaps = true)
+    private static Texture2DArray CreateTextureArray(Texture2D[] textures, int width, int height, TextureFormat format, bool mipmaps = true)
     {
         // Create a new Texture2DArray with the specified dimensions and format
         Texture2DArray textureArray = new Texture2DArray(width, height, textures.Length, format, mipmaps);
@@ -216,13 +346,17 @@ public class TextureGenerator
 
             // Copy the standardized texture into the texture array at the corresponding index
             Graphics.CopyTexture(standardizedTexture, 0, 0, textureArray, i, 0);
+
+            // The resized copy was only needed for this.
+            DestroyObject(standardizedTexture);
         }
 
-        // Apply the texture array (commits changes to the GPU)
-        textureArray.Apply();
+        // Apply the texture array (commits changes to the GPU, builds the mipmaps) and free its CPU copy.
+        textureArray.Apply(mipmaps, true);
 
         return textureArray;
     }
+
     /// <summary>
     /// Standardizes a texture to a specified width, height, and format. This method resizes the texture and applies the new format.
     /// </summary>
@@ -231,7 +365,7 @@ public class TextureGenerator
     /// <param name="height">The target height of the standardized texture.</param>
     /// <param name="format">The target texture format (e.g., <see cref="TextureFormat.RGBA32"/>).</param>
     /// <returns>A new <see cref="Texture2D"/> that has been resized and standardized.</returns>
-    private Texture2D StandardizeTexture(Texture2D sourceTexture, int width, int height, TextureFormat format)
+    private static Texture2D StandardizeTexture(Texture2D sourceTexture, int width, int height, TextureFormat format)
     {
         // Create a temporary RenderTexture to hold the resized texture
         RenderTexture renderTexture = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
@@ -243,14 +377,25 @@ public class TextureGenerator
         Texture2D standardizedTexture = new Texture2D(width, height, format, true);
 
         // Set the RenderTexture as the active texture and read the pixels into the new texture
+        RenderTexture previous = RenderTexture.active;
         RenderTexture.active = renderTexture;
         standardizedTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
         standardizedTexture.Apply();
 
         // Release the temporary render texture
+        RenderTexture.active = previous;
         RenderTexture.ReleaseTemporary(renderTexture);
-        RenderTexture.active = null;
 
         return standardizedTexture;
+    }
+
+    private static void DestroyObject(Object obj)
+    {
+        if (obj == null)
+            return;
+        if (Application.isPlaying)
+            Object.Destroy(obj);
+        else
+            Object.DestroyImmediate(obj);
     }
 }

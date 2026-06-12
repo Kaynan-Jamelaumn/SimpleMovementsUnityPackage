@@ -24,6 +24,8 @@ public static class WaterGenerator
         SeaStacks.ClearCache();
         VolcanoGenerator.ClearCache();
         ErosionTiles.ClearCache();
+        // Landmark spots are chosen from the world's shape, so they go with it.
+        ObjectPlacementEngine.ClearCaches();
     }
 
     /// <summary>

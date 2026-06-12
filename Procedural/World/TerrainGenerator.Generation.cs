@@ -14,13 +14,15 @@ public partial class TerrainGenerator : MonoBehaviour
     /// </summary>
     /// <param name="globalOffset">The global offset for the terrain.</param>
     /// <returns>A MapData object containing the height map.</returns>
-    private MapData GenerateTerrain(Vector2 globalOffset)
+    /// <param name="placementFields">Also build the chunk's object placement environment (see <see cref="PlacementFields"/>).</param>
+    private MapData GenerateTerrain(Vector2 globalOffset, bool placementFields = false)
     {
-        // Local, not a field: this runs on its own worker thread per chunk (see RequestMapData),
-        // and every chunk shares this same TerrainGenerator instance, so a shared field here would
-        // race between concurrently-generating chunks.
-        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, out float[,] erosionDeltaMap, out WaterMapData waterData);
-        return new MapData(localHeightMap, null, erosionDeltaMap, waterData);
+        // Local, not a field: this runs on a worker thread (see RequestMapData), and every chunk shares this
+        // same TerrainGenerator instance, so a shared field here would race between chunks generating at once.
+        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, placementFields, out float[,] erosionDeltaMap, out WaterMapData waterData, out PlacementFields fields);
+        var mapData = new MapData(localHeightMap, null, erosionDeltaMap, waterData);
+        mapData.placementFields = fields;
+        return mapData;
     }
 
     /// <summary>
@@ -47,7 +49,7 @@ public partial class TerrainGenerator : MonoBehaviour
         TerrainHeightSampler sampler = new TerrainHeightSampler(this, EnableWater ? WaterSettings.From(this) : null);
 
         splatBlend = computeSplatBlend ? new SplatBlendData(ChunkSize, SplatTexturesPerPixel) : null;
-        SplatBiomeIndex splatIndices = computeSplatBlend ? new SplatBiomeIndex(SplatMapGenerator.BiomeIndexMap(this)) : null;
+        SplatBiomeIndex splatIndices = computeSplatBlend ? new SplatBiomeIndex(SplatMapGenerator.BiomeIndexMap(this), SplatIndexByBiome) : null;
         // With ocean/volcanic biomes, a cell's biome is the top of its texture blend (see SampleBiome).
         bool shareBlend = computeSplatBlend && sampler.HasSpecialBiomes;
 

@@ -148,6 +148,46 @@ public static partial class VoronoiBiomeGenerator
         return result;
     }
 
+    /// <summary>
+    /// For each biome near a position: how much farther (world units, after border warp) its nearest point is than
+    /// the nearest point of any biome - 0 for the biome that owns the position. For another biome, half of that is
+    /// roughly the distance to its border (exactly half on the line between the two points). Same layout and
+    /// parameters as <see cref="GetBiomeBlend"/>, and like it a pure function of position and settings.
+    /// </summary>
+    public static void GetBiomeGaps(Vector2 worldPosition, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome,
+        bool useClimatePlacement, float climateNoiseScale, float warpStrength, float warpScale,
+        float clusterStrength, float clusterRadius, float repeatPenalty, LayoutOptions options, List<KeyValuePair<Biome, float>> into)
+    {
+        into.Clear();
+        Vector2 warpedPosition = WarpPosition(worldPosition, warpStrength, warpScale, seed);
+        var chunkCoord = GetChunkCoord(warpedPosition, scale);
+        Neighborhood hood = GetNeighborhood(chunkCoord, scale, numPoints, availableBiomes, seed, useWeightedBiome, useClimatePlacement, climateNoiseScale, clusterStrength, clusterRadius, repeatPenalty, options);
+
+        Vector2[] positions = hood.Positions;
+        int pointCount = positions.Length;
+        if (pointCount == 0)
+            return;
+
+        Biome[] biomes = hood.Biomes;
+        int[] biomeIndex = hood.BiomeIndex;
+        int[] firstPoint = hood.FirstPoint;
+        int count = biomes.Length;
+        float[] nearest = Scratch(ref scratchNearest, count);
+        float closest = float.MaxValue;
+        for (int p = 0; p < pointCount; p++)
+        {
+            float distance = (warpedPosition - positions[p]).magnitude;
+            int index = biomeIndex[p];
+            if (p == firstPoint[index] || distance < nearest[index])
+                nearest[index] = distance;
+            if (distance < closest)
+                closest = distance;
+        }
+
+        for (int c = 0; c < count; c++)
+            into.Add(new KeyValuePair<Biome, float>(biomes[c], nearest[c] - closest));
+    }
+
     // Per-thread scratch arrays for GetBiomeBlend's intermediate values (it runs for every terrain cell,
     // on several worker threads at once), so those don't allocate on every call.
     [System.ThreadStatic] private static float[] scratchDistances;

@@ -63,6 +63,19 @@ public sealed class TerrainHeightSampler
         return Layout(availableBiomes, new Vector2(x, y));
     }
 
+    /// <summary>
+    /// For each land biome near a position, how much farther its nearest Voronoi point is than the nearest one
+    /// (0 for the biome owning the position); half of it is roughly the distance to that biome's border.
+    /// See <see cref="VoronoiBiomeGenerator.GetBiomeGaps"/>.
+    /// </summary>
+    public void GetBiomeGaps(float x, float y, List<KeyValuePair<Biome, float>> into)
+    {
+        TerrainGenerator tg = terrainGenerator;
+        VoronoiBiomeGenerator.GetBiomeGaps(new Vector2(x, y), tg.VoronoiScale, tg.NumVoronoiPoints, availableBiomes, tg.VoronoiSeed,
+            tg.useWeightedBiome, tg.UseNaturalClimatePlacement, tg.ClimateNoiseScale, tg.VoronoiWarpStrength, tg.VoronoiWarpScale,
+            tg.BiomeClusterStrength, tg.BiomeClusterRadius, tg.BiomeRepeatPenalty, layout, into);
+    }
+
     private List<VoronoiBiomeGenerator.BiomeWeight> GetOceanBlend(float x, float y)
     {
         return Layout(oceanBiomes, new Vector2(x / OceanLayerScale + OceanLayerOffset, y / OceanLayerScale), oceanLayout);

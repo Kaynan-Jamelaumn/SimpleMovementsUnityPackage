@@ -135,91 +135,170 @@ public sealed class ChunkWaterContext
                 int index = paddedY * size + paddedX;
                 float height = paddedHeights[paddedX, paddedY];
 
-                WaterBodyType type = WaterBodyType.None;
-                float surface = float.NaN;
-                float shore = float.NaN;
-
-                for (int i = 0; i < lakes.Length; i++)
-                {
-                    LakeFeature lake = lakes[i];
-                    if (!lake.TryGetLocal(worldX, worldY, out float rho, out float beyond))
-                        continue;
-
-                    float level = lake.WaterLevel;
-                    if (lake.IsInWaterZone(rho) && height < level)
-                    {
-                        type = lake.Type;
-                        surface = level;
-                        break;
-                    }
-
-                    if (float.IsNaN(shore) && lake.IsInShoreZone(beyond))
-                        shore = level;
-                }
-
-                float side = landSide[index];
-
-                // Nearest water for wetness: how far away it is (world units from its edge) and its level.
-                float wetDistance = float.PositiveInfinity;
-                float wetLevel = float.NaN;
-                for (int i = 0; i < lakes.Length; i++)
-                {
-                    LakeFeature lake = lakes[i];
-                    if (lake.TryGetLocal(worldX, worldY, out _, out float lakeBeyond) && lakeBeyond < wetDistance)
-                    {
-                        wetDistance = lakeBeyond;
-                        wetLevel = lake.WaterLevel;
-                    }
-                }
-                if (settings.OceansEnabled && side < float.MaxValue)
-                {
-                    float coastDistance = side / settings.ContinentGradient;
-                    if (coastDistance < wetDistance)
-                    {
-                        wetDistance = coastDistance;
-                        wetLevel = settings.SeaLevel;
-                    }
-                }
-                if (rivers != null && rivers.HintEdgeDistance[index] < wetDistance)
-                {
-                    wetDistance = rivers.HintEdgeDistance[index];
-                    wetLevel = rivers.Hint[index];
-                }
-
-                if (type == WaterBodyType.None && settings.OceansEnabled && side < 0f && height < settings.SeaLevel)
-                {
-                    type = WaterBodyType.Ocean;
-                    surface = settings.SeaLevel;
-                }
-
-                if (type == WaterBodyType.None && rivers != null && rivers.OwnerNorm[index] <= 1f && height < rivers.Surface[index])
-                {
-                    type = WaterBodyType.River;
-                    surface = rivers.Surface[index];
-                    map.FlowX[x, y] = rivers.FlowX[index];
-                    map.FlowY[x, y] = rivers.FlowY[index];
-                }
-
-                if (type != WaterBodyType.None)
-                {
-                    shore = surface;
-                }
-                else if (float.IsNaN(shore))
-                {
-                    if (rivers != null && !float.IsNaN(rivers.Hint[index]))
-                        shore = rivers.Hint[index];
-                    else if (settings.OceansEnabled && side < coastClampLandSide * 2f)
-                        shore = settings.SeaLevel;
-                }
-
-                map.Type[x, y] = type;
-                map.Surface[x, y] = surface;
-                map.ShoreLevel[x, y] = shore;
-                map.Wetness[x, y] = type != WaterBodyType.None ? 1f : Wetness(wetDistance, height - wetLevel);
+                CellWater cell = Classify(index, worldX, worldY, height);
+                map.Type[x, y] = cell.Type;
+                map.Surface[x, y] = cell.Surface;
+                map.ShoreLevel[x, y] = cell.Shore;
+                map.FlowX[x, y] = cell.FlowX;
+                map.FlowY[x, y] = cell.FlowY;
+                map.Wetness[x, y] = cell.Type != WaterBodyType.None ? 1f : Wetness(cell.WetDistance, height - cell.WetLevel);
             }
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// Fills the water part of an object-placement environment (see <see cref="PlacementFields"/>) for the area
+    /// it covers - the chunk plus a margin, which must lie within this context's padded area. Cells use exactly
+    /// the classification <see cref="BuildWaterMap"/> gives them.
+    /// </summary>
+    /// <param name="offset">Index in this context's padded grid of the fields' first cell (padding - margin).</param>
+    public void FillPlacementFields(PlacementFields fields, float[,] paddedHeights, int offset)
+    {
+        int n = fields.Size;
+        for (int y = 0; y < n; y++)
+        {
+            int paddedY = y + offset;
+            float worldY = origin.y + paddedY;
+            for (int x = 0; x < n; x++)
+            {
+                int paddedX = x + offset;
+                float worldX = origin.x + paddedX;
+                int index = paddedY * size + paddedX;
+                CellWater cell = Classify(index, worldX, worldY, paddedHeights[paddedX, paddedY]);
+
+                int i = y * n + x;
+                fields.WaterType[i] = (byte)cell.Type;
+                fields.WaterSurface[i] = cell.Surface;
+                fields.NearestWaterLevel[i] = cell.Type != WaterBodyType.None ? cell.Surface : cell.WetLevel;
+                fields.FeatureDistance[(int)WaterBodyType.Ocean][i] = cell.OceanDistance;
+                fields.FeatureDistance[(int)WaterBodyType.Lake][i] = cell.LakeDistance;
+                fields.FeatureDistance[(int)WaterBodyType.Pond][i] = cell.PondDistance;
+                fields.FeatureDistance[(int)WaterBodyType.River][i] = cell.RiverDistance;
+                fields.RiverDirX[i] = cell.RiverDirX;
+                fields.RiverDirY[i] = cell.RiverDirY;
+            }
+        }
+    }
+
+    /// <summary>Everything the water step decides about one cell.</summary>
+    private struct CellWater
+    {
+        public WaterBodyType Type;
+        public float Surface;
+        public float Shore;
+        public float FlowX, FlowY;
+        /// <summary>Distance to the nearest water's edge (lake outline, coast, river channel) and that water's level, for wetness.</summary>
+        public float WetDistance, WetLevel;
+        /// <summary>Distance to each kind of water from the global feature data (negative inside it, +infinity when none is near).</summary>
+        public float OceanDistance, LakeDistance, PondDistance, RiverDistance;
+        /// <summary>Direction of the nearest river (unit vector along its course), zero when none is near.</summary>
+        public float RiverDirX, RiverDirY;
+    }
+
+    private CellWater Classify(int index, float worldX, float worldY, float height)
+    {
+        CellWater cell = new CellWater
+        {
+            Type = WaterBodyType.None,
+            Surface = float.NaN,
+            Shore = float.NaN,
+            WetDistance = float.PositiveInfinity,
+            WetLevel = float.NaN,
+            OceanDistance = float.PositiveInfinity,
+            LakeDistance = float.PositiveInfinity,
+            PondDistance = float.PositiveInfinity,
+            RiverDistance = float.PositiveInfinity,
+        };
+
+        for (int i = 0; i < lakes.Length; i++)
+        {
+            LakeFeature lake = lakes[i];
+            if (!lake.TryGetLocal(worldX, worldY, out float rho, out float beyond))
+                continue;
+
+            float level = lake.WaterLevel;
+            if (lake.IsInWaterZone(rho) && height < level)
+            {
+                cell.Type = lake.Type;
+                cell.Surface = level;
+                break;
+            }
+
+            if (float.IsNaN(cell.Shore) && lake.IsInShoreZone(beyond))
+                cell.Shore = level;
+        }
+
+        float side = landSide[index];
+
+        // Nearest water for wetness: how far away it is (world units from its edge) and its level.
+        for (int i = 0; i < lakes.Length; i++)
+        {
+            LakeFeature lake = lakes[i];
+            if (!lake.TryGetLocal(worldX, worldY, out _, out float lakeBeyond))
+                continue;
+
+            if (lake.Type == WaterBodyType.Pond)
+                cell.PondDistance = Mathf.Min(cell.PondDistance, lakeBeyond);
+            else
+                cell.LakeDistance = Mathf.Min(cell.LakeDistance, lakeBeyond);
+
+            if (lakeBeyond < cell.WetDistance)
+            {
+                cell.WetDistance = lakeBeyond;
+                cell.WetLevel = lake.WaterLevel;
+            }
+        }
+        if (settings.OceansEnabled && side < float.MaxValue)
+        {
+            float coastDistance = side / settings.ContinentGradient;
+            cell.OceanDistance = coastDistance;
+            if (coastDistance < cell.WetDistance)
+            {
+                cell.WetDistance = coastDistance;
+                cell.WetLevel = settings.SeaLevel;
+            }
+        }
+        if (rivers != null)
+        {
+            cell.RiverDistance = rivers.HintEdgeDistance[index];
+            cell.RiverDirX = rivers.HintDirX[index];
+            cell.RiverDirY = rivers.HintDirY[index];
+            if (rivers.HintEdgeDistance[index] < cell.WetDistance)
+            {
+                cell.WetDistance = rivers.HintEdgeDistance[index];
+                cell.WetLevel = rivers.Hint[index];
+            }
+        }
+
+        if (cell.Type == WaterBodyType.None && settings.OceansEnabled && side < 0f && height < settings.SeaLevel)
+        {
+            cell.Type = WaterBodyType.Ocean;
+            cell.Surface = settings.SeaLevel;
+        }
+
+        if (cell.Type == WaterBodyType.None && rivers != null && rivers.OwnerNorm[index] <= 1f && height < rivers.Surface[index])
+        {
+            cell.Type = WaterBodyType.River;
+            cell.Surface = rivers.Surface[index];
+            cell.FlowX = rivers.FlowX[index];
+            cell.FlowY = rivers.FlowY[index];
+        }
+
+        if (cell.Type != WaterBodyType.None)
+        {
+            cell.Shore = cell.Surface;
+        }
+        else if (float.IsNaN(cell.Shore))
+        {
+            if (rivers != null && !float.IsNaN(rivers.Hint[index]))
+                cell.Shore = rivers.Hint[index];
+            else if (settings.OceansEnabled && side < coastClampLandSide * 2f)
+                cell.Shore = settings.SeaLevel;
+        }
+
+        return cell;
     }
 
     /// <summary>1 at the water's edge, fading to 0 with distance from it and with height above its level.</summary>

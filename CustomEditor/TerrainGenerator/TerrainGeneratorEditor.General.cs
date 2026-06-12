@@ -4,7 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-// TerrainGeneratorEditor: terrain size, noise, height range, texture variations, level of detail, biome list and objects sections (see TerrainGeneratorEditor.cs).
+// TerrainGeneratorEditor: terrain size, noise, height range, texture variations, level of detail and biome list sections (see TerrainGeneratorEditor.cs).
 public partial class TerrainGeneratorEditor : Editor
 {
     /// <summary>Contents of the "Terrain Configuration" section.</summary>
@@ -147,26 +147,4 @@ public partial class TerrainGeneratorEditor : Editor
         return $"{2 * cells * cells:N0}";
     }
 
-    /// <summary>Contents of the "Biomes" section.</summary>
-    private void DrawBiomesSection()
-    {
-        Field(biomeDefinitionsProp, "Biome Definitions", true);
-        if (biomeDefinitionsProp.arraySize == 0)
-        {
-            EditorGUILayout.HelpBox("No biomes assigned - terrain generation has nothing to draw from and will fail.", MessageType.Error);
-        }
-    }
-
-    /// <summary>Contents of the "Objects" section.</summary>
-    private void DrawObjectsSection()
-    {
-        Field(shouldSpawnObjectsProp, "Should Spawn Objects");
-        using (new EditorGUI.DisabledScope(!shouldSpawnObjectsProp.boolValue))
-        {
-            EditorGUI.indentLevel++;
-            Field(clusterBaseFrequencyProp, "Cluster Base Frequency");
-            Field(clusterAmplitudeProp, "Cluster Amplitude");
-            EditorGUI.indentLevel--;
-        }
-    }
 }

@@ -18,191 +18,119 @@ public static partial class SplatMapGenerator
     /// </param>
     public static Texture2D[] GenerateSplatMaps(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Vector2 worldOrigin, Vector2 globalOffset = default, SplatBlendData precomputedBlend = null)
     {
-        // Get the terrain's chunk size (resolution) and number of defined biomes
+        return CreateSplatTextures(GenerateSplatPixels(terrainGenerator, biomeMap, worldOrigin, precomputedBlend), terrainGenerator.ChunkSize);
+    }
+
+    /// <summary>
+    /// The pixels of a chunk's splat maps, without creating any texture - so this can run on a worker thread (see
+    /// <see cref="TextureGenerator.CreateChunkMaterial"/>, which makes the textures from them). One RGBA array per
+    /// splat map; splat map i, channel c holds the weight of biome i * 4 + c (in <see cref="TerrainGenerator.BiomeDefinitions"/>
+    /// order). With biome-blended texturing a pixel mixes up to <see cref="TerrainGenerator.SplatTexturesPerPixel"/>
+    /// biomes near borders, otherwise it is fully its biome.
+    /// </summary>
+    /// <param name="worldOrigin">The chunk's global offset (needed to blend across biome borders).</param>
+    /// <param name="precomputedBlend">The chunk's per-pixel biome blend if already computed (see <see cref="TerrainGenerator.GenerateBiomeMap(Vector2, float[,], bool, out SplatBlendData)"/>); null to compute it here.</param>
+    public static Color32[][] GenerateSplatPixels(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Vector2 worldOrigin, SplatBlendData precomputedBlend = null)
+    {
         int chunkSize = terrainGenerator.ChunkSize;
         int numBiomes = terrainGenerator.BiomeDefinitions.Length;
-
-        // Calculate the number of splatmaps needed (each can store up to 4 biomes in RGBA)
+        // Each splat map stores up to 4 biomes in RGBA.
         int numSplatMaps = Mathf.CeilToInt(numBiomes / 4f);
-        // Calculate the total number of pixels in a single splatmap
         int totalPixels = chunkSize * chunkSize;
-
-        // Precompute a dictionary mapping biome names to their indices for fast lookup
         var biomeIndexMap = BiomeIndexMap(terrainGenerator);
 
-        // Precompute RGBA channel values for each biome index
-        var channelValues = new Color32[numBiomes];
-        for (int i = 0; i < numBiomes; i++)
-        {
-            // Assign RGBA values based on biome index modulo 4
-            switch (i % 4)
-            {
-                case 0: channelValues[i] = new Color32(255, 0, 0, 0); break;
-                case 1: channelValues[i] = new Color32(0, 255, 0, 0); break;
-                case 2: channelValues[i] = new Color32(0, 0, 255, 0); break;
-                case 3: channelValues[i] = new Color32(0, 0, 0, 255); break;
-            }
-        }
+        var pixels = new Color32[numSplatMaps][];
+        for (int i = 0; i < numSplatMaps; i++)
+            pixels[i] = new Color32[totalPixels];
 
-        // When enabled, blend up to two biome indices per pixel (with weights summing to 1) near cell
+        // When enabled, blend up to SplatTexturesPerPixel biomes per pixel (weights summing to 1) near cell
         // borders so texture transitions match the smoothly blended terrain height instead of cutting hard.
         bool useBlending = terrainGenerator.TerrainTextureBasedOnVoronoiPoints && terrainGenerator.UseBiomeBlendedTexturing;
-
-        // Precompute the biome indices for every pixel in the biomeMap (skipped entirely when blending,
-        // since the blended path below computes its own per-pixel indices/weights instead).
-        int[,] precomputedBiomeIndices = useBlending ? null : new int[chunkSize, chunkSize];
-
-        // Check if texture variations are enabled and we have a valid global offset
-        bool useTextureVariations = !useBlending && terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
-
-        if (useBlending)
-        {
-            // Blended path fills its own index/weight buffers below; nothing to precompute here.
-        }
-        else if (useTextureVariations)
-        {
-            // ENHANCED PATH: Apply texture variation logic
-            int chunkSeed = Mathf.FloorToInt(globalOffset.x * 0.1f) + Mathf.FloorToInt(globalOffset.y * 0.1f) * 1000;
-
-            Parallel.For(0, chunkSize, y =>
-            {
-                for (int x = 0; x < chunkSize; x++)
-                {
-                    Biome biome = biomeMap[x, y];
-
-                    // Find base biome index
-                    int baseBiomeIndex = biomeIndexMap[biome.name];
-
-                    // Apply texture variation if biome has multiple textures
-                    if (biome.textureVariations != null && biome.textureVariations.Length > 0)
-                    {
-                        // Create a unique seed for this pixel based on chunk seed and position
-                        int pixelSeed = chunkSeed + x * 31 + y * 97;
-                        System.Random pixelRandom = new System.Random(pixelSeed);
-
-                        // For future enhancement: texture variation index could be stored here
-                        // Currently we just use base biome index
-                        precomputedBiomeIndices[x, y] = baseBiomeIndex;
-                    }
-                    else
-                    {
-                        precomputedBiomeIndices[x, y] = baseBiomeIndex;
-                    }
-                }
-            });
-        }
-        else
-        {
-            // ORIGINAL PATH: Simple biome index lookup without variations
-            Parallel.For(0, chunkSize, y =>
-            {
-                for (int x = 0; x < chunkSize; x++)
-                {
-                    precomputedBiomeIndices[x, y] = biomeIndexMap[biomeMap[x, y].name];
-                }
-            });
-        }
-
-        int[,,] blendIndices = null;
-        float[,,] blendWeights = null;
-        int blendSlots = 0;
-
         if (useBlending)
         {
             SplatBlendData blend = precomputedBlend != null && precomputedBlend.Size == chunkSize && precomputedBlend.Slots == terrainGenerator.SplatTexturesPerPixel
                 ? precomputedBlend
                 : ComputeBlend(terrainGenerator, worldOrigin, chunkSize, biomeIndexMap);
-            blendIndices = blend.Indices;
-            blendWeights = blend.Weights;
-            blendSlots = blend.Slots;
-        }
-
-        // Initialize the array of splatmaps and a shared buffer for pixel data
-        Texture2D[] splatMaps = new Texture2D[numSplatMaps];
-        Color32[] sharedBuffer = new Color32[totalPixels];
-
-        // Create an empty splatmap texture for each required splatmap
-        for (int i = 0; i < numSplatMaps; i++)
-        {
-            // Create an empty splatmap texture with RGBA32 format
-            splatMaps[i] = new Texture2D(chunkSize, chunkSize, TextureFormat.RGBA32, false);
-        }
-        // Populate the shared buffer for all splatmaps in parallel
-        for (int i = 0; i < numSplatMaps; i++)
-        {
-            // Clear the shared buffer before processing the current splatmap
-            Array.Clear(sharedBuffer, 0, totalPixels); // Reset buffer
-
-            int splatMapIndex = i;
-
-            if (useBlending)
+            for (int y = 0; y < chunkSize; y++)
             {
-                Parallel.For(0, chunkSize, y =>
+                for (int x = 0; x < chunkSize; x++)
                 {
-                    for (int x = 0; x < chunkSize; x++)
+                    int pixelIndex = y * chunkSize + x;
+                    for (int slot = 0; slot < blend.Slots; slot++)
                     {
-                        byte r = 0, g = 0, b = 0, a = 0;
-                        bool touchesThisMap = false;
-
-                        for (int slot = 0; slot < blendSlots; slot++)
+                        int biomeIndex = blend.Indices[x, y, slot];
+                        if (biomeIndex < 0)
+                            continue;
+                        byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(blend.Weights[x, y, slot]) * 255f);
+                        Color32 pixel = pixels[biomeIndex / 4][pixelIndex];
+                        switch (biomeIndex % 4)
                         {
-                            int biomeIndex = blendIndices[x, y, slot];
-                            if (biomeIndex < 0 || biomeIndex / 4 != splatMapIndex) continue;
-
-                            touchesThisMap = true;
-                            byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(blendWeights[x, y, slot]) * 255f);
-                            switch (biomeIndex % 4)
-                            {
-                                case 0: r = value; break;
-                                case 1: g = value; break;
-                                case 2: b = value; break;
-                                case 3: a = value; break;
-                            }
+                            case 0: pixel.r = value; break;
+                            case 1: pixel.g = value; break;
+                            case 2: pixel.b = value; break;
+                            case 3: pixel.a = value; break;
                         }
-
-                        if (!touchesThisMap) continue;
-
-                        int pixelIndex = y * chunkSize + x;
-                        sharedBuffer[pixelIndex] = new Color32(r, g, b, a);
+                        pixels[biomeIndex / 4][pixelIndex] = pixel;
                     }
-                });
+                }
             }
-            else
+            return pixels;
+        }
+
+        // One biome per pixel: full weight in its channel. (Texture variations don't change the splat maps.)
+        var indices = new SplatBiomeIndex(biomeIndexMap, terrainGenerator.SplatIndexByBiome);
+        for (int y = 0; y < chunkSize; y++)
+        {
+            for (int x = 0; x < chunkSize; x++)
             {
-                // Parallelize row processing for better performance
-                Parallel.For(0, chunkSize, y =>
+                int biomeIndex = indices[biomeMap[x, y]];
+                Color32 pixel = new Color32(0, 0, 0, 0);
+                switch (biomeIndex % 4)
                 {
-                    for (int x = 0; x < chunkSize; x++)
-                    {
-                        // Get the biome index at (x, y)
-                        int biomeIndex = precomputedBiomeIndices[x, y];
-
-                        // Check if the biome belongs to the current splatmap
-                        if (biomeIndex / 4 != splatMapIndex) continue;
-
-                        // Calculate the linear pixel index and set the corresponding color
-                        int pixelIndex = y * chunkSize + x;
-                        sharedBuffer[pixelIndex] = channelValues[biomeIndex];
-                    }
-                });
+                    case 0: pixel.r = 255; break;
+                    case 1: pixel.g = 255; break;
+                    case 2: pixel.b = 255; break;
+                    case 3: pixel.a = 255; break;
+                }
+                pixels[biomeIndex / 4][y * chunkSize + x] = pixel;
             }
+        }
+        return pixels;
+    }
 
-            // Transfer the buffer's data to the texture and apply changes
-            splatMaps[i].SetPixelData(sharedBuffer, 0);
+    /// <summary>Splat map textures from <see cref="GenerateSplatPixels"/> (main thread only).</summary>
+    public static Texture2D[] CreateSplatTextures(Color32[][] pixels, int size)
+    {
+        var splatMaps = new Texture2D[pixels.Length];
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            splatMaps[i] = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            splatMaps[i].SetPixelData(pixels[i], 0);
             splatMaps[i].Apply();
         }
-
         return splatMaps;
     }
 
-    /// <summary>Biome name -> index into <see cref="TerrainGenerator.BiomeDefinitions"/> (a later duplicate name wins).</summary>
+    /// <summary>
+    /// Biome name -> index into <see cref="TerrainGenerator.BiomeDefinitions"/> (a later duplicate name wins). The copy
+    /// the generator prepared on the main thread when there is one (reading asset names is main-thread work).
+    /// </summary>
     public static Dictionary<string, int> BiomeIndexMap(TerrainGenerator terrainGenerator)
+    {
+        return terrainGenerator.SplatIndexByName ?? ComputeBiomeIndexMap(terrainGenerator);
+    }
+
+    /// <summary>As <see cref="BiomeIndexMap"/>, always computed now (main thread).</summary>
+    public static Dictionary<string, int> ComputeBiomeIndexMap(TerrainGenerator terrainGenerator)
     {
         int numBiomes = terrainGenerator.BiomeDefinitions.Length;
         var biomeIndexMap = new Dictionary<string, int>(numBiomes);
         for (int i = 0; i < numBiomes; i++)
         {
-            biomeIndexMap[terrainGenerator.BiomeDefinitions[i].BiomePrefab.name] = i;
+            // An empty slot keeps its index (the others' indices don't move) but maps no name.
+            BiomeInstance instance = terrainGenerator.BiomeDefinitions[i];
+            if (instance != null && instance.BiomePrefab != null)
+                biomeIndexMap[instance.BiomePrefab.name] = i;
         }
         return biomeIndexMap;
     }
@@ -211,7 +139,7 @@ public static partial class SplatMapGenerator
     private static SplatBlendData ComputeBlend(TerrainGenerator terrainGenerator, Vector2 worldOrigin, int chunkSize, Dictionary<string, int> biomeIndexMap)
     {
         var data = new SplatBlendData(chunkSize, terrainGenerator.SplatTexturesPerPixel);
-        var indices = new SplatBiomeIndex(biomeIndexMap);
+        var indices = new SplatBiomeIndex(biomeIndexMap, terrainGenerator.SplatIndexByBiome);
 
         // Same biome layout the terrain was built from, including ocean biomes along the coast and a
         // volcanic biome over volcanoes (see TerrainHeightSampler.GetTextureBlend).

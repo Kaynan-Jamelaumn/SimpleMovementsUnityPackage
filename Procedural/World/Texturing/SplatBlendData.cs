@@ -35,9 +35,15 @@ public sealed class SplatBiomeIndex
     private readonly Dictionary<string, int> byName;
     private readonly ConcurrentDictionary<Biome, int> byBiome = new ConcurrentDictionary<Biome, int>();
 
-    public SplatBiomeIndex(Dictionary<string, int> byName)
+    /// <param name="known">Biomes whose index is already known (worked out on the main thread), so worker threads needn't read their names.</param>
+    public SplatBiomeIndex(Dictionary<string, int> byName, IDictionary<Biome, int> known = null)
     {
         this.byName = byName;
+        if (known != null)
+        {
+            foreach (KeyValuePair<Biome, int> pair in known)
+                byBiome[pair.Key] = pair.Value;
+        }
     }
 
     public int this[Biome biome]

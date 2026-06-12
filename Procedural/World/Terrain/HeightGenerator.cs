@@ -52,12 +52,24 @@ public static class HeightGenerator
     /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
     public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset, out float[,] erosionDeltaMap, out WaterMapData waterMap)
     {
+        return GenerateHeightMap(terrainGenerator, globalOffset, false, out erosionDeltaMap, out waterMap, out _);
+    }
+
+    /// <summary>
+    /// As above, also building the chunk's object placement environment (see <see cref="PlacementFields"/>) when
+    /// <paramref name="buildPlacementFields"/> is set - from the same padded heights and water, covering the chunk
+    /// plus a margin. Without erosion that needs a little padding it otherwise wouldn't have; heights are then
+    /// computed per cell, so the padding doesn't change anything inside the chunk.
+    /// </summary>
+    public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset, bool buildPlacementFields,
+        out float[,] erosionDeltaMap, out WaterMapData waterMap, out PlacementFields placementFields)
+    {
         int chunkSize = terrainGenerator.ChunkSize;
         int finalSize = chunkSize + 1;
 
         bool erosionEnabled = terrainGenerator.EnableErosion;
         bool captureErosionDebug = erosionEnabled && terrainGenerator.VisualizeErosionDebug;
-        int padding = erosionEnabled ? Mathf.Max(0, terrainGenerator.ErosionPadding) : 0;
+        int padding = erosionEnabled ? Mathf.Max(0, terrainGenerator.ErosionPadding) : (buildPlacementFields ? PlacementFields.DefaultMargin : 0);
         int paddedSize = finalSize + padding * 2;
 
         int voronoiSeed = terrainGenerator.VoronoiSeed;
@@ -139,6 +151,9 @@ public static class HeightGenerator
         }
 
         waterMap = water != null ? water.BuildWaterMap(paddedHeights, padding, finalSize) : null;
+        placementFields = buildPlacementFields
+            ? PlacementFields.Build(paddedHeights, paddedOrigin, padding, finalSize, Mathf.Min(PlacementFields.DefaultMargin, padding), water)
+            : null;
         return heightMap;
     }
 

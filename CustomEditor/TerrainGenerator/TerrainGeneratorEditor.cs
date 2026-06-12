@@ -51,6 +51,8 @@ public partial class TerrainGeneratorEditor : Editor
     private bool showOther = false;
     private bool showBiomes = true;
     private bool showObjects = false;
+    private bool showTerrainMaterial = false;
+    private bool showPerformance = false;
 
     // Cached properties, found once in OnEnable rather than FindProperty'd every OnInspectorGUI call.
     private SerializedProperty terrainSizeProp;
@@ -184,11 +186,12 @@ public partial class TerrainGeneratorEditor : Editor
 
         EditorGUILayout.Space(4);
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(new GUIContent("Clear Voronoi / Biome Cache", "Voronoi points and their assigned biomes are cached per chunk coordinate for the lifetime of the process. If you change VoronoiSeed, VoronoiScale, biome list, or any Natural Placement/Climate setting while already in Play Mode (or with 'Reload Domain' disabled), old chunks keep their stale biome layout until this cache is cleared. TerrainGenerator.Awake() already does this automatically at the start of Play - use this button to force it on demand, e.g. after tweaking values mid-Play.")))
+        if (GUILayout.Button(new GUIContent("Clear Voronoi / Biome Cache", "Voronoi points and their assigned biomes are cached per chunk coordinate for the lifetime of the process. If you change VoronoiSeed, VoronoiScale, biome list, or any Natural Placement/Climate setting while already in Play Mode (or with 'Reload Domain' disabled), old chunks keep their stale biome layout until this cache is cleared. TerrainGenerator.Awake() already does this automatically at the start of Play - use this button to force it on demand, e.g. after tweaking values mid-Play.\n\nAlso forgets the compiled object rules and measured prefabs, so changed object settings apply to chunks generated from now on.")))
         {
             VoronoiBiomeGenerator.ClearCache();
             WaterGenerator.ClearCaches();
-            Debug.Log("[TerrainGenerator] Voronoi/biome and water feature caches cleared.");
+            generator.RefreshGenerationCaches();
+            Debug.Log("[TerrainGenerator] Voronoi/biome, water feature and object rule caches cleared.");
         }
         EditorGUILayout.EndHorizontal();
 
@@ -205,6 +208,8 @@ public partial class TerrainGeneratorEditor : Editor
         showHeightAndTexture = Section("Height Range & Texture", showHeightAndTexture, () => DrawHeightAndTextureSection(generator));
 
         showTextureVariations = Section("Texture Variations", showTextureVariations, () => DrawTextureVariationsSection(generator));
+
+        showTerrainMaterial = Section("Terrain Material (Tri-Planar Shader)", showTerrainMaterial, () => DrawTerrainMaterialSection(generator));
 
         showVoronoi = Section("Voronoi / Biome Grid", showVoronoi, DrawVoronoiSection);
 
@@ -224,7 +229,9 @@ public partial class TerrainGeneratorEditor : Editor
 
         showBiomes = Section("Biomes", showBiomes, DrawBiomesSection);
 
-        showObjects = Section("Objects", showObjects, DrawObjectsSection);
+        showObjects = Section("Objects", showObjects, () => DrawObjectsSection(generator));
+
+        showPerformance = Section("Performance & Threading", showPerformance, () => DrawPerformanceSection(generator));
 
         EditorGUILayout.Space(6);
         serializedObject.ApplyModifiedProperties();

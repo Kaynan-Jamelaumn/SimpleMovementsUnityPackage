@@ -22,6 +22,9 @@ public static class DataStructure
         [Tooltip("Per-cell water (surface height, water body type, shoreline level). Null when EnableWater is off.")]
         public readonly WaterMapData waterData;
 
+        [Tooltip("The chunk's object placement environment (null when there are no objects to place). Dropped once the objects are placed.")]
+        public PlacementFields placementFields;
+
         /// <summary>
         /// Constructor for MapData.
         /// </summary>
@@ -35,6 +38,7 @@ public static class DataStructure
             this.splatMap = splatMap;
             this.erosionDeltaMap = erosionDeltaMap;
             this.waterData = waterData;
+            this.placementFields = null;
         }
     }
 
@@ -70,6 +74,15 @@ public static class DataStructure
         [Tooltip("Per-pixel biome blend for the splat maps, computed on the worker thread (null when blended texturing is off).")]
         public SplatBlendData splatBlend;
 
+        [Tooltip("The chunk's object placement environment, passed on from MapData (null when there are no objects to place).")]
+        public PlacementFields placementFields;
+
+        [Tooltip("The splat maps' pixels, computed on the worker thread (one RGBA array per splat map; see SplatMapGenerator.GenerateSplatPixels). Null when textures aren't biome-based.")]
+        public Color32[][] splatPixels;
+
+        [Tooltip("The chunk's water mesh data, computed on the worker thread (null when the chunk is dry or water is off).")]
+        public WaterMeshData waterMeshData;
+
         /// <summary>
         /// Constructor for TerrainData.
         /// </summary>
@@ -100,6 +113,9 @@ public static class DataStructure
             this.erosionDeltaMap = erosionDeltaMap;
             this.waterData = waterData;
             this.splatBlend = null;
+            this.placementFields = null;
+            this.splatPixels = null;
+            this.waterMeshData = null;
         }
     }
 
@@ -124,8 +140,12 @@ public static class DataStructure
         public readonly Transform chunkTransform;
         public readonly MeshData meshData;
 
-        [Tooltip("Per-cell water (surface height, water body type, shoreline level). Null when EnableWater is off. Used to skip spawning land objects underwater.")]
+        [Tooltip("Per-cell water (surface height, water body type, shoreline level). Null when EnableWater is off.")]
         public readonly WaterMapData waterData;
+
+        [Tooltip("Where this chunk's objects go (computed on a worker thread), and the plan they were computed with.")]
+        public PlacementResult placements;
+        public PlacementPlan plan;
 
         /// <summary>
         /// Constructor for BiomeObjectData.
@@ -152,6 +172,8 @@ public static class DataStructure
             this.chunkTransform = chunkTransform;
             this.meshData = meshData;
             this.waterData = waterData;
+            this.placements = null;
+            this.plan = null;
         }
     }
 }

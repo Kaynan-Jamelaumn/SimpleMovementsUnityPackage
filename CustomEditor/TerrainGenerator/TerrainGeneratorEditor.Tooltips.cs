@@ -237,8 +237,8 @@ public partial class TerrainGeneratorEditor
         // --- Biomes & objects
         { "biomeDefinitions", "Biomes the world can use. Each entry points to a Biome asset (its height shape, climate, erosion and water settings) and holds the objects that spawn in it. At least one is required." },
         { "shouldSpawnObjects", "Whether biome objects (trees, rocks, etc. listed in each biome's objects) are spawned on generated chunks." },
-        { "clusterBaseFrequency", "Frequency of the noise that groups spawned objects into clusters. Higher = smaller, more frequent clumps." },
-        { "clusterAmplitude", "Strength of the object clustering noise. Higher = sharper contrast between dense clumps and empty ground." },
+        { "clusterBaseFrequency", "No longer used: each object has its own Density Noise and Clustering settings (on its entry in a biome's object list)." },
+        { "clusterAmplitude", "No longer used: each object has its own Density Noise and Clustering settings (on its entry in a biome's object list)." },
     };
 
     /// <summary>Hover text for a property: the detailed text above, else its own [Tooltip].</summary>
