@@ -78,6 +78,8 @@ public partial class EndlessTerrain : MonoBehaviour
         bool hasGeneratedData;
         PlacementResult placements;
         GameObject[] objects;
+        PlacementInstantiator.Batch objectBatch;
+        FarObjectSwitcher.Chunk farObjects;
         Dictionary<GameObject, int> objectIndices;
         bool objectsReady;
         Material terrainMaterial;
@@ -270,7 +272,7 @@ public partial class EndlessTerrain : MonoBehaviour
                 loaded.Placements = result;
                 loaded.Plan = result.Plan;
             }
-            mapGenerator.ObjectInstantiator.Enqueue(meshObject.transform, result.Plan, result, DistanceToViewer, token,
+            objectBatch = mapGenerator.ObjectInstantiator.Enqueue(meshObject.transform, result.Plan, result, DistanceToViewer, token,
                 index => owner.IsRemoved(coord, index), OnObjectsCreated);
         }
 
@@ -288,6 +290,8 @@ public partial class EndlessTerrain : MonoBehaviour
             if (loaded != null)
                 loaded.Objects = objects;
             objectsReady = true;
+            // Only chunks near the viewer keep their full objects (see Far Objects).
+            farObjects = mapGenerator.FarObjects.Track(meshObject.transform, objects, DistanceToViewer);
             if (enableDebugging)
                 Debug.Log($"Chunk at {globalOffset}: {objectIndices.Count} objects created");
         }
@@ -689,7 +693,13 @@ public partial class EndlessTerrain : MonoBehaviour
             Mesh shown = meshFilter.sharedMesh;
             if (baseMesh != null)
                 meshFilter.sharedMesh = baseMesh;
+            // A NavMesh built from colliders must see the objects' colliders, even while the chunk is far.
+            bool fromColliders = farObjects != null && navMeshSurface.useGeometry == NavMeshCollectGeometry.PhysicsColliders;
+            if (fromColliders)
+                mapGenerator.FarObjects.SetSwitchedCollidersEnabled(farObjects, true);
             navMeshBuild = navMeshSurface.UpdateNavMesh(navMeshSurface.navMeshData);
+            if (fromColliders)
+                mapGenerator.FarObjects.SetSwitchedCollidersEnabled(farObjects, false);
             meshFilter.sharedMesh = shown;
         }
 
@@ -715,10 +725,14 @@ public partial class EndlessTerrain : MonoBehaviour
             if (unloaded)
                 return;
 
-            bool visible = DistanceToViewer() <= maxViewDistance;
+            float distance = DistanceToViewer();
+            bool visible = distance <= maxViewDistance;
             SetVisible(visible);
             if (visible)
                 UpdateLod(LodDistance());
+            // Hidden chunks' objects are inactive anyway: they are switched when the chunk shows again.
+            if (visible && farObjects != null && mapGenerator != null)
+                mapGenerator.FarObjects.Refresh(farObjects, distance);
 
             if (colliderBaking && colliderBake.IsCompleted)
             {
@@ -788,6 +802,7 @@ public partial class EndlessTerrain : MonoBehaviour
             TextureGenerator.ReleaseChunkMaterial(terrainMaterial);
             terrainMaterial = null;
 
+            ReleaseObjects();
             if (meshObject != null)
                 Object.Destroy(meshObject);
             meshObject = null;
@@ -800,6 +815,39 @@ public partial class EndlessTerrain : MonoBehaviour
             generatedData = default;
             placements = null;
             loaded = null;
+        }
+
+        /// <summary>Hands the chunk's objects (also those of a batch still being created) back for reuse (see Object Pooling).</summary>
+        void ReleaseObjects()
+        {
+            // Far objects get back what was switched off, after they are pooled (inactive) and with the chunk switched
+            // off first, so restoring doesn't wake any script up (the chunk is destroyed right after anyway).
+            FarObjectSwitcher.Chunk far = farObjects;
+            farObjects = null;
+            bool restore = far != null && far.HasChanges;
+            if (restore && meshObject != null)
+                meshObject.SetActive(false);
+
+            GameObject[] created = objects ?? objectBatch?.Created;
+            objectBatch = null;
+            if (created != null && placements != null && placements.Plan != null && mapGenerator != null)
+            {
+                PlacementInstantiator instantiator = mapGenerator.ObjectInstantiator;
+                Transform chunk = meshObject != null ? meshObject.transform : null;
+                for (int i = 0; i < created.Length && i < placements.Objects.Count; i++)
+                {
+                    GameObject instance = created[i];
+                    // Objects the game moved out of the chunk (picked up, re-parented) are no longer the chunk's to reuse.
+                    if (instance == null || instance.transform.parent != chunk)
+                        continue;
+                    int type = placements.Objects[i].Type;
+                    instantiator.Release(type < placements.Plan.Types.Length ? placements.Plan.Types[type].Prefab : null, instance);
+                    created[i] = null;
+                }
+            }
+
+            if (far != null && mapGenerator != null)
+                mapGenerator.FarObjects.Remove(far, restore);
         }
 
         static void DestroyAsset(Object asset)

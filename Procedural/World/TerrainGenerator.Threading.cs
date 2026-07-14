@@ -22,6 +22,7 @@ public partial class TerrainGenerator : MonoBehaviour
     private TerrainWorkerPool workerPool;
     private Queue<Action> mainThreadQueue;
     private PlacementInstantiator objectInstantiator;
+    private FarObjectSwitcher farObjectSwitcher;
     private PlacementPlan placementPlan;
     private Stopwatch frameWatch;
 
@@ -49,7 +50,30 @@ public partial class TerrainGenerator : MonoBehaviour
     }
 
     /// <summary>Creates objects decided by object placement, a few per frame (see <see cref="PlacementInstantiator"/>).</summary>
-    public PlacementInstantiator ObjectInstantiator => objectInstantiator ?? (objectInstantiator = new PlacementInstantiator());
+    public PlacementInstantiator ObjectInstantiator
+    {
+        get
+        {
+            if (objectInstantiator == null)
+                objectInstantiator = new PlacementInstantiator { PoolParent = transform };
+            objectInstantiator.PoolingEnabled = PoolObjects;
+            objectInstantiator.MaxPooled = MaxPooledObjects;
+            return objectInstantiator;
+        }
+    }
+
+    /// <summary>Switches the objects of chunks beyond Full Object Distance to far and back (see <see cref="FarObjectSwitcher"/>).</summary>
+    public FarObjectSwitcher FarObjects
+    {
+        get
+        {
+            if (farObjectSwitcher == null)
+                farObjectSwitcher = new FarObjectSwitcher();
+            farObjectSwitcher.FullDistance = FullObjectDistance;
+            farObjectSwitcher.Parts = farObjectParts;
+            return farObjectSwitcher;
+        }
+    }
 
     /// <summary>Jobs waiting for a worker thread (0 before the first request).</summary>
     public int PendingWorkerJobs => workerPool != null ? workerPool.PendingCount : 0;
@@ -226,6 +250,8 @@ public partial class TerrainGenerator : MonoBehaviour
             mapData.waterData != null ? mapData.waterData.Wetness : null,
             MeshGenerator.SkirtDepth(this, mapData.heightMap)
         );
+        if (prepareMeshesOnWorkers)
+            meshData.Prepare();
 
         // The splat maps' per-pixel biome blend is computed together with the biome map.
         bool computeSplatBlend = terrainTextureBasedOnVoronoiPoints && UseBiomeBlendedTexturing;
@@ -259,6 +285,8 @@ public partial class TerrainGenerator : MonoBehaviour
                 waterData != null ? waterData.Wetness : null,
                 MeshGenerator.SkirtDepth(this, heightMap)
             );
+            if (prepareMeshesOnWorkers)
+                meshData.Prepare();
             Deliver(callback, meshData, token);
         }, priority, token);
     }
@@ -356,6 +384,7 @@ public partial class TerrainGenerator : MonoBehaviour
                 break;
         }
 
+        farObjectSwitcher?.Update(ObjectSpawnBudgetMs);
         objectInstantiator?.Update(ObjectSpawnBudgetMs, MaxObjectsPerFrame);
     }
 
@@ -370,6 +399,7 @@ public partial class TerrainGenerator : MonoBehaviour
         lock (mainThreadLock)
             mainThreadQueue?.Clear();
         objectInstantiator?.Clear();
+        objectInstantiator?.ClearPool();
         TextureGenerator.ReleaseSharedTextures();
     }
 }

@@ -22,6 +22,7 @@ public partial class TerrainGeneratorEditor : Editor
             MessageType.Info);
 
         DrawProp("enableWater", "Enable Water (master)");
+        InlinePreviewButton("Preview Water", "Draws every ocean, lake, pond and river around the Scene view position (World Preview, Water view), with how many of each there are.", PreviewMode.Water, 6000f);
         using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("enableWater").boolValue))
         {
             DrawProp("waterLevel", "Sea Level (oceans only)");

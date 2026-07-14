@@ -26,6 +26,10 @@ public class MeshData
 
     private bool enableDebugging;
 
+    // Filled by Prepare (normally on a worker thread), so UpdateMesh only has to upload the data.
+    private Vector3[] preparedNormals;
+    private Bounds preparedBounds;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="MeshData"/> class with the given width and depth.
     /// </summary>
@@ -129,8 +133,102 @@ public class MeshData
         }
     }
 
+    /// <summary>
+    /// Does the costly parts of <see cref="UpdateMesh"/> - checking the data, computing the normals (area-weighted,
+    /// like Mesh.RecalculateNormals; skirts copy their ground vertex's) and the bounds - so they can run on a worker
+    /// thread. UpdateMesh then only uploads the finished arrays. Safe to skip: UpdateMesh does it all itself.
+    /// </summary>
+    public void Prepare()
+    {
+        Validate();
+
+        var normals = new Vector3[vertices.Length];
+        for (int t = 0; t + 2 < triangles.Length; t += 3)
+        {
+            int a = triangles[t], b = triangles[t + 1], c = triangles[t + 2];
+            Vector3 face = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]);
+            normals[a] += face;
+            normals[b] += face;
+            normals[c] += face;
+        }
+        for (int i = 0; i < normals.Length; i++)
+        {
+            float length = normals[i].magnitude;
+            normals[i] = length > 1e-12f ? normals[i] / length : Vector3.up;
+        }
+        if (skirtSources != null)
+        {
+            int gridVertices = vertices.Length - skirtSources.Length;
+            for (int i = 0; i < skirtSources.Length; i++)
+                normals[gridVertices + i] = normals[skirtSources[i]];
+        }
+
+        Vector3 min = vertices.Length > 0 ? vertices[0] : Vector3.zero, max = min;
+        for (int i = 1; i < vertices.Length; i++)
+        {
+            min = Vector3.Min(min, vertices[i]);
+            max = Vector3.Max(max, vertices[i]);
+        }
+        preparedBounds = new Bounds((min + max) * 0.5f, max - min);
+        preparedNormals = normals;
+    }
+
+    /// <summary>Replaces invalid vertices and triangle indices (logging them) so the mesh can always be built.</summary>
+    private void Validate()
+    {
+        int invalidVertices = 0;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vector3 v = vertices[i];
+            if (float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z))
+            {
+                vertices[i] = Vector3.zero;
+                invalidVertices++;
+            }
+        }
+        int invalidTriangles = 0;
+        for (int i = 0; i < triangles.Length; i++)
+        {
+            if (triangles[i] < 0 || triangles[i] >= vertices.Length)
+            {
+                triangles[i] = 0;
+                invalidTriangles++;
+            }
+        }
+        if (invalidVertices > 0 || invalidTriangles > 0)
+            Debug.LogError($"Terrain mesh data had {invalidVertices} invalid vertices and {invalidTriangles} invalid triangle indices (replaced).");
+    }
+
+    /// <summary>The mesh from data that <see cref="Prepare"/> already checked: only uploads, no recalculation or validation.</summary>
+    private Mesh UploadPrepared()
+    {
+        const UnityEngine.Rendering.MeshUpdateFlags flags = UnityEngine.Rendering.MeshUpdateFlags.DontValidateIndices |
+            UnityEngine.Rendering.MeshUpdateFlags.DontRecalculateBounds | UnityEngine.Rendering.MeshUpdateFlags.DontNotifyMeshUsers;
+        var mesh = new Mesh { name = "Terrain Mesh", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        mesh.SetVertices(vertices, 0, vertices.Length, flags);
+        mesh.SetNormals(preparedNormals, 0, preparedNormals.Length, flags);
+        mesh.SetUVs(0, uvs, 0, uvs.Length, flags);
+        mesh.SetUVs(1, splatUVs, 0, splatUVs.Length, flags);
+        if (colors != null && colors.Length == vertices.Length)
+            mesh.SetColors(colors, 0, colors.Length, flags);
+        mesh.SetIndexBufferParams(triangles.Length, UnityEngine.Rendering.IndexFormat.UInt32);
+        mesh.SetIndexBufferData(triangles, 0, 0, triangles.Length, flags);
+        mesh.subMeshCount = 1;
+        mesh.SetSubMesh(0, new UnityEngine.Rendering.SubMeshDescriptor(0, triangles.Length)
+        {
+            firstVertex = 0,
+            vertexCount = vertices.Length,
+            bounds = preparedBounds,
+        }, flags);
+        mesh.bounds = preparedBounds;
+        return mesh;
+    }
+
     public Mesh UpdateMesh()
     {
+        if (preparedNormals != null && preparedNormals.Length == vertices.Length)
+            return UploadPrepared();
+
         if (enableDebugging)
             Debug.Log($"UpdateMesh called - Vertices: {vertices.Length}, Triangles: {triangles.Length}");
 

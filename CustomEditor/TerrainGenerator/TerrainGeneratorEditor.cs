@@ -234,7 +234,9 @@ public partial class TerrainGeneratorEditor : Editor
         showPerformance = Section("Performance & Threading", showPerformance, () => DrawPerformanceSection(generator));
 
         EditorGUILayout.Space(6);
-        serializedObject.ApplyModifiedProperties();
+        bool changed = serializedObject.ApplyModifiedProperties() | settingsChangedByButton;
+        settingsChangedByButton = false;
+        SchedulePreviewUpdate(changed);
     }
 
     /// <summary>

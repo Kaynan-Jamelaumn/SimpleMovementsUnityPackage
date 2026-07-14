@@ -18,7 +18,17 @@ public partial class TerrainGeneratorEditor
             DrawProp("objectSpawnBudgetMs", "Spawn Budget (ms per frame)");
             DrawProp("maxObjectsPerFrame", "Max Objects Per Frame");
             EditorGUI.indentLevel--;
+
+            EditorGUILayout.Space(2);
+            EditorGUILayout.LabelField(new GUIContent("Far Objects", "Only chunks near the viewer get full objects; further away, objects keep their looks but lose their colliders, scripts and so on."), EditorStyles.miniBoldLabel);
+            EditorGUI.indentLevel++;
+            DrawProp("fullObjectDistance", "Full Object Distance (0 = off)");
+            using (new EditorGUI.DisabledScope(serializedObject.FindProperty("fullObjectDistance").floatValue <= 0f))
+                DrawProp("farObjectParts", "Far Object Parts");
+            DrawFarObjectInfo(generator);
+            EditorGUI.indentLevel--;
         }
+        ResetButtons("object", ObjectRecommended, ObjectFields, "Leaves Should Spawn Objects as it is.");
 
         EditorGUILayout.HelpBox(
             "Each object's rules are on its entry in a biome's object list (Biomes section > a biome > Runtime Objects): density, biomes and " +
@@ -34,6 +44,34 @@ public partial class TerrainGeneratorEditor
             DrawPlacementReport(generator);
         else
             EditorGUILayout.HelpBox("In Play mode, a report here shows how many of each object were placed in the loaded chunks, and why the rest of their candidate spots were rejected - the quickest way to see which rule keeps an object from spawning.", MessageType.None);
+    }
+
+    /// <summary>What Far Objects means with the current settings, and in Play mode how many chunks are far.</summary>
+    private void DrawFarObjectInfo(TerrainGenerator generator)
+    {
+        float distance = serializedObject.FindProperty("fullObjectDistance").floatValue;
+        if (distance <= 0f)
+        {
+            EditorGUILayout.LabelField("Off: every chunk keeps its objects fully working.", EditorStyles.wordWrappedMiniLabel);
+            return;
+        }
+        var parts = (FarObjectParts)serializedObject.FindProperty("farObjectParts").intValue;
+        int span = Mathf.Max(1, generator.ChunkSize - 1);
+        var names = new List<string>();
+        if ((parts & FarObjectParts.Colliders) != 0) names.Add("colliders (Rigidbodies kinematic)");
+        if ((parts & FarObjectParts.Scripts) != 0) names.Add("scripts");
+        if ((parts & FarObjectParts.Animators) != 0) names.Add("animators");
+        if ((parts & FarObjectParts.Audio) != 0) names.Add("audio");
+        if ((parts & FarObjectParts.Lights) != 0) names.Add("lights");
+        float margin = Mathf.Max(20f, distance * 0.2f);
+        string text = names.Count == 0
+            ? "Far Object Parts is empty: nothing is switched off."
+            : $"Chunks whose nearest edge is within {distance:0} units of the viewer (your chunk and about {Mathf.CeilToInt(distance / span)} ring{(distance > span ? "s" : "")} around it) keep full objects. " +
+              $"Beyond {distance + margin:0} units, objects switch off their {string.Join(", ", names)} - they still look the same. " +
+              "Physics, raycasts and AI further away than that pass through them. Scripts implementing IFarTerrainObject stay on and are told instead; objects with Terrain Object Keep Full are never touched.";
+        EditorGUILayout.LabelField(text, EditorStyles.wordWrappedMiniLabel);
+        if (Application.isPlaying)
+            EditorGUILayout.LabelField($"Now: {generator.FarObjects.FarChunks} chunk(s) with far objects, {generator.FarObjects.SwitchingChunks} switching.", EditorStyles.miniLabel);
     }
 
     /// <summary>Per object type over the loaded chunks: placed, tried, and the stages that rejected the most spots.</summary>
@@ -145,6 +183,10 @@ public partial class TerrainGeneratorEditor
             DrawProp("wetnessSmoothness", "Wet Ground Smoothness");
             EditorGUI.indentLevel--;
         }
+        DrawTriplanarCurve(generator);
+        DrawBiomeTextureStrip(generator);
+        InlinePreviewButton("Preview Tri-Planar Areas", "Shows where the terrain's textures are projected from the sides (orange) on the World Preview, around the Scene view position.", PreviewMode.TriPlanar, 4000f);
+        ResetButtons("terrain material", MaterialRecommended, MaterialFields, "Leaves the Terrain Shader choice and the Custom Terrain Material alone.");
 
         var info = new StringBuilder();
         info.Append("Package (Tri-Planar) projects the biome textures in world space: from above on gentle ground, and from the sides as well " +
@@ -164,10 +206,28 @@ public partial class TerrainGeneratorEditor
     /// <summary>Contents of the "Performance & Threading" section.</summary>
     private void DrawPerformanceSection(TerrainGenerator generator)
     {
+        EditorGUILayout.LabelField("Threads & Frame Budget", EditorStyles.miniBoldLabel);
         DrawProp("workerThreads", "Worker Threads");
         if (serializedObject.FindProperty("workerThreads").intValue <= 0)
             EditorGUILayout.LabelField($"Automatic: {TerrainWorkerPool.DefaultThreadCount} threads on this machine", EditorStyles.miniLabel);
         DrawProp("mainThreadBudgetMs", "Main Thread Budget (ms per frame)");
+        DrawProp("objectSpawnBudgetMs", "Object Spawn Budget (ms per frame)");
+        DrawProp("maxObjectsPerFrame", "Max Objects Per Frame");
+        DrawProp("prepareMeshesOnWorkers", "Prepare Meshes On Workers");
+        float frame = serializedObject.FindProperty("mainThreadBudgetMs").floatValue + serializedObject.FindProperty("objectSpawnBudgetMs").floatValue;
+        EditorGUILayout.LabelField($"   Up to {frame:0.#} ms of each frame goes to the terrain while chunks load ({100f * frame / 16.7f:0}% of a 60 fps frame).", EditorStyles.miniLabel);
+
+        EditorGUILayout.Space(2);
+        EditorGUILayout.LabelField("Object Pooling", EditorStyles.miniBoldLabel);
+        DrawProp("poolObjects", "Reuse Objects Of Unloaded Chunks");
+        using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("poolObjects").boolValue))
+            DrawProp("maxPooledObjects", "Max Pooled Objects");
+
+        EditorGUILayout.Space(2);
+        EditorGUILayout.LabelField("Biome Textures", EditorStyles.miniBoldLabel);
+        DrawProp("biomeTextureQuality", "Texture Quality");
+        DrawProp("biomeTextureResolution", "Texture Resolution (0 = auto)");
+        DrawBiomeTextureMemory(generator);
 
         EditorGUILayout.HelpBox(
             "Chunks are generated on a fixed set of worker threads, nearest to the viewer first (re-checked as the viewer moves), instead of one " +
@@ -182,9 +242,51 @@ public partial class TerrainGeneratorEditor
                 $"Worker jobs waiting: {generator.PendingWorkerJobs} ({generator.WorkerThreads} threads)\n" +
                 $"Results waiting for the main thread: {generator.PendingMainThreadWork}\n" +
                 $"Objects waiting to be created: {generator.ObjectInstantiator.PendingObjects}\n" +
+                $"Objects in the pool: {generator.ObjectInstantiator.PooledObjects}\n" +
                 $"Chunks loaded: {LoadedTerrain.Count}",
                 MessageType.None);
             Repaint();
         }
+
+        ResetButtons("performance", PerformanceRecommended, PerformanceFields, null, "Auto-Detect For This Computer",
+            "Chooses the budgets, pool size and biome texture storage from this computer's CPU, memory and video memory, and tells you what it picked.",
+            AutoDetectPerformance);
+    }
+
+    /// <summary>What the biome texture array will cost with the current Texture Quality and textures.</summary>
+    private void DrawBiomeTextureMemory(TerrainGenerator generator)
+    {
+        if (generator.BiomeDefinitions == null)
+            return;
+        var textures = new List<Texture2D>();
+        foreach (BiomeInstance instance in generator.BiomeDefinitions)
+            if (instance?.BiomePrefab != null)
+                textures.Add(instance.BiomePrefab.texture);
+        if (textures.Count == 0)
+            return;
+
+        var quality = (BiomeTextureQuality)serializedObject.FindProperty("biomeTextureQuality").intValue;
+        int resolutionSetting = serializedObject.FindProperty("biomeTextureResolution").intValue;
+        int resolution = resolutionSetting > 0 ? Mathf.Clamp(Mathf.ClosestPowerOfTwo(resolutionSetting), 64, 4096)
+            : Mathf.Clamp(Mathf.RoundToInt(1024f * Mathf.Sqrt((float)generator.ChunkSize / TerrainGenerator.MaxChunkSize)), 512, 2048);
+        bool matching = textures.TrueForAll(t => t != null && textures[0] != null && t.width == textures[0].width && t.height == textures[0].height && t.format == textures[0].format && t.mipmapCount == textures[0].mipmapCount);
+
+        string how;
+        float megabytes;
+        if (quality == BiomeTextureQuality.Automatic && matching)
+        {
+            megabytes = 0f;
+            foreach (Texture2D t in textures)
+                megabytes += UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(t) / (1024f * 1024f);
+            how = $"all {textures.Count} textures are {textures[0].width} x {textures[0].height} {textures[0].format}, so they are copied as imported (no quality loss)";
+        }
+        else
+        {
+            bool compressed = quality == BiomeTextureQuality.Compressed;
+            megabytes = textures.Count * resolution * resolution * (compressed ? 1f : 4f) * 1.333f / (1024f * 1024f);
+            how = (quality == BiomeTextureQuality.Automatic ? "the textures differ in size or format, so they are " : "") +
+                  $"resized to {resolution} x {resolution}, {(compressed ? "compressed (DXT5)" : "uncompressed")}";
+        }
+        EditorGUILayout.LabelField($"   Biome texture array: {how} - about {megabytes:0.#} MB of video memory, shared by every chunk.", EditorStyles.wordWrappedMiniLabel);
     }
 }

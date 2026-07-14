@@ -37,6 +37,17 @@ public partial class TerrainGeneratorEditor : Editor
                 MessageType.Warning);
         }
 
+        if (generator.VoronoiScale * generator.BiomeBlendRange < 10f || (UsesReliefLandforms(generator) && generator.LandformTransitionWidth < 0.15f))
+        {
+            EditorGUILayout.HelpBox(
+                "Biome borders are set up to be abrupt: " +
+                (generator.VoronoiScale * generator.BiomeBlendRange < 10f ? $"Height Blend Range gives only {generator.VoronoiScale * generator.BiomeBlendRange:0.#} units of transition" : "") +
+                (generator.VoronoiScale * generator.BiomeBlendRange < 10f && UsesReliefLandforms(generator) && generator.LandformTransitionWidth < 0.15f ? " and " : "") +
+                (UsesReliefLandforms(generator) && generator.LandformTransitionWidth < 0.15f ? $"Relief Transition Width {generator.LandformTransitionWidth:0.##} makes mountains and hills drop right at their border" : "") +
+                " - expect steps and walls between biomes. See Natural Biome Placement > Border Check (Soften Borders).",
+                MessageType.Warning);
+        }
+
         float regionWidth = generator.VoronoiScale / Mathf.Sqrt(Mathf.Max(1, generator.NumVoronoiPoints));
         float blendBand = generator.VoronoiScale * generator.BiomeBlendRange;
         if (blendBand > regionWidth * 0.6f)

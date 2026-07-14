@@ -737,6 +737,23 @@ public partial class TerrainGenerator : MonoBehaviour
     [Tooltip("Most objects created per frame (whatever the time budget).")]
     [SerializeField] private int maxObjectsPerFrame = 300;
 
+    [Header("Far Objects")]
+    [Tooltip("Only chunks whose nearest edge is within this distance (world units) of the viewer get their full objects. In chunks further away, " +
+             "placed objects still look the same (their renderers and LOD groups are untouched), but the parts chosen in Far Object Parts - " +
+             "colliders, scripts, animators, audio, lights - are switched off, and switched back on as the chunk comes near again. " +
+             "0 = off: every chunk keeps full objects.\n\n" +
+             "Chunks switch to far a little beyond this distance (20% more, at least 20 units), so a chunk near the limit doesn't flip back and forth. " +
+             "Switching is spread over frames within Spawn Budget, nearest chunks first.\n\n" +
+             "Things far away can't collide with far objects: physics, raycasts and AI beyond this distance pass through them.")]
+    [SerializeField] private float fullObjectDistance = 150f;
+    [Tooltip("What far objects switch off (see Full Object Distance).\n\n" +
+             "Colliders: every collider; Rigidbodies are made kinematic meanwhile, so nothing falls through the ground.\n" +
+             "Scripts: every MonoBehaviour, except scripts implementing IFarTerrainObject - those stay on and are told instead (OnFar / OnNear).\n" +
+             "Animators: Animator and Animation components.\nAudio: Audio Sources.\nLights: Lights (off by default - distant lights usually matter).\n\n" +
+             "Objects with a Terrain Object Keep Full component on their root are always left fully on. Only what was on is switched off, " +
+             "and exactly that is switched back on.")]
+    [SerializeField] private FarObjectParts farObjectParts = FarObjectParts.Colliders | FarObjectParts.Scripts | FarObjectParts.Animators | FarObjectParts.Audio;
+
     [Header("Terrain Material")]
     [Tooltip("Which shader draws the terrain.\n\nPackage (Tri-Planar): the package's own terrain shader (URP and Built-in). Biome textures blended by the splat maps, projected from the sides on steep ground - cliffs, mountains, abrupt rises and drops - so they don't stretch; wet ground near water darker and glossier.\nProject Shader: your project's 'Custom/TerrainSplatMapShaderURP' (or HDRP) shader, as before.\nCustom Material: a copy of Custom Terrain Material, whose shader reads the same properties (_TextureArray, _SplatMaps, _SplatMapCount...).\n\nUnder HDRP the package shader isn't available, so the project shader is used.")]
     [SerializeField] private TerrainShaderMode terrainShader = TerrainShaderMode.PackageTriplanar;
@@ -764,6 +781,20 @@ public partial class TerrainGenerator : MonoBehaviour
     [SerializeField][Range(0, 16)] private int workerThreads = 0;
     [Tooltip("Most time (milliseconds) spent per frame applying finished chunk data on the main thread (textures, meshes, colliders). At least one result is applied every frame.")]
     [SerializeField] private float mainThreadBudgetMs = 4f;
+    [Tooltip("Build each terrain mesh's normals, bounds and checks on the worker threads, so the main thread only uploads the finished data - the costliest part of showing a chunk at a detailed Level Of Detail. Turn off only if the terrain's lighting looks different from before (it uses the same area-weighted normals as Unity's RecalculateNormals).")]
+    [SerializeField] private bool prepareMeshesOnWorkers = true;
+
+    [Header("Object Pooling")]
+    [Tooltip("Keep the objects of unloaded chunks (trees, rocks...) switched off in a pool and reuse them when a chunk needs the same prefab, instead of destroying them and creating new ones - fewer hitches and less garbage when walking back and forth.\n\nReused objects keep their components' state; scripts that need resetting can implement IPooledTerrainObject.")]
+    [SerializeField] private bool poolObjects = true;
+    [Tooltip("Most objects kept in the pool (all prefabs together). Beyond this, objects of unloaded chunks are destroyed. Each pooled object costs memory like a live one.")]
+    [SerializeField] private int maxPooledObjects = 4000;
+
+    [Header("Biome Textures")]
+    [Tooltip("How the biome textures are stored in the texture array every chunk shares.\n\nAutomatic: when all biome textures have the same size and format, they are copied as they are - same quality and compression as their import settings, the least memory, and the fastest start. Otherwise they are resized and stored uncompressed.\nUncompressed: always resized to Texture Resolution, uncompressed (4 bytes per pixel - about 5.6 MB per biome at 1024).\nCompressed: resized, then compressed (DXT5, 1 byte per pixel - a quarter of the memory). Looks nearly the same; very smooth gradients can band slightly. Desktop graphics only (falls back to Uncompressed elsewhere).")]
+    [SerializeField] private BiomeTextureQuality biomeTextureQuality = BiomeTextureQuality.Automatic;
+    [Tooltip("Size (pixels) the biome textures are resized to when they are resized (Uncompressed / Compressed, or Automatic when the textures differ). 0 = automatic (1024 at the largest chunk size).")]
+    [SerializeField] private int biomeTextureResolution = 0;
 
     // Guards minHeight/maxHeight, which UpdateMinMaxHeight below mutates from multiple
     // concurrent per-chunk worker threads (all sharing this one TerrainGenerator instance).

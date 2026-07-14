@@ -31,6 +31,7 @@ public partial class TerrainGeneratorEditor : Editor
             DrawVolcanoInfo(generator);
         }
         DrawVolcanoBiomeStatus(generator);
+        InlinePreviewButton("Preview Volcanoes", "Draws the area around the Scene view position (World Preview, Height view) large enough to show a few volcanoes - they appear as the brightest rings and cones.", PreviewMode.Height, Mathf.Clamp(serializedObject.FindProperty("volcanoSpacing").floatValue * 3f, 4000f, 60000f));
 
         EditorGUILayout.Space(2);
         EditorGUILayout.BeginHorizontal();

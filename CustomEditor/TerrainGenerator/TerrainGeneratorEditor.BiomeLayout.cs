@@ -19,6 +19,9 @@ public partial class TerrainGeneratorEditor : Editor
             "Cluster Radius) derive their own scale from as a multiplier, so they automatically stay " +
             "proportioned if you change this.",
             MessageType.None);
+        DrawVoronoiInfo();
+        InlinePreviewButton("Preview Biome Layout", "Draws the biome regions around the Scene view position (World Preview, Biomes view) - enough area to see several regions.", PreviewMode.Biomes, Mathf.Clamp(voronoiScaleProp.floatValue * 12f, 1500f, 20000f));
+        ResetButtons("Voronoi grid", VoronoiRecommended, VoronoiFields, "Leaves Voronoi Seed as it is (Reset To Default sets it back to 0).");
     }
 
     /// <summary>Contents of the "Natural Biome Placement" section.</summary>
@@ -54,12 +57,19 @@ public partial class TerrainGeneratorEditor : Editor
             "walls at biome borders without touching either biome's own natural terrain elsewhere. " +
             "0 disables this and leaves border width exactly as Blend Range specifies.",
             MessageType.None);
+        DrawBorderCheck(generator);
 
         EditorGUILayout.Space(2);
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Cluster Strength, Cluster Radius Multiplier, Repeat Penalty, Border Warp Strength/Scale, Blend Range, Blend Texturing, Textures Per Pixel and Boundary Max Walkable Slope to their recommended default values.")))
+        if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Cluster Strength 0.5, Cluster Radius Multiplier 1.5, Repeat Penalty 0.6, Border Warp Strength 50 / Scale 1.5, " +
+                $"Blend Range {SuggestedBlendRange(numVoronoiPointsProp.intValue):0.##} (suited to {numVoronoiPointsProp.intValue} biome points per cell), Blend Texturing on, Textures Per Pixel 4, " +
+                "Boundary Max Walkable Slope 28 and Order-Independent Layout on.")))
         {
             ResetBiomePlacementToRecommended();
+        }
+        if (GUILayout.Button(new GUIContent("Reset To Default", "Restores every Natural Biome Placement setting (including Order-Independent Layout) to its factory default.")))
+        {
+            ResetToDefault(BiomePlacementFields);
         }
         if (GUILayout.Button(new GUIContent("Turn Off", "Disables natural biome placement's effect: sets Cluster Strength, Repeat Penalty and Border Warp Strength to 0 (their 'fully disabled' value per the code's own design - see tooltips) and Blend Range and Boundary Max Walkable Slope to 0 (hard biome borders, no smoothing). Cluster Radius Multiplier, Warp Scale Multiplier and Blend Texturing are left as-is since they have no effect once their associated strength is 0.")))
         {
@@ -106,12 +116,17 @@ public partial class TerrainGeneratorEditor : Editor
             "carving power) hydraulic erosion droplets get, per-biome-adjusted by that biome's Rainfall " +
             "Erosion Multiplier.",
             MessageType.Info);
+        InlinePreviewButton("Preview Climate", "Draws temperature (red = hot, blue = cold) and moisture (green = wet) around the Scene view position (World Preview, Climate view), with rain shadows, altitude cooling and coastal moisture when they are on.", PreviewMode.Climate, Mathf.Clamp(generator.ClimateNoiseScale * 4f, 2000f, 40000f));
 
         EditorGUILayout.Space(2);
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Use Natural Climate Placement (ON), Climate Scale Multiplier and the Terrain Influence settings to their recommended default values.")))
         {
             ResetClimateToRecommended();
+        }
+        if (GUILayout.Button(new GUIContent("Reset To Default", "Restores every climate setting to its factory default.")))
+        {
+            ResetToDefault(ClimateFields);
         }
         if (GUILayout.Button(new GUIContent("Turn Off", "Disables climate-driven biome placement (Use Natural Climate Placement = OFF). Note: Moisture still feeds hydraulic erosion's rainfall strength regardless of this setting, whenever Erosion is enabled.")))
         {
@@ -270,11 +285,13 @@ public partial class TerrainGeneratorEditor : Editor
         biomeRepeatPenaltyProp.floatValue = 0.6f;
         voronoiWarpStrengthProp.floatValue = 50f;
         voronoiWarpScaleMultiplierProp.floatValue = 1.5f;
-        biomeBlendRangeProp.floatValue = 0.25f;
+        biomeBlendRangeProp.floatValue = SuggestedBlendRange(numVoronoiPointsProp.intValue);
         useBiomeBlendedTexturingProp.boolValue = true;
         serializedObject.FindProperty("splatTexturesPerPixel").intValue = 4;
         biomeBoundaryMaxSlopeDegreesProp.floatValue = 28f;
+        serializedObject.FindProperty("orderIndependentBiomeLayout").boolValue = true;
         serializedObject.ApplyModifiedProperties();
+        settingsChangedByButton = true;
     }
 
     private void DisableBiomePlacement()

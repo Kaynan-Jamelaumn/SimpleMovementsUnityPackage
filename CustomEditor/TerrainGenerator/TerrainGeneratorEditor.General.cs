@@ -26,6 +26,8 @@ public partial class TerrainGeneratorEditor : Editor
             "Both only affect biomes using the Classic landform. Other landforms choose their own layers " +
             "(down to a few world units of detail) - see Terrain Shape (Landforms).",
             MessageType.None);
+        DrawNoisePreview();
+        ResetButtons("noise", NoiseRecommended, NoiseFields);
     }
 
     /// <summary>Contents of the "Height Range & Texture" section.</summary>
@@ -85,6 +87,9 @@ public partial class TerrainGeneratorEditor : Editor
                 "read as an obviously repeating pattern. Strongly recommended ON.",
                 MessageType.Warning);
         }
+        DrawTextureVariationInfo(generator);
+        ResetButtons("texture variation", TextureVariationRecommended, TextureVariationFields,
+            "Recommended also turns on the shader-based enhancements, with a gentle Blend Sharpness of 1.5.");
     }
 
     /// <summary>Contents of the "Other Configuration" section.</summary>
@@ -105,6 +110,8 @@ public partial class TerrainGeneratorEditor : Editor
         }
         EditorGUI.indentLevel--;
         DrawLodInfo();
+        ResetButtons("level of detail", LodRecommended, LodFields,
+            "Recommended is Level Of Detail 2 (a vertex every 4 cells) with distance LOD - detailed nearby, cheap far away; the factory default is the much coarser Level Of Detail 6.");
     }
 
     /// <summary>Which level of detail chunks get at which distance, and what that saves.</summary>

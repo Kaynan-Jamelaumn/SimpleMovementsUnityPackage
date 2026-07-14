@@ -12,6 +12,17 @@ public enum TerrainShaderMode
     CustomMaterial,
 }
 
+/// <summary>How the biome textures are stored in the texture array every chunk shares (see TerrainGenerator > Biome Textures).</summary>
+public enum BiomeTextureQuality
+{
+    /// <summary>Copied as imported when all biome textures match in size and format (no quality loss, least memory); otherwise Uncompressed.</summary>
+    Automatic,
+    /// <summary>Resized, 4 bytes per pixel.</summary>
+    Uncompressed,
+    /// <summary>Resized, then compressed to DXT5 (1 byte per pixel) where the graphics card supports it.</summary>
+    Compressed,
+}
+
 /// <summary>
 /// The <see cref="TextureGenerator"/> class is responsible for managing texture assignments for terrain rendering.
 /// It handles the creation and assignment of texture arrays to materials, including biome textures and splat maps.
@@ -26,7 +37,7 @@ public class TextureGenerator
 
     // Biome texture arrays shared by every chunk, by the textures they hold and their resolution.
     private static readonly List<KeyValuePair<Texture2D[], Texture2DArray>> SharedBiomeArrays = new List<KeyValuePair<Texture2D[], Texture2DArray>>();
-    private static readonly List<int> SharedBiomeArrayResolutions = new List<int>();
+    private static readonly List<string> SharedBiomeArrayKeys = new List<string>();
 
     /// <summary>
     /// Assigns four individual textures (for different biome layers) and a splat map to a material on a mesh renderer.
@@ -88,8 +99,10 @@ public class TextureGenerator
         List<Texture2D> biomeTextures = terrainGenerator.EnableTextureVariations
             ? CreateBiomeTextureListWithVariations(terrainGenerator)
             : CreateBiomeTextureListOriginal(terrainGenerator);
-        int textureResolution = GetOptimalTextureResolution(terrainGenerator);
-        Texture2DArray textureArray = GetSharedBiomeArray(biomeTextures, textureResolution);
+        int textureResolution = terrainGenerator.BiomeTextureResolution > 0
+            ? Mathf.Clamp(Mathf.ClosestPowerOfTwo(terrainGenerator.BiomeTextureResolution), 64, 4096)
+            : GetOptimalTextureResolution(terrainGenerator);
+        Texture2DArray textureArray = GetSharedBiomeArray(biomeTextures, textureResolution, terrainGenerator.BiomeTextureQualitySetting);
 
         // The package shader reads the weights as plain numbers (linear); project shaders get the sRGB array
         // they always had, so they look exactly as before.
@@ -160,7 +173,7 @@ public class TextureGenerator
         foreach (KeyValuePair<Texture2D[], Texture2DArray> entry in SharedBiomeArrays)
             DestroyObject(entry.Value);
         SharedBiomeArrays.Clear();
-        SharedBiomeArrayResolutions.Clear();
+        SharedBiomeArrayKeys.Clear();
     }
 
     /// <summary>
@@ -203,20 +216,65 @@ public class TextureGenerator
         return shader != null && shader.isSupported ? shader : null;
     }
 
-    /// <summary>The biome texture array for these textures - built once, then shared by every chunk.</summary>
-    private static Texture2DArray GetSharedBiomeArray(List<Texture2D> textures, int resolution)
+    /// <summary>The biome texture array for these textures and settings - built once, then shared by every chunk.</summary>
+    private static Texture2DArray GetSharedBiomeArray(List<Texture2D> textures, int resolution, BiomeTextureQuality quality)
     {
+        string settings = quality + "/" + resolution;
         for (int i = 0; i < SharedBiomeArrays.Count; i++)
         {
             KeyValuePair<Texture2D[], Texture2DArray> entry = SharedBiomeArrays[i];
-            if (entry.Value != null && SharedBiomeArrayResolutions[i] == resolution && SameTextures(entry.Key, textures))
+            if (entry.Value != null && SharedBiomeArrayKeys[i] == settings && SameTextures(entry.Key, textures))
                 return entry.Value;
         }
 
-        Texture2DArray array = CreateTextureArray(textures.ToArray(), resolution, resolution, TextureFormat.RGBA32);
+        Texture2DArray array = null;
+        if (quality == BiomeTextureQuality.Automatic)
+            array = CopySourceTextures(textures);
+        if (array == null)
+        {
+            bool compress = quality == BiomeTextureQuality.Compressed && SystemInfo.SupportsTextureFormat(TextureFormat.DXT5);
+            array = CreateTextureArray(textures.ToArray(), resolution, resolution, TextureFormat.RGBA32, true, compress);
+        }
         array.name = "Biome Textures (shared)";
         SharedBiomeArrays.Add(new KeyValuePair<Texture2D[], Texture2DArray>(textures.ToArray(), array));
-        SharedBiomeArrayResolutions.Add(resolution);
+        SharedBiomeArrayKeys.Add(settings);
+        return array;
+    }
+
+    /// <summary>
+    /// The biome textures copied into an array exactly as they were imported (same size, format, compression and
+    /// mipmaps) - on the graphics card only, no resizing or read-back. Null when they don't all match or the
+    /// platform can't copy textures, so the caller resizes them instead.
+    /// </summary>
+    private static Texture2DArray CopySourceTextures(List<Texture2D> textures)
+    {
+        if (textures.Count == 0 || (SystemInfo.copyTextureSupport & UnityEngine.Rendering.CopyTextureSupport.Basic) == 0)
+            return null;
+        Texture2D first = textures[0];
+        if (first == null)
+            return null;
+        bool srgb = UnityEngine.Experimental.Rendering.GraphicsFormatUtility.IsSRGBFormat(first.graphicsFormat);
+        foreach (Texture2D texture in textures)
+        {
+            if (texture == null || texture.width != first.width || texture.height != first.height || texture.format != first.format ||
+                texture.mipmapCount != first.mipmapCount || texture.graphicsFormat != first.graphicsFormat)
+                return null;
+        }
+        // Crunched textures are only unpacked when loaded; copying them isn't dependable.
+        if (first.format == TextureFormat.DXT1Crunched || first.format == TextureFormat.DXT5Crunched ||
+            first.format == TextureFormat.ETC_RGB4Crunched || first.format == TextureFormat.ETC2_RGBA8Crunched)
+            return null;
+
+        var array = new Texture2DArray(first.width, first.height, textures.Count, first.format, first.mipmapCount > 1, !srgb);
+        if (array.mipmapCount != first.mipmapCount)
+        {
+            DestroyObject(array);
+            return null;
+        }
+        // Upload nothing and drop the CPU copy first: the pixels only ever exist on the graphics card.
+        array.Apply(false, true);
+        for (int i = 0; i < textures.Count; i++)
+            Graphics.CopyTexture(textures[i], 0, array, i);
         return array;
     }
 
@@ -333,26 +391,33 @@ public class TextureGenerator
     /// <param name="format">The texture format to be used for the texture array.</param>
     /// <param name="mipmaps">Whether mipmaps should be generated for the texture array (default is true).</param>
     /// <returns>A <see cref="Texture2DArray"/> containing the standardized textures.</returns>
-    private static Texture2DArray CreateTextureArray(Texture2D[] textures, int width, int height, TextureFormat format, bool mipmaps = true)
+    /// <param name="compress">Compress each layer to DXT5 (a quarter of the memory; the caller checks the platform supports it).</param>
+    private static Texture2DArray CreateTextureArray(Texture2D[] textures, int width, int height, TextureFormat format, bool mipmaps = true, bool compress = false)
     {
         // Create a new Texture2DArray with the specified dimensions and format
-        Texture2DArray textureArray = new Texture2DArray(width, height, textures.Length, format, mipmaps);
+        Texture2DArray textureArray = new Texture2DArray(width, height, textures.Length, compress ? TextureFormat.DXT5 : format, mipmaps);
 
         // Loop through the textures and copy them into the texture array
         for (int i = 0; i < textures.Length; i++)
         {
             // Standardize each texture to the target dimensions and format
             Texture2D standardizedTexture = StandardizeTexture(textures[i], width, height, format);
+            if (compress)
+                standardizedTexture.Compress(true);
 
-            // Copy the standardized texture into the texture array at the corresponding index
-            Graphics.CopyTexture(standardizedTexture, 0, 0, textureArray, i, 0);
+            // Copy the standardized texture into the texture array at the corresponding index (compressed: every
+            // mipmap, already compressed; otherwise the full-size image, whose mipmaps Apply builds below).
+            if (compress)
+                Graphics.CopyTexture(standardizedTexture, 0, textureArray, i);
+            else
+                Graphics.CopyTexture(standardizedTexture, 0, 0, textureArray, i, 0);
 
             // The resized copy was only needed for this.
             DestroyObject(standardizedTexture);
         }
 
         // Apply the texture array (commits changes to the GPU, builds the mipmaps) and free its CPU copy.
-        textureArray.Apply(mipmaps, true);
+        textureArray.Apply(mipmaps && !compress, true);
 
         return textureArray;
     }

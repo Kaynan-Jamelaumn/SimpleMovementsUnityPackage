@@ -34,6 +34,10 @@ public partial class TerrainGeneratorEditor : Editor
         {
             ResetErosionToRecommended();
         }
+        if (GUILayout.Button(new GUIContent("Reset To Default", "Restores every erosion setting (thermal and hydraulic, including Enable Erosion, Padding and Seamless Erosion) to its factory default.")))
+        {
+            ResetToDefault(ErosionFields);
+        }
         if (GUILayout.Button(new GUIContent("Turn Off", "Disables erosion entirely (Enable Erosion = OFF). Every other erosion field is left as-is so your tuning is preserved if you turn it back on.")))
         {
             DisableErosion();

@@ -5,6 +5,20 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 /// <summary>
+/// Optional, for components on placed objects' prefabs (root object only) that keep state while the object is in
+/// use - health, harvested fruit, open doors: with object pooling on, an object of an unloaded chunk is reused
+/// for another chunk, and these calls are the chance to reset that state.
+/// </summary>
+public interface IPooledTerrainObject
+{
+    /// <summary>The object was taken from the pool and placed again (it is active, at its new pose).</summary>
+    void OnTakenFromPool();
+
+    /// <summary>The object is going into the pool (its chunk was unloaded).</summary>
+    void OnReturnedToPool();
+}
+
+/// <summary>
 /// Creates the objects that object placement decided (see <see cref="ObjectPlacementEngine"/>) on the main
 /// thread, within a time budget per frame and nearest chunk first - so the hundreds of trees and rocks of a
 /// newly generated chunk appear over a few frames instead of in one hitch, and the chunks next to the
@@ -38,6 +52,22 @@ public sealed class PlacementInstantiator
     private readonly List<Batch> batches = new List<Batch>();
     private readonly Stopwatch watch = new Stopwatch();
     private static readonly List<Renderer> Renderers = new List<Renderer>();
+    private static readonly List<IPooledTerrainObject> PoolListeners = new List<IPooledTerrainObject>();
+
+    // Object pool: switched-off objects of unloaded chunks, per prefab, reused before creating new ones.
+    private readonly Dictionary<GameObject, Stack<GameObject>> pool = new Dictionary<GameObject, Stack<GameObject>>();
+    private Transform poolRoot;
+    private int pooledCount;
+
+    /// <summary>Reuse objects of unloaded chunks (see <see cref="Release"/>).</summary>
+    public bool PoolingEnabled = true;
+    /// <summary>Most objects kept in the pool, all prefabs together.</summary>
+    public int MaxPooled = 4000;
+    /// <summary>Where the pool's (inactive) holder object goes in the hierarchy.</summary>
+    public Transform PoolParent;
+
+    /// <summary>Objects waiting in the pool.</summary>
+    public int PooledObjects => pooledCount;
 
     /// <summary>Batches with objects still to create.</summary>
     public int PendingBatches => batches.Count;
@@ -85,6 +115,89 @@ public sealed class PlacementInstantiator
     public void Clear()
     {
         batches.Clear();
+    }
+
+    /// <summary>
+    /// Takes back a placed object whose chunk is going away: kept (switched off) for reuse when pooling is on and
+    /// the pool has room, destroyed otherwise.
+    /// </summary>
+    public void Release(GameObject prefab, GameObject instance)
+    {
+        if (instance == null)
+            return;
+        Transform root = PoolingEnabled && prefab != null && pooledCount < MaxPooled ? PoolRoot() : null;
+        if (root == null)
+        {
+            Object.Destroy(instance);
+            return;
+        }
+
+        Notify(instance, false);
+        // Under the inactive holder it is switched off without touching its own active flag.
+        instance.transform.SetParent(root, false);
+        if (!pool.TryGetValue(prefab, out Stack<GameObject> stack))
+            pool[prefab] = stack = new Stack<GameObject>();
+        stack.Push(instance);
+        pooledCount++;
+    }
+
+    /// <summary>Destroys every pooled object.</summary>
+    public void ClearPool()
+    {
+        foreach (Stack<GameObject> stack in pool.Values)
+            foreach (GameObject instance in stack)
+                if (instance != null)
+                    Object.Destroy(instance);
+        pool.Clear();
+        pooledCount = 0;
+        if (poolRoot != null)
+            Object.Destroy(poolRoot.gameObject);
+        poolRoot = null;
+    }
+
+    private Transform PoolRoot()
+    {
+        if (poolRoot == null)
+        {
+            var holder = new GameObject("Terrain Object Pool");
+            holder.SetActive(false);
+            if (PoolParent != null)
+                holder.transform.SetParent(PoolParent, false);
+            poolRoot = holder.transform;
+        }
+        return poolRoot;
+    }
+
+    /// <summary>A pooled copy of the prefab placed at the pose, or null when the pool has none.</summary>
+    private GameObject TakeFromPool(GameObject prefab, Vector3 position, Quaternion rotation, Transform parent)
+    {
+        if (!pool.TryGetValue(prefab, out Stack<GameObject> stack))
+            return null;
+        while (stack.Count > 0)
+        {
+            GameObject instance = stack.Pop();
+            pooledCount--;
+            if (instance == null)
+                continue;   // destroyed while pooled
+            instance.transform.SetParent(parent, false);
+            instance.transform.SetPositionAndRotation(position, rotation);
+            Notify(instance, true);
+            return instance;
+        }
+        return null;
+    }
+
+    private static void Notify(GameObject instance, bool taken)
+    {
+        instance.GetComponents(PoolListeners);
+        foreach (IPooledTerrainObject listener in PoolListeners)
+        {
+            if (taken)
+                listener.OnTakenFromPool();
+            else
+                listener.OnReturnedToPool();
+        }
+        PoolListeners.Clear();
     }
 
     /// <summary>
@@ -144,13 +257,14 @@ public sealed class PlacementInstantiator
         return best;
     }
 
-    private static GameObject Spawn(Batch batch, ObjectPlacement placement)
+    private GameObject Spawn(Batch batch, ObjectPlacement placement)
     {
         PlacementType type = batch.Plan.Types[placement.Type];
         if (type.Prefab == null)
             return null;
 
-        GameObject instance = Object.Instantiate(type.Prefab, placement.Position, placement.Rotation, batch.Parent);
+        GameObject instance = TakeFromPool(type.Prefab, placement.Position, placement.Rotation, batch.Parent)
+            ?? Object.Instantiate(type.Prefab, placement.Position, placement.Rotation, batch.Parent);
         instance.transform.localScale = placement.Scale;
         if (!float.IsNaN(placement.ExpectedMinY))
             CorrectHeight(instance, placement.ExpectedMinY);

@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
-using static UnityEngine.EventSystems.EventTrigger;
 
 // ObjectPlacementEngine, part 3: landmarks - rare objects placed at the best-suited spots of each world region,
 // with per-region limits, world-wide spacing, guaranteed and unique placement (see ObjectPlacementEngine.cs).
@@ -28,6 +27,53 @@ public static partial class ObjectPlacementEngine
     // A region's picks depend only on the world, the seed and the type's rules, so they are computed once and shared.
     private static readonly ConcurrentDictionary<RegionKey, Lazy<List<LandmarkPick>>> RegionPicks = new ConcurrentDictionary<RegionKey, Lazy<List<LandmarkPick>>>();
     private static readonly ConcurrentDictionary<RegionKey, Lazy<LandmarkPick>> UniquePicks = new ConcurrentDictionary<RegionKey, Lazy<LandmarkPick>>();
+
+    /// <summary>A landmark object's chosen spot (see <see cref="FindLandmarkSpots"/>).</summary>
+    public struct LandmarkSpot
+    {
+        /// <summary>Index into <see cref="PlacementPlan.Types"/>.</summary>
+        public int Type;
+        /// <summary>World X, Z.</summary>
+        public Vector2 Position;
+    }
+
+    /// <summary>
+    /// Where the plan's landmark objects will stand within an area - the spots chosen from the world's coarse
+    /// shape, known before any chunk there exists (for maps, quest markers, the editor's World Preview). Each spot
+    /// is confirmed on the chunk's exact terrain when the chunk is generated, so now and then one doesn't appear.
+    /// Main thread or not; results are cached.
+    /// </summary>
+    public static void FindLandmarkSpots(PlacementPlan plan, Vector2 min, Vector2 max, List<LandmarkSpot> into)
+    {
+        if (plan == null || plan.IsEmpty || into == null)
+            return;
+        foreach (PlacementType type in plan.Types)
+        {
+            if (!type.Landmark)
+                continue;
+            if (type.Def.limits.unique)
+            {
+                LandmarkPick unique = UniquePick(plan, type);
+                if (unique != null && unique.X >= min.x && unique.X < max.x && unique.Z >= min.y && unique.Z < max.y)
+                    into.Add(new LandmarkSpot { Type = type.Index, Position = new Vector2(unique.X, unique.Z) });
+                continue;
+            }
+            float size = Mathf.Max(16f, type.Def.limits.regionSize);
+            int rx0 = Mathf.FloorToInt(min.x / size), rx1 = Mathf.FloorToInt(max.x / size);
+            int rz0 = Mathf.FloorToInt(min.y / size), rz1 = Mathf.FloorToInt(max.y / size);
+            for (int rz = rz0; rz <= rz1; rz++)
+            {
+                for (int rx = rx0; rx <= rx1; rx++)
+                {
+                    foreach (LandmarkPick pick in FinalPicks(plan, type, rx, rz))
+                    {
+                        if (pick.X >= min.x && pick.X < max.x && pick.Z >= min.y && pick.Z < max.y)
+                            into.Add(new LandmarkSpot { Type = type.Index, Position = new Vector2(pick.X, pick.Z) });
+                    }
+                }
+            }
+        }
+    }
 
     /// <summary>Forgets the cached landmark choices (call when settings change; <see cref="WaterGenerator.ClearCaches"/> does).</summary>
     public static void ClearCaches()

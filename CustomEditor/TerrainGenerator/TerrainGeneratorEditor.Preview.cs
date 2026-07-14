@@ -1,17 +1,19 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
-// TerrainGeneratorEditor: the World Preview - a top-down map of the world drawn in the inspector (see TerrainGeneratorEditor.cs).
+// TerrainGeneratorEditor: the World Preview - a top-down map of the world drawn in the inspector, with several
+// views, overlays, a readout of the spot under the mouse and a right-click menu (see TerrainGeneratorEditor.cs).
 public partial class TerrainGeneratorEditor
 {
-    private enum PreviewMode { Combined, Height, Biomes, Water, Climate }
+    private enum PreviewMode { Combined, Height, Biomes, Water, Climate, Temperature, Moisture, Slope, TriPlanar, Landforms }
 
-    private static readonly int[] PreviewResolutions = { 128, 256, 384, 512 };
-    private static readonly string[] PreviewResolutionLabels = { "128 x 128 (fast)", "256 x 256", "384 x 384", "512 x 512 (slow)" };
+    private static readonly int[] PreviewResolutions = { 128, 256, 384, 512, 768 };
+    private static readonly string[] PreviewResolutionLabels = { "128 x 128 (fast)", "256 x 256", "384 x 384", "512 x 512", "768 x 768 (slow)" };
 
     private bool showPreview = true;
     private PreviewMode previewMode = PreviewMode.Combined;
@@ -21,7 +23,26 @@ public partial class TerrainGeneratorEditor
     private Texture2D previewTexture;
     private PreviewData previewData;
 
-    /// <summary>What a preview sampled, kept so switching the view mode only re-colors it.</summary>
+    // Display settings (re-colour only, no re-sampling).
+    private bool showPreviewSettings;
+    private float previewShading = 1f;
+    private float previewLightAngle = 315f;
+    private bool previewShowContours;
+    private float previewContourInterval = 25f;
+    private bool previewShowChunkGrid;
+    private bool previewShowBiomeBorders;
+    private bool previewShowOrigin = true;
+    private bool previewShowSceneView = true;
+    private bool previewShowLandmarks;
+    private bool previewAutoRegenerate;
+    private float previewImageSize = 512f;
+
+    // Where the last generated map was requested from (a section's inline button shows the map there too).
+    private string inlinePreviewOwner;
+    private string previewHover = "";
+    private double autoRegenerateAt = -1;
+
+    /// <summary>What a preview sampled, kept so switching the view mode or overlays only re-colors it.</summary>
     private sealed class PreviewData
     {
         public int Resolution;
@@ -34,10 +55,15 @@ public partial class TerrainGeneratorEditor
         public float[] Moisture;
         public List<Biome> Biomes = new List<Biome>();
         public Color[] BiomeColors;
+        public LandformType[] Landforms;
         public int[] BiomeCounts;
         public float SeaLevel;
         public float MinHeight, MaxHeight;
         public int Lakes, Ponds, Rivers;
+        public int ChunkSpan;
+        public float TriplanarStart, TriplanarEnd, TriplanarStrength;
+        public readonly List<ObjectPlacementEngine.LandmarkSpot> Landmarks = new List<ObjectPlacementEngine.LandmarkSpot>();
+        public readonly List<string> LandmarkNames = new List<string>();
         public long Milliseconds;
     }
 
@@ -45,9 +71,10 @@ public partial class TerrainGeneratorEditor
     private void DrawPreviewSection(TerrainGenerator generator)
     {
         EditorGUILayout.HelpBox(
-            "A top-down map of the world from the current settings - heights, biomes, oceans, lakes, ponds, rivers and volcanoes - " +
-            "without entering Play mode. It samples the terrain before erosion (erosion only changes small-scale detail), " +
-            "one sample per pixel, so very small features can fall between pixels. North (+Z) is up, east (+X) to the right.",
+            "A top-down map of the world from the current settings - heights, biomes, oceans, lakes, ponds, rivers, volcanoes, climate, slopes and " +
+            "landmarks - without entering Play mode. It samples the terrain before erosion (erosion only changes small-scale detail), one sample per " +
+            "pixel, so very small features can fall between pixels. North (+Z) is up, east (+X) to the right.\n\n" +
+            "Hover the map to read the spot under the mouse; double-click to center the map there; right-click for more.",
             MessageType.None);
 
         previewCenter = EditorGUILayout.Vector2Field(new GUIContent("Center (world X, Z)", "World position at the middle of the map. 0,0 is the usual spawn point."), previewCenter);
@@ -61,9 +88,14 @@ public partial class TerrainGeneratorEditor
         if (GUILayout.Button(new GUIContent("Reset To Origin", "Centers the map on world 0,0.")))
             previewCenter = Vector2.zero;
         EditorGUILayout.EndHorizontal();
-        previewSize = EditorGUILayout.Slider(new GUIContent("Area Size (world units)", "Width and height of the area shown. Larger areas show more of the world, with less detail per pixel."), previewSize, 500f, 30000f);
+        previewSize = EditorGUILayout.Slider(new GUIContent("Area Size (world units)", "Width and height of the area shown. Larger areas show more of the world, with less detail per pixel."), previewSize, 250f, 60000f);
         previewResolutionIndex = EditorGUILayout.Popup(new GUIContent("Resolution", "Pixels per side. Time grows with the square of this."), previewResolutionIndex, ToContents(PreviewResolutionLabels));
-        PreviewMode mode = (PreviewMode)EditorGUILayout.EnumPopup(new GUIContent("Show", "Combined: biome colours with hill shading and water. Height: elevation (dark = low, light = high). Biomes: the biome layout. Water: every water body by type. Climate: temperature (red = hot, blue = cold) and moisture (brighter green = wetter), including the terrain's influence."), previewMode);
+        PreviewMode mode = (PreviewMode)EditorGUILayout.EnumPopup(new GUIContent("Show",
+            "Combined: biome colours with hill shading and water.\nHeight: elevation (dark = low, light = high).\nBiomes: the biome layout.\n" +
+            "Water: every water body by type.\nClimate: temperature (red = hot, blue = cold) and moisture (brighter green = wetter).\n" +
+            "Temperature / Moisture: each on its own.\nSlope: steepness (green flat, yellow, orange, red steep).\n" +
+            "Tri-Planar: where the terrain shader projects textures from the sides (orange), from Terrain Material's slope settings.\n" +
+            "Landforms: which landform shapes the ground (from each biome's landform)."), previewMode);
         if (mode != previewMode)
         {
             previewMode = mode;
@@ -71,15 +103,34 @@ public partial class TerrainGeneratorEditor
                 Colorize();
         }
 
+        showPreviewSettings = EditorGUILayout.Foldout(showPreviewSettings, new GUIContent("Map Settings & Overlays", "How the map is drawn: shading, lines and markers, image size and automatic updates."), true);
+        if (showPreviewSettings)
+            DrawPreviewSettings();
+
         float pixelSize = previewSize / PreviewResolutions[previewResolutionIndex];
         EditorGUILayout.LabelField($"{previewSize / 1000f:0.#} x {previewSize / 1000f:0.#} km, one pixel = {pixelSize:0.#} world units (a chunk is {generator.ChunkSize - 1} units)", EditorStyles.miniLabel);
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Generate Preview", "Samples the world with the current settings and draws the map. Can be cancelled from the progress bar.")))
+        {
+            inlinePreviewOwner = null;
             GeneratePreview(generator);
+        }
+        if (GUILayout.Button(new GUIContent("Zoom In", "Halves the area shown (same center) and draws it again."), GUILayout.Width(62)))
+        {
+            previewSize = Mathf.Max(250f, previewSize * 0.5f);
+            GeneratePreview(generator);
+        }
+        if (GUILayout.Button(new GUIContent("Zoom Out", "Doubles the area shown (same center) and draws it again."), GUILayout.Width(70)))
+        {
+            previewSize = Mathf.Min(60000f, previewSize * 2f);
+            GeneratePreview(generator);
+        }
         using (new EditorGUI.DisabledScope(previewTexture == null))
         {
-            if (GUILayout.Button(new GUIContent("Clear", "Removes the preview image."), GUILayout.Width(60)))
+            if (GUILayout.Button(new GUIContent("Save PNG", "Saves the map as it is shown to a PNG file."), GUILayout.Width(70)))
+                SavePreviewPng();
+            if (GUILayout.Button(new GUIContent("Clear", "Removes the preview image."), GUILayout.Width(50)))
                 ClearPreview();
         }
         EditorGUILayout.EndHorizontal();
@@ -92,10 +143,168 @@ public partial class TerrainGeneratorEditor
         if (previewTexture == null || previewData == null)
             return;
 
-        float width = Mathf.Min(EditorGUIUtility.currentViewWidth - 40f, 512f);
+        DrawPreviewImage(previewImageSize);
+        DrawPreviewLegend();
+    }
+
+    /// <summary>Shading, overlays, image size and automatic updates.</summary>
+    private void DrawPreviewSettings()
+    {
+        EditorGUI.indentLevel++;
+        EditorGUI.BeginChangeCheck();
+        previewShading = EditorGUILayout.Slider(new GUIContent("Hill Shading", "How strongly slopes are shaded by the light. 0 = flat colours."), previewShading, 0f, 2f);
+        previewLightAngle = EditorGUILayout.Slider(new GUIContent("Light From (degrees)", "Direction the light comes from, clockwise from north. 315 = north-west, as on printed maps."), previewLightAngle, 0f, 360f);
+        previewShowContours = EditorGUILayout.Toggle(new GUIContent("Contour Lines", "Thin lines at every Contour Interval of height, like a hiking map."), previewShowContours);
+        if (previewShowContours)
+        {
+            EditorGUI.indentLevel++;
+            previewContourInterval = Mathf.Max(1f, EditorGUILayout.FloatField(new GUIContent("Contour Interval", "Height (world units) between two contour lines."), previewContourInterval));
+            EditorGUI.indentLevel--;
+        }
+        previewShowChunkGrid = EditorGUILayout.Toggle(new GUIContent("Chunk Grid", "Lines along chunk borders, to see how big chunks are compared to the features."), previewShowChunkGrid);
+        previewShowBiomeBorders = EditorGUILayout.Toggle(new GUIContent("Biome Borders", "Dark lines where one biome meets another."), previewShowBiomeBorders);
+        previewShowOrigin = EditorGUILayout.Toggle(new GUIContent("World Origin", "A red cross at world 0,0."), previewShowOrigin);
+        previewShowSceneView = EditorGUILayout.Toggle(new GUIContent("Scene View Position", "A white ring where the Scene view camera is looking."), previewShowSceneView);
+        bool changed = EditorGUI.EndChangeCheck();
+        previewShowLandmarks = EditorGUILayout.Toggle(new GUIContent("Landmarks",
+            "Marks where landmark objects (Limits & Landmarks > Placement Mode = Landmark) will stand - chosen from the world's shape, before any chunk exists. " +
+            "Found when the map is generated; large areas with many regions take longer."), previewShowLandmarks);
+        previewImageSize = EditorGUILayout.Slider(new GUIContent("Image Size (pixels)", "How big the map is drawn in the inspector."), previewImageSize, 128f, 1024f);
+        previewAutoRegenerate = EditorGUILayout.Toggle(new GUIContent("Update Automatically",
+            "Draw the map again by itself, half a second after any Terrain Generator setting changes. Best with a small Resolution - each update samples the whole map."), previewAutoRegenerate);
+        EditorGUI.indentLevel--;
+        if (changed && previewData != null)
+            Colorize();
+    }
+
+    /// <summary>Draws the map with the hover readout, double-click to center and the right-click menu.</summary>
+    private void DrawPreviewImage(float maxSize)
+    {
+        float width = Mathf.Min(EditorGUIUtility.currentViewWidth - 40f, maxSize);
         Rect rect = GUILayoutUtility.GetRect(width, width, GUILayout.ExpandWidth(false));
         EditorGUI.DrawPreviewTexture(rect, previewTexture);
-        DrawPreviewLegend();
+
+        Event e = Event.current;
+        if (e.type != EventType.Layout && rect.Contains(e.mousePosition) && previewData != null)
+        {
+            // The inspector only gets mouse-move events (for the readout) when it asks for them.
+            if (EditorWindow.mouseOverWindow != null && !EditorWindow.mouseOverWindow.wantsMouseMove)
+                EditorWindow.mouseOverWindow.wantsMouseMove = true;
+            PreviewData data = previewData;
+            int n = data.Resolution;
+            int i = Mathf.Clamp(Mathf.FloorToInt((e.mousePosition.x - rect.x) / rect.width * n), 0, n - 1);
+            int j = Mathf.Clamp(Mathf.FloorToInt((1f - (e.mousePosition.y - rect.y) / rect.height) * n), 0, n - 1);
+            Vector2 world = data.Min + new Vector2((i + 0.5f) * data.Step, (j + 0.5f) * data.Step);
+            previewHover = HoverText(data, i, j, world);
+
+            if (e.type == EventType.MouseDown && e.button == 0 && e.clickCount == 2)
+            {
+                previewCenter = world;
+                GeneratePreview((TerrainGenerator)target);
+                e.Use();
+            }
+            else if (e.type == EventType.ContextClick)
+            {
+                ShowPreviewMenu(world, data.Height[j * n + i]);
+                e.Use();
+            }
+            else if (e.type == EventType.MouseMove)
+            {
+                Repaint();
+            }
+        }
+        // Fixed height, so the layout doesn't jump as the text changes.
+        Rect readout = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight * 2f);
+        EditorGUI.LabelField(readout, string.IsNullOrEmpty(previewHover) ? "Hover the map to read a spot; double-click to center it there; right-click for more." : previewHover, EditorStyles.wordWrappedMiniLabel);
+    }
+
+    private string HoverText(PreviewData data, int i, int j, Vector2 world)
+    {
+        int n = data.Resolution, index = j * n + i;
+        string biome = data.Biome[index] >= 0 ? data.Biomes[data.Biome[index]].name : "(no biome)";
+        string water = data.Water[index] != 0 ? ((WaterBodyType)data.Water[index]).ToString() : "dry land";
+        int span = Mathf.Max(1, data.ChunkSpan);
+        return $"({world.x:0}, {world.y:0}) - chunk ({Mathf.FloorToInt(world.x / span)}, {Mathf.FloorToInt(world.y / span)}) - height {data.Height[index]:0.#} - " +
+               $"slope {SlopeAt(data, i, j):0}° - {biome}" + (data.Biome[index] >= 0 && data.Landforms != null ? $" ({data.Landforms[data.Biome[index]]})" : "") +
+               $" - {water} - temperature {data.Temperature[index]:0.00}, moisture {data.Moisture[index]:0.00}";
+    }
+
+    private void ShowPreviewMenu(Vector2 world, float height)
+    {
+        var menu = new GenericMenu();
+        TerrainGenerator generator = (TerrainGenerator)target;
+        menu.AddItem(new GUIContent("Center Map Here"), false, () => { previewCenter = world; GeneratePreview(generator); });
+        menu.AddItem(new GUIContent("Zoom In Here"), false, () => { previewCenter = world; previewSize = Mathf.Max(250f, previewSize * 0.5f); GeneratePreview(generator); });
+        menu.AddItem(new GUIContent("Move Scene View Here"), false, () =>
+        {
+            SceneView view = SceneView.lastActiveSceneView;
+            if (view != null)
+                view.LookAt(new Vector3(world.x, height, world.y));
+        });
+        menu.AddItem(new GUIContent("Test Object Placement Here"), false, () =>
+        {
+            RunPlacementTest(generator, world);
+            EditorUtility.DisplayDialog("Test Placement", (testSummary ?? "Done.") + "\n\nEach object's own result is shown in its box in the Biomes section.", "OK");
+        });
+        menu.AddItem(new GUIContent("Copy Position"), false, () => EditorGUIUtility.systemCopyBuffer = $"{world.x:0.##}, {world.y:0.##}");
+        menu.ShowAsContext();
+    }
+
+    private void SavePreviewPng()
+    {
+        string path = EditorUtility.SaveFilePanel("Save World Preview", "", $"World Preview {previewMode}.png", "png");
+        if (string.IsNullOrEmpty(path))
+            return;
+        File.WriteAllBytes(path, previewTexture.EncodeToPNG());
+    }
+
+    /// <summary>
+    /// A button in another section that draws the World Preview in a given view around the Scene view position, and
+    /// shows the map right under the button.
+    /// </summary>
+    private void InlinePreviewButton(string label, string tooltip, PreviewMode mode, float size)
+    {
+        if (GUILayout.Button(new GUIContent(label, tooltip + " Also updates the World Preview section.")))
+        {
+            SceneView view = SceneView.lastActiveSceneView;
+            if (view != null)
+                previewCenter = new Vector2(view.pivot.x, view.pivot.z);
+            previewMode = mode;
+            previewSize = size;
+            inlinePreviewOwner = label;
+            GeneratePreview((TerrainGenerator)target);
+        }
+        if (inlinePreviewOwner == label && previewTexture != null && previewData != null)
+        {
+            DrawPreviewImage(320f);
+            DrawPreviewLegend();
+            if (GUILayout.Button(new GUIContent("Hide Map", "Hides this map here (it stays in the World Preview section).")))
+                inlinePreviewOwner = null;
+        }
+    }
+
+    /// <summary>Call at the end of OnInspectorGUI: regenerates the preview a moment after settings change, when Update Automatically is on.</summary>
+    private void SchedulePreviewUpdate(bool settingsChanged)
+    {
+        if (!previewAutoRegenerate || previewData == null || !settingsChanged)
+            return;
+        bool waiting = autoRegenerateAt > 0;
+        autoRegenerateAt = EditorApplication.timeSinceStartup + 0.5;
+        if (!waiting)
+            EditorApplication.update += AutoRegenerateTick;
+    }
+
+    private void AutoRegenerateTick()
+    {
+        if (autoRegenerateAt < 0 || EditorApplication.timeSinceStartup < autoRegenerateAt)
+            return;
+        EditorApplication.update -= AutoRegenerateTick;
+        autoRegenerateAt = -1;
+        if (target != null)
+        {
+            GeneratePreview((TerrainGenerator)target);
+            Repaint();
+        }
     }
 
     private static GUIContent[] ToContents(string[] labels)
@@ -112,6 +321,12 @@ public partial class TerrainGeneratorEditor
             DestroyImmediate(previewTexture);
         previewTexture = null;
         previewData = null;
+        inlinePreviewOwner = null;
+        if (autoRegenerateAt > 0)
+        {
+            EditorApplication.update -= AutoRegenerateTick;
+            autoRegenerateAt = -1;
+        }
     }
 
     private void DrawPreviewLegend()
@@ -121,14 +336,51 @@ public partial class TerrainGeneratorEditor
         foreach (int count in data.BiomeCounts)
             land += count;
 
-        if (previewMode == PreviewMode.Combined || previewMode == PreviewMode.Biomes)
+        switch (previewMode)
         {
-            for (int i = 0; i < data.Biomes.Count; i++)
-            {
-                if (data.BiomeCounts[i] == 0)
-                    continue;
-                Swatch(data.BiomeColors[i], $"{data.Biomes[i].name}  ({100f * data.BiomeCounts[i] / Mathf.Max(1, land):0.#}% of land)");
-            }
+            case PreviewMode.Combined:
+            case PreviewMode.Biomes:
+                for (int i = 0; i < data.Biomes.Count; i++)
+                {
+                    if (data.BiomeCounts[i] == 0)
+                        continue;
+                    Swatch(data.BiomeColors[i], $"{data.Biomes[i].name}  ({100f * data.BiomeCounts[i] / Mathf.Max(1, land):0.#}% of land)");
+                }
+                break;
+            case PreviewMode.Height:
+                EditorGUILayout.LabelField($"Land height {data.MinHeight:0} (dark) to {data.MaxHeight:0} (light); sea level {data.SeaLevel:0}.", EditorStyles.miniLabel);
+                break;
+            case PreviewMode.Climate:
+                EditorGUILayout.LabelField("Red = hot, blue = cold; brighter green = wetter. Includes rain shadows, altitude cooling and coastal moisture when on.", EditorStyles.wordWrappedMiniLabel);
+                break;
+            case PreviewMode.Temperature:
+                Swatch(TemperatureColor(0f), "Cold (0)");
+                Swatch(TemperatureColor(0.5f), "Mild (0.5)");
+                Swatch(TemperatureColor(1f), "Hot (1)");
+                break;
+            case PreviewMode.Moisture:
+                Swatch(MoistureColor(0f), "Dry (0)");
+                Swatch(MoistureColor(0.5f), "Average (0.5)");
+                Swatch(MoistureColor(1f), "Wet (1)");
+                break;
+            case PreviewMode.Slope:
+                Swatch(SlopeColor(3f), "Flat (under 10°)");
+                Swatch(SlopeColor(17f), "Gentle (10-25°)");
+                Swatch(SlopeColor(32f), "Steep (25-40°)");
+                Swatch(SlopeColor(50f), "Very steep (over 40°)");
+                EditorGUILayout.LabelField("Slopes are averaged over one pixel - zoom in to see small cliffs.", EditorStyles.miniLabel);
+                break;
+            case PreviewMode.TriPlanar:
+                Swatch(new Color(0.55f, 0.55f, 0.55f), "Textures from above only");
+                Swatch(new Color(1f, 0.55f, 0.1f), $"Projected from the sides too (slopes over {data.TriplanarStart:0}°, fully from {data.TriplanarEnd:0}°)");
+                EditorGUILayout.LabelField("Slopes are averaged over one pixel, so real cliffs are steeper than they look here.", EditorStyles.miniLabel);
+                break;
+            case PreviewMode.Landforms:
+                var seen = new HashSet<LandformType>();
+                for (int i = 0; i < data.Biomes.Count; i++)
+                    if (data.BiomeCounts[i] > 0 && seen.Add(data.Landforms[i]))
+                        Swatch(LandformColor(data.Landforms[i]), data.Landforms[i].ToString());
+                break;
         }
         if (previewMode == PreviewMode.Combined || previewMode == PreviewMode.Water)
         {
@@ -137,12 +389,23 @@ public partial class TerrainGeneratorEditor
             Swatch(WaterColor(WaterBodyType.Pond, 0f), $"Ponds ({data.Ponds})");
             Swatch(WaterColor(WaterBodyType.River, 0f), $"Rivers ({data.Rivers})");
         }
-        if (previewMode == PreviewMode.Height)
-            EditorGUILayout.LabelField($"Land height {data.MinHeight:0} (dark) to {data.MaxHeight:0} (light); sea level {data.SeaLevel:0}.", EditorStyles.miniLabel);
-        if (previewMode == PreviewMode.Climate)
-            EditorGUILayout.LabelField("Red = hot, blue = cold; brighter green = wetter. Includes rain shadows, altitude cooling and coastal moisture when on.", EditorStyles.wordWrappedMiniLabel);
+        if (previewShowLandmarks && data.Landmarks.Count > 0)
+        {
+            var counts = new Dictionary<int, int>();
+            foreach (ObjectPlacementEngine.LandmarkSpot spot in data.Landmarks)
+            {
+                counts.TryGetValue(spot.Type, out int c);
+                counts[spot.Type] = c + 1;
+            }
+            foreach (KeyValuePair<int, int> entry in counts)
+                Swatch(LandmarkColor(entry.Key), $"{data.LandmarkNames[entry.Key]} ({entry.Value})");
+        }
+        else if (previewShowLandmarks)
+        {
+            EditorGUILayout.LabelField("No landmark spots in this area.", EditorStyles.miniLabel);
+        }
 
-        EditorGUILayout.LabelField($"Generated in {data.Milliseconds / 1000f:0.0} s. The map doesn't update by itself - press Generate Preview again after changing settings.", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField($"Generated in {data.Milliseconds / 1000f:0.0} s." + (previewAutoRegenerate ? " Updates by itself when settings change." : " The map doesn't update by itself - press Generate Preview again after changing settings (or turn on Update Automatically)."), EditorStyles.wordWrappedMiniLabel);
     }
 
     private static void Swatch(Color color, string label)
@@ -261,10 +524,29 @@ public partial class TerrainGeneratorEditor
                 }
             }
 
+            if (!cancelled && previewShowLandmarks && generator.ShouldSpawnObjects)
+            {
+                cancelled = EditorUtility.DisplayCancelableProgressBar("World Preview", "Finding landmark spots", 0.94f);
+                if (!cancelled)
+                {
+                    PlacementPlan plan = PlacementPlan.Build(generator, PrefabShapeCache.Get);
+                    ObjectPlacementEngine.FindLandmarkSpots(plan, data.Min, data.Min + Vector2.one * previewSize, data.Landmarks);
+                    foreach (PlacementType type in plan.Types)
+                        data.LandmarkNames.Add(type.Prefab != null ? type.Prefab.name : type.Tag);
+                }
+            }
+
             if (cancelled)
                 return;
 
             data.BiomeColors = BiomeColors(data.Biomes);
+            data.Landforms = new LandformType[data.Biomes.Count];
+            for (int b = 0; b < data.Biomes.Count; b++)
+                data.Landforms[b] = LandformGenerator.Effective(data.Biomes[b], generator.TerrainShapeMode);
+            data.ChunkSpan = generator.ChunkSize - 1;
+            data.TriplanarStart = generator.TriplanarSlopeStart;
+            data.TriplanarEnd = generator.TriplanarSlopeEnd;
+            data.TriplanarStrength = generator.TriplanarStrength;
             data.BiomeCounts = new int[data.Biomes.Count];
             data.MinHeight = float.MaxValue;
             data.MaxHeight = float.MinValue;
@@ -435,7 +717,55 @@ public partial class TerrainGeneratorEditor
         }
     }
 
-    /// <summary>(Re)draws the preview texture from the sampled data in the current view mode.</summary>
+    private static Color TemperatureColor(float t) => Color.Lerp(Color.Lerp(new Color(0.15f, 0.3f, 0.95f), new Color(0.9f, 0.9f, 0.85f), Mathf.Clamp01(t * 2f)), new Color(0.95f, 0.25f, 0.1f), Mathf.Clamp01(t * 2f - 1f));
+    private static Color MoistureColor(float m) => Color.Lerp(new Color(0.85f, 0.7f, 0.4f), new Color(0.1f, 0.55f, 0.25f), Mathf.Clamp01(m));
+
+    private static Color SlopeColor(float degrees)
+    {
+        if (degrees < 10f) return Color.Lerp(new Color(0.2f, 0.55f, 0.2f), new Color(0.55f, 0.75f, 0.25f), degrees / 10f);
+        if (degrees < 25f) return Color.Lerp(new Color(0.55f, 0.75f, 0.25f), new Color(0.95f, 0.85f, 0.2f), (degrees - 10f) / 15f);
+        if (degrees < 40f) return Color.Lerp(new Color(0.95f, 0.85f, 0.2f), new Color(0.95f, 0.5f, 0.1f), (degrees - 25f) / 15f);
+        return Color.Lerp(new Color(0.95f, 0.5f, 0.1f), new Color(0.75f, 0.1f, 0.1f), Mathf.Clamp01((degrees - 40f) / 20f));
+    }
+
+    private static Color LandformColor(LandformType landform)
+    {
+        switch (landform)
+        {
+            case LandformType.Classic: return new Color(0.65f, 0.65f, 0.6f);
+            case LandformType.Plains: return new Color(0.6f, 0.8f, 0.4f);
+            case LandformType.Hills: return new Color(0.4f, 0.65f, 0.3f);
+            case LandformType.Mountains: return new Color(0.55f, 0.45f, 0.4f);
+            case LandformType.Dunes: return new Color(0.93f, 0.8f, 0.5f);
+            case LandformType.Wetland: return new Color(0.3f, 0.55f, 0.5f);
+            case LandformType.Plateau: return new Color(0.8f, 0.5f, 0.35f);
+            case LandformType.Highlands: return new Color(0.35f, 0.45f, 0.25f);
+            case LandformType.Glacial: return new Color(0.85f, 0.9f, 0.95f);
+            case LandformType.SeaPlain: return new Color(0.2f, 0.35f, 0.6f);
+            case LandformType.SeaRavines: return new Color(0.15f, 0.25f, 0.5f);
+            case LandformType.SeaReef: return new Color(0.3f, 0.7f, 0.75f);
+            case LandformType.SeaRocky: return new Color(0.3f, 0.35f, 0.45f);
+            default: return new Color(0.7f, 0.7f, 0.7f);
+        }
+    }
+
+    private static readonly Color[] LandmarkColors =
+    {
+        new Color(1f, 0.2f, 0.8f), new Color(1f, 1f, 0.2f), new Color(0.2f, 1f, 1f), new Color(1f, 0.5f, 0f), new Color(0.6f, 0.3f, 1f), Color.white,
+    };
+
+    private static Color LandmarkColor(int type) => LandmarkColors[type % LandmarkColors.Length];
+
+    /// <summary>Slope (degrees) at a pixel from the height gradient over one pixel.</summary>
+    private static float SlopeAt(PreviewData data, int i, int j)
+    {
+        int n = data.Resolution;
+        float dx = (data.Height[j * n + Mathf.Min(n - 1, i + 1)] - data.Height[j * n + Mathf.Max(0, i - 1)]) / (2f * data.Step);
+        float dy = (data.Height[Mathf.Min(n - 1, j + 1) * n + i] - data.Height[Mathf.Max(0, j - 1) * n + i]) / (2f * data.Step);
+        return Mathf.Atan(Mathf.Sqrt(dx * dx + dy * dy)) * Mathf.Rad2Deg;
+    }
+
+    /// <summary>(Re)draws the preview texture from the sampled data in the current view mode and overlays.</summary>
     private void Colorize()
     {
         PreviewData data = previewData;
@@ -455,7 +785,8 @@ public partial class TerrainGeneratorEditor
 
         var pixels = new Color[n * n];
         float heightRange = Mathf.Max(1f, data.MaxHeight - data.MinHeight);
-        Vector3 light = new Vector3(-0.6f, 0.75f, 0.35f).normalized; // from the north-west, as on printed maps
+        float angle = (90f - previewLightAngle) * Mathf.Deg2Rad;   // compass (clockwise from north) to maths angle
+        Vector3 light = new Vector3(Mathf.Cos(angle) * 0.8f, 0.75f, Mathf.Sin(angle) * 0.8f).normalized;
         for (int j = 0; j < n; j++)
         {
             for (int i = 0; i < n; i++)
@@ -467,16 +798,19 @@ public partial class TerrainGeneratorEditor
                 float dx = (data.Height[j * n + Mathf.Min(n - 1, i + 1)] - data.Height[j * n + Mathf.Max(0, i - 1)]) / (2f * data.Step);
                 float dy = (data.Height[Mathf.Min(n - 1, j + 1) * n + i] - data.Height[Mathf.Max(0, j - 1) * n + i]) / (2f * data.Step);
                 Vector3 normal = new Vector3(-dx * 3f, 1f, -dy * 3f).normalized;
-                float shade = Mathf.Clamp(0.55f + 0.6f * Vector3.Dot(normal, light), 0.3f, 1.25f);
+                float rawShade = Mathf.Clamp(0.55f + 0.6f * Vector3.Dot(normal, light), 0.3f, 1.25f);
+                float shade = Mathf.Lerp(1f, rawShade, previewShading);
 
                 byte water = data.Water[index];
+                bool ocean = water == (byte)WaterBodyType.Ocean;
                 Color landColor = data.Biome[index] >= 0 ? data.BiomeColors[data.Biome[index]] : Color.gray;
                 float elevation = Mathf.Clamp01((h - data.MinHeight) / heightRange);
+                float slope = Mathf.Atan(Mathf.Sqrt(dx * dx + dy * dy)) * Mathf.Rad2Deg;
                 Color color;
                 switch (previewMode)
                 {
                     case PreviewMode.Height:
-                        color = water == (byte)WaterBodyType.Ocean
+                        color = ocean
                             ? WaterColor(WaterBodyType.Ocean, Mathf.Clamp01((data.SeaLevel - h) / 40f))
                             : Color.Lerp(new Color(0.1f, 0.1f, 0.1f), Color.white, elevation) * Mathf.Lerp(1f, shade, 0.5f);
                         break;
@@ -491,8 +825,30 @@ public partial class TerrainGeneratorEditor
                     case PreviewMode.Climate:
                         float t = data.Temperature[index], m = data.Moisture[index];
                         color = new Color(0.15f + 0.85f * t, 0.15f + 0.7f * m, 0.15f + 0.85f * (1f - t)) * Mathf.Lerp(1f, shade, 0.3f);
-                        if (water == (byte)WaterBodyType.Ocean)
+                        if (ocean)
                             color = Color.Lerp(color, new Color(0.1f, 0.1f, 0.2f), 0.6f);
+                        break;
+                    case PreviewMode.Temperature:
+                        color = TemperatureColor(data.Temperature[index]) * Mathf.Lerp(1f, shade, 0.3f);
+                        if (ocean)
+                            color = Color.Lerp(color, new Color(0.1f, 0.1f, 0.2f), 0.5f);
+                        break;
+                    case PreviewMode.Moisture:
+                        color = MoistureColor(data.Moisture[index]) * Mathf.Lerp(1f, shade, 0.3f);
+                        if (ocean)
+                            color = Color.Lerp(color, new Color(0.1f, 0.1f, 0.2f), 0.5f);
+                        break;
+                    case PreviewMode.Slope:
+                        color = water != 0 ? new Color(0.25f, 0.35f, 0.5f) : SlopeColor(slope) * Mathf.Lerp(1f, shade, 0.4f);
+                        break;
+                    case PreviewMode.TriPlanar:
+                        float amount = data.TriplanarStrength * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(data.TriplanarStart, Mathf.Max(data.TriplanarEnd, data.TriplanarStart + 0.01f), slope));
+                        color = water != 0 ? new Color(0.25f, 0.35f, 0.5f) : Color.Lerp(new Color(0.55f, 0.55f, 0.55f), new Color(1f, 0.55f, 0.1f), amount) * Mathf.Lerp(1f, shade, 0.5f);
+                        break;
+                    case PreviewMode.Landforms:
+                        color = data.Biome[index] >= 0 ? LandformColor(data.Landforms[data.Biome[index]]) * Mathf.Lerp(1f, shade, 0.4f) : Color.gray;
+                        if (ocean && (data.Biome[index] < 0 || data.Biomes[data.Biome[index]].placement != BiomePlacement.Ocean))
+                            color = Color.Lerp(color, WaterColor(WaterBodyType.Ocean, 0.5f), 0.7f);
                         break;
                     default:
                         color = water != 0
@@ -500,20 +856,83 @@ public partial class TerrainGeneratorEditor
                             : landColor * shade;
                         break;
                 }
+
+                // Line overlays.
+                if (previewShowContours && water == 0)
+                {
+                    int band = Mathf.FloorToInt(h / previewContourInterval);
+                    if ((i + 1 < n && Mathf.FloorToInt(data.Height[index + 1] / previewContourInterval) != band) ||
+                        (j + 1 < n && Mathf.FloorToInt(data.Height[index + n] / previewContourInterval) != band))
+                        color = Color.Lerp(color, new Color(0.2f, 0.12f, 0.05f), 0.55f);
+                }
+                if (previewShowBiomeBorders && !ocean &&
+                    ((i + 1 < n && data.Biome[index + 1] != data.Biome[index]) || (j + 1 < n && data.Biome[index + n] != data.Biome[index])))
+                    color = Color.Lerp(color, Color.black, 0.6f);
+                if (previewShowChunkGrid && data.ChunkSpan > 0)
+                {
+                    float x0 = data.Min.x + i * data.Step, z0 = data.Min.y + j * data.Step;
+                    if (Mathf.FloorToInt(x0 / data.ChunkSpan) != Mathf.FloorToInt((x0 + data.Step) / data.ChunkSpan) ||
+                        Mathf.FloorToInt(z0 / data.ChunkSpan) != Mathf.FloorToInt((z0 + data.Step) / data.ChunkSpan))
+                        color = Color.Lerp(color, Color.white, 0.35f);
+                }
                 color.a = 1f;
                 pixels[index] = color;
             }
         }
 
-        // A small cross at world 0,0 when it is on the map.
-        int oi = Mathf.FloorToInt((0f - data.Min.x) / data.Step), oj = Mathf.FloorToInt((0f - data.Min.y) / data.Step);
-        for (int k = -3; k <= 3; k++)
+        // Markers.
+        if (previewShowOrigin)
+            DrawCross(pixels, data, Vector2.zero, Color.red, 3);
+        if (previewShowSceneView && SceneView.lastActiveSceneView != null)
         {
-            if (oi + k >= 0 && oi + k < n && oj >= 0 && oj < n) pixels[oj * n + oi + k] = Color.red;
-            if (oj + k >= 0 && oj + k < n && oi >= 0 && oi < n) pixels[(oj + k) * n + oi] = Color.red;
+            Vector3 pivot = SceneView.lastActiveSceneView.pivot;
+            DrawRing(pixels, data, new Vector2(pivot.x, pivot.z), Color.white, 4);
         }
+        if (previewShowLandmarks)
+            foreach (ObjectPlacementEngine.LandmarkSpot spot in data.Landmarks)
+                DrawRing(pixels, data, spot.Position, LandmarkColor(spot.Type), 3);
 
         previewTexture.SetPixels(pixels);
         previewTexture.Apply();
+    }
+
+    private static bool ToPixel(PreviewData data, Vector2 world, out int i, out int j)
+    {
+        i = Mathf.FloorToInt((world.x - data.Min.x) / data.Step);
+        j = Mathf.FloorToInt((world.y - data.Min.y) / data.Step);
+        return i >= 0 && j >= 0 && i < data.Resolution && j < data.Resolution;
+    }
+
+    private static void DrawCross(Color[] pixels, PreviewData data, Vector2 world, Color color, int arm)
+    {
+        if (!ToPixel(data, world, out int ci, out int cj))
+            return;
+        int n = data.Resolution;
+        for (int k = -arm; k <= arm; k++)
+        {
+            if (ci + k >= 0 && ci + k < n) pixels[cj * n + ci + k] = color;
+            if (cj + k >= 0 && cj + k < n) pixels[(cj + k) * n + ci] = color;
+        }
+    }
+
+    private static void DrawRing(Color[] pixels, PreviewData data, Vector2 world, Color color, int radius)
+    {
+        if (!ToPixel(data, world, out int ci, out int cj))
+            return;
+        int n = data.Resolution;
+        for (int dj = -radius - 1; dj <= radius + 1; dj++)
+        {
+            for (int di = -radius - 1; di <= radius + 1; di++)
+            {
+                float d = Mathf.Sqrt(di * di + dj * dj);
+                int i = ci + di, j = cj + dj;
+                if (i < 0 || j < 0 || i >= n || j >= n)
+                    continue;
+                if (Mathf.Abs(d - radius) < 0.8f)
+                    pixels[j * n + i] = color;
+                else if (Mathf.Abs(d - radius) < 1.6f)
+                    pixels[j * n + i] = Color.black;
+            }
+        }
     }
 }

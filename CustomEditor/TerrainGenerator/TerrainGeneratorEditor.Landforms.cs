@@ -25,6 +25,9 @@ public partial class TerrainGeneratorEditor : Editor
             MessageType.Info);
 
         DrawProp("terrainShapeMode", "Terrain Shape Mode");
+        ResetButtons("terrain shape", LandformRecommended, LandformFields, "Each biome's own landform (the table below) is left alone.");
+        InlinePreviewButton("Preview Terrain Shape", "Draws the heights around the Scene view position (World Preview, Height view) - mountains, hills, plateaus and plains as they come out of these settings.", PreviewMode.Height, 6000f);
+        InlinePreviewButton("Preview Landform Map", "Colours the area around the Scene view position by the landform shaping each spot (World Preview, Landforms view), from each biome's landform and the Terrain Shape Mode.", PreviewMode.Landforms, 10000f);
         TerrainShapeMode mode = (TerrainShapeMode)serializedObject.FindProperty("terrainShapeMode").enumValueIndex;
         using (new EditorGUI.DisabledScope(mode == TerrainShapeMode.ClassicOnly))
         {

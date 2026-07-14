@@ -55,6 +55,8 @@ public partial class TerrainGeneratorEditor
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.BeginHorizontal();
+            if (biome != null && biome.texture != null)
+                GUILayout.Label(new GUIContent(biome.texture, $"{biome.name}'s ground texture ({biome.texture.name})."), GUILayout.Width(18), GUILayout.Height(18));
             string title = (biome != null ? biome.name : "(no biome asset)") + $"  -  {objectsProp.arraySize} object{(objectsProp.arraySize == 1 ? "" : "s")}";
             bool open = Foldout($"biome/{b}", title, false, null, EditorStyles.foldout);
             if (GUILayout.Button(new GUIContent("▲", "Move this biome up."), EditorStyles.miniButton, GUILayout.Width(22)) && b > 0)
@@ -133,6 +135,9 @@ public partial class TerrainGeneratorEditor
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.BeginHorizontal();
         string name = prefabObject != null ? prefabObject.name : "(no prefab)";
+        Texture icon = PrefabIcon(prefabObject);
+        if (icon != null)
+            GUILayout.Label(new GUIContent(icon, name), GUILayout.Width(18), GUILayout.Height(18));
         bool open = Foldout(key, name, false, Summary(generator, def));
         GUILayout.Label(Summary(generator, def), EditorStyles.miniLabel, GUILayout.MinWidth(40));
         if (GUILayout.Button(new GUIContent("Presets ▾", "Replace this object's rules with a preset (its prefab and Group Tag are kept)."), EditorStyles.miniButton, GUILayout.Width(66)))
@@ -144,7 +149,14 @@ public partial class TerrainGeneratorEditor
         if (open)
         {
             EditorGUI.indentLevel++;
+            EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PropertyField(prefab, new GUIContent("Prefab", "The prefab to place."));
+            Texture preview = prefabObject != null ? AssetPreview.GetAssetPreview(prefabObject) : null;
+            if (preview != null)
+                GUILayout.Label(new GUIContent(preview, $"{name} as it looks (Unity's asset preview)."), GUILayout.Width(64), GUILayout.Height(64));
+            else if (prefabObject != null && AssetPreview.IsLoadingAssetPreviews())
+                Repaint();
+            EditorGUILayout.EndHorizontal();
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.PropertyField(obj.FindPropertyRelative("groupTag"), new GUIContent("Group Tag", obj.FindPropertyRelative("groupTag").tooltip));
             if (GUILayout.Button(new GUIContent("Auto-Configure", "Sets Group Tag, footprint, tilt and ground-contact limits from the prefab's measured size and shape (tall and thin like a tree, flat like a rug, round like a rock...). Density and the other rules are left alone."), EditorStyles.miniButton, GUILayout.Width(100)))
@@ -171,6 +183,19 @@ public partial class TerrainGeneratorEditor
         }
         EditorGUILayout.EndVertical();
         return true;
+    }
+
+    /// <summary>A small picture of the prefab: its preview once Unity has rendered one, its type icon until then.</summary>
+    private Texture PrefabIcon(GameObject prefab)
+    {
+        if (prefab == null)
+            return null;
+        Texture preview = AssetPreview.GetAssetPreview(prefab);
+        if (preview != null)
+            return preview;
+        if (AssetPreview.IsLoadingAssetPreviews())
+            Repaint();
+        return AssetPreview.GetMiniThumbnail(prefab);
     }
 
     /// <summary>One line describing an object's main rules.</summary>
@@ -956,14 +981,15 @@ public partial class TerrainGeneratorEditor
 
     // ------------------------------------------------------------------ test placement
 
-    private void RunPlacementTest(TerrainGenerator generator)
+    private void RunPlacementTest(TerrainGenerator generator, Vector2? at = null)
     {
         TestResults.Clear();
         testSummary = null;
         try
         {
             EditorUtility.DisplayCancelableProgressBar("Test Placement", "Generating a chunk", 0.2f);
-            Vector3 focus = SceneView.lastActiveSceneView != null ? SceneView.lastActiveSceneView.pivot : Vector3.zero;
+            Vector3 focus = at.HasValue ? new Vector3(at.Value.x, 0f, at.Value.y)
+                : SceneView.lastActiveSceneView != null ? SceneView.lastActiveSceneView.pivot : Vector3.zero;
             int span = generator.ChunkSize - 1;
             int cx = Mathf.FloorToInt(focus.x / span), cz = Mathf.FloorToInt(focus.z / span);
             var offset = new Vector2(cx * span, cz * span);

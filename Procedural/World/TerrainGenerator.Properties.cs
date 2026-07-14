@@ -131,8 +131,15 @@ public partial class TerrainGenerator : MonoBehaviour
     public float ObjectCliffAngle => objectCliffAngle;
     public float ObjectSpawnBudgetMs => Mathf.Max(0.1f, objectSpawnBudgetMs);
     public int MaxObjectsPerFrame => Mathf.Max(1, maxObjectsPerFrame);
+    public float FullObjectDistance => Mathf.Max(0f, fullObjectDistance);
+    public FarObjectParts FarObjectPartsSetting => farObjectParts;
     public int WorkerThreads => workerThreads > 0 ? workerThreads : TerrainWorkerPool.DefaultThreadCount;
     public float MainThreadBudgetMs => Mathf.Max(0.1f, mainThreadBudgetMs);
+    public bool PrepareMeshesOnWorkers => prepareMeshesOnWorkers;
+    public bool PoolObjects => poolObjects;
+    public int MaxPooledObjects => Mathf.Max(0, maxPooledObjects);
+    public BiomeTextureQuality BiomeTextureQualitySetting => biomeTextureQuality;
+    public int BiomeTextureResolution => biomeTextureResolution;
 
     // Terrain material
     public TerrainShaderMode TerrainShader => terrainShader;
