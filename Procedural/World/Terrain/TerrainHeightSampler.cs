@@ -52,6 +52,25 @@ public sealed class TerrainHeightSampler
         layout = terrainGenerator.BiomeLayout;
         // The ocean layout is looked up at shifted positions, where the terrain climate would read the wrong place.
         oceanLayout = layout != null ? layout.WithoutClimate() : null;
+        massifs = MountainMassifs.Create(terrainGenerator, availableBiomes, landforms, NearestLandBiome);
+        landforms.Massifs = massifs;
+    }
+
+    private readonly MountainMassifs massifs;
+
+    /// <summary>The land biome owning a position (nearest Voronoi point of the land layout).</summary>
+    private Biome NearestLandBiome(float x, float y)
+    {
+        TerrainGenerator tg = terrainGenerator;
+        return VoronoiBiomeGenerator.GetBiomeAtPosition(new Vector2(x, y), tg.VoronoiScale, tg.NumVoronoiPoints, availableBiomes, tg.VoronoiSeed,
+            tg.useWeightedBiome, tg.UseNaturalClimatePlacement, tg.ClimateNoiseScale, tg.VoronoiWarpStrength, tg.VoronoiWarpScale,
+            tg.BiomeClusterStrength, tg.BiomeClusterRadius, tg.BiomeRepeatPenalty, layout);
+    }
+
+    /// <summary>Signed distance to the edge of the mountain territory (world units, + inside); float.MinValue without mountains.</summary>
+    public float MountainDepth(float x, float y)
+    {
+        return massifs != null ? massifs.Depth(x, y) : float.MinValue;
     }
 
     /// <summary>True when ocean or volcanic biomes change texturing (see <see cref="GetTextureBlend"/>).</summary>
@@ -112,7 +131,15 @@ public sealed class TerrainHeightSampler
 
     public float LandHeight(List<VoronoiBiomeGenerator.BiomeWeight> blend, float x, float y, out float relief)
     {
-        return LandformGenerator.LandHeight(blend, x, y, landforms, out relief);
+        float height = LandformGenerator.LandHeight(blend, x, y, landforms, out relief);
+        if (massifs != null)
+        {
+            // Mountain massifs rise out of whatever land is there (their foothills reach past the territory's edge).
+            float mountain = massifs.Height(x, y);
+            height += mountain;
+            relief += mountain;
+        }
+        return height;
     }
 
     /// <summary>

@@ -14,14 +14,21 @@ public partial class TerrainGeneratorEditor : Editor
     private void DrawLandformSection(TerrainGenerator generator)
     {
         EditorGUILayout.HelpBox(
-            "A biome's landform decides the shape of the ground: Mountains (ranges of connected peaks and ridges " +
-            "with valleys), Hills (rounded, rolling), Plains (broad, low swells), Dunes, Wetland, Plateau (flat tops " +
+            "A biome's landform decides the shape of the ground: Mountains (massifs and ranges with ridges, peaks, " +
+            "saddles and valleys), Hills (rounded, rolling), Plains (broad, low swells), Dunes, Wetland, Plateau (flat tops " +
             "with cliff steps and canyons), or Classic (the original terrain). The biome still decides everything " +
             "else: textures, climate, water, objects. Amplitude sets a landform's height, Frequency its feature " +
             "size, Persistence its roughness.\n\n" +
+            "Mountains are built from the shape of the mountain territory as a whole: they rise with the distance into " +
+            "it, so a small territory makes a small formation and a large or long one a broad massif or a range whose " +
+            "main ridge follows its middle, dipping into saddles where it narrows. Foothills start a little outside the " +
+            "territory. Each massif varies in height, steepness and shape: difficult ones have steep flanks and cliff " +
+            "bands, accessible ones long gentle sides - and valleys rising from the foothills give routes toward the " +
+            "summits. Taller mountains need room: larger territories (Voronoi Scale, fewer points per cell, Cluster " +
+            "Strength) and Mountain Belt Strength, which lines mountain biomes up into long ranges.\n\n" +
             "Landform terrain is computed from world position and seed only, so it continues seamlessly across " +
-            "chunks. At borders the relief (peaks, hills) sinks into foothills before the neighbor begins, and " +
-            "mountain fronts rise at most ~50 degrees (other landforms: Boundary Max Walkable Slope).",
+            "chunks. At borders the relief of other landforms sinks into foothills before the neighbor begins " +
+            "(Boundary Max Walkable Slope).",
             MessageType.Info);
 
         DrawProp("terrainShapeMode", "Terrain Shape Mode");

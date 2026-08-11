@@ -137,6 +137,8 @@ public static partial class VoronoiBiomeGenerator
             foreach (var labels in CellLabels)
                 labels.Clear();
         }
+        // Mountain territories follow the biome layout.
+        MountainMassifs.ClearCache();
     }
 
     /// <summary>

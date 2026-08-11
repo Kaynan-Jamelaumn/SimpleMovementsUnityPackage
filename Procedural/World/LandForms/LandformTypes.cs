@@ -13,7 +13,11 @@ public enum LandformType
     Plains = 1,
     /// <summary>Rounded, rolling hills with gentle slopes and broad lows between them.</summary>
     Hills = 2,
-    /// <summary>Mountain ranges: connected peaks and ridges of varied height and shape, separated by valleys.</summary>
+    /// <summary>
+    /// Mountain massifs built from the mountain territory's shape (see <see cref="MountainMassifs"/>): their height
+    /// grows with the distance into the territory, so large territories make broad massifs and ranges and small
+    /// ones small formations; ridges, peaks, saddles, valleys, ravines and cliff bands are carved into them.
+    /// </summary>
     Mountains = 3,
     /// <summary>Wind-aligned sand dunes (gentle windward side, steep lee side) in fields separated by flat pans.</summary>
     Dunes = 4,

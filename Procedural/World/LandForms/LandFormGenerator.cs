@@ -247,7 +247,8 @@ public static partial class LandformGenerator
 
         switch (landform)
         {
-            case LandformType.Mountains: return Mountains(x, y, wavelength, amplitude, roughness, seed);
+            // Mountains are built from their territory as a whole (MountainMassifs), added by the sampler.
+            case LandformType.Mountains: return s.Massifs != null ? 0f : Mountains(x, y, wavelength, amplitude, roughness, seed);
             case LandformType.Hills: return Hills(x, y, wavelength, amplitude, roughness, seed);
             case LandformType.Plains: return Plains(x, y, wavelength, amplitude, seed);
             case LandformType.Dunes: return Dunes(x, y, wavelength, amplitude, seed);

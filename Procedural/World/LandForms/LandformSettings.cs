@@ -19,6 +19,9 @@ public sealed class LandformSettings
     /// <summary>How far (smoothed gap, world units) nearby biomes are listed before they blend in - see <see cref="NearbyReachFor"/>.</summary>
     public float NearbyReach;
 
+    /// <summary>The mountains of Mountains-landform biomes (null when no land biome uses it); set by the sampler.</summary>
+    public MountainMassifs Massifs;
+
     public bool VolcanoesEnabled;
     public float VolcanoSpacing;
     public float VolcanoChance;
