@@ -31,6 +31,9 @@ public static partial class RiverGenerator
         int[] parent = new int[cells];
         CellHeap open = new CellHeap(256);
 
+        // The grid is aligned to the world (not to the pit), so every search - by other rivers draining into the same
+        // basin, or by this one spilling on through a chain of pits - reads the same points, cached (SpillHeight).
+        Vector2 center = new Vector2(Mathf.Round(pit.x / spacing) * spacing, Mathf.Round(pit.y / spacing) * spacing);
         int startIndex = radius * size + radius;
         visited[startIndex] = true;
         parent[startIndex] = -1;
@@ -63,11 +66,11 @@ public static partial class RiverGenerator
 
                     visited[neighbor] = true;
                     parent[neighbor] = current;
-                    Vector2 point = pit + new Vector2((nx - radius) * spacing, (ny - radius) * spacing);
+                    Vector2 point = center + new Vector2((nx - radius) * spacing, (ny - radius) * spacing);
 
                     // Only ground lower than the pit's own bottom counts as an outflow: anything higher
                     // is still part of the same (combined) basin, and would just drain back into the pit.
-                    float height = sampler.SampleBaseHeight(point.x, point.y);
+                    float height = SpillHeight(point, sampler);
                     if (height < pitHeight - 1f
                         || (s.OceansEnabled && height < s.SeaLevel && OceanGenerator.LandSide(s, point.x, point.y) < 0f)
                         || LakeGenerator.FindLakeContaining(point, sourceLake, s, sampler) != null)
@@ -86,8 +89,9 @@ public static partial class RiverGenerator
 
         List<Vector2> route = new List<Vector2>();
         for (int cell = found; cell >= 0; cell = parent[cell])
-            route.Add(pit + new Vector2((cell % size - radius) * spacing, (cell / size - radius) * spacing));
+            route.Add(center + new Vector2((cell % size - radius) * spacing, (cell / size - radius) * spacing));
         route.Reverse();
+        route[0] = pit;   // leaves from the pit itself, not the grid point nearest to it
 
         // The grid route is a staircase of 45/90 degree moves - smooth it, then walk it at TraceStep.
         route = ChaikinSmooth(ChaikinSmooth(route));
@@ -110,6 +114,30 @@ public static partial class RiverGenerator
         if (path.Count == 0)
             path.Enqueue(route[route.Count - 1]);
         return true;
+    }
+
+    // Base heights at the spill grids' points (multiples of SpillGridSpacing - the coarse grid's are too), shared by
+    // every search. The grid points are fixed, so what the cache holds never depends on which river asked first.
+    private const int MaxSpillHeights = 1 << 18;
+    private static readonly ConcurrentDictionary<long, float> SpillHeights = new ConcurrentDictionary<long, float>();
+    private static int spillHeightCount;
+
+    private static float SpillHeight(Vector2 point, TerrainHeightSampler sampler)
+    {
+        long key = ((long)Mathf.RoundToInt(point.x / SpillGridSpacing) << 32) ^ (uint)Mathf.RoundToInt(point.y / SpillGridSpacing);
+        if (SpillHeights.TryGetValue(key, out float height))
+            return height;
+        height = sampler.SampleBaseHeight(point.x, point.y);
+        if (Interlocked.Increment(ref spillHeightCount) > MaxSpillHeights)
+            ClearSpillHeights();   // a long journey: start over rather than keep growing
+        SpillHeights[key] = height;
+        return height;
+    }
+
+    private static void ClearSpillHeights()
+    {
+        SpillHeights.Clear();
+        Interlocked.Exchange(ref spillHeightCount, 0);
     }
 
     private static List<Vector2> ChaikinSmooth(List<Vector2> points)

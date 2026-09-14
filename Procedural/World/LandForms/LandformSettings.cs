@@ -19,6 +19,9 @@ public sealed class LandformSettings
     /// <summary>How far (smoothed gap, world units) nearby biomes are listed before they blend in - see <see cref="NearbyReachFor"/>.</summary>
     public float NearbyReach;
 
+    /// <summary>How far (world units) mountain foothills reach past the Mountains biome's border.</summary>
+    public float FoothillReach;
+
     /// <summary>The mountains of Mountains-landform biomes (null when no land biome uses it); set by the sampler.</summary>
     public MountainMassifs Massifs;
 
@@ -84,6 +87,7 @@ public sealed class LandformSettings
             ClassicOctaves = tg.Octaves,
             ClassicLacunarity = tg.Lacunarity,
             NearbyReach = NearbyReachFor(tg),
+            FoothillReach = tg.MountainFoothillReach,
 
             VolcanoesEnabled = tg.EnableVolcanoes && tg.VolcanoChance > 0f,
             VolcanoSpacing = Mathf.Max(500f, tg.VolcanoSpacing),

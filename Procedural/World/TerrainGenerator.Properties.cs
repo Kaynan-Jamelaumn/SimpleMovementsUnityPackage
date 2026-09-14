@@ -87,6 +87,7 @@ public partial class TerrainGenerator : MonoBehaviour
     public float LandformTransitionWidth => landformTransitionWidth;
     public float MountainBeltStrength => mountainBeltStrength;
     public float MountainBeltScale => VoronoiScale * Mathf.Max(0.5f, mountainBeltScaleMultiplier);
+    public float MountainFoothillReach => Mathf.Max(0f, mountainFoothillReach);
 
     // Volcano Properties
     public bool EnableVolcanoes => enableVolcanoes;
@@ -254,6 +255,7 @@ public partial class TerrainGenerator : MonoBehaviour
     public float SnowmeltSprings => snowmeltSprings;
     public float WaterfallMinDrop => waterfallMinDrop;
     public float WaterfallTierHeight => waterfallTierHeight;
+    public float WaterfallMinSlope => waterfallMinSlope;
 
     // Erosion Properties
     public bool EnableErosion => enableErosion;

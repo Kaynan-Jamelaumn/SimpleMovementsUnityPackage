@@ -52,7 +52,7 @@ public sealed class TerrainHeightSampler
         layout = terrainGenerator.BiomeLayout;
         // The ocean layout is looked up at shifted positions, where the terrain climate would read the wrong place.
         oceanLayout = layout != null ? layout.WithoutClimate() : null;
-        massifs = MountainMassifs.Create(terrainGenerator, availableBiomes, landforms, NearestLandBiome);
+        massifs = MountainMassifs.Create(terrainGenerator, availableBiomes, landforms, NearestLandBiome, LandBiomesInArea);
         landforms.Massifs = massifs;
     }
 
@@ -65,6 +65,14 @@ public sealed class TerrainHeightSampler
         return VoronoiBiomeGenerator.GetBiomeAtPosition(new Vector2(x, y), tg.VoronoiScale, tg.NumVoronoiPoints, availableBiomes, tg.VoronoiSeed,
             tg.useWeightedBiome, tg.UseNaturalClimatePlacement, tg.ClimateNoiseScale, tg.VoronoiWarpStrength, tg.VoronoiWarpScale,
             tg.BiomeClusterStrength, tg.BiomeClusterRadius, tg.BiomeRepeatPenalty, layout);
+    }
+
+    private void LandBiomesInArea(Vector2 min, Vector2 max, HashSet<Biome> into)
+    {
+        TerrainGenerator tg = terrainGenerator;
+        VoronoiBiomeGenerator.GetBiomesInArea(min, max, tg.VoronoiScale, tg.NumVoronoiPoints, availableBiomes, tg.VoronoiSeed,
+            tg.useWeightedBiome, tg.UseNaturalClimatePlacement, tg.ClimateNoiseScale, tg.VoronoiWarpStrength, tg.VoronoiWarpScale,
+            tg.BiomeClusterStrength, tg.BiomeClusterRadius, tg.BiomeRepeatPenalty, layout, into);
     }
 
     /// <summary>Signed distance to the edge of the mountain territory (world units, + inside); float.MinValue without mountains.</summary>

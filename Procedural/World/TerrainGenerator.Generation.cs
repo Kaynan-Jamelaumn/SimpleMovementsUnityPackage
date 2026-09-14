@@ -19,7 +19,10 @@ public partial class TerrainGenerator : MonoBehaviour
     {
         // Local, not a field: this runs on a worker thread (see RequestMapData), and every chunk shares this
         // same TerrainGenerator instance, so a shared field here would race between chunks generating at once.
+        long start = GenerationStats.Start();
         float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, placementFields, out float[,] erosionDeltaMap, out WaterMapData waterData, out PlacementFields fields);
+        GenerationStats.Record(GenerationStats.ChunkHeights, start);
+        GenerationStats.Count(GenerationStats.ChunksGenerated);
         var mapData = new MapData(localHeightMap, null, erosionDeltaMap, waterData);
         mapData.placementFields = fields;
         return mapData;
@@ -53,7 +56,9 @@ public partial class TerrainGenerator : MonoBehaviour
         // With ocean/volcanic biomes, a cell's biome is the top of its texture blend (see SampleBiome).
         bool shareBlend = computeSplatBlend && sampler.HasSpecialBiomes;
 
-        for (int y = 0; y < ChunkSize; y++)
+        // Rows are independent: on a worker thread, other workers help (see TerrainWorkerPool.For).
+        SplatBlendData blendData = splatBlend;
+        System.Action<int> row = y =>
         {
             for (int x = 0; x < ChunkSize; x++)
             {
@@ -62,15 +67,22 @@ public partial class TerrainGenerator : MonoBehaviour
                 {
                     List<VoronoiBiomeGenerator.BiomeWeight> blend = sampler.GetTextureBlend(worldX, worldY);
                     biomeMap[x, y] = blend.Count > 0 ? blend[0].Biome : null;
-                    SplatMapGenerator.FillBlendSlots(blend, splatIndices, splatBlend, x, y);
+                    SplatMapGenerator.FillBlendSlots(blend, splatIndices, blendData, x, y);
                     continue;
                 }
 
                 biomeMap[x, y] = sampler.SampleBiome(worldX, worldY);
                 if (computeSplatBlend)
-                    SplatMapGenerator.FillBlendSlots(sampler.GetTextureBlend(worldX, worldY), splatIndices, splatBlend, x, y);
+                    SplatMapGenerator.FillBlendSlots(sampler.GetTextureBlend(worldX, worldY), splatIndices, blendData, x, y);
             }
-        }
+        };
+
+        TerrainWorkerPool pool = TerrainWorkerPool.Current;
+        if (pool != null)
+            pool.For(ChunkSize, row);
+        else
+            for (int y = 0; y < ChunkSize; y++)
+                row(y);
 
         return biomeMap;
     }

@@ -10,6 +10,7 @@ public static partial class RiverGenerator
     private static RiverPath Trace(Vector2 start, Vector2 initialDirection, float surfaceCap, LakeFeature sourceLake,
         float phase, bool isSpring, WaterSettings s, TerrainHeightSampler sampler)
     {
+        GenerationStats.Count(GenerationStats.RiversTraced);
         int maxPoints = Mathf.Max(3, Mathf.CeilToInt(s.RiverMaxLength / TraceStep) + 1);
         List<Vector2> points = new List<Vector2>(maxPoints + 8);
         List<float> natural = new List<float>(maxPoints + 8);

@@ -172,6 +172,33 @@ public static partial class VoronoiBiomeGenerator
         public int[] BiomeIndex;        // per point: index into Biomes
         public int[] FirstPoint;        // per biome: index of its first point
         public int[] PointCounts;       // per biome: how many points it has here
+        private PairBandTable pairBands;  // RequiredSlopeSafeBlendDistance for every pair of Biomes, made on first use
+
+        private sealed class PairBandTable
+        {
+            public int Octaves;
+            public float Tangent;
+            public float[] Bands;
+        }
+
+        /// <summary>
+        /// <see cref="RequiredSlopeSafeBlendDistance"/> of Biomes[c] against Biomes[b] at [c * Biomes.Length + b] - it
+        /// only depends on the two biomes' settings, so it is worked out once here instead of for every cell.
+        /// </summary>
+        public float[] PairBands(int octaves, float tangent)
+        {
+            PairBandTable table = pairBands;
+            if (table != null && table.Octaves == octaves && table.Tangent == tangent)
+                return table.Bands;
+            int count = Biomes.Length;
+            var bands = new float[count * count];
+            for (int c = 0; c < count; c++)
+                for (int b = 0; b < count; b++)
+                    if (b != c)
+                        bands[c * count + b] = RequiredSlopeSafeBlendDistance(Biomes[c], Biomes[b], octaves, tangent);
+            pairBands = new PairBandTable { Octaves = octaves, Tangent = tangent, Bands = bands };
+            return bands;
+        }
 
         public static Neighborhood Build(List<VoronoiPoint> points)
         {

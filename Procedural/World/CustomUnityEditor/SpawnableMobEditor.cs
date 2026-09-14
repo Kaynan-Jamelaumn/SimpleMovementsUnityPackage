@@ -152,7 +152,7 @@ public class SpawnableMobEditor : EditorWindow
     private void FindTerrainGenerator()
     {
 #if UNITY_2023_1_OR_NEWER
-        terrainGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
+        terrainGenerator = Object.FindAnyObjectByType<TerrainGenerator>();
 #else
             terrainGenerator = Object.FindObjectOfType<TerrainGenerator>();
 #endif

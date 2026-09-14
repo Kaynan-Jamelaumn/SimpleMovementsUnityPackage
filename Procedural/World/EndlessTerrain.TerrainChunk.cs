@@ -85,6 +85,8 @@ public partial class EndlessTerrain : MonoBehaviour
         Material terrainMaterial;
         JobHandle colliderBake;
         bool colliderBaking;
+        // Generation Stats timestamps (see GenerationStats): when the chunk was requested, its collider scheduled, its NavMesh started.
+        long requestedAt, colliderScheduledAt, navMeshStartedAt;
         NavMeshData navMeshData;
         AsyncOperation navMeshBuild;
         bool navMeshBuilt;
@@ -159,6 +161,7 @@ public partial class EndlessTerrain : MonoBehaviour
             meshObject.transform.parent = parent;
             SetVisible(false);
 
+            requestedAt = GenerationStats.Start();
             if (cachedData.HasValue)
             {
                 // Back from the data cache: only the main-thread part is left (still within the per-frame budget).
@@ -185,6 +188,8 @@ public partial class EndlessTerrain : MonoBehaviour
                 return;
             if (enableDebugging)
                 Debug.Log($"OnTerrainDataReceived for chunk at {globalOffset}");
+            long applyStart = GenerationStats.Start();
+            long stage = applyStart;
 
             terrainGenerator = terrainData.terrainGenerator;
             heightmap = terrainData.heightMap;
@@ -200,9 +205,12 @@ public partial class EndlessTerrain : MonoBehaviour
                     meshRenderer.sharedMaterial = terrainMaterial;
                     ApplyWetnessMap(terrainData.waterData);
                 }
+                GenerationStats.Record(GenerationStats.ApplyMaterial, stage);
             }
 
+            stage = GenerationStats.Start();
             Mesh mesh = terrainData.meshData.UpdateMesh();
+            GenerationStats.Record(GenerationStats.ApplyMesh, stage);
 
             if (enableDebugging)
                 Debug.Log($"Mesh stats - Vertices: {mesh.vertexCount}, Bounds: {mesh.bounds}");
@@ -223,13 +231,17 @@ public partial class EndlessTerrain : MonoBehaviour
                 colliderBake = new BakeColliderJob { MeshId = mesh.GetInstanceID() }.Schedule();
 #endif
                 colliderBaking = true;
+                colliderScheduledAt = GenerationStats.Start();
             }
             else
             {
                 Debug.LogError($"Invalid mesh generated for chunk at {globalOffset}");
             }
 
+            stage = GenerationStats.Start();
             UpdateWaterMesh(terrainData);
+            if (terrainData.waterMeshData != null)
+                GenerationStats.Record(GenerationStats.ApplyWater, stage);
             if (IsVisible())
                 UpdateLod(LodDistance());
 
@@ -259,6 +271,11 @@ public partial class EndlessTerrain : MonoBehaviour
                 mapGenerator.RequestObjectPlacement(OnPlacementsReady, terrainData, DistanceToViewer, token);
             // The placement job has what it needs; the environment it reads is dropped with it.
             generatedData.placementFields = null;
+
+            GenerationStats.Record(GenerationStats.ApplyTotal, applyStart);
+            GenerationStats.Record(GenerationStats.ChunkVisible, requestedAt);
+            GenerationStats.Count(GenerationStats.ChunksApplied);
+            GenerationStats.MarkChunkVisible();
         }
 
         /// <summary>The chunk's objects were decided: create them a few per frame, nearest chunks first.</summary>
@@ -290,6 +307,8 @@ public partial class EndlessTerrain : MonoBehaviour
             if (loaded != null)
                 loaded.Objects = objects;
             objectsReady = true;
+            GenerationStats.Record(GenerationStats.ChunkObjects, requestedAt);
+            GenerationStats.MarkObjectsCreated();
             // Only chunks near the viewer keep their full objects (see Far Objects).
             farObjects = mapGenerator.FarObjects.Track(meshObject.transform, objects, DistanceToViewer);
             if (enableDebugging)
@@ -664,6 +683,7 @@ public partial class EndlessTerrain : MonoBehaviour
             {
                 if (!navMeshBuild.isDone)
                     return;
+                GenerationStats.Record(GenerationStats.NavMesh, navMeshStartedAt);
                 navMeshBuild = null;
                 navMeshBuilt = true;
                 if (loaded != null)
@@ -697,6 +717,7 @@ public partial class EndlessTerrain : MonoBehaviour
             bool fromColliders = farObjects != null && navMeshSurface.useGeometry == NavMeshCollectGeometry.PhysicsColliders;
             if (fromColliders)
                 mapGenerator.FarObjects.SetSwitchedCollidersEnabled(farObjects, true);
+            navMeshStartedAt = GenerationStats.Start();
             navMeshBuild = navMeshSurface.UpdateNavMesh(navMeshSurface.navMeshData);
             if (fromColliders)
                 mapGenerator.FarObjects.SetSwitchedCollidersEnabled(farObjects, false);
@@ -740,6 +761,7 @@ public partial class EndlessTerrain : MonoBehaviour
                 colliderBaking = false;
                 if (baseMesh != null)
                     meshCollider.sharedMesh = baseMesh;   // already cooked: no cooking on the main thread
+                GenerationStats.Record(GenerationStats.ColliderReady, colliderScheduledAt);
             }
 
             UpdateNavMesh();

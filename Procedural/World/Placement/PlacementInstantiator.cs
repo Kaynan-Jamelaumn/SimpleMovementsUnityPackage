@@ -65,6 +65,11 @@ public sealed class PlacementInstantiator
     public int MaxPooled = 4000;
     /// <summary>Where the pool's (inactive) holder object goes in the hierarchy.</summary>
     public Transform PoolParent;
+    /// <summary>
+    /// Released objects are destroyed instead of pooled while this is set - for teardown (a scene closing), when no
+    /// holder may be created or re-parented under objects that are being destroyed.
+    /// </summary>
+    public bool PoolingSuspended;
 
     /// <summary>Objects waiting in the pool.</summary>
     public int PooledObjects => pooledCount;
@@ -125,7 +130,7 @@ public sealed class PlacementInstantiator
     {
         if (instance == null)
             return;
-        Transform root = PoolingEnabled && prefab != null && pooledCount < MaxPooled ? PoolRoot() : null;
+        Transform root = PoolingEnabled && !PoolingSuspended && prefab != null && pooledCount < MaxPooled ? PoolRoot() : null;
         if (root == null)
         {
             Object.Destroy(instance);
@@ -208,6 +213,18 @@ public sealed class PlacementInstantiator
     {
         if (batches.Count == 0)
             return 0;
+        long start = GenerationStats.Start();
+        int created = CreateSome(budgetMs, maxObjects);
+        if (created > 0)
+        {
+            GenerationStats.Record(GenerationStats.ObjectSpawnFrame, start);
+            GenerationStats.Count(GenerationStats.ObjectsCreated, created);
+        }
+        return created;
+    }
+
+    private int CreateSome(float budgetMs, int maxObjects)
+    {
 
         watch.Restart();
         int created = 0;

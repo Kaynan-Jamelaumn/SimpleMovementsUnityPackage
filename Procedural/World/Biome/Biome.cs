@@ -129,6 +129,46 @@ public class Biome : ScriptableObject
     [Tooltip("How likely a river spring is to appear in this biome (0 = never, 1 = normal, 3 = very common - e.g. mountains).")]
     [Range(0f, 3f)] public float riverSpringLikelihood = 1f;
 
+    [Header("Weather")]
+    /// <summary>How often each kind of weather happens in this biome, relative to what its climate gives (see <see cref="WeatherSystem"/>).</summary>
+    [Tooltip("How often each kind of weather happens in this biome, relative to what its climate gives - 1 = as the climate says, 0 = never, up to 3 = much more often. The climate already decides most of it: Ideal Temperature and Ideal Moisture above (and the altitude) make dry, hot biomes get sandstorms and heat waves, cold ones snow and blizzards, wet ones rain and fog. Right-click the biome's header (or the three dots) for presets: Desert, Tundra, Rainforest... Only used when the scene has a Weather System.")]
+    public BiomeWeather weather = new BiomeWeather();
+
+    [ContextMenu("Weather Preset/From Climate Only (all 1)")]
+    private void WeatherPresetNeutral() { ApplyWeatherPreset(BiomeWeatherPreset.FromClimate); }
+    [ContextMenu("Weather Preset/Temperate (rain, fog, some storms)")]
+    private void WeatherPresetTemperate() { ApplyWeatherPreset(BiomeWeatherPreset.Temperate); }
+    [ContextMenu("Weather Preset/Grassland (storms, wind, tornadoes)")]
+    private void WeatherPresetGrassland() { ApplyWeatherPreset(BiomeWeatherPreset.Grassland); }
+    [ContextMenu("Weather Preset/Desert (sandstorms, heat waves)")]
+    private void WeatherPresetDesert() { ApplyWeatherPreset(BiomeWeatherPreset.Desert); }
+    [ContextMenu("Weather Preset/Tundra & Snow (snow, blizzards)")]
+    private void WeatherPresetTundra() { ApplyWeatherPreset(BiomeWeatherPreset.TundraAndSnow); }
+    [ContextMenu("Weather Preset/Rainforest (heavy rain, storms, mist)")]
+    private void WeatherPresetRainforest() { ApplyWeatherPreset(BiomeWeatherPreset.Rainforest); }
+    [ContextMenu("Weather Preset/Swamp & Wetland (fog, mist, rain)")]
+    private void WeatherPresetSwamp() { ApplyWeatherPreset(BiomeWeatherPreset.SwampAndWetland); }
+    [ContextMenu("Weather Preset/Mountains (wind, snow, sudden storms)")]
+    private void WeatherPresetMountains() { ApplyWeatherPreset(BiomeWeatherPreset.Mountains); }
+    [ContextMenu("Weather Preset/Coast (wind, fog, storms)")]
+    private void WeatherPresetCoast() { ApplyWeatherPreset(BiomeWeatherPreset.Coast); }
+    [ContextMenu("Weather Preset/Always Calm (no weather events)")]
+    private void WeatherPresetCalm() { ApplyWeatherPreset(BiomeWeatherPreset.AlwaysCalm); }
+
+    /// <summary>Sets this biome's weather multipliers to a preset (with undo in the editor).</summary>
+    public void ApplyWeatherPreset(BiomeWeatherPreset preset)
+    {
+#if UNITY_EDITOR
+        UnityEditor.Undo.RecordObject(this, "Weather Preset");
+#endif
+        if (weather == null)
+            weather = new BiomeWeather();
+        weather.ApplyPreset(preset);
+#if UNITY_EDITOR
+        UnityEditor.EditorUtility.SetDirty(this);
+#endif
+    }
+
     /// <summary>
     /// Scores how well a given climate matches this biome's ideal temperature/moisture niche.
     /// Returns 1 when the climate exactly matches the ideal, falling off toward 0 the further away it is

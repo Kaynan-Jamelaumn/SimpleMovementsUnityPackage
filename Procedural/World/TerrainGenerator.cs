@@ -344,6 +344,10 @@ public partial class TerrainGenerator : MonoBehaviour
     [Tooltip("Spacing of mountain belts = Voronoi Scale x this. Larger = fewer, longer, more widely separated ranges.")]
     [SerializeField] private float mountainBeltScaleMultiplier = 6f;
 
+    /// <summary>How far (world units) mountain foothills reach past the Mountains biome's border.</summary>
+    [Tooltip("How far (world units) the foothills of Mountains biomes reach past the biome's border into the neighboring biomes. 0 = mountains rise entirely inside their own biome; larger = longer foothills climbing out of the neighboring land (which then looks more like part of the mountain). The mountains' own shape is not affected.")]
+    [SerializeField] private float mountainFoothillReach = 40f;
+
     [Header("Volcanoes")]
     [Tooltip("Generate volcanoes and calderas: rare, very large landmarks (a cone or a collapsed caldera with a wide apron of lava plains) that reshape a big area around them. Rivers run down their flanks and lakes can form in calderas. A biome with Placement = Volcanic, if you have one, is painted over them.")]
     [SerializeField] private bool enableVolcanoes = true;
@@ -531,6 +535,8 @@ public partial class TerrainGenerator : MonoBehaviour
     [SerializeField] private float waterfallMinDrop = 4f;
     [Tooltip("Tallest single fall; bigger drops become several falls with pools between them (a multi-tier waterfall).")]
     [SerializeField] private float waterfallTierHeight = 12f;
+    [Tooltip("How steep (degrees) a river's water must drop for the stretch to become a waterfall. Lower = more falls: steep hillsides become cascades of falls, each with a rock ledge across the valley. Higher = falls only at steep cliffs; rivers run as rapids elsewhere.")]
+    [SerializeField][Range(10f, 85f)] private float waterfallMinSlope = 17f;
 
     [Header("Erosion")]
     /// <summary>

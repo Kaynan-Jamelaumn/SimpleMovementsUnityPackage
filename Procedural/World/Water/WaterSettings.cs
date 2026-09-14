@@ -79,6 +79,8 @@ public sealed class WaterSettings
     public float SnowmeltSprings;
     public float WaterfallMinDrop;
     public float WaterfallTierHeight;
+    /// <summary>Surface drop per unit of river length (tan of Waterfall Min Slope) from which a stretch becomes a waterfall.</summary>
+    public float WaterfallMinGrade;
 
     public static WaterSettings From(TerrainGenerator tg)
     {
@@ -161,6 +163,7 @@ public sealed class WaterSettings
             SnowmeltSprings = Mathf.Max(0f, tg.SnowmeltSprings),
             WaterfallMinDrop = Mathf.Max(1f, tg.WaterfallMinDrop),
             WaterfallTierHeight = Mathf.Max(2f, tg.WaterfallTierHeight),
+            WaterfallMinGrade = Mathf.Tan(Mathf.Clamp(tg.WaterfallMinSlope, 10f, 85f) * Mathf.Deg2Rad),
         };
     }
 }

@@ -201,11 +201,13 @@ public partial class TerrainGeneratorEditor
         { "riverMaxValleyWidth", "Furthest (world units) from the river's center its valley may reach." },
         { "riverBankFreeboard", "How far the banks stay above the river's water." },
         { "enableWaterfalls",
-            "Where a river's water drops steeply (at least 0.3 units per unit of length), rebuild the drop as real waterfalls: a flat pool, a rock lip, a sheer fall and a plunge pool, " +
-            "repeated as tiers for tall drops. Happens naturally at cliffs, plateau and Highlands edges, volcano flanks, glacial valley walls and sea cliffs.\n\n" +
+            "Where a river's water drops at least as steeply as Min Slope, rebuild the drop as real waterfalls: a flat pool, a rock lip, a sheer fall and a plunge pool " +
+            "carved into the land below, repeated as tiers for tall drops. The land takes part: the lip is a rock ledge across the valley, curving downstream to both sides, " +
+            "so a fall never stands on its own in the middle of a slope. Happens naturally at cliffs, plateau and Highlands edges, mountain flanks, glacial valley walls and sea cliffs.\n\n" +
             "OFF = steep rapids instead. Waterfall sheets use the Waterfall material slot (falling back to River, then Default)." },
         { "waterfallMinDrop", "Smallest total drop (world units) that becomes a waterfall. Lower = more, smaller falls; higher = only big ones." },
         { "waterfallTierHeight", "Tallest single fall. A drop taller than this is split into several falls with pools between them (up to 4 tiers, if the steep stretch is long enough)." },
+        { "waterfallMinSlope", "How steep (degrees) a river's water must drop for the stretch to become a waterfall. Lower = more falls: steep hillsides become cascades of falls, each with a rock ledge across the valley. Higher (40-60) = falls only at steep cliffs; rivers run as rapids elsewhere." },
 
         // --- Water materials & gameplay
         { "waterMaterial", "Material for every water type that doesn't have its own below. Empty = built-in transparent fallbacks, tinted per type." },

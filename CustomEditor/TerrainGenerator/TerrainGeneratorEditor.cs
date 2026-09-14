@@ -223,6 +223,10 @@ public partial class TerrainGeneratorEditor : Editor
 
         showWater = Section("Water (Oceans, Lakes, Ponds, Rivers)", showWater, () => DrawWaterSection(generator));
 
+        showWeatherSection = Section("Weather (Rain, Snow, Storms...)", showWeatherSection, () => DrawWeatherSection(generator));
+
+        showStatsSection = Section("Performance Stats (Generation Timings)", showStatsSection, DrawStatsSection);
+
         showErosionDebug = Section("Erosion Debug Visualization", showErosionDebug, DrawErosionDebugSection);
 
         showOther = Section("Other Configuration", showOther, DrawOtherSection);

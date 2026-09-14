@@ -55,9 +55,12 @@ public static partial class VoronoiBiomeGenerator
         float[] distances = Scratch(ref scratchDistances, pointCount);
         float[] nearest = Scratch(ref scratchNearest, count);
         float closest = float.MaxValue;
+        float wx = warpedPosition.x, wy = warpedPosition.y;
         for (int p = 0; p < pointCount; p++)
         {
-            float distance = (warpedPosition - positions[p]).magnitude;
+            // (warpedPosition - positions[p]).magnitude, written out (the same float operations, so the same value).
+            float dx = wx - positions[p].x, dy = wy - positions[p].y;
+            float distance = (float)System.Math.Sqrt(dx * dx + dy * dy);
             distances[p] = distance;
             int index = biomeIndex[p];
             if (p == firstPoint[index])
@@ -92,6 +95,7 @@ public static partial class VoronoiBiomeGenerator
 
         float[] weights = Scratch(ref scratchWeights, count);
         float[] bands = Scratch(ref scratchBands, count);
+        float[] pairBands = maxBoundarySlopeTangent > 0f ? hood.PairBands(octaves, maxBoundarySlopeTangent) : null;
         float total = 0f;
         for (int c = 0; c < count; c++)
         {
@@ -111,7 +115,7 @@ public static partial class VoronoiBiomeGenerator
                     if (b == c || preliminary[b] <= 0f)
                         continue;
 
-                    weighted += preliminary[b] * Mathf.Max(baseBand, RequiredSlopeSafeBlendDistance(biomes[c], biomes[b], octaves, maxBoundarySlopeTangent));
+                    weighted += preliminary[b] * Mathf.Max(baseBand, pairBands[c * count + b]);
                     presence += preliminary[b];
                 }
 
@@ -244,7 +248,7 @@ public static partial class VoronoiBiomeGenerator
     /// with the typical case, borders are walkable along most of their length, and the few spots where
     /// both noises happen to peak apart are local steep patches rather than a continuous wall.
     /// </summary>
-    private static float RequiredSlopeSafeBlendDistance(Biome biomeA, Biome biomeB, int octaves, float maxSlopeTangent)
+    internal static float RequiredSlopeSafeBlendDistance(Biome biomeA, Biome biomeB, int octaves, float maxSlopeTangent)
     {
         float roughnessGap = 0.5f * (biomeA.EstimateMaxHeightAmplitude(octaves) + biomeB.EstimateMaxHeightAmplitude(octaves));
         float baseElevationGap = Mathf.Abs(biomeA.baseElevation - biomeB.baseElevation);

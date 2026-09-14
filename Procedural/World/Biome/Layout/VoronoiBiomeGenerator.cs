@@ -165,7 +165,24 @@ public static partial class VoronoiBiomeGenerator
             // If the chunk's Voronoi points have already been generated, do nothing.
             if (ChunkVoronoiPoints.ContainsKey(chunkCoord))
                 return;
+            long statStart = GenerationStats.Start();
+            try
+            {
+                GenerateChunkVoronoiLocked(chunkCoord, scale, numPoints, availableBiomes, seed, useWeightedBiome, useClimatePlacement,
+                    climateNoiseScale, clusterStrength, clusterRadius, repeatPenalty, options);
+            }
+            finally
+            {
+                GenerationStats.Record(GenerationStats.VoronoiPoints, statStart);
+            }
+        }
+    }
 
+    /// <summary>The body of <see cref="GenerateChunkVoronoi"/>, called under its lock for a cell without points yet.</summary>
+    private static void GenerateChunkVoronoiLocked(Vector2Int chunkCoord, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome,
+        bool useClimatePlacement, float climateNoiseScale, float clusterStrength, float clusterRadius, float repeatPenalty, LayoutOptions options)
+    {
+        {
             if (options != null && options.OrderIndependent)
             {
                 var args = new LayoutArgs
@@ -263,5 +280,54 @@ public static partial class VoronoiBiomeGenerator
         }
 
         return closestBiome;
+    }
+
+    /// <summary>
+    /// Adds to <paramref name="into"/> every biome <see cref="GetBiomeAtPosition"/> (same settings) could return
+    /// anywhere in the rectangle [<paramref name="min"/>, <paramref name="max"/>] - the biomes of the Voronoi points
+    /// that could be nearest somewhere in it (a few more at most, never fewer). A quick way to tell that an area
+    /// holds no biome of some kind, or only one, without looking up every position in it.
+    /// </summary>
+    public static void GetBiomesInArea(Vector2 min, Vector2 max, float scale, int numPoints, List<Biome> availableBiomes, int seed, bool useWeightedBiome,
+        bool useClimatePlacement, float climateNoiseScale, float warpStrength, float warpScale,
+        float clusterStrength, float clusterRadius, float repeatPenalty, LayoutOptions options, HashSet<Biome> into)
+    {
+        // Positions are warped before the lookup: widen the rectangle by the most the warp can move them (its
+        // noise is about [-1,1]; Unity's Perlin noise can overshoot slightly, hence the extra 10%).
+        float reach = warpStrength > 0f ? 1.1f * Mathf.Min(warpStrength, Mathf.Max(0.0001f, warpScale) * 0.35f) : 0f;
+        float minX = min.x - reach, minY = min.y - reach, maxX = max.x + reach, maxY = max.y + reach;
+        Vector2Int from = GetChunkCoord(new Vector2(minX, minY), scale);
+        Vector2Int to = GetChunkCoord(new Vector2(maxX, maxY), scale);
+        for (int cy = from.y; cy <= to.y; cy++)
+        {
+            for (int cx = from.x; cx <= to.x; cx++)
+            {
+                // Warped positions in this Voronoi chunk are looked up among its neighborhood's points.
+                Neighborhood hood = GetNeighborhood(new Vector2Int(cx, cy), scale, numPoints, availableBiomes, seed, useWeightedBiome, useClimatePlacement,
+                    climateNoiseScale, clusterStrength, clusterRadius, repeatPenalty, options);
+                Vector2[] positions = hood.Positions;
+                if (positions.Length == 0)
+                    continue;
+                float x0 = Mathf.Max(minX, cx * scale), x1 = Mathf.Min(maxX, (cx + 1) * scale);
+                float y0 = Mathf.Max(minY, cy * scale), y1 = Mathf.Min(maxY, (cy + 1) * scale);
+
+                // A point can't be nearest anywhere in the rectangle if even its closest spot is farther than
+                // some other point's farthest spot.
+                float bound = float.MaxValue;
+                for (int i = 0; i < positions.Length; i++)
+                {
+                    float dx = Mathf.Max(Mathf.Abs(positions[i].x - x0), Mathf.Abs(positions[i].x - x1));
+                    float dy = Mathf.Max(Mathf.Abs(positions[i].y - y0), Mathf.Abs(positions[i].y - y1));
+                    bound = Mathf.Min(bound, dx * dx + dy * dy);
+                }
+                for (int i = 0; i < positions.Length; i++)
+                {
+                    float dx = Mathf.Max(0f, Mathf.Max(x0 - positions[i].x, positions[i].x - x1));
+                    float dy = Mathf.Max(0f, Mathf.Max(y0 - positions[i].y, positions[i].y - y1));
+                    if (dx * dx + dy * dy <= bound)
+                        into.Add(hood.PointBiomes[i]);
+                }
+            }
+        }
     }
 }

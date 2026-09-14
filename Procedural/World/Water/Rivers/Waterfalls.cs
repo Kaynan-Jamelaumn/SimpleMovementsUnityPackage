@@ -5,22 +5,35 @@ using System.Threading;
 using UnityEngine;
 
 /// <summary>
-/// Turns steep stretches of a river into waterfalls. Wherever the water surface drops faster than a
-/// steep-rapids grade over a meaningful height (a river running off a cliff, a plateau edge, a volcano
-/// flank or into a valley), the drop is rebuilt as one or more falls: a flat pool, a rock lip, a sheer
+/// Turns steep stretches of a river into waterfalls. Wherever the water surface drops at least as steeply as
+/// Waterfall Min Slope over a meaningful height (a river running off a cliff, a ledge, a plateau edge or a
+/// sea cliff), the drop is rebuilt as one or more falls: a flat pool, a rock lip, a sheer
 /// drop and a plunge pool, repeated as a multi-tier fall when the drop is taller than one tier. Each
 /// pool sits at the level the original surface had at the pool's downstream end, so the water is never
 /// raised above its banks, and the surface still only ever goes downhill.
+///
+/// The land takes part too: below each lip a rounded plunge basin is carved into the slope (see
+/// <see cref="BasinCarve"/>), so the drop is a ledge running across the valley - highest at the river and
+/// dying out to both sides, like a fall that has cut back into a horseshoe - instead of a slot with walls
+/// cut into an otherwise smooth hillside.
 /// </summary>
 public static class Waterfalls
 {
-    private const float FallGrade = 0.3f;   // surface drop per unit of river length that counts as "falling"
     private const float LipHalfGap = 0.35f; // the sheer drop happens over twice this distance
 
+    /// <summary>
+    /// Rebuilds the steep stretches of a river (given per point) as waterfalls, adding two points around each lip.
+    /// <paramref name="inFall"/> receives, per resulting point, whether it lies in a fall - below a lip, in a pool
+    /// lowered into the drop - where the land beside the water is the fall's own rock face rather than ground the
+    /// river has to cut a valley through.
+    /// </summary>
     public static RiverFall[] Shape(List<Vector2> points, List<float> natural, List<float> halfWidth, List<float> depth,
-        List<float> surface, List<float> extraDepth, WaterSettings s)
+        List<float> surface, List<float> extraDepth, List<bool> inFall, WaterSettings s)
     {
         int n = points.Count;
+        inFall.Clear();
+        for (int i = 0; i < n; i++)
+            inFall.Add(false);
         if (n < 3)
             return new RiverFall[0];
 
@@ -32,6 +45,7 @@ public static class Waterfalls
         var lipArc = new List<float>();
         var lipTop = new List<float>();
         var lipBottom = new List<float>();
+        var lipLength = new List<float>();
         var pointLevel = new float[n];
         for (int i = 0; i < n; i++)
             pointLevel[i] = float.NaN;
@@ -39,7 +53,7 @@ public static class Waterfalls
         int k = 0;
         while (k < n - 1)
         {
-            if (!Steep(k, arc, surface))
+            if (!Steep(k, arc, surface, s.WaterfallMinGrade))
             {
                 k++;
                 continue;
@@ -48,8 +62,8 @@ public static class Waterfalls
             int a = k, b = k + 1, j = k + 1;
             while (j < n - 1)
             {
-                if (Steep(j, arc, surface)) { b = j + 1; j++; }
-                else if (j + 1 < n - 1 && Steep(j + 1, arc, surface) && arc[j + 1] - arc[j] < 12f) { j++; }
+                if (Steep(j, arc, surface, s.WaterfallMinGrade)) { b = j + 1; j++; }
+                else if (j + 1 < n - 1 && Steep(j + 1, arc, surface, s.WaterfallMinGrade) && arc[j + 1] - arc[j] < 12f) { j++; }
                 else break;
             }
             k = b;
@@ -76,6 +90,7 @@ public static class Waterfalls
                 lipArc.Add(lips[t]);
                 lipTop.Add(t == 0 ? SurfaceAt(lips[0], arc, surface) : levels[t - 1]);
                 lipBottom.Add(levels[t]);
+                lipLength.Add(lips[t + 1] - lips[t]);
             }
 
             for (int q = a + 1; q <= b; q++)
@@ -98,6 +113,7 @@ public static class Waterfalls
         var newDepth = new List<float>(newPoints.Capacity);
         var newSurface = new List<float>(newPoints.Capacity);
         var newArc = new List<float>(newPoints.Capacity);
+        var newInFall = new List<bool>(newPoints.Capacity);
         var falls = new List<RiverFall>(lipArc.Count);
         int lip = 0;
         for (int i = 0; i < n; i++)
@@ -108,7 +124,20 @@ public static class Waterfalls
                 float gap = Mathf.Min(LipHalfGap, 0.25f * (arc[i] - arc[i - 1]));
                 AddAt(p - gap, lipTop[lip], i - 1, arc, points, natural, halfWidth, depth, newPoints, newNatural, newHalfWidth, newDepth, newSurface, newArc);
                 AddAt(p + gap, lipBottom[lip], i - 1, arc, points, natural, halfWidth, depth, newPoints, newNatural, newHalfWidth, newDepth, newSurface, newArc);
-                falls.Add(new RiverFall { Position = PointAt(p, i - 1, arc, points), Top = lipTop[lip], Bottom = lipBottom[lip] });
+                newInFall.Add(false);
+                newInFall.Add(true);
+                Vector2 direction = points[i] - points[i - 1];
+                float lipHalfWidth = Mathf.Lerp(halfWidth[i - 1], halfWidth[i], Mathf.InverseLerp(arc[i - 1], arc[i], p));
+                float drop = lipTop[lip] - lipBottom[lip];
+                falls.Add(new RiverFall
+                {
+                    Position = PointAt(p, i - 1, arc, points),
+                    Direction = direction.sqrMagnitude > 1e-8f ? direction.normalized : new Vector2(1f, 0f),
+                    Top = lipTop[lip],
+                    Bottom = lipBottom[lip],
+                    Length = lipLength[lip],
+                    BasinHalfWidth = Mathf.Clamp(0.8f * drop + 2.5f * lipHalfWidth + 3f, 6f, 40f),
+                });
                 lip++;
             }
 
@@ -118,6 +147,7 @@ public static class Waterfalls
             newDepth.Add(depth[i]);
             newSurface.Add(float.IsNaN(pointLevel[i]) ? surface[i] : pointLevel[i]);
             newArc.Add(arc[i]);
+            newInFall.Add(!float.IsNaN(pointLevel[i]));
         }
 
         // Plunge pools below each fall; a shallower rock lip just above it.
@@ -143,13 +173,53 @@ public static class Waterfalls
         depth.Clear(); depth.AddRange(newDepth);
         surface.Clear(); surface.AddRange(newSurface);
         extraDepth.Clear(); extraDepth.AddRange(extra);
+        inFall.Clear(); inFall.AddRange(newInFall);
         return falls.ToArray();
     }
 
-    private static bool Steep(int i, float[] arc, List<float> surface)
+    /// <summary>How far from its lip a fall's plunge basin can reach.</summary>
+    public static float BasinReach(RiverFall fall)
+    {
+        return fall.Length + 1.5f * fall.BasinHalfWidth;
+    }
+
+    /// <summary>
+    /// Height the land is carved down to (keep the lower of this and the terrain) by a fall's plunge basin: a
+    /// bowl below the lip, its floor just above the lower pool, widest at the lip and closing downstream over the
+    /// tier's length. Where it cuts into the slope it leaves a rock ledge along the lip - the full height of the
+    /// drop at the river, lower to the sides, gone at the basin's edge - so the fall reads as a step in the land.
+    /// Upstream of the lip nothing is carved below the water above it plus 2 units.
+    /// </summary>
+    public static float BasinCarve(RiverFall fall, float x, float y, float freeboard)
+    {
+        float dx = x - fall.Position.x, dy = y - fall.Position.y;
+        float along = dx * fall.Direction.x + dy * fall.Direction.y;
+        float across = dy * fall.Direction.x - dx * fall.Direction.y;
+        float drop = Mathf.Max(0f, fall.Top - fall.Bottom);
+        float width = Mathf.Max(1f, fall.BasinHalfWidth);
+        float lift = drop + 2f;
+
+        float a = across / width;
+        float b = Mathf.Max(0f, along) / Mathf.Max(1f, fall.Length + 0.5f * width);
+        float floor = fall.Bottom + Mathf.Max(0.5f, freeboard) + lift * (a * a + b * b);
+        // The ledge's face, just below the lip (so the banks of the pool above stay above its water), and
+        // well above anything upstream.
+        float face = Mathf.Clamp(0.15f * drop, 0.8f, 2.5f);
+        if (along < face)
+            floor += lift * (1f - SmoothStep01(along / face)) + 4f * Mathf.Max(0f, -along);
+        return floor;
+    }
+
+    private static float SmoothStep01(float t)
+    {
+        t = Mathf.Clamp01(t);
+        return t * t * (3f - 2f * t);
+    }
+
+    private static bool Steep(int i, float[] arc, List<float> surface, float grade)
     {
         float length = Mathf.Max(0.5f, arc[i + 1] - arc[i]);
-        return surface[i] - surface[i + 1] >= FallGrade * length;
+        return surface[i] - surface[i + 1] >= grade * length;
     }
 
     private static float SurfaceAt(float p, float[] arc, List<float> surface)

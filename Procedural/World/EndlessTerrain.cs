@@ -103,7 +103,7 @@ public partial class EndlessTerrain : MonoBehaviour
 
     void Start()
     {
-        mapGenerator = Object.FindFirstObjectByType<TerrainGenerator>();
+        mapGenerator = Object.FindAnyObjectByType<TerrainGenerator>();
 
         if (mapGenerator == null)
         {
@@ -281,7 +281,14 @@ public partial class EndlessTerrain : MonoBehaviour
 
     void OnDestroy()
     {
+        // This (or the whole scene) is going away: destroy the chunks' objects instead of pooling them - the pool's
+        // holder can't be created or moved under objects that are being destroyed, and would be left behind.
+        PlacementInstantiator instantiator = mapGenerator != null ? mapGenerator.ObjectInstantiator : null;
+        if (instantiator != null)
+            instantiator.PoolingSuspended = true;
         UnloadAllChunks();
+        if (instantiator != null)
+            instantiator.PoolingSuspended = false;
         LoadedTerrain.Clear();
     }
 

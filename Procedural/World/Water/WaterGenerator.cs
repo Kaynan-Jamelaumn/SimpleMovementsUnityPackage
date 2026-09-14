@@ -37,12 +37,17 @@ public static class WaterGenerator
     {
         Vector2 rectMin = origin;
         Vector2 rectMax = origin + new Vector2(size - 1, size - 1);
+        long total = GenerationStats.Start();
 
+        long stage = GenerationStats.Start();
         List<LakeFeature> lakes = new List<LakeFeature>();
         LakeGenerator.GatherForRect(rectMin, rectMax, settings, sampler, lakes);
+        GenerationStats.Record(GenerationStats.WaterLakes, stage);
 
+        stage = GenerationStats.Start();
         List<RiverPath> rivers = new List<RiverPath>();
         RiverGenerator.Gather(rectMin, rectMax, settings, sampler, rivers);
+        GenerationStats.Record(GenerationStats.WaterRivers, stage);
 
         // Lakes created where a river got trapped aren't on the lake grid - they come with their river.
         for (int i = 0; i < rivers.Count; i++)
@@ -54,12 +59,16 @@ public static class WaterGenerator
 
         // Resolve every lake's final water level up front (it's computed once, lazily, from the global
         // river data) rather than on first touch inside the per-cell loops.
+        stage = GenerationStats.Start();
         for (int i = 0; i < lakes.Count; i++)
         {
             float unused = lakes[i].WaterLevel;
         }
+        GenerationStats.Record(GenerationStats.WaterLakeLevels, stage);
 
-        return new ChunkWaterContext(settings, origin, size, lakes, rivers);
+        var context = new ChunkWaterContext(settings, origin, size, lakes, rivers);
+        GenerationStats.Record(GenerationStats.WaterSetup, total);
+        return context;
     }
 
     public static float SmoothStep01(float v)

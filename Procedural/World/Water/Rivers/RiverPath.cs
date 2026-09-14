@@ -41,7 +41,15 @@ public sealed class RiverPath
 /// <summary>One waterfall drop on a river.</summary>
 public struct RiverFall
 {
+    /// <summary>Where the water goes over the lip.</summary>
     public Vector2 Position;
+    /// <summary>Direction the river flows over the lip (unit length).</summary>
+    public Vector2 Direction;
+    /// <summary>Water level above and below the drop.</summary>
     public float Top;
     public float Bottom;
+    /// <summary>Distance along the river from this lip to the next one (or to the end of the falls).</summary>
+    public float Length;
+    /// <summary>Half the width of the plunge basin below the lip (see <see cref="Waterfalls.BasinCarve"/>).</summary>
+    public float BasinHalfWidth;
 }

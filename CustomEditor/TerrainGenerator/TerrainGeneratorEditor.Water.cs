@@ -144,6 +144,7 @@ public partial class TerrainGeneratorEditor : Editor
     {
         { "waterfallMinDrop", "Min Drop" },
         { "waterfallTierHeight", "Max Tier Height" },
+        { "waterfallMinSlope", "Min Slope" },
     };
 
     private static readonly string[,] WaterJunctionFields =
@@ -198,7 +199,7 @@ public partial class TerrainGeneratorEditor : Editor
         { "riverValleySlope", 28f }, { "riverMaxValleyWidth", 150f }, { "riverBankFreeboard", 0.8f },
         { "coastCliffFrequency", 0.35f }, { "coastCliffHeight", 26f }, { "coastCliffTerraces", 0.5f },
         { "seaStackChance", 0.3f }, { "seaStackSpacing", 220f }, { "seaStackMaxHeight", 30f },
-        { "enableWaterfalls", 1f }, { "waterfallMinDrop", 4f }, { "waterfallTierHeight", 12f },
+        { "enableWaterfalls", 1f }, { "waterfallMinDrop", 4f }, { "waterfallTierHeight", 12f }, { "waterfallMinSlope", 17f },
         { "enableRiverJunctions", 1f }, { "enableMeanderCutoffs", 1f },
         { "wetnessDistance", 14f }, { "wetnessHeight", 4f }, { "snowLineHeight", 90f }, { "snowmeltSprings", 1f },
     };

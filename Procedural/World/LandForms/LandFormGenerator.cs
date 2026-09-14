@@ -97,11 +97,15 @@ public static partial class LandformGenerator
         // that keeps the height continuous everywhere.
         float[] wanted = Scratch(ref scratchWanted, count);
         float[] presence = Scratch(ref scratchPresence, count);
+        float[] typical = Scratch(ref scratchTypical, count);
+        LandformType[] landforms = scratchLandforms != null && scratchLandforms.Length >= count ? scratchLandforms : (scratchLandforms = new LandformType[Mathf.Max(count, 16)]);
         for (int i = 0; i < count; i++)
         {
             Biome biome = blend[i].Biome;
+            landforms[i] = Effective(biome, s.Mode);
+            typical[i] = TypicalRelief(landforms[i], biome, s.ClassicOctaves);
             wanted[i] = Mathf.Max(s.TransitionWidth * s.PointSpacing,
-                1.333f * TypicalRelief(Effective(biome, s.Mode), biome, s.ClassicOctaves) / Mathf.Max(0.05f, s.TransitionSlopeTangent));
+                1.333f * typical[i] / Mathf.Max(0.05f, s.TransitionSlopeTangent));
             presence[i] = Presence(blend[i].SmoothGap, s);
         }
 
@@ -109,6 +113,15 @@ public static partial class LandformGenerator
         float reliefTotal = 0f;
         for (int i = 0; i < count; i++)
         {
+            // The gate below makes the relief vanish exactly as the biome's weight does (and stay 0 for nearby
+            // biomes that aren't blending in yet), which keeps the height continuous everywhere.
+            float gate = SmoothStep(0f, 0.03f, blend[i].Weight);
+            if (gate <= 0f)
+            {
+                reliefWeights[i] = 0f;
+                continue;
+            }
+
             float bandWanted = wanted[i];
             for (int j = 0; j < count; j++)
             {
@@ -122,9 +135,6 @@ public static partial class LandformGenerator
             // Wavering edge: each biome's relief edge is shifted by its own slow noise, so where two
             // landforms meet the line wanders instead of following the straight cell outline.
             float wobble = Noise(x / (0.7f * s.PointSpacing), y / (0.7f * s.PointSpacing), s.StableNameHash(blend[i].Biome), 7) * 0.3f * band;
-            // The gate makes the relief vanish exactly as the biome's weight does (and stay 0 for nearby
-            // biomes that aren't blending in yet), which keeps the height continuous everywhere.
-            float gate = SmoothStep(0f, 0.03f, blend[i].Weight);
             reliefWeights[i] = gate * Falloff(Mathf.Max(0f, blend[i].SmoothGap + wobble) / band);
             reliefTotal += reliefWeights[i];
         }
@@ -152,7 +162,7 @@ public static partial class LandformGenerator
                 continue;
 
             float landformRelief = Relief(landform, biome, x, y, s);
-            height += share * LimitToFront(landformRelief, landform, biome, blend, i, s);
+            height += share * LimitToFront(landformRelief, landform, blend, i, landforms, typical, presence, s);
         }
 
         relief = height - baseElevation;
@@ -161,6 +171,8 @@ public static partial class LandformGenerator
 
     // Per-thread scratch arrays for LandHeight (called for every terrain cell, on several threads at once).
     [System.ThreadStatic] private static float[] scratchWanted;
+    [System.ThreadStatic] private static float[] scratchTypical;
+    [System.ThreadStatic] private static LandformType[] scratchLandforms;
     [System.ThreadStatic] private static float[] scratchPresence;
     [System.ThreadStatic] private static float[] scratchReliefWeights;
 
@@ -191,29 +203,30 @@ public static partial class LandformGenerator
     /// neighbor's influence is weighted by <see cref="Presence"/>, so it fades in smoothly. Deep inside
     /// a territory this changes nothing.
     /// </summary>
-    private static float LimitToFront(float relief, LandformType landform, Biome biome, List<VoronoiBiomeGenerator.BiomeWeight> blend, int index, LandformSettings s)
+    private static float LimitToFront(float relief, LandformType landform, List<VoronoiBiomeGenerator.BiomeWeight> blend, int index,
+        LandformType[] landforms, float[] typicalReliefs, float[] presences, LandformSettings s)
     {
-        float typical = TypicalRelief(landform, biome, s.ClassicOctaves);
+        float typical = typicalReliefs[index];
         // Mountains and plateaus are meant to be hard to cross: their front may rise more steeply than
         // walkable ground (valleys reaching the edge still give walkable ways in).
         float frontSlope = landform == LandformType.Mountains || landform == LandformType.Plateau || landform == LandformType.Glacial
             ? Mathf.Max(s.TransitionSlopeTangent, MountainFrontSlope)
             : s.TransitionSlopeTangent;
         float foothill = Mathf.Max(2f, 0.12f * s.PointSpacing);
+        float typicalScale = Mathf.Max(0.01f, 0.9f * typical);
 
         float floor = 0f;
         float scale = 1f;
         for (int j = 0; j < blend.Count; j++)
         {
-            Biome other = blend[j].Biome;
-            LandformType otherLandform = Effective(other, s.Mode);
+            LandformType otherLandform = landforms[j];
             if (j == index || otherLandform == landform)
                 continue;
-            float presence = Presence(blend[j].SmoothGap, s);
+            float presence = presences[j];
             if (presence <= 0f)
                 continue;
 
-            floor = Mathf.Max(floor, presence * TypicalRelief(otherLandform, other, s.ClassicOctaves));
+            floor = Mathf.Max(floor, presence * typicalReliefs[j]);
 
             // The gap grows by up to 2 per world unit moved straight across a border, so half the gap
             // difference is a safe (never overestimated) distance to it.
@@ -222,11 +235,17 @@ public static partial class LandformGenerator
             // Soft ramp: level at the border, steepening to frontSlope within a short foothill distance,
             // fading smoothly past the border.
             float z = distance / foothill;
+
+            // Well inside, the ramp is high enough that this border doesn't scale the relief at all (pairScale
+            // below is exactly 1 once t passes about 1.34; softplus(z) > z): skip the logarithm and exponential.
+            if (frontSlope * foothill * z / typicalScale >= 1.5f)
+                continue;
+
             float softplus = z > 20f ? z : Mathf.Log(1f + Mathf.Exp(z));
             float envelope = frontSlope * foothill * softplus;
 
             // Scale reaches 1 once the envelope is about as high as the landform's typical relief.
-            float t = envelope / Mathf.Max(0.01f, 0.9f * typical);
+            float t = envelope / typicalScale;
             float t4 = t * t * t * t;
             float pairScale = Mathf.Min(1f, 1.07f * t / Mathf.Sqrt(Mathf.Sqrt(1f + t4)));
             scale = Mathf.Min(scale, Mathf.Lerp(1f, pairScale, presence));

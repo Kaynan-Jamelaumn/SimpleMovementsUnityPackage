@@ -15,6 +15,8 @@ public sealed class RiverRaster
     public readonly float[] Channel;
     /// <summary>Post-erosion bank height (terrain right beside the channel is kept at or above this).</summary>
     public readonly float[] Bank;
+    /// <summary>Distance from the nearest river channel's edge (negative inside a channel), within bank reach.</summary>
+    public readonly float[] BankEdgeDistance;
     /// <summary>Water surface of the river owning this cell's channel.</summary>
     public readonly float[] Surface;
     /// <summary>Distance to the owning river's centerline divided by its half-width (&lt;= 1 = inside the channel).</summary>
@@ -36,6 +38,7 @@ public sealed class RiverRaster
         Carve = Filled(count, float.PositiveInfinity);
         Channel = Filled(count, float.PositiveInfinity);
         Bank = Filled(count, float.NegativeInfinity);
+        BankEdgeDistance = Filled(count, float.PositiveInfinity);
         Surface = Filled(count, float.NaN);
         OwnerNorm = Filled(count, float.PositiveInfinity);
         FlowX = new float[count];

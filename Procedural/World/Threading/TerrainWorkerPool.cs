@@ -37,6 +37,13 @@ public sealed class TerrainWorkerPool : IDisposable
         public long Order;
     }
 
+    // The pool whose worker is running on this thread (null on any other thread), and the priority of the job it runs.
+    [ThreadStatic] private static TerrainWorkerPool current;
+    [ThreadStatic] private static float currentPriority;
+
+    // For() calls with items nobody has taken yet (guarded by gate).
+    private readonly List<Batch> openBatches = new List<Batch>();
+
     private readonly List<Job> queue = new List<Job>();
     private readonly object gate = new object();
     private readonly Thread[] threads;
@@ -64,6 +71,106 @@ public sealed class TerrainWorkerPool : IDisposable
     public static int DefaultThreadCount => Mathf.Clamp(Environment.ProcessorCount - 1, 1, 8);
 
     public int ThreadCount => threads.Length;
+
+    /// <summary>The pool whose worker thread this is, or null when called from any other thread.</summary>
+    public static TerrainWorkerPool Current => current;
+
+    /// <summary>
+    /// Runs <paramref name="body"/> for every index from 0 to <paramref name="count"/> - 1 and returns when all are
+    /// done, shared with this pool's other workers: before starting a new job, and between the items of their own
+    /// For calls, workers take items of the most urgent For in progress (by its job's priority, e.g. the chunk
+    /// nearest the player). So the chunk under the player gets every thread as soon as they can help, instead of
+    /// one each - and with nothing more urgent around, everything runs as before, without any extra threads.
+    /// <paramref name="body"/> must be safe to run for different indices at once. The first exception it throws is
+    /// rethrown here once the other indices are done. Called from any other thread, it simply runs them in order.
+    /// </summary>
+    public void For(int count, Action<int> body)
+    {
+        if (count <= 0)
+            return;
+        if (current != this || threads.Length < 2)
+        {
+            for (int i = 0; i < count; i++)
+                body(i);
+            return;
+        }
+
+        var batch = new Batch(count, body, currentPriority);
+        lock (gate)
+        {
+            openBatches.Add(batch);
+            Monitor.PulseAll(gate);
+        }
+
+        // Work on the most urgent open batch (this one, unless another is more urgent) until this one's items are all taken.
+        while (batch.HasOpenItems)
+            (MostUrgentBatch(batch) ?? batch).RunOne();
+        batch.Wait();
+        if (batch.Error != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(batch.Error).Throw();
+    }
+
+    /// <summary>The open batch to help first: the lowest priority value (<paramref name="own"/> on a tie); null when none is listed.</summary>
+    private Batch MostUrgentBatch(Batch own)
+    {
+        lock (gate)
+        {
+            Batch best = OpenBatchUnderLock();
+            return best != null && own.HasOpenItems && own.Priority <= best.Priority ? own : best;
+        }
+    }
+
+    /// <summary>The shared state of one <see cref="For"/> call.</summary>
+    private sealed class Batch
+    {
+        public readonly float Priority;
+        private readonly int count;
+        private readonly Action<int> body;
+        private int next = -1;
+        private int done;
+        public Exception Error;
+
+        public Batch(int count, Action<int> body, float priority)
+        {
+            this.count = count;
+            this.body = body;
+            Priority = priority;
+        }
+
+        public bool HasOpenItems => Volatile.Read(ref next) + 1 < count;
+
+        /// <summary>Takes and runs one item, if any is left.</summary>
+        public void RunOne()
+        {
+            int index = Interlocked.Increment(ref next);
+            if (index >= count)
+                return;
+            try
+            {
+                body(index);
+            }
+            catch (Exception e)
+            {
+                Interlocked.CompareExchange(ref Error, e, null);
+            }
+
+            if (Interlocked.Increment(ref done) == count)
+            {
+                lock (this)
+                    Monitor.PulseAll(this);
+            }
+        }
+
+        /// <summary>Waits until every item has run (all taken, some maybe still running on other workers).</summary>
+        public void Wait()
+        {
+            lock (this)
+            {
+                while (Volatile.Read(ref done) < count)
+                    Monitor.Wait(this);
+            }
+        }
+    }
 
     /// <summary>Jobs waiting for a thread (not counting the ones running).</summary>
     public int PendingCount
@@ -97,21 +204,43 @@ public sealed class TerrainWorkerPool : IDisposable
 
     private void Run()
     {
+        current = this;
         while (true)
         {
-            Job job;
+            Job job = null;
+            Batch help = null;
+            float priority = 0f;
             lock (gate)
             {
-                while (queue.Count == 0 && !stopping)
+                while (true)
+                {
+                    if (stopping)
+                        return;
+                    // A chunk already being worked on finishes before a new one starts.
+                    help = OpenBatchUnderLock();
+                    if (help != null)
+                        break;
+                    if (queue.Count > 0)
+                    {
+                        job = TakeNext(out priority);
+                        if (job != null)
+                            break;
+                        continue;
+                    }
                     Monitor.Wait(gate);
-                if (stopping)
-                    return;
-                job = TakeNext();
+                }
             }
 
-            if (job == null || (job.Token != null && job.Token.IsCancelled))
+            if (help != null)
+            {
+                help.RunOne();
+                continue;
+            }
+
+            if (job.Token != null && job.Token.IsCancelled)
                 continue;
 
+            currentPriority = priority;
             try
             {
                 job.Work();
@@ -123,9 +252,28 @@ public sealed class TerrainWorkerPool : IDisposable
         }
     }
 
-    /// <summary>Removes and returns the most urgent job (dropping cancelled ones on the way). Called under the lock.</summary>
-    private Job TakeNext()
+    /// <summary>The most urgent batch with items left (dropping finished ones); null when none. Called under the lock.</summary>
+    private Batch OpenBatchUnderLock()
     {
+        Batch best = null;
+        for (int i = openBatches.Count - 1; i >= 0; i--)
+        {
+            Batch batch = openBatches[i];
+            if (!batch.HasOpenItems)
+            {
+                openBatches.RemoveAt(i);
+                continue;
+            }
+            if (best == null || batch.Priority < best.Priority)
+                best = batch;
+        }
+        return best;
+    }
+
+    /// <summary>Removes and returns the most urgent job (dropping cancelled ones on the way). Called under the lock.</summary>
+    private Job TakeNext(out float priorityOfNext)
+    {
+        priorityOfNext = 0f;
         int best = -1;
         float bestPriority = float.MaxValue;
         long bestOrder = long.MaxValue;
@@ -165,6 +313,7 @@ public sealed class TerrainWorkerPool : IDisposable
             return null;
         Job next = queue[best];
         RemoveAt(best);
+        priorityOfNext = bestPriority;
         return next;
     }
 
@@ -182,6 +331,7 @@ public sealed class TerrainWorkerPool : IDisposable
         {
             stopping = true;
             queue.Clear();
+            openBatches.Clear();
             Monitor.PulseAll(gate);
         }
     }

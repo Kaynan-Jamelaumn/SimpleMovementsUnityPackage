@@ -205,8 +205,11 @@ public static partial class RiverGenerator
             boundsMax = Vector2.Max(boundsMax, river.Points[i]);
         }
         Vector2 pad = new Vector2(maxValley + ValleyFade, maxValley + ValleyFade);
-        river.BoundsMin = boundsMin - pad;
-        river.BoundsMax = boundsMax + pad;
+        boundsMin -= pad;
+        boundsMax += pad;
+        IncludeFallBasins(river.Falls, ref boundsMin, ref boundsMax);
+        river.BoundsMin = boundsMin;
+        river.BoundsMax = boundsMax;
         return river;
     }
 

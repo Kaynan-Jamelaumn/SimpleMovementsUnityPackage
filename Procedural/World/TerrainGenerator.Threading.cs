@@ -184,7 +184,12 @@ public partial class TerrainGenerator : MonoBehaviour
     {
         PrepareForGeneration();
         bool placementFields = NeedsObjectPlacement;
-        WorkerPool.Enqueue(() => Deliver(callback, GenerateTerrain(globalOffset, placementFields), token), priority, token);
+        long queued = GenerationStats.Start();
+        WorkerPool.Enqueue(() =>
+        {
+            GenerationStats.Record(GenerationStats.QueueWait, queued);
+            Deliver(callback, GenerateTerrain(globalOffset, placementFields), token);
+        }, priority, token);
     }
 
     /// <summary>
@@ -229,18 +234,24 @@ public partial class TerrainGenerator : MonoBehaviour
     {
         PrepareForGeneration();
         bool placementFields = NeedsObjectPlacement;
+        long queued = GenerationStats.Start();
         WorkerPool.Enqueue(() =>
         {
+            GenerationStats.Record(GenerationStats.QueueWait, queued);
+            long start = GenerationStats.Start();
             MapData mapData = GenerateTerrain(globalOffset, placementFields);
             if (token != null && token.IsCancelled)
                 return;
-            Deliver(callback, BuildTerrainData(mapData, globalOffset), token);
+            DataStructure.TerrainData data = BuildTerrainData(mapData, globalOffset);
+            GenerationStats.Record(GenerationStats.ChunkWorker, start);
+            Deliver(callback, data, token);
         }, priority, token);
     }
 
     /// <summary>The mesh, biome map, splat pixels and water mesh of a chunk from its map data (worker thread).</summary>
     private DataStructure.TerrainData BuildTerrainData(MapData mapData, Vector2 globalOffset)
     {
+        long stage = GenerationStats.Start();
         MeshData meshData = MeshGenerator.GenerateTerrainMesh(
             this,
             mapData.heightMap,
@@ -252,18 +263,29 @@ public partial class TerrainGenerator : MonoBehaviour
         );
         if (prepareMeshesOnWorkers)
             meshData.Prepare();
+        GenerationStats.Record(GenerationStats.TerrainMesh, stage);
 
         // The splat maps' per-pixel biome blend is computed together with the biome map.
+        stage = GenerationStats.Start();
         bool computeSplatBlend = terrainTextureBasedOnVoronoiPoints && UseBiomeBlendedTexturing;
         Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap, computeSplatBlend, out SplatBlendData splatBlend);
+        GenerationStats.Record(GenerationStats.BiomeMap, stage);
 
         var terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap, mapData.erosionDeltaMap, mapData.waterData);
         terrainData.splatBlend = splatBlend;
         terrainData.placementFields = mapData.placementFields;
         if (terrainTextureBasedOnVoronoiPoints)
+        {
+            stage = GenerationStats.Start();
             terrainData.splatPixels = SplatMapGenerator.GenerateSplatPixels(this, biomeMap, globalOffset, splatBlend);
+            GenerationStats.Record(GenerationStats.SplatPixels, stage);
+        }
         if (EnableWater && mapData.waterData != null)
+        {
+            stage = GenerationStats.Start();
             terrainData.waterMeshData = MeshGenerator.GenerateWaterMesh(this, mapData.heightMap, mapData.waterData, levelOfDetail, globalOffset);
+            GenerationStats.Record(GenerationStats.WaterMesh, stage);
+        }
         return terrainData;
     }
 
@@ -276,6 +298,7 @@ public partial class TerrainGenerator : MonoBehaviour
     {
         WorkerPool.Enqueue(() =>
         {
+            long start = GenerationStats.Start();
             MeshData meshData = MeshGenerator.GenerateTerrainMesh(
                 this,
                 heightMap,
@@ -287,6 +310,7 @@ public partial class TerrainGenerator : MonoBehaviour
             );
             if (prepareMeshesOnWorkers)
                 meshData.Prepare();
+            GenerationStats.Record(GenerationStats.LodMesh, start);
             Deliver(callback, meshData, token);
         }, priority, token);
     }
@@ -318,7 +342,9 @@ public partial class TerrainGenerator : MonoBehaviour
         };
         WorkerPool.Enqueue(() =>
         {
+            long start = GenerationStats.Start();
             PlacementResult result = ObjectPlacementEngine.Place(plan, input, token);
+            GenerationStats.Record(GenerationStats.ObjectPlacement, start);
             if (result != null)
                 Deliver(callback, result, token);
         }, priority, token);

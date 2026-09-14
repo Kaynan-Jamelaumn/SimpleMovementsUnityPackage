@@ -21,8 +21,8 @@ public partial class TerrainGeneratorEditor : Editor
             "size, Persistence its roughness.\n\n" +
             "Mountains are built from the shape of the mountain territory as a whole: they rise with the distance into " +
             "it, so a small territory makes a small formation and a large or long one a broad massif or a range whose " +
-            "main ridge follows its middle, dipping into saddles where it narrows. Foothills start a little outside the " +
-            "territory. Each massif varies in height, steepness and shape: difficult ones have steep flanks and cliff " +
+            "main ridge follows its middle, dipping into saddles where it narrows. Foothills reach Mountain Foothill Reach " +
+            "units into the neighboring biomes. Each massif varies in height, steepness and shape: difficult ones have steep flanks and cliff " +
             "bands, accessible ones long gentle sides - and valleys rising from the foothills give routes toward the " +
             "summits. Taller mountains need room: larger territories (Voronoi Scale, fewer points per cell, Cluster " +
             "Strength) and Mountain Belt Strength, which lines mountain biomes up into long ranges.\n\n" +
@@ -45,6 +45,7 @@ public partial class TerrainGeneratorEditor : Editor
                 DrawProp("mountainBeltScaleMultiplier", "Mountain Belt Scale Multiplier");
                 EditorGUILayout.LabelField($"= {generator.MountainBeltScale:0} world units between belts", EditorStyles.miniLabel);
             }
+            DrawProp("mountainFoothillReach", "Mountain Foothill Reach");
         }
 
         BiomeInstance[] biomes = generator.BiomeDefinitions;

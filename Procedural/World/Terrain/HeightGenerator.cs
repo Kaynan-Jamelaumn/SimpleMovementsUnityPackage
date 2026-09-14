@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
 
@@ -96,11 +97,15 @@ public static class HeightGenerator
                     for (int x = 0; x < paddedSize; x++)
                         water.RecordLandSide(x, y, sampler.LandSideAt(paddedOrigin.x + x, paddedOrigin.y + y));
             }
+            long tiles = GenerationStats.Start();
             ErosionTiles.Assemble(terrainGenerator, paddedHeights, paddedOrigin, padding);
+            GenerationStats.Record(GenerationStats.Erosion, tiles);
         }
         else
         {
+            long heights = GenerationStats.Start();
             paddedHeights = BuildBaseHeights(terrainGenerator, sampler, water, paddedOrigin, paddedSize, erosionEnabled, out float[,] resistanceMap, out float[,] rainfallMap);
+            GenerationStats.Record(GenerationStats.HeightMap, heights);
 
             // Snapshot the pre-erosion heights only when the debug visualization actually needs the
             // before/after comparison - this is a full extra heightmap-sized copy, so it stays opt-in.
@@ -108,10 +113,12 @@ public static class HeightGenerator
 
             if (erosionEnabled)
             {
+                long erosion = GenerationStats.Start();
                 if (seamless)
                     ErosionTiles.ErodeSeamlessly(terrainGenerator, paddedHeights, resistanceMap, rainfallMap, paddedOrigin, padding);
                 else
                     Erode(terrainGenerator, paddedHeights, resistanceMap, rainfallMap, paddedOrigin);
+                GenerationStats.Record(GenerationStats.Erosion, erosion);
             }
         }
 
@@ -130,6 +137,7 @@ public static class HeightGenerator
             }
         }
 
+        long waterApply = GenerationStats.Start();
         if (water != null)
             water.ApplyPostErosion(paddedHeights);
 
@@ -151,9 +159,14 @@ public static class HeightGenerator
         }
 
         waterMap = water != null ? water.BuildWaterMap(paddedHeights, padding, finalSize) : null;
+        if (water != null)
+            GenerationStats.Record(GenerationStats.WaterApply, waterApply);
+        long fields = GenerationStats.Start();
         placementFields = buildPlacementFields
             ? PlacementFields.Build(paddedHeights, paddedOrigin, padding, finalSize, Mathf.Min(PlacementFields.DefaultMargin, padding), water)
             : null;
+        if (buildPlacementFields)
+            GenerationStats.Record(GenerationStats.PlacementFields, fields);
         return heightMap;
     }
 
@@ -174,7 +187,9 @@ public static class HeightGenerator
         int originX = Mathf.RoundToInt(paddedOrigin.x), originY = Mathf.RoundToInt(paddedOrigin.y);
         TerrainClimate.Grid climateMoisture = climate != null ? climate.MoistureGrid(originX, originY, paddedSize) : null;
 
-        for (int y = 0; y < paddedSize; y++)
+        // Rows are independent: on a worker thread, idle workers help (see TerrainWorkerPool.For) - same heights.
+        float[,] resistance = resistanceMap, rainfall = rainfallMap;
+        Action<int> row = y =>
         {
             float worldPosY = paddedOrigin.y + y;
             for (int x = 0; x < paddedSize; x++)
@@ -194,17 +209,17 @@ public static class HeightGenerator
                     if (climateMoisture != null)
                         moisture = Mathf.Clamp01(moisture + climateMoisture.At(originX + x, originY + y));
 
-                    float resistance = 0f;
-                    float rainfall = 0f;
+                    float cellResistance = 0f;
+                    float cellRainfall = 0f;
                     for (int i = 0; i < blend.Count; i++)
                     {
-                        resistance += blend[i].Weight * blend[i].Biome.erosionResistance;
-                        rainfall += blend[i].Weight * blend[i].Biome.rainfallErosionMultiplier;
+                        cellResistance += blend[i].Weight * blend[i].Biome.erosionResistance;
+                        cellRainfall += blend[i].Weight * blend[i].Biome.rainfallErosionMultiplier;
                     }
 
-                    resistanceMap[x, y] = Mathf.Clamp01(resistance);
+                    resistance[x, y] = Mathf.Clamp01(cellResistance);
                     // Rainfall-driven ("climate") erosion strength: how much water this cell's climate feeds into passing droplets.
-                    rainfallMap[x, y] = Mathf.Clamp01(moisture * rainfall);
+                    rainfall[x, y] = Mathf.Clamp01(moisture * cellRainfall);
                 }
 
                 if (water != null)
@@ -212,7 +227,14 @@ public static class HeightGenerator
 
                 paddedHeights[x, y] = height;
             }
-        }
+        };
+
+        TerrainWorkerPool pool = TerrainWorkerPool.Current;
+        if (pool != null)
+            pool.For(paddedSize, row);
+        else
+            for (int y = 0; y < paddedSize; y++)
+                row(y);
 
         return paddedHeights;
     }

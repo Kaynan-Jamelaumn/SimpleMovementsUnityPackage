@@ -47,6 +47,7 @@ public static partial class RiverGenerator
     {
         Springs.Clear();
         Outlets.Clear();
+        ClearSpillHeights();
     }
 
     /// <summary>
@@ -66,6 +67,16 @@ public static partial class RiverGenerator
     /// </summary>
     public static void Prefetch(Vector2 rectMin, Vector2 rectMax, WaterSettings s, TerrainHeightSampler sampler)
     {
+        Prefetch(rectMin, rectMax, s, sampler, -1, true);
+    }
+
+    /// <summary>
+    /// As above, on at most <paramref name="maxThreads"/> threads (-1 = no limit); junctions only with
+    /// <paramref name="resolveJunctions"/>. A gather traces only the rivers themselves this way: it can run inside
+    /// a junction being resolved, which must not start resolving the others (one of them may be that very river).
+    /// </summary>
+    private static void Prefetch(Vector2 rectMin, Vector2 rectMax, WaterSettings s, TerrainHeightSampler sampler, int maxThreads, bool resolveJunctions)
+    {
         if (!s.RiversEnabled)
             return;
 
@@ -77,9 +88,10 @@ public static partial class RiverGenerator
             AddCells(cells, rectMin - reachVector, rectMax + reachVector, LakeGenerator.EffectiveSpacing(s, false), true);
 
         // Base traces first (junctions compare against other rivers' base traces), then junctions.
-        System.Threading.Tasks.Parallel.ForEach(cells, cell => GetCached(cell.Value ? Outlets : Springs, cell.Key, cell.Value, s, sampler));
-        if (s.RiverJunctions)
-            System.Threading.Tasks.Parallel.ForEach(cells, cell => Resolve(GetCached(cell.Value ? Outlets : Springs, cell.Key, cell.Value, s, sampler), s, sampler));
+        var options = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = maxThreads };
+        System.Threading.Tasks.Parallel.ForEach(cells, options, cell => GetCached(cell.Value ? Outlets : Springs, cell.Key, cell.Value, s, sampler));
+        if (s.RiverJunctions && resolveJunctions)
+            System.Threading.Tasks.Parallel.ForEach(cells, options, cell => Resolve(GetCached(cell.Value ? Outlets : Springs, cell.Key, cell.Value, s, sampler), s, sampler));
     }
 
     private static void AddCells(List<KeyValuePair<Vector2Int, bool>> cells, Vector2 min, Vector2 max, float spacing, bool outlet)
@@ -102,6 +114,14 @@ public static partial class RiverGenerator
 
         Vector2Int min = WaterGenerator.CellOf(rectMin - reachVector, s.RiverSpacing);
         Vector2Int max = WaterGenerator.CellOf(rectMax + reachVector, s.RiverSpacing);
+
+        // The first chunks of a new area can need hundreds of rivers traced: trace the missing ones on all
+        // cores but one (left for the main thread) first. Each is traced once, from its own cell, so the rivers
+        // are exactly the same either way.
+        if (CountUntraced(Springs, min, max) + (s.LakesEnabled ? CountUntraced(Outlets, WaterGenerator.CellOf(rectMin - reachVector, LakeGenerator.EffectiveSpacing(s, false)),
+                WaterGenerator.CellOf(rectMax + reachVector, LakeGenerator.EffectiveSpacing(s, false))) : 0) >= ParallelTraceThreshold)
+            Prefetch(rectMin, rectMax, s, sampler, Mathf.Max(1, Environment.ProcessorCount - 1), false);
+
         for (int cy = min.y; cy <= max.y; cy++)
         {
             for (int cx = min.x; cx <= max.x; cx++)
@@ -131,6 +151,23 @@ public static partial class RiverGenerator
                     into.Add(river);
             }
         }
+    }
+
+    /// <summary>Untraced cells a gather needs before it traces them on all cores (a few are quicker one at a time).</summary>
+    private const int ParallelTraceThreshold = 24;
+
+    private static int CountUntraced(ConcurrentDictionary<long, Lazy<RiverPath>> cache, Vector2Int min, Vector2Int max)
+    {
+        int count = 0;
+        for (int cy = min.y; cy <= max.y; cy++)
+        {
+            for (int cx = min.x; cx <= max.x; cx++)
+            {
+                if (!cache.TryGetValue(WaterGenerator.CellKey(new Vector2Int(cx, cy)), out Lazy<RiverPath> lazy) || !lazy.IsValueCreated)
+                    count++;
+            }
+        }
+        return count;
     }
 
     private static RiverPath GetCached(ConcurrentDictionary<long, Lazy<RiverPath>> cache, Vector2Int cell, bool outlet, WaterSettings s, TerrainHeightSampler sampler)

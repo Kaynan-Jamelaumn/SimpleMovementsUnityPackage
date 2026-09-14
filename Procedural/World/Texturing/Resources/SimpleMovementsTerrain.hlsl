@@ -9,7 +9,17 @@
 #ifndef SIMPLEMOVEMENTS_TERRAIN_INCLUDED
 #define SIMPLEMOVEMENTS_TERRAIN_INCLUDED
 
-CBUFFER_START(UnityPerMaterial)
+// The material's values go in the UnityPerMaterial buffer (URP's SRP Batcher needs that). Where the buffer macros
+// aren't defined (the Built-in pipeline's surface shader analysis, or an editor's HLSL checker) they're plain values.
+#if defined(CBUFFER_START) && !defined(SHADER_TARGET_SURFACE_ANALYSIS)
+#define SM_MATERIAL_BUFFER_START CBUFFER_START(UnityPerMaterial)
+#define SM_MATERIAL_BUFFER_END CBUFFER_END
+#else
+#define SM_MATERIAL_BUFFER_START
+#define SM_MATERIAL_BUFFER_END
+#endif
+
+SM_MATERIAL_BUFFER_START
 float _TextureTiling;
 float _TextureArrayLength;
 float _SplatMapCount;
@@ -27,7 +37,17 @@ float _TriplanarSlopeEnd;
 float _Smoothness;
 float _WetnessDarkening;
 float _WetnessSmoothness;
-CBUFFER_END
+SM_MATERIAL_BUFFER_END
+
+// Weather, set globally by the WeatherSystem (all 0 without one): ground wet from rain, snow settled while it
+// snows, and permanent snow on the terrain above a height (_SMSnowCaps on, _SMSnowLine = its world height).
+// Rain and snow are the weather where the viewer is, so they fade out with distance from it: _SMWeatherArea =
+// (viewer x, viewer z, full-strength radius, 1 / fade distance); radius 0 = everywhere.
+float _SMWeatherWetness;
+float4 _SMWeatherArea;
+float _SMWeatherSnow;
+float _SMSnowCaps;
+float _SMSnowLine;
 
 #if defined(SHADER_TARGET_SURFACE_ANALYSIS)
     // The Built-in pipeline's surface shader analysis only needs code it can parse.
@@ -155,10 +175,26 @@ void TerrainSurface(float3 positionWS, float3 normalWS, float2 splatUV, out floa
     }
     albedo = total > 0 ? color / total : float3(0.5, 0.5, 0.5);
 
-    // Wet ground near water: darker and glossier.
+    // Wet ground near water, and everywhere after rain: darker and glossier.
     float wet = saturate(TERRAIN_SAMPLE_TEX_LOD(_WetnessMap, splatUV, 0).r);
+    float weatherHere = _SMWeatherArea.z > 0 ? 1.0 - saturate((distance(positionWS.xz, _SMWeatherArea.xy) - _SMWeatherArea.z) * _SMWeatherArea.w) : 1.0;
+    wet = max(wet, 0.8 * saturate(_SMWeatherWetness) * weatherHere);
     albedo *= 1.0 - wet * _WetnessDarkening;
     smoothness = lerp(_Smoothness, max(_Smoothness, _WetnessSmoothness), wet);
+
+    // Snow on ground facing up (not on cliffs): settling on the flattest ground first while it snows, and
+    // lying permanently above the snow line, its edge broken up by noise.
+    [branch]
+    if (_SMWeatherSnow > 0.001 || _SMSnowCaps > 0.5)
+    {
+        float flatness = saturate((normalize(normalWS).y - 0.5) / 0.35);
+        float drift = TerrainValueNoise(positionWS.xz * 0.15 + 7.3);
+        float settled = saturate(_SMWeatherSnow * weatherHere * (1.4 + 0.8 * (0.5 - drift)) - (1.0 - flatness) * 0.8);
+        float caps = _SMSnowCaps * saturate((positionWS.y + (drift - 0.5) * 24.0 - _SMSnowLine) / 25.0) * saturate(flatness * 1.5);
+        float snow = saturate(max(settled, caps));
+        albedo = lerp(albedo, float3(0.9, 0.92, 0.95), snow);
+        smoothness = lerp(smoothness, 0.3, snow);
+    }
 }
 
 #endif

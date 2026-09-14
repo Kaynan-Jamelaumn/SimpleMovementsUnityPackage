@@ -26,11 +26,11 @@ public partial class TerrainGeneratorEditor
         { "NumVoronoiPoints", 8 }, { "VoronoiScale", 350f }, { "useWeightedBiome", true },
     };
 
-    private static readonly string[] LandformFields = { "terrainShapeMode", "landformTransitionWidth", "mountainBeltStrength", "mountainBeltScaleMultiplier" };
+    private static readonly string[] LandformFields = { "terrainShapeMode", "landformTransitionWidth", "mountainBeltStrength", "mountainBeltScaleMultiplier", "mountainFoothillReach" };
     private static readonly Dictionary<string, object> LandformRecommended = new Dictionary<string, object>
     {
         { "terrainShapeMode", (int)TerrainShapeMode.PerBiome }, { "landformTransitionWidth", 0.35f },
-        { "mountainBeltStrength", 0.5f }, { "mountainBeltScaleMultiplier", 6f },
+        { "mountainBeltStrength", 0.5f }, { "mountainBeltScaleMultiplier", 6f }, { "mountainFoothillReach", 40f },
     };
 
     private static readonly string[] TextureVariationFields =
