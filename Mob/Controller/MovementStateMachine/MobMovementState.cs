@@ -23,6 +23,8 @@ public abstract class MobMovementState : BaseState<MobMovementStateMachine.EMobM
     protected const float DISTANCE_WEIGHT = 0.3f;
     protected const float SAFETY_WEIGHT = 0.3f;
 
+    //  perception parameters
+    protected const float THREAT_MEMORY_DURATION = 5f;
     protected const float OPPORTUNITY_MEMORY_DURATION = 3f;
     protected Dictionary<GameObject, float> threatMemory = new Dictionary<GameObject, float>();
     protected Dictionary<GameObject, float> opportunityMemory = new Dictionary<GameObject, float>();

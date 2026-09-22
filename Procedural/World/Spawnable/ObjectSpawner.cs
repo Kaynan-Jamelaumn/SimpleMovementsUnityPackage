@@ -25,7 +25,8 @@ public static class ObjectSpawner
            int x,
            int y,
            MeshData meshData,
-           int lodFactor
+           int lodFactor,
+           Dictionary<BiomeObject, List<Vector3>> placedPositions = null
        )
     {
         foreach (BiomeObject biomeObject in biomeDefinition.runtimeObjects)
@@ -46,14 +47,54 @@ public static class ObjectSpawner
             // by comparing the angle between the surface normal and the upward vector (Vector3.up).
             // Finally, verify that the calculated spawn position is not occupied by another object.
 
+            // IsFarEnoughFromSameType (a cheap local-list distance check) runs before
+            // IsValidSpawnPosition (which ends in a Physics.OverlapBox query) so candidates
+            // rejected purely for being too close to a same-type neighbor never pay for a physics
+            // query.
             if (TryGetSpawnPositionAndNormal(worldPosition, heightMap, meshData, chunkTransform, x, y, lodFactor,
                     out var spawnPosition, out var normal) &&
+                IsFarEnoughFromSameType(spawnPosition, biomeObject, placedPositions) &&
                 IsValidSpawnPosition(spawnPosition, normal, biomeObject))
             {
                 InstantiateBiomeObject(chunkTransform, biomeObject.terrainObject, spawnPosition, normal);
                 biomeObject.currentNumberOfThisObject++;
+
+                if (placedPositions != null)
+                {
+                    if (!placedPositions.TryGetValue(biomeObject, out var positions))
+                    {
+                        positions = new List<Vector3>();
+                        placedPositions[biomeObject] = positions;
+                    }
+                    positions.Add(spawnPosition);
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Rejects a candidate position that falls within another already-placed instance of the same
+    /// object type's minimum spacing. This is a cheap local-list distance check (no Physics query),
+    /// run before the final IsPositionFree/Physics.OverlapBox check, so natural, non grid-aligned
+    /// spacing doesn't rely purely on independent per-cell probability rolls.
+    /// </summary>
+    private static bool IsFarEnoughFromSameType(Vector3 candidatePosition, BiomeObject biomeObject, Dictionary<BiomeObject, List<Vector3>> placedPositions)
+    {
+        if (placedPositions == null || !placedPositions.TryGetValue(biomeObject, out var positions))
+            return true;
+
+        float spacing = biomeObject.GetEffectiveMinSpacing();
+        if (spacing <= 0f)
+            return true;
+
+        float spacingSquared = spacing * spacing;
+        foreach (var placed in positions)
+        {
+            if ((placed - candidatePosition).sqrMagnitude < spacingSquared)
+                return false;
+        }
+
+        return true;
     }
     /// <summary>
     /// Adjusts the probability of spawning based on the density at a given position. This accounts for whether the biome object is clusterable or not.
@@ -529,7 +570,7 @@ public static class ObjectSpawner
     /// <param name="amplitude">The amplitude of Perlin noise to scale the density.</param>
     /// <param name="scaleFactor">The scale factor to adjust cluster size.</param>
     /// <returns>A 2D array representing the density map values, where higher values indicate more dense areas.</returns>
-    public static float[,] GenerateClusteredDensityMap(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor)
+    public static float[,] GenerateClusteredDensityMap(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor, int seed = 0)
     {
         //amplitude: Scales the values of the noise. Higher values increase the intensity of the noise (making the contrast between low and high values more noticeable).
         //baseFrequency: Controls the "zoom level" of the Perlin noise pattern. Higher values create tighter noise patterns (smaller "islands"), while lower values produce broader, smoother patterns.
@@ -538,8 +579,10 @@ public static class ObjectSpawner
         NativeArray<float> clusterRadii = new NativeArray<float>(clusterCount, Allocator.TempJob);
 
         // Generate cluster data
-        // Randomly generate cluster centers and radii
-        System.Random prng = new System.Random();
+        // Randomly generate cluster centers and radii. Seeded so cluster layouts are deterministic
+        // and reproducible (e.g. re-generating the same world seed always yields the same clusters)
+        // instead of re-rolling randomly every time this runs.
+        System.Random prng = new System.Random(seed);
         for (int i = 0; i < clusterCount; i++)
         {
             clusterCenters[i] = new Vector2(prng.Next(0, width), prng.Next(0, height));
@@ -799,14 +842,14 @@ public static class ObjectSpawner
     /// <param name="baseFrequency">The frequency of Perlin noise for base density.</param>
     /// <param name="amplitude">The amplitude of Perlin noise to scale the density.</param>
     /// <returns>A 2D array representing the density map values, where higher values indicate more dense areas.</returns>
-    public static float[,] GenerateClusteredDensityMapWithoutJobSystem(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor)
+    public static float[,] GenerateClusteredDensityMapWithoutJobSystem(int width, int height, int clusterCount, float clusterRadius, float baseFrequency, float amplitude, float scaleFactor, int seed = 0)
     {
         //amplitude: Scales the values of the noise. Higher values increase the intensity of the noise (making the contrast between low and high values more noticeable).
         //baseFrequency: Controls the "zoom level" of the Perlin noise pattern. Higher values create tighter noise patterns (smaller "islands"), while lower values produce broader, smoother patterns.
 
         // Initialize an empty density map
         float[,] densityMap = new float[width, height];
-        System.Random prng = new System.Random();
+        System.Random prng = new System.Random(seed);
 
         Vector2[] clusterCenters = new Vector2[clusterCount];
         clusterRadius = clusterRadius * scaleFactor; // Scale factor to adjust cluster size

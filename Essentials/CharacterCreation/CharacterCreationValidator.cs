@@ -39,7 +39,7 @@ public class CharacterCreationValidator
 
     private void ValidateUISetup()
     {
-        var eventSystem = Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
+        var eventSystem = Object.FindAnyObjectByType <UnityEngine.EventSystems.EventSystem>();
         if (eventSystem == null)
         {
             mainUI.DebugLogError("NO EVENTSYSTEM FOUND! Please add an EventSystem to your scene");

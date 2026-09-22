@@ -12,7 +12,7 @@ public class EffectRegistry : MonoBehaviour
         {
             if (_instance == null)
             {
-                _instance = FindFirstObjectByType<EffectRegistry>();
+                _instance = FindAnyObjectByType<EffectRegistry>();
                 if (_instance == null)
                 {
                     GameObject go = new GameObject("EffectRegistry");
@@ -53,7 +53,7 @@ public class EffectRegistry : MonoBehaviour
     private void FindAndRegisterExistingHandlers()
     {
         // Find all special mechanic handlers in the scene
-        var handlers = FindObjectsByType<SpecialMechanicHandlerBase>(FindObjectsSortMode.None);
+        var handlers = FindObjectsByType<SpecialMechanicHandlerBase>(FindObjectsInactive.Exclude);
         foreach (var handler in handlers)
         {
             foreach (var mechanicId in handler.GetSupportedMechanics())

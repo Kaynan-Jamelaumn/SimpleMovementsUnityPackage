@@ -20,9 +20,9 @@ public class MobActionsController : Mob
     [SerializeField] Transform mobTransform;
 
     // Utility AI weights for target selection
-    private const float DISTANCE_WEIGHT = 0.4f;
+    private const float DISTANCE_WEIGHT = 0.45f;
     private const float HEALTH_WEIGHT = 0.3f;
-    private const float THREAT_WEIGHT = 0.3f;
+    private const float THREAT_WEIGHT = 0.35f;
 
     /// <summary>
     /// Gets or sets the Transform of the mob.

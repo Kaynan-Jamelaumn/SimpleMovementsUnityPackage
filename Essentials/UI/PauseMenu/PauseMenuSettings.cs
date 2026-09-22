@@ -319,7 +319,7 @@ public class PauseMenuSettings : MonoBehaviour
         mainCamera = Camera.main;
         if (mainCamera == null)
         {
-            mainCamera = FindFirstObjectByType<Camera>();
+            mainCamera = FindAnyObjectByType <Camera>();
         }
     }
 
@@ -817,14 +817,14 @@ public class PauseMenuSettings : MonoBehaviour
 
         foreach (string controllerName in commonControllerNames)
         {
-            var controller = FindFirstObjectByType<MonoBehaviour>();
+            var controller = FindAnyObjectByType <MonoBehaviour>();
             if (controller != null && controller.GetType().Name.Contains(controllerName))
             {
                 return controller;
             }
         }
 
-        return FindFirstObjectByType<MonoBehaviour>();
+        return FindAnyObjectByType <MonoBehaviour>();
     }
 
     // Use reflection to dynamically update player controller settings

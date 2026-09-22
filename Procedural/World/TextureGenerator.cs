@@ -77,6 +77,10 @@ public class TextureGenerator
 
         // Create a texture array for the splat maps using the provided splat maps array
         Texture2DArray splatMapArray = CreateTextureArray(splatMaps, splatMaps[0].width, splatMaps[0].height, TextureFormat.RGBA32, false);
+        // Clamp, not Repeat: the splat map is sampled with a dedicated 0-1 UV that should never
+        // wrap within a chunk. This is a defensive guard against float rounding at uv=1.0 only -
+        // the real fix is MeshGenerator's separate, untiled splat UV channel (mesh.uv2).
+        splatMapArray.wrapMode = TextureWrapMode.Clamp;
 
         // Assign the created texture arrays to the material
         mat.SetTexture("_TextureArray", textureArray);
@@ -101,6 +105,16 @@ public class TextureGenerator
             mat.SetFloat("_UVScaleVariation", 1f);
             mat.SetFloat("_TextureBlendSharpness", 1f);
         }
+
+        // Wire the UV noise properties - previously these had NO material property at all,
+        // so the shader's GenerateUVVariation ran at full, hardcoded strength unconditionally,
+        // completely ignoring EnableTextureVariations/EnableUVNoise. Strength is now properly
+        // 0 (fully disabled, no offset applied at all) when those toggles are off.
+        mat.SetFloat("_UVNoiseStrength", terrainGenerator.EnableUVNoise ? terrainGenerator.UVNoiseStrength : 0f);
+        mat.SetFloat("_UVNoiseScale", Mathf.Max(0.0001f, terrainGenerator.UVNoiseScale));
+        // Seeds the shader's noise field so texture variation (when enabled) differs between
+        // worlds/seeds instead of always producing the exact same pattern at the same world position.
+        mat.SetFloat("_NoiseSeedOffset", terrainGenerator.VoronoiSeed * 0.6180339887f);
 
         // Apply the material to the mesh renderer
         meshRenderer.sharedMaterial = mat;

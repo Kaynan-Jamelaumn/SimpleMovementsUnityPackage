@@ -157,7 +157,7 @@ public class InventoryEditorDebug
         int fixedCount = 0;
         foreach (var prop in objectRefProperties)
         {
-            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceInstanceIDValue != 0)
+            if (prop != null && prop.objectReferenceValue == null && prop.objectReferenceEntityIdValue  != default)
             {
                 // Reference exists but object is null - broken reference
                 Debug.LogWarning($"Found broken reference in {prop.displayName}");

@@ -8,7 +8,9 @@ using UnityEngine;
 [System.Serializable]
 public class SpecialMechanicRegistry
 {
-    [SerializeField] private Dictionary<string, System.Type> mechanicTypes = new Dictionary<string, System.Type>();
+    // Not [SerializeField]: Unity can't serialize a Dictionary whose value type is System.Type -
+    // this is populated at runtime via RegisterMechanic(), never Inspector-edited.
+    private Dictionary<string, System.Type> mechanicTypes = new Dictionary<string, System.Type>();
     [SerializeField] private Dictionary<string, Component> mechanicHandlers = new Dictionary<string, Component>();
 
     public void RegisterMechanic(string mechanicId, System.Type handlerType)

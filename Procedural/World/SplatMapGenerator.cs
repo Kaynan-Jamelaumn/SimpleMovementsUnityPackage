@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -168,7 +169,12 @@ public static class SplatMapGenerator
     /// </remarks>
 
 
-    public static Texture2D[] GenerateSplatMaps(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Vector2 globalOffset = default)
+    /// <param name="worldOrigin">
+    /// The chunk's true global offset, always required (regardless of texture variations) when biome-blended
+    /// texturing is enabled, so per-pixel world positions can be resolved for smooth border blending.
+    /// </param>
+    /// <param name="globalOffset">Global offset for the chunk. Only used for texture variations when enabled.</param>
+    public static Texture2D[] GenerateSplatMaps(TerrainGenerator terrainGenerator, Biome[,] biomeMap, Vector2 worldOrigin, Vector2 globalOffset = default)
     {
         // Get the terrain's chunk size (resolution) and number of defined biomes
         int chunkSize = terrainGenerator.ChunkSize;
@@ -200,13 +206,22 @@ public static class SplatMapGenerator
             }
         }
 
-        // Precompute the biome indices for every pixel in the biomeMap
-        int[,] precomputedBiomeIndices = new int[chunkSize, chunkSize];
+        // When enabled, blend up to two biome indices per pixel (with weights summing to 1) near cell
+        // borders so texture transitions match the smoothly blended terrain height instead of cutting hard.
+        bool useBlending = terrainGenerator.TerrainTextureBasedOnVoronoiPoints && terrainGenerator.UseBiomeBlendedTexturing;
+
+        // Precompute the biome indices for every pixel in the biomeMap (skipped entirely when blending,
+        // since the blended path below computes its own per-pixel indices/weights instead).
+        int[,] precomputedBiomeIndices = useBlending ? null : new int[chunkSize, chunkSize];
 
         // Check if texture variations are enabled and we have a valid global offset
-        bool useTextureVariations = terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
+        bool useTextureVariations = !useBlending && terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
 
-        if (useTextureVariations)
+        if (useBlending)
+        {
+            // Blended path fills its own index/weight buffers below; nothing to precompute here.
+        }
+        else if (useTextureVariations)
         {
             // ENHANCED PATH: Apply texture variation logic
             int chunkSeed = Mathf.FloorToInt(globalOffset.x * 0.1f) + Mathf.FloorToInt(globalOffset.y * 0.1f) * 1000;
@@ -250,6 +265,55 @@ public static class SplatMapGenerator
             });
         }
 
+        int[,,] blendIndices = null;
+        float[,,] blendWeights = null;
+
+        if (useBlending)
+        {
+            blendIndices = new int[chunkSize, chunkSize, 2];
+            blendWeights = new float[chunkSize, chunkSize, 2];
+
+            List<Biome> availableBiomes = terrainGenerator.BiomeDefinitions.Select(b => b.BiomePrefab).ToList();
+
+            Parallel.For(0, chunkSize, y =>
+            {
+                for (int x = 0; x < chunkSize; x++)
+                {
+                    Vector2 worldPos = new Vector2(worldOrigin.x + x, worldOrigin.y + y);
+                    List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.GetBiomeBlend(
+                        worldPos,
+                        terrainGenerator.VoronoiScale,
+                        terrainGenerator.NumVoronoiPoints,
+                        availableBiomes,
+                        terrainGenerator.VoronoiSeed,
+                        terrainGenerator.useWeightedBiome,
+                        terrainGenerator.UseNaturalClimatePlacement,
+                        terrainGenerator.ClimateNoiseScale,
+                        terrainGenerator.VoronoiWarpStrength,
+                        terrainGenerator.VoronoiWarpScale,
+                        terrainGenerator.BiomeBlendRange,
+                        terrainGenerator.BiomeClusterStrength,
+                        terrainGenerator.BiomeClusterRadius,
+                        terrainGenerator.BiomeRepeatPenalty
+                    );
+
+                    for (int slot = 0; slot < 2; slot++)
+                    {
+                        if (slot < blend.Count)
+                        {
+                            blendIndices[x, y, slot] = biomeIndexMap[blend[slot].Biome.name];
+                            blendWeights[x, y, slot] = blend[slot].Weight;
+                        }
+                        else
+                        {
+                            blendIndices[x, y, slot] = -1;
+                            blendWeights[x, y, slot] = 0f;
+                        }
+                    }
+                }
+            });
+        }
+
         // Initialize the array of splatmaps and a shared buffer for pixel data
         Texture2D[] splatMaps = new Texture2D[numSplatMaps];
         Color32[] sharedBuffer = new Color32[totalPixels];
@@ -266,24 +330,61 @@ public static class SplatMapGenerator
             // Clear the shared buffer before processing the current splatmap
             Array.Clear(sharedBuffer, 0, totalPixels); // Reset buffer
 
-            // Parallelize row processing for better performance
-            Parallel.For(0, chunkSize, y =>
+            int splatMapIndex = i;
+
+            if (useBlending)
             {
-                for (int x = 0; x < chunkSize; x++)
+                Parallel.For(0, chunkSize, y =>
                 {
-                    // Get the biome index at (x, y)
-                    int biomeIndex = precomputedBiomeIndices[x, y];
+                    for (int x = 0; x < chunkSize; x++)
+                    {
+                        byte r = 0, g = 0, b = 0, a = 0;
+                        bool touchesThisMap = false;
 
-                    // Check if the biome belongs to the current splatmap
-                    if (biomeIndex / 4 != i) continue;
+                        for (int slot = 0; slot < 2; slot++)
+                        {
+                            int biomeIndex = blendIndices[x, y, slot];
+                            if (biomeIndex < 0 || biomeIndex / 4 != splatMapIndex) continue;
 
-                    // Calculate the linear pixel index and set the corresponding color
-                    int pixelIndex = y * chunkSize + x;
-                    sharedBuffer[pixelIndex] = channelValues[biomeIndex];
-                }
-            });
+                            touchesThisMap = true;
+                            byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(blendWeights[x, y, slot]) * 255f);
+                            switch (biomeIndex % 4)
+                            {
+                                case 0: r = value; break;
+                                case 1: g = value; break;
+                                case 2: b = value; break;
+                                case 3: a = value; break;
+                            }
+                        }
 
-            // Transfer the buffer's data to the texture and apply changes 
+                        if (!touchesThisMap) continue;
+
+                        int pixelIndex = y * chunkSize + x;
+                        sharedBuffer[pixelIndex] = new Color32(r, g, b, a);
+                    }
+                });
+            }
+            else
+            {
+                // Parallelize row processing for better performance
+                Parallel.For(0, chunkSize, y =>
+                {
+                    for (int x = 0; x < chunkSize; x++)
+                    {
+                        // Get the biome index at (x, y)
+                        int biomeIndex = precomputedBiomeIndices[x, y];
+
+                        // Check if the biome belongs to the current splatmap
+                        if (biomeIndex / 4 != splatMapIndex) continue;
+
+                        // Calculate the linear pixel index and set the corresponding color
+                        int pixelIndex = y * chunkSize + x;
+                        sharedBuffer[pixelIndex] = channelValues[biomeIndex];
+                    }
+                });
+            }
+
+            // Transfer the buffer's data to the texture and apply changes
             splatMaps[i].SetPixelData(sharedBuffer, 0);
             splatMaps[i].Apply();
         }

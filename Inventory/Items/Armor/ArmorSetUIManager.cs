@@ -82,10 +82,10 @@ public class ArmorSetUIManager : MonoBehaviour
     private void ValidateComponents()
     {
         if (armorSetManager == null)
-            armorSetManager = Object.FindFirstObjectByType<ArmorSetManager>();
+            armorSetManager = Object.FindAnyObjectByType <ArmorSetManager>();
 
         if (inventoryManager == null)
-            inventoryManager = Object.FindFirstObjectByType<InventoryManager>();
+            inventoryManager = Object.FindAnyObjectByType <InventoryManager>();
 
         if (uiAudioSource == null)
             uiAudioSource = GetComponent<AudioSource>();
