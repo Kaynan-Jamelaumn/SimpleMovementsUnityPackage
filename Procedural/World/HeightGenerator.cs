@@ -18,10 +18,29 @@ public static class HeightGenerator
     /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
     public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset)
     {
+        return GenerateHeightMap(terrainGenerator, globalOffset, out _);
+    }
+
+    /// <summary>
+    /// Generates a height map for a terrain chunk, additionally reporting how much erosion changed each
+    /// cell (for the "Visualize Erosion" debug tool - see <see cref="TerrainGenerator.VisualizeErosionDebug"/>).
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing configuration parameters such as chunk size, Voronoi scale, and biome definitions.</param>
+    /// <param name="globalOffset">The global offset for the chunk's position in the world.</param>
+    /// <param name="erosionDeltaMap">
+    /// Same dimensions as the returned height map. Positive = height removed by erosion at that cell,
+    /// negative = height deposited/added by erosion, zero = untouched. Null when erosion is disabled or
+    /// <see cref="TerrainGenerator.VisualizeErosionDebug"/> is off (it is never computed unless needed,
+    /// since capturing it costs an extra heightmap-sized array copy).
+    /// </param>
+    /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
+    public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset, out float[,] erosionDeltaMap)
+    {
         int chunkSize = terrainGenerator.ChunkSize;
         int finalSize = chunkSize + 1;
 
         bool erosionEnabled = terrainGenerator.EnableErosion;
+        bool captureErosionDebug = erosionEnabled && terrainGenerator.VisualizeErosionDebug;
         int padding = erosionEnabled ? Mathf.Max(0, terrainGenerator.ErosionPadding) : 0;
         int paddedSize = finalSize + padding * 2;
 
@@ -90,6 +109,10 @@ public static class HeightGenerator
             }
         }
 
+        // Snapshot the pre-erosion heights only when the debug visualization actually needs the
+        // before/after comparison - this is a full extra heightmap-sized copy, so it stays opt-in.
+        float[,] preErosionHeights = captureErosionDebug ? (float[,])paddedHeights.Clone() : null;
+
         if (erosionEnabled)
         {
             if (terrainGenerator.ThermalIterations > 0 && terrainGenerator.ThermalErosionRate > 0f)
@@ -121,14 +144,23 @@ public static class HeightGenerator
         }
 
         float[,] heightMap = new float[finalSize, finalSize];
+        erosionDeltaMap = captureErosionDebug ? new float[finalSize, finalSize] : null;
         bool trackMinMax = !terrainGenerator.TerrainTextureBasedOnVoronoiPoints;
 
         for (int y = 0; y < finalSize; y++)
         {
             for (int x = 0; x < finalSize; x++)
             {
-                float finalHeight = paddedHeights[x + padding, y + padding];
+                int paddedX = x + padding;
+                int paddedY = y + padding;
+                float finalHeight = paddedHeights[paddedX, paddedY];
                 heightMap[x, y] = finalHeight;
+
+                if (captureErosionDebug)
+                {
+                    // Positive = erosion removed material here, negative = erosion deposited material here.
+                    erosionDeltaMap[x, y] = preErosionHeights[paddedX, paddedY] - finalHeight;
+                }
 
                 if (trackMinMax)
                 {

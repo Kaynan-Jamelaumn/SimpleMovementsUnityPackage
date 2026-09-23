@@ -375,6 +375,59 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Radius (in cells) of the brush used to erode/deposit terrain around a droplet.")]
     [SerializeField][Range(1f, 6f)] private float erosionRadius = 3f;
 
+    [Header("Erosion Debug Visualization")]
+    /// <summary>
+    /// Master toggle for the erosion debug tool: draws Scene-view gizmos over generated terrain marking
+    /// exactly where thermal/hydraulic erosion removed material (red/orange) or deposited it (blue/cyan),
+    /// so you can visually confirm erosion is actually running and see its shape/strength at a glance.
+    /// Has no effect unless <see cref="EnableErosion"/> is also on. Adds a small amount of extra work per
+    /// chunk (capturing pre-erosion heights) and Scene-view draw cost, so leave it off outside of tuning.
+    /// </summary>
+    [Tooltip("Draw Scene-view gizmos showing exactly where erosion removed material (red/orange) or deposited it (blue/cyan). Enable this to visually verify erosion is working. No effect unless 'Enable Erosion' above is also on.")]
+    [SerializeField] private bool visualizeErosionDebug = false;
+
+    /// <summary>
+    /// Minimum |height delta| (world units) a cell must have been changed by erosion before it gets a
+    /// gizmo at all. Filters out imperceptible noise so the view isn't cluttered with near-zero changes.
+    /// </summary>
+    [Tooltip("Minimum height change (world units) before a cell gets an erosion gizmo. Filters out imperceptible noise.")]
+    [SerializeField] private float erosionDebugMinDelta = 0.05f;
+
+    /// <summary>
+    /// Height delta (world units) that maps to full gizmo size/color intensity. Cells changed by more
+    /// than this are clamped to the strongest color, not drawn larger.
+    /// </summary>
+    [Tooltip("Height change (world units) that maps to the strongest gizmo color/size. Lower this if your erosion looks subtle and the gizmos all appear pale/small; raise it if everything looks maxed-out red/blue.")]
+    [SerializeField] private float erosionDebugMaxDelta = 1.5f;
+
+    /// <summary>
+    /// Draws one gizmo every N heightmap cells instead of every cell. Higher values are much cheaper to
+    /// draw (fewer gizmos) at the cost of a coarser-looking overlay. Keep well above 1 for anything but
+    /// small chunk sizes - drawing every single cell can make the Scene view very slow.
+    /// </summary>
+    [Tooltip("Draw one gizmo every N heightmap cells instead of every cell. Higher = cheaper to draw but coarser overlay. Keep well above 1 for larger chunk sizes.")]
+    [SerializeField][Range(1, 16)] private int erosionDebugStride = 4;
+
+    /// <summary>
+    /// Base size (world units) of each erosion gizmo cube before the delta-based size scaling is applied.
+    /// </summary>
+    [Tooltip("Base size (world units) of each erosion gizmo cube.")]
+    [SerializeField][Range(0.1f, 5f)] private float erosionDebugGizmoSize = 1f;
+
+    /// <summary>
+    /// Vertical offset (world units) applied above the terrain surface so gizmo cubes don't z-fight with
+    /// (or get hidden inside) the terrain mesh they're marking.
+    /// </summary>
+    [Tooltip("Vertical offset (world units) so gizmo cubes float just above the terrain instead of z-fighting with it.")]
+    [SerializeField] private float erosionDebugHeightOffset = 0.25f;
+
+    /// <summary>
+    /// Hard cap on how many gizmos a single chunk will draw, regardless of stride, as a safety net
+    /// against the Scene view grinding to a halt on very large/densely-eroded chunks.
+    /// </summary>
+    [Tooltip("Safety cap on how many gizmos a single chunk will draw, regardless of stride.")]
+    [SerializeField] private int erosionDebugMaxGizmosPerChunk = 4000;
+
     [Header("Other Configurations")]
     /// <summary>
     /// Level of detail for terrain generation, controlling mesh resolution.
@@ -469,6 +522,15 @@ public class TerrainGenerator : MonoBehaviour
     public float ErosionGravity => erosionGravity;
     public float ErosionRadius => erosionRadius;
 
+    // Erosion Debug Visualization Properties
+    public bool VisualizeErosionDebug => visualizeErosionDebug;
+    public float ErosionDebugMinDelta => erosionDebugMinDelta;
+    public float ErosionDebugMaxDelta => erosionDebugMaxDelta;
+    public int ErosionDebugStride => erosionDebugStride;
+    public float ErosionDebugGizmoSize => erosionDebugGizmoSize;
+    public float ErosionDebugHeightOffset => erosionDebugHeightOffset;
+    public int ErosionDebugMaxGizmosPerChunk => erosionDebugMaxGizmosPerChunk;
+
     // Guards minHeight/maxHeight, which UpdateMinMaxHeight below mutates from multiple
     // concurrent per-chunk worker threads (all sharing this one TerrainGenerator instance).
     private readonly object heightRangeLock = new object();
@@ -545,8 +607,8 @@ public class TerrainGenerator : MonoBehaviour
         // Local, not a field: this runs on its own worker thread per chunk (see RequestMapData),
         // and every chunk shares this same TerrainGenerator instance, so a shared field here would
         // race between concurrently-generating chunks.
-        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset);
-        return new MapData(localHeightMap, null);
+        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, out float[,] erosionDeltaMap);
+        return new MapData(localHeightMap, null, erosionDeltaMap);
     }
 
     /// <summary>
@@ -655,7 +717,7 @@ public class TerrainGenerator : MonoBehaviour
 
         Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
 
-        DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap);
+        DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap, mapData.erosionDeltaMap);
 
         lock (terrainDataThreadInfoQueue)
         {
