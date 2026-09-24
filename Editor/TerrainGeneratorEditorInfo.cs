@@ -104,7 +104,9 @@ public partial class TerrainGeneratorEditor
             "ON: each world position gets a temperature and moisture, and biomes are placed where their Ideal Temperature/Moisture match (deserts where hot and dry, tundra where cold). OFF: only Weight and clustering decide biomes.\n" +
             "Moisture still drives hydraulic erosion strength either way." },
         { "climateScaleMultiplier",
-            "Size of climate zones (Voronoi Scale x this). Larger = broad climate belts spanning many biome regions; smaller = climate changes quickly, so biomes mix more." },
+            "Size of climate zones (Voronoi Scale x this). Larger = broad climate belts spanning many biome regions; smaller = climate changes quickly, so biomes mix more.\n\n" +
+            "Implications: also sets how far temperature drifts with latitude (coldest about 4x this away from world Y = 0) and how far wet and dry areas stretch, " +
+            "which changes hydraulic erosion strength across the world. Ocean biomes follow the same climate." },
 
         // --- Water (summary tips; the fields also carry their own [Tooltip])
         { "enableWater", "Master switch for oceans, lakes, ponds and rivers. OFF = terrain is generated with no water shaping or water meshes at all (and no water cost)." },
@@ -117,6 +119,103 @@ public partial class TerrainGeneratorEditor
         { "riverSpacing", "Grid size (world units) for river springs, at most one spring per cell. Smaller = more rivers (and more tracing work the first time an area is visited)." },
         { "riverMaxLength", "Longest a river can be traced (world units). Also how far each chunk searches for rivers that might pass through it, so very large values cost more on first visit." },
         { "riverSourceWidth", "River width at its source (world units). At high Level Of Detail, stretches narrower than about two mesh vertices are not visible." },
+
+        // --- Volcanoes
+        { "enableVolcanoes",
+            "Master switch for volcanoes and calderas. OFF = none anywhere, and terrain is exactly as it would be without them.\n\n" +
+            "Implications: turning it on or off, or changing any volcano setting, reshapes the land wherever a volcano stands (up to about 2 km around it). " +
+            "Rivers and lakes near a volcano are traced against it, so they move too. Works with or without a Volcanic biome (see the note below the settings)." },
+        { "volcanoSpacing",
+            "Size (world units) of the grid volcanoes are placed on - at most one per cell, and each volcano stays inside its own cell.\n\n" +
+            "Implications: doubling it means a quarter as many volcanoes. It must be comfortably larger than 2 x Max Radius x 2.2 (the volcano plus its lava plain), " +
+            "otherwise every volcano is squeezed into the middle of its cell and they look evenly spaced." },
+        { "volcanoChance",
+            "Chance a grid cell gets a volcano. 0 = none. With Spacing 5000, 0.35 is about one volcano every 8 km; 1 = one in every cell (a volcanic region).\n\n" +
+            "Implications: which cells get one is fixed by the seed, so raising the chance keeps existing volcanoes and adds new ones." },
+        { "volcanoMinRadius",
+            "Smallest volcano radius (world units): the distance from the center to the foot of the cone. The lava plain around it reaches about 1.9x this.\n\n" +
+            "Implications: with a small radius and a large height you get steep spikes; keep Height below about half the Radius for natural cones." },
+        { "volcanoMaxRadius",
+            "Largest volcano radius (world units). Each volcano gets a random size between Min and Max Radius.\n\n" +
+            "Implications: larger volcanoes dominate more of the map and bury more of the land under them (hills and valleys within the cone are mostly smoothed away)." },
+        { "volcanoMinHeight",
+            "Lowest summit or caldera-rim height above the land the volcano stands on (world units)." },
+        { "volcanoMaxHeight",
+            "Highest summit or caldera-rim height above the surrounding land (world units). Each volcano picks a random height between Min and Max.\n\n" +
+            "Implications: tall volcanoes can reach the snow of height-based texturing and make big waterfalls on rivers running off them." },
+        { "calderaChance",
+            "Chance a volcano is a caldera instead of a cone.\n" +
+            "Cone: a concave peak with a small summit crater.\n" +
+            "Caldera: a broad massif whose top has collapsed into a wide, flat-floored depression (roughly half the volcano's width) with steep, stepped walls " +
+            "you have to find a way down, a rim that rises and dips, and sometimes a young cone on the floor. Lakes can form inside." },
+
+        // --- Oceans & coasts
+        { "enableOceans", "Generate oceans from a very large-scale continent field. OFF = no seas at all (lakes, ponds and rivers still work, and rivers end in lakes instead). Ocean biomes and coast settings are ignored." },
+        { "beachWidth", "How far (world units) beaches rise from the waterline before the normal land takes over. Wider = broad sandy flats; narrow = the land meets the sea quickly. Cliff coasts ignore this." },
+        { "beachHeight", "How high (above sea level) the beach rises across its width. Higher = a steeper beach." },
+        { "coastBlendWidth", "Distance (world units) over which the beach blends into the normal inland terrain. Too small = hills that end abruptly at the beach; larger = a flatter coastal plain. Cliff tops stay flat a bit longer (up to 2.5x this)." },
+        { "continentalShelfWidth", "Distance (world units) from the shore over which the seafloor slopes down to Ocean Depth. Wide = long shallow water you can wade into; narrow = deep water close to shore. Cliff coasts get a much narrower shelf automatically." },
+        { "oceanDepth", "Depth of the open seafloor below sea level. Ocean biomes add their own relief (ravines, reefs) on top of this." },
+        { "inlandRise", "How much the land gradually rises going inland from the coast (world units), on top of the biome heights. Helps rivers drain naturally toward the sea. 0 = none." },
+        { "inlandRiseDistance", "Distance (world units) over which that inland rise builds up." },
+        { "islandFrequency", "How often islands rise out of open ocean. 0 = none. Islands only appear away from the mainland shore." },
+        { "islandScaleMultiplier", "Island size (Voronoi Scale x this). Larger = bigger, fewer islands." },
+        { "islandPeakHeight", "Height of islands above the sea (plus some of the land biome's relief)." },
+        { "coastCliffFrequency",
+            "How much of the coastline is cliffs or rocky shore. 0 = all beaches (the coast looks exactly as before cliffs existed); 0.35 = about a third; 1 = almost all cliffs.\n\n" +
+            "Coasts change character gradually along their length (every few hundred units), passing through rocky shores between beaches and cliffs, so both kinds always exist unless this is 0 or 1." },
+        { "coastCliffHeight",
+            "Height (world units) of the tallest sea cliffs. Height varies along the coast (lower stretches, notches and headlands).\n\n" +
+            "Implications: anything above about 2x the player's jump height is a real barrier - players have to walk along the coast to a beach or a notch to reach the sea." },
+        { "coastCliffTerraces",
+            "How often cliffs are split into steps: up to three faces with walkable ledges between them, instead of one sheer face. 0 = always a single face; 1 = mostly stepped." },
+        { "seaStackChance",
+            "Chance a stretch of cliff coast gets sea stacks: tall rock towers (in groups of 1-3) standing 12-90 units offshore, with eroded, uneven tops and rocky bases. " +
+            "Only near cliffs and rocky shores, never off beaches. 0 = none." },
+        { "seaStackSpacing", "Grid size (world units) sea stack groups are placed on - at most one group per cell along cliff coasts. Larger = rarer stacks." },
+        { "seaStackMaxHeight", "Tallest a sea stack rises above the water (world units). Each stack gets a random height up to this." },
+
+        // --- Lakes, ponds & shores
+        { "enableLakes", "Generate lakes: inland water in a natural (or carved) basin, each with its own flat water level and a closed shoreline. OFF = none." },
+        { "lakeChance", "Base chance a grid cell gets a lake. It is then scaled by the site's biome Lake Likelihood and by how much the site is a natural hollow, so real counts are lower." },
+        { "lakeMinRadius", "Smallest lake radius (world units)." },
+        { "lakeMaxRadius", "Largest lake radius (world units). Keep 2 x this well below Lake Spacing." },
+        { "lakeMaxDepth", "Water depth at the center of the largest lakes; smaller lakes are proportionally shallower. Deeper = more of the basin is carved into the ground." },
+        { "lakeMaxSiteSlope", "Steepest ground (rise per unit) a lake may be placed on. Lower = lakes only in flat lowlands; higher = lakes can sit on hillsides (with bigger rims)." },
+        { "lakeOutletChance", "Chance a lake overflows into an outlet river at the lowest point of its rim. Otherwise it is a closed lake." },
+        { "enablePonds", "Generate ponds: small, shallow water bodies in minor hollows. OFF = none." },
+        { "pondChance", "Base chance a grid cell gets a pond, then scaled by the biome's Pond Likelihood and the site's shape." },
+        { "pondMinRadius", "Smallest pond radius (world units)." },
+        { "pondMaxRadius", "Largest pond radius (world units)." },
+        { "pondDepth", "Typical water depth at a pond's center." },
+        { "pondMaxSiteSlope", "Steepest ground (rise per unit) a pond may be placed on." },
+        { "shoreRimWidth", "Width (world units) of the ring around every lake and pond where the ground is kept above the water, so water can never spill out. Wider = smoother, broader banks." },
+        { "shoreFreeboard", "How high the rim stays above the water. Higher = more obvious banks; very low values can let water show through at coarse Level Of Detail." },
+
+        // --- Rivers & waterfalls
+        { "enableRivers", "Generate rivers: traced from springs (and lake outlets) downhill to the sea or a lake, carving a channel and valley. OFF = none (also no waterfalls)." },
+        { "riverChance", "Base chance a grid cell has a spring, then scaled by the biome's River Spring Likelihood and by how high the spring is. Many springs are discarded because their river would be too short." },
+        { "riverMinSpringElevation", "Springs only appear at least this high above sea level, so rivers start in the uplands rather than on the coast." },
+        { "riverMinLength", "Rivers shorter than this are discarded. Higher = fewer but longer rivers." },
+        { "riverMouthWidth", "River width (world units) where it reaches the sea or a lake. Width grows from Source Width to this along the river." },
+        { "riverWidthVariation", "How much the width wobbles along the river (0 = a smooth taper)." },
+        { "riverMeander", "How strongly rivers wind away from the straight downhill line. 0 = direct paths; 1 = strongly meandering." },
+        { "riverMeanderWavelength", "Typical length (world units) of one meander bend. Larger = long, lazy bends." },
+        { "riverDepth", "Water depth at the mouth (shallower toward the source). Deeper rivers can't be waded." },
+        { "riverValleySlope", "Steepness (degrees) of the valley walls a river carves where it has to cut through higher ground. Higher = narrow gorges; lower = wide gentle valleys." },
+        { "riverMaxValleyWidth", "Furthest (world units) from the river's center its valley may reach." },
+        { "riverBankFreeboard", "How far the banks stay above the river's water." },
+        { "enableWaterfalls",
+            "Where a river's water drops steeply (at least 0.3 units per unit of length), rebuild the drop as real waterfalls: a flat pool, a rock lip, a sheer fall and a plunge pool, " +
+            "repeated as tiers for tall drops. Happens naturally at cliffs, plateau and Highlands edges, volcano flanks, glacial valley walls and sea cliffs.\n\n" +
+            "OFF = steep rapids instead. Waterfall sheets use the Waterfall material slot (falling back to River, then Default)." },
+        { "waterfallMinDrop", "Smallest total drop (world units) that becomes a waterfall. Lower = more, smaller falls; higher = only big ones." },
+        { "waterfallTierHeight", "Tallest single fall. A drop taller than this is split into several falls with pools between them (up to 4 tiers, if the steep stretch is long enough)." },
+
+        // --- Water materials & gameplay
+        { "waterMaterial", "Material for every water type that doesn't have its own below. Empty = built-in transparent fallbacks, tinted per type." },
+        { "waterfallMaterial", "Material for waterfall sheets (the steep quads where a river drops). Empty = the River material, then Default. A foamy, fast-scrolling material works best." },
+        { "enableSwimDetection", "Adds trigger volumes to water so anything with an OxygenManager knows when it is underwater. Doesn't change how water looks." },
 
         // --- Erosion
         { "enableErosion", "Master switch for thermal (slope collapse) and hydraulic (water droplet) erosion. Erosion is the most expensive part of generation; turning it off is the quickest speed-up." },

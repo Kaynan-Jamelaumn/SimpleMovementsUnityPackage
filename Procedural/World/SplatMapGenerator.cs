@@ -273,36 +273,16 @@ public static class SplatMapGenerator
             blendIndices = new int[chunkSize, chunkSize, 2];
             blendWeights = new float[chunkSize, chunkSize, 2];
 
-            List<Biome> availableBiomes = terrainGenerator.BiomeDefinitions.Select(b => b.BiomePrefab).ToList();
-            // Computed once per chunk (not per cell): keeps the texture blend band matched to the
-            // (possibly widened) height blend band from HeightGenerator, so the visual biome transition
-            // doesn't finish before the terrain has actually finished sloping down.
-            float boundaryMaxSlopeTangent = terrainGenerator.BiomeBoundaryMaxSlopeTangent;
+            // Same biome layout the terrain was built from, including ocean biomes along the coast and a
+            // volcanic biome over volcanoes (see TerrainHeightSampler.GetTextureBlend).
+            TerrainHeightSampler sampler = new TerrainHeightSampler(terrainGenerator,
+                terrainGenerator.EnableWater ? WaterSettings.From(terrainGenerator) : null);
 
             Parallel.For(0, chunkSize, y =>
             {
                 for (int x = 0; x < chunkSize; x++)
                 {
-                    Vector2 worldPos = new Vector2(worldOrigin.x + x, worldOrigin.y + y);
-                    List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.GetBiomeBlend(
-                        worldPos,
-                        terrainGenerator.VoronoiScale,
-                        terrainGenerator.NumVoronoiPoints,
-                        availableBiomes,
-                        terrainGenerator.VoronoiSeed,
-                        terrainGenerator.useWeightedBiome,
-                        terrainGenerator.UseNaturalClimatePlacement,
-                        terrainGenerator.ClimateNoiseScale,
-                        terrainGenerator.VoronoiWarpStrength,
-                        terrainGenerator.VoronoiWarpScale,
-                        terrainGenerator.BiomeBlendRange,
-                        terrainGenerator.BiomeClusterStrength,
-                        terrainGenerator.BiomeClusterRadius,
-                        terrainGenerator.BiomeRepeatPenalty,
-                        terrainGenerator.Octaves,
-                        boundaryMaxSlopeTangent,
-                        terrainGenerator.BiomeLayout
-                    );
+                    List<VoronoiBiomeGenerator.BiomeWeight> blend = sampler.GetTextureBlend(worldOrigin.x + x, worldOrigin.y + y);
 
                     // Blend entries come sorted by weight; near a point where three biomes meet there can be
                     // more than the two splat slots, so the top two are renormalized to still sum to 1.

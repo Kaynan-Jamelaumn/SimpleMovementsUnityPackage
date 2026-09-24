@@ -13,6 +13,11 @@ public enum WaterBodyType : byte
     Lake = 2,
     Pond = 3,
     River = 4,
+    /// <summary>
+    /// Only used by the water mesh: the steep sheets of water where a river (or lake outlet) drops over a
+    /// waterfall, so they can get their own material. Water map cells are never this type.
+    /// </summary>
+    Waterfall = 5,
 }
 
 /// <summary>
@@ -72,6 +77,13 @@ public sealed class WaterSettings
     public float IslandPeakHeight;
     public float SpawnLandRadius;
 
+    public float CliffFrequency;
+    public float CliffHeight;
+    public float CliffTerraces;
+    public float StackChance;
+    public float StackSpacing;
+    public float StackMaxHeight;
+
     public bool LakesEnabled;
     public float LakeSpacing;
     public float LakeChance;
@@ -108,6 +120,10 @@ public sealed class WaterSettings
     public float RiverMaxValleyHalfWidth;
     public float RiverBankFreeboard;
 
+    public bool WaterfallsEnabled;
+    public float WaterfallMinDrop;
+    public float WaterfallTierHeight;
+
     public static WaterSettings From(TerrainGenerator tg)
     {
         int lod = tg.LevelOfDetail;
@@ -136,6 +152,13 @@ public sealed class WaterSettings
             IslandScale = Mathf.Max(10f, tg.IslandScale),
             IslandPeakHeight = Mathf.Max(0f, tg.IslandPeakHeight),
             SpawnLandRadius = Mathf.Max(0f, tg.SpawnLandRadius),
+
+            CliffFrequency = Mathf.Clamp01(tg.CoastCliffFrequency),
+            CliffHeight = Mathf.Max(0f, tg.CoastCliffHeight),
+            CliffTerraces = Mathf.Clamp01(tg.CoastCliffTerraces),
+            StackChance = Mathf.Clamp01(tg.SeaStackChance),
+            StackSpacing = Mathf.Max(60f, tg.SeaStackSpacing),
+            StackMaxHeight = Mathf.Max(4f, tg.SeaStackMaxHeight),
 
             LakesEnabled = tg.EnableLakes,
             LakeSpacing = Mathf.Max(10f, tg.LakeSpacing),
@@ -172,6 +195,10 @@ public sealed class WaterSettings
             RiverValleySlopeTan = Mathf.Tan(Mathf.Clamp(tg.RiverValleySlope, 5f, 80f) * Mathf.Deg2Rad),
             RiverMaxValleyHalfWidth = Mathf.Max(5f, tg.RiverMaxValleyWidth),
             RiverBankFreeboard = Mathf.Max(0.1f, tg.RiverBankFreeboard),
+
+            WaterfallsEnabled = tg.EnableWaterfalls,
+            WaterfallMinDrop = Mathf.Max(1f, tg.WaterfallMinDrop),
+            WaterfallTierHeight = Mathf.Max(2f, tg.WaterfallTierHeight),
         };
     }
 }
@@ -196,6 +223,8 @@ public static class WaterGenerator
     {
         LakeGenerator.ClearCache();
         RiverGenerator.ClearCache();
+        SeaStacks.ClearCache();
+        VolcanoGenerator.ClearCache();
     }
 
     /// <summary>
@@ -292,7 +321,7 @@ public static class WaterGenerator
 /// Applies every water feature touching one chunk to that chunk's (padded) height map, in the stages
 /// <see cref="HeightGenerator"/> calls it:
 ///
-/// 1. <see cref="ShapeBaseHeight"/> - ocean/coast shaping of the biome-blended land height.
+/// 1. <see cref="RecordLandSide"/> - where the coastline is (the shaping itself happens in <see cref="TerrainHeightSampler.ShapeLand"/>).
 /// 2. <see cref="ApplyPreErosion"/> - lake/pond bowls and rims, river valleys and channels, carved
 ///    before erosion so thermal/hydraulic erosion weathers them into natural-looking shapes.
 /// 3. <see cref="ApplyPostErosion"/> - hard guarantees re-applied after erosion (coastline above sea
@@ -336,18 +365,14 @@ public sealed class ChunkWaterContext
         coastClampLandSide = (settings.BeachWidth + 2f * settings.LodCells) * settings.ContinentGradient;
     }
 
-    public float ShapeBaseHeight(int x, int y, float worldX, float worldY, float landHeight, float landRelief)
+    /// <summary>
+    /// Stores the continent field value (<see cref="OceanGenerator.LandSide"/>) the terrain sampler computed
+    /// for a cell while shaping it (float.MaxValue when oceans are off), for the coastline guarantee and
+    /// ocean detection below.
+    /// </summary>
+    public void RecordLandSide(int x, int y, float side)
     {
-        int index = y * size + x;
-        if (!settings.OceansEnabled)
-        {
-            landSide[index] = float.MaxValue;
-            return landHeight;
-        }
-
-        float height = OceanGenerator.ShapeHeight(settings, worldX, worldY, landHeight, landRelief, out float side);
-        landSide[index] = side;
-        return height;
+        landSide[y * size + x] = settings.OceansEnabled ? side : float.MaxValue;
     }
 
     public float ApplyPreErosion(int x, int y, float worldX, float worldY, float height)

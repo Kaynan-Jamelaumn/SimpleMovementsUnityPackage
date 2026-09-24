@@ -522,6 +522,7 @@ public class EndlessTerrain : MonoBehaviour
                 case WaterBodyType.Ocean: return new UnityEngine.Color(0.06f, 0.24f, 0.42f, 0.78f); // deep blue, most opaque
                 case WaterBodyType.Lake: return new UnityEngine.Color(0.10f, 0.34f, 0.42f, 0.62f);  // clear blue-teal
                 case WaterBodyType.Pond: return new UnityEngine.Color(0.20f, 0.34f, 0.24f, 0.66f);  // murky green
+                case WaterBodyType.Waterfall: return new UnityEngine.Color(0.78f, 0.86f, 0.90f, 0.72f); // white water
                 default: return new UnityEngine.Color(0.22f, 0.44f, 0.50f, 0.55f);                  // river: lighter, shallower
             }
         }
