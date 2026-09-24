@@ -3,10 +3,101 @@ using UnityEngine;
 using System.Linq;
 
 /// <summary>
+/// Samples the deterministic base terrain (biome-blended land height, plus ocean/coast shaping when water
+/// is enabled) at any world position. <see cref="HeightGenerator"/> builds each chunk from exactly these
+/// functions, and the water feature generators (<see cref="LakeGenerator"/>, <see cref="RiverGenerator"/>)
+/// use the same ones to pick lake sites and trace rivers - so a feature is always placed against the
+/// same terrain it ends up carved into, no matter which chunk asks first.
+/// </summary>
+public sealed class TerrainHeightSampler
+{
+    private readonly TerrainGenerator terrainGenerator;
+    private readonly List<Biome> availableBiomes;
+    private readonly float inverseChunkSize;
+    private readonly float boundaryMaxSlopeTangent;
+    private readonly WaterSettings water;
+    private readonly LandformSettings landforms;
+    private readonly VoronoiBiomeGenerator.LayoutOptions layout;
+
+    public TerrainHeightSampler(TerrainGenerator terrainGenerator, WaterSettings water)
+    {
+        this.terrainGenerator = terrainGenerator;
+        this.water = water;
+        availableBiomes = terrainGenerator.BiomeDefinitions.Select(biomeInstance => biomeInstance.BiomePrefab).ToList();
+        inverseChunkSize = 1f / terrainGenerator.ChunkSize;
+        boundaryMaxSlopeTangent = terrainGenerator.BiomeBoundaryMaxSlopeTangent;
+        landforms = LandformSettings.From(terrainGenerator);
+        layout = terrainGenerator.BiomeLayout;
+    }
+
+    public List<VoronoiBiomeGenerator.BiomeWeight> GetBlend(float x, float y)
+    {
+        TerrainGenerator tg = terrainGenerator;
+        return VoronoiBiomeGenerator.GetBiomeBlend(
+            new Vector2(x, y),
+            tg.VoronoiScale,
+            tg.NumVoronoiPoints,
+            availableBiomes,
+            tg.VoronoiSeed,
+            tg.useWeightedBiome,
+            tg.UseNaturalClimatePlacement,
+            tg.ClimateNoiseScale,
+            tg.VoronoiWarpStrength,
+            tg.VoronoiWarpScale,
+            tg.BiomeBlendRange,
+            tg.BiomeClusterStrength,
+            tg.BiomeClusterRadius,
+            tg.BiomeRepeatPenalty,
+            tg.Octaves,
+            boundaryMaxSlopeTangent,
+            layout
+        );
+    }
+
+    public float LandHeight(List<VoronoiBiomeGenerator.BiomeWeight> blend, float x, float y, out float relief)
+    {
+        return LandformGenerator.LandHeight(blend, x, y, landforms, out relief);
+    }
+
+    /// <summary>Terrain height before erosion and before any lake/river carving.</summary>
+    public float SampleBaseHeight(float x, float y)
+    {
+        float land = LandHeight(GetBlend(x, y), x, y, out float relief);
+        if (water == null || !water.OceansEnabled)
+            return land;
+
+        return OceanGenerator.ShapeHeight(water, x, y, land, relief, out _);
+    }
+
+    public Biome SampleBiome(float x, float y)
+    {
+        TerrainGenerator tg = terrainGenerator;
+        return VoronoiBiomeGenerator.GetBiomeAtPosition(
+            new Vector2(x, y),
+            tg.VoronoiScale,
+            tg.NumVoronoiPoints,
+            availableBiomes,
+            tg.VoronoiSeed,
+            tg.useWeightedBiome,
+            tg.UseNaturalClimatePlacement,
+            tg.ClimateNoiseScale,
+            tg.VoronoiWarpStrength,
+            tg.VoronoiWarpScale,
+            tg.BiomeClusterStrength,
+            tg.BiomeClusterRadius,
+            tg.BiomeRepeatPenalty,
+            layout
+        );
+    }
+}
+
+/// <summary>
 /// Static class responsible for generating height maps for terrain based on Voronoi diagrams, Perlin noise, and biome-specific parameters.
 /// Height is blended across the two nearest biomes near their border (instead of cutting hard between them)
 /// so adjacent biomes with different amplitude/frequency don't produce a visible cliff, and the result is
 /// optionally weathered by thermal and hydraulic (water) erosion, itself modulated by the local climate.
+/// When water is enabled, oceans, lakes, ponds and rivers shape the terrain around that erosion pass - see
+/// <see cref="ChunkWaterContext"/>.
 /// </summary>
 public static class HeightGenerator
 {
@@ -36,6 +127,20 @@ public static class HeightGenerator
     /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
     public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset, out float[,] erosionDeltaMap)
     {
+        return GenerateHeightMap(terrainGenerator, globalOffset, out erosionDeltaMap, out _);
+    }
+
+    /// <summary>
+    /// Generates a height map for a terrain chunk, additionally reporting the erosion debug delta (see
+    /// the other overload) and the chunk's water (oceans, lakes, ponds, rivers - see <see cref="WaterGenerator"/>).
+    /// </summary>
+    /// <param name="terrainGenerator">The terrain generator containing configuration parameters such as chunk size, Voronoi scale, and biome definitions.</param>
+    /// <param name="globalOffset">The global offset for the chunk's position in the world.</param>
+    /// <param name="erosionDeltaMap">See the other overload.</param>
+    /// <param name="waterMap">Per-cell water surface, type and shoreline level. Null when <see cref="TerrainGenerator.EnableWater"/> is off.</param>
+    /// <returns>A 2D array representing the height map of the terrain chunk.</returns>
+    public static float[,] GenerateHeightMap(TerrainGenerator terrainGenerator, Vector2 globalOffset, out float[,] erosionDeltaMap, out WaterMapData waterMap)
+    {
         int chunkSize = terrainGenerator.ChunkSize;
         int finalSize = chunkSize + 1;
 
@@ -45,14 +150,13 @@ public static class HeightGenerator
         int paddedSize = finalSize + padding * 2;
 
         int voronoiSeed = terrainGenerator.VoronoiSeed;
-        float inverseWidth = 1f / chunkSize;
-        float inverseDepth = 1f / chunkSize;
-
-        List<Biome> availableBiomes = terrainGenerator.BiomeDefinitions
-            .Select(biomeInstance => biomeInstance.BiomePrefab)
-            .ToList();
-
         Vector2 paddedOrigin = globalOffset - new Vector2(padding, padding);
+
+        WaterSettings waterSettings = terrainGenerator.EnableWater ? WaterSettings.From(terrainGenerator) : null;
+        TerrainHeightSampler sampler = new TerrainHeightSampler(terrainGenerator, waterSettings);
+        ChunkWaterContext water = waterSettings != null
+            ? WaterGenerator.CreateChunkContext(waterSettings, sampler, paddedOrigin, paddedSize)
+            : null;
 
         float[,] paddedHeights = new float[paddedSize, paddedSize];
         float[,] resistanceMap = erosionEnabled ? new float[paddedSize, paddedSize] : null;
@@ -65,30 +169,11 @@ public static class HeightGenerator
             {
                 float worldPosX = paddedOrigin.x + x;
 
-                List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.GetBiomeBlend(
-                    new Vector2(worldPosX, worldPosY),
-                    terrainGenerator.VoronoiScale,
-                    terrainGenerator.NumVoronoiPoints,
-                    availableBiomes,
-                    voronoiSeed,
-                    terrainGenerator.useWeightedBiome,
-                    terrainGenerator.UseNaturalClimatePlacement,
-                    terrainGenerator.ClimateNoiseScale,
-                    terrainGenerator.VoronoiWarpStrength,
-                    terrainGenerator.VoronoiWarpScale,
-                    terrainGenerator.BiomeBlendRange,
-                    terrainGenerator.BiomeClusterStrength,
-                    terrainGenerator.BiomeClusterRadius,
-                    terrainGenerator.BiomeRepeatPenalty
-                );
+                List<VoronoiBiomeGenerator.BiomeWeight> blend = sampler.GetBlend(worldPosX, worldPosY);
+                float height = sampler.LandHeight(blend, worldPosX, worldPosY, out float relief);
 
-                float height = 0f;
-                for (int i = 0; i < blend.Count; i++)
-                {
-                    height += blend[i].Weight * ComputeBiomeNoise(blend[i].Biome, worldPosX, worldPosY, terrainGenerator.Octaves, terrainGenerator.Lacunarity, inverseWidth, inverseDepth);
-                }
-
-                paddedHeights[x, y] = height;
+                if (water != null)
+                    height = water.ShapeBaseHeight(x, y, worldPosX, worldPosY, height, relief);
 
                 if (erosionEnabled)
                 {
@@ -106,6 +191,11 @@ public static class HeightGenerator
                     // Rainfall-driven ("climate") erosion strength: how much water this cell's climate feeds into passing droplets.
                     rainfallMap[x, y] = Mathf.Clamp01(moisture * rainfall);
                 }
+
+                if (water != null)
+                    height = water.ApplyPreErosion(x, y, worldPosX, worldPosY, height);
+
+                paddedHeights[x, y] = height;
             }
         }
 
@@ -143,24 +233,33 @@ public static class HeightGenerator
             }
         }
 
+        erosionDeltaMap = null;
+        if (captureErosionDebug)
+        {
+            // Captured before the water guarantees below, so it shows erosion's own effect only.
+            erosionDeltaMap = new float[finalSize, finalSize];
+            for (int y = 0; y < finalSize; y++)
+            {
+                for (int x = 0; x < finalSize; x++)
+                {
+                    // Positive = erosion removed material here, negative = erosion deposited material here.
+                    erosionDeltaMap[x, y] = preErosionHeights[x + padding, y + padding] - paddedHeights[x + padding, y + padding];
+                }
+            }
+        }
+
+        if (water != null)
+            water.ApplyPostErosion(paddedHeights);
+
         float[,] heightMap = new float[finalSize, finalSize];
-        erosionDeltaMap = captureErosionDebug ? new float[finalSize, finalSize] : null;
         bool trackMinMax = !terrainGenerator.TerrainTextureBasedOnVoronoiPoints;
 
         for (int y = 0; y < finalSize; y++)
         {
             for (int x = 0; x < finalSize; x++)
             {
-                int paddedX = x + padding;
-                int paddedY = y + padding;
-                float finalHeight = paddedHeights[paddedX, paddedY];
+                float finalHeight = paddedHeights[x + padding, y + padding];
                 heightMap[x, y] = finalHeight;
-
-                if (captureErosionDebug)
-                {
-                    // Positive = erosion removed material here, negative = erosion deposited material here.
-                    erosionDeltaMap[x, y] = preErosionHeights[paddedX, paddedY] - finalHeight;
-                }
 
                 if (trackMinMax)
                 {
@@ -169,11 +268,41 @@ public static class HeightGenerator
             }
         }
 
+        waterMap = water != null ? water.BuildWaterMap(paddedHeights, padding, finalSize) : null;
         return heightMap;
     }
 
     /// <summary>
-    /// Applies a biome's fractal/fBm Perlin noise (amplitude, frequency, persistence) at a world position.
+    /// Biome-blended land height at a world position: each contributing biome's noise (including its
+    /// baseElevation) weighted by its blend weight. <paramref name="relief"/> is the same without the
+    /// baseElevation part - just the terrain's roughness - which the ocean reuses for seafloor detail.
+    /// </summary>
+    public static float LandHeightFromBlend(List<VoronoiBiomeGenerator.BiomeWeight> blend, float worldX, float worldY, int octaves, float lacunarity, float inverseChunkSize, out float relief)
+    {
+        float height = 0f;
+        float baseElevation = 0f;
+        for (int i = 0; i < blend.Count; i++)
+        {
+            if (blend[i].Weight <= 0f)
+                continue; // a nearby biome that isn't blending in yet (see LayoutOptions.NearbyReach)
+            height += blend[i].Weight * ComputeBiomeNoise(blend[i].Biome, worldX, worldY, octaves, lacunarity, inverseChunkSize, inverseChunkSize);
+            baseElevation += blend[i].Weight * blend[i].Biome.baseElevation;
+        }
+
+        relief = height - baseElevation;
+        return height;
+    }
+
+    /// <summary>Classic (original) terrain of one biome at a world position - see <see cref="LandformType.Classic"/>.</summary>
+    public static float ComputeClassicBiomeNoise(Biome biome, float worldX, float worldY, int octaves, float lacunarity, float inverseChunkSize)
+    {
+        return ComputeBiomeNoise(biome, worldX, worldY, octaves, lacunarity, inverseChunkSize, inverseChunkSize);
+    }
+
+    /// <summary>
+    /// Applies a biome's fractal/fBm Perlin noise (amplitude, frequency, persistence) at a world
+    /// position, plus its baseElevation offset (see <see cref="Biome.baseElevation"/>) - this is what
+    /// lets two biomes with identical roughness still sit at genuinely different elevations.
     /// </summary>
     private static float ComputeBiomeNoise(Biome biome, float worldX, float worldY, int octaves, float lacunarity, float inverseWidth, float inverseDepth)
     {
@@ -186,7 +315,7 @@ public static class HeightGenerator
         // and make every biome just look like a rescaled copy of the same terrain).
         float phaseOffset = biome.name != null ? (biome.name.GetHashCode() % 1000) * 0.137f : 0f;
 
-        float height = 0f;
+        float height = biome.baseElevation;
         for (int o = 0; o < octaves; o++)
         {
             float sampleX = (worldX * inverseWidth) * frequency + phaseOffset;

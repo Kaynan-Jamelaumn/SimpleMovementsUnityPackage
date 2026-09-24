@@ -274,6 +274,10 @@ public static class SplatMapGenerator
             blendWeights = new float[chunkSize, chunkSize, 2];
 
             List<Biome> availableBiomes = terrainGenerator.BiomeDefinitions.Select(b => b.BiomePrefab).ToList();
+            // Computed once per chunk (not per cell): keeps the texture blend band matched to the
+            // (possibly widened) height blend band from HeightGenerator, so the visual biome transition
+            // doesn't finish before the terrain has actually finished sloping down.
+            float boundaryMaxSlopeTangent = terrainGenerator.BiomeBoundaryMaxSlopeTangent;
 
             Parallel.For(0, chunkSize, y =>
             {
@@ -294,15 +298,24 @@ public static class SplatMapGenerator
                         terrainGenerator.BiomeBlendRange,
                         terrainGenerator.BiomeClusterStrength,
                         terrainGenerator.BiomeClusterRadius,
-                        terrainGenerator.BiomeRepeatPenalty
+                        terrainGenerator.BiomeRepeatPenalty,
+                        terrainGenerator.Octaves,
+                        boundaryMaxSlopeTangent,
+                        terrainGenerator.BiomeLayout
                     );
+
+                    // Blend entries come sorted by weight; near a point where three biomes meet there can be
+                    // more than the two splat slots, so the top two are renormalized to still sum to 1.
+                    float slotTotal = 0f;
+                    for (int slot = 0; slot < 2 && slot < blend.Count; slot++)
+                        slotTotal += blend[slot].Weight;
 
                     for (int slot = 0; slot < 2; slot++)
                     {
                         if (slot < blend.Count)
                         {
                             blendIndices[x, y, slot] = biomeIndexMap[blend[slot].Biome.name];
-                            blendWeights[x, y, slot] = blend[slot].Weight;
+                            blendWeights[x, y, slot] = slotTotal > 0f ? blend[slot].Weight / slotTotal : 0f;
                         }
                         else
                         {

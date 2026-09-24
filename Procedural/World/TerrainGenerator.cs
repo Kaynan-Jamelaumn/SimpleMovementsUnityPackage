@@ -282,6 +282,178 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Blend splat map textures across biome borders to match the blended terrain height.")]
     [SerializeField] private bool useBiomeBlendedTexturing = true;
 
+    /// <summary>
+    /// Steepest slope, in degrees, considered walkable at a biome border. When two neighboring biomes'
+    /// height ranges (amplitude) differ a lot (e.g. Mountains next to Plains), <see cref="BiomeBlendRange"/>
+    /// alone may not give the transition enough room to stay under this slope - in that case the blend
+    /// band automatically widens (capped at one Voronoi cell width) just enough to keep the biome-to-biome
+    /// elevation change walkable, without touching either biome's own natural terrain variation away from
+    /// the border. This is deliberately separate from <see cref="TalusAngle"/>: that one governs when loose
+    /// material collapses under erosion (a material-stability slope), this one governs whether a player can
+    /// actually walk the transition (a traversal slope) - they don't have to match. 0 disables this and
+    /// leaves border width exactly as <see cref="BiomeBlendRange"/> specifies (the original behavior).
+    /// </summary>
+    [Tooltip("Steepest slope (degrees) considered walkable where two biomes meet. The blend band automatically widens beyond Height Blend Range when two neighboring biomes' height ranges differ enough that this slope would otherwise be exceeded - capped at one Voronoi cell width. 0 disables this (border width comes purely from Height Blend Range, the original behavior). Separate from Talus Angle, which is about material stability, not player traversal.")]
+    [SerializeField][Range(0f, 89f)] private float biomeBoundaryMaxSlopeDegrees = 28f;
+
+    /// <summary>
+    /// When on, which biome goes where depends only on the seed and settings. When off, the original
+    /// behavior: clustering looks at whichever neighboring areas happen to be generated already, so the
+    /// layout can differ depending on where the player goes first (chunks generate on worker threads in
+    /// no fixed order). Point positions are the same either way; only which biome each point gets differs.
+    /// </summary>
+    [Tooltip("ON: the same seed and settings always give the same biome layout, no matter where the player goes first (recommended).\nOFF: the original behavior - biome clustering depends on which areas were generated first, so the layout can change between runs.\n\nSwitching this changes the biome layout of an existing world.")]
+    [SerializeField] private bool orderIndependentBiomeLayout = true;
+
+    [Header("Terrain Shape (Landforms)")]
+    /// <summary>How each biome's landform is decided - see <see cref="global::TerrainShapeMode"/>.</summary>
+    [Tooltip("Classic Only: every biome uses the original terrain; Landform settings are ignored.\nPer Biome: each biome uses its own Landform setting (biomes left on Classic keep the original terrain), so you can switch biomes over one at a time.\nLandforms Only: every biome uses a landform; biomes still on Classic get a suggested one based on their settings.")]
+    [SerializeField] private TerrainShapeMode terrainShapeMode = TerrainShapeMode.PerBiome;
+
+    /// <summary>Fraction of the typical distance between biome points over which a landform's relief fades out at a border.</summary>
+    [Tooltip("How gradually a landform's relief (mountains, hills, dunes...) fades out toward a neighboring biome, as a fraction of the typical distance between biome points. Larger = long foothills; smaller = mountains stay tall closer to their edge. It is automatically widened so the fade itself stays walkable, but never beyond the biome's own blend band.")]
+    [SerializeField][Range(0.05f, 1f)] private float landformTransitionWidth = 0.35f;
+
+    /// <summary>0-1: how strongly Mountain/Plateau biomes gather along long belts.</summary>
+    [Tooltip("How strongly Mountain and Plateau biomes are placed along long belts, so they form ranges that run across many chunks instead of scattered patches. Hills are favored next to the belts, Plains/Wetland/Dunes away from them. 0 = off. Only applies when landforms are in use.")]
+    [SerializeField][Range(0f, 1f)] private float mountainBeltStrength = 0.5f;
+
+    /// <summary>Belt spacing = VoronoiScale x this.</summary>
+    [Tooltip("Spacing of mountain belts = Voronoi Scale x this. Larger = fewer, longer, more widely separated ranges.")]
+    [SerializeField] private float mountainBeltScaleMultiplier = 6f;
+
+    [Header("Water")]
+    /// <summary>
+    /// Master toggle for oceans, lakes, ponds and rivers. When off, terrain generates exactly as it did
+    /// before water existed - no coast shaping, no carving, no water geometry, zero extra cost.
+    /// </summary>
+    [Tooltip("Master toggle for oceans, lakes, ponds and rivers. Off = terrain generates exactly as before water existed.")]
+    [SerializeField] private bool enableWater = true;
+
+    /// <summary>
+    /// Sea level (world Y). Only oceans use it - lakes and ponds each get their own level from the terrain
+    /// around them, and rivers follow their own downhill surface. Terrain being below this level does NOT
+    /// by itself make water: oceans are decided by the continent field (see Ocean settings).
+    /// </summary>
+    [Tooltip("Sea level (world Y), used by oceans only. Lakes/ponds/rivers each have their own water level. Being below this height does not by itself create water - oceans come from the continent field.")]
+    [SerializeField] private float waterLevel = 0f;
+
+    [Tooltip("Default water material for every water type that doesn't have its own below. Leave empty to use simple built-in transparent fallbacks (tinted per type).")]
+    [SerializeField] private Material waterMaterial;
+    [Tooltip("Optional material for oceans (falls back to the default water material).")]
+    [SerializeField] private Material oceanMaterial;
+    [Tooltip("Optional material for lakes (falls back to the default water material).")]
+    [SerializeField] private Material lakeMaterial;
+    [Tooltip("Optional material for ponds (falls back to the lake material, then the default).")]
+    [SerializeField] private Material pondMaterial;
+    [Tooltip("Optional material for rivers (falls back to the default water material).")]
+    [SerializeField] private Material riverMaterial;
+
+    [Tooltip("Whether water bodies get a trigger volume that drives OxygenManager.SetUnderwater for anything with an OxygenManager (player, mobs, etc). Water rendering/geometry is unaffected either way.")]
+    [SerializeField] private bool enableSwimDetection = true;
+
+    [Header("Water - Oceans")]
+    [Tooltip("Generate oceans. Oceans are large-scale geographic features from a low-frequency continent field, not every low area.")]
+    [SerializeField] private bool enableOceans = true;
+    [Tooltip("Continent field scale = VoronoiScale * this multiplier. Larger = bigger continents and oceans, further apart.")]
+    [SerializeField] private float continentScaleMultiplier = 18f;
+    [Tooltip("Where the continent field turns into ocean. Lower = rarer oceans (-0.2 is roughly 15% of the world).")]
+    [SerializeField][Range(-0.8f, 0.8f)] private float oceanThreshold = -0.2f;
+    [Tooltip("Width (world units, approximate) of the beach that rises from sea level.")]
+    [SerializeField] private float beachWidth = 30f;
+    [Tooltip("Height of the beach above sea level before inland terrain takes over.")]
+    [SerializeField] private float beachHeight = 2.5f;
+    [Tooltip("Width (world units, approximate) over which coastal terrain blends into normal inland terrain.")]
+    [SerializeField] private float coastBlendWidth = 140f;
+    [Tooltip("Width (world units, approximate) of the continental shelf between the shore and the deep seafloor.")]
+    [SerializeField] private float continentalShelfWidth = 260f;
+    [Tooltip("Depth of the open-ocean seafloor below sea level.")]
+    [SerializeField] private float oceanDepth = 35f;
+    [Tooltip("How much land gradually rises moving inland from the coast. Gives rivers a natural tendency to drain toward the sea.")]
+    [SerializeField] private float inlandRise = 40f;
+    [Tooltip("Distance (world units, approximate) over which the inland rise builds up.")]
+    [SerializeField] private float inlandRiseDistance = 3000f;
+    [Tooltip("How often islands rise out of open ocean. 0 = none.")]
+    [SerializeField][Range(0f, 1f)] private float islandFrequency = 0.3f;
+    [Tooltip("Island noise scale = VoronoiScale * this multiplier. Larger = bigger, fewer islands.")]
+    [SerializeField] private float islandScaleMultiplier = 1.4f;
+    [Tooltip("Peak height of islands above sea level.")]
+    [SerializeField] private float islandPeakHeight = 14f;
+    [Tooltip("Radius (world units) around the world origin kept on land, so the player never spawns at sea. 0 disables.")]
+    [SerializeField] private float spawnLandRadius = 700f;
+
+    [Header("Water - Lakes")]
+    [Tooltip("Generate lakes: inland bodies of water sitting in a basin, with their own water level.")]
+    [SerializeField] private bool enableLakes = true;
+    [Tooltip("Size (world units) of the grid cells lakes are placed on - at most one lake per cell. Larger = sparser lakes.")]
+    [SerializeField] private float lakeSpacing = 900f;
+    [Tooltip("Base chance a cell gets a lake (then scaled by the site's biome Lake Likelihood and by how much the site is a natural depression).")]
+    [SerializeField][Range(0f, 1f)] private float lakeChance = 0.35f;
+    [Tooltip("Smallest lake radius (world units).")]
+    [SerializeField] private float lakeMinRadius = 45f;
+    [Tooltip("Largest lake radius (world units).")]
+    [SerializeField] private float lakeMaxRadius = 130f;
+    [Tooltip("Water depth at the center of the largest lakes (smaller lakes are proportionally shallower).")]
+    [SerializeField] private float lakeMaxDepth = 10f;
+    [Tooltip("Steepest average ground slope (rise/run) a lake can be placed on - lakes don't sit on mountainsides.")]
+    [SerializeField] private float lakeMaxSiteSlope = 0.3f;
+    [Tooltip("Chance a lake drains through an outlet river at the lowest point of its rim.")]
+    [SerializeField][Range(0f, 1f)] private float lakeOutletChance = 0.5f;
+
+    [Header("Water - Ponds")]
+    [Tooltip("Generate ponds: small, shallow bodies of water in minor depressions.")]
+    [SerializeField] private bool enablePonds = true;
+    [Tooltip("Size (world units) of the grid cells ponds are placed on - at most one pond per cell.")]
+    [SerializeField] private float pondSpacing = 220f;
+    [Tooltip("Base chance a cell gets a pond (then scaled by the site's biome Pond Likelihood and depression shape).")]
+    [SerializeField][Range(0f, 1f)] private float pondChance = 0.25f;
+    [Tooltip("Smallest pond radius (world units).")]
+    [SerializeField] private float pondMinRadius = 8f;
+    [Tooltip("Largest pond radius (world units).")]
+    [SerializeField] private float pondMaxRadius = 22f;
+    [Tooltip("Typical water depth at a pond's center.")]
+    [SerializeField] private float pondDepth = 2f;
+    [Tooltip("Steepest average ground slope (rise/run) a pond can be placed on.")]
+    [SerializeField] private float pondMaxSiteSlope = 0.45f;
+
+    [Header("Water - Shorelines")]
+    [Tooltip("Width (world units) of the band around a lake/pond where the terrain is guaranteed to stay above its water, so the shoreline is always closed. Automatically at least 1.5 terrain mesh vertices at the current Level Of Detail.")]
+    [SerializeField] private float shoreRimWidth = 12f;
+    [Tooltip("How far a lake/pond's rim stays above its water level.")]
+    [SerializeField] private float shoreFreeboard = 0.6f;
+
+    [Header("Water - Rivers")]
+    [Tooltip("Generate rivers: traced paths from springs (and lake outlets) downhill to the ocean or a lake.")]
+    [SerializeField] private bool enableRivers = true;
+    [Tooltip("Size (world units) of the grid cells river springs are placed on - at most one spring per cell.")]
+    [SerializeField] private float riverSpacing = 1000f;
+    [Tooltip("Base chance a cell gets a spring (then scaled by the biome's River Spring Likelihood and the spring's elevation).")]
+    [SerializeField][Range(0f, 1f)] private float riverChance = 0.35f;
+    [Tooltip("Springs only appear at least this high above sea level.")]
+    [SerializeField] private float riverMinSpringElevation = 10f;
+    [Tooltip("Rivers from springs shorter than this are discarded.")]
+    [SerializeField] private float riverMinLength = 350f;
+    [Tooltip("Longest a river can be traced. Also how far away a chunk has to look for rivers that might reach it.")]
+    [SerializeField] private float riverMaxLength = 2600f;
+    [Tooltip("River width (world units) at its source.")]
+    [SerializeField] private float riverSourceWidth = 5f;
+    [Tooltip("River width (world units) at its mouth.")]
+    [SerializeField] private float riverMouthWidth = 26f;
+    [Tooltip("How much river width wobbles along its course (0 = smooth taper from source to mouth).")]
+    [SerializeField][Range(0f, 0.9f)] private float riverWidthVariation = 0.35f;
+    [Tooltip("How strongly rivers meander away from the straight downhill direction.")]
+    [SerializeField][Range(0f, 1f)] private float riverMeander = 0.55f;
+    [Tooltip("Typical length (world units) of one meander bend.")]
+    [SerializeField] private float riverMeanderWavelength = 180f;
+    [Tooltip("Water depth at the river's mouth (shallower toward the source).")]
+    [SerializeField] private float riverDepth = 3f;
+    [Tooltip("Steepness (degrees) of the valley walls a river carves. Higher = narrower, steeper valleys and gorges.")]
+    [SerializeField][Range(5f, 80f)] private float riverValleySlope = 28f;
+    [Tooltip("Largest distance (world units) from a river's center a valley can extend.")]
+    [SerializeField] private float riverMaxValleyWidth = 150f;
+    [Tooltip("How far river banks stay above the river's water.")]
+    [SerializeField] private float riverBankFreeboard = 0.8f;
+
     [Header("Erosion")]
     /// <summary>
     /// Master toggle for the erosion post-process (thermal + hydraulic/water erosion).
@@ -504,6 +676,117 @@ public class TerrainGenerator : MonoBehaviour
     public float VoronoiWarpScale => VoronoiScale * voronoiWarpScaleMultiplier;
     public float BiomeBlendRange => biomeBlendRange;
     public bool UseBiomeBlendedTexturing => useBiomeBlendedTexturing;
+    public float BiomeBoundaryMaxSlopeDegrees => biomeBoundaryMaxSlopeDegrees;
+    // tan() of BiomeBoundaryMaxSlopeDegrees, precomputed once per access rather than per heightmap cell.
+    // <= 0 (from a 0 degrees setting) means "disabled" to callers, same convention as the degrees field.
+    public float BiomeBoundaryMaxSlopeTangent => biomeBoundaryMaxSlopeDegrees > 0f
+        ? Mathf.Tan(biomeBoundaryMaxSlopeDegrees * Mathf.Deg2Rad)
+        : 0f;
+
+    public bool OrderIndependentBiomeLayout => orderIndependentBiomeLayout;
+
+    // Terrain Shape (Landforms) Properties
+    public TerrainShapeMode TerrainShapeMode => terrainShapeMode;
+    public float LandformTransitionWidth => landformTransitionWidth;
+    public float MountainBeltStrength => mountainBeltStrength;
+    public float MountainBeltScale => VoronoiScale * Mathf.Max(0.5f, mountainBeltScaleMultiplier);
+
+    /// <summary>
+    /// Biome layout options passed to every <see cref="VoronoiBiomeGenerator"/> query. Null (the original
+    /// behavior) when neither order-independent layout nor landform placement is in use.
+    /// </summary>
+    public VoronoiBiomeGenerator.LayoutOptions BiomeLayout
+    {
+        get
+        {
+            bool landforms = terrainShapeMode != TerrainShapeMode.ClassicOnly;
+            bool belts = landforms && mountainBeltStrength > 0f;
+            if (!orderIndependentBiomeLayout && !landforms)
+                return null;
+            return new VoronoiBiomeGenerator.LayoutOptions
+            {
+                OrderIndependent = orderIndependentBiomeLayout,
+                ShapeMode = terrainShapeMode,
+                BeltStrength = belts ? mountainBeltStrength : 0f,
+                BeltScale = MountainBeltScale,
+                NearbyReach = landforms ? LandformSettings.NearbyReachFor(this) : 0f,
+            };
+        }
+    }
+
+    // Water Properties
+    public bool EnableWater => enableWater;
+    public float SeaLevel => waterLevel;
+    public bool EnableSwimDetection => enableSwimDetection;
+
+    /// <summary>
+    /// Material for a water type: its own material if assigned, else (for ponds) the lake material, else
+    /// the default water material. Null means "use the built-in fallback".
+    /// </summary>
+    public Material GetWaterMaterial(WaterBodyType type)
+    {
+        Material specific = null;
+        switch (type)
+        {
+            case WaterBodyType.Ocean: specific = oceanMaterial; break;
+            case WaterBodyType.Lake: specific = lakeMaterial; break;
+            case WaterBodyType.Pond: specific = pondMaterial != null ? pondMaterial : lakeMaterial; break;
+            case WaterBodyType.River: specific = riverMaterial; break;
+        }
+        return specific != null ? specific : waterMaterial;
+    }
+
+    public bool EnableOceans => enableWater && enableOceans;
+    // Derived from VoronoiScale like ClimateNoiseScale/VoronoiWarpScale, so it stays proportioned to biome size.
+    public float ContinentScale => VoronoiScale * continentScaleMultiplier;
+    public float OceanThreshold => oceanThreshold;
+    public float BeachWidth => beachWidth;
+    public float BeachHeight => beachHeight;
+    public float CoastBlendWidth => coastBlendWidth;
+    public float ContinentalShelfWidth => continentalShelfWidth;
+    public float OceanDepth => oceanDepth;
+    public float InlandRise => inlandRise;
+    public float InlandRiseDistance => inlandRiseDistance;
+    public float IslandFrequency => islandFrequency;
+    public float IslandScale => VoronoiScale * islandScaleMultiplier;
+    public float IslandPeakHeight => islandPeakHeight;
+    public float SpawnLandRadius => spawnLandRadius;
+
+    public bool EnableLakes => enableWater && enableLakes;
+    public float LakeSpacing => lakeSpacing;
+    public float LakeChance => lakeChance;
+    public float LakeMinRadius => lakeMinRadius;
+    public float LakeMaxRadius => lakeMaxRadius;
+    public float LakeMaxDepth => lakeMaxDepth;
+    public float LakeMaxSiteSlope => lakeMaxSiteSlope;
+    public float LakeOutletChance => lakeOutletChance;
+
+    public bool EnablePonds => enableWater && enablePonds;
+    public float PondSpacing => pondSpacing;
+    public float PondChance => pondChance;
+    public float PondMinRadius => pondMinRadius;
+    public float PondMaxRadius => pondMaxRadius;
+    public float PondDepth => pondDepth;
+    public float PondMaxSiteSlope => pondMaxSiteSlope;
+
+    public float ShoreRimWidth => shoreRimWidth;
+    public float ShoreFreeboard => shoreFreeboard;
+
+    public bool EnableRivers => enableWater && enableRivers;
+    public float RiverSpacing => riverSpacing;
+    public float RiverChance => riverChance;
+    public float RiverMinSpringElevation => riverMinSpringElevation;
+    public float RiverMinLength => riverMinLength;
+    public float RiverMaxLength => riverMaxLength;
+    public float RiverSourceWidth => riverSourceWidth;
+    public float RiverMouthWidth => riverMouthWidth;
+    public float RiverWidthVariation => riverWidthVariation;
+    public float RiverMeander => riverMeander;
+    public float RiverMeanderWavelength => riverMeanderWavelength;
+    public float RiverDepth => riverDepth;
+    public float RiverValleySlope => riverValleySlope;
+    public float RiverMaxValleyWidth => riverMaxValleyWidth;
+    public float RiverBankFreeboard => riverBankFreeboard;
 
     // Erosion Properties
     public bool EnableErosion => enableErosion;
@@ -572,6 +855,8 @@ public class TerrainGenerator : MonoBehaviour
         // especially easy to hit with "Reload Domain" disabled in Enter Play Mode Settings, where
         // static fields like this one otherwise survive between separate Play sessions.
         VoronoiBiomeGenerator.ClearCache();
+        // Same reasoning for the globally cached lakes, ponds and river paths.
+        WaterGenerator.ClearCaches();
 
         // Initialize thread-safe queues for handling map data, terrain data, and biome object data from worker threads.
         mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
@@ -607,8 +892,8 @@ public class TerrainGenerator : MonoBehaviour
         // Local, not a field: this runs on its own worker thread per chunk (see RequestMapData),
         // and every chunk shares this same TerrainGenerator instance, so a shared field here would
         // race between concurrently-generating chunks.
-        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, out float[,] erosionDeltaMap);
-        return new MapData(localHeightMap, null, erosionDeltaMap);
+        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, out float[,] erosionDeltaMap, out WaterMapData waterData);
+        return new MapData(localHeightMap, null, erosionDeltaMap, waterData);
     }
 
     /// <summary>
@@ -639,7 +924,8 @@ public class TerrainGenerator : MonoBehaviour
                     VoronoiWarpScale,
                     BiomeClusterStrength,
                     BiomeClusterRadius,
-                    BiomeRepeatPenalty
+                    BiomeRepeatPenalty,
+                    BiomeLayout
                 );
                 biomeMap[x, y] = chosenBiome;
             }
@@ -717,7 +1003,7 @@ public class TerrainGenerator : MonoBehaviour
 
         Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
 
-        DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap, mapData.erosionDeltaMap);
+        DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap, mapData.erosionDeltaMap, mapData.waterData);
 
         lock (terrainDataThreadInfoQueue)
         {
@@ -756,7 +1042,7 @@ public class TerrainGenerator : MonoBehaviour
             return;
         }
 
-        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform, meshData);
+        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform, meshData, terrainData.waterData);
 
         lock (biomeObjectDataThreadInfoQueue)
         {
@@ -842,12 +1128,21 @@ public class TerrainGenerator : MonoBehaviour
                         }
                         else
                         {
-                            // Find the corresponding biome instance for the chosen biome.
-                            BiomeInstance chosenBiomeInstance = threadInfo.parameter.terrainGenerator.biomeDefinitions
-                                .FirstOrDefault(b => b.BiomePrefab == chosenBiome);
+                            // Skip land objects (trees, rocks, etc.) at cells now covered by water -
+                            // without this, biomes with a low baseElevation/near WaterLevel would still
+                            // spawn their normal land object set on what is now a lake/river bed.
+                            WaterMapData waterData = threadInfo.parameter.waterData;
+                            bool isUnderwater = waterData != null && waterData.IsWet(x, y);
 
-                            // Place objects for the selected biome at the calculated position.
-                            ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, lodFactor);
+                            if (!isUnderwater)
+                            {
+                                // Find the corresponding biome instance for the chosen biome.
+                                BiomeInstance chosenBiomeInstance = threadInfo.parameter.terrainGenerator.biomeDefinitions
+                                    .FirstOrDefault(b => b.BiomePrefab == chosenBiome);
+
+                                // Place objects for the selected biome at the calculated position.
+                                ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, lodFactor);
+                            }
                         }
                     }
                 }

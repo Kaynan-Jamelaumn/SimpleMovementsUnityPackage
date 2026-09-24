@@ -13,7 +13,7 @@ using UnityEngine;
 /// and flags known-bad parameter combinations before they produce visible seams/artifacts.
 /// </summary>
 [CustomEditor(typeof(TerrainGenerator))]
-public class TerrainGeneratorEditor : Editor
+public partial class TerrainGeneratorEditor : Editor
 {
     private static GUIStyle _sectionFoldoutStyle;
     private static GUIStyle SectionFoldoutStyle
@@ -38,11 +38,13 @@ public class TerrainGeneratorEditor : Editor
     private bool showHeightAndTexture = false;
     private bool showTextureVariations = false;
     private bool showVoronoi = true;
+    private bool showLandforms = true;
     private bool showNaturalPlacement = true;
     private bool showClimate = true;
     private bool showBiomeClimateSummary = false;
     private bool showErosionThermal = true;
     private bool showErosionHydraulic = true;
+    private bool showWater = true;
     private bool showErosionDebug = true;
     private bool showOther = false;
     private bool showBiomes = true;
@@ -60,6 +62,7 @@ public class TerrainGeneratorEditor : Editor
     private SerializedProperty numVoronoiPointsProp, voronoiSeedProp, voronoiScaleProp, useWeightedBiomeProp;
     private SerializedProperty biomeClusterStrengthProp, biomeClusterRadiusMultiplierProp, biomeRepeatPenaltyProp;
     private SerializedProperty voronoiWarpStrengthProp, voronoiWarpScaleMultiplierProp, biomeBlendRangeProp, useBiomeBlendedTexturingProp;
+    private SerializedProperty biomeBoundaryMaxSlopeDegreesProp;
     private SerializedProperty useNaturalClimatePlacementProp, climateScaleMultiplierProp;
     private SerializedProperty enableErosionProp, erosionPaddingProp, thermalIterationsProp, talusAngleProp, thermalErosionRateProp;
     private SerializedProperty hydraulicDropletDensityProp, dropletLifetimeProp, dropletInertiaProp, sedimentCapacityFactorProp, minSedimentCapacityProp;
@@ -110,6 +113,7 @@ public class TerrainGeneratorEditor : Editor
         voronoiWarpScaleMultiplierProp = serializedObject.FindProperty("voronoiWarpScaleMultiplier");
         biomeBlendRangeProp = serializedObject.FindProperty("biomeBlendRange");
         useBiomeBlendedTexturingProp = serializedObject.FindProperty("useBiomeBlendedTexturing");
+        biomeBoundaryMaxSlopeDegreesProp = serializedObject.FindProperty("biomeBoundaryMaxSlopeDegrees");
 
         useNaturalClimatePlacementProp = serializedObject.FindProperty("useNaturalClimatePlacement");
         climateScaleMultiplierProp = serializedObject.FindProperty("climateScaleMultiplier");
@@ -130,6 +134,7 @@ public class TerrainGeneratorEditor : Editor
         evaporateSpeedProp = serializedObject.FindProperty("evaporateSpeed");
         erosionGravityProp = serializedObject.FindProperty("erosionGravity");
         erosionRadiusProp = serializedObject.FindProperty("erosionRadius");
+
 
         visualizeErosionDebugProp = serializedObject.FindProperty("visualizeErosionDebug");
         erosionDebugMinDeltaProp = serializedObject.FindProperty("erosionDebugMinDelta");
@@ -172,40 +177,46 @@ public class TerrainGeneratorEditor : Editor
             EditorStyles.wordWrappedMiniLabel);
 
         DrawValidationWarnings(generator);
+        DrawCopySettingsBar(generator);
 
         EditorGUILayout.Space(4);
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Clear Voronoi / Biome Cache", "Voronoi points and their assigned biomes are cached per chunk coordinate for the lifetime of the process. If you change VoronoiSeed, VoronoiScale, biome list, or any Natural Placement/Climate setting while already in Play Mode (or with 'Reload Domain' disabled), old chunks keep their stale biome layout until this cache is cleared. TerrainGenerator.Awake() already does this automatically at the start of Play - use this button to force it on demand, e.g. after tweaking values mid-Play.")))
         {
             VoronoiBiomeGenerator.ClearCache();
-            Debug.Log("[TerrainGenerator] Voronoi/biome cache cleared.");
+            WaterGenerator.ClearCaches();
+            Debug.Log("[TerrainGenerator] Voronoi/biome and water feature caches cleared.");
         }
         EditorGUILayout.EndHorizontal();
 
         showTerrainConfig = Section("Terrain Configuration", showTerrainConfig, () =>
         {
-            EditorGUILayout.PropertyField(terrainSizeProp, new GUIContent("Terrain Size"));
+            Field(terrainSizeProp, "Terrain Size");
             EditorGUILayout.LabelField($"Resulting chunk size: {generator.ChunkSize} x {generator.ChunkSize} cells", EditorStyles.miniLabel);
         });
 
         showNoise = Section("Noise Configuration", showNoise, () =>
         {
-            EditorGUILayout.PropertyField(octavesProp, new GUIContent("Octaves"));
-            EditorGUILayout.PropertyField(lacunarityProp, new GUIContent("Lacunarity"));
+            Field(octavesProp, "Octaves");
+            Field(lacunarityProp, "Lacunarity");
             EditorGUILayout.HelpBox(
                 "Each biome also defines its own amplitude/frequency/persistence (on the Biome asset) - " +
                 "these two fields only control how many fractal layers are combined (Octaves) and how much " +
-                "each successive layer's frequency grows (Lacunarity), shared by every biome.",
+                "each successive layer's frequency grows (Lacunarity), shared by every biome.\n\n" +
+                "Both only affect biomes using the Classic landform. Other landforms choose their own layers " +
+                "(down to a few world units of detail) - see Terrain Shape (Landforms).",
                 MessageType.None);
         });
 
+        showLandforms = Section("Terrain Shape (Landforms)", showLandforms, () => DrawLandformSection(generator));
+
         showHeightAndTexture = Section("Height Range & Texture", showHeightAndTexture, () =>
         {
-            EditorGUILayout.PropertyField(terrainTextureBasedOnVoronoiPointsProp, new GUIContent("Texture Based On Voronoi Points"));
+            Field(terrainTextureBasedOnVoronoiPointsProp, "Texture Based On Voronoi Points");
             using (new EditorGUI.DisabledScope(generator.TerrainTextureBasedOnVoronoiPoints))
             {
-                EditorGUILayout.PropertyField(minHeightProp, new GUIContent("Min Height (tracked)"));
-                EditorGUILayout.PropertyField(maxHeightProp, new GUIContent("Max Height (tracked)"));
+                Field(minHeightProp, "Min Height (tracked)");
+                Field(maxHeightProp, "Max Height (tracked)");
             }
             EditorGUILayout.HelpBox(
                 generator.TerrainTextureBasedOnVoronoiPoints
@@ -216,33 +227,33 @@ public class TerrainGeneratorEditor : Editor
 
         showTextureVariations = Section("Texture Variations", showTextureVariations, () =>
         {
-            EditorGUILayout.PropertyField(enableTextureVariationsProp, new GUIContent("Enable Texture Variations (master)"));
+            Field(enableTextureVariationsProp, "Enable Texture Variations (master)");
             using (new EditorGUI.DisabledScope(!generator.EnableTextureVariations))
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(enableUVRotationProp, new GUIContent("UV Rotation"));
-                EditorGUILayout.PropertyField(enableUVNoiseProp, new GUIContent("UV Noise Offset"));
+                Field(enableUVRotationProp, "UV Rotation");
+                Field(enableUVNoiseProp, "UV Noise Offset");
                 using (new EditorGUI.DisabledScope(!enableUVNoiseProp.boolValue))
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(uvNoiseStrengthProp, new GUIContent("Noise Strength"));
-                    EditorGUILayout.PropertyField(uvNoiseScaleProp, new GUIContent("Noise Scale"));
+                    Field(uvNoiseStrengthProp, "Noise Strength");
+                    Field(uvNoiseScaleProp, "Noise Scale");
                     EditorGUI.indentLevel--;
                 }
-                EditorGUILayout.PropertyField(enableTextureScaleVariationProp, new GUIContent("Texture Scale Variation"));
+                Field(enableTextureScaleVariationProp, "Texture Scale Variation");
                 using (new EditorGUI.DisabledScope(!enableTextureScaleVariationProp.boolValue))
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(textureScaleVariationRangeProp, new GUIContent("Scale Variation Range"));
+                    Field(textureScaleVariationRangeProp, "Scale Variation Range");
                     EditorGUI.indentLevel--;
                 }
-                EditorGUILayout.PropertyField(enableShaderEnhancementsProp, new GUIContent("Shader-Based Enhancements"));
+                Field(enableShaderEnhancementsProp, "Shader-Based Enhancements");
                 using (new EditorGUI.DisabledScope(!enableShaderEnhancementsProp.boolValue))
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(shaderUVRotationStrengthProp, new GUIContent("Shader UV Rotation Strength"));
-                    EditorGUILayout.PropertyField(shaderUVScaleVariationProp, new GUIContent("Shader UV Scale Variation"));
-                    EditorGUILayout.PropertyField(shaderTextureBlendSharpnessProp, new GUIContent("Shader Blend Sharpness"));
+                    Field(shaderUVRotationStrengthProp, "Shader UV Rotation Strength");
+                    Field(shaderUVScaleVariationProp, "Shader UV Scale Variation");
+                    Field(shaderTextureBlendSharpnessProp, "Shader Blend Sharpness");
                     EditorGUI.indentLevel--;
                 }
                 EditorGUI.indentLevel--;
@@ -258,10 +269,10 @@ public class TerrainGeneratorEditor : Editor
 
         showVoronoi = Section("Voronoi / Biome Grid", showVoronoi, () =>
         {
-            EditorGUILayout.PropertyField(numVoronoiPointsProp, new GUIContent("Num Voronoi Points"));
-            EditorGUILayout.PropertyField(voronoiSeedProp, new GUIContent("Voronoi Seed"));
-            EditorGUILayout.PropertyField(voronoiScaleProp, new GUIContent("Voronoi Scale"));
-            EditorGUILayout.PropertyField(useWeightedBiomeProp, new GUIContent("Use Weighted Biome"));
+            Field(numVoronoiPointsProp, "Num Voronoi Points");
+            Field(voronoiSeedProp, "Voronoi Seed");
+            Field(voronoiScaleProp, "Voronoi Scale");
+            Field(useWeightedBiomeProp, "Use Weighted Biome");
             EditorGUILayout.HelpBox(
                 "Voronoi Scale is the base unit several other settings below (Climate Noise Scale, Warp Scale, " +
                 "Cluster Radius) derive their own scale from as a multiplier, so they automatically stay " +
@@ -271,31 +282,38 @@ public class TerrainGeneratorEditor : Editor
 
         showNaturalPlacement = Section("Natural Biome Placement", showNaturalPlacement, () =>
         {
-            EditorGUILayout.PropertyField(biomeClusterStrengthProp, new GUIContent("Cluster Strength"));
-            EditorGUILayout.PropertyField(biomeClusterRadiusMultiplierProp, new GUIContent("Cluster Radius Multiplier"));
+            Field(biomeClusterStrengthProp, "Cluster Strength");
+            Field(biomeClusterRadiusMultiplierProp, "Cluster Radius Multiplier");
             EditorGUILayout.LabelField($"= {generator.BiomeClusterRadius:0.#} world units", EditorStyles.miniLabel);
-            EditorGUILayout.PropertyField(biomeRepeatPenaltyProp, new GUIContent("Repeat Penalty"));
+            Field(biomeRepeatPenaltyProp, "Repeat Penalty");
             EditorGUILayout.Space(2);
-            EditorGUILayout.PropertyField(voronoiWarpStrengthProp, new GUIContent("Border Warp Strength"));
-            EditorGUILayout.PropertyField(voronoiWarpScaleMultiplierProp, new GUIContent("Border Warp Scale Multiplier"));
+            Field(voronoiWarpStrengthProp, "Border Warp Strength");
+            Field(voronoiWarpScaleMultiplierProp, "Border Warp Scale Multiplier");
             EditorGUILayout.LabelField($"= {generator.VoronoiWarpScale:0.#} world units", EditorStyles.miniLabel);
             EditorGUILayout.Space(2);
-            EditorGUILayout.PropertyField(biomeBlendRangeProp, new GUIContent("Height Blend Range"));
-            EditorGUILayout.PropertyField(useBiomeBlendedTexturingProp, new GUIContent("Blend Texturing Too"));
+            Field(biomeBlendRangeProp, "Height Blend Range");
+            Field(useBiomeBlendedTexturingProp, "Blend Texturing Too");
+            Field(biomeBoundaryMaxSlopeDegreesProp, "Boundary Max Walkable Slope");
+            DrawProp("orderIndependentBiomeLayout", "Order-Independent Layout");
             EditorGUILayout.HelpBox(
                 "Cluster Strength/Repeat Penalty turn scattered Voronoi points into contiguous biome " +
                 "territories purely by proximity - this works even with Climate below turned off. Border Warp " +
                 "bends cell edges into organic coastlines instead of straight polygon lines. Blend Range " +
-                "smooths height (and optionally texture) across the transition instead of a hard cut.",
+                "smooths height (and optionally texture) across the transition instead of a hard cut.\n\n" +
+                "Boundary Max Walkable Slope widens that blend band further, beyond Blend Range if needed, " +
+                "whenever two neighboring biomes' height ranges differ enough (e.g. Mountains next to Plains) " +
+                "that the border would otherwise be steeper than this - preventing unwalkable artificial " +
+                "walls at biome borders without touching either biome's own natural terrain elsewhere. " +
+                "0 disables this and leaves border width exactly as Blend Range specifies.",
                 MessageType.None);
 
             EditorGUILayout.Space(2);
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Cluster Strength, Cluster Radius Multiplier, Repeat Penalty, Border Warp Strength/Scale, Blend Range and Blend Texturing to their recommended default values.")))
+            if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores Cluster Strength, Cluster Radius Multiplier, Repeat Penalty, Border Warp Strength/Scale, Blend Range, Blend Texturing and Boundary Max Walkable Slope to their recommended default values.")))
             {
                 ResetBiomePlacementToRecommended();
             }
-            if (GUILayout.Button(new GUIContent("Turn Off", "Disables natural biome placement's effect: sets Cluster Strength, Repeat Penalty and Border Warp Strength to 0 (their 'fully disabled' value per the code's own design - see tooltips) and Blend Range to 0 (hard biome borders, no smoothing). Cluster Radius Multiplier, Warp Scale Multiplier and Blend Texturing are left as-is since they have no effect once their associated strength is 0.")))
+            if (GUILayout.Button(new GUIContent("Turn Off", "Disables natural biome placement's effect: sets Cluster Strength, Repeat Penalty and Border Warp Strength to 0 (their 'fully disabled' value per the code's own design - see tooltips) and Blend Range and Boundary Max Walkable Slope to 0 (hard biome borders, no smoothing). Cluster Radius Multiplier, Warp Scale Multiplier and Blend Texturing are left as-is since they have no effect once their associated strength is 0.")))
             {
                 DisableBiomePlacement();
             }
@@ -304,11 +322,11 @@ public class TerrainGeneratorEditor : Editor
 
         showClimate = Section("Climate (Temperature & Moisture)", showClimate, () =>
         {
-            EditorGUILayout.PropertyField(useNaturalClimatePlacementProp, new GUIContent("Use Natural Climate Placement"));
+            Field(useNaturalClimatePlacementProp, "Use Natural Climate Placement");
             using (new EditorGUI.DisabledScope(!useNaturalClimatePlacementProp.boolValue))
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(climateScaleMultiplierProp, new GUIContent("Climate Scale Multiplier"));
+                Field(climateScaleMultiplierProp, "Climate Scale Multiplier");
                 EditorGUILayout.LabelField($"= {generator.ClimateNoiseScale:0.#} world units", EditorStyles.miniLabel);
                 EditorGUI.indentLevel--;
             }
@@ -353,14 +371,14 @@ public class TerrainGeneratorEditor : Editor
 
         showErosionThermal = Section("Erosion - Thermal (Slopes/Talus)", showErosionThermal, () =>
         {
-            EditorGUILayout.PropertyField(enableErosionProp, new GUIContent("Enable Erosion (master, thermal + hydraulic)"));
+            Field(enableErosionProp, "Enable Erosion (master, thermal + hydraulic)");
             using (new EditorGUI.DisabledScope(!enableErosionProp.boolValue))
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(erosionPaddingProp, new GUIContent("Erosion Padding (cells)"));
-                EditorGUILayout.PropertyField(thermalIterationsProp, new GUIContent("Thermal Iterations"));
-                EditorGUILayout.PropertyField(talusAngleProp, new GUIContent("Talus Angle (degrees)"));
-                EditorGUILayout.PropertyField(thermalErosionRateProp, new GUIContent("Thermal Erosion Rate"));
+                Field(erosionPaddingProp, "Erosion Padding (cells)");
+                Field(thermalIterationsProp, "Thermal Iterations");
+                Field(talusAngleProp, "Talus Angle (degrees)");
+                Field(thermalErosionRateProp, "Thermal Erosion Rate");
                 EditorGUI.indentLevel--;
             }
             EditorGUILayout.HelpBox(
@@ -387,19 +405,19 @@ public class TerrainGeneratorEditor : Editor
         {
             using (new EditorGUI.DisabledScope(!enableErosionProp.boolValue))
             {
-                EditorGUILayout.PropertyField(hydraulicDropletDensityProp, new GUIContent("Droplet Density"));
+                Field(hydraulicDropletDensityProp, "Droplet Density");
                 using (new EditorGUI.DisabledScope(hydraulicDropletDensityProp.floatValue <= 0f))
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(dropletLifetimeProp, new GUIContent("Droplet Lifetime (steps)"));
-                    EditorGUILayout.PropertyField(dropletInertiaProp, new GUIContent("Droplet Inertia"));
-                    EditorGUILayout.PropertyField(sedimentCapacityFactorProp, new GUIContent("Sediment Capacity Factor"));
-                    EditorGUILayout.PropertyField(minSedimentCapacityProp, new GUIContent("Min Sediment Capacity"));
-                    EditorGUILayout.PropertyField(erodeSpeedProp, new GUIContent("Erode Speed"));
-                    EditorGUILayout.PropertyField(depositSpeedProp, new GUIContent("Deposit Speed"));
-                    EditorGUILayout.PropertyField(evaporateSpeedProp, new GUIContent("Evaporate Speed"));
-                    EditorGUILayout.PropertyField(erosionGravityProp, new GUIContent("Gravity"));
-                    EditorGUILayout.PropertyField(erosionRadiusProp, new GUIContent("Erosion Brush Radius (cells)"));
+                    Field(dropletLifetimeProp, "Droplet Lifetime (steps)");
+                    Field(dropletInertiaProp, "Droplet Inertia");
+                    Field(sedimentCapacityFactorProp, "Sediment Capacity Factor");
+                    Field(minSedimentCapacityProp, "Min Sediment Capacity");
+                    Field(erodeSpeedProp, "Erode Speed");
+                    Field(depositSpeedProp, "Deposit Speed");
+                    Field(evaporateSpeedProp, "Evaporate Speed");
+                    Field(erosionGravityProp, "Gravity");
+                    Field(erosionRadiusProp, "Erosion Brush Radius (cells)");
                     EditorGUI.indentLevel--;
                 }
             }
@@ -414,18 +432,82 @@ public class TerrainGeneratorEditor : Editor
                 MessageType.None);
         });
 
+        showWater = Section("Water (Oceans, Lakes, Ponds, Rivers)", showWater, () =>
+        {
+            EditorGUILayout.HelpBox(
+                "Each water type is its own geographic feature with its own rules and water level - none of them " +
+                "is simply 'terrain below a height', and none is decided by biome (biomes only make lakes, ponds " +
+                "and river springs more or less likely to start there - see each Biome asset's Water section).\n\n" +
+                "Oceans: large-scale, from a low-frequency continent field. Lakes/Ponds: sparse sites on gentle, " +
+                "preferably sunken ground; each carves a basin and keeps a closed rim above its own water level. " +
+                "Rivers: traced downhill from springs (or lake outlets) to the ocean or a lake, carving a channel " +
+                "and valley; they overflow terrain pits through their lowest saddle. All of it is computed from " +
+                "world position + seed and shared by every chunk, so water is identical across chunk borders.",
+                MessageType.Info);
+
+            DrawProp("enableWater", "Enable Water (master)");
+            using (new EditorGUI.DisabledScope(!serializedObject.FindProperty("enableWater").boolValue))
+            {
+                DrawProp("waterLevel", "Sea Level (oceans only)");
+                DrawProp("enableSwimDetection", "Swim Detection (OxygenManager)");
+
+                EditorGUILayout.Space(2);
+                EditorGUILayout.LabelField("Materials (optional - built-in tinted fallbacks otherwise)", EditorStyles.miniBoldLabel);
+                EditorGUI.indentLevel++;
+                DrawProp("waterMaterial", "Default");
+                DrawProp("oceanMaterial", "Ocean");
+                DrawProp("lakeMaterial", "Lake");
+                DrawProp("pondMaterial", "Pond");
+                DrawProp("riverMaterial", "River");
+                EditorGUI.indentLevel--;
+
+                DrawWaterGroup("Oceans", "enableOceans", WaterOceanFields);
+                EditorGUILayout.LabelField($"Continent scale = {generator.ContinentScale:0} world units", EditorStyles.miniLabel);
+                DrawWaterGroup("Lakes", "enableLakes", WaterLakeFields);
+                DrawWaterGroup("Ponds", "enablePonds", WaterPondFields);
+                DrawWaterGroup("Shorelines (lakes & ponds)", null, WaterShoreFields);
+                DrawWaterGroup("Rivers", "enableRivers", WaterRiverFields);
+
+                // Water can't be finer than the terrain mesh it sits in.
+                int lod = levelOfDetailProp.intValue;
+                int vertexSpacing = lod > 0 ? lod * 2 : 1;
+                float narrowest = serializedObject.FindProperty("riverSourceWidth").floatValue;
+                if (serializedObject.FindProperty("enableRivers").boolValue && narrowest < vertexSpacing * 2f)
+                {
+                    EditorGUILayout.HelpBox(
+                        $"At Level Of Detail {lod} terrain vertices are {vertexSpacing} units apart, so river stretches " +
+                        $"narrower than ~{vertexSpacing * 2} units (River Source Width is {narrowest:0.#}) can't be " +
+                        "represented and won't show - rivers will appear to start further downstream. Lower the Level " +
+                        "Of Detail or widen the rivers if that matters.",
+                        MessageType.Warning);
+                }
+            }
+
+            EditorGUILayout.Space(2);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button(new GUIContent("Reset To Recommended", "Restores every water tuning parameter (toggles, ocean/lake/pond/shore/river settings) to its recommended value. Leaves Sea Level and the water materials untouched, since those are world/art-specific choices rather than tuning parameters.")))
+            {
+                ResetWaterToRecommended();
+            }
+            if (GUILayout.Button(new GUIContent("Reset To Default", "Restores every water setting - including Sea Level and the water materials - to its original factory default.")))
+            {
+                ResetWaterToDefault();
+            }
+            EditorGUILayout.EndHorizontal();
+        });
+
         showErosionDebug = Section("Erosion Debug Visualization", showErosionDebug, () =>
         {
-            EditorGUILayout.PropertyField(visualizeErosionDebugProp, new GUIContent("Visualize Erosion (Scene-view gizmos)"));
+            Field(visualizeErosionDebugProp, "Visualize Erosion (Scene-view gizmos)");
             using (new EditorGUI.DisabledScope(!visualizeErosionDebugProp.boolValue))
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(erosionDebugMinDeltaProp, new GUIContent("Min Delta To Show"));
-                EditorGUILayout.PropertyField(erosionDebugMaxDeltaProp, new GUIContent("Delta At Full Intensity"));
-                EditorGUILayout.PropertyField(erosionDebugStrideProp, new GUIContent("Cell Stride (sample every N)"));
-                EditorGUILayout.PropertyField(erosionDebugGizmoSizeProp, new GUIContent("Gizmo Cube Size"));
-                EditorGUILayout.PropertyField(erosionDebugHeightOffsetProp, new GUIContent("Height Offset"));
-                EditorGUILayout.PropertyField(erosionDebugMaxGizmosPerChunkProp, new GUIContent("Max Gizmos Per Chunk"));
+                Field(erosionDebugMinDeltaProp, "Min Delta To Show");
+                Field(erosionDebugMaxDeltaProp, "Delta At Full Intensity");
+                Field(erosionDebugStrideProp, "Cell Stride (sample every N)");
+                Field(erosionDebugGizmoSizeProp, "Gizmo Cube Size");
+                Field(erosionDebugHeightOffsetProp, "Height Offset");
+                Field(erosionDebugMaxGizmosPerChunkProp, "Max Gizmos Per Chunk");
                 EditorGUI.indentLevel--;
             }
 
@@ -452,12 +534,12 @@ public class TerrainGeneratorEditor : Editor
 
         showOther = Section("Other Configuration", showOther, () =>
         {
-            EditorGUILayout.PropertyField(levelOfDetailProp, new GUIContent("Level Of Detail"));
+            Field(levelOfDetailProp, "Level Of Detail");
         });
 
         showBiomes = Section("Biomes", showBiomes, () =>
         {
-            EditorGUILayout.PropertyField(biomeDefinitionsProp, new GUIContent("Biome Definitions"), true);
+            Field(biomeDefinitionsProp, "Biome Definitions", true);
             if (biomeDefinitionsProp.arraySize == 0)
             {
                 EditorGUILayout.HelpBox("No biomes assigned - terrain generation has nothing to draw from and will fail.", MessageType.Error);
@@ -466,12 +548,12 @@ public class TerrainGeneratorEditor : Editor
 
         showObjects = Section("Objects", showObjects, () =>
         {
-            EditorGUILayout.PropertyField(shouldSpawnObjectsProp, new GUIContent("Should Spawn Objects"));
+            Field(shouldSpawnObjectsProp, "Should Spawn Objects");
             using (new EditorGUI.DisabledScope(!shouldSpawnObjectsProp.boolValue))
             {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(clusterBaseFrequencyProp, new GUIContent("Cluster Base Frequency"));
-                EditorGUILayout.PropertyField(clusterAmplitudeProp, new GUIContent("Cluster Amplitude"));
+                Field(clusterBaseFrequencyProp, "Cluster Base Frequency");
+                Field(clusterAmplitudeProp, "Cluster Amplitude");
                 EditorGUI.indentLevel--;
             }
         });
@@ -527,11 +609,11 @@ public class TerrainGeneratorEditor : Editor
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         EditorGUILayout.BeginHorizontal();
         GUILayout.Space(20);
-        EditorGUILayout.LabelField("Biome", EditorStyles.miniBoldLabel, GUILayout.Width(90));
-        EditorGUILayout.LabelField("Ideal Temp", EditorStyles.miniBoldLabel, GUILayout.Width(75));
-        EditorGUILayout.LabelField("Ideal Moist.", EditorStyles.miniBoldLabel, GUILayout.Width(75));
-        EditorGUILayout.LabelField("Erosion Res.", EditorStyles.miniBoldLabel, GUILayout.Width(75));
-        EditorGUILayout.LabelField("Rain Erosion x", EditorStyles.miniBoldLabel, GUILayout.Width(90));
+        EditorGUILayout.LabelField(new GUIContent("Biome", "Biome name. Click the arrow to edit the biome inline."), EditorStyles.miniBoldLabel, GUILayout.Width(90));
+        EditorGUILayout.LabelField(new GUIContent("Ideal Temp", "Temperature (0 = coldest, 1 = hottest) where this biome fits best."), EditorStyles.miniBoldLabel, GUILayout.Width(75));
+        EditorGUILayout.LabelField(new GUIContent("Ideal Moist.", "Moisture (0 = driest, 1 = wettest) where this biome fits best."), EditorStyles.miniBoldLabel, GUILayout.Width(75));
+        EditorGUILayout.LabelField(new GUIContent("Erosion Res.", "0 = soft ground that erodes and slumps easily, 1 = hard rock that holds steep slopes."), EditorStyles.miniBoldLabel, GUILayout.Width(75));
+        EditorGUILayout.LabelField(new GUIContent("Rain Erosion x", "Multiplier on water-erosion strength in this biome (higher = deeper gullies)."), EditorStyles.miniBoldLabel, GUILayout.Width(90));
         EditorGUILayout.EndHorizontal();
 
         foreach (BiomeInstance instance in biomes)
@@ -585,7 +667,7 @@ public class TerrainGeneratorEditor : Editor
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Apply Preset...",
             "Overwrites this biome's Climate (Ideal Temperature/Moisture, tolerances), Erosion (Resistance, " +
-            "Rainfall Multiplier) and noise shape (Amplitude, Frequency, Persistence) with a recommended " +
+            "Rainfall Multiplier), Landform and noise shape (Amplitude, Frequency, Persistence) with a recommended " +
             "starting point for a common biome archetype. Does NOT touch Weight, Min/Max Height, or textures. " +
             "Amplitude/Frequency are relative starting points, not tied to your world's actual scale - rescale " +
             "them to match after applying."), EditorStyles.miniButton))
@@ -605,6 +687,10 @@ public class TerrainGeneratorEditor : Editor
             {
                 LoadBiomeState(biome);
             }
+        }
+        if (GUILayout.Button(new GUIContent("Copy", "Copies every value of this biome asset to the clipboard as text."), EditorStyles.miniButton))
+        {
+            CopyBiome(biome);
         }
         EditorGUILayout.EndHorizontal();
 
@@ -638,18 +724,19 @@ public class TerrainGeneratorEditor : Editor
         public float IdealTemperature, IdealMoisture, TemperatureTolerance, MoistureTolerance;
         public float ErosionResistance, RainfallErosionMultiplier;
         public float Amplitude, Frequency, Persistence;
+        public LandformType Landform;
     }
 
     private static readonly BiomePresetDefinition[] BiomePresets =
     {
-        new BiomePresetDefinition { Name = "Mountain",        IdealTemperature = 0.35f, IdealMoisture = 0.45f, TemperatureTolerance = 0.35f, MoistureTolerance = 0.40f, ErosionResistance = 0.85f, RainfallErosionMultiplier = 0.8f, Amplitude = 60f, Frequency = 1.5f, Persistence = 0.50f },
-        new BiomePresetDefinition { Name = "Tundra",          IdealTemperature = 0.08f, IdealMoisture = 0.35f, TemperatureTolerance = 0.20f, MoistureTolerance = 0.30f, ErosionResistance = 0.55f, RainfallErosionMultiplier = 0.6f, Amplitude = 8f,  Frequency = 1.2f, Persistence = 0.45f },
-        new BiomePresetDefinition { Name = "Grassland",       IdealTemperature = 0.55f, IdealMoisture = 0.45f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.30f, ErosionResistance = 0.35f, RainfallErosionMultiplier = 1.0f, Amplitude = 4f,  Frequency = 1.0f, Persistence = 0.40f },
-        new BiomePresetDefinition { Name = "Forest",          IdealTemperature = 0.50f, IdealMoisture = 0.60f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.30f, ErosionResistance = 0.40f, RainfallErosionMultiplier = 1.1f, Amplitude = 10f, Frequency = 1.3f, Persistence = 0.45f },
-        new BiomePresetDefinition { Name = "Desert",          IdealTemperature = 0.85f, IdealMoisture = 0.10f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.20f, ErosionResistance = 0.20f, RainfallErosionMultiplier = 0.3f, Amplitude = 12f, Frequency = 0.8f, Persistence = 0.35f },
-        new BiomePresetDefinition { Name = "Swamp",           IdealTemperature = 0.60f, IdealMoisture = 0.90f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.25f, ErosionResistance = 0.25f, RainfallErosionMultiplier = 1.4f, Amplitude = 2f,  Frequency = 1.0f, Persistence = 0.30f },
-        new BiomePresetDefinition { Name = "Jungle",          IdealTemperature = 0.85f, IdealMoisture = 0.85f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.25f, ErosionResistance = 0.35f, RainfallErosionMultiplier = 1.6f, Amplitude = 14f, Frequency = 1.4f, Persistence = 0.50f },
-        new BiomePresetDefinition { Name = "Beach / Coastal", IdealTemperature = 0.65f, IdealMoisture = 0.55f, TemperatureTolerance = 0.35f, MoistureTolerance = 0.35f, ErosionResistance = 0.15f, RainfallErosionMultiplier = 1.2f, Amplitude = 3f,  Frequency = 0.9f, Persistence = 0.30f },
+        new BiomePresetDefinition { Name = "Mountain",        IdealTemperature = 0.35f, IdealMoisture = 0.45f, TemperatureTolerance = 0.35f, MoistureTolerance = 0.40f, ErosionResistance = 0.85f, RainfallErosionMultiplier = 0.8f, Amplitude = 60f, Frequency = 1.5f, Persistence = 0.50f, Landform = LandformType.Mountains },
+        new BiomePresetDefinition { Name = "Tundra",          IdealTemperature = 0.08f, IdealMoisture = 0.35f, TemperatureTolerance = 0.20f, MoistureTolerance = 0.30f, ErosionResistance = 0.55f, RainfallErosionMultiplier = 0.6f, Amplitude = 8f,  Frequency = 1.2f, Persistence = 0.45f, Landform = LandformType.Plains },
+        new BiomePresetDefinition { Name = "Grassland",       IdealTemperature = 0.55f, IdealMoisture = 0.45f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.30f, ErosionResistance = 0.35f, RainfallErosionMultiplier = 1.0f, Amplitude = 4f,  Frequency = 1.0f, Persistence = 0.40f, Landform = LandformType.Plains },
+        new BiomePresetDefinition { Name = "Forest",          IdealTemperature = 0.50f, IdealMoisture = 0.60f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.30f, ErosionResistance = 0.40f, RainfallErosionMultiplier = 1.1f, Amplitude = 10f, Frequency = 1.3f, Persistence = 0.45f, Landform = LandformType.Hills },
+        new BiomePresetDefinition { Name = "Desert",          IdealTemperature = 0.85f, IdealMoisture = 0.10f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.20f, ErosionResistance = 0.20f, RainfallErosionMultiplier = 0.3f, Amplitude = 12f, Frequency = 0.8f, Persistence = 0.35f, Landform = LandformType.Dunes },
+        new BiomePresetDefinition { Name = "Swamp",           IdealTemperature = 0.60f, IdealMoisture = 0.90f, TemperatureTolerance = 0.30f, MoistureTolerance = 0.25f, ErosionResistance = 0.25f, RainfallErosionMultiplier = 1.4f, Amplitude = 2f,  Frequency = 1.0f, Persistence = 0.30f, Landform = LandformType.Wetland },
+        new BiomePresetDefinition { Name = "Jungle",          IdealTemperature = 0.85f, IdealMoisture = 0.85f, TemperatureTolerance = 0.25f, MoistureTolerance = 0.25f, ErosionResistance = 0.35f, RainfallErosionMultiplier = 1.6f, Amplitude = 14f, Frequency = 1.4f, Persistence = 0.50f, Landform = LandformType.Hills },
+        new BiomePresetDefinition { Name = "Beach / Coastal", IdealTemperature = 0.65f, IdealMoisture = 0.55f, TemperatureTolerance = 0.35f, MoistureTolerance = 0.35f, ErosionResistance = 0.15f, RainfallErosionMultiplier = 1.2f, Amplitude = 3f,  Frequency = 0.9f, Persistence = 0.30f, Landform = LandformType.Plains },
     };
 
     private static void ShowBiomePresetMenu(Biome biome)
@@ -675,6 +762,7 @@ public class TerrainGeneratorEditor : Editor
         biome.amplitude = preset.Amplitude;
         biome.frequency = preset.Frequency;
         biome.persistence = preset.Persistence;
+        biome.landform = preset.Landform;
         EditorUtility.SetDirty(biome);
         Debug.Log($"[TerrainGenerator] Applied '{preset.Name}' preset to biome '{biome.name}'. Amplitude/Frequency are relative starting points - rescale them to match your world's overall height scale.");
     }
@@ -688,6 +776,13 @@ public class TerrainGeneratorEditor : Editor
         public float minHeight, maxHeight, amplitude, frequency, weight, persistence;
         public float idealTemperature, idealMoisture, temperatureTolerance, moistureTolerance;
         public float erosionResistance, rainfallErosionMultiplier;
+        // Added with the water system; version 0 = older backup without them (left untouched on load).
+        public int version;
+        public float baseElevation;
+        public bool allowsWaterBodies;
+        public float lakeLikelihood, pondLikelihood, riverSpringLikelihood;
+        // Version 2 adds the landform.
+        public int landform;
     }
 
     private const string BiomeBackupFolder = "Assets/BiomeBackups";
@@ -726,7 +821,14 @@ public class TerrainGeneratorEditor : Editor
             temperatureTolerance = biome.temperatureTolerance,
             moistureTolerance = biome.moistureTolerance,
             erosionResistance = biome.erosionResistance,
-            rainfallErosionMultiplier = biome.rainfallErosionMultiplier
+            rainfallErosionMultiplier = biome.rainfallErosionMultiplier,
+            version = 2,
+            landform = (int)biome.landform,
+            baseElevation = biome.baseElevation,
+            allowsWaterBodies = biome.allowsWaterBodies,
+            lakeLikelihood = biome.lakeLikelihood,
+            pondLikelihood = biome.pondLikelihood,
+            riverSpringLikelihood = biome.riverSpringLikelihood
         };
 
         string path = GetBiomeBackupPath(biome);
@@ -764,6 +866,18 @@ public class TerrainGeneratorEditor : Editor
         biome.moistureTolerance = snapshot.moistureTolerance;
         biome.erosionResistance = snapshot.erosionResistance;
         biome.rainfallErosionMultiplier = snapshot.rainfallErosionMultiplier;
+        if (snapshot.version >= 1)
+        {
+            biome.baseElevation = snapshot.baseElevation;
+            biome.allowsWaterBodies = snapshot.allowsWaterBodies;
+            biome.lakeLikelihood = snapshot.lakeLikelihood;
+            biome.pondLikelihood = snapshot.pondLikelihood;
+            biome.riverSpringLikelihood = snapshot.riverSpringLikelihood;
+        }
+        if (snapshot.version >= 2)
+        {
+            biome.landform = (LandformType)snapshot.landform;
+        }
         EditorUtility.SetDirty(biome);
         Debug.Log($"[TerrainGenerator] Loaded biome state for '{biome.name}' from {path}");
     }
@@ -783,6 +897,7 @@ public class TerrainGeneratorEditor : Editor
         voronoiWarpScaleMultiplierProp.floatValue = 1.5f;
         biomeBlendRangeProp.floatValue = 0.25f;
         useBiomeBlendedTexturingProp.boolValue = true;
+        biomeBoundaryMaxSlopeDegreesProp.floatValue = 28f;
         serializedObject.ApplyModifiedProperties();
     }
 
@@ -792,6 +907,149 @@ public class TerrainGeneratorEditor : Editor
         biomeRepeatPenaltyProp.floatValue = 0f;
         voronoiWarpStrengthProp.floatValue = 0f;
         biomeBlendRangeProp.floatValue = 0f;
+        biomeBoundaryMaxSlopeDegreesProp.floatValue = 0f;
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    // (field name, label) per water sub-section, drawn by DrawWaterGroup.
+    private static readonly string[,] WaterOceanFields =
+    {
+        { "continentScaleMultiplier", "Continent Scale Multiplier" },
+        { "oceanThreshold", "Ocean Threshold (lower = rarer)" },
+        { "beachWidth", "Beach Width" },
+        { "beachHeight", "Beach Height" },
+        { "coastBlendWidth", "Coast Blend Width" },
+        { "continentalShelfWidth", "Continental Shelf Width" },
+        { "oceanDepth", "Ocean Depth" },
+        { "inlandRise", "Inland Rise" },
+        { "inlandRiseDistance", "Inland Rise Distance" },
+        { "islandFrequency", "Island Frequency" },
+        { "islandScaleMultiplier", "Island Scale Multiplier" },
+        { "islandPeakHeight", "Island Peak Height" },
+        { "spawnLandRadius", "Spawn Land Radius" },
+    };
+
+    private static readonly string[,] WaterLakeFields =
+    {
+        { "lakeSpacing", "Lake Spacing" },
+        { "lakeChance", "Lake Chance" },
+        { "lakeMinRadius", "Min Radius" },
+        { "lakeMaxRadius", "Max Radius" },
+        { "lakeMaxDepth", "Max Depth" },
+        { "lakeMaxSiteSlope", "Max Site Slope" },
+        { "lakeOutletChance", "Outlet River Chance" },
+    };
+
+    private static readonly string[,] WaterPondFields =
+    {
+        { "pondSpacing", "Pond Spacing" },
+        { "pondChance", "Pond Chance" },
+        { "pondMinRadius", "Min Radius" },
+        { "pondMaxRadius", "Max Radius" },
+        { "pondDepth", "Depth" },
+        { "pondMaxSiteSlope", "Max Site Slope" },
+    };
+
+    private static readonly string[,] WaterShoreFields =
+    {
+        { "shoreRimWidth", "Rim Width" },
+        { "shoreFreeboard", "Rim Freeboard" },
+    };
+
+    private static readonly string[,] WaterRiverFields =
+    {
+        { "riverSpacing", "Spring Spacing" },
+        { "riverChance", "Spring Chance" },
+        { "riverMinSpringElevation", "Min Spring Elevation" },
+        { "riverMinLength", "Min Length" },
+        { "riverMaxLength", "Max Length" },
+        { "riverSourceWidth", "Source Width" },
+        { "riverMouthWidth", "Mouth Width" },
+        { "riverWidthVariation", "Width Variation" },
+        { "riverMeander", "Meander" },
+        { "riverMeanderWavelength", "Meander Wavelength" },
+        { "riverDepth", "Depth" },
+        { "riverValleySlope", "Valley Wall Slope (deg)" },
+        { "riverMaxValleyWidth", "Max Valley Half-Width" },
+        { "riverBankFreeboard", "Bank Freeboard" },
+    };
+
+    // Recommended values for every water tuning field (booleans as 1/0). Sea level and the materials are
+    // deliberately not here - see ResetWaterToRecommended.
+    private static readonly Dictionary<string, float> WaterRecommended = new Dictionary<string, float>
+    {
+        { "enableWater", 1f }, { "enableSwimDetection", 1f },
+        { "enableOceans", 1f }, { "continentScaleMultiplier", 18f }, { "oceanThreshold", -0.2f }, { "beachWidth", 30f },
+        { "beachHeight", 2.5f }, { "coastBlendWidth", 140f }, { "continentalShelfWidth", 260f }, { "oceanDepth", 35f },
+        { "inlandRise", 40f }, { "inlandRiseDistance", 3000f }, { "islandFrequency", 0.3f }, { "islandScaleMultiplier", 1.4f },
+        { "islandPeakHeight", 14f }, { "spawnLandRadius", 700f },
+        { "enableLakes", 1f }, { "lakeSpacing", 900f }, { "lakeChance", 0.35f }, { "lakeMinRadius", 45f }, { "lakeMaxRadius", 130f },
+        { "lakeMaxDepth", 10f }, { "lakeMaxSiteSlope", 0.3f }, { "lakeOutletChance", 0.5f },
+        { "enablePonds", 1f }, { "pondSpacing", 220f }, { "pondChance", 0.25f }, { "pondMinRadius", 8f }, { "pondMaxRadius", 22f },
+        { "pondDepth", 2f }, { "pondMaxSiteSlope", 0.45f },
+        { "shoreRimWidth", 12f }, { "shoreFreeboard", 0.6f },
+        { "enableRivers", 1f }, { "riverSpacing", 1000f }, { "riverChance", 0.35f }, { "riverMinSpringElevation", 10f },
+        { "riverMinLength", 350f }, { "riverMaxLength", 2600f }, { "riverSourceWidth", 5f }, { "riverMouthWidth", 26f },
+        { "riverWidthVariation", 0.35f }, { "riverMeander", 0.55f }, { "riverMeanderWavelength", 180f }, { "riverDepth", 3f },
+        { "riverValleySlope", 28f }, { "riverMaxValleyWidth", 150f }, { "riverBankFreeboard", 0.8f },
+    };
+
+    private static readonly string[] WaterMaterialFields = { "waterMaterial", "oceanMaterial", "lakeMaterial", "pondMaterial", "riverMaterial" };
+
+    private void DrawProp(string field, string label)
+    {
+        Field(serializedObject.FindProperty(field), label);
+    }
+
+    private void DrawWaterGroup(string title, string toggleField, string[,] fields)
+    {
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField(title, EditorStyles.miniBoldLabel);
+        EditorGUI.indentLevel++;
+        bool enabled = true;
+        if (toggleField != null)
+        {
+            DrawProp(toggleField, "Enabled");
+            enabled = serializedObject.FindProperty(toggleField).boolValue;
+        }
+        using (new EditorGUI.DisabledScope(!enabled))
+        {
+            for (int i = 0; i < fields.GetLength(0); i++)
+                DrawProp(fields[i, 0], fields[i, 1]);
+        }
+        EditorGUI.indentLevel--;
+    }
+
+    /// <summary>
+    /// Restores every water tuning parameter to its recommended value, WITHOUT touching Sea Level or the
+    /// water materials - those are world/art-specific choices (how high the sea sits in this particular
+    /// world, what the water should look like), not tuning knobs this preset should silently override.
+    /// </summary>
+    private void ResetWaterToRecommended()
+    {
+        foreach (KeyValuePair<string, float> entry in WaterRecommended)
+        {
+            SerializedProperty property = serializedObject.FindProperty(entry.Key);
+            if (property == null)
+                continue;
+            if (property.propertyType == SerializedPropertyType.Boolean)
+                property.boolValue = entry.Value != 0f;
+            else
+                property.floatValue = entry.Value;
+        }
+        serializedObject.ApplyModifiedProperties();
+    }
+
+    /// <summary>
+    /// Restores every water setting, including Sea Level and the water materials, to its original factory
+    /// default - a full reset rather than just the tuning parameters (see <see cref="ResetWaterToRecommended"/>).
+    /// </summary>
+    private void ResetWaterToDefault()
+    {
+        ResetWaterToRecommended();
+        serializedObject.FindProperty("waterLevel").floatValue = 0f;
+        foreach (string field in WaterMaterialFields)
+            serializedObject.FindProperty(field).objectReferenceValue = null;
         serializedObject.ApplyModifiedProperties();
     }
 
@@ -839,6 +1097,106 @@ public class TerrainGeneratorEditor : Editor
     /// in this class or its collaborators - to produce visible artifacts, so misconfigurations surface
     /// in the Inspector instead of only after noticing something looks wrong in-game.
     /// </summary>
+    /// <summary>
+    /// Terrain Shape section: the mode switch, the landform transition/placement settings, and a per-biome
+    /// landform picker showing which landform each biome actually ends up using under the current mode.
+    /// </summary>
+    private void DrawLandformSection(TerrainGenerator generator)
+    {
+        EditorGUILayout.HelpBox(
+            "A biome's landform decides the shape of the ground: Mountains (ranges of connected peaks and ridges " +
+            "with valleys), Hills (rounded, rolling), Plains (broad, low swells), Dunes, Wetland, Plateau (flat tops " +
+            "with cliff steps and canyons), or Classic (the original terrain). The biome still decides everything " +
+            "else: textures, climate, water, objects. Amplitude sets a landform's height, Frequency its feature " +
+            "size, Persistence its roughness.\n\n" +
+            "Landform terrain is computed from world position and seed only, so it continues seamlessly across " +
+            "chunks. At borders the relief (peaks, hills) sinks into foothills before the neighbor begins, and " +
+            "mountain fronts rise at most ~50 degrees (other landforms: Boundary Max Walkable Slope).",
+            MessageType.Info);
+
+        DrawProp("terrainShapeMode", "Terrain Shape Mode");
+        TerrainShapeMode mode = (TerrainShapeMode)serializedObject.FindProperty("terrainShapeMode").enumValueIndex;
+        using (new EditorGUI.DisabledScope(mode == TerrainShapeMode.ClassicOnly))
+        {
+            DrawProp("landformTransitionWidth", "Relief Transition Width");
+            DrawProp("mountainBeltStrength", "Mountain Belt Strength");
+            using (new EditorGUI.DisabledScope(serializedObject.FindProperty("mountainBeltStrength").floatValue <= 0f))
+            {
+                DrawProp("mountainBeltScaleMultiplier", "Mountain Belt Scale Multiplier");
+                EditorGUILayout.LabelField($"= {generator.MountainBeltScale:0} world units between belts", EditorStyles.miniLabel);
+            }
+        }
+
+        BiomeInstance[] biomes = generator.BiomeDefinitions;
+        if (biomes == null || biomes.Length == 0)
+            return;
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField(new GUIContent("Biome Landforms",
+            "Each biome's own Landform setting, and the landform it actually uses under the current Terrain Shape Mode."),
+            EditorStyles.miniBoldLabel);
+
+        bool anyClassic = false;
+        bool anyMountain = false;
+        foreach (BiomeInstance instance in biomes)
+        {
+            Biome biome = instance != null ? instance.BiomePrefab : null;
+            if (biome == null)
+                continue;
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(string.IsNullOrEmpty(biome.name) ? "(unnamed)" : biome.name, GUILayout.Width(110));
+            EditorGUI.BeginChangeCheck();
+            LandformType chosen = (LandformType)EditorGUILayout.EnumPopup(biome.landform, GUILayout.Width(110));
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(biome, "Change Biome Landform");
+                biome.landform = chosen;
+                EditorUtility.SetDirty(biome);
+            }
+
+            LandformType effective = LandformGenerator.Effective(biome, mode);
+            string note = effective == biome.landform ? ""
+                : mode == TerrainShapeMode.ClassicOnly ? "uses Classic (Classic Only mode)"
+                : $"uses {effective} (suggested)";
+            EditorGUILayout.LabelField(note, EditorStyles.miniLabel);
+            EditorGUILayout.EndHorizontal();
+
+            anyClassic |= biome.landform == LandformType.Classic;
+            anyMountain |= effective == LandformType.Mountains || effective == LandformType.Plateau;
+        }
+
+        using (new EditorGUI.DisabledScope(!anyClassic))
+        {
+            if (GUILayout.Button(new GUIContent("Set Classic Biomes To Suggested Landforms",
+                "Gives every biome still set to Classic the landform suggested from its settings (hot and dry = Dunes, " +
+                "very wet and flat = Wetland, amplitude 35+ = Mountains, 9+ = Hills, otherwise Plains). Biomes that " +
+                "already have a landform are left alone. Undoable.")))
+            {
+                foreach (BiomeInstance instance in biomes)
+                {
+                    Biome biome = instance != null ? instance.BiomePrefab : null;
+                    if (biome == null || biome.landform != LandformType.Classic)
+                        continue;
+                    Undo.RecordObject(biome, "Set Suggested Landforms");
+                    biome.landform = LandformGenerator.Suggest(biome);
+                    EditorUtility.SetDirty(biome);
+                }
+            }
+        }
+
+        float regionWidth = generator.VoronoiScale / Mathf.Sqrt(Mathf.Max(1, generator.NumVoronoiPoints));
+        if (anyMountain && regionWidth < 180f)
+        {
+            EditorGUILayout.HelpBox(
+                $"Biome regions are only ~{regionWidth:0} world units across. Mountains keep their full height only " +
+                "far enough from their border to come down again, so in small territories they stay low. For " +
+                "large ranges, raise Voronoi Scale, lower Num Voronoi Points, or raise Cluster Strength / Mountain " +
+                "Belt Strength so mountain territories merge.",
+                MessageType.Info);
+        }
+    }
+
     private static void DrawValidationWarnings(TerrainGenerator generator)
     {
         if (generator.BiomeDefinitions == null || generator.BiomeDefinitions.Length == 0)
@@ -861,6 +1219,19 @@ public class TerrainGeneratorEditor : Editor
                 "Climate Scale Multiplier is low relative to Voronoi Scale: climate will vary almost cell-to-cell " +
                 "instead of spanning several biome cells, producing a 'salt and pepper' patchwork instead of " +
                 "natural clustered territories. Keep the multiplier around 5-10.",
+                MessageType.Warning);
+        }
+
+        float regionWidth = generator.VoronoiScale / Mathf.Sqrt(Mathf.Max(1, generator.NumVoronoiPoints));
+        float blendBand = generator.VoronoiScale * generator.BiomeBlendRange;
+        if (blendBand > regionWidth * 0.6f)
+        {
+            EditorGUILayout.HelpBox(
+                $"Height Blend Range is wide for this layout: biome transitions are ~{blendBand:0} world units wide, " +
+                $"but biome regions are only ~{regionWidth:0} across. Almost every point is then a mix of several " +
+                "biomes, so each biome's own terrain is averaged away and they all look alike (Classic biomes are " +
+                $"affected most). Keep it below about {0.5f / Mathf.Sqrt(Mathf.Max(1, generator.NumVoronoiPoints)):0.00}, " +
+                "or use Boundary Max Walkable Slope to widen only the borders that need it.",
                 MessageType.Warning);
         }
 
