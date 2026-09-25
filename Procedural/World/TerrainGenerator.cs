@@ -22,7 +22,7 @@ public enum TerrainSize
 /// Generates terrain with customizable noise, textures, biomes, and objects.
 /// Supports multithreading for map, terrain, and biome object generation.
 /// </summary>
-public class TerrainGenerator : MonoBehaviour
+public partial class TerrainGenerator : MonoBehaviour
 {
     [Header("Terrain Configuration")]
     /// <summary>
@@ -252,6 +252,21 @@ public class TerrainGenerator : MonoBehaviour
     [SerializeField] private float climateScaleMultiplier = 6f;
 
     /// <summary>
+    /// Lets the large-scale terrain shape the climate: rain shadows behind mountain belts, colder mountains and
+    /// continental interiors, wetter coasts. Changes where climate-placed biomes go, and erosion rainfall.
+    /// </summary>
+    [Tooltip("Lets the terrain shape the climate: mountain ranges cast rain shadows (wet windward side, dry land behind them - often desert), mountains and high continental interiors are colder, coasts are wetter and deep interiors drier. Affects climate-based biome placement and how much rain erodes the terrain. Rain shadow and mountain cooling need landforms with Mountain Belt Strength above 0; coastal effects need oceans.")]
+    [SerializeField] private bool terrainAwareClimate = true;
+    [Tooltip("Direction the prevailing wind blows TOWARD, in degrees: 0 = +X (east), 90 = +Z (north), 180 = west, 270 = south. Rain shadows form on this side of mountain ranges.")]
+    [SerializeField][Range(0f, 360f)] private float prevailingWindAngle = 0f;
+    [Tooltip("How much drier the land downwind of a mountain range is (and how much wetter its windward side). 0 = no rain shadow.")]
+    [SerializeField][Range(0f, 1f)] private float rainShadowStrength = 0.6f;
+    [Tooltip("How much colder mountain belts and risen continental interiors are. At 1, the heart of a mountain belt is 0.4 colder on the 0-1 temperature scale, favoring cold biomes (tundra, glacial) there.")]
+    [SerializeField][Range(0f, 1f)] private float altitudeCooling = 0.5f;
+    [Tooltip("How much wetter land near the sea is, and how much drier deep continental interiors are. Needs oceans.")]
+    [SerializeField][Range(0f, 1f)] private float coastalMoisture = 0.4f;
+
+    /// <summary>
     /// World-unit strength of the domain warp applied to Voronoi cell borders, making them read as
     /// organic, wobbly boundaries instead of straight polygon edges. 0 disables warping. Internally
     /// clamped relative to the warp noise scale so borders can never fold into self-intersecting shapes.
@@ -281,6 +296,13 @@ public class TerrainGenerator : MonoBehaviour
     /// </summary>
     [Tooltip("Blend splat map textures across biome borders to match the blended terrain height.")]
     [SerializeField] private bool useBiomeBlendedTexturing = true;
+
+    /// <summary>
+    /// How many biome textures a single terrain pixel can mix, where several biomes meet. 2 = only the two
+    /// strongest (a hard seam where three biomes meet); 3-4 = smooth three- and four-way junctions.
+    /// </summary>
+    [Tooltip("How many biome textures one terrain pixel can mix where several biomes meet. 2 = only the two strongest (a visible seam where three biomes meet); 3 or 4 = smooth three- and four-way junctions. Needs Blend Texturing on.")]
+    [SerializeField][Range(2, 4)] private int splatTexturesPerPixel = 4;
 
     /// <summary>
     /// Steepest slope, in degrees, considered walkable at a biome border. When two neighboring biomes'
@@ -491,6 +513,20 @@ public class TerrainGenerator : MonoBehaviour
     [Header("Water - Waterfalls")]
     [Tooltip("Where a river drops steeply (over a cliff, off a volcano or plateau, down into a valley), turn the drop into a real waterfall: a flat pool, a rock lip, a sheer fall and a plunge pool, instead of steep rapids.")]
     [SerializeField] private bool enableWaterfalls = true;
+    [Tooltip("Where a smaller river meets a bigger one, it flows into it: it ends at the confluence with its water stepping down to the bigger river's level (a small waterfall if the drop is steep). Off = rivers are independent and run alongside each other at their own levels.")]
+    [SerializeField] private bool enableRiverJunctions = true;
+    [Tooltip("Tidies tight river bends: where a river bends back so tightly that it would run right beside (or over) its own earlier stretch, it cuts through the neck of the bend instead, like real rivers do; and at sharp corners the water is levelled before the corner rather than dropping around it. Stops water standing against ground a lower stretch carved away.")]
+    [SerializeField] private bool enableMeanderCutoffs = true;
+
+    [Header("Water - Wetness & Snowmelt")]
+    [Tooltip("How far (world units) from rivers, lakes and the sea the ground counts as wet, fading out. Wetness goes to the terrain mesh's vertex color (red) and a per-chunk _WetnessMap texture, for darker, glossier ground near water in your terrain shader.")]
+    [SerializeField] private float wetnessDistance = 14f;
+    [Tooltip("How far above the nearest water's level the ground can still be wet. Low = only low banks and beaches get wet, not cliff tops beside the water.")]
+    [SerializeField] private float wetnessHeight = 4f;
+    [Tooltip("Height above sea level where snow starts. Ground above it feeds snowmelt springs (see Snowmelt Springs).")]
+    [SerializeField] private float snowLineHeight = 90f;
+    [Tooltip("How much more likely river springs are above the snow line (snowmelt feeding streams). 0 = no effect; 1 = up to twice as likely high up; 3 = up to four times.")]
+    [SerializeField][Range(0f, 3f)] private float snowmeltSprings = 1f;
     [Tooltip("Smallest drop (world units) that becomes a waterfall.")]
     [SerializeField] private float waterfallMinDrop = 4f;
     [Tooltip("Tallest single fall; bigger drops become several falls with pools between them (a multi-tier waterfall).")]
@@ -510,6 +546,13 @@ public class TerrainGenerator : MonoBehaviour
     /// </summary>
     [Tooltip("Padding (in cells) generated around each chunk for erosion context, then cropped away. Should exceed the droplet's typical travel distance (roughly dropletLifetime cells).")]
     [SerializeField] private int erosionPadding = 40;
+
+    /// <summary>
+    /// Erodes fixed world-space tiles (cached and shared between chunks) and crossfades them at tile
+    /// borders, so neighboring chunks always agree exactly on their shared edge - see <see cref="ErosionTiles"/>.
+    /// </summary>
+    [Tooltip("Erode fixed world tiles shared between chunks and crossfade them at tile borders, so neighboring chunks always match exactly along their edges (no cracks or steps between chunks). Costs extra work for tiles just beyond the loaded area. Off = each chunk erodes on its own (the original behavior; small seams possible).")]
+    [SerializeField] private bool seamlessErosion = true;
 
     /// <summary>
     /// Number of thermal erosion relaxation passes. Higher values produce smoother, more settled slopes.
@@ -649,6 +692,18 @@ public class TerrainGenerator : MonoBehaviour
     [Tooltip("Level of detail for terrain generation, controlling mesh resolution.")]
     [SerializeField][Range(0, 6)] private int levelOfDetail = 6;
 
+    /// <summary>Distant chunks switch to coarser meshes (see <see cref="LodForDistance"/>).</summary>
+    [Tooltip("Distance-based level of detail: chunks far from the viewer switch to coarser meshes (built in the background the first time each is needed), so a longer view distance costs far fewer triangles. Nearby chunks keep the Level Of Detail above; collision, NavMesh and object placement always use it. Thin 'skirts' under every chunk edge hide the cracks between chunks of different detail.")]
+    [SerializeField] private bool distanceLod = true;
+    [Tooltip("Chunks whose nearest edge is within this distance (world units) of the viewer use the full Level Of Detail.")]
+    [SerializeField] private float lodFullDetailDistance = 300f;
+    [Tooltip("Beyond the full-detail distance, a chunk's mesh gets one level coarser every this many world units.")]
+    [SerializeField] private float lodDistanceStep = 300f;
+    [Tooltip("The coarsest level distant chunks use (same scale as Level Of Detail: 0 = every cell, 1 = every 2nd, 2 = every 4th ... 6 = every 12th). No effect if Level Of Detail is already this coarse.")]
+    [SerializeField][Range(0, 6)] private int lodMaxLevel = 4;
+    [Tooltip("Extra depth (world units) of the skirts hung under chunk edges, on top of what the terrain's shape needs. Raise it if you ever see cracks between chunks of different detail.")]
+    [SerializeField] private float lodSkirtDepth = 2f;
+
     [Header("Biomes")]
     /// <summary>
     /// Definitions for biomes used in terrain generation.
@@ -679,202 +734,6 @@ public class TerrainGenerator : MonoBehaviour
     private Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue;
     private Queue<MapThreadInfo<DataStructure.TerrainData>> terrainDataThreadInfoQueue;
     private Queue<MapThreadInfo<BiomeObjectData>> biomeObjectDataThreadInfoQueue;
-
-    // Properties
-    public float Lacunarity => lacunarity;
-    public int Octaves => octaves;
-    public BiomeInstance[] BiomeDefinitions { get => biomeDefinitions; set => biomeDefinitions = value; }
-    public bool TerrainTextureBasedOnVoronoiPoints => terrainTextureBasedOnVoronoiPoints;
-    public Texture2D DefaultTexture { get => defaultTexture; set => defaultTexture = value; }
-    public ComputeShader SplatMapShader { get => splatMapShader; set => splatMapShader = value; }
-    public float ScaleFactor { get => scaleFactor; set => scaleFactor = value; }
-    public float MinHeight { get => minHeight; set => minHeight = value; }
-    public float MaxHeight { get => maxHeight; set => maxHeight = value; }
-    public int LevelOfDetail { get => levelOfDetail; set => levelOfDetail = value; }
-    public TerrainSize TerrainSizeValue { get => terrainSize; set => terrainSize = value; }
-
-    // Texture Variation Properties (only active when enableTextureVariations is true)
-    public bool EnableTextureVariations => enableTextureVariations;
-    public bool EnableUVRotation => enableTextureVariations && enableUVRotation;
-    public bool EnableUVNoise => enableTextureVariations && enableUVNoise;
-    public float UVNoiseStrength => uvNoiseStrength;
-    public float UVNoiseScale => uvNoiseScale;
-    public bool EnableTextureScaleVariation => enableTextureVariations && enableTextureScaleVariation;
-    public float TextureScaleVariationRange => textureScaleVariationRange;
-    public bool EnableShaderEnhancements => enableTextureVariations && enableShaderEnhancements;
-    public float ShaderUVRotationStrength => shaderUVRotationStrength;
-    public float ShaderUVScaleVariation => shaderUVScaleVariation;
-    public float ShaderTextureBlendSharpness => shaderTextureBlendSharpness;
-
-    // Natural Biome Placement Properties
-    public float BiomeClusterStrength => biomeClusterStrength;
-    public float BiomeRepeatPenalty => biomeRepeatPenalty;
-    // Both derived scales are multiples of VoronoiScale so they stay correctly proportioned to the
-    // biome cell size regardless of what VoronoiScale is configured to - see the fields' tooltips.
-    public float BiomeClusterRadius => VoronoiScale * biomeClusterRadiusMultiplier;
-    public bool UseNaturalClimatePlacement => useNaturalClimatePlacement;
-    public float ClimateNoiseScale => VoronoiScale * climateScaleMultiplier;
-    public float VoronoiWarpStrength => voronoiWarpStrength;
-    public float VoronoiWarpScale => VoronoiScale * voronoiWarpScaleMultiplier;
-    public float BiomeBlendRange => biomeBlendRange;
-    public bool UseBiomeBlendedTexturing => useBiomeBlendedTexturing;
-    public float BiomeBoundaryMaxSlopeDegrees => biomeBoundaryMaxSlopeDegrees;
-    // tan() of BiomeBoundaryMaxSlopeDegrees, precomputed once per access rather than per heightmap cell.
-    // <= 0 (from a 0 degrees setting) means "disabled" to callers, same convention as the degrees field.
-    public float BiomeBoundaryMaxSlopeTangent => biomeBoundaryMaxSlopeDegrees > 0f
-        ? Mathf.Tan(biomeBoundaryMaxSlopeDegrees * Mathf.Deg2Rad)
-        : 0f;
-
-    public bool OrderIndependentBiomeLayout => orderIndependentBiomeLayout;
-
-    // Terrain Shape (Landforms) Properties
-    public TerrainShapeMode TerrainShapeMode => terrainShapeMode;
-    public float LandformTransitionWidth => landformTransitionWidth;
-    public float MountainBeltStrength => mountainBeltStrength;
-    public float MountainBeltScale => VoronoiScale * Mathf.Max(0.5f, mountainBeltScaleMultiplier);
-
-    // Volcano Properties
-    public bool EnableVolcanoes => enableVolcanoes;
-    public float VolcanoSpacing => volcanoSpacing;
-    public float VolcanoChance => volcanoChance;
-    public float VolcanoMinRadius => volcanoMinRadius;
-    public float VolcanoMaxRadius => volcanoMaxRadius;
-    public float VolcanoMinHeight => volcanoMinHeight;
-    public float VolcanoMaxHeight => volcanoMaxHeight;
-    public float CalderaChance => calderaChance;
-
-    /// <summary>
-    /// Biome layout options passed to every <see cref="VoronoiBiomeGenerator"/> query. Null (the original
-    /// behavior) when neither order-independent layout nor landform placement is in use.
-    /// </summary>
-    public VoronoiBiomeGenerator.LayoutOptions BiomeLayout
-    {
-        get
-        {
-            bool landforms = terrainShapeMode != TerrainShapeMode.ClassicOnly;
-            bool belts = landforms && mountainBeltStrength > 0f;
-            if (!orderIndependentBiomeLayout && !landforms)
-                return null;
-            return new VoronoiBiomeGenerator.LayoutOptions
-            {
-                OrderIndependent = orderIndependentBiomeLayout,
-                ShapeMode = terrainShapeMode,
-                BeltStrength = belts ? mountainBeltStrength : 0f,
-                BeltScale = MountainBeltScale,
-                NearbyReach = landforms ? LandformSettings.NearbyReachFor(this) : 0f,
-            };
-        }
-    }
-
-    // Water Properties
-    public bool EnableWater => enableWater;
-    public float SeaLevel => waterLevel;
-    public bool EnableSwimDetection => enableSwimDetection;
-
-    /// <summary>
-    /// Material for a water type: its own material if assigned, else (for ponds) the lake material, else
-    /// the default water material. Null means "use the built-in fallback".
-    /// </summary>
-    public Material GetWaterMaterial(WaterBodyType type)
-    {
-        Material specific = null;
-        switch (type)
-        {
-            case WaterBodyType.Ocean: specific = oceanMaterial; break;
-            case WaterBodyType.Lake: specific = lakeMaterial; break;
-            case WaterBodyType.Pond: specific = pondMaterial != null ? pondMaterial : lakeMaterial; break;
-            case WaterBodyType.River: specific = riverMaterial; break;
-            case WaterBodyType.Waterfall: specific = waterfallMaterial != null ? waterfallMaterial : riverMaterial; break;
-        }
-        return specific != null ? specific : waterMaterial;
-    }
-
-    public bool EnableOceans => enableWater && enableOceans;
-    // Derived from VoronoiScale like ClimateNoiseScale/VoronoiWarpScale, so it stays proportioned to biome size.
-    public float ContinentScale => VoronoiScale * continentScaleMultiplier;
-    public float OceanThreshold => oceanThreshold;
-    public float BeachWidth => beachWidth;
-    public float BeachHeight => beachHeight;
-    public float CoastBlendWidth => coastBlendWidth;
-    public float ContinentalShelfWidth => continentalShelfWidth;
-    public float OceanDepth => oceanDepth;
-    public float InlandRise => inlandRise;
-    public float InlandRiseDistance => inlandRiseDistance;
-    public float IslandFrequency => islandFrequency;
-    public float IslandScale => VoronoiScale * islandScaleMultiplier;
-    public float IslandPeakHeight => islandPeakHeight;
-    public float SpawnLandRadius => spawnLandRadius;
-    public float CoastCliffFrequency => coastCliffFrequency;
-    public float CoastCliffHeight => coastCliffHeight;
-    public float CoastCliffTerraces => coastCliffTerraces;
-    public float SeaStackChance => seaStackChance;
-    public float SeaStackSpacing => seaStackSpacing;
-    public float SeaStackMaxHeight => seaStackMaxHeight;
-
-    public bool EnableLakes => enableWater && enableLakes;
-    public float LakeSpacing => lakeSpacing;
-    public float LakeChance => lakeChance;
-    public float LakeMinRadius => lakeMinRadius;
-    public float LakeMaxRadius => lakeMaxRadius;
-    public float LakeMaxDepth => lakeMaxDepth;
-    public float LakeMaxSiteSlope => lakeMaxSiteSlope;
-    public float LakeOutletChance => lakeOutletChance;
-
-    public bool EnablePonds => enableWater && enablePonds;
-    public float PondSpacing => pondSpacing;
-    public float PondChance => pondChance;
-    public float PondMinRadius => pondMinRadius;
-    public float PondMaxRadius => pondMaxRadius;
-    public float PondDepth => pondDepth;
-    public float PondMaxSiteSlope => pondMaxSiteSlope;
-
-    public float ShoreRimWidth => shoreRimWidth;
-    public float ShoreFreeboard => shoreFreeboard;
-
-    public bool EnableRivers => enableWater && enableRivers;
-    public float RiverSpacing => riverSpacing;
-    public float RiverChance => riverChance;
-    public float RiverMinSpringElevation => riverMinSpringElevation;
-    public float RiverMinLength => riverMinLength;
-    public float RiverMaxLength => riverMaxLength;
-    public float RiverSourceWidth => riverSourceWidth;
-    public float RiverMouthWidth => riverMouthWidth;
-    public float RiverWidthVariation => riverWidthVariation;
-    public float RiverMeander => riverMeander;
-    public float RiverMeanderWavelength => riverMeanderWavelength;
-    public float RiverDepth => riverDepth;
-    public float RiverValleySlope => riverValleySlope;
-    public float RiverMaxValleyWidth => riverMaxValleyWidth;
-    public float RiverBankFreeboard => riverBankFreeboard;
-    public bool EnableWaterfalls => enableWaterfalls;
-    public float WaterfallMinDrop => waterfallMinDrop;
-    public float WaterfallTierHeight => waterfallTierHeight;
-
-    // Erosion Properties
-    public bool EnableErosion => enableErosion;
-    public int ErosionPadding => erosionPadding;
-    public int ThermalIterations => thermalIterations;
-    public float TalusAngle => talusAngle;
-    public float ThermalErosionRate => thermalErosionRate;
-    public float HydraulicDropletDensity => hydraulicDropletDensity;
-    public int DropletLifetime => dropletLifetime;
-    public float DropletInertia => dropletInertia;
-    public float SedimentCapacityFactor => sedimentCapacityFactor;
-    public float MinSedimentCapacity => minSedimentCapacity;
-    public float ErodeSpeed => erodeSpeed;
-    public float DepositSpeed => depositSpeed;
-    public float EvaporateSpeed => evaporateSpeed;
-    public float ErosionGravity => erosionGravity;
-    public float ErosionRadius => erosionRadius;
-
-    // Erosion Debug Visualization Properties
-    public bool VisualizeErosionDebug => visualizeErosionDebug;
-    public float ErosionDebugMinDelta => erosionDebugMinDelta;
-    public float ErosionDebugMaxDelta => erosionDebugMaxDelta;
-    public int ErosionDebugStride => erosionDebugStride;
-    public float ErosionDebugGizmoSize => erosionDebugGizmoSize;
-    public float ErosionDebugHeightOffset => erosionDebugHeightOffset;
-    public int ErosionDebugMaxGizmosPerChunk => erosionDebugMaxGizmosPerChunk;
 
     // Guards minHeight/maxHeight, which UpdateMinMaxHeight below mutates from multiple
     // concurrent per-chunk worker threads (all sharing this one TerrainGenerator instance).
@@ -942,278 +801,4 @@ public class TerrainGenerator : MonoBehaviour
             }
         }
     }
-
-
-    /// <summary>
-    /// Generates terrain data based on the given global offset.
-    /// </summary>
-    /// <param name="globalOffset">The global offset for the terrain.</param>
-    /// <returns>A MapData object containing the height map.</returns>
-    private MapData GenerateTerrain(Vector2 globalOffset)
-    {
-        // Local, not a field: this runs on its own worker thread per chunk (see RequestMapData),
-        // and every chunk shares this same TerrainGenerator instance, so a shared field here would
-        // race between concurrently-generating chunks.
-        float[,] localHeightMap = HeightGenerator.GenerateHeightMap(this, globalOffset, out float[,] erosionDeltaMap, out WaterMapData waterData);
-        return new MapData(localHeightMap, null, erosionDeltaMap, waterData);
-    }
-
-    /// <summary>
-    /// Generates a biome map based on the given global offset and height map.
-    /// </summary>
-    /// <param name="globalOffset">The global offset for the biome map.</param>
-    /// <param name="heightMap">The height map for the terrain.</param>
-    /// <returns>A 2D array of Biome objects.</returns>
-    public Biome[,] GenerateBiomeMap(Vector2 globalOffset, float[,] heightMap)
-    {
-        Biome[,] biomeMap = new Biome[ChunkSize, ChunkSize];
-        // The same sampler the terrain is built with, so ocean and volcanic biomes land where the terrain has them.
-        TerrainHeightSampler sampler = new TerrainHeightSampler(this, EnableWater ? WaterSettings.From(this) : null);
-
-        for (int y = 0; y < ChunkSize; y++)
-        {
-            for (int x = 0; x < ChunkSize; x++)
-            {
-                biomeMap[x, y] = sampler.SampleBiome(globalOffset.x + x, globalOffset.y + y);
-            }
-        }
-
-        return biomeMap;
-    }
-
-    /// <summary>
-    /// Handles asynchronous requests for generating map data.
-    /// </summary>
-    /// <param name="callback">The callback to execute when the map data is ready.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
-    public void RequestMapData(Action<MapData> callback, Vector2 globalOffset, bool enableDebugging = false)
-    {
-        ThreadStart threadStart = delegate {
-            MapDataThread(callback, globalOffset, enableDebugging);
-        };
-
-        new Thread(threadStart).Start();
-    }
-
-    /// <summary>
-    /// Threaded method for generating map data.
-    /// </summary>
-    /// <param name="callback">The callback to execute with the generated map data.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
-    void MapDataThread(Action<MapData> callback, Vector2 globalOffset, bool enableDebugging)
-    {
-        MapData mapData = GenerateTerrain(globalOffset);
-
-        lock (mapDataThreadInfoQueue)
-        {
-            mapDataThreadInfoQueue.Enqueue(new MapThreadInfo<MapData>(callback, mapData));
-        }
-    }
-
-    /// <summary>
-    /// Handles asynchronous requests for generating terrain data.
-    /// </summary>
-    /// <param name="mapData">The input map data for terrain generation.</param>
-    /// <param name="callback">The callback to execute when the terrain data is ready.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
-    /// <param name="lod">The level of detail for the terrain mesh.</param>
-    public void RequestTerrainData(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, bool enableDebugging = false, int lod = 0)
-    {
-        ThreadStart threadStart = delegate {
-            TerrainDataThread(mapData, callback, globalOffset, enableDebugging, lod);
-        };
-
-        new Thread(threadStart).Start();
-    }
-
-    /// <summary>
-    /// Threaded method for generating terrain data.
-    /// </summary>
-    /// <param name="mapData">The input map data for terrain generation.</param>
-    /// <param name="callback">The callback to execute with the generated terrain data.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
-    /// <param name="lod">The level of detail for the terrain mesh.</param>
-    void TerrainDataThread(MapData mapData, Action<DataStructure.TerrainData> callback, Vector2 globalOffset, bool enableDebugging, int lod = 0)
-    {
-        // Pass globalOffset only if texture variations are enabled, otherwise pass Vector2.zero for original behavior
-        MeshData meshData = MeshGenerator.GenerateTerrainMesh(
-            this,
-            mapData.heightMap,
-            levelOfDetail,
-            enableDebugging,
-            enableTextureVariations ? globalOffset : Vector2.zero
-        );
-
-        Biome[,] biomeMap = GenerateBiomeMap(globalOffset, mapData.heightMap);
-
-        DataStructure.TerrainData terrainData = new DataStructure.TerrainData(meshData, null, mapData.heightMap, this, globalOffset, biomeMap, mapData.erosionDeltaMap, mapData.waterData);
-
-        lock (terrainDataThreadInfoQueue)
-        {
-            terrainDataThreadInfoQueue.Enqueue(new MapThreadInfo<DataStructure.TerrainData>(callback, terrainData));
-        }
-    }
-
-    /// <summary>
-    /// Handles asynchronous requests for generating biome object data.
-    /// </summary>
-    /// <param name="callback">The callback to execute when the biome object data is ready.</param>
-    /// <param name="terrainData">The terrain data used for object placement.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="chunkTransform">The transform of the terrain chunk.</param>
-    public void RequestBiomeObjectData(Action<BiomeObjectData> callback, DataStructure.TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform)
-    {
-        ThreadStart threadStart = delegate {
-            BiomeObjectThread(callback, terrainData, globalOffset, chunkTransform, terrainData.meshData);
-        };
-
-        new Thread(threadStart).Start();
-    }
-
-    /// <summary>
-    /// Threaded method for generating biome object data.
-    /// </summary>
-    /// <param name="callback">The callback to execute with the generated biome object data.</param>
-    /// <param name="terrainData">The terrain data used for object placement.</param>
-    /// <param name="globalOffset">The global offset for the terrain generation.</param>
-    /// <param name="chunkTransform">The transform of the terrain chunk.</param>
-    void BiomeObjectThread(Action<BiomeObjectData> callback, DataStructure.TerrainData terrainData, Vector2 globalOffset, Transform chunkTransform, MeshData meshData)
-    {
-        if (callback == null)
-        {
-            Debug.LogError("Callback is null");
-            return;
-        }
-
-        BiomeObjectData biomeObjectData = new BiomeObjectData(terrainData.heightMap, globalOffset, terrainData.terrainGenerator, terrainData.biomeMap, chunkTransform, meshData, terrainData.waterData);
-
-        lock (biomeObjectDataThreadInfoQueue)
-        {
-            biomeObjectDataThreadInfoQueue.Enqueue(new MapThreadInfo<BiomeObjectData>(callback, biomeObjectData));
-        }
-    }
-
-
-    /// <summary>
-    /// Processes queued thread results for map data, terrain data, and biome object data, updating them in the main thread.
-    /// </summary>
-    void Update()
-    {
-        // Process and update map data if any queued results are available.
-        if (mapDataThreadInfoQueue.Count > 0)
-        {
-            // Iterate over the queued map data and call the associated callback for each result.
-            for (int i = 0; i < mapDataThreadInfoQueue.Count; i++)
-            {
-                MapThreadInfo<MapData> threadInfo = mapDataThreadInfoQueue.Dequeue();
-                threadInfo.callback(threadInfo.parameter);
-            }
-        }
-
-        // Process and update terrain data if any queued results are available.
-        if (terrainDataThreadInfoQueue.Count > 0)
-        {
-            // Iterate over the queued terrain data and process it.
-            for (int i = 0; i < terrainDataThreadInfoQueue.Count; i++)
-            {
-                MapThreadInfo<DataStructure.TerrainData> threadInfo = terrainDataThreadInfoQueue.Dequeue();
-
-                // Generate splat maps if terrain texture is based on Voronoi points.
-                Texture2D[] splatMap = null;
-                if (terrainTextureBasedOnVoronoiPoints)
-                {
-                    // worldOrigin is always the chunk's true global offset (needed for biome blending);
-                    // the variation offset is only passed through when texture variations are enabled.
-                    splatMap = SplatMapGenerator.GenerateSplatMaps(
-                        this,
-                        threadInfo.parameter.biomeMap,
-                        threadInfo.parameter.globalOffset,
-                        enableTextureVariations ? threadInfo.parameter.globalOffset : Vector2.zero
-                    );
-                }
-
-                // Assign the generated splat map to the terrain data and trigger the callback.
-                threadInfo.parameter.splatMap = splatMap;
-                threadInfo.callback(threadInfo.parameter);
-            }
-        }
-
-        // Process and update biome object data if any queued results are available.
-        if (biomeObjectDataThreadInfoQueue.Count > 0)
-        {
-            bool shouldBreak = false;
-            int lodFactor = levelOfDetail > 0 ? levelOfDetail * 2 : 1;
-            // Iterate over the queued biome object data and place objects based on biome information.
-            for (int i = 0; i < biomeObjectDataThreadInfoQueue.Count; i++)
-            {
-                MapThreadInfo<BiomeObjectData> threadInfo = biomeObjectDataThreadInfoQueue.Dequeue();
-
-                // Loop through the terrain chunk to place objects at specific coordinates.
-                for (int y = 0; y < threadInfo.parameter.terrainGenerator.ChunkSize; y++)
-                {
-                    if (shouldBreak) break;
-
-                    for (int x = 0; x < threadInfo.parameter.terrainGenerator.ChunkSize; x++)
-                    {
-                        // Calculate the world position for the current chunk coordinates.
-                        Vector2 worldPos2D = new Vector2(threadInfo.parameter.globalOffset.x + x, threadInfo.parameter.globalOffset.y + y);
-                        Vector3 worldPos3D = new Vector3(worldPos2D.x, 0, worldPos2D.y);
-
-
-                        // Determine the biome at the current position.
-                        Biome chosenBiome = threadInfo.parameter.biomeMap[x, y];
-
-                        // Check if objects should be spawned in the current biome.
-                        if (!shouldSpawnObjects)
-                        {
-                            shouldBreak = true;
-                            break;
-                        }
-                        else
-                        {
-                            // Skip land objects (trees, rocks, etc.) at cells now covered by water -
-                            // without this, biomes with a low baseElevation/near WaterLevel would still
-                            // spawn their normal land object set on what is now a lake/river bed.
-                            WaterMapData waterData = threadInfo.parameter.waterData;
-                            bool isUnderwater = waterData != null && waterData.IsWet(x, y);
-
-                            if (!isUnderwater)
-                            {
-                                // Find the corresponding biome instance for the chosen biome.
-                                BiomeInstance chosenBiomeInstance = threadInfo.parameter.terrainGenerator.biomeDefinitions
-                                    .FirstOrDefault(b => b.BiomePrefab == chosenBiome);
-
-                                // Place objects for the selected biome at the calculated position.
-                                ObjectSpawner.PlaceObjectsForBiome(threadInfo.parameter.chunkTransform, worldPos3D, chosenBiomeInstance, threadInfo.parameter.heightMap, x, y, threadInfo.parameter.meshData, lodFactor);
-                            }
-                        }
-                    }
-                }
-
-                // Trigger the callback once the biome object data has been processed.
-                threadInfo.callback(threadInfo.parameter);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Thread-safe container for map thread information.
-    /// </summary>
-    /// <typeparam name="T">The type of data being passed.</typeparam>
-    struct MapThreadInfo<T>
-    {
-        public readonly Action<T> callback;
-        public T parameter;
-
-        public MapThreadInfo(Action<T> callback, T parameter)
-        {
-            this.callback = callback;
-            this.parameter = parameter;
-        }
-    }
-
 }
