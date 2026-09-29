@@ -1,5 +1,4 @@
-﻿using UnityEngine;
-using UnityEngine.InputSystem.XR;
+using UnityEngine;
 
 public class JumpingState : MovementState
 {
@@ -44,8 +43,9 @@ public class JumpingState : MovementState
 
     public override void UpdateState()
     {
-        // Apply gravity
-        Context.MovementModel.VerticalVelocity += Context.MovementModel.Gravity * Context.MovementModel.GravityMultiplier * Time.deltaTime;
+        // Apply gravity (not while a trait such as Wall Climb holds the player)
+        if (!Context.MovementModel.SuspendGravity)
+            Context.MovementModel.VerticalVelocity += Context.MovementModel.Gravity * Context.MovementModel.GravityMultiplier * Time.deltaTime;
 
         // Move player with both horizontal and vertical movement
         Vector3 currentDirection = Context.MovementModel.Direction;

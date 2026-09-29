@@ -5,9 +5,8 @@ using UnityEditor;
 #endif
 
 /// <summary>
-/// Quick setup utility for creating fully configured mobs with all necessary components.
-/// Access via: Right-click GameObject → Mob Setup → Quick Setup Mob
-/// Or: Tools → Mob Setup → Create New Mob
+/// Quick setup for mobs: adds and wires every component the mob AI needs.
+/// Tools > Mob Setup > Create New Mob, or right-click a GameObject > Mob Setup > Quick Setup Mob.
 /// </summary>
 public class MobQuickSetup : MonoBehaviour
 {
@@ -16,7 +15,8 @@ public class MobQuickSetup : MonoBehaviour
     private static void CreateNewMob()
     {
         GameObject mobObject = new GameObject("NewMob");
-        SetupMob(mobObject);
+        Undo.RegisterCreatedObjectUndo(mobObject, "Create Mob");
+        MobSetupUtility.SetupMob(mobObject, true);
         Selection.activeGameObject = mobObject;
         EditorGUIUtility.PingObject(mobObject);
     }
@@ -26,295 +26,11 @@ public class MobQuickSetup : MonoBehaviour
     {
         GameObject mobObject = menuCommand.context as GameObject;
         if (mobObject != null)
-        {
-            SetupMob(mobObject);
-        }
+            MobSetupUtility.SetupMob(mobObject, false);
     }
 
     [MenuItem("GameObject/Mob Setup/Quick Setup Mob", true)]
-    private static bool ValidateQuickSetupMob()
-    {
-        return Selection.activeGameObject != null;
-    }
-
-    /// <summary>
-    /// Main setup method that adds and configures all necessary components.
-    /// </summary>
-    private static void SetupMob(GameObject mobObject)
-    {
-        Undo.RegisterCompleteObjectUndo(mobObject, "Setup Mob");
-
-        Debug.Log($"Setting up mob: {mobObject.name}");
-
-        // Step 1: Add Collider if missing
-        Collider collider = mobObject.GetComponent<Collider>();
-        if (collider == null)
-        {
-            CapsuleCollider capsule = mobObject.AddComponent<CapsuleCollider>();
-            capsule.radius = 0.5f;
-            capsule.height = 2f;
-            capsule.center = new Vector3(0, 1f, 0);
-            Debug.Log("✓ Added CapsuleCollider");
-        }
-
-        // Step 2: Add Rigidbody for physics
-        Rigidbody rb = mobObject.GetComponent<Rigidbody>();
-        if (rb == null)
-        {
-            rb = mobObject.AddComponent<Rigidbody>();
-            rb.mass = 1f;
-            rb.linearDamping = 0f;
-            rb.angularDamping = 0.05f;
-            rb.useGravity = true;
-            rb.isKinematic = false;
-            rb.interpolation = RigidbodyInterpolation.None;
-            rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
-            rb.constraints = RigidbodyConstraints.FreezeRotation; // Prevent rotation for NavMeshAgent
-            Debug.Log("✓ Added Rigidbody");
-        }
-
-        // Step 3: Add NavMeshAgent
-        NavMeshAgent agent = mobObject.GetComponent<NavMeshAgent>();
-        if (agent == null)
-        {
-            agent = mobObject.AddComponent<NavMeshAgent>();
-            agent.speed = 3.5f;
-            agent.angularSpeed = 120f;
-            agent.acceleration = 8f;
-            agent.stoppingDistance = 0.5f;
-            agent.autoBraking = true;
-            agent.radius = 0.5f;
-            agent.height = 2f;
-            agent.baseOffset = 0f;
-            Debug.Log("✓ Added NavMeshAgent");
-        }
-
-        // Step 4: Setup Model/Animator hierarchy
-        SetupModelHierarchy(mobObject);
-
-        // Step 5: Add MobStatusController
-        MobStatusController statusController = mobObject.GetComponent<MobStatusController>();
-        if (statusController == null)
-        {
-            statusController = mobObject.AddComponent<MobStatusController>();
-
-            // Add HealthManager if it doesn't exist
-            HealthManager healthManager = mobObject.GetComponent<HealthManager>();
-            if (healthManager == null)
-            {
-                healthManager = mobObject.AddComponent<HealthManager>();
-                // Set health manager via reflection
-                SerializedObject so = new SerializedObject(statusController);
-                so.FindProperty("healthManager").objectReferenceValue = healthManager;
-                so.ApplyModifiedProperties();
-            }
-
-            // Add SpeedManager if it doesn't exist
-            SpeedManager speedManager = mobObject.GetComponent<SpeedManager>();
-            if (speedManager == null)
-            {
-                speedManager = mobObject.AddComponent<SpeedManager>();
-                // Set speed manager via reflection
-                SerializedObject so = new SerializedObject(statusController);
-                so.FindProperty("speedManager").objectReferenceValue = speedManager;
-                so.ApplyModifiedProperties();
-            }
-
-            Debug.Log("✓ Added MobStatusController");
-        }
-
-        // Step 6: Add MobActionsController (main mob script)
-        MobActionsController actionsController = mobObject.GetComponent<MobActionsController>();
-        if (actionsController == null)
-        {
-            actionsController = mobObject.AddComponent<MobActionsController>();
-
-            // Setup detection cast
-            SerializedObject so = new SerializedObject(actionsController);
-            SerializedProperty castProp = so.FindProperty("detectionCast");
-
-            if (castProp != null)
-            {
-                castProp.FindPropertyRelative("castType").enumValueIndex = (int)CastBase.CastType.Sphere;
-                castProp.FindPropertyRelative("castSize").floatValue = 10f;
-                castProp.FindPropertyRelative("targetLayers").intValue = -1; // Everything
-            }
-
-            // Setup detection distances
-            so.FindProperty("detectionDistance").vector3Value = new Vector3(2f, 2f, 2f);
-            so.FindProperty("offSetDetectionDistance").vector3Value = new Vector3(0f, 1f, 1f);
-            so.FindProperty("mobTransform").objectReferenceValue = mobObject.transform;
-
-            // Setup mob type
-            so.FindProperty("type").stringValue = "Mob";
-
-            // Setup prey list
-            SerializedProperty preysProp = so.FindProperty("Preys");
-            if (preysProp != null && preysProp.arraySize == 0)
-            {
-                preysProp.arraySize = 1;
-                preysProp.GetArrayElementAtIndex(0).stringValue = "Player";
-            }
-
-            so.ApplyModifiedProperties();
-            Debug.Log("✓ Added MobActionsController");
-        }
-
-        // Step 7: Add MobMovementStateMachine
-        MobMovementStateMachine stateMachine = mobObject.GetComponent<MobMovementStateMachine>();
-        if (stateMachine == null)
-        {
-            stateMachine = mobObject.AddComponent<MobMovementStateMachine>();
-
-            // Get the animator from the hierarchy
-            Transform modelParent = mobObject.transform.Find("Model");
-            Animator animator = null;
-            if (modelParent != null)
-            {
-                Transform visualModel = modelParent.Find("VisualModel");
-                if (visualModel != null)
-                {
-                    animator = visualModel.GetComponent<Animator>();
-                    if (animator != null)
-                    {
-                        Debug.Log($"✓ Found Animator on {visualModel.name}");
-                    }
-                    else
-                    {
-                        Debug.LogWarning("⚠ Animator component not found on VisualModel!");
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("⚠ VisualModel not found in Model hierarchy!");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("⚠ Model parent not found!");
-            }
-
-            // Wire up references
-            SerializedObject so = new SerializedObject(stateMachine);
-            so.FindProperty("actionsController").objectReferenceValue = actionsController;
-            so.FindProperty("mob").objectReferenceValue = actionsController;
-            so.FindProperty("animator").objectReferenceValue = animator;
-            so.FindProperty("navMeshAgent").objectReferenceValue = agent;
-            so.FindProperty("statusController").objectReferenceValue = statusController;
-            so.ApplyModifiedProperties();
-
-            if (animator != null)
-            {
-                Debug.Log("✓ Added MobMovementStateMachine with Animator assigned");
-            }
-            else
-            {
-                Debug.LogError("✗ MobMovementStateMachine added but Animator is NULL!");
-            }
-        }
-
-        // Step 8: Add MobAbilityController (optional)
-        MobAbilityController abilityController = mobObject.GetComponent<MobAbilityController>();
-        if (abilityController == null)
-        {
-            abilityController = mobObject.AddComponent<MobAbilityController>();
-            Debug.Log("✓ Added MobAbilityController");
-        }
-
-        // Step 9: Configure default values
-        ConfigureDefaultValues(mobObject, actionsController);
-
-        EditorUtility.SetDirty(mobObject);
-        Debug.Log($"<color=green>✓ Mob setup complete for: {mobObject.name}</color>");
-        Debug.Log("Next steps:\n" +
-                  "1. Assign an Animator Controller to the Model child\n" +
-                  "2. Configure mob type and prey list\n" +
-                  "3. Adjust detection ranges\n" +
-                  "4. Set up patrol points (optional)");
-    }
-
-    /// <summary>
-    /// Sets up the Model/Animator hierarchy required by the mob system.
-    /// Expected structure: Mob -> Model -> VisualModel (with Animator)
-    /// </summary>
-    private static void SetupModelHierarchy(GameObject mobObject)
-    {
-        Transform modelParent = mobObject.transform.Find("Model");
-
-        if (modelParent == null)
-        {
-            GameObject modelParentObj = new GameObject("Model");
-            modelParentObj.transform.SetParent(mobObject.transform);
-            modelParentObj.transform.localPosition = Vector3.zero;
-            modelParent = modelParentObj.transform;
-            Debug.Log("✓ Created Model parent");
-        }
-
-        Transform visualModel = modelParent.Find("VisualModel");
-
-        if (visualModel == null)
-        {
-            GameObject visualModelObj = new GameObject("VisualModel");
-            visualModelObj.transform.SetParent(modelParent);
-            visualModelObj.transform.localPosition = Vector3.zero;
-            visualModel = visualModelObj.transform;
-            Debug.Log("✓ Created VisualModel");
-        }
-
-        // ALWAYS ensure Animator exists
-        Animator animator = visualModel.GetComponent<Animator>();
-        if (animator == null)
-        {
-            animator = visualModel.gameObject.AddComponent<Animator>();
-            animator.applyRootMotion = false;
-            Debug.Log("✓ Added Animator component");
-        }
-
-        // Add placeholder mesh if not exists
-        MeshFilter meshFilter = visualModel.GetComponent<MeshFilter>();
-        if (meshFilter == null)
-        {
-            meshFilter = visualModel.gameObject.AddComponent<MeshFilter>();
-            MeshRenderer meshRenderer = visualModel.gameObject.AddComponent<MeshRenderer>();
-
-            // Create a simple capsule mesh as placeholder
-            GameObject tempCapsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            meshFilter.sharedMesh = tempCapsule.GetComponent<MeshFilter>().sharedMesh;
-            meshRenderer.sharedMaterial = tempCapsule.GetComponent<MeshRenderer>().sharedMaterial;
-            DestroyImmediate(tempCapsule);
-
-            Debug.Log("✓ Added placeholder mesh");
-        }
-    }
-
-    /// <summary>
-    /// Configures sensible default values for the mob.
-    /// </summary>
-    private static void ConfigureDefaultValues(GameObject mobObject, MobActionsController actionsController)
-    {
-        SerializedObject so = new SerializedObject(actionsController);
-
-        // Wander settings
-        so.FindProperty("wanderDistance").floatValue = 20f;
-        so.FindProperty("maxWalkTime").floatValue = 6f;
-        so.FindProperty("idleTime").floatValue = 3f;
-
-        // Detection settings
-        so.FindProperty("detectionRange").floatValue = 10f;
-
-        // Prey settings
-        so.FindProperty("escapeMaxDistance").floatValue = 30f;
-
-        // Predator settings
-        so.FindProperty("maxChaseTime").floatValue = 10f;
-        so.FindProperty("biteDamage").intValue = 10;
-        so.FindProperty("biteCooldown").floatValue = 1.5f;
-        so.FindProperty("attackDistance").floatValue = 2f;
-        so.FindProperty("isPartialWait").boolValue = false;
-        so.FindProperty("playerHasMaxChaseTime").boolValue = true;
-
-        so.ApplyModifiedProperties();
-    }
+    private static bool ValidateQuickSetupMob() => Selection.activeGameObject != null;
 
     [MenuItem("Tools/Mob Setup/Add Missing Components")]
     private static void AddMissingComponents()
@@ -325,55 +41,412 @@ public class MobQuickSetup : MonoBehaviour
             EditorUtility.DisplayDialog("No Selection", "Please select a GameObject first.", "OK");
             return;
         }
-
-        SetupMob(selected);
+        MobSetupUtility.SetupMob(selected, false);
     }
 
     [MenuItem("Tools/Mob Setup/Help")]
     private static void ShowHelp()
     {
-        string help = @"MOB QUICK SETUP GUIDE
+        EditorUtility.DisplayDialog("Mob Setup Help", @"MOB QUICK SETUP
 
-AUTOMATIC SETUP:
-1. Right-click in Hierarchy → Mob Setup → Quick Setup Mob
-   OR
-2. Tools → Mob Setup → Create New Mob
+Right-click a GameObject > Mob Setup > Quick Setup Mob, or Tools > Mob Setup > Create New Mob.
 
-WHAT IT ADDS:
-✓ CapsuleCollider (0.5 radius, 2 height)
-✓ Rigidbody (with rotation freeze)
-✓ NavMeshAgent (3.5 speed, 0.5 stopping distance)
-✓ Model hierarchy (Model/VisualModel with Animator)
-✓ MobStatusController
-✓ HealthManager
-✓ SpeedManager
-✓ MobActionsController (main mob script)
-✓ MobMovementStateMachine (AI states)
-✓ MobAbilityController (for abilities)
-✓ Detection cast configuration
+ADDS (only what is missing):
+- CapsuleCollider, kinematic Rigidbody (a physics Rigidbody fights the NavMeshAgent)
+- NavMeshAgent
+- Model / VisualModel hierarchy with an Animator
+- MobStatusController + HealthManager + SpeedManager
+- MobActionsController (the mob), MobMovementStateMachine (the AI)
+- MobAbilityController (abilities), CombatEntity (team, body, crowd control)
 
-AFTER SETUP:
-1. Assign Animator Controller to VisualModel
-2. Configure mob type (Sheep, Wolf, Fox, etc.)
-3. Set prey list (what this mob hunts)
-4. Adjust detection ranges as needed
-5. Optionally set patrol points
-6. Replace placeholder capsule mesh with your model
-
-STATES:
-- Idle: Resting, scanning environment
-- Moving: Walking to destination
-- Chasing: Pursuing prey or fleeing predator
-- Patrol: Following patrol points
-
-TIPS:
-- Use Layer Masks to filter detection
-- Higher detection range = sees threats earlier
-- Lower bite cooldown = attacks faster
-- Set playerHasMaxChaseTime = false for persistent chase
-";
-
-        EditorUtility.DisplayDialog("Mob Setup Help", help, "Got it!");
+THEN:
+1. Assign an Animator Controller (parameters like Speed, IsMoving, Hit, Die are used when present;
+   old controllers with Idle/Moving/Chasing/Patrol states keep working).
+2. Set the mob Type and its Preys ('Player' to attack players).
+3. Assign or create a Mob Profile (temperament, senses, movement, combat, dodging).
+4. Add Ability Definitions to the MobAbilityController (a basic attack is created from Bite Damage otherwise).
+5. Bake the NavMesh.", "Got it!");
     }
 #endif
 }
+
+#if UNITY_EDITOR
+/// <summary>Adds and wires the components of a mob (used by the menus and the mob inspector).</summary>
+public static class MobSetupUtility
+{
+    /// <summary>
+    /// Adds and wires every component. With <paramref name="createAssets"/> it also gives the mob a Mob Profile asset
+    /// and (when it would use the automatic bite) a Basic Attack asset, so nothing important is hidden in runtime code.
+    /// </summary>
+    public static void SetupMob(GameObject mobObject, bool isNew, bool createAssets = true)
+    {
+        Undo.RegisterFullObjectHierarchyUndo(mobObject, "Setup Mob");
+        int added = 0;
+
+        if (mobObject.GetComponent<Collider>() == null)
+        {
+            CapsuleCollider capsule = Undo.AddComponent<CapsuleCollider>(mobObject);
+            capsule.radius = 0.5f;
+            capsule.height = 2f;
+            capsule.center = new Vector3(0f, 1f, 0f);
+            added++;
+        }
+
+        Rigidbody rb = mobObject.GetComponent<Rigidbody>();
+        if (rb == null)
+        {
+            rb = Undo.AddComponent<Rigidbody>(mobObject);
+            added++;
+        }
+        // Kinematic: the NavMeshAgent moves the mob; physics only detects hits.
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.interpolation = RigidbodyInterpolation.None;
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
+
+        NavMeshAgent agent = mobObject.GetComponent<NavMeshAgent>();
+        if (agent == null)
+        {
+            agent = Undo.AddComponent<NavMeshAgent>(mobObject);
+            agent.speed = 3.5f;
+            agent.angularSpeed = 540f;
+            agent.acceleration = 24f;
+            agent.stoppingDistance = 0.3f;
+            agent.autoBraking = true;
+            agent.radius = 0.5f;
+            agent.height = 2f;
+            added++;
+        }
+
+        Animator animator = SetupModelHierarchy(mobObject, ref added);
+
+        MobStatusController status = mobObject.GetComponent<MobStatusController>();
+        if (status == null)
+        {
+            status = Undo.AddComponent<MobStatusController>(mobObject);
+            added++;
+        }
+        HealthManager health = mobObject.GetComponent<HealthManager>();
+        if (health == null)
+        {
+            health = Undo.AddComponent<HealthManager>(mobObject);
+            added++;
+        }
+        SpeedManager speed = mobObject.GetComponent<SpeedManager>();
+        if (speed == null)
+        {
+            speed = Undo.AddComponent<SpeedManager>(mobObject);
+            added++;
+        }
+        var statusSo = new SerializedObject(status);
+        SetRef(statusSo, "healthManager", health);
+        SetRef(statusSo, "speedManager", speed);
+        statusSo.ApplyModifiedProperties();
+
+        MobActionsController mob = mobObject.GetComponent<MobActionsController>();
+        if (mob == null)
+        {
+            mob = Undo.AddComponent<MobActionsController>(mobObject);
+            added++;
+            var so = new SerializedObject(mob);
+            SetRef(so, "mobTransform", mobObject.transform);
+            SetString(so, "type", "Mob");
+            SerializedProperty preys = so.FindProperty("Preys");
+            if (preys != null && preys.arraySize == 0)
+            {
+                preys.arraySize = 1;
+                preys.GetArrayElementAtIndex(0).stringValue = "Player";
+            }
+            if (isNew)
+            {
+                SetFloat(so, "wanderDistance", 12f);
+                SetFloat(so, "detectionRange", 15f);
+                SetInt(so, "biteDamage", 8);
+                SetFloat(so, "biteCooldown", 1.5f);
+                SetFloat(so, "attackDistance", 1.8f);
+            }
+            so.ApplyModifiedProperties();
+        }
+
+        MobMovementStateMachine machine = mobObject.GetComponent<MobMovementStateMachine>();
+        if (machine == null)
+        {
+            machine = Undo.AddComponent<MobMovementStateMachine>(mobObject);
+            added++;
+        }
+        var machineSo = new SerializedObject(machine);
+        SetRef(machineSo, "actionsController", mob);
+        SetRef(machineSo, "mob", mob);
+        SetRef(machineSo, "animator", animator);
+        SetRef(machineSo, "navMeshAgent", agent);
+        SetRef(machineSo, "statusController", status);
+        machineSo.ApplyModifiedProperties();
+
+        MobAbilityController abilities = mobObject.GetComponent<MobAbilityController>();
+        if (abilities == null)
+        {
+            abilities = Undo.AddComponent<MobAbilityController>(mobObject);
+            added++;
+        }
+        var abilitiesSo = new SerializedObject(abilities);
+        SetRef(abilitiesSo, "mobActionController", mob);
+        SetRef(abilitiesSo, "animator", animator);
+        abilitiesSo.ApplyModifiedProperties();
+        Undo.RecordObject(abilities, "Sync Absorption Table");
+        abilities.SyncAbsorptionTable();
+        EditorUtility.SetDirty(abilities);
+        if (mobObject.GetComponent<CombatEntity>() == null)
+        {
+            Undo.AddComponent<CombatEntity>(mobObject);
+            added++;
+        }
+
+        // Make what the mob would otherwise build at runtime visible and editable: a Profile asset and a Basic Attack asset.
+        string created = "";
+        if (createAssets)
+        {
+            bool hadProfile = mob.ProfileAsset != null;
+            MobProfile profile = EnsureProfile(mob);
+            if (!hadProfile && profile != null)
+                created += $" Profile: '{profile.name}'.";
+            AbilityDefinition bite = EnsureBasicAttack(abilities, mob);
+            if (bite != null)
+                created += $" Basic attack: '{bite.name}'.";
+        }
+
+        EditorUtility.SetDirty(mobObject);
+        Debug.Log(added > 0
+            ? $"<color=green>Mob setup: added {added} component(s) to {mobObject.name}.</color>{created} Next: assign an Animator Controller, set Type/Preys, add abilities, bake the NavMesh."
+            : $"Mob setup: {mobObject.name} already has every component (references re-wired).{created}", mobObject);
+    }
+
+    /// <summary>
+    /// Assigns a Mob Profile if the mob has none: an existing '&lt;Type&gt; Profile' asset (shared by the type) or a new
+    /// one built from the mob's fields. Returns the profile.
+    /// </summary>
+    public static MobProfile EnsureProfile(Mob mob)
+    {
+        if (mob == null)
+            return null;
+        if (mob.ProfileAsset != null)
+            return mob.ProfileAsset;
+        if (!string.IsNullOrEmpty(mob.type) && mob.type != "Mob")
+        {
+            MobProfile existing = FindAssetNamed<MobProfile>(mob.type + " Profile");
+            if (existing != null)
+            {
+                AssignProfile(mob, existing);
+                return existing;
+            }
+        }
+        return CreateProfileFor(mob, null);
+    }
+
+    /// <summary>
+    /// When the mob would get the automatic basic attack (no melee ability, no legacy abilities, Bite Damage &gt; 0),
+    /// puts it in a slot as a real asset instead (an existing '&lt;Type&gt; Basic Attack' asset, or a new one), so it
+    /// can be seen and edited. Returns the ability added, or null.
+    /// </summary>
+    public static AbilityDefinition EnsureBasicAttack(MobAbilityController abilities, Mob mob)
+    {
+        if (abilities == null || mob == null || mob.BiteDamage <= 0 || abilities.HasMeleeSlot())
+            return null;
+        foreach (AbilityHolder h in abilities.LegacyAbilities)
+            if (h != null && h.abilityEffect != null)
+                return null; // legacy abilities may already be melee; the runtime decides
+        string fileName = MobAbilityController.BasicAttackName(mob);
+        AbilityDefinition def = !string.IsNullOrEmpty(mob.type) && mob.type != "Mob" ? FindAssetNamed<AbilityDefinition>(fileName) : null;
+        if (def == null)
+            def = SaveAbility(MobAbilityController.CreateBasicAttackDefinition(mob), FolderFor(mob.gameObject), fileName);
+        AddSlot(abilities, def);
+        return def;
+    }
+
+    /// <summary>Saves a new basic attack asset from the mob's Bite settings and adds it to a slot (inspector button).</summary>
+    public static AbilityDefinition CreateBasicAttackAsset(MobAbilityController abilities, Mob mob)
+    {
+        AbilityDefinition def = SaveAbility(MobAbilityController.CreateBasicAttackDefinition(mob), FolderFor(mob.gameObject), MobAbilityController.BasicAttackName(mob));
+        if (abilities != null)
+            AddSlot(abilities, def);
+        return def;
+    }
+
+    /// <summary>Adds <paramref name="def"/> to a new slot (with Undo) and syncs the absorption table.</summary>
+    public static void AddSlot(MobAbilityController abilities, AbilityDefinition def)
+    {
+        var so = new SerializedObject(abilities);
+        SerializedProperty slots = so.FindProperty("slots");
+        int i = slots.arraySize;
+        slots.arraySize++;
+        SerializedProperty s = slots.GetArrayElementAtIndex(i);
+        s.FindPropertyRelative("ability").objectReferenceValue = def;
+        s.FindPropertyRelative("enabled").boolValue = true;
+        s.FindPropertyRelative("aiWeight").floatValue = 1f;
+        s.FindPropertyRelative("label").stringValue = "";
+        so.ApplyModifiedProperties();
+        Undo.RecordObject(abilities, "Sync Absorption Table");
+        abilities.SyncAbsorptionTable();
+        EditorUtility.SetDirty(abilities);
+    }
+
+    private static AbilityDefinition SaveAbility(AbilityDefinition def, string folder, string fileName)
+    {
+        foreach (char ch in System.IO.Path.GetInvalidFileNameChars())
+            fileName = fileName.Replace(ch, '_');
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{fileName}.asset");
+        def.hideFlags = HideFlags.None;
+        AssetDatabase.CreateAsset(def, path);
+        def.SetId(AssetDatabase.AssetPathToGUID(path));
+        EditorUtility.SetDirty(def);
+        AssetDatabase.SaveAssets();
+        return def;
+    }
+
+    private static T FindAssetNamed<T>(string fileName) where T : Object
+    {
+        foreach (string guid in AssetDatabase.FindAssets($"\"{fileName}\" t:{typeof(T).Name}"))
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (System.IO.Path.GetFileNameWithoutExtension(path) == fileName)
+            {
+                T asset = AssetDatabase.LoadAssetAtPath<T>(path);
+                if (asset != null)
+                    return asset;
+            }
+        }
+        return null;
+    }
+
+    private static void AssignProfile(Mob mob, MobProfile p)
+    {
+        var so = new SerializedObject(mob);
+        so.FindProperty("profile").objectReferenceValue = p;
+        so.ApplyModifiedProperties();
+    }
+
+    /// <summary>The folder of the mob's prefab (asset, instance or open prefab stage), else Assets/Generated/Mobs.</summary>
+    public static string FolderFor(GameObject go)
+    {
+        string prefabPath = AssetDatabase.GetAssetPath(go);
+        if (string.IsNullOrEmpty(prefabPath))
+            prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go);
+#if UNITY_2021_2_OR_NEWER
+        if (string.IsNullOrEmpty(prefabPath))
+        {
+            var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
+            if (stage != null)
+                prefabPath = stage.assetPath;
+        }
+#endif
+        if (!string.IsNullOrEmpty(prefabPath))
+            return System.IO.Path.GetDirectoryName(prefabPath).Replace('\\', '/');
+        return EnsureFolder("Assets/Generated/Mobs");
+    }
+
+    private static string EnsureFolder(string path)
+    {
+        if (AssetDatabase.IsValidFolder(path))
+            return path;
+        string parent = System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
+        EnsureFolder(parent);
+        AssetDatabase.CreateFolder(parent, System.IO.Path.GetFileName(path));
+        return path;
+    }
+
+    private static Animator SetupModelHierarchy(GameObject mobObject, ref int added)
+    {
+        Animator existing = MobMovementStateMachine.FindAnimator(mobObject.transform);
+        if (existing != null)
+            return existing;
+
+        Transform model = mobObject.transform.Find("Model");
+        if (model == null)
+        {
+            var m = new GameObject("Model");
+            Undo.RegisterCreatedObjectUndo(m, "Create Model");
+            m.transform.SetParent(mobObject.transform, false);
+            model = m.transform;
+            added++;
+        }
+        Transform visual = model.Find("VisualModel");
+        if (visual == null)
+        {
+            var v = new GameObject("VisualModel");
+            Undo.RegisterCreatedObjectUndo(v, "Create Visual Model");
+            v.transform.SetParent(model, false);
+            visual = v.transform;
+            added++;
+
+            // Placeholder capsule (replace with your model).
+            GameObject temp = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            var mf = v.AddComponent<MeshFilter>();
+            var mr = v.AddComponent<MeshRenderer>();
+            mf.sharedMesh = temp.GetComponent<MeshFilter>().sharedMesh;
+            mr.sharedMaterial = temp.GetComponent<MeshRenderer>().sharedMaterial;
+            Object.DestroyImmediate(temp);
+            v.transform.localPosition = new Vector3(0f, 1f, 0f);
+        }
+        Animator animator = visual.GetComponent<Animator>();
+        if (animator == null)
+        {
+            animator = Undo.AddComponent<Animator>(visual.gameObject);
+            animator.applyRootMotion = false;
+            added++;
+        }
+        return animator;
+    }
+
+    /// <summary>Creates a Mob Profile asset (from the mob's current fields, or a preset) and assigns it.</summary>
+    public static MobProfile CreateProfileFor(Mob mob, MobProfile.Preset? preset)
+    {
+        MobProfile p;
+        if (preset.HasValue)
+        {
+            p = MobProfile.CreatePreset(preset.Value);
+        }
+        else
+        {
+            p = ScriptableObject.CreateInstance<MobProfile>();
+            MobProfile legacy = MobProfile.FromLegacy(mob);
+            EditorUtility.CopySerialized(legacy, p);
+            Object.DestroyImmediate(legacy);
+            p.hideFlags = HideFlags.None;
+        }
+        string folder = FolderFor(mob.gameObject);
+        string niceType = string.IsNullOrEmpty(mob.type) ? mob.name : mob.type;
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{niceType} Profile.asset");
+        AssetDatabase.CreateAsset(p, path);
+        AssetDatabase.SaveAssets();
+
+        AssignProfile(mob, p);
+        EditorGUIUtility.PingObject(p);
+        return p;
+    }
+
+    private static void SetRef(SerializedObject so, string field, Object value)
+    {
+        SerializedProperty p = so.FindProperty(field);
+        if (p != null && value != null && p.objectReferenceValue == null)
+            p.objectReferenceValue = value;
+    }
+
+    private static void SetString(SerializedObject so, string field, string value)
+    {
+        SerializedProperty p = so.FindProperty(field);
+        if (p != null && string.IsNullOrEmpty(p.stringValue))
+            p.stringValue = value;
+    }
+
+    private static void SetFloat(SerializedObject so, string field, float value)
+    {
+        SerializedProperty p = so.FindProperty(field);
+        if (p != null) p.floatValue = value;
+    }
+
+    private static void SetInt(SerializedObject so, string field, int value)
+    {
+        SerializedProperty p = so.FindProperty(field);
+        if (p != null) p.intValue = value;
+    }
+}
+#endif

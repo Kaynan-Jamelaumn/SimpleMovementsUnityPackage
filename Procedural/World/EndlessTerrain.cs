@@ -17,68 +17,64 @@ using static DataStructure;
 /// </example>
 public partial class EndlessTerrain : MonoBehaviour
 {
-    [Tooltip("Enable to show debug messages in the console")]
-    [SerializeField]
-    public bool enableDebugging = false;
-
-    [Tooltip("If Should use HDRP Shader if not, will use URP Shaders(Lighter)")]
-    [SerializeField]
-    public bool shouldUseHDRPShaders = false;
-
-    [Tooltip("Chunks whose nearest edge is within this distance (world units) of the viewer are generated and shown.")]
-    [SerializeField]
-    public float maxViewDst = 250;
-
-    [Tooltip("The object (e.g., player or camera) whose position determines terrain visibility.")]
+    [Header("Viewer")]
+    [Tooltip("REQUIRED. The object whose position decides which chunks exist - usually the player (or the camera following it). Nothing is generated while this is empty. Also the fallback 'player' for the portal and mob spawners when nothing is tagged Player.")]
     public Transform viewer;
-    /// <summary>
-    /// The viewer's position in world space, represented as a 2D coordinate (x, z).
-    /// Used for efficient distance calculations, ignoring the y-axis (height).
-    /// </summary>
-    [Tooltip("Viewer's position in world space (x, z), ignoring height.")]
+
+    /// <summary>The viewer's position in world space (x, z), ignoring height - read by the chunks for distances.</summary>
     public static Vector2 viewerPosition;
 
-    [Tooltip("Reference to the terrain generator responsible for creating terrain data.")]
+    // Found in the scene at Start (there must be exactly one TerrainGenerator).
     static TerrainGenerator mapGenerator;
 
-    [Tooltip("Scale factor affecting terrain features (size, spacing, etc.).")]
-    [SerializeField] float scaleFactor = 1.0f;
-
-    [Tooltip("The size of each terrain chunk in world units.")]
+    // Read from the TerrainGenerator at Start.
+    float scaleFactor = 1.0f;
     int chunkSize;
 
-    [Tooltip("Enable to limit the number of visible chunks per side.")]
+    [Header("View Distance")]
+    [Tooltip("Chunks whose nearest edge is within this distance (world units) of the viewer are generated and shown. A chunk is Terrain Size - 1 units wide (240 for Extra Large). Recommended 250-600: every extra ring of chunks costs generation time and memory.")]
+    [Min(10f)] public float maxViewDst = 250;
+
+    [Tooltip("Cap the number of chunks per side (see Max Chunks Per Side), whatever the view distance.")]
     public bool shouldHaveMaxChunkPerSide = true;
 
-    [Tooltip("At most this many chunks from the viewer's chunk in each direction are generated, whatever the view distance.")]
-    public int maxChunksPerSide = 5;
+    [Tooltip("At most this many chunks from the viewer's chunk in each direction are generated (with Should Have Max Chunk Per Side). 5 = up to 11 x 11 chunks.")]
+    [Min(0)] public int maxChunksPerSide = 5;
 
     [Header("Chunk Lifecycle")]
-    [Tooltip("Chunks whose nearest edge is farther than this (world units) from the viewer are destroyed, freeing their meshes, textures, colliders, NavMesh and objects; closer hidden chunks are only hidden. 0 = View Distance plus one chunk. A destroyed chunk that comes back into view is generated exactly as it was.")]
-    public float unloadDistance = 0f;
+    [Tooltip("Chunks whose nearest edge is farther than this (world units) from the viewer are destroyed, freeing their meshes, textures, colliders, NavMesh, objects, portals and mobs; closer hidden chunks are only hidden. 0 = View Distance plus one chunk. A destroyed chunk that comes back into view is generated exactly as it was.")]
+    [Min(0f)] public float unloadDistance = 0f;
 
-    [Tooltip("How many unloaded chunks keep their generated data (heights, water, biomes, mesh data, object placements - no GameObjects) in memory, so they come back without being generated again. Each costs roughly 1-5 MB. 0 = none.")]
+    [Tooltip("How many unloaded chunks keep their generated data (heights, water, biomes, mesh data, object placements - no GameObjects) in memory, so they come back without being generated again. Each costs roughly 1-5 MB. 0 = none. Recommended 16-64.")]
     [Range(0, 256)] public int chunkDataCacheSize = 16;
 
-    [Tooltip("Build a NavMesh for chunks (mobs need it). It is built in the background, after the chunk's objects exist.")]
+    [Header("Navigation")]
+    [Tooltip("Build a NavMesh for chunks. Needed by mobs (they walk on it and are spawned on it) and by portals with Require NavMesh. It is built in the background, after the chunk's objects exist; the chunk's portal and mob spawners start once it is done.")]
     public bool bakeNavMesh = true;
 
-    [Tooltip("Only chunks whose nearest edge is within this distance (world units) of the viewer get a NavMesh (and start their mob and portal spawners). 0 = every chunk within the view distance.")]
-    public float navMeshDistance = 250f;
+    [Tooltip("Only chunks whose nearest edge is within this distance (world units) of the viewer get a NavMesh - and start their portal and mob spawners. 0 = every chunk within the view distance. Mob Settings' Activation Distance should be below this.")]
+    [Min(0f)] public float navMeshDistance = 250f;
 
-    [Tooltip("Dictionary storing terrain chunks, keyed by their 2D coordinates.")]
+    [Header("Rendering")]
+    [Tooltip("Use the HDRP versions of the terrain shaders. Off = URP / Built-in shaders (lighter). Must match the project's render pipeline.")]
+    public bool shouldUseHDRPShaders = false;
+
+    [Header("Portals")]
+    [Tooltip("Where world portals (dungeon entrances) appear, which prefabs, and what happens after use. Each chunk's PortalSpawner reads these. Needs at least one entry in Prefabs.")]
+    [SerializeField]
+    PortalSettings portalSettings = new PortalSettings();
+
+    [Header("Mobs")]
+    [Tooltip("Which mobs live on the terrain, how many per chunk, and when they spawn, despawn and respawn. Each chunk's MobSpawner reads these. Needs at least one entry in Prefabs and Bake NavMesh on.")]
+    [SerializeField]
+    MobSettings mobSettings = new MobSettings();
+
+    [Header("Debugging")]
+    [Tooltip("Log chunk creation, data arrival and spawner starts to the Console (noisy).")]
+    public bool enableDebugging = false;
+
     Dictionary<Vector2, TerrainChunk> terrainChunkDictionary = new Dictionary<Vector2, TerrainChunk>();
-
-    [Tooltip("List of terrain chunks visible during the last frame update.")]
     List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
-
-    [Tooltip("Configuration settings for spawning portals.")]
-    [SerializeField]
-    PortalSettings portalSettings;
-
-    [Tooltip("Configuration settings for spawning mobs.")]
-    [SerializeField]
-    MobSettings mobSettings;
 
     // Recently unloaded chunks' generated data, most recently used last.
     readonly LinkedList<CachedChunkData> dataCache = new LinkedList<CachedChunkData>();
@@ -100,6 +96,29 @@ public partial class EndlessTerrain : MonoBehaviour
 
     /// <summary>Chunks currently loaded (generated or being generated), visible or hidden.</summary>
     public int LoadedChunkCount => terrainChunkDictionary.Count;
+
+    /// <summary>The portal settings every chunk's PortalSpawner uses.</summary>
+    public PortalSettings Portals => portalSettings;
+
+    /// <summary>The mob settings every chunk's MobSpawner uses.</summary>
+    public MobSettings Mobs => mobSettings;
+
+    /// <summary>
+    /// The portals planned in an area (world x, z; e.g. for map markers or quests) - known before their chunks exist.
+    /// Planned points: once the chunk is ready a portal stands within Search Radius of its point, or (rarely, when
+    /// no suitable spot is near) not at all.
+    /// </summary>
+    public void FindPortalSites(Vector2 min, Vector2 max, List<PortalSitePlanner.Site> into)
+    {
+        TerrainGenerator generator = mapGenerator != null ? mapGenerator : Object.FindAnyObjectByType<TerrainGenerator>();
+        PortalSitePlanner.SitesInArea(portalSettings, generator != null ? generator.VoronoiSeed : 0, min, max, into);
+    }
+
+    void OnValidate()
+    {
+        portalSettings?.ValidateSettings();
+        mobSettings?.ValidateSettings();
+    }
 
     void Start()
     {

@@ -1,34 +1,31 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using static AbilityEffectSO;
 using static AbilityStateMachine;
 
-
-
-
-[CreateAssetMenu(fileName = "Ability", menuName = "Scriptable Objects/Ability/Ability")]
+/// <summary>
+/// Legacy ability asset. Still supported: player slots and mobs convert it automatically to an
+/// <see cref="AbilityDefinition"/> at runtime (see <see cref="LegacyAbilityConverter"/>), and
+/// Tools > Abilities > Convert Selected Legacy Abilities turns it into a real Ability Definition asset you can extend with
+/// the new shapes, projectiles, surges, walls, summons and AI settings.
+/// </summary>
+[CreateAssetMenu(fileName = "Ability", menuName = "Scriptable Objects/Ability/Ability (Legacy)")]
 public class AbilityEffectSO : AbilitySO
 {
-
     [SerializeField] public List<AttackEffect> effects;
     [Tooltip("A GameObject with ApplyEffect script Monobehaviour")][SerializeField] public GameObject fakeInstancerApplyEffects;
     [SerializeField] public GameObject particle;
     [Tooltip("Particle change the size according to the AttackCast Collider")][SerializeField] public bool particleShouldChangeSize;
     [Tooltip("A Child Particle from the Particle Object change the size according to the AttackCast Collider")][SerializeField] public bool subParticleShouldChangeSize;
     public bool onlyPrincipalParticle;
-    [Tooltip("Caster receives damage/debuff from it's own ability true = is imune")][SerializeField] public bool casterReceivePenalties;
-    [Tooltip("when the ability activates even if the caster(player or mob) is not within the area of effect of the skill it still will receive effects from the skill")][SerializeField] public bool casterReceivesBeneffitsBuffsEvenFromFarAway;
-    [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area")][SerializeField] public bool multiAreaEffect;
+    [Tooltip("ON: the caster is never hit by its own ability (it is excluded from the area).")][SerializeField] public bool casterReceivePenalties;
+    [Tooltip("Buffs (non-enemy effects) are applied to the caster even if it is outside the area.")][SerializeField] public bool casterReceivesBeneffitsBuffsEvenFromFarAway;
+    [Tooltip("If the ability can damage/debuff more than one target within the AttackCast area")][SerializeField] public bool multiAreaEffect;
     [SerializeField] public bool canBeHitMoreThanOnce;
-    [Tooltip("If the ability can damage/debuff more than one player within the AttackCast area does it have a max amount of targets")][SerializeField] public bool hasMaxHitPerCollider;
-    [Tooltip("the ability will only be activated if it's clicked with the mouse")][SerializeField] public bool doesAbilityNeedsConfirmationClickToLaunch;
-    [Tooltip("the ability will only be spawn at the mouse area clicked")][SerializeField] public bool isAbilityTargetSpawnDecidedUponMouseClick;
-
-
-    // [SerializeField] public float maxVictimsPerCollider;
-    //private ApplyEffects applyEffects = new ApplyEffects();
+    [Tooltip("If the ability can damage/debuff more than one target within the AttackCast area, is there a maximum number of targets")][SerializeField] public bool hasMaxHitPerCollider;
+    [Tooltip("The ability is only activated after a confirmation click")][SerializeField] public bool doesAbilityNeedsConfirmationClickToLaunch;
+    [Tooltip("The ability spawns at the point clicked with the mouse")][SerializeField] public bool isAbilityTargetSpawnDecidedUponMouseClick;
 
     [System.Serializable]
     public class StateAvailability
@@ -37,20 +34,19 @@ public class AbilityEffectSO : AbilitySO
         public bool available;
     }
 
-
     [SerializeField]
     private List<StateAvailability> _stateAvailability = new List<StateAvailability>();
     private Dictionary<EAbilityState, bool> stateAvailabilityDict = new Dictionary<EAbilityState, bool>();
 
     public Dictionary<EAbilityState, bool> StateAvailabilityDict { get => stateAvailabilityDict; set => stateAvailabilityDict = value; }
 
-
+    /// <summary>This ability converted to the new system (cached).</summary>
+    public AbilityDefinition ToDefinition(bool forMob = false) => LegacyAbilityConverter.Convert(this, forMob);
 
     public void PopulateStateAvailabilityList()
     {
         EAbilityState[] allStates = (EAbilityState[])System.Enum.GetValues(typeof(EAbilityState));
 
-        // Add missing states
         foreach (var state in allStates)
         {
             if (!_stateAvailability.Any(entry => entry.state == state))
@@ -58,215 +54,149 @@ public class AbilityEffectSO : AbilitySO
                 _stateAvailability.Add(new StateAvailability
                 {
                     state = state,
-                    available = true // Default to available
+                    available = true
                 });
             }
         }
 
-        // Remove obsolete states (in case enum values were removed)
-        _stateAvailability.RemoveAll(entry =>
-            !System.Enum.IsDefined(typeof(EAbilityState), entry.state));
+        _stateAvailability.RemoveAll(entry => !System.Enum.IsDefined(typeof(EAbilityState), entry.state));
     }
 
     public void UpdateStateAvailabilityDict()
     {
         StateAvailabilityDict.Clear();
         foreach (var entry in _stateAvailability)
-        {
             StateAvailabilityDict[entry.state] = entry.available;
-        }
     }
 
-
-    public  void AbnormalUse(Transform targetxTransform, AttackEffect effect)
+    public void AbnormalUse(Transform targetxTransform, AttackEffect effect)
     {
         foreach (var attackCast in effect.attackCast)
         {
-
             Collider[] targets = attackCast.DetectObjects(targetxTransform);
-            if (targets != null && targets.Length > 0)
+            if (targets == null)
+                continue;
+            foreach (Collider targetCollider in targets)
             {
-                foreach (Collider targetCollider in targets)
-                {
-                    GameObject target = targetCollider.gameObject;
-
-                //if (target == targetTransform.gameObject) continue;
-                if (target != null)
-                ApplyEffectsToController(target, effect);
-                }
+                if (targetCollider != null)
+                    ApplyEffectsToController(targetCollider.gameObject, effect);
             }
         }
     }
+
     public override void Use(GameObject affectedTarget, AttackEffect effect)
     {
         ApplyEffectsToController(affectedTarget, effect);
     }
+
     public override void Use(Transform targetTransform, AttackEffect effect, List<AttackCast> attackCast, bool singleTarget = false, GameObject includedTarget = null, GameObject excludedTarget = null)
     {
-        if (includedTarget != null)
-            ApplyEffectsToController(includedTarget, effect);
-
-        if (numberOfTargets > 1)
-        {
-            foreach (var eachAttackCast in attackCast)
-            {
-                Collider[] targets = eachAttackCast.DetectObjects(targetTransform);
-                if (targets == null || targets.Length == 0) return;
-
-                int currentVictims = 1;
-                foreach (Collider targetCollider in targets)
-                {
-                    if (hasMaxHitPerCollider && currentVictims > effect.maxHitTimes) break;
-                    GameObject target = targetCollider.gameObject;
-                    if (target != null && (excludedTarget == null || target != excludedTarget) && (includedTarget == null || target == includedTarget))
-                    {
-                        ApplyEffectsToController(target, effect);
-                        if (singleTarget) break;
-                    }
-                }
-            }
-        }
-        else
+        if (attackCast == null || attackCast.Count == 0)
         {
             if (includedTarget != null)
                 ApplyEffectsToController(includedTarget, effect);
+            return;
+        }
 
-            Collider[] targets = attackCast.First<AttackCast>().DetectObjects(targetTransform);
-            if (targets == null || targets.Length == 0) return;
+        if (includedTarget != null)
+        {
+            ApplyEffectsToController(includedTarget, effect);
+            if (singleTarget)
+                return;
+        }
 
+        int casts = numberOfTargets > 1 ? attackCast.Count : 1;
+        for (int c = 0; c < casts; c++)
+        {
+            AttackCast eachAttackCast = attackCast[c];
+            if (eachAttackCast == null)
+                continue;
+            Collider[] targets = eachAttackCast.DetectObjects(targetTransform);
+            if (targets == null || targets.Length == 0)
+                continue;
+
+            int victims = 0;
+            var seen = new HashSet<GameObject>();
             foreach (Collider targetCollider in targets)
             {
-                GameObject target = targetCollider.gameObject;
-                if (target != null && (excludedTarget == null || target != excludedTarget) && (includedTarget == null || target == includedTarget))
-                {
-                    ApplyEffectsToController(target, effect);
-                    if (singleTarget) break;
-                }
+                if (hasMaxHitPerCollider && effect.maxHitTimes > 0 && victims >= effect.maxHitTimes)
+                    break;
+                if (targetCollider == null)
+                    continue;
+                BaseStatusController status = targetCollider.GetComponentInParent<BaseStatusController>();
+                GameObject target = status != null ? status.gameObject : targetCollider.gameObject;
+                if (!seen.Add(target))
+                    continue; // several colliders of the same character
+                if (excludedTarget != null && target == excludedTarget)
+                    continue;
+                if (includedTarget != null && target == includedTarget)
+                    continue; // already applied above
+                ApplyEffectsToController(target, effect);
+                victims++;
+                if (singleTarget)
+                    break;
             }
         }
     }
+
     public GameObject CheckContactCollider(Transform targetTransform, AttackCast attackCast, GameObject launcher = null)
     {
         Collider[] targets = attackCast.DetectObjects(targetTransform);
-        if (targets != null && targets.Length > 0)
+        if (targets == null)
+            return null;
+        foreach (Collider targetCollider in targets)
         {
-            foreach (Collider targetCollider in targets)
+            if (targetCollider == null)
+                continue;
+            GameObject target = targetCollider.gameObject;
+            if (launcher != null)
             {
-                GameObject target = targetCollider.gameObject;
-
-                //if (target == targetTransform.gameObject) continue;
-                if (launcher != null && launcher != target || launcher == null && target != null && target.CompareTag("Player") || target.CompareTag("Mob"))
+                if (target != launcher && !target.transform.IsChildOf(launcher.transform))
                     return target;
-                
+            }
+            else if (target.CompareTag("Player") || target.CompareTag("Mob"))
+            {
+                return target;
             }
         }
         return null;
-
     }
-
 
     public void ApplyEffectsToController(GameObject targetGameObject, AttackEffect effect)
     {
+        if (targetGameObject == null || effect == null)
+            return;
         if (UnityEngine.Random.value <= effect.probabilityToApply)
             ApplyEffect(effect, targetGameObject.GetComponent<MonoBehaviour>());
-        //if (effect.enemyEffect == false)
-        //{
-        //    ApplyEffect(effect, targetGameObject.GetComponent<MonoBehaviour>());
-        //}
-        //else
-        //{
-        //    ApplyEffect(effect, targetGameObject.GetComponent<MonoBehaviour>());
-        //}
     }
 
+    /// <summary>
+    /// Applies one effect with its random amount, critical hit, duration and tick values, through the target's status
+    /// controller (which supports every effect type: HP, stamina, mana, speed, factors, regeneration...).
+    /// </summary>
     public void ApplyEffect<T>(AttackEffect effect, T statusController) where T : MonoBehaviour
     {
+        if (statusController == null || effect == null)
+            return;
         float amount = GenericMethods.GetRandomValue(effect.amount, effect.randomAmount, effect.minAmount, effect.maxAmount);
         float criticalMultiplier = (UnityEngine.Random.value <= effect.criticalChance) ? effect.criticalDamageMultiplier : 1.0f;
         amount *= criticalMultiplier;
         float timeBuffEffect = GenericMethods.GetRandomValue(effect.timeBuffEffect, effect.randomTimeBuffEffect, effect.minTimeBuffEffect, effect.maxTimeBuffEffect);
         float tickCooldown = GenericMethods.GetRandomValue(effect.tickCooldown, effect.randomTickCooldown, effect.minTickCooldown, effect.maxTickCooldown);
+
+        BaseStatusController status = statusController as BaseStatusController;
+        if (status == null)
+            status = statusController.GetComponentInParent<BaseStatusController>();
+        if (status == null)
+            return;
+
         try
         {
-            PlayerStatusController playerController = statusController.GetComponent<PlayerStatusController>();
-            if (playerController != null)
-                ApplyEffectToPlayer(effect, playerController, amount, timeBuffEffect, tickCooldown);
-
-            MobStatusController mobController = statusController.GetComponent<MobStatusController>();
-            if (mobController != null)
-                ApplyEffectToMob(effect, mobController, amount, timeBuffEffect, tickCooldown);
+            status.ApplyEffect(effect, amount, timeBuffEffect, tickCooldown);
         }
         catch (Exception ex)
         {
-            // Handle the exception
-            Debug.LogError("An error occurred while applying the effect: " + ex.Message);
-        }
-
-    }
-
-    private void ApplyEffectToPlayer(AttackEffect effect, PlayerStatusController playerController, float amount, float timeBuffEffect, float tickCooldown)
-    {
-        switch (effect.effectType)
-        {
-            case AttackEffectType.Stamina:
-                if (effect.timeBuffEffect == 0) playerController.StaminaManager.AddCurrentValue(effect.amount);
-                else playerController.StaminaManager.AddStaminaEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) playerController.HpManager.AddCurrentValue(effect.amount);
-                else playerController.HpManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);    
-                break;
-            case AttackEffectType.Food:
-                if (effect.timeBuffEffect == 0) playerController.HungerManager.AddCurrentValue(effect.amount);
-                else playerController.HungerManager.AddFoodEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Drink:
-                if (effect.timeBuffEffect == 0) playerController.ThirstManager.AddCurrentValue(effect.amount);
-                else playerController.ThirstManager.AddDrinkEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.Weight:
-                if (effect.timeBuffEffect == 0) playerController.WeightManager.AddWeight(effect.amount);
-                else playerController.WeightManager.AddWeightEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpHealFactor:
-                playerController.HpManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpDamageFactor:
-                playerController.HpManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaHealFactor:
-                playerController.StaminaManager.AddStaminaHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaDamageFactor:
-                playerController.StaminaManager.AddStaminaDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.StaminaRegeneration:
-                playerController.StaminaManager.AddStaminaRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpRegeneration:
-                playerController.HpManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-        }
-    }
-
-    private void ApplyEffectToMob(AttackEffect effect, MobStatusController mobController, float amount, float timeBuffEffect, float tickCooldown)
-    {
-
-        switch (effect.effectType)
-        {
-            case AttackEffectType.Hp:
-                if (effect.timeBuffEffect == 0) mobController.HealthManager.AddCurrentValue(effect.amount);
-                else mobController.HealthManager.AddHpEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpHealFactor:
-                mobController.HealthManager.AddHpHealFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpDamageFactor:
-                mobController.HealthManager.AddHpDamageFactorEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
-            case AttackEffectType.HpRegeneration:
-                mobController.HealthManager.AddHpRegenEffect(effect.effectName, amount, timeBuffEffect, tickCooldown, effect.isProcedural, effect.isStackable);
-                break;
+            Debug.LogError($"An error occurred while applying the effect '{effect.effectName}' to {status.name}: {ex.Message}", status);
         }
     }
 }

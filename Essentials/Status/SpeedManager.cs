@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,6 +16,11 @@ public class SpeedManager : MonoBehaviour
     [SerializeField] protected float statusIncrementValue = 1f;
 
     private List<CoroutineInfo> speedEffectRoutines = new List<CoroutineInfo>();
+
+    // Undo actions of running effects, so an effect that is replaced or stopped early is reverted exactly
+    // (previously a stopped/replaced effect left its change on the speed forever).
+    private readonly Dictionary<Coroutine, Action> reverts = new Dictionary<Coroutine, Action>();
+    private Action pendingRevert;
 
     // Properties
     public float Speed => currentSpeed;
@@ -113,7 +118,14 @@ public class SpeedManager : MonoBehaviour
             }
         }
 
-        Coroutine effectCoroutine = StartCoroutine(effectRoutineFunc(effectName, amount, duration, tickInterval, isProcedural, isStackable));
+        pendingRevert = null;
+        IEnumerator routine = effectRoutineFunc(effectName, amount, duration, tickInterval, isProcedural, isStackable);
+        Action revert = pendingRevert;
+        pendingRevert = null;
+        Coroutine effectCoroutine = StartCoroutine(routine);
+        if (revert != null && effectCoroutine != null)
+            reverts[effectCoroutine] = revert;
+        effectList.RemoveAll(e => e == null || e.coroutine == null);
         effectList.Add(new CoroutineInfo
         {
             coroutine = effectCoroutine,
@@ -138,9 +150,21 @@ public class SpeedManager : MonoBehaviour
     {
         foreach (var effect in effectList)
         {
+            if (effect?.coroutine == null)
+                continue;
             StopCoroutine(effect.coroutine);
+            RunRevert(effect.coroutine);
         }
         effectList.Clear();
+    }
+
+    private void RunRevert(Coroutine coroutine)
+    {
+        if (coroutine != null && reverts.TryGetValue(coroutine, out Action revert))
+        {
+            reverts.Remove(coroutine);
+            revert?.Invoke();
+        }
     }
 
     public void StopAllEffectsByType(List<CoroutineInfo> effectList, bool isBuff)
@@ -154,7 +178,11 @@ public class SpeedManager : MonoBehaviour
 
     private void StopAndRemoveEffect(List<CoroutineInfo> effectList, CoroutineInfo effect)
     {
-        StopCoroutine(effect.coroutine);
+        if (effect.coroutine != null)
+        {
+            StopCoroutine(effect.coroutine);
+            RunRevert(effect.coroutine);
+        }
         effectList.Remove(effect);
     }
 
@@ -193,6 +221,15 @@ public class SpeedManager : MonoBehaviour
 
     public IEnumerator ApplySpeedEffectRoutine(string effectName, float speedAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
+        // Tracks exactly how much this effect changed the speed so it can be undone when it ends
+        // (previously slows and hastes were permanent).
+        float applied = 0f;
+        Action revert = () =>
+        {
+            currentSpeed = Mathf.Max(0, currentSpeed - applied);
+            applied = 0f;
+        };
+        pendingRevert = revert;
         return ApplyEffectRoutine(
             effectName,
             speedAmount,
@@ -203,19 +240,30 @@ public class SpeedManager : MonoBehaviour
             perTick =>
             {
                 float newAmount = perTick > 0 ? AddFactor(perTick) : RemoveFactor(perTick);
+                float before = currentSpeed;
                 currentSpeed = Mathf.Max(0, currentSpeed + newAmount);
+                applied += currentSpeed - before;
             },
             total =>
             {
                 float newAmount = total > 0 ? AddFactor(total) : RemoveFactor(total);
+                float before = currentSpeed;
                 currentSpeed = Mathf.Max(0, currentSpeed + newAmount);
+                applied += currentSpeed - before;
             },
-            _ => currentSpeed = Mathf.Max(0, currentSpeed)
+            _ => revert()
         );
     }
 
     public IEnumerator ApplySpeedFactorEffectRoutine(string effectName, float speedFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
+        float applied = 0f;
+        Action revert = () =>
+        {
+            incrementFactor -= applied;
+            applied = 0f;
+        };
+        pendingRevert = revert;
         return ApplyEffectRoutine(
             effectName,
             speedFactorAmount,
@@ -223,14 +271,21 @@ public class SpeedManager : MonoBehaviour
             tickCooldown,
             isProcedural,
             isStackable,
-            perTick => incrementFactor += perTick,
-            total => incrementFactor += total,
-            original => incrementFactor -= original
+            perTick => { incrementFactor += perTick; applied += perTick; },
+            total => { incrementFactor += total; applied += total; },
+            _ => revert()
         );
     }
 
     public IEnumerator ApplySpeedMultiplierEffectRoutine(string effectName, float multiplierAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
+        float applied = 0f;
+        Action revert = () =>
+        {
+            speedWhileRunningMultiplier -= applied;
+            applied = 0f;
+        };
+        pendingRevert = revert;
         return ApplyEffectRoutine(
             effectName,
             multiplierAmount,
@@ -238,9 +293,9 @@ public class SpeedManager : MonoBehaviour
             tickCooldown,
             isProcedural,
             isStackable,
-            perTick => speedWhileRunningMultiplier += perTick,
-            total => speedWhileRunningMultiplier += total,
-            original => speedWhileRunningMultiplier -= original
+            perTick => { speedWhileRunningMultiplier += perTick; applied += perTick; },
+            total => { speedWhileRunningMultiplier += total; applied += total; },
+            _ => revert()
         );
     }
 }

@@ -369,6 +369,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void OnUseItem(InputAction.CallbackContext value)
     {
         if (!value.started || (dragHandler?.IsDragging ?? false)) return;
+        if (PlayerAbilityController.IsPointerCapturedFor(player)) return; // this click confirms/cancels an ability preview
         var selectedSlot = GetSelectedHotbarSlot();
         var heldItem = ItemUsageHandler.GetHeldItem(selectedSlot);
         if (heldItem == null || !ItemUsageHandler.HandleCooldown(heldItem)) return;

@@ -1,519 +1,325 @@
-﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Specialized spawner for portals that inherits from SpawnerBase.
-/// It handles the spawning of portal instances with improved natural distribution,
-/// biome awareness, and configurable spawn parameters.
-/// NOW USES PortalSettings FROM EndlessTerrain INSTEAD OF LOCAL DUPLICATE FIELDS
+/// Places the world portals of one terrain chunk (added to every chunk by <see cref="EndlessTerrain"/>).
+///
+/// Where: the planned sites whose point lies in this chunk (<see cref="PortalSitePlanner"/> - a pure function of the
+/// world seed, so no duplicates, no dependence on loading order). When the chunk is ready (its objects and NavMesh
+/// exist) each site gets the flattest open spot within Search Radius of its point (<see cref="FlatSpots"/> on the
+/// chunk's exact data: dry, gentle slope, clear of trees and rocks, allowed biome and height, on the NavMesh), kept
+/// inside the chunk so only this chunk's data decides it. No spot = the site stays empty.
+///
+/// Lifetime: the portal is a child of the chunk - removed when the chunk unloads, recreated identically when it
+/// comes back. A portal that disappears by itself (its Portal's Despawn Time) reappears after its type's reappear
+/// delay; one closed by use (<see cref="PortalSettings.closeAfterUse"/>) or by the game
+/// (<see cref="WorldSpawnRegistry.ClosePortalSite"/>) stays away until it reopens - both remembered across unloading.
 /// </summary>
-public class PortalSpawner : SpawnerBase<SpawnablePortal, SpawnablePortal>
+public class PortalSpawner : ChunkSpawnerBase
 {
-    // IMPLEMENTATION NOTE: Settings are now retrieved from parent component instead of duplicated here
     private PortalSettings settings;
+    private readonly List<Site> sites = new List<Site>();
+    private readonly List<FlatSpots.Spot> spotScratch = new List<FlatSpots.Spot>();
+    private Transform container;
+    private float startAt;
+    private bool resolved;
+    private int spawned;
 
-    [Header("Debug Control")]
-    [Tooltip("Stop spawning when no valid prefabs instead of infinite retries")]
-    [SerializeField] private bool stopWhenNoValidPrefabs = true;
-
-    [Tooltip("Maximum time to retry when no prefabs available (0 = retry forever)")]
-    [SerializeField] private float maxRetryTime = 60f;
-
-    // Private tracking variables
-    private float noValidPrefabsStartTime = 0f;
-    private bool hasLoggedNoValidPrefabs = false;
-
-    /// <summary>
-    /// Coroutine responsible for the portal spawning routine. It continuously attempts to spawn portals
-    /// while the chunk is active in the scene and within the set conditions.
-    /// </summary>
-    /// <returns>IEnumerator for coroutine.</returns>
-    protected override IEnumerator SpawnRoutine()
+    private sealed class Site
     {
-        // Initial validation - stop immediately if no valid prefabs
-        if (stopWhenNoValidPrefabs && GetValidPrefabCount() == 0)
-        {
-            if (!hasLoggedNoValidPrefabs)
-            {
-                Debug.LogWarning($"PortalSpawner {gameObject.name} stopping - no valid prefabs available");
-                hasLoggedNoValidPrefabs = true;
-            }
-            yield break;
-        }
-
-        // Track how long we've been without valid prefabs
-        noValidPrefabsStartTime = Time.time;
-
-        // Continue spawning while the chunk is active in the scene
-        while (chunkParent != null && chunkParent.gameObject.activeInHierarchy)
-        {
-            // Validate that we have spawnable portals
-            if (spawnablePrefabs == null || spawnablePrefabs.Count == 0)
-            {
-                // Check if we should stop retrying
-                if (stopWhenNoValidPrefabs)
-                {
-                    if (!hasLoggedNoValidPrefabs)
-                    {
-                        Debug.LogWarning($"No valid portal prefabs available for spawning in chunk at {chunkPosition}. Stopping spawner.");
-                        hasLoggedNoValidPrefabs = true;
-                    }
-                    yield break;
-                }
-
-                // Check retry timeout
-                if (maxRetryTime > 0 && Time.time - noValidPrefabsStartTime > maxRetryTime)
-                {
-                    Debug.LogWarning($"PortalSpawner {gameObject.name} timed out after {maxRetryTime} seconds of no valid prefabs. Stopping.");
-                    yield break;
-                }
-
-                // Only log once, then wait longer
-                if (!hasLoggedNoValidPrefabs)
-                {
-                    Debug.LogWarning($"No valid portal prefabs available for spawning in chunk at {chunkPosition}");
-                    hasLoggedNoValidPrefabs = true;
-                }
-
-                yield return new WaitForSeconds(retryingSpawnTime * 5f);
-                continue;
-            }
-
-            // Reset the flag since we have prefabs now
-            hasLoggedNoValidPrefabs = false;
-
-            // Check if we can spawn more portals globally
-            if (totalActiveInstances >= globalMaxInstances)
-            {
-                yield return new WaitForSeconds(retryingSpawnTime);
-                continue;
-            }
-
-            // IMPLEMENTED: Use settings for weighted selection
-            bool useWeightedSelection = settings != null ? settings.useWeightedSelection : false;
-
-            // Select a portal based on the configured selection method
-            SpawnablePortal chosenPortal = useWeightedSelection ?
-                ChooseWeightedPortal() :
-                ChooseRandomPortal();
-
-            // If a valid portal is chosen and it can be spawned, spawn it
-            if (chosenPortal != null && CanSpawnPortal(chosenPortal))
-            {
-                SpawnInstance(chosenPortal);
-
-                // Determine the waiting time before the next spawn based on the portal's settings
-                float waitTime = chosenPortal.shouldHaveRandomSpawnTime
-                    ? Random.Range(chosenPortal.minSpawnTime, chosenPortal.maxSpawnTime)
-                    : chosenPortal.spawnTime;
-
-                yield return new WaitForSeconds(waitTime);
-            }
-            else
-            {
-                // If no portal is chosen, retry spawning after a short delay
-                yield return new WaitForSeconds(retryingSpawnTime);
-            }
-        }
+        public PortalSitePlanner.Site Plan;
+        public Vector2 SearchCenter;
+        public bool Resolved, HasSpot;
+        public Vector3 Position;
+        public GameObject Instance;
+        /// <summary>A portal of this site is out (Instance may already be destroyed - Unity's null).</summary>
+        public bool Live;
+        public Portal Portal;
+        public Portal.PortalDestroyedHandler Handler;
+        public float RetryAt;
+        public int Appearances;
+        public string Problem;
     }
 
-    /// <summary>
-    /// Gets the number of valid prefabs available for spawning.
-    /// </summary>
-    /// <returns>Count of valid prefabs.</returns>
-    private int GetValidPrefabCount()
-    {
-        if (spawnablePrefabs == null) return 0;
+    public override int ActiveCount => spawned;
 
-        int validCount = 0;
-        foreach (var prefab in spawnablePrefabs)
-        {
-            if (prefab != null && prefab.prefab != null)
-            {
-                // IMPLEMENTED: Check global forbidden biomes if settings available
-                if (settings != null && settings.useBiomeRestrictions)
-                {
-                    // Check if portal has preferred biomes that aren't all forbidden
-                    if (prefab.preferredBiomes != null && prefab.preferredBiomes.Length > 0)
-                    {
-                        bool hasValidBiome = false;
-                        foreach (var biome in prefab.preferredBiomes)
-                        {
-                            if (settings.IsBiomeAllowed(biome))
-                            {
-                                hasValidBiome = true;
-                                break;
-                            }
-                        }
-                        if (hasValidBiome) validCount++;
-                    }
-                    else
-                    {
-                        // No preferred biomes means can spawn anywhere not forbidden
-                        validCount++;
-                    }
-                }
-                else
-                {
-                    validCount++;
-                }
-            }
-        }
-        return validCount;
+    public override string Describe()
+    {
+        int empty = 0;
+        foreach (Site s in sites)
+            if (s.Resolved && !s.HasSpot)
+                empty++;
+        return $"Portals {spawned}/{sites.Count} sites ({empty} without a spot)";
     }
 
-    /// <summary>
-    /// Chooses a random portal from the available spawnable portals.
-    /// </summary>
-    /// <returns>A randomly selected portal, or null if none available.</returns>
-    private SpawnablePortal ChooseRandomPortal()
-    {
-        var availablePortals = GetAvailablePortals();
-        if (availablePortals.Count == 0) return null;
-
-        return availablePortals[Random.Range(0, availablePortals.Count)];
-    }
-
-    /// <summary>
-    /// Chooses a portal based on weighted selection for more natural distribution.
-    /// </summary>
-    /// <returns>A weighted-selected portal, or null if none available.</returns>
-    private SpawnablePortal ChooseWeightedPortal()
-    {
-        var availablePortals = GetAvailablePortals();
-        if (availablePortals.Count == 0) return null;
-
-        // IMPLEMENTED: Use rarity-based weight system with rarityFavorBias from settings
-        float rarityFavorBias = settings != null ? settings.rarityFavorBias : 1f;
-
-        float totalWeight = 0f;
-        var portalWeights = new List<float>();
-
-        foreach (var portal in availablePortals)
-        {
-            // Calculate weight based on spawn time (longer = rarer = lower weight) and rarity level
-            float baseWeight = portal.shouldHaveRandomSpawnTime ?
-                1f / Mathf.Max(0.1f, (portal.minSpawnTime + portal.maxSpawnTime) * 0.5f) :
-                1f / Mathf.Max(0.1f, portal.spawnTime);
-
-            // Apply rarity modifier with bias
-            float rarityModifier = Mathf.Pow((11f - portal.rarityLevel) / 10f, rarityFavorBias);
-            float weight = baseWeight * rarityModifier;
-
-            portalWeights.Add(weight);
-            totalWeight += weight;
-        }
-
-        if (totalWeight <= 0) return availablePortals[0];
-
-        float randomValue = Random.Range(0f, totalWeight);
-        float currentWeight = 0f;
-
-        for (int i = 0; i < availablePortals.Count; i++)
-        {
-            currentWeight += portalWeights[i];
-            if (randomValue <= currentWeight)
-                return availablePortals[i];
-        }
-
-        return availablePortals[0];
-    }
-
-    /// <summary>
-    /// Gets a list of portals that can currently be spawned.
-    /// </summary>
-    /// <returns>List of available portals for spawning.</returns>
-    private List<SpawnablePortal> GetAvailablePortals()
-    {
-        var available = new List<SpawnablePortal>();
-
-        foreach (var portal in spawnablePrefabs)
-        {
-            if (portal != null && CanSpawnPortal(portal))
-            {
-                // IMPLEMENTED: Check if portal's biomes are allowed
-                if (settings != null && settings.useBiomeRestrictions)
-                {
-                    if (portal.preferredBiomes != null && portal.preferredBiomes.Length > 0)
-                    {
-                        bool hasValidBiome = false;
-                        foreach (var biome in portal.preferredBiomes)
-                        {
-                            if (settings.IsBiomeAllowed(biome))
-                            {
-                                hasValidBiome = true;
-                                break;
-                            }
-                        }
-                        if (!hasValidBiome) continue;
-                    }
-                }
-
-                available.Add(portal);
-            }
-        }
-
-        return available;
-    }
-
-    /// <summary>
-    /// Checks if a specific portal can be spawned based on instance limits.
-    /// </summary>
-    /// <param name="portal">The portal to check.</param>
-    /// <returns>True if the portal can be spawned.</returns>
-    private bool CanSpawnPortal(SpawnablePortal portal)
-    {
-        return portal.CurrentInstances < portal.MaxInstances;
-    }
-
-    /// <summary>
-    /// Gets a random spawn position within the chunk with improved natural distribution.
-    /// Includes distance checking, height validation, and edge avoidance.
-    /// </summary>
-    /// <returns>A random spawn position as a Vector3, or Vector3.negativeInfinity if no valid position found.</returns>
-    protected override Vector3 GetRandomSpawnPosition(SpawnablePortal data)
-    {
-        // IMPLEMENTED: Use settings for max spawn attempts
-        int maxSpawnAttempts = settings != null ? settings.maxSpawnAttempts : 10;
-
-        for (int attempt = 0; attempt < maxSpawnAttempts; attempt++)
-        {
-            Vector3 candidatePosition = GenerateCandidatePosition();
-
-            if (IsValidPortalPosition(candidatePosition))
-            {
-                return candidatePosition;
-            }
-        }
-
-        // If we couldn't find a valid position after max attempts
-        return Vector3.negativeInfinity;
-    }
-
-    /// <summary>
-    /// Generates a candidate spawn position with optional center preference.
-    /// </summary>
-    /// <returns>A candidate world position.</returns>
-    private Vector3 GenerateCandidatePosition()
-    {
-        float xOffset, zOffset;
-
-        // IMPLEMENTED: Use settings for center spawning preference
-        bool preferCenterSpawning = settings != null ? settings.preferCenterSpawning : true;
-        float edgeAvoidanceDistance = settings != null ? settings.edgeAvoidanceDistance : 15f;
-
-        if (preferCenterSpawning)
-        {
-            // Generate positions biased toward the center, avoiding edges
-            float centerBias = 0.7f; // How much to bias toward center (0.5 = no bias, 1.0 = always center)
-
-            xOffset = Mathf.Lerp(
-                Random.Range(edgeAvoidanceDistance, chunkSize - edgeAvoidanceDistance),
-                chunkSize * 0.5f,
-                Random.Range(0f, centerBias)
-            );
-
-            zOffset = Mathf.Lerp(
-                Random.Range(edgeAvoidanceDistance, chunkSize - edgeAvoidanceDistance),
-                chunkSize * 0.5f,
-                Random.Range(0f, centerBias)
-            );
-        }
-        else
-        {
-            // Standard random distribution across entire chunk
-            xOffset = Random.Range(0, chunkSize);
-            zOffset = Random.Range(0, chunkSize);
-        }
-
-        // Ensure we don't go out of bounds
-        xOffset = Mathf.Clamp(xOffset, 0, chunkSize - 1);
-        zOffset = Mathf.Clamp(zOffset, 0, chunkSize - 1);
-
-        // Get the height from the height map
-        float height = heightMap[(int)xOffset, (int)zOffset];
-
-        return new Vector3(chunkPosition.x + xOffset, height, chunkPosition.y + zOffset);
-    }
-
-    /// <summary>
-    /// Validates if a position is suitable for portal spawning with  checks.
-    /// </summary>
-    /// <param name="position">The position to validate.</param>
-    /// <returns>True if the position is valid for portal spawning.</returns>
-    private bool IsValidPortalPosition(Vector3 position)
-    {
-        // Basic validation
-        if (!IsValidSpawnPosition(position))
-            return false;
-
-        // IMPLEMENTED: Use settings for height restrictions
-        bool useHeightRestrictions = settings != null ? settings.useHeightRestrictions : true;
-        float minSpawnHeight = settings != null ? settings.minSpawnHeight : 0f;
-        float maxSpawnHeight = settings != null ? settings.maxSpawnHeight : 100f;
-
-        // Height restrictions
-        if (useHeightRestrictions && (position.y < minSpawnHeight || position.y > maxSpawnHeight))
-            return false;
-
-        // Distance check with existing portals
-        if (!IsValidDistance(position))
-            return false;
-
-        // IMPLEMENTED: Check biome restrictions if enabled
-        if (settings != null && settings.useBiomeRestrictions)
-        {
-            int localX = Mathf.Clamp((int)(position.x - chunkPosition.x), 0, chunkSize - 1);
-            int localZ = Mathf.Clamp((int)(position.z - chunkPosition.y), 0, chunkSize - 1);
-            Biome biome = biomeMap[localX, localZ];
-
-            if (!settings.IsBiomeAllowed(biome))
-                return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Checks if the position maintains minimum distance from existing portals.
-    /// </summary>
-    /// <param name="position">Position to check.</param>
-    /// <returns>True if position maintains required distance.</returns>
-    private bool IsValidDistance(Vector3 position)
-    {
-        // IMPLEMENTED: Use settings for minimum distance
-        float minDistanceBetweenPortals = settings != null ? settings.minDistanceBetweenPortals : 25f;
-
-        foreach (var portalList in activeInstances.Values)
-        {
-            foreach (var existingPortal in portalList)
-            {
-                if (existingPortal != null)
-                {
-                    float distance = Vector3.Distance(position, existingPortal.transform.position);
-                    if (distance < minDistanceBetweenPortals)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Checks if position is within player proximity restrictions.
-    /// </summary>
-    /// <param name="position">Position to check.</param>
-    /// <returns>True if position is valid (not too close to players).</returns>
-    private bool IsValidPlayerDistance(Vector3 position)
-    {
-        // IMPLEMENTED: Use settings for player proximity
-        if (settings == null || !settings.enablePlayerProximityInfluence) return true;
-
-        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
-
-        if (players.Length == 0) return true;
-
-        foreach (GameObject player in players)
-        {
-            if (player != null)
-            {
-                float distance = Vector3.Distance(position, player.transform.position);
-
-                // Too close to player
-                if (distance < settings.minDistanceFromPlayer)
-                {
-                    return false;
-                }
-
-                // Too far from player (if max distance is set)
-                if (settings.maxDistanceFromPlayer > 0 && distance > settings.maxDistanceFromPlayer)
-                {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Checks if the given position is a valid spawn location.
-    /// </summary>
-    /// <param name="position">The position to check for validity.</param>
-    /// <returns>True if the position is valid, otherwise false.</returns>
-    protected override bool IsValidSpawnPosition(Vector3 position)
-    {
-        // Basic bounds checking
-        if (position == Vector3.negativeInfinity)
-            return false;
-
-        // Check if position is within chunk bounds
-        if (position.x < chunkPosition.x || position.x >= chunkPosition.x + chunkSize ||
-            position.z < chunkPosition.y || position.z >= chunkPosition.y + chunkSize)
-        {
-            return false;
-        }
-
-        // Check player proximity
-        if (!IsValidPlayerDistance(position))
-        {
-            return false;
-        }
-
-        // Portals generally don't need complex terrain validation like mobs
-        // They can spawn on most surfaces as they're typically magical/dimensional
-        return true;
-    }
-
-    /// <summary>
-    /// Retrieves the prefab for the portal, used when spawning a portal instance.
-    /// </summary>
-    /// <param name="data">The portal data used to retrieve the associated prefab.</param>
-    /// <returns>The GameObject prefab for the portal.</returns>
-    protected override GameObject GetPrefab(SpawnablePortal data)
-    {
-        return data.prefab;
-    }
-
-    /// <summary>
-    /// Sets the portal settings for this spawner.
-    /// </summary>
-    /// <param name="portalSettings">The PortalSettings to use.</param>
+    /// <summary>The settings this chunk's portals follow (set by EndlessTerrain before <see cref="ChunkSpawnerBase.Begin"/>).</summary>
     public void SetSettings(PortalSettings portalSettings)
     {
         settings = portalSettings;
+        detailedLogging = settings != null && settings.enableDetailedLogging;
     }
 
-    /// <summary>
-    /// Initializes the portal spawner with validation and setup.
-    /// </summary>
-    /// <param name="chunkPosition">Position of the chunk to be spawned.</param>
-    /// <param name="heightMap">Height map for spawn locations.</param>
-    /// <param name="chunkSize">Size of the chunk.</param>
-    /// <param name="parent">Parent transform for the spawned objects.</param>
-    /// <param name="biomeMap">Biome map for the chunk.</param>
-    public override void InitializeSpawner(Vector2 chunkPosition, float[,] heightMap, int chunkSize, Transform parent, Biome[,] biomeMap)
+    protected override float TickInterval => 1f;
+
+    protected override void OnBegin()
     {
-        base.InitializeSpawner(chunkPosition, heightMap, chunkSize, parent, biomeMap);
+        sites.Clear();
+        resolved = false;
+        if (settings == null || settings.prefabs == null || settings.prefabs.Count == 0)
+            return;
+        container = GetContainer("Portals");
+        startAt = Time.time + settings.StartDelay(PlacementRandom.Value(WorldSeed, 0x9047, Coord.x, Coord.y, 1));
 
-        // Filter out any null prefabs from the spawnable prefabs list to prevent runtime issues
-        spawnablePrefabs = spawnablePrefabs?.FindAll(portal => portal != null && portal.prefab != null) ?? new List<SpawnablePortal>();
+        var planned = new List<PortalSitePlanner.Site>();
+        PortalSitePlanner.SitesInArea(settings, WorldSeed, Origin, Origin + Vector2.one * Span, planned);
+        foreach (PortalSitePlanner.Site p in planned)
+            sites.Add(new Site { Plan = p });
+        if (sites.Count > 0)
+            WorldSpawnRegistry.PortalSiteClosed += OnSiteClosed;
+        Log($"{sites.Count} planned portal site(s)");
+    }
 
-        // Check if we have any valid prefabs before starting
-        int validPrefabCount = GetValidPrefabCount();
-        if (validPrefabCount == 0)
+    protected override void OnEnd()
+    {
+        WorldSpawnRegistry.PortalSiteClosed -= OnSiteClosed;
+        foreach (Site site in sites)
+            Despawn(site);
+        sites.Clear();
+    }
+
+    protected override void Tick()
+    {
+        if (settings == null || sites.Count == 0 || IsPaused || Time.time < startAt)
+            return;
+
+        // Every site's spot first, in the same order every time (a site checks its distance to the earlier ones), so
+        // the result never depends on which sites happen to be closed right now.
+        if (!resolved)
         {
-            Debug.LogWarning($"PortalSpawner at {chunkPosition} has no valid portal prefabs to spawn! Spawning will be disabled.");
+            resolved = true;
+            for (int i = 0; i < sites.Count; i++)
+                Resolve(sites[i], i);
+        }
 
-            // Don't start the spawning routine if no prefabs
-            if (stopWhenNoValidPrefabs)
+        float now = Time.time;
+        for (int i = 0; i < sites.Count; i++)
+        {
+            Site site = sites[i];
+            if (site.Instance != null)
+                continue;
+            if (site.Live)
+                OnPortalGone(site);   // destroyed without telling us (no Portal component)
+            if (!site.HasSpot || now < site.RetryAt || WorldSpawnRegistry.IsPortalSiteClosed(site.Plan.Id))
+                continue;
+
+            if (settings.enablePlayerProximityInfluence)
             {
-                enabled = false;
-                return;
+                float d = WorldSpawnRegistry.DistanceToNearestPlayer(site.Position, settings.playerTag, Viewer);
+                if (d < settings.minDistanceFromPlayer || (settings.maxDistanceFromPlayer > 0f && d > settings.maxDistanceFromPlayer && !float.IsPositiveInfinity(d)))
+                {
+                    site.RetryAt = now + settings.retryingSpawnTime;
+                    continue;
+                }
             }
+            Spawn(site);
+        }
+    }
+
+    /// <summary>Finds the site's spot on this chunk's exact terrain (once per chunk load; the result is always the same).</summary>
+    private void Resolve(Site site, int index)
+    {
+        site.Resolved = true;
+        site.HasSpot = false;
+        SpawnablePortal type = site.Plan.Type >= 0 && site.Plan.Type < settings.prefabs.Count ? settings.prefabs[site.Plan.Type] : null;
+        if (type == null || type.prefab == null)
+        {
+            site.Problem = "type has no prefab";
+            return;
+        }
+
+        float footprint = settings.footprintRadius > 0f ? settings.footprintRadius : SpawnGround.FootprintRadius(type.prefab, 1.5f);
+        // Keep the whole search (footprint and object clearance included) inside this chunk.
+        float margin = settings.searchRadius + footprint + settings.objectClearance + settings.edgeAvoidanceDistance + 4f;
+        Vector2 center = site.Plan.Point;
+        center.x = ClampInside(center.x, Origin.x, margin);
+        center.y = ClampInside(center.y, Origin.y, margin);
+        site.SearchCenter = center;
+
+        var query = new FlatSpots.Query
+        {
+            center = center,
+            searchRadius = settings.searchRadius,
+            footprintRadius = footprint,
+            maxSlope = settings.maxSlope,
+            maxUnevenness = settings.maxUnevenness,
+            allowWater = false,
+            avoidObjects = true,
+            objectClearance = settings.objectClearance,
+            maxResults = 8,
+            preferCenter = 0.5f,
+            requireNavMesh = settings.requireNavMesh && Terrain != null && Terrain.bakeNavMesh,
+            navMeshSampleDistance = 2f,
+            seed = site.Plan.Id.GetHashCode(),
+        };
+        if (settings.useBiomeRestrictions && type.preferredBiomes != null)
+            foreach (Biome b in type.preferredBiomes)
+                if (b != null)
+                    query.allowedBiomes.Add(b);
+        if (settings.useHeightRestrictions || type.limitHeight)
+        {
+            query.limitHeight = true;
+            query.minHeight = Mathf.Max(settings.useHeightRestrictions ? settings.minSpawnHeight : float.NegativeInfinity, type.limitHeight ? type.minPreferredHeight : float.NegativeInfinity);
+            query.maxHeight = Mathf.Min(settings.useHeightRestrictions ? settings.maxSpawnHeight : float.PositiveInfinity, type.limitHeight ? type.maxPreferredHeight : float.PositiveInfinity);
+        }
+
+        spotScratch.Clear();
+        FlatSpots.Find(query, spotScratch);
+        float spacing = settings.EffectiveMinDistance;
+        foreach (FlatSpots.Spot spot in spotScratch)
+        {
+            if (!settings.IsBiomeAllowed(spot.biome))
+                continue;
+            // Sites of this chunk resolved earlier (always in the same order) keep their distance.
+            bool crowded = false;
+            for (int j = 0; j < index; j++)
+            {
+                Site other = sites[j];
+                if (other.HasSpot && (new Vector2(other.Position.x, other.Position.z) - new Vector2(spot.position.x, spot.position.z)).sqrMagnitude < spacing * spacing * 0.64f)
+                {
+                    crowded = true;
+                    break;
+                }
+            }
+            if (crowded)
+                continue;
+            site.HasSpot = true;
+            site.Position = spot.position;
+            Log($"{site.Plan.Id}: spot at {spot.position} (slope {spot.slope:0.0}, biome {(spot.biome != null ? spot.biome.name : "-")})");
+            return;
+        }
+        site.Problem = spotScratch.Count == 0 ? "no flat, dry, open spot within Search Radius" : "only spots in forbidden biomes or too close to another portal";
+        Log($"{site.Plan.Id}: {site.Problem}");
+    }
+
+    private float ClampInside(float value, float origin, float margin)
+    {
+        float lo = origin + margin, hi = origin + Span - margin;
+        return lo <= hi ? Mathf.Clamp(value, lo, hi) : origin + Span * 0.5f;
+    }
+
+    private void Spawn(Site site)
+    {
+        SpawnablePortal type = settings.prefabs[site.Plan.Type];
+        GameObject instance = Instantiate(type.prefab, site.Position, Quaternion.Euler(0f, site.Plan.Yaw, 0f), container);
+        instance.name = $"{type.prefab.name} ({site.Plan.Id})";
+        SpawnGround.SitOnGround(instance, site.Position.y, settings.sinkDepth);
+        site.Instance = instance;
+        site.Live = true;
+        site.Appearances++;
+        spawned++;
+        WorldSpawnRegistry.PortalCount++;
+
+        site.Portal = instance.GetComponentInChildren<Portal>(true);
+        if (site.Portal != null)
+        {
+            site.Portal.AssignSite(site.Plan.Id, settings.DifficultyAt(new Vector2(site.Position.x, site.Position.z)), settings.closeAfterUse, settings.reopenAfterUse);
+            site.Handler = () => OnPortalGone(site);
+            site.Portal.OnPortalDestroyed += site.Handler;
+        }
+        else
+        {
+            Debug.LogWarning($"PortalSpawner: '{type.prefab.name}' has no Portal component - it stands there but can't be entered. Add a Portal (and a trigger Collider) to the prefab.", type.prefab);
+        }
+        Log($"{site.Plan.Id}: spawned {type.prefab.name} at {instance.transform.position}");
+    }
+
+    /// <summary>The portal disappeared by itself (its despawn time, or the game destroyed it): reopen the site after the type's delay.</summary>
+    private void OnPortalGone(Site site)
+    {
+        if (!site.Live)
+            return;
+        site.Live = false;
+        if (site.Portal != null && site.Handler != null)
+            site.Portal.OnPortalDestroyed -= site.Handler;
+        site.Portal = null;
+        site.Handler = null;
+        site.Instance = null;
+        spawned = Mathf.Max(0, spawned - 1);
+        WorldSpawnRegistry.PortalCount = Mathf.Max(0, WorldSpawnRegistry.PortalCount - 1);
+        if (!Started || settings == null)
+            return;
+        SpawnablePortal type = settings.prefabs[site.Plan.Type];
+        float delay = type.ReappearDelay(PlacementRandom.Value(WorldSeed, 0x9047, site.Plan.Id.GetHashCode(), site.Appearances, 2));
+        if (delay > 0f)
+            WorldSpawnRegistry.ClosePortalSite(site.Plan.Id, delay);
+        Log($"{site.Plan.Id}: portal gone, back in {delay:0} s");
+    }
+
+    /// <summary>Removes the site's portal without scheduling it to reappear (chunk unloading, or the site was closed).</summary>
+    private void Despawn(Site site)
+    {
+        if (site.Portal != null && site.Handler != null)
+            site.Portal.OnPortalDestroyed -= site.Handler;
+        if (site.Live)
+        {
+            site.Live = false;
+            spawned = Mathf.Max(0, spawned - 1);
+            WorldSpawnRegistry.PortalCount = Mathf.Max(0, WorldSpawnRegistry.PortalCount - 1);
+        }
+        if (site.Instance != null)
+            Destroy(site.Instance);
+        site.Portal = null;
+        site.Handler = null;
+        site.Instance = null;
+    }
+
+    private void OnSiteClosed(PortalSiteId id, float until)
+    {
+        foreach (Site site in sites)
+        {
+            if (site.Plan.Id.Equals(id) && site.Live)
+            {
+                Despawn(site);
+                Log($"{id}: closed");
+            }
+        }
+    }
+
+    private void OnDrawGizmos()
+    {
+        if (settings == null || !settings.enableVisualDebug)
+            return;
+        foreach (Site site in sites)
+        {
+            Vector3 planned = new Vector3(site.Plan.Point.x, transform.position.y, site.Plan.Point.y);
+            if (LoadedTerrain.TryGetHeight(planned.x, planned.z, out float h))
+                planned.y = h;
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(planned + Vector3.up, 1f);
+            if (site.Resolved)
+            {
+                Vector3 c = new Vector3(site.SearchCenter.x, planned.y, site.SearchCenter.y);
+                Gizmos.color = site.HasSpot ? new Color(0.3f, 1f, 0.4f) : Color.red;
+                DrawCircle(c, settings.searchRadius);
+                if (site.HasSpot)
+                {
+                    Gizmos.DrawLine(site.Position, site.Position + Vector3.up * 12f);
+                    Gizmos.DrawWireSphere(site.Position, 1.5f);
+                }
+            }
+        }
+    }
+
+    private static void DrawCircle(Vector3 center, float radius)
+    {
+        const int segments = 32;
+        Vector3 previous = center + new Vector3(radius, 0f, 0f);
+        for (int i = 1; i <= segments; i++)
+        {
+            float a = i * Mathf.PI * 2f / segments;
+            Vector3 next = center + new Vector3(Mathf.Cos(a) * radius, 0f, Mathf.Sin(a) * radius);
+            Gizmos.DrawLine(previous, next);
+            previous = next;
         }
     }
 }

@@ -66,6 +66,8 @@ public partial class EndlessTerrain : MonoBehaviour
         // have nothing chunk-specific in them, so one shared instance each is fine.
         private static readonly Material[] fallbackWaterMaterials = new Material[WaterMeshData.SubmeshCount];
         private static readonly bool[] fallbackWaterMaterialAttempted = new bool[WaterMeshData.SubmeshCount];
+        // The missing "Ground" tag is reported once, not per chunk.
+        private static bool missingGroundTagReported;
 
         Vector2 globalOffset;
         float maxViewDistance;
@@ -91,6 +93,8 @@ public partial class EndlessTerrain : MonoBehaviour
         AsyncOperation navMeshBuild;
         bool navMeshBuilt;
         bool spawnersStarted;
+        PortalSpawner portalSpawner;
+        MobSpawner mobSpawner;
         LoadedTerrain.Chunk loaded;
 
         public Vector2 Position { get { return position; } }
@@ -127,7 +131,20 @@ public partial class EndlessTerrain : MonoBehaviour
                 Debug.Log($"Creating TerrainChunk {count} at coord: {coord}, position: {position}, size: {size}, scaleFactor: {scaleFactor}, globalOffset: {globalOffset}");
 
             meshObject = new GameObject("Terrain Chunk" + count);
-            meshObject.tag = "Ground";
+            // Used by TerrainMonitor and gameplay code to recognise the ground. An undefined tag throws, which would
+            // abort the chunk: warn once instead (add "Ground" under Project Settings > Tags and Layers).
+            try
+            {
+                meshObject.tag = "Ground";
+            }
+            catch (UnityException)
+            {
+                if (!missingGroundTagReported)
+                {
+                    missingGroundTagReported = true;
+                    Debug.LogWarning("EndlessTerrain: the 'Ground' tag isn't defined - terrain chunks stay Untagged. Add it under Project Settings > Tags and Layers.");
+                }
+            }
             meshRenderer = meshObject.AddComponent<MeshRenderer>();
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
@@ -135,27 +152,11 @@ public partial class EndlessTerrain : MonoBehaviour
             navMeshSurface = meshObject.AddComponent<NavMeshSurface>();
             navMeshSurface.collectObjects = CollectObjects.Children;
 
-            PortalSpawner portalSpawner = meshObject.AddComponent<PortalSpawner>();
-            portalSpawner.SetSettings(portalSettings); // Pass the entire settings object
-            portalSpawner.spawnablePrefabs = portalSettings.prefabs;
-            portalSpawner.globalMaxInstances = portalSettings.maxNumberOfPortals;
-            portalSpawner.shouldWaitToStartSpawning = portalSettings.shouldWaitToStartSpawning;
-            portalSpawner.waitingTime = portalSettings.waitingTime;
-            portalSpawner.minWaitingTime = portalSettings.minWaitingTime;
-            portalSpawner.maxWaitingTime = portalSettings.maxWaitingTime;
-            portalSpawner.shouldHaveRandomWaitingTime = portalSettings.shouldHaveRandomWaitingTime;
-            portalSpawner.retryingSpawnTime = portalSettings.retryingSpawnTime;
-
-            MobSpawner mobSpawner = meshObject.AddComponent<MobSpawner>();
-            mobSpawner.SetSettings(mobSettings); // Pass the entire settings object
-            mobSpawner.spawnablePrefabs = mobSettings.prefabs;
-            mobSpawner.globalMaxInstances = mobSettings.maxNumberOfMobs;
-            mobSpawner.shouldWaitToStartSpawning = mobSettings.shouldWaitToStartSpawning;
-            mobSpawner.waitingTime = mobSettings.waitingTime;
-            mobSpawner.minWaitingTime = mobSettings.minWaitingTime;
-            mobSpawner.maxWaitingTime = mobSettings.maxWaitingTime;
-            mobSpawner.shouldHaveRandomWaitingTime = mobSettings.shouldHaveRandomWaitingTime;
-            mobSpawner.retryingSpawnTime = mobSettings.retryingSpawnTime;
+            // The chunk's portals and mobs (started by StartSpawners once the chunk is ready, stopped by Unload).
+            portalSpawner = meshObject.AddComponent<PortalSpawner>();
+            portalSpawner.SetSettings(portalSettings);
+            mobSpawner = meshObject.AddComponent<MobSpawner>();
+            mobSpawner.SetSettings(mobSettings);
 
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
@@ -223,13 +224,10 @@ public partial class EndlessTerrain : MonoBehaviour
                 lodMeshes[currentLod] = mesh;
                 lodRequested[currentLod] = true;
 
-                // Cooking the collider is the slowest part of applying a chunk, so it runs on a job thread;
-                // the collider is assigned the cooked mesh once it is done (see UpdateTerrainChunk).
-#if UNITY_6000_3_OR_NEWER
-                colliderBake = new BakeColliderJob { MeshId = mesh.GetEntityId() }.Schedule();
-#else
-                colliderBake = new BakeColliderJob { MeshId = mesh.GetInstanceID() }.Schedule();
-#endif
+                // Cooking the collider is the slowest part of applying a chunk, so it runs on a job thread, with the
+                // same cooking options the collider is given; the collider gets the mesh once it is done (see
+                // UpdateTerrainChunk), so it finds the pre-baked data and nothing is cooked on the main thread.
+                colliderBake = MeshColliderBaker.Schedule(mesh);
                 colliderBaking = true;
                 colliderScheduledAt = GenerationStats.Start();
             }
@@ -730,11 +728,13 @@ public partial class EndlessTerrain : MonoBehaviour
             if (enableDebugging)
                 Debug.Log($"Starting spawners for chunk at {globalOffset}");
 
-            MobSpawner mobSpawner = meshObject.GetComponent<MobSpawner>();
-            mobSpawner.InitializeSpawner(globalOffset, generatedData.heightMap, terrainGenerator.ChunkSize, meshObject.transform, generatedData.biomeMap);
-
-            PortalSpawner portalSpawner = meshObject.GetComponent<PortalSpawner>();
-            portalSpawner.InitializeSpawner(globalOffset, generatedData.heightMap, mapGenerator.ChunkSize, meshObject.transform, generatedData.biomeMap);
+            // The chunk's data, objects and NavMesh exist: its spawners can judge the ground (see LoadedTerrain).
+            var chunkCoord = new Vector2Int((int)coord.x, (int)coord.y);
+            float span = terrainGenerator.ChunkSize - 1;
+            if (portalSpawner != null)
+                portalSpawner.Begin(owner, terrainGenerator, chunkCoord, globalOffset, span);
+            if (mobSpawner != null)
+                mobSpawner.Begin(owner, terrainGenerator, chunkCoord, globalOffset, span);
         }
 
         /// <summary>
@@ -760,7 +760,7 @@ public partial class EndlessTerrain : MonoBehaviour
                 colliderBake.Complete();
                 colliderBaking = false;
                 if (baseMesh != null)
-                    meshCollider.sharedMesh = baseMesh;   // already cooked: no cooking on the main thread
+                    MeshColliderBaker.Assign(meshCollider, baseMesh);   // already cooked: no cooking on the main thread
                 GenerationStats.Record(GenerationStats.ColliderReady, colliderScheduledAt);
             }
 
@@ -789,6 +789,11 @@ public partial class EndlessTerrain : MonoBehaviour
                 return;
             unloaded = true;
             token.Cancel();
+            // Spawners first: they remove their portals and mobs without counting them as killed or used.
+            if (portalSpawner != null)
+                portalSpawner.End();
+            if (mobSpawner != null)
+                mobSpawner.End();
             LoadedTerrain.Unregister(new Vector2Int((int)coord.x, (int)coord.y));
 
             if (colliderBaking)
@@ -876,21 +881,6 @@ public partial class EndlessTerrain : MonoBehaviour
         {
             if (asset != null)
                 Object.Destroy(asset);
-        }
-
-        /// <summary>Cooks a mesh's collision data on a job thread, so assigning it to the MeshCollider costs nothing.</summary>
-        struct BakeColliderJob : IJob
-        {
-#if UNITY_6000_3_OR_NEWER
-            public EntityId MeshId;
-#else
-            public int MeshId;
-#endif
-
-            public void Execute()
-            {
-                Physics.BakeMesh(MeshId, false);
-            }
         }
 
         /// <summary>

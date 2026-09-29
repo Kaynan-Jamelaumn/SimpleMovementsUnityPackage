@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -82,8 +83,20 @@ public class AbilityEffectSOEditor : Editor
     {
         serializedObject.Update();
 
+        // New system.
+        EditorGUILayout.HelpBox("Legacy ability. It still works (converted automatically at runtime), but converting it to an " +
+            "Ability Definition unlocks hit shapes, projectiles patterns, ground surges, walls/cages, summons, dashes, mob AI hints and absorption variants.", MessageType.Info);
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("Convert → Ability Definition (Player)"))
+            Selection.activeObject = AbilityToolsMenuBridge.Convert((AbilityEffectSO)target, false);
+        if (GUILayout.Button("Convert → Ability Definition (Mob)"))
+            Selection.activeObject = AbilityToolsMenuBridge.Convert((AbilityEffectSO)target, true);
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space();
+
         // Basic Properties
-        EditorGUILayout.PropertyField(nameProp);
+        if (nameProp != null)
+            EditorGUILayout.PropertyField(nameProp);
         EditorGUILayout.PropertyField(singleTargetSelfTarget);
         EditorGUILayout.PropertyField(numberOfTargets);
 
@@ -171,3 +184,22 @@ public class AbilityEffectSOEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 }
+
+/// <summary>Saves a converted copy of a legacy ability next to it (usable from runtime-assembly editors).</summary>
+public static class AbilityToolsMenuBridge
+{
+    public static AbilityDefinition Convert(AbilityEffectSO legacy, bool forMob)
+    {
+        string src = AssetDatabase.GetAssetPath(legacy);
+        string folder = string.IsNullOrEmpty(src) ? "Assets" : System.IO.Path.GetDirectoryName(src).Replace('\\', '/');
+        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{legacy.name} ({(forMob ? "Mob" : "Player")}).asset");
+        AbilityDefinition def = LegacyAbilityConverter.CreateDefinition(legacy, forMob);
+        AssetDatabase.CreateAsset(def, path);
+        def.SetId(AssetDatabase.AssetPathToGUID(path));
+        EditorUtility.SetDirty(def);
+        AssetDatabase.SaveAssets();
+        EditorGUIUtility.PingObject(def);
+        return def;
+    }
+}
+#endif

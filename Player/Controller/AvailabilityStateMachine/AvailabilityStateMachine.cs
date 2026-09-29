@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -47,6 +47,9 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
 
     private AvailabilityContext context;
 
+    [Tooltip("Log applied/removed status effects to the Console.")]
+    [SerializeField] private bool debugLog = false;
+
     private void Awake()
     {
 
@@ -63,22 +66,11 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
         CurrentState = States[EAvailabilityState.UnnafectedState];
     }
 
-    private void Update()
+    protected override void Update()
     {
         UpdateStatusEffects();
         DetermineCurrentState();
-
-        // Handle state transitions and updates (copied from base StateManager logic)
-        EAvailabilityState nextStateKey = CurrentState.GetNextState();
-
-        if (!IsTransitioningState && nextStateKey.Equals(CurrentState.StateKey))
-        {
-            CurrentState.UpdateState();
-        }
-        else if (!IsTransitioningState)
-        {
-            TransitionToState(nextStateKey);
-        }
+        base.Update();
     }
 
     private void UpdateStatusEffects()
@@ -104,6 +96,10 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
 
     private void DetermineCurrentState()
     {
+        // Death is permanent until Revive() (previously the next frame brought the player back to life).
+        if (CurrentState.StateKey == EAvailabilityState.Death)
+            return;
+
         EAvailabilityState targetState = EAvailabilityState.UnnafectedState;
 
         // Priority: Death > Stunned > Ready
@@ -133,7 +129,7 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
             {
                 activeStatusEffects[effect].remainingDuration = duration;
                 activeStatusEffects[effect].originalDuration = duration;
-                Debug.Log($"Extended {effect} duration to {duration}s");
+                if (debugLog) Debug.Log($"Extended {effect} duration to {duration}s");
             }
         }
         else
@@ -141,7 +137,7 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
             activeStatusEffects[effect] = new StatusEffectData(effect, duration);
             currentStatusFlags |= effect;
             OnStatusEffectAdded?.Invoke(effect);
-            Debug.Log($"Applied {effect} for {duration}s");
+            if (debugLog) Debug.Log($"Applied {effect} for {duration}s");
         }
     }
 
@@ -152,7 +148,7 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
             activeStatusEffects.Remove(effect);
             currentStatusFlags &= ~effect;
             OnStatusEffectRemoved?.Invoke(effect);
-            Debug.Log($"Removed {effect}");
+            if (debugLog) Debug.Log($"Removed {effect}");
         }
     }
 
@@ -216,11 +212,19 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
         // Clear all status effects and go to death state
         activeStatusEffects.Clear();
         currentStatusFlags = EStatusEffect.None;
+        var previous = CurrentState != null ? CurrentState.StateKey : EAvailabilityState.UnnafectedState;
+        if (previous == EAvailabilityState.Death)
+            return;
         TransitionToState(EAvailabilityState.Death);
+        OnStateChanged?.Invoke(previous, EAvailabilityState.Death);
     }
 
     public void Revive()
     {
+        activeStatusEffects.Clear();
+        currentStatusFlags = EStatusEffect.None;
+        var previous = CurrentState != null ? CurrentState.StateKey : EAvailabilityState.Death;
         TransitionToState(EAvailabilityState.UnnafectedState);
+        OnStateChanged?.Invoke(previous, EAvailabilityState.UnnafectedState);
     }
 }

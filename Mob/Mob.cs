@@ -1,186 +1,125 @@
-﻿using System.Collections;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.Assertions;
 
 /// <summary>
-/// The <see cref="Mob"/> class manages the behavior of animals in the game, including wandering, detecting predators, 
-/// and being pursued by predators.
+/// A creature driven by the mob AI (<see cref="MobMovementStateMachine"/>). Holds its identity (type, preys, team),
+/// home and patrol route, its behaviour profile and the old per-mob settings (still used to build a profile when
+/// none is assigned).
 /// </summary>
-/// <remarks>
-/// This class handles the animal's state transitions and interactions with other game objects.
-/// </remarks>
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(MobStatusController))]
-public class Mob : MonoBehaviour
+[DefaultExecutionOrder(-20)]
+public class Mob : MonoBehaviour, ICombatHostility, ISummonable
 {
-    /// <summary>
-    /// Delegate for the event that is triggered when the mob is destroyed.
-    /// </summary>
+    /// <summary>Delegate for the event raised when the mob is destroyed (spawners count kills with it).</summary>
     public delegate void MobDestroyedHandler();
-    public event MobDestroyedHandler OnMobDestroyed; // Event called when the mob is destroyed.
+    public event MobDestroyedHandler OnMobDestroyed;
 
-    /// <summary>
-    /// Status controller for the mob.
-    /// </summary>
+    /// <summary>Raised once when the mob dies (this mob, killer - may be null).</summary>
+    public event Action<Mob, CombatEntity> Died;
+
+    [Tooltip("Health, speed and death of this mob. Empty = the MobStatusController on this object.")]
     [SerializeField] private MobStatusController statusController;
 
+    [Header("AI Profile")]
+    [Tooltip("Behaviour of this mob type: temperament, senses, movement, fighting style, dodging, fleeing, animation. Empty = built from the old fields below (Detection Range, Wander Distance, Chase Time, Preys...).")]
+    [SerializeField] protected MobProfile profile;
+
+    [Tooltip("Combat team. Mobs of the same team are allies. Empty = the mob Type (mobs of the same type help each other).")]
+    [SerializeField] protected string teamOverride = "";
+
     [Header("Wander")]
-    /// <summary>
-    /// How far the animal can move in one go.
-    /// </summary>
-    [Tooltip("How far the animal can move in one go.")]
+    [Tooltip("How far the animal can move in one go (used when no profile is assigned).")]
     [SerializeField] private float wanderDistance = 50f;
 
-    /// <summary>
-    /// Maximum time the animal will wander.
-    /// </summary>
-    [Tooltip("Maximum time the animal will wander.")]
+    [Tooltip("Maximum time the animal will wander (used when no profile is assigned).")]
     [SerializeField] private float maxWalkTime = 6f;
 
-    /// <summary>
-    /// Points that the animal will patrol.
-    /// </summary>
-    [Tooltip("Points that the animal will patrol.")]
+    [Tooltip("Points that the animal will patrol (world positions, or relative to its spawn point when 'Patrol Points Relative To Home' is on).")]
     [SerializeField] protected Vector3[] patrolPoints;
 
-    /// <summary>
-    /// Current patrol point index.
-    /// </summary>
+    [Tooltip("Optional: a transform whose children are the patrol points (easier to edit in the scene). Used instead of Patrol Points when set.")]
+    [SerializeField] protected Transform patrolRoute;
+
+    [Tooltip("Patrol Points are offsets from where the mob spawned (use this for prefabs placed by spawners).")]
+    [SerializeField] protected bool patrolPointsRelativeToHome = false;
+
+    [Tooltip("Current patrol point index.")]
     [SerializeField] protected int currentPatrolPoint = 0;
 
     [Header("Idle")]
-    /// <summary>
-    /// How long the animal takes a break for.
-    /// </summary>
-    [Tooltip("How long the animal takes a break for.")]
+    [Tooltip("How long the animal takes a break for (used when no profile is assigned).")]
     [SerializeField] private float idleTime = 5f;
 
-    [Header("Chase")]
-    [Header("Attributes")]
-
-    /// <summary>
-    /// Reference to the NavMeshAgent component.
-    /// </summary>
-    protected NavMeshAgent navMeshAgent;
-
-    /// <summary>
-    /// Reference to the Animator component.
-    /// </summary>
-    protected Animator animator;
-
-    /// <summary>
-    /// Types of mobs.
-    /// </summary>
-    [Tooltip("Types of mobs.")]
+    [Header("Identity")]
+    [Tooltip("Types of mobs (a helper list for the inspector).")]
     [SerializeField] public List<string> mobTypes = new List<string> { "Player", "Sheep", "Wolf", "Fox" };
 
-    /// <summary>
-    /// The type of mob as a string.
-    /// </summary>
-    [Tooltip("The type of mob as a string.")]
+    [Tooltip("The type of this mob. Other mobs list it in their Preys to hunt it; mobs of the same type are allies unless a Team is set.")]
     [SerializeField] public string type;
 
-    /// <summary>
-    /// The range within which the prey can detect predators.
-    /// </summary>
-    [Tooltip("The range within which the prey can detect predators.")]
+    [Tooltip("Sight range used when no profile is assigned.")]
     [SerializeField] protected float detectionRange = 10f;
 
-    /// <summary>
-    /// Reference to the cast detection.
-    /// </summary>
-    [Tooltip("Reference to the cast detection.")]
+    [Tooltip("Old detection shape (kept for compatibility; the AI now uses the profile's sight, field of view and hearing).")]
     [SerializeField] protected Cast detectionCast;
 
     [Header("Prey Variables")]
-    /// <summary>
-    /// The maximum distance the prey can escape from the predator.
-    /// </summary>
-    [Tooltip("The maximum distance the prey can escape from the predator.")]
+    [Tooltip("How far the prey runs from a predator (used when no profile is assigned).")]
     [SerializeField] protected float escapeMaxDistance = 80f;
 
-    /// <summary>
-    /// Reference to the current predator pursuing the prey.
-    /// </summary>
-    [Tooltip("Reference to the current predator pursuing the prey.")]
+    [Tooltip("The predator currently chasing this mob (read only, set by the AI).")]
     [SerializeField] protected MobActionsController currentPredator = null;
 
     [Header("Predator Variables")]
-    /// <summary>
-    /// The maximum time the predator will chase prey.
-    /// </summary>
-    [Tooltip("The maximum time the predator will chase prey.")]
+    [Tooltip("The maximum time the predator chases a target it cannot catch (players only when 'Player Has Max Chase Time').")]
     [SerializeField] protected float maxChaseTime = 10f;
 
-    /// <summary>
-    /// The damage inflicted when the predator catches prey.
-    /// </summary>
-    [Tooltip("The damage inflicted when the predator catches prey.")]
+    [Tooltip("Damage of the automatic basic attack (used when the mob has no melee ability).")]
     [SerializeField] protected int biteDamage = 3;
 
-    /// <summary>
-    /// If after biting it should stop moving or keep chasing and then attack.
-    /// </summary>
-    [Tooltip("If after biting it should stop moving or keep chasing and then attack.")]
+    [Tooltip("OFF: after a basic attack the mob pauses for a moment (recovery). ON: it keeps moving.")]
     [SerializeField] protected bool isPartialWait = false;
 
-    /// <summary>
-    /// The cooldown time between consecutive bites.
-    /// </summary>
-    [Tooltip("The cooldown time between consecutive bites.")]
+    [Tooltip("Cooldown of the automatic basic attack (seconds).")]
     [SerializeField] protected float biteCooldown = 1f;
 
-    /// <summary>
-    /// The distance within which the predator can attack prey.
-    /// </summary>
-    [Tooltip("The distance within which the predator can attack prey.")]
+    [Tooltip("Reach of the automatic basic attack (metres).")]
     [SerializeField] protected float attackDistance = 2f;
 
-    /// <summary>
-    /// Reference to the current prey being chased.
-    /// </summary>
-    [Tooltip("Reference to the current prey being chased.")]
+    [Tooltip("The mob this one is hunting (read only, set by the AI).")]
     [SerializeField] protected MobActionsController currentChaseTarget;
 
     [Header("Player Chase Variables")]
-    /// <summary>
-    /// Determines if the player has a maximum chase time.
-    /// </summary>
-    [Tooltip("Determines if the player has a maximum chase time.")]
+    [Tooltip("Give up chasing a player after Max Chase Time.")]
     [SerializeField] protected bool playerHasMaxChaseTime = false;
 
-    /// <summary>
-    /// Reference to the current player target.
-    /// </summary>
-    [Tooltip("Reference to the current player target.")]
+    [Tooltip("The player this mob is fighting (read only, set by the AI).")]
     [SerializeField] protected PlayerStatusController currentPlayerTarget;
 
-    /// <summary>
-    /// List of prey types.
-    /// </summary>
-    [Tooltip("List of prey types.")]
+    [Tooltip("What this mob hunts: 'Player' for players, and mob Types (e.g. 'Sheep').")]
     [SerializeField] protected List<string> Preys;
 
-    /// <summary>
-    /// Stopping margin for navigation.
-    /// </summary>
+    [Tooltip("Extra margin used by HasReachedDestinationWithMargin (metres).")]
     [SerializeField] private float stoppingMargin = 0;
 
-    /// <summary>
-    /// Coroutine reference for waiting to move.
-    /// </summary>
     private Coroutine waitToMoveRoutine;
-
-    /// <summary>
-    /// Coroutine reference for waiting to reach destination.
-    /// </summary>
     private Coroutine waitToReachDestinationRoutine;
 
+    protected NavMeshAgent navMeshAgent;
+    protected Animator animator;
 
-// Properties
-public float WanderDistance { get => wanderDistance; set => wanderDistance = value; }
+    private MobProfile runtimeProfile;
+    private MobMovementStateMachine ai;
+    private CombatEntity entity;
+    private bool dead;
+    private int patrolDirection = 1;
+
+    // ------------------------------------------------------------------ properties (old API kept)
+    public float WanderDistance { get => wanderDistance; set => wanderDistance = value; }
     public float DetectionRange { get => detectionRange; }
     public Transform TransformReference { get => transform; }
     public Coroutine WaitToMoveRoutine { get => waitToMoveRoutine; set => waitToMoveRoutine = value; }
@@ -203,94 +142,218 @@ public float WanderDistance { get => wanderDistance; set => wanderDistance = val
     public float AttackDistance { get => attackDistance; }
     public float EscapeMaxDistance { get => escapeMaxDistance; }
 
-    /// <summary>
-    /// Initializes the <see cref="Mob"/> class, setting the references for statusController and NavMeshAgent.
-    /// </summary>
-    private void Awake()
+    // ------------------------------------------------------------------ new API
+    /// <summary>The behaviour profile in use (the assigned asset, or one built from the old fields).</summary>
+    public MobProfile Profile
     {
-        statusController = GetComponent<MobStatusController>(); // Assign the MobStatusController component.
+        get
+        {
+            if (profile != null)
+                return profile;
+            if (runtimeProfile == null)
+                runtimeProfile = MobProfile.FromLegacy(this);
+            return runtimeProfile;
+        }
     }
 
-    /// <summary>
-    /// Starts the initialization process, validating assignments and setting up the animal's components.
-    /// </summary>
-    private void Start()
+    /// <summary>The assigned profile asset (may be null).</summary>
+    public MobProfile ProfileAsset => profile;
+
+    /// <summary>Team used for combat relations: the Team field, or the mob type.</summary>
+    public virtual string CombatTeam => !string.IsNullOrEmpty(teamOverride) ? teamOverride : (string.IsNullOrEmpty(type) ? name : type);
+
+    /// <summary>Where the mob lives (its spawn point). The AI wanders, patrols and returns around it.</summary>
+    public Vector3 HomePosition { get; set; }
+
+    /// <summary>The combat identity of this mob.</summary>
+    public CombatEntity Entity
     {
-        ValidateAssignments(); // Ensure all assignments are valid.
-        InitializeAnimal(); // Initialize the animal.
+        get
+        {
+            if (entity == null)
+                entity = CombatEntity.GetOrAdd(gameObject);
+            return entity;
+        }
     }
 
-    /// <summary>
-    /// Ensures that all necessary assignments are valid and not null.
-    /// Throws an assertion if a required assignment is missing.
-    /// </summary>
+    /// <summary>The AI state machine (null if the mob has none).</summary>
+    public MobMovementStateMachine AI
+    {
+        get
+        {
+            if (ai == null)
+                ai = GetComponent<MobMovementStateMachine>();
+            return ai;
+        }
+    }
+
+    public MobStatusController StatusController => statusController;
+    public Animator Animator => animator;
+    public bool IsDead => dead || (entity != null && entity.IsDead);
+
+    /// <summary>Summoned mobs with this flag never drop absorbable abilities.</summary>
+    public bool SummonedPreventAbsorption { get; private set; }
+
+    /// <summary>Direction of travel along the patrol route (ping-pong).</summary>
+    public int PatrolDirection { get => patrolDirection; set => patrolDirection = value >= 0 ? 1 : -1; }
+
+    public int PatrolPointCount
+    {
+        get
+        {
+            if (patrolRoute != null)
+                return patrolRoute.childCount;
+            return patrolPoints != null ? patrolPoints.Length : 0;
+        }
+    }
+
+    public Vector3 GetPatrolPoint(int index)
+    {
+        if (patrolRoute != null)
+        {
+            if (patrolRoute.childCount == 0)
+                return transform.position;
+            return patrolRoute.GetChild(Mathf.Clamp(index, 0, patrolRoute.childCount - 1)).position;
+        }
+        if (patrolPoints == null || patrolPoints.Length == 0)
+            return transform.position;
+        Vector3 p = patrolPoints[Mathf.Clamp(index, 0, patrolPoints.Length - 1)];
+        if (patrolPointsRelativeToHome)
+            p += Application.isPlaying ? HomePosition : transform.position;
+        return p;
+    }
+
+    // ------------------------------------------------------------------ lifecycle
+    protected virtual void Awake()
+    {
+        if (statusController == null)
+            statusController = GetComponent<MobStatusController>();
+        navMeshAgent = GetComponent<NavMeshAgent>();
+        HomePosition = transform.position;
+        entity = CombatEntity.GetOrAdd(gameObject);
+        entity.Hostility = this;
+    }
+
+    protected virtual void Start()
+    {
+        ValidateAssignments();
+        InitializeAnimal();
+    }
+
     private void ValidateAssignments()
     {
-        Assert.IsNotNull(statusController, "MobStatusController is not assigned in statusController."); // Verify assignments.
+        if (statusController == null)
+            Debug.LogWarning($"[{name}] Mob has no MobStatusController.", this);
+        if (string.IsNullOrEmpty(type))
+            Debug.LogWarning($"[{name}] Mob Type is empty; set it so other mobs can recognise it (prey/predator) and allies can help.", this);
     }
 
-    /// <summary>
-    /// Checks if the mob has reached its destination, considering a margin of error.
-    /// </summary>
-    /// <returns>True if the mob is close enough to the destination; otherwise, false.</returns>
-    public bool HasReachedDestinationWithMargin()
-    {
-        return navMeshAgent.remainingDistance <= navMeshAgent.stoppingDistance + stoppingMargin; // Check if the mob is close enough to the destination.
-    }
-
-    /// <summary>
-    /// Initializes the animal, setting up the NavMeshAgent and Animator components, and adjusting movement speed.
-    /// </summary>
+    /// <summary>Finds the Animator and sets up the NavMeshAgent.</summary>
     protected virtual void InitializeAnimal()
     {
-        navMeshAgent = GetComponent<NavMeshAgent>(); // Get the NavMeshAgent component.
-        animator = transform.GetChild(0).GetChild(0).GetComponent<Animator>(); // Get the Animator component.
-        navMeshAgent.speed = statusController.SpeedManager.Speed; // Set the NavMeshAgent's speed.
+        if (navMeshAgent == null)
+            navMeshAgent = GetComponent<NavMeshAgent>();
+        animator = MobMovementStateMachine.FindAnimator(transform);
+        if (statusController != null && statusController.SpeedManager != null && statusController.SpeedManager.Speed > 0f && navMeshAgent != null)
+            navMeshAgent.speed = statusController.SpeedManager.Speed;
     }
 
-    /// <summary>
-    /// Returns a random position on the NavMesh within a specified distance from the given origin.
-    /// </summary>
-    /// <param name="origin">The origin point from which to generate a random position.</param>
-    /// <param name="distance">The distance within which to generate the random position.</param>
-    /// <returns>A random position on the NavMesh, or the origin if no valid position is found.</returns>
+    /// <summary>Checks if the mob has reached its destination, considering a margin of error.</summary>
+    public bool HasReachedDestinationWithMargin()
+    {
+        if (navMeshAgent == null || !navMeshAgent.isActiveAndEnabled || !navMeshAgent.isOnNavMesh)
+            return true;
+        return navMeshAgent.remainingDistance <= navMeshAgent.stoppingDistance + stoppingMargin;
+    }
+
+    /// <summary>A random position on the NavMesh within <paramref name="distance"/> of <paramref name="origin"/> (or the origin).</summary>
     public Vector3 GetRandomNavMeshPosition(Vector3 origin, float distance)
     {
-        // Try finding a valid random position within the specified distance multiple times.
         for (int i = 0; i < 5; i++)
         {
-            Vector3 randomDirection = Random.insideUnitSphere * distance; // Generate a random direction.
-            randomDirection += origin; // Add it to the origin.
-
-            // Check if the random position is on the NavMesh and return it if true.
+            Vector3 randomDirection = UnityEngine.Random.insideUnitSphere * distance + origin;
             if (NavMesh.SamplePosition(randomDirection, out NavMeshHit navMeshHit, distance, NavMesh.AllAreas))
-            {
                 return navMeshHit.position;
-            }
         }
-
-        // Return the original position if no valid random position is found.
         return origin;
     }
 
+    /// <summary>Deals damage to the mob (attacker unknown). Prefer CombatEntity.ApplyDamage with a source.</summary>
     public virtual void ReceiveDamage(int damage)
     {
-        // Reduce health based on the received damage.
-        statusController.HealthManager.ConsumeHP(damage);
-        // If health is depleted, trigger the Die method.
-        if (statusController.HealthManager.CurrentValue <= 0)
+        if (IsDead || damage <= 0)
+            return;
+        Entity.ApplyDamage(new DamageInfo { amount = damage, point = Entity.Center });
+        if (statusController != null && statusController.HealthManager != null && statusController.HealthManager.CurrentValue <= 0)
             Die();
     }
 
-    // Placeholder method for handling the death of the Animal.
+    /// <summary>Kills the mob (death animation, drops, absorption, removal after the profile's delay).</summary>
     protected virtual void Die()
     {
-        // Stop all coroutines and destroy the GameObject.
-        StopAllCoroutines();
-        Destroy(gameObject);
+        if (statusController != null)
+            statusController.Kill();
+        else
+            Destroy(gameObject);
     }
-    private void OnDestroy()
+
+    /// <summary>Called once by the status controller when the mob dies.</summary>
+    public virtual void OnDeath(CombatEntity killer)
+    {
+        if (dead)
+            return;
+        dead = true;
+        StopAllCoroutines();
+        MobMovementStateMachine machine = AI;
+        if (machine != null)
+            machine.OnDeath();
+        Died?.Invoke(this, killer);
+    }
+
+    protected virtual void OnDestroy()
     {
         OnMobDestroyed?.Invoke();
+    }
+
+    // ------------------------------------------------------------------ relations & summons
+    /// <summary>Is this mob hostile to <paramref name="other"/>? (Used by abilities' target filters.)</summary>
+    public bool IsHostileTo(CombatEntity other)
+    {
+        MobMovementStateMachine machine = AI;
+        if (machine != null && machine.Context != null)
+            return machine.Context.Brain.IsHostileTo(other);
+        if (other == null)
+            return false;
+        if (other.Kind == CombatEntity.EntityKind.Player)
+            return Preys != null && Preys.Contains("Player");
+        return other.Mob != null && Preys != null && Preys.Contains(other.Mob.type);
+    }
+
+    public void OnSummoned(CombatEntity summoner, CombatEntity target, float lifetime, bool preventAbsorption)
+    {
+        SummonedPreventAbsorption = preventAbsorption;
+        HomePosition = transform.position;
+        if (summoner != null)
+            Entity.Summoner = summoner;
+        MobMovementStateMachine machine = AI;
+        if (machine != null && machine.Context != null)
+            machine.Context.Brain.OnSummoned(target);
+        else if (target != null && machine != null)
+            StartCoroutine(SetTargetNextFrame(machine, target));
+    }
+
+    private IEnumerator SetTargetNextFrame(MobMovementStateMachine machine, CombatEntity target)
+    {
+        yield return null;
+        if (machine != null && target != null)
+            machine.SetTarget(target);
+    }
+
+    /// <summary>Keeps the old inspector fields (current player / chase target / predator) in sync with the AI.</summary>
+    public void SyncLegacyTargets(CombatEntity target, CombatEntity threat)
+    {
+        currentPlayerTarget = target != null ? target.Status as PlayerStatusController : null;
+        currentChaseTarget = target != null ? target.Mob as MobActionsController : null;
+        currentPredator = threat != null ? threat.Mob as MobActionsController : null;
     }
 }

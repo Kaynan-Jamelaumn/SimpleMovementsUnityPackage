@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -275,6 +275,9 @@ public class AttackExecutor
                 }
             }
         }
+
+        // New-style trait modifiers (Weapon Damage).
+        modifiedDamage *= traitManager.GetStatMultiplier(TraitStat.WeaponDamage);
 
         return modifiedDamage;
     }

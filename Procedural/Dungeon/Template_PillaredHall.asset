@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 910728a4239973047bed403031f38251, type: 3}
+  m_Name: Template_PillaredHall
+  m_EditorClassIdentifier: Assembly-CSharp::ProceduralDungeon.RoomTemplate
+  mode: 0
+  shapeMask: '#####D#####
+
+    #.........#
+
+    #..P...P..#
+
+    #.........#
+
+    D....P....D
+
+    #.........#
+
+    #..P...P..#
+
+    #.........#
+
+    #####D#####'
+  prefab: {fileID: 0}
+  footprint: {x: 7, y: 7}
+  pivot: 0
+  prefabOffset: {x: 0, y: 0, z: 0}
+  sockets: []
+  legacyRoomBehaviour: 0
+  role: 0
+  tag: 
+  weight: 1
+  styles: 5
+  ceilingHeight: 6
+  allowPopulation: 1

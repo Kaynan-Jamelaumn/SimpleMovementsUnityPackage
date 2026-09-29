@@ -322,7 +322,10 @@ public class ArmorSetManager : MonoBehaviour
     }
     private void ReplaceTraitTemporarily(TraitEnhancement enhancement)
     {
-        traitManager.RemoveTrait(enhancement.originalTrait, true);
+        // Suspend (not remove) the original: its effects stop, but the points paid for it and its other grants are
+        // kept, so taking the set off gives it back exactly as it was (removing it used to refund its points for free).
+        if (!traitManager.SuspendTrait(enhancement.originalTrait))
+            traitManager.RemoveTrait(enhancement.originalTrait, true);
         if (enhancement.enhancedTrait != null)
         {
             traitManager.AddTrait(enhancement.enhancedTrait, true);
@@ -337,7 +340,8 @@ public class ArmorSetManager : MonoBehaviour
             traitManager.RemoveTrait(enhancement.enhancedTrait, true);
             temporarySetTraits.Remove(enhancement.enhancedTrait);
         }
-        traitManager.AddTrait(enhancement.originalTrait, true);
+        if (!traitManager.ResumeTrait(enhancement.originalTrait))
+            traitManager.AddTrait(enhancement.originalTrait, true);
     }
 
     private void UpgradeToEnhancedTrait(TraitEnhancement enhancement)

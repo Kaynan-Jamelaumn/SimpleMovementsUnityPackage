@@ -1,7 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
-using static UnityEditor.SceneView;
 
 public abstract class MovementState : BaseState<MovementStateMachine.EMovementState>
 {

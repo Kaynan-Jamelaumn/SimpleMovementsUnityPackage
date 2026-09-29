@@ -1,585 +1,259 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-///  configuration settings for managing spawnable mobs with advanced pack behavior,
-/// environmental awareness, territorial dynamics, and natural distribution patterns.
+/// How mobs live on the endless terrain (edited on <see cref="EndlessTerrain"/>, used by each chunk's
+/// <see cref="MobSpawner"/>).
+///
+/// Every chunk has a population: up to <see cref="maxNumberOfMobs"/>, fewer where few biomes suit any mob type.
+/// Mobs only exist in chunks near the player (<see cref="activationDistance"/>): they are spawned there a few at a
+/// time on valid ground (on the NavMesh, dry, not too steep, clear of trees and rocks, allowed biome and height, not
+/// too close to the player or each other) and removed again when the player moves away
+/// (<see cref="deactivationDistance"/>) or the chunk unloads. Mobs that were merely removed come back when the player
+/// returns; killed ones only after <see cref="respawnDelay"/> - remembered per chunk, even while it is unloaded.
 /// </summary>
 [System.Serializable]
 public class MobSettings : BaseSettings
 {
-    [Header("Mob Prefab Configuration")]
-    /// <summary>
-    /// List of spawnable mob prefabs with their individual configurations.
-    /// </summary>
-    [Tooltip("List of spawnable mob prefabs with individual configurations.")]
-    public List<SpawnableMob> prefabs;
+    [Header("Mob Types")]
+    [Tooltip("REQUIRED. The mob prefabs that can appear, each with its weight, biomes and pack behaviour. A prefab should have a NavMeshAgent (mobs are placed on the NavMesh of its agent type) and ideally a Mob component (so kills are counted). Empty = no mobs.")]
+    public List<SpawnableMob> prefabs = new List<SpawnableMob>();
 
-    /// <summary>
-    /// The maximum number of mobs allowed to spawn simultaneously.
-    /// </summary>
-    [Tooltip("Maximum number of mobs allowed to spawn simultaneously.")]
-    public int maxNumberOfMobs;
+    [Header("Population")]
+    [Tooltip("Most mobs one chunk holds at a time. A chunk's actual population is this times the share of it where some mob type may live, varied by Population Variation. Recommended 3-10 for a 240-unit chunk.")]
+    [Min(0)] public int maxNumberOfMobs = 6;
 
-    [Header("Pack Behavior and Social Dynamics")]
-    /// <summary>
-    /// Enable pack spawning behavior for social mobs.
-    /// </summary>
-    [Tooltip("Enable pack spawning behavior for social mobs.")]
+    [Tooltip("How much populations vary between chunks (0 = every suitable chunk gets Max Number Of Mobs, 0.5 = between 50% and 100% of it).")]
+    [Range(0f, 1f)] public float populationVariation = 0.3f;
+
+    [Tooltip("World-wide limit on mobs from all chunks (0 = no limit). Protects performance when many chunks are active. Recommended 40-120.")]
+    [Min(0)] public int maxMobsInWorld = 60;
+
+    [Header("Activation (chunks near the player)")]
+    [Tooltip("A chunk spawns its mobs while its nearest edge is within this distance of the player (world units). Must be less than EndlessTerrain's NavMesh Distance (mobs need the NavMesh). Recommended 80-160.")]
+    [Min(10f)] public float activationDistance = 120f;
+
+    [Tooltip("A chunk removes its mobs when the player is farther than this (world units) - they come back when the player returns (unless killed). Keep it above Activation Distance so mobs don't flicker at the boundary.")]
+    [Min(10f)] public float deactivationDistance = 180f;
+
+    [Tooltip("Seconds between spawns in one chunk while it fills up. Low = the area fills quickly. Recommended 0.5-3.")]
+    [Min(0.05f)] public float spawnInterval = 1.5f;
+
+    [Header("Respawning")]
+    [Tooltip("Seconds before a killed mob is replaced in its chunk (remembered while the chunk is unloaded). Recommended 120-600.")]
+    [Min(0f)] public float respawnDelay = 180f;
+
+    [Tooltip("Random variation of Respawn Delay (0.25 = +/-25%).")]
+    [Range(0f, 1f)] public float respawnDelayVariation = 0.25f;
+
+    [Header("Pack Behavior")]
+    [Tooltip("Mob types marked Is Pack Animal may spawn as a group.")]
     public bool enablePackSpawning = true;
 
-    /// <summary>
-    /// Global chance modifier for pack spawning (multiplied with individual mob settings).
-    /// </summary>
-    [Tooltip("Global pack spawning chance modifier.")]
-    [Range(0f, 2f)]
-    public float globalPackSpawnChanceModifier = 1f;
+    [Tooltip("Multiplies every type's Pack Spawn Chance (0 = no packs, 2 = twice as often).")]
+    [Range(0f, 2f)] public float globalPackSpawnChanceModifier = 1f;
 
-    /// <summary>
-    /// Maximum distance for pack spawning - mobs of same type spawn within this range.
-    /// </summary>
-    [Tooltip("Maximum distance for pack member spawning.")]
-    [Range(5f, 50f)]
-    public float packSpawnRadius = 15f;
+    [Tooltip("How far pack members spawn from the pack's centre (world units), unless the type sets its own Pack Spread Radius.")]
+    [Range(2f, 50f)] public float packSpawnRadius = 12f;
 
-    /// <summary>
-    /// Minimum pack size when pack spawning occurs.
-    /// </summary>
-    [Tooltip("Minimum pack size when pack spawning occurs.")]
-    [Range(2, 8)]
-    public int minPackSize = 2;
+    [Tooltip("Smallest pack.")]
+    [Range(2, 8)] public int minPackSize = 2;
 
-    /// <summary>
-    /// Maximum pack size when pack spawning occurs.
-    /// </summary>
-    [Tooltip("Maximum pack size when pack spawning occurs.")]
-    [Range(2, 12)]
-    public int maxPackSize = 4;
+    [Tooltip("Largest pack (a type's Preferred Pack Size is used instead when set).")]
+    [Range(2, 12)] public int maxPackSize = 4;
 
-    // UNIMPLEMENTED: Mixed-species pack spawning not implemented in MobSpawner
-    /// <summary>
-    /// Allow mixed-species packs for compatible mob types.
-    /// </summary>
-    [Tooltip("Allow mixed-species packs for compatible mob types.")]
-    public bool allowMixedSpeciesPacks = false;
-
-    [Header("Territorial and Distance Management")]
-    /// <summary>
-    /// Minimum distance between individual mob spawns to prevent overcrowding.
-    /// </summary>
-    [Tooltip("Minimum distance between individual mob spawns.")]
-    [Range(2f, 25f)]
-    public float minDistanceBetweenMobs = 5f;
-
-    // UNIMPLEMENTED: Territorial behavior system not implemented in MobSpawner
-    /// <summary>
-    /// Enable territorial behavior calculations for applicable mobs.
-    /// </summary>
-    [Tooltip("Enable territorial behavior calculations.")]
-    public bool enableTerritorialBehavior = true;
-
-    // UNIMPLEMENTED: Territorial distance modifier not applied in spawn logic
-    /// <summary>
-    /// Global territorial distance modifier (multiplied with individual mob settings).
-    /// </summary>
-    [Tooltip("Global territorial distance modifier.")]
-    [Range(0.5f, 2f)]
-    public float territorialDistanceModifier = 1f;
-
-    // UNIMPLEMENTED: Inter-species conflicts not implemented
-    /// <summary>
-    /// Enable inter-species territorial conflicts (some species avoid others).
-    /// </summary>
-    [Tooltip("Enable inter-species territorial conflicts.")]
-    public bool enableInterSpeciesConflicts = true;
+    [Header("Spacing")]
+    [Tooltip("Minimum distance between two mobs when spawning (world units). Pack members use half of it.")]
+    [Range(0.5f, 25f)] public float minDistanceBetweenMobs = 5f;
 
     [Header("Environmental and Biome Awareness")]
-    /// <summary>
-    /// Enable biome-specific spawn rate modifiers.
-    /// </summary>
-    [Tooltip("Enable biome-specific spawn rate modifiers.")]
+    [Tooltip("Weigh types by biome: more likely in their Preferred Biomes, less likely elsewhere (see the two multipliers).")]
     public bool useBiomeSpawnModifiers = true;
 
-    /// <summary>
-    /// Global spawn rate multiplier for preferred biomes.
-    /// </summary>
-    [Tooltip("Global spawn rate multiplier for preferred biomes.")]
-    [Range(1f, 3f)]
-    public float preferredBiomeMultiplier = 1.5f;
+    [Tooltip("Weight multiplier where a type is in one of its Preferred Biomes.")]
+    [Range(1f, 5f)] public float preferredBiomeMultiplier = 2f;
 
-    /// <summary>
-    /// Global spawn rate multiplier for non-preferred biomes.
-    /// </summary>
-    [Tooltip("Global spawn rate multiplier for non-preferred biomes.")]
-    [Range(0.1f, 1f)]
-    public float nonPreferredBiomeMultiplier = 0.5f;
+    [Tooltip("Weight multiplier where a type has Preferred Biomes but isn't in one.")]
+    [Range(0.05f, 1f)] public float nonPreferredBiomeMultiplier = 0.5f;
 
-    /// <summary>
-    /// Global biomes where no mobs should spawn (overrides individual mob settings).
-    /// </summary>
-    [Tooltip("Global biomes where no mobs should spawn.")]
-    public List<Biome> globalForbiddenBiomes;
+    [Tooltip("Biomes where no mob ever spawns.")]
+    public List<Biome> globalForbiddenBiomes = new List<Biome>();
 
-    /// <summary>
-    /// Enable height-based spawn restrictions and preferences.
-    /// </summary>
-    [Tooltip("Enable height-based spawn restrictions and preferences.")]
-    public bool useHeightBasedSpawning = true;
+    [Tooltip("Keep mobs within a height band: the type's own (Limit Height) or else the biome's Min/Max Height, widened by Global Height Tolerance.")]
+    public bool useHeightBasedSpawning = false;
 
-    /// <summary>
-    /// Global height tolerance for mob spawning preferences.
-    /// </summary>
-    [Tooltip("Global height tolerance for mob spawning preferences.")]
-    [Range(0f, 50f)]
-    public float globalHeightTolerance = 10f;
+    [Tooltip("World units added above and below the height band (with Use Height Based Spawning).")]
+    [Range(0f, 50f)] public float globalHeightTolerance = 10f;
 
-    [Header("Spawn Distribution and Positioning")]
-    /// <summary>
-    /// Maximum attempts to find a valid spawn position before giving up.
-    /// </summary>
-    [Tooltip("Maximum attempts to find a valid spawn position.")]
-    [Range(5, 50)]
-    public int maxSpawnAttempts = 15;
+    [Header("Spawn Position")]
+    [Tooltip("Spots tried per spawn before waiting Retrying Spawn Time. Recommended 8-20.")]
+    [Range(1, 50)] public int maxSpawnAttempts = 12;
 
-    /// <summary>
-    /// Prefer spawning in areas away from chunk edges.
-    /// </summary>
-    [Tooltip("Prefer spawning away from chunk edges.")]
-    public bool avoidChunkEdges = true;
+    [Tooltip("How far a spot may be from the NavMesh (world units); the mob is placed exactly on it.")]
+    [Range(0.1f, 10f)] public float navMeshSampleDistance = 2f;
 
-    /// <summary>
-    /// Distance from chunk edges to avoid when edge avoidance is enabled.
-    /// </summary>
-    [Tooltip("Distance from chunk edges to avoid.")]
-    [Range(0f, 30f)]
-    public float edgeAvoidanceDistance = 10f;
+    [Tooltip("Steepest ground a mob spawns on (degrees); a type's Max Spawn Slope can lower it.")]
+    [Range(0f, 90f)] public float maxSlope = 35f;
 
-    /// <summary>
-    /// NavMesh sample distance for position validation.
-    /// </summary>
-    [Tooltip("NavMesh sample distance for position validation.")]
-    [Range(0.1f, 10f)]
-    public float navMeshSampleDistance = 2f;
+    [Tooltip("Free space kept between a mob and placed objects such as trees and rocks (world units). -1 = ignore objects.")]
+    public float objectClearance = 0.5f;
 
-    // UNIMPLEMENTED: Natural clustering patterns not implemented in spawn distribution
-    /// <summary>
-    /// Enable natural clustering patterns for mob distribution.
-    /// </summary>
-    [Tooltip("Enable natural clustering patterns for mob distribution.")]
-    public bool enableNaturalClustering = true;
+    [Tooltip("Don't spawn where the player's camera can see, within Hidden Spawn Distance - mobs appear out of sight instead of popping in.")]
+    public bool avoidCameraView = true;
 
-    // UNIMPLEMENTED: Clustering strength not applied
-    /// <summary>
-    /// Strength of clustering behavior (higher = more clustered).
-    /// </summary>
-    [Tooltip("Strength of clustering behavior.")]
-    [Range(0.1f, 2f)]
-    public float clusteringStrength = 1f;
+    [Tooltip("With Avoid Camera View: spots in view closer than this are skipped (world units).")]
+    [Min(0f)] public float hiddenSpawnDistance = 70f;
 
-    [Header("Time-Based and Activity Patterns")]
-    // UNIMPLEMENTED: Day/night cycle not implemented in MobSpawner
-    /// <summary>
-    /// Enable day/night cycle influence on mob spawning.
-    /// </summary>
-    [Tooltip("Enable day/night cycle influence on spawning.")]
+    [Header("Time of Day")]
+    [Tooltip("Weigh types by the day/night cycle (DayNightManager): types marked Is Diurnal / Is Nocturnal are rarer outside their time.")]
     public bool enableTimeBasedSpawning = false;
 
-    // UNIMPLEMENTED: Time of day not used in spawn calculations
-    /// <summary>
-    /// Current time of day for spawning calculations (0-24).
-    /// </summary>
-    [Tooltip("Current time of day for spawning calculations (0-24).")]
-    [Range(0f, 24f)]
-    public float currentTimeOfDay = 12f;
-
-    // UNIMPLEMENTED: Time influence not applied to spawn rates
-    /// <summary>
-    /// How strongly time affects spawn rates (higher = more effect).
-    /// </summary>
-    [Tooltip("How strongly time affects spawn rates.")]
-    [Range(0.1f, 2f)]
-    public float timeInfluenceStrength = 1f;
-
-    [Header("Performance and Error Handling")]
-    /// <summary>
-    /// Maximum number of consecutive spawn failures before temporarily disabling mob spawning.
-    /// </summary>
-    [Tooltip("Max consecutive failures before temporarily disabling spawning.")]
-    [Range(5, 30)]
-    public int maxConsecutiveFailures = 12;
-
-    /// <summary>
-    /// Time to wait after max failures before re-enabling mob spawn attempts.
-    /// </summary>
-    [Tooltip("Time to wait after max failures before re-enabling spawning.")]
-    [Range(15f, 180f)]
-    public float failureRecoveryTime = 60f;
-
-    /// <summary>
-    /// Enable performance monitoring and detailed logging for mob spawning operations.
-    /// </summary>
-    [Tooltip("Enable performance monitoring and detailed logging.")]
-    public bool enablePerformanceLogging = false;
-
-    // UNIMPLEMENTED: Max spawn processing time not enforced in spawner
-    /// <summary>
-    /// Maximum processing time allowed for a single spawn cycle (in seconds).
-    /// </summary>
-    [Tooltip("Maximum processing time for a single spawn cycle.")]
-    [Range(0.01f, 1f)]
-    public float maxSpawnProcessingTime = 0.1f;
-
-    [Header("Dynamic Population Management")]
-    // UNIMPLEMENTED: Dynamic population control not implemented in MobSpawner
-    /// <summary>
-    /// Dynamically adjust spawn rates based on current mob density in the area.
-    /// </summary>
-    [Tooltip("Dynamically adjust spawn rates based on current density.")]
-    public bool useDynamicPopulationControl = true;
-
-    // UNIMPLEMENTED: Target density not used in spawn logic
-    /// <summary>
-    /// Target mob density per chunk area (mobs per square unit).
-    /// </summary>
-    [Tooltip("Target mob density per chunk area.")]
-    [Range(0.0001f, 0.1f)]
-    public float targetMobDensity = 0.01f;
-
-    // UNIMPLEMENTED: Population adjustment not implemented
-    /// <summary>
-    /// How quickly to adjust spawn rates when population is off-target.
-    /// </summary>
-    [Tooltip("How quickly to adjust spawn rates when population is off-target.")]
-    [Range(0.1f, 3f)]
-    public float populationAdjustmentSpeed = 1.5f;
-
-    // UNIMPLEMENTED: Seasonal variations not implemented
-    /// <summary>
-    /// Enable seasonal population variations (future expansion).
-    /// </summary>
-    [Tooltip("Enable seasonal population variations (future expansion).")]
-    public bool enableSeasonalVariations = false;
+    [Tooltip("Weight multiplier for a type outside its active time (0 = never, 1 = no effect).")]
+    [Range(0f, 1f)] public float inactiveTimeWeight = 0.15f;
 
     [Header("Player Interaction and Safety")]
-    /// <summary>
-    /// Enable player proximity influence on mob spawning.
-    /// </summary>
-    [Tooltip("Enable player proximity influence on spawning.")]
+    [Tooltip("Apply Min/Max Distance From Player.")]
     public bool enablePlayerProximityInfluence = true;
 
-    /// <summary>
-    /// Minimum distance from player before mobs can spawn.
-    /// </summary>
-    [Tooltip("Minimum distance from player before mobs can spawn.")]
-    [Range(10f, 200f)]
-    public float minDistanceFromPlayer = 30f;
+    [Tooltip("No mob spawns closer than this to the player (world units); a type's own Min Distance From Player can raise it.")]
+    [Range(0f, 200f)] public float minDistanceFromPlayer = 30f;
 
-    /// <summary>
-    /// Maximum distance from player where mobs will spawn (0 = unlimited).
-    /// </summary>
-    [Tooltip("Maximum distance from player for spawning (0 = unlimited).")]
-    [Range(0f, 1000f)]
-    public float maxDistanceFromPlayer = 500f;
+    [Tooltip("No mob spawns farther than this from the player (world units, 0 = no limit besides Activation Distance).")]
+    [Range(0f, 1000f)] public float maxDistanceFromPlayer = 0f;
 
-    // UNIMPLEMENTED: Safe zones not implemented in MobSpawner
-    /// <summary>
-    /// Enable safe zone creation around player spawn points and bases.
-    /// </summary>
-    [Tooltip("Enable safe zones around player spawn points and bases.")]
-    public bool enableSafeZones = true;
+    [Tooltip("No mob spawns within Safe Zone Radius of the Safe Zone Centers (e.g. towns, the player's base).")]
+    public bool enableSafeZones = false;
 
-    // UNIMPLEMENTED: Safe zone radius not checked in spawn logic
-    /// <summary>
-    /// Radius of safe zones where aggressive mobs won't spawn.
-    /// </summary>
-    [Tooltip("Radius of safe zones where aggressive mobs won't spawn.")]
-    [Range(20f, 200f)]
-    public float safeZoneRadius = 100f;
+    [Tooltip("Radius of each safe zone (world units).")]
+    [Range(5f, 500f)] public float safeZoneRadius = 60f;
 
-    [Header("Advanced Spawn Algorithms")]
-    // UNIMPLEMENTED: Advanced weighted selection not implemented
-    /// <summary>
-    /// Use advanced weighted selection considering all environmental factors.
-    /// </summary>
-    [Tooltip("Use advanced weighted selection with environmental factors.")]
-    public bool useAdvancedWeightedSelection = true;
+    [Tooltip("World positions of the safe zones (add more at runtime with MobSpawner.AddSafeZone).")]
+    public List<Vector3> safeZoneCenters = new List<Vector3>();
 
-    // UNIMPLEMENTED: Spawn prediction not implemented
-    /// <summary>
-    /// Enable spawn prediction to prevent overcrowding before it happens.
-    /// </summary>
-    [Tooltip("Enable spawn prediction to prevent overcrowding.")]
-    public bool enableSpawnPrediction = true;
-
-    // UNIMPLEMENTED: Ecosystem balance only used in SpawnerManager, not actual spawning
-    /// <summary>
-    /// Enable ecosystem balance calculations (predator/prey ratios).
-    /// </summary>
-    [Tooltip("Enable ecosystem balance calculations.")]
-    public bool enableEcosystemBalance = false;
-
-    /// <summary>
-    /// Validates all mob settings and logs warnings for invalid configurations.
-    /// </summary>
+    /// <summary>Clamps values to safe ranges.</summary>
     public void ValidateSettings()
     {
-        // Validate basic settings
         maxNumberOfMobs = Mathf.Max(0, maxNumberOfMobs);
-        minDistanceBetweenMobs = Mathf.Max(1f, minDistanceBetweenMobs);
-        packSpawnRadius = Mathf.Max(minDistanceBetweenMobs, packSpawnRadius);
-        maxSpawnAttempts = Mathf.Max(1, maxSpawnAttempts);
-
-        // Validate pack settings
+        maxMobsInWorld = Mathf.Max(0, maxMobsInWorld);
+        activationDistance = Mathf.Max(10f, activationDistance);
+        deactivationDistance = Mathf.Max(activationDistance + 10f, deactivationDistance);
+        spawnInterval = Mathf.Max(0.05f, spawnInterval);
+        respawnDelay = Mathf.Max(0f, respawnDelay);
         minPackSize = Mathf.Max(2, minPackSize);
         maxPackSize = Mathf.Max(minPackSize, maxPackSize);
-        globalPackSpawnChanceModifier = Mathf.Max(0f, globalPackSpawnChanceModifier);
-
-        // Validate distance settings
-        edgeAvoidanceDistance = Mathf.Max(0f, edgeAvoidanceDistance);
+        minDistanceBetweenMobs = Mathf.Max(0.5f, minDistanceBetweenMobs);
+        maxSpawnAttempts = Mathf.Max(1, maxSpawnAttempts);
         navMeshSampleDistance = Mathf.Max(0.1f, navMeshSampleDistance);
-        territorialDistanceModifier = Mathf.Max(0.1f, territorialDistanceModifier);
-
-        // Validate biome and environmental settings
-        preferredBiomeMultiplier = Mathf.Max(0.1f, preferredBiomeMultiplier);
-        nonPreferredBiomeMultiplier = Mathf.Max(0.1f, nonPreferredBiomeMultiplier);
-        globalHeightTolerance = Mathf.Max(0f, globalHeightTolerance);
-
-        // Validate time settings
-        currentTimeOfDay = Mathf.Clamp(currentTimeOfDay, 0f, 24f);
-        timeInfluenceStrength = Mathf.Max(0.1f, timeInfluenceStrength);
-
-        // Validate player proximity settings
-        if (enablePlayerProximityInfluence && maxDistanceFromPlayer > 0 && minDistanceFromPlayer > maxDistanceFromPlayer)
-        {
-            Debug.LogWarning("MobSettings: minDistanceFromPlayer > maxDistanceFromPlayer, adjusting");
-            maxDistanceFromPlayer = minDistanceFromPlayer + 100f;
-        }
-
-        // Validate population control settings
-        targetMobDensity = Mathf.Max(0.0001f, targetMobDensity);
-        populationAdjustmentSpeed = Mathf.Max(0.1f, populationAdjustmentSpeed);
-
-        // Validate performance settings
-        maxSpawnProcessingTime = Mathf.Max(0.01f, maxSpawnProcessingTime);
-        maxConsecutiveFailures = Mathf.Max(1, maxConsecutiveFailures);
-        failureRecoveryTime = Mathf.Max(1f, failureRecoveryTime);
-
-        // Validate safe zone settings
-        safeZoneRadius = Mathf.Max(minDistanceFromPlayer, safeZoneRadius);
-
-        // Validate individual mob prefabs
+        if (maxDistanceFromPlayer > 0f && maxDistanceFromPlayer < minDistanceFromPlayer)
+            maxDistanceFromPlayer = minDistanceFromPlayer;
         if (prefabs != null)
-        {
-            for (int i = prefabs.Count - 1; i >= 0; i--)
-            {
-                if (prefabs[i] == null)
-                {
-                    Debug.LogWarning($"MobSettings: Removing null mob prefab at index {i}");
-                    prefabs.RemoveAt(i);
-                }
-                else
-                {
-                    prefabs[i].ValidateConfiguration();
-                }
-            }
-
-            if (prefabs.Count == 0)
-            {
-                Debug.LogWarning("MobSettings: No valid mob prefabs configured!");
-            }
-        }
-
-        // Validate base settings
+            foreach (SpawnableMob m in prefabs)
+                m?.ValidateConfiguration();
         ValidateBaseSettings();
     }
 
-    /// <summary>
-    /// Gets the effective spawn rate modifier based on current conditions.
-    /// </summary>
-    /// <param name="currentDensity">Current mob density in the area.</param>
-    /// <param name="biome">Current biome being evaluated.</param>
-    /// <param name="height">Current height being evaluated.</param>
-    /// <returns>Spawn rate modifier (1.0 = normal rate).</returns>
-    public float GetEffectiveSpawnRateModifier(float currentDensity, Biome biome = null, float height = 0f)
+    /// <summary>Problems that stop mobs from appearing (empty when the settings look usable).</summary>
+    public List<string> GetProblems(float navMeshDistance, bool bakeNavMesh)
     {
-        float modifier = 1f;
-
-        // Apply dynamic population control
-        if (useDynamicPopulationControl)
+        var problems = new List<string>();
+        if (prefabs == null || prefabs.Count == 0)
+            problems.Add("No mob types: add an entry to Prefabs with a mob prefab.");
+        else
         {
-            float densityRatio = currentDensity / targetMobDensity;
-            if (densityRatio > 1f)
+            for (int i = 0; i < prefabs.Count; i++)
             {
-                // Too many mobs, reduce spawn rate
-                modifier *= Mathf.Lerp(1f, 0.1f, (densityRatio - 1f) * populationAdjustmentSpeed);
+                SpawnableMob m = prefabs[i];
+                if (m == null || m.mobPrefab == null)
+                    problems.Add($"Prefabs[{i}] has no Mob Prefab.");
+                else
+                {
+                    var agent = m.mobPrefab.GetComponentInChildren<UnityEngine.AI.NavMeshAgent>(true);
+                    if (agent == null)
+                        problems.Add($"Prefabs[{i}] ({m.mobPrefab.name}) has no NavMeshAgent: it is placed on the default agent's NavMesh and may not move.");
+                    else if (agent.agentTypeID != 0)
+                        problems.Add($"Prefabs[{i}] ({m.mobPrefab.name}) uses a non-default NavMesh agent type, but chunk NavMeshes are built for the default one (Humanoid): it will never find a spot.");
+                }
             }
-            else if (densityRatio < 0.3f)
-            {
-                // Too few mobs, increase spawn rate
-                modifier *= Mathf.Lerp(1f, 2f, (0.3f - densityRatio) * populationAdjustmentSpeed);
-            }
         }
-
-        // Apply biome-based modifications
-        if (useBiomeSpawnModifiers && biome != null)
-        {
-            // This is a simplified version - individual mobs have more detailed biome preferences
-            modifier *= preferredBiomeMultiplier; // Assume preferred for now
-        }
-
-        // Apply time-based modifications
-        if (enableTimeBasedSpawning)
-        {
-            // Simple day/night cycle influence
-            float timeModifier = 1f + 0.2f * Mathf.Sin((currentTimeOfDay / 24f) * 2f * Mathf.PI) * timeInfluenceStrength;
-            modifier *= timeModifier;
-        }
-
-        // Apply seasonal variations (future expansion)
-        if (enableSeasonalVariations)
-        {
-            // Placeholder for seasonal logic
-            modifier *= 1f; // No change for now
-        }
-
-        return Mathf.Clamp(modifier, 0.05f, 5f);
+        if (maxNumberOfMobs <= 0)
+            problems.Add("Max Number Of Mobs is 0: no mob can appear.");
+        if (!bakeNavMesh)
+            problems.Add("EndlessTerrain's Bake NavMesh is off: mobs can't be placed on a NavMesh (and can't walk).");
+        else if (navMeshDistance > 0f && activationDistance > navMeshDistance)
+            problems.Add($"Activation Distance ({activationDistance}) is beyond EndlessTerrain's NavMesh Distance ({navMeshDistance}): chunks between the two never get mobs.");
+        return problems;
     }
 
-    /// <summary>
-    /// Checks if a mob can spawn in the given biome based on global restrictions.
-    /// </summary>
-    /// <param name="biome">Biome to check.</param>
-    /// <returns>True if biome allows mob spawning.</returns>
-    public bool IsBiomeAllowed(Biome biome)
+    /// <summary>True when mobs may spawn in <paramref name="biome"/> (Global Forbidden Biomes).</summary>
+    public bool IsBiomeAllowed(Biome biome) => biome == null || globalForbiddenBiomes == null || !globalForbiddenBiomes.Contains(biome);
+
+    /// <summary>A type's pack chance with the global modifier (0 when packs are off).</summary>
+    public float GetEffectivePackSpawnChance(float baseMobPackChance) => enablePackSpawning ? Mathf.Clamp01(baseMobPackChance * globalPackSpawnChanceModifier) : 0f;
+
+    /// <summary>True when <paramref name="position"/> is in a safe zone.</summary>
+    public bool IsInSafeZone(Vector3 position)
     {
-        if (globalForbiddenBiomes != null && globalForbiddenBiomes.Contains(biome))
+        if (!enableSafeZones || safeZoneCenters == null)
             return false;
-
-        return true;
-    }
-
-    /// <summary>
-    /// Calculates the maximum mobs allowed based on chunk size and density settings.
-    /// </summary>
-    /// <param name="chunkSize">Size of the terrain chunk.</param>
-    /// <returns>Maximum mobs for the chunk size.</returns>
-    public int CalculateMaxMobsForChunkSize(int chunkSize)
-    {
-        if (!useDynamicPopulationControl)
-            return maxNumberOfMobs;
-
-        float chunkArea = chunkSize * chunkSize;
-        int densityBasedMax = Mathf.RoundToInt(chunkArea * targetMobDensity);
-
-        return Mathf.Min(maxNumberOfMobs, Mathf.Max(1, densityBasedMax));
-    }
-
-    /// <summary>
-    /// Gets the effective pack spawn chance considering global modifiers.
-    /// </summary>
-    /// <param name="baseMobPackChance">Base pack chance from individual mob settings.</param>
-    /// <returns>Effective pack spawn chance.</returns>
-    public float GetEffectivePackSpawnChance(float baseMobPackChance)
-    {
-        if (!enablePackSpawning) return 0f;
-
-        return Mathf.Clamp01(baseMobPackChance * globalPackSpawnChanceModifier);
-    }
-
-    /// <summary>
-    /// Checks if a position is within a safe zone.
-    /// </summary>
-    /// <param name="position">Position to check.</param>
-    /// <param name="playerPositions">List of player positions to check against.</param>
-    /// <returns>True if position is within a safe zone.</returns>
-    public bool IsPositionInSafeZone(Vector3 position, List<Vector3> playerPositions)
-    {
-        if (!enableSafeZones || playerPositions == null) return false;
-
-        foreach (Vector3 playerPos in playerPositions)
+        float r2 = safeZoneRadius * safeZoneRadius;
+        foreach (Vector3 c in safeZoneCenters)
         {
-            if (Vector3.Distance(position, playerPos) < safeZoneRadius)
+            float dx = c.x - position.x, dz = c.z - position.z;
+            if (dx * dx + dz * dz < r2)
                 return true;
         }
-
         return false;
     }
 
-    /// <summary>
-    /// Gets debug information about current mob settings.
-    /// </summary>
-    /// <returns>Formatted debug string.</returns>
     public string GetDebugInfo()
     {
-        System.Text.StringBuilder sb = new System.Text.StringBuilder();
-        sb.AppendLine("=== Mob Settings Debug Info ===");
-        sb.AppendLine($"Max Mobs: {maxNumberOfMobs}");
-        sb.AppendLine($"Prefab Count: {(prefabs != null ? prefabs.Count : 0)}");
-        sb.AppendLine($"Pack Spawning: {enablePackSpawning} (Size: {minPackSize}-{maxPackSize})");
-        sb.AppendLine($"Min Distance: {minDistanceBetweenMobs}");
-        sb.AppendLine($"Max Attempts: {maxSpawnAttempts}");
-        sb.AppendLine($"Territorial Behavior: {enableTerritorialBehavior}");
-        sb.AppendLine($"Biome Modifiers: {useBiomeSpawnModifiers}");
-        sb.AppendLine($"Height-Based: {useHeightBasedSpawning}");
-        sb.AppendLine($"Time-Based: {enableTimeBasedSpawning} (Current: {currentTimeOfDay:F1}h)");
-        sb.AppendLine($"Population Control: {useDynamicPopulationControl} (Target: {targetMobDensity})");
-        sb.AppendLine($"Player Proximity: {enablePlayerProximityInfluence} ({minDistanceFromPlayer}-{maxDistanceFromPlayer})");
-        sb.AppendLine($"Safe Zones: {enableSafeZones} (Radius: {safeZoneRadius})");
-
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("=== Mob Settings ===");
+        sb.AppendLine($"Types: {(prefabs != null ? prefabs.Count : 0)}");
+        sb.AppendLine($"Per chunk: {maxNumberOfMobs} (variation {populationVariation:0.00}), world limit {(maxMobsInWorld > 0 ? maxMobsInWorld.ToString() : "none")}");
+        sb.AppendLine($"Active within {activationDistance}, removed beyond {deactivationDistance}, one spawn per {spawnInterval} s");
+        sb.AppendLine($"Packs: {enablePackSpawning} ({minPackSize}-{maxPackSize}), respawn after {respawnDelay} s");
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Resets all settings to safe default values.
-    /// </summary>
-    [ContextMenu("Reset to Default Values")]
+    /// <summary>Sensible defaults (keeps the prefab list and safe zones).</summary>
     public void ResetToDefaults()
     {
-        maxNumberOfMobs = 10;
+        maxNumberOfMobs = 6;
+        populationVariation = 0.3f;
+        maxMobsInWorld = 60;
+        activationDistance = 120f;
+        deactivationDistance = 180f;
+        spawnInterval = 1.5f;
+        respawnDelay = 180f;
+        respawnDelayVariation = 0.25f;
         enablePackSpawning = true;
         globalPackSpawnChanceModifier = 1f;
-        packSpawnRadius = 15f;
+        packSpawnRadius = 12f;
         minPackSize = 2;
         maxPackSize = 4;
-        allowMixedSpeciesPacks = false;
         minDistanceBetweenMobs = 5f;
-        enableTerritorialBehavior = true;
-        territorialDistanceModifier = 1f;
-        enableInterSpeciesConflicts = true;
         useBiomeSpawnModifiers = true;
-        preferredBiomeMultiplier = 1.5f;
+        preferredBiomeMultiplier = 2f;
         nonPreferredBiomeMultiplier = 0.5f;
-        useHeightBasedSpawning = true;
+        globalForbiddenBiomes = new List<Biome>();
+        useHeightBasedSpawning = false;
         globalHeightTolerance = 10f;
-        maxSpawnAttempts = 15;
-        avoidChunkEdges = true;
-        edgeAvoidanceDistance = 10f;
+        maxSpawnAttempts = 12;
         navMeshSampleDistance = 2f;
-        enableNaturalClustering = true;
-        clusteringStrength = 1f;
+        maxSlope = 35f;
+        objectClearance = 0.5f;
+        avoidCameraView = true;
+        hiddenSpawnDistance = 70f;
         enableTimeBasedSpawning = false;
-        currentTimeOfDay = 12f;
-        timeInfluenceStrength = 1f;
-        maxConsecutiveFailures = 12;
-        failureRecoveryTime = 60f;
-        enablePerformanceLogging = false;
-        maxSpawnProcessingTime = 0.1f;
-        useDynamicPopulationControl = true;
-        targetMobDensity = 0.01f;
-        populationAdjustmentSpeed = 1.5f;
-        enableSeasonalVariations = false;
+        inactiveTimeWeight = 0.15f;
         enablePlayerProximityInfluence = true;
         minDistanceFromPlayer = 30f;
-        maxDistanceFromPlayer = 500f;
-        enableSafeZones = true;
-        safeZoneRadius = 100f;
-        useAdvancedWeightedSelection = true;
-        enableSpawnPrediction = true;
-        enableEcosystemBalance = false;
-
-        if (globalForbiddenBiomes == null)
-            globalForbiddenBiomes = new List<Biome>();
-        else
-            globalForbiddenBiomes.Clear();
+        maxDistanceFromPlayer = 0f;
+        enableSafeZones = false;
+        safeZoneRadius = 60f;
+        shouldWaitToStartSpawning = false;
+        retryingSpawnTime = 3f;
+        playerTag = "Player";
     }
 }

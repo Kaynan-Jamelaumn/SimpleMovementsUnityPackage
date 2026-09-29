@@ -168,8 +168,12 @@ public class TraitSelectionManager
         if (references.traitDetailName != null)
             references.traitDetailName.text = trait.Name;
 
+        // Trait rules (required / incompatible / mutually exclusive) against the traits already chosen.
+        string ruleProblem = canAdd ? RuleProblem(trait) : RemovalProblem(trait);
+
         if (references.traitDetailDescription != null)
-            references.traitDetailDescription.text = CharacterCreationValidator.GetTraitDescriptionSafe(trait);
+            references.traitDetailDescription.text = CharacterCreationValidator.GetTraitDescriptionSafe(trait) +
+                (ruleProblem != null ? $"\n\n<color=#E06666>{ruleProblem}</color>" : "");
 
         if (references.traitDetailCost != null)
         {
@@ -185,7 +189,7 @@ public class TraitSelectionManager
             if (canAdd && mainUI.SelectedClass != null)
             {
                 int cost = mainUI.SelectedClass.GetTraitCost(trait);
-                references.addTraitButton.interactable = mainUI.CurrentTraitPoints >= cost && !mainUI.SelectedTraits.Contains(trait);
+                references.addTraitButton.interactable = mainUI.CurrentTraitPoints >= cost && !mainUI.SelectedTraits.Contains(trait) && ruleProblem == null;
             }
         }
 
@@ -193,7 +197,7 @@ public class TraitSelectionManager
         {
             references.removeTraitButton.gameObject.SetActive(!canAdd);
             if (!canAdd)
-                references.removeTraitButton.interactable = mainUI.SelectedTraits.Contains(trait);
+                references.removeTraitButton.interactable = mainUI.SelectedTraits.Contains(trait) && ruleProblem == null;
         }
     }
 
@@ -205,6 +209,13 @@ public class TraitSelectionManager
         if (selectedTrait == null || selectedClass == null) return;
 
         int cost = selectedClass.GetTraitCost(selectedTrait);
+
+        string ruleProblem = RuleProblem(selectedTrait);
+        if (ruleProblem != null)
+        {
+            mainUI.DebugLogWarning($"Cannot add trait {selectedTrait.Name}: {ruleProblem}");
+            return;
+        }
 
         if (mainUI.CurrentTraitPoints >= cost && !mainUI.SelectedTraits.Contains(selectedTrait))
         {
@@ -230,6 +241,13 @@ public class TraitSelectionManager
 
         if (selectedTrait == null || selectedClass == null) return;
 
+        string removalProblem = RemovalProblem(selectedTrait);
+        if (removalProblem != null)
+        {
+            mainUI.DebugLogWarning($"Cannot remove trait {selectedTrait.Name}: {removalProblem}");
+            return;
+        }
+
         if (mainUI.SelectedTraits.Contains(selectedTrait))
         {
             mainUI.RemoveTraitFromSelected(selectedTrait);
@@ -242,6 +260,25 @@ public class TraitSelectionManager
             if (references.traitDetailPanel != null)
                 references.traitDetailPanel.SetActive(false);
         }
+    }
+
+    /// <summary>The traits the character will have: the ones picked plus the class's starting traits.</summary>
+    private List<Trait> ChosenTraits()
+    {
+        var chosen = new List<Trait>(mainUI.SelectedTraits);
+        if (mainUI.SelectedClass != null)
+            chosen.AddRange(mainUI.SelectedClass.GetStartingTraits());
+        return chosen;
+    }
+
+    /// <summary>Why the trait cannot be added to the current choice (required / incompatible / exclusive), or null.</summary>
+    private string RuleProblem(Trait trait) => TraitRules.WhyCannotCombine(trait, ChosenTraits());
+
+    /// <summary>Why the trait cannot be removed (another chosen trait requires it), or null.</summary>
+    private string RemovalProblem(Trait trait)
+    {
+        Trait needs = TraitRules.RequiredBy(trait, mainUI.SelectedTraits);
+        return needs != null ? $"{needs.Name} requires it (remove {needs.Name} first)." : null;
     }
 
     private void RefreshTraitDisplays()

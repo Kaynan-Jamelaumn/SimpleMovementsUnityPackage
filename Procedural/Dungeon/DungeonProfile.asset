@@ -1,0 +1,368 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 428caf56e758ca249aa235d947129d67, type: 3}
+  m_Name: DungeonProfile
+  m_EditorClassIdentifier: Assembly-CSharp::ProceduralDungeon.DungeonProfile
+  cellSize: 1.5
+  floorSpacing: 10
+  maxStairSlope: 33
+  floorCount: {x: 2, y: 4}
+  sizeClasses:
+  - size: 0
+    floorCells: {x: 46, y: 46}
+    floorCount: {x: 1, y: 2}
+  - size: 1
+    floorCells: {x: 64, y: 64}
+    floorCount: {x: 0, y: 0}
+  - size: 2
+    floorCells: {x: 86, y: 86}
+    floorCount: {x: 3, y: 5}
+  - size: 3
+    floorCells: {x: 112, y: 112}
+    floorCount: {x: 4, y: 7}
+  footprintVariation: 0.15
+  openness:
+    min: 0.3
+    max: 0.75
+  complexity:
+    min: 0.3
+    max: 0.75
+  styles:
+    rooms: 1
+    bsp: 0.6
+    caverns: 0.8
+    hybrid: 0.9
+    gridMaze: 0.15
+  naturalWeightPerFloor: 0.25
+  repeatStylePenalty: 0.45
+  difficultyPerFloor: 0.2
+  rooms:
+    coverage:
+      min: 0.2
+      max: 0.38
+    sizes:
+    - name: Closet
+      size:
+        min: 3
+        max: 4
+      weight: 0.45
+      hall: 0
+      opennessBias: -0.4
+    - name: Small
+      size:
+        min: 4
+        max: 6
+      weight: 1
+      hall: 0
+      opennessBias: -0.3
+    - name: Medium
+      size:
+        min: 6
+        max: 9
+      weight: 1.2
+      hall: 0
+      opennessBias: 0
+    - name: Large
+      size:
+        min: 9
+        max: 13
+      weight: 0.55
+      hall: 0
+      opennessBias: 0.6
+    - name: Hall
+      size:
+        min: 13
+        max: 18
+      weight: 0.2
+      hall: 1
+      opennessBias: 0.5
+    shapes:
+      rectangle: 3
+      lShape: 1
+      tShape: 0.6
+      cross: 0.5
+      circle: 0.6
+      composite: 1
+      pillaredHall: 0.5
+      ruined: 0
+    aspectVariation: 0.35
+    spacing:
+      min: 2
+      max: 4
+    tightPackingChance: 0.15
+    placementAttempts: 700
+    spreadCandidates: 4
+    roomCeiling: 4
+    hallCeiling: 6.5
+    corridorCeiling: 3.2
+  bsp:
+    minLeafSize: 11
+    splitRatio:
+      min: 0.38
+      max: 0.62
+    roomMargin:
+      min: 1
+      max: 3
+    emptyLeafChance: 0.08
+    earlyStopChance: 0.12
+    shapedRoomChance: 0.3
+  caves:
+    solidFill:
+      min: 0.46
+      max: 0.555
+    fillNoiseScale: 0.06
+    fillNoiseStrength: 0.2
+    smoothingIterations: 5
+    rockThreshold: 5
+    openThreshold: 3
+    minRegionCells: 40
+    minPassageWidth: 2
+    chamberMinRadius: 2.2
+    chamberSpacing: 8
+    tunnelWidth:
+      min: 2
+      max: 3
+    tunnelWinding: 0.9
+    floorHeightAmplitude: 1.1
+    floorHeightScale: 0.07
+    heightSmoothing: 5
+    ceilingBase: 3.2
+    ceilingPerWallDistance: 0.55
+    ceilingLimits:
+      min: 2.8
+      max: 7.5
+    ceilingNoise: 0.7
+    wallRoughness: 0.3
+    wallBulge: 0.3
+  hybrid:
+    zoneSize: 22
+    borderNoise: 6
+    builtWeight: 1
+    cavernWeight: 1
+    ruinsWeight: 0.5
+    ruinsErosion: 0.35
+  maze:
+    blockSize: 7
+    gap: 2
+    pruneFraction:
+      min: 0
+      max: 0.35
+    templates: []
+  connections:
+    loopChance:
+      min: 0.08
+      max: 0.4
+    deadEndShare:
+      min: 0.15
+      max: 0.4
+    corridorWidth:
+      min: 1
+      max: 2
+    wideCorridorChance: 0.4
+    turnPenalty: 2.5
+    reuseCost: 0.35
+    maxConnectionLength: 60
+    secretChance: 0.12
+  links:
+    stairWidth: 2
+    landingSize:
+      min: 4
+      max: 6
+    departureDistance:
+      min: 0.6
+      max: 1
+    extraStairChance: 0.35
+    maxExtraStairs: 1
+    dropChance: 0.3
+    dropSize: 2
+    edgeMargin: 4
+    anchorSpacing: 3
+    entranceSize:
+      min: 6
+      max: 8
+    exitSize:
+      min: 7
+      max: 9
+  roles:
+  - name: Boss
+    role: 7
+    tag: 
+    required: 1
+    perFloor:
+      min: 1
+      max: 1
+    maxTotal: 1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 1
+    progress:
+      min: 0
+      max: 1
+    placement: 5
+    size: 3
+    minCells: 30
+    styles: 7
+    chance: 1
+    weight: 1
+    templates:
+    - {fileID: 11400000, guid: dac05e3ab9b29b54fa377ce40cc2eb44, type: 2}
+    secretEntrance: 0
+  - name: Treasure
+    role: 8
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 2
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.15
+      max: 1
+    placement: 1
+    size: 0
+    minCells: 0
+    styles: 7
+    chance: 0.85
+    weight: 1
+    templates: []
+    secretEntrance: 0
+  - name: Rest
+    role: 9
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.3
+      max: 0.85
+    placement: 2
+    size: 1
+    minCells: 0
+    styles: 7
+    chance: 0.5
+    weight: 1
+    templates: []
+    secretEntrance: 0
+  - name: Arena
+    role: 10
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.2
+      max: 0.9
+    placement: 2
+    size: 3
+    minCells: 50
+    styles: 7
+    chance: 0.45
+    weight: 1
+    templates: []
+    secretEntrance: 0
+  - name: Shrine
+    role: 11
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 0
+    minCells: 0
+    styles: 5
+    chance: 0.4
+    weight: 1
+    templates: []
+    secretEntrance: 0
+  - name: Secret
+    role: 12
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 1
+    size: 1
+    minCells: 0
+    styles: 5
+    chance: 0.3
+    weight: 1
+    templates: []
+    secretEntrance: 1
+  population:
+    encounters: {fileID: 0}
+    loot: {fileID: 11400000, guid: e5946760227527e4487bb06fb097d291, type: 2}
+    props: {fileID: 11400000, guid: 00b83cbc4db159641a92123df4fc77fc, type: 2}
+    defaultLoot: 1
+    defaultProps: 1
+    placeholderMobs: 1
+    encounterDensity: 2.2
+    safeRadius: 16
+    packSpacing: 5
+    corridorEncounterChance: 0.12
+    treasureRoomLoot:
+      min: 2
+      max: 4
+    bossLoot:
+      min: 1
+      max: 2
+    deadEndLootChance: 0.55
+    roomLootChance: 0.15
+    maxPlacementsPerFloor: 500
+  theme: {fileID: 11400000, guid: 0edd8d8779458d24a8b7298ee3d751d2, type: 2}
+  build:
+    frameBudgetMs: 6
+    streamFloors: 1
+    floorsAround: 1
+    bakeNavMesh: 1
+    navMeshAgentTypeId: 0
+    geometryLayer: 0
+    meshChunkCells: 24
+    buildCeilings: 1
+    castShadows: 1
+    useTileKit: 1
+    doorFrames: 1
+    markStatic: 1
+  validation:
+    maxAttempts: 6
+    repairUnreachable: 1
+    maxRepairsPerFloor: 16
+    logReport: 0
+  customStages: []

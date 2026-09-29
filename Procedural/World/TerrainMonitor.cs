@@ -85,8 +85,8 @@ public class TerrainMonitor : MonoBehaviour
 
     private void Start()
     {
-        terrainGenerator = FindObjectOfType<TerrainGenerator>();
-        endlessTerrain = FindObjectOfType<EndlessTerrain>();
+        terrainGenerator = FindAnyObjectByType<TerrainGenerator>();
+        endlessTerrain = FindAnyObjectByType<EndlessTerrain>();
 
         if (terrainGenerator == null)
         {
@@ -181,8 +181,8 @@ public class TerrainMonitor : MonoBehaviour
             {
                 Transform child = chunk.transform.GetChild(i);
 
-                // Skip if it's a spawner or other system component
-                if (child.GetComponent<SpawnerBase<object, object>>() != null) continue;
+                // Skip the chunk's own containers (water, spawned portals and mobs): only placed objects count.
+                if (child.name == "Water" || child.name == "Portals" || child.name == "Mobs") continue;
 
                 totalObjects++;
                 string objectType = child.name.Replace("(Clone)", "").Trim();

@@ -1,393 +1,108 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI;
+using EState = MobMovementStateMachine.EMobMovementState;
 
 /// <summary>
-/// Abstract base class representing a state in the mob's movement state machine.
-///  with utility-based decision making for intelligent state transitions.
+/// Base of every mob AI state. A state carries out one behaviour (wander, chase, attack...) using the context's
+/// motor, perception and abilities; the <see cref="MobBrain"/> decides which state comes next. A state calls
+/// <see cref="Finish"/> when its job is done, and can be "committed" (e.g. mid-attack) so the brain waits for it.
 /// </summary>
-public abstract class MobMovementState : BaseState<MobMovementStateMachine.EMobMovementState>
+public abstract class MobMovementState : BaseState<EState>
 {
     protected MobMovementContext Context;
-    protected bool alreadyMoving = false;
-    protected Vector3 playerPosition;
-    protected bool shouldChangeToMovingState;
-    protected bool shouldChangeToPatrolState;
-    protected bool shouldChangeToIdleState;
-    protected bool shouldChangeToChasingState;
+    protected float enterTime;
+    private bool finished;
 
-    // Utility weights for decision making
-    protected const float URGENCY_WEIGHT = 0.4f;
-    protected const float DISTANCE_WEIGHT = 0.3f;
-    protected const float SAFETY_WEIGHT = 0.3f;
-
-    //  perception parameters
-    protected const float THREAT_MEMORY_DURATION = 5f;
-    protected const float OPPORTUNITY_MEMORY_DURATION = 3f;
-    protected Dictionary<GameObject, float> threatMemory = new Dictionary<GameObject, float>();
-    protected Dictionary<GameObject, float> opportunityMemory = new Dictionary<GameObject, float>();
-
-    /// <summary>
-    /// Safely sets the NavMeshAgent destination with validation checks.
-    /// </summary>
-    /// <param name="destination">Target destination position.</param>
-    /// <returns>True if destination was set successfully, false otherwise.</returns>
-    protected bool SafeSetDestination(Vector3 destination)
-    {
-        // Validate NavMeshAgent is ready
-        if (Context.NavMeshAgentReference == null)
-        {
-            Debug.LogError($"[{Context.MobReference?.name}] NavMeshAgent is null!");
-            return false;
-        }
-
-        if (!Context.NavMeshAgentReference.isActiveAndEnabled)
-        {
-            Debug.LogWarning($"[{Context.MobReference.name}] NavMeshAgent is not active. Skipping SetDestination.");
-            return false;
-        }
-
-        if (!Context.NavMeshAgentReference.isOnNavMesh)
-        {
-            Debug.LogWarning($"[{Context.MobReference.name}] NavMeshAgent is not on NavMesh! " +
-                           $"Make sure NavMesh is baked (Window → AI → Navigation → Bake) " +
-                           $"and the mob is placed on the NavMesh surface.");
-            return false;
-        }
-
-        // All checks passed, set destination
-        Context.NavMeshAgentReference.SetDestination(destination);
-        return true;
-    }
-
-    /// <summary>
-    /// Constructor for the mob movement state.
-    /// </summary>
-    /// <param name="context">The context for the mob's movement state.</param>
-    /// <param name="stateKey">The state key for the state.</param>
-    public MobMovementState(MobMovementContext context, MobMovementStateMachine.EMobMovementState stateKey) : base(stateKey)
+    protected MobMovementState(MobMovementContext context, EState stateKey) : base(stateKey)
     {
         Context = context;
     }
 
-    /// <summary>
-    /// Coroutine that waits for the mob to reach its destination with improved path monitoring.
-    /// </summary>
-    public IEnumerator WaitToReachDestinationRoutine()
+    /// <summary>The state has done its job and waits for the brain's next decision.</summary>
+    public bool IsFinished => finished;
+
+    /// <summary>While true the brain cannot switch away (except to Stunned or Dead).</summary>
+    public virtual bool IsCommitted => false;
+
+    /// <summary>Attacking: can the wind-up be cancelled to dodge (profile "Dodge Cancels Attacks")?</summary>
+    public virtual bool CanCancelForDodge => false;
+
+    protected float TimeInState => Time.time - enterTime;
+    protected MobMotor Motor => Context.Motor;
+    protected MobBrain Brain => Context.Brain;
+    protected MobProfile Profile => Context.Profile;
+    protected CombatEntity Self => Context.Entity;
+    protected Vector3 Position => Context.Transform.position;
+
+    public override void EnterState()
     {
-        // Record the start time for measuring the walk time.
-        float startTime = Time.time;
-        Vector3 lastPosition = Context.MobReference.TransformReference.position;
-        float stuckTimer = 0f;
-        float perceptionCheckTimer = 0f;
-        const float PERCEPTION_INTERVAL = 0.3f;
-        const float STUCK_THRESHOLD = 0.1f;
-        const float STUCK_TIME = 2f;
+        enterTime = Time.time;
+        finished = false;
+        OnEnter();
+    }
 
-        // Continue the loop until the destination is reached or the maximum walk time is exceeded.
-        while (Context.NavMeshAgentReference.pathPending ||
-               (Context.NavMeshAgentReference.isActiveAndEnabled &&
-                Context.NavMeshAgentReference.isOnNavMesh &&
-                !Context.MobReference.HasReachedDestinationWithMargin()))
-        {
-            //  periodic perception check
-            perceptionCheckTimer += Time.deltaTime;
-            if (perceptionCheckTimer >= PERCEPTION_INTERVAL)
-            {
-                UpdateMemory();
-                CheckChaseConditions();
-                perceptionCheckTimer = 0f;
-            }
+    public override void ExitState() => OnExit();
 
-            // Check if stuck (not moving significantly)
-            float distanceMoved = Vector3.Distance(lastPosition, Context.MobReference.TransformReference.position);
-            if (distanceMoved < STUCK_THRESHOLD)
-            {
-                stuckTimer += Time.deltaTime;
-                if (stuckTimer > STUCK_TIME)
-                {
-                    // Try to find alternative path using smart pathfinding
-                    Vector3 alternativeDestination = FindAlternativePath(Context.NavMeshAgentReference.destination);
-                    if (SafeSetDestination(alternativeDestination))
-                    {
-                        stuckTimer = 0f;
-                    }
-                }
-            }
-            else
-            {
-                stuckTimer = 0f;
-                lastPosition = Context.MobReference.TransformReference.position;
-            }
+    public override void UpdateState()
+    {
+        if (!finished)
+            OnUpdate(Time.deltaTime);
+    }
 
-            // Check if maximum walk time is exceeded
-            bool timeExceeded = false;
-            if (Context.MobReference.CurrentPlayerTarget != null && Context.MobReference.PlayerHasMaxChaseTime)
-            {
-                timeExceeded = Time.time - startTime >= Context.MobReference.MaxWalkTime;
-            }
-            else if (Context.MobReference.CurrentPlayerTarget == null)
-            {
-                timeExceeded = Time.time - startTime >= Context.MobReference.MaxWalkTime;
-            }
+    public override EState GetNextState() => Context.Brain.ResolveNext(this);
 
-            if (timeExceeded)
-            {
-                if (Context.MobReference.CurrentPredator != null)
-                {
-                    Context.MobReference.CurrentPredator = null;
-                }
-                Context.NavMeshAgentReference.ResetPath();
-                shouldChangeToIdleState = true;
-                yield break;
-            }
+    public override void LateUpdateState() { }
+    public override void OnTriggerEnter(Collider other) { }
+    public override void OnTriggerStay(Collider other) { }
+    public override void OnTriggerExit(Collider other) { }
 
-            // Check conditions to enter the Chase state during movement.
-            if (shouldChangeToChasingState)
-                yield break;
+    protected abstract void OnEnter();
+    protected virtual void OnExit() { }
+    protected abstract void OnUpdate(float dt);
 
-            yield return null;
-        }
+    /// <summary>Marks the state as done and asks the brain for the next step.</summary>
+    protected void Finish()
+    {
+        if (finished)
+            return;
+        finished = true;
+        Context.Brain.RequestDecision();
+    }
 
-        // Destination has been reached, set the state to Idle.
-        if (!Context.MobReference.CurrentPlayerTarget)
-        {
-            shouldChangeToIdleState = true;
-        }
-        else
-        {
-            CheckChaseConditions();
-        }
+    // ------------------------------------------------------------------ helpers
+    /// <summary>Faces the current target (for strafing and backing off).</summary>
+    protected void FaceTarget()
+    {
+        CombatEntity t = Brain.Target;
+        if (t != null)
+            Motor.FaceTowards(t.Position);
     }
 
     /// <summary>
-    /// Finds an alternative path when stuck, using intelligent pathfinding.
+    /// If the mob stands in (or is about to be hit by) a hazard, walks out of it. Returns true while escaping.
     /// </summary>
-    /// <param name="originalDestination">The original destination that couldn't be reached.</param>
-    /// <returns>Alternative destination position.</returns>
+    protected bool EscapeHazardIfNeeded()
+    {
+        if (!Profile.avoidHazards || !Brain.StandingInHazard && Motor.IsSafe(Position, 0.6f))
+            return false;
+        Vector3 away = Brain.Target != null ? CombatQuery.FlatDirection(Brain.Target.Position, Position, Context.Transform.right) : Context.Transform.right;
+        if (HazardRegistry.Query(Self, Position, Self.Radius, Self.Height, 1.5f, out HazardInfo info))
+            away = info.escapeDirection;
+        if (Motor.TryFindSafePoint(away, 5f, out Vector3 safe))
+        {
+            Motor.MoveTo(safe, MobMoveMode.Run, 0.2f);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Old helper kept for custom states: moves to <paramref name="destination"/> at the current pace.</summary>
+    protected bool SafeSetDestination(Vector3 destination) => Motor.MoveTo(destination, Motor.Mode);
+
+    /// <summary>Old helper kept for custom states: a reachable point near the direction of <paramref name="originalDestination"/>.</summary>
     protected Vector3 FindAlternativePath(Vector3 originalDestination)
     {
-        // Try multiple angles to find a clear path
-        for (int angle = 30; angle <= 180; angle += 30)
-        {
-            Vector3 direction = Quaternion.Euler(0, angle, 0) * (originalDestination - Context.MobReference.TransformReference.position).normalized;
-            Vector3 testPosition = Context.MobReference.TransformReference.position + direction * 5f;
-
-            if (NavMesh.SamplePosition(testPosition, out NavMeshHit hit, 10f, NavMesh.AllAreas))
-            {
-                // Check if this path is actually navigable
-                NavMeshPath path = new NavMeshPath();
-                if (NavMesh.CalculatePath(Context.MobReference.TransformReference.position, hit.position, NavMesh.AllAreas, path))
-                {
-                    if (path.status == NavMeshPathStatus.PathComplete)
-                        return hit.position;
-                }
-            }
-        }
-
-        // Fallback: random position nearby
-        return Context.MobReference.GetRandomNavMeshPosition(
-            Context.MobReference.TransformReference.position, 5f);
-    }
-
-    /// <summary>
-    /// Updates memory of threats and opportunities, removing outdated entries.
-    /// </summary>
-    protected void UpdateMemory()
-    {
-        float currentTime = Time.time;
-        List<GameObject> expiredThreats = new List<GameObject>();
-        List<GameObject> expiredOpportunities = new List<GameObject>();
-
-        foreach (var kvp in threatMemory)
-        {
-            if (kvp.Key == null || currentTime - kvp.Value > THREAT_MEMORY_DURATION)
-                expiredThreats.Add(kvp.Key);
-        }
-
-        foreach (var kvp in opportunityMemory)
-        {
-            if (kvp.Key == null || currentTime - kvp.Value > OPPORTUNITY_MEMORY_DURATION)
-                expiredOpportunities.Add(kvp.Key);
-        }
-
-        foreach (var expired in expiredThreats)
-            threatMemory.Remove(expired);
-
-        foreach (var expired in expiredOpportunities)
-            opportunityMemory.Remove(expired);
-    }
-
-    /// <summary>
-    /// Checks the conditions for entering the Chase state using utility-based evaluation with memory.
-    /// </summary>
-    public void CheckChaseConditions()
-    {
-        // If already chasing a target or being chased by a predator, do nothing.
-        if (Context.MobReference.CurrentChaseTarget != null ||
-            Context.MobReference.CurrentPredator != null ||
-            Context.MobReference.CurrentPlayerTarget != null)
-            return;
-
-        // Detect objects in the mob's detection range.
-        Collider[] detectedObjects = Context.MobReference.DetectionCast.DetectObjects(Context.MobReference.TransformReference);
-
-        Transform bestTarget = null;
-        float bestUtility = 0f;
-        bool isPlayer = false;
-        GameObject bestTargetObject = null;
-
-        // Iterate through detected colliders to find and score potential targets.
-        foreach (var collider in detectedObjects)
-        {
-            if (collider == null) continue;
-
-            PlayerStatusController player = collider.GetComponent<PlayerStatusController>();
-
-            if (player != null && Context.MobReference.PreysReference.Contains("Player"))
-            {
-                float utility = EvaluateTargetUtility(player.transform, true, player.gameObject);
-                if (utility > bestUtility)
-                {
-                    bestUtility = utility;
-                    bestTarget = player.transform;
-                    bestTargetObject = player.gameObject;
-                    isPlayer = true;
-                }
-            }
-
-            MobActionsController prey = collider.GetComponent<MobActionsController>();
-
-            if (prey != null && Context.MobReference.PreysReference.Contains(prey.type))
-            {
-                float utility = EvaluateTargetUtility(prey.transform, false, prey.gameObject);
-                if (utility > bestUtility && !isPlayer) // Players have priority
-                {
-                    bestUtility = utility;
-                    bestTarget = prey.transform;
-                    bestTargetObject = prey.gameObject;
-                }
-            }
-        }
-
-        // Dynamic threshold based on current state and memory
-        float threshold = CalculateDynamicThreshold();
-
-        // Start chase if a suitable target was found
-        if (bestTarget != null && bestUtility > threshold)
-        {
-            // Remember this opportunity
-            if (bestTargetObject != null)
-            {
-                opportunityMemory[bestTargetObject] = Time.time;
-            }
-
-            if (isPlayer)
-            {
-                StartPlayerChase(bestTarget.GetComponent<PlayerStatusController>());
-            }
-            else
-            {
-                StartChase(bestTarget.GetComponent<MobActionsController>());
-            }
-        }
-    }
-
-    /// <summary>
-    /// Calculates a dynamic threshold for initiating chase based on current state and health.
-    /// </summary>
-    /// <returns>Threshold value for chase initiation.</returns>
-    protected float CalculateDynamicThreshold()
-    {
-        float baseThreshold = 0.3f;
-
-        // Lower threshold if health is high (more aggressive)
-        float healthFactor = Context.StatusController.HealthManager.CurrentValue / Context.StatusController.HealthManager.MaxValue;
-        float healthAdjustment = (healthFactor - 0.5f) * 0.2f;
-
-        // Higher threshold if we have remembered threats nearby
-        float threatAdjustment = threatMemory.Count * 0.1f;
-
-        return Mathf.Clamp(baseThreshold - healthAdjustment + threatAdjustment, 0.2f, 0.6f);
-    }
-
-    /// <summary>
-    /// Evaluates the utility of pursuing a target based on multiple factors with memory influence.
-    /// </summary>
-    /// <param name="targetTransform">Transform of the potential target.</param>
-    /// <param name="isPlayer">Whether the target is a player.</param>
-    /// <param name="targetObject">GameObject of the target for memory lookup.</param>
-    /// <returns>Utility score for pursuing this target.</returns>
-    protected float EvaluateTargetUtility(Transform targetTransform, bool isPlayer, GameObject targetObject)
-    {
-        float distance = Vector3.Distance(Context.MobReference.TransformReference.position, targetTransform.position);
-
-        // Distance factor - closer targets are more attractive
-        float distanceFactor = 1f - Mathf.Clamp01(distance / Context.MobReference.DetectionRange);
-
-        // Urgency factor - players typically have higher priority
-        float urgencyFactor = isPlayer ? 0.8f : 0.5f;
-
-        // Safety factor - consider if we're at a good health level to engage
-        float healthRatio = Context.StatusController.HealthManager.CurrentValue / Context.StatusController.HealthManager.MaxValue;
-        float safetyFactor = Mathf.Lerp(0.3f, 0.9f, healthRatio);
-
-        // Calculate direction alignment - prefer targets in front
-        Vector3 directionToTarget = (targetTransform.position - Context.MobReference.TransformReference.position).normalized;
-        Vector3 forward = Context.MobReference.TransformReference.forward;
-        float alignment = (Vector3.Dot(forward, directionToTarget) + 1f) / 2f; // Normalize to 0-1
-
-        // Memory bonus - targets we've seen before get a small bonus
-        float memoryBonus = 0f;
-        if (targetObject != null && opportunityMemory.ContainsKey(targetObject))
-        {
-            float timeSinceLastSeen = Time.time - opportunityMemory[targetObject];
-            if (timeSinceLastSeen < OPPORTUNITY_MEMORY_DURATION)
-                memoryBonus = 0.1f * (1f - timeSinceLastSeen / OPPORTUNITY_MEMORY_DURATION);
-        }
-
-        // Combine factors
-        float utility = (distanceFactor * DISTANCE_WEIGHT) +
-                       (urgencyFactor * URGENCY_WEIGHT) +
-                       (safetyFactor * SAFETY_WEIGHT) +
-                       memoryBonus;
-
-        // Apply alignment bonus
-        utility *= (0.7f + alignment * 0.3f);
-
-        return utility;
-    }
-
-    /// <summary>
-    /// Starts chasing the given prey.
-    /// </summary>
-    /// <param name="prey">The prey to chase.</param>
-    private void StartChase(MobActionsController prey)
-    {
-        // Set the current chase target and change the state to Chasing.
-        Context.MobReference.CurrentChaseTarget = prey;
-        shouldChangeToChasingState = true;
-    }
-
-    /// <summary>
-    /// Starts chasing the given player.
-    /// </summary>
-    /// <param name="player">The player to chase.</param>
-    private void StartPlayerChase(PlayerStatusController player)
-    {
-        // Set the current player target and change the state to Chasing.
-        Context.MobReference.CurrentPlayerTarget = player;
-        shouldChangeToChasingState = true;
-    }
-
-    /// <summary>
-    /// Evaluates whether the mob should continue current behavior or switch states.
-    /// </summary>
-    /// <returns>Utility score for continuing current behavior.</returns>
-    protected virtual float EvaluateCurrentBehavior()
-    {
-        return 0.5f; // Default neutral score
+        Vector3 d = originalDestination - Position;
+        float angle = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+        return Motor.TryFindPointAround(Position, 5f, angle + Random.Range(-90f, 90f), out Vector3 p) ? p : Position;
     }
 }

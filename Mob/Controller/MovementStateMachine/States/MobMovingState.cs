@@ -1,129 +1,61 @@
-﻿using UnityEngine;
-using UnityEngine.AI;
+using UnityEngine;
 
 /// <summary>
-/// Represents the moving state of the mob in the movement state machine.
-///  with dynamic path adjustment and obstacle avoidance.
+/// Idle walking: strolls to a random safe point around home. Summoned mobs use it to follow their summoner.
 /// </summary>
 public class MobMovingState : MobMovementState
 {
-    private float pathRecalculationInterval = 1f;
-    private float lastPathRecalculation = 0f;
+    private bool following;
+    private float nextFollowUpdate;
 
-    public MobMovingState(MobMovementContext context, MobMovementStateMachine.EMobMovementState estate) : base(context, estate)
+    public MobMovingState(MobMovementContext context, MobMovementStateMachine.EMobMovementState estate) : base(context, estate) { }
+
+    protected override void OnEnter()
     {
-        MobMovementContext Context = context;
+        CombatEntity summoner = Self.Summoner;
+        following = summoner != null && summoner.IsAlive;
+        nextFollowUpdate = 0f;
+        if (following)
+            return;
+
+        float radius = Mathf.Max(1f, Profile.wanderRadius);
+        if (!Motor.TryFindWanderPoint(Context.Home, radius, out Vector3 destination) || !Motor.MoveTo(destination, MobMoveMode.Walk, 0.4f, true))
+            Finish();
     }
 
-    public override void EnterState()
+    protected override void OnUpdate(float dt)
     {
-        if (Context.Anim != null)
+        if (following)
         {
-            Context.Anim.CrossFadeInFixedTime(StateKey.ToString(), 0.5f);
+            UpdateFollow();
+            return;
         }
-
-        if (!alreadyMoving)
-        {
-            if (Context.MobReference != null && Context.MobReference.WaitToReachDestinationRoutine != null)
-            {
-                Context.MobReference.StopCoroutine(Context.MobReference.WaitToReachDestinationRoutine);
-            }
-
-            if (Context.MobReference != null)
-            {
-                Context.MobReference.WaitToReachDestinationRoutine =
-                    Context.MobReference.StartCoroutine(WaitToReachDestinationRoutine());
-            }
-        }
-        lastPathRecalculation = Time.time;
+        if (Motor.HasArrived() || Motor.IsStuck || Motor.IsOffMesh || TimeInState > Profile.maxWalkTime)
+            Finish();
     }
 
-    public override void ExitState()
+    private void UpdateFollow()
     {
-        alreadyMoving = false;
-        lastPathRecalculation = 0f;
-    }
-
-    public override void UpdateState()
-    {
-        // Continuously check for opportunities or threats while moving
-        if (Time.time - lastPathRecalculation >= pathRecalculationInterval)
+        CombatEntity summoner = Self.Summoner;
+        if (summoner == null || !summoner.IsAlive)
         {
-            CheckChaseConditions();
-            OptimizePath();
-            lastPathRecalculation = Time.time;
+            Finish();
+            return;
         }
-    }
-
-    public override MobMovementStateMachine.EMobMovementState GetNextState()
-    {
-        if (shouldChangeToIdleState)
+        float d = CombatQuery.FlatDistance(Position, summoner.Position);
+        if (d < 3f)
         {
-            shouldChangeToIdleState = false;
-            return MobMovementStateMachine.EMobMovementState.Idle;
+            Motor.Stop();
+            Finish();
+            return;
         }
-        if (shouldChangeToPatrolState)
+        if (Time.time >= nextFollowUpdate)
         {
-            shouldChangeToPatrolState = false;
-            return MobMovementStateMachine.EMobMovementState.Patrol;
+            nextFollowUpdate = Time.time + 0.5f;
+            // Walk to a spot beside/behind the summoner rather than into it.
+            Vector3 side = Quaternion.AngleAxis(Random.Range(120f, 240f), Vector3.up) * summoner.Forward;
+            Vector3 goal = summoner.Position + side * 2.5f;
+            Motor.MoveTo(goal, d > 8f ? MobMoveMode.Run : MobMoveMode.Walk, 0.5f);
         }
-        if (shouldChangeToChasingState)
-        {
-            shouldChangeToChasingState = false;
-            return MobMovementStateMachine.EMobMovementState.Chasing;
-        }
-        return StateKey;
-    }
-
-    public override void OnTriggerEnter(Collider other) { }
-    public override void OnTriggerStay(Collider other) { }
-    public override void OnTriggerExit(Collider other) { }
-    public override void LateUpdateState() { }
-
-    /// <summary>
-    /// Optimizes the current path if conditions warrant it.
-    /// </summary>
-    private void OptimizePath()
-    {
-        if (Context.NavMeshAgentReference == null) return;
-
-        // Check if we're moving efficiently
-        if (Context.NavMeshAgentReference.hasPath && !Context.NavMeshAgentReference.pathPending)
-        {
-            // If we're moving too slowly or path seems inefficient, recalculate
-            if (Context.NavMeshAgentReference.velocity.magnitude < Context.NavMeshAgentReference.speed * 0.5f)
-            {
-                // Check if we're actually stuck or just starting/stopping
-                if (Context.NavMeshAgentReference.remainingDistance > Context.NavMeshAgentReference.stoppingDistance + 1f)
-                {
-                    // Try to find a better path
-                    Vector3 currentDestination = Context.NavMeshAgentReference.destination;
-
-                    // Validate the destination is still valid
-                    if (NavMesh.SamplePosition(currentDestination, out NavMeshHit hit, 5f, NavMesh.AllAreas))
-                    {
-                        SafeSetDestination(hit.position);
-                    }
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Evaluates the utility of continuing movement behavior.
-    /// </summary>
-    /// <returns>Utility score for current behavior.</returns>
-    protected override float EvaluateCurrentBehavior()
-    {
-        if (Context.NavMeshAgentReference == null) return 0.3f;
-
-        // Moving towards a goal is generally productive
-        if (Context.NavMeshAgentReference.hasPath &&
-            Context.NavMeshAgentReference.remainingDistance > Context.NavMeshAgentReference.stoppingDistance)
-        {
-            return 0.6f; // Good to continue moving when we have a valid destination
-        }
-
-        return 0.3f; // Lower utility if path is unclear
     }
 }

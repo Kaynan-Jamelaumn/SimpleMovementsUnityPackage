@@ -1,8 +1,14 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using UnityEngine;
 
+/// <summary>
+/// Every trait of the game. Put it in a Resources folder named "TraitDatabase" so the character creation screen and
+/// the Trait Manager find it at runtime.
+/// </summary>
 [CreateAssetMenu(fileName = "Trait Database", menuName = "Scriptable Objects/Trait Database")]
 public class TraitDatabase : ScriptableObject
 {
@@ -50,6 +56,18 @@ public class TraitDatabase : ScriptableObject
     public List<Trait> GetAllTraits()
     {
         return new List<Trait>(allTraits);
+    }
+
+    /// <summary>Traits that can be picked on the character creation screen (Available At Creation).</summary>
+    public List<Trait> GetCreationTraits()
+    {
+        return allTraits.Where(t => t != null && t.availableAtCreation).ToList();
+    }
+
+    /// <summary>Traits of a kind (passive stat changes, active skills, or both).</summary>
+    public List<Trait> GetTraitsByKind(TraitKind kind)
+    {
+        return allTraits.Where(t => t != null && t.Kind == kind).ToList();
     }
 
     public Trait GetTraitByName(string traitName)
