@@ -1,9 +1,8 @@
-﻿[System.Serializable]
+/// <summary>
+/// A classic status effect of a weapon attack (Hp, Speed, Stamina...). Same as <see cref="AttackEffect"/>; its drawer
+/// hides the Attack Cast list, which weapon attacks do not use (they have their own hit detection).
+/// </summary>
+[System.Serializable]
 public class AttackActionEffect : AttackEffect
 {
-    // This class inherits everything from AttackEffect
-    // but a custom drawer hides AttackCast (necessary)
 }
-
-// Base interface for all attack components
-

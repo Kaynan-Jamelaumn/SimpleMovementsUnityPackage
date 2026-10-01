@@ -1,10 +1,18 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 public static class SplitItemHandler
 {
+    /// <summary>Splits half of the stack into a free slot.</summary>
     public static bool SplitItemIntoNewStack(InventoryManager inventoryManager, InventoryItem pickedItem, GameObject[] slots, GameObject player)
+        => SplitItemIntoNewStack(inventoryManager, pickedItem, slots, player, -1);
+
+    /// <summary>
+    /// Moves <paramref name="amount"/> items of the stack (with their durabilities) into a free slot - preferably in the
+    /// same part of the inventory (hotbar or bag). <paramref name="amount"/> below 1 = half.
+    /// </summary>
+    public static bool SplitItemIntoNewStack(InventoryManager inventoryManager, InventoryItem pickedItem, GameObject[] slots, GameObject player, int amount)
     {
         if (!ValidateInputs(inventoryManager, pickedItem, slots, player))
         {
@@ -28,8 +36,16 @@ public static class SplitItemHandler
                 return false;
             }
 
+            InventorySlot source = pickedItem.GetComponentInParent<InventorySlot>();
             InventorySlot emptySlot = emptySlots[0];
-            int quantityToTransfer = CalculateQuantityToTransfer(pickedItem.stackCurrent);
+            if (source != null)
+            {
+                InventorySlot sameSection = emptySlots.Find(s => s != null && s.IsHotbarSlot == source.IsHotbarSlot);
+                if (sameSection != null) emptySlot = sameSection;
+            }
+            int quantityToTransfer = amount >= 1
+                ? Mathf.Clamp(amount, 1, pickedItem.stackCurrent - 1)
+                : CalculateQuantityToTransfer(pickedItem.stackCurrent);
 
             return ExecuteSplit(inventoryManager, pickedItem, emptySlot, quantityToTransfer, player);
         }
@@ -58,7 +74,7 @@ public static class SplitItemHandler
     {
         var durabilityToTransfer = new List<int>();
 
-        if (originalItem?.DurabilityList == null || quantity <= 0)
+        if (originalItem.Live()?.DurabilityList == null || quantity <= 0)
             return durabilityToTransfer;
 
         int availableDurability = originalItem.DurabilityList.Count;
@@ -89,35 +105,19 @@ public static class SplitItemHandler
         int quantity,
         List<int> durabilityList)
     {
-        if (inventoryManager == null || originalItem?.itemScriptableObject == null || emptySlot == null)
+        if (inventoryManager == null || originalItem.Live()?.itemScriptableObject == null || emptySlot == null)
         {
             Debug.LogError("Cannot create new item: invalid parameters");
             return;
         }
 
-        try
-        {
-            // Create temporary ItemPickable for the InstantiateNewItem method
-            GameObject tempGameObject = new GameObject("TempItem");
-            ItemPickable newItem = tempGameObject.AddComponent<ItemPickable>();
-
-            newItem.DurabilityList = durabilityList ?? new List<int>();
-            newItem.itemScriptableObject = originalItem.itemScriptableObject;
-            newItem.quantity = quantity;
-
-            inventoryManager.InstantiateNewItem(emptySlot.gameObject, tempGameObject);
-            InventoryUtils.SafeDestroy(tempGameObject);
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"Error creating new item: {e.Message}");
-        }
+        inventoryManager.CreateItemInSlot(emptySlot, originalItem.itemScriptableObject, quantity, durabilityList, true);
     }
 
     private static bool ValidateInputs(InventoryManager inventoryManager, InventoryItem pickedItem, GameObject[] slots, GameObject player)
     {
         return inventoryManager != null &&
-               pickedItem?.itemScriptableObject != null &&
+               pickedItem.Live()?.itemScriptableObject != null &&
                slots != null &&
                player != null;
     }

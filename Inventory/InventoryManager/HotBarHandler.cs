@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 public static class HotbarHandler
@@ -6,12 +6,12 @@ public static class HotbarHandler
     // Constants
     private const float SELECTED_SLOT_SCALE = 1.25f;
     private const float NORMAL_SLOT_SCALE = 1f;
-    private const int MAX_HOTBAR_SLOTS = 8;
+    private const int MAX_HOTBAR_SLOTS = 9;
 
-    // State
+    // State (static: one player's hotbar)
     private static int selectedHotbarSlot = 0;
     private static int lastSelectedSlot = -1;
-    private static Keyboard keyboard;
+    private static GameObject lastHeldItem;
 
     // Cached components for performance
     private static GameObject currentHandItem;
@@ -19,36 +19,48 @@ public static class HotbarHandler
     // Properties
     public static int SelectedHotbarSlot => selectedHotbarSlot;
 
-    // Initialize the keyboard reference
-    static HotbarHandler()
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
     {
-        keyboard = Keyboard.current;
+        selectedHotbarSlot = 0;
+        lastSelectedSlot = -1;
+        lastHeldItem = null;
+        currentHandItem = null;
     }
 
-    // Main input checking method with optimized key detection
-    public static void CheckForHotbarInput(GameObject[] hotbarSlots, Transform handParent)
+    /// <summary>Number keys 1-9 select a hotbar slot. Returns true when the selection changed.</summary>
+    public static bool CheckForHotbarInput(GameObject[] hotbarSlots, Transform handParent)
     {
-        if (keyboard == null || hotbarSlots == null) return;
+        if (hotbarSlots == null || hotbarSlots.Length == 0) return false;
 
-        int newSelectedSlot = GetPressedSlotIndex();
+        int newSelectedSlot = GetPressedSlotIndex(hotbarSlots.Length);
+        if (newSelectedSlot == -1 || newSelectedSlot == selectedHotbarSlot) return false;
 
-        if (newSelectedSlot != -1 && newSelectedSlot != selectedHotbarSlot)
+        selectedHotbarSlot = newSelectedSlot;
+        HotbarItemChanged(hotbarSlots, handParent);
+        return true;
+    }
+
+    // Keyboard.current is read every time (it used to be cached once and could stay null forever).
+    private static int GetPressedSlotIndex(int slotCount)
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null)
         {
-            selectedHotbarSlot = newSelectedSlot;
-            HotbarItemChanged(hotbarSlots, handParent);
+            if (keyboard.digit1Key.wasPressedThisFrame) return Valid(0, slotCount);
+            if (keyboard.digit2Key.wasPressedThisFrame) return Valid(1, slotCount);
+            if (keyboard.digit3Key.wasPressedThisFrame) return Valid(2, slotCount);
+            if (keyboard.digit4Key.wasPressedThisFrame) return Valid(3, slotCount);
+            if (keyboard.digit5Key.wasPressedThisFrame) return Valid(4, slotCount);
+            if (keyboard.digit6Key.wasPressedThisFrame) return Valid(5, slotCount);
+            if (keyboard.digit7Key.wasPressedThisFrame) return Valid(6, slotCount);
+            if (keyboard.digit8Key.wasPressedThisFrame) return Valid(7, slotCount);
+            if (keyboard.digit9Key.wasPressedThisFrame) return Valid(8, slotCount);
         }
-    }
-
-    // Optimized key detection
-    private static int GetPressedSlotIndex()
-    {
-        if (keyboard.digit1Key.wasPressedThisFrame) return 0;
-        if (keyboard.digit2Key.wasPressedThisFrame) return 1;
-        if (keyboard.digit3Key.wasPressedThisFrame) return 2;
-        if (keyboard.digit4Key.wasPressedThisFrame) return 3;
-        if (keyboard.digit5Key.wasPressedThisFrame) return 4;
         return -1;
     }
+
+    private static int Valid(int index, int count) => index < count ? index : -1;
 
     // Optimized hotbar update - only update when selection changes
     public static void HotbarItemChanged(GameObject[] hotbarSlots, Transform handParent)
@@ -62,6 +74,22 @@ public static class HotbarHandler
         UpdateHandItem(hotbarSlots, handParent);
 
         lastSelectedSlot = selectedHotbarSlot;
+        lastHeldItem = CurrentSlotItem(hotbarSlots);
+    }
+
+    /// <summary>Rebuilds the hand model when the item in the selected slot changed (dragged in or out, used up).</summary>
+    public static void RefreshIfItemChanged(GameObject[] hotbarSlots, Transform handParent)
+    {
+        if (hotbarSlots == null || handParent == null) return;
+        if (lastSelectedSlot != selectedHotbarSlot || lastHeldItem != CurrentSlotItem(hotbarSlots))
+            ForceRefresh(hotbarSlots, handParent);
+    }
+
+    private static GameObject CurrentSlotItem(GameObject[] hotbarSlots)
+    {
+        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length || hotbarSlots[selectedHotbarSlot] == null) return null;
+        var slot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
+        return slot != null ? slot.heldItem : null;
     }
 
     // Update visual states of hotbar slots
@@ -95,7 +123,7 @@ public static class HotbarHandler
         if (selectedSlot.heldItem == null) return;
 
         var heldItem = selectedSlot.heldItem.GetComponent<InventoryItem>();
-        if (heldItem?.itemScriptableObject?.Prefab != null)
+        if (heldItem.Live()?.itemScriptableObject.Live()?.Prefab != null)
         {
             InstantiateHandItem(heldItem, handParent);
         }
@@ -174,8 +202,8 @@ public static class HotbarHandler
         if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length)
             return null;
 
-        var slot = hotbarSlots[selectedHotbarSlot]?.GetComponent<InventorySlot>();
-        return slot?.heldItem?.GetComponent<InventoryItem>();
+        var slot = hotbarSlots[selectedHotbarSlot].Live()?.GetComponent<InventorySlot>();
+        return slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
     }
 
     // Check if a specific slot has an item
@@ -184,8 +212,8 @@ public static class HotbarHandler
         if (hotbarSlots == null || slotIndex < 0 || slotIndex >= hotbarSlots.Length)
             return false;
 
-        var slot = hotbarSlots[slotIndex]?.GetComponent<InventorySlot>();
-        return slot?.heldItem != null;
+        var slot = hotbarSlots[slotIndex].Live()?.GetComponent<InventorySlot>();
+        return slot.Live()?.heldItem != null;
     }
 
     // Get item from specific slot
@@ -200,7 +228,8 @@ public static class HotbarHandler
     // Select specific slot programmatically
     public static void SelectSlot(int slotIndex, GameObject[] hotbarSlots, Transform handParent)
     {
-        if (slotIndex < 0 || slotIndex >= MAX_HOTBAR_SLOTS) return;
+        int count = hotbarSlots != null ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
+        if (slotIndex < 0 || slotIndex >= count) return;
 
         selectedHotbarSlot = slotIndex;
         HotbarItemChanged(hotbarSlots, handParent);
@@ -209,13 +238,15 @@ public static class HotbarHandler
     // Get next/previous slot with wrapping
     public static void SelectNextSlot(GameObject[] hotbarSlots, Transform handParent)
     {
-        int nextSlot = (selectedHotbarSlot + 1) % MAX_HOTBAR_SLOTS;
+        int count = hotbarSlots != null && hotbarSlots.Length > 0 ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
+        int nextSlot = (selectedHotbarSlot + 1) % count;
         SelectSlot(nextSlot, hotbarSlots, handParent);
     }
 
     public static void SelectPreviousSlot(GameObject[] hotbarSlots, Transform handParent)
     {
-        int prevSlot = (selectedHotbarSlot - 1 + MAX_HOTBAR_SLOTS) % MAX_HOTBAR_SLOTS;
+        int count = hotbarSlots != null && hotbarSlots.Length > 0 ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
+        int prevSlot = (selectedHotbarSlot - 1 + count) % count;
         SelectSlot(prevSlot, hotbarSlots, handParent);
     }
 

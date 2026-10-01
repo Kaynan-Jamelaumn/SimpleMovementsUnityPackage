@@ -70,6 +70,12 @@ public abstract class AbilityEffect
     /// <summary>Damage dealt to one target (AI and tooltips).</summary>
     public virtual float EstimateDamage(in AbilityStats s) => 0f;
 
+    /// <summary>
+    /// Does this effect hurt its target (damage, control, displacement, a lowered stat)? Harmful effects only land on
+    /// party members and allies when friendly fire allows it; helpful ones (heal, buff, cleanse) follow the filters.
+    /// </summary>
+    public virtual bool IsHarmful => false;
+
     /// <summary>Seconds of hard control (stun/root/silence) applied (AI).</summary>
     public virtual float EstimateControl(in AbilityStats s) => 0f;
 
@@ -93,6 +99,9 @@ public abstract class AbilityEffect
 [Serializable, AbilityMenu("Damage/Damage", "Instant damage to the hit character.", 0)]
 public class DamageEffect : AbilityEffect
 {
+    /// <summary>Harmful: never lands on party members / allies unless friendly fire allows it.</summary>
+    public override bool IsHarmful => true;
+
     [Tooltip("Damage per hit (before the target's resistances).")]
     [Min(0f)] public float amount = 10f;
     [Tooltip("Random spread: 0.1 = between 90% and 110% of Amount.")]
@@ -101,6 +110,10 @@ public class DamageEffect : AbilityEffect
     [Range(0f, 1f)] public float criticalChance = 0f;
     [Tooltip("Damage multiplier of critical hits.")]
     [Min(1f)] public float criticalMultiplier = 1.5f;
+    [Tooltip("Physical is reduced by the target's Defense, Magical by its Magic Resistance, True by neither.")]
+    public DamageType damageType = DamageType.Physical;
+    [Tooltip("Element of the damage. Targets with a resistance to it (armor, traits) take less. None = plain damage.")]
+    public ElementType element = ElementType.None;
 
     public override void Apply(ref EffectContext ctx)
     {
@@ -120,12 +133,14 @@ public class DamageEffect : AbilityEffect
             point = ctx.point,
             direction = ctx.direction,
             isCritical = crit,
+            type = damageType,
+            element = element,
         });
     }
 
     public override float EstimateDamage(in AbilityStats s) => amount * s.damage * (1f + criticalChance * (criticalMultiplier - 1f));
 
-    public override string Describe(in AbilityStats s) => $"{amount * s.damage:0.#} damage{Chance(chance)}";
+    public override string Describe(in AbilityStats s) => $"{amount * s.damage:0.#} {DamageWords.Describe(damageType, element)}damage{Chance(chance)}";
 
     public override void Validate(string owner, List<string> errors, List<string> warnings)
     {
@@ -138,6 +153,9 @@ public class DamageEffect : AbilityEffect
 [Serializable, AbilityMenu("Damage/Damage Over Time", "Poison, burn, bleed: damage every tick for a duration.", 1)]
 public class DamageOverTimeEffect : AbilityEffect
 {
+    /// <summary>Harmful: never lands on party members / allies unless friendly fire allows it.</summary>
+    public override bool IsHarmful => true;
+
     [Tooltip("Damage of each tick.")]
     [Min(0f)] public float damagePerTick = 3f;
     [Tooltip("Seconds between ticks.")]
@@ -150,19 +168,24 @@ public class DamageOverTimeEffect : AbilityEffect
     [Min(1)] public int maxStacks = 3;
     [Tooltip("Optional particle attached to the target while it lasts.")]
     public GameObject attachedVfx;
+    [Tooltip("Physical is reduced by the target's Defense, Magical by its Magic Resistance, True by neither.")]
+    public DamageType damageType = DamageType.Physical;
+    [Tooltip("Element of the ticks (a burn is Fire, a poison Poison). None = plain damage.")]
+    public ElementType element = ElementType.None;
 
     public override void Apply(ref EffectContext ctx)
     {
         if (ctx.target == null)
             return;
         float perTick = damagePerTick * ctx.stats.damage * ctx.multiplier;
-        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, -perTick, tickInterval, duration * ctx.stats.duration, stacking, maxStacks, attachedVfx);
+        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, -perTick, tickInterval, duration * ctx.stats.duration, stacking, maxStacks, attachedVfx,
+            damageType, element);
     }
 
     public override float EstimateDamage(in AbilityStats s) => damagePerTick * s.damage * Mathf.Floor(duration * s.duration / tickInterval);
 
     public override string Describe(in AbilityStats s) =>
-        $"{damagePerTick * s.damage:0.#} damage every {tickInterval:0.##}s for {duration * s.duration:0.#}s{Chance(chance)}";
+        $"{damagePerTick * s.damage:0.#} {DamageWords.Describe(damageType, element)}damage every {tickInterval:0.##}s for {duration * s.duration:0.#}s{Chance(chance)}";
 }
 
 // ====================================================================================================== support
@@ -240,6 +263,9 @@ public class InvulnerabilityEffect : AbilityEffect
 [Serializable, AbilityMenu("Status/Status Effect", "Changes a status through the status controller: HP, stamina, mana, hunger, speed, heal/damage factors, regeneration... Same as the old AttackEffect.", 0)]
 public class StatEffect : AbilityEffect
 {
+    /// <summary>Lowering a status (damage, slow, drain) is harmful; raising it is helpful.</summary>
+    public override bool IsHarmful => amount < 0f;
+
     [Tooltip("Which status to change.")]
     public AttackEffectType effectType = AttackEffectType.Hp;
     [Tooltip("Name of the effect (effects with the same name replace each other unless Stackable).")]
@@ -354,6 +380,9 @@ public class StatEffect : AbilityEffect
 [Serializable]
 public abstract class ControlEffect : AbilityEffect
 {
+    /// <summary>Harmful: never lands on party members / allies unless friendly fire allows it.</summary>
+    public override bool IsHarmful => true;
+
     [Tooltip("Duration in seconds.")]
     [Min(0.05f)] public float duration = 1.5f;
 
@@ -416,6 +445,9 @@ public class TauntEffect : ControlEffect
 [Serializable, AbilityMenu("Displacement/Knockback", "Pushes the target away.", 0)]
 public class KnockbackEffect : AbilityEffect
 {
+    /// <summary>Harmful: never lands on party members / allies unless friendly fire allows it.</summary>
+    public override bool IsHarmful => true;
+
     [Tooltip("Distance pushed (metres).")]
     [Min(0f)] public float distance = 4f;
     [Tooltip("Seconds the push takes.")]
@@ -465,6 +497,9 @@ public class KnockbackEffect : AbilityEffect
 [Serializable, AbilityMenu("Displacement/Pull", "Drags the target toward the caster or the centre of the hit (hooks, vortexes).", 1)]
 public class PullEffect : AbilityEffect
 {
+    /// <summary>Harmful: never lands on party members / allies unless friendly fire allows it.</summary>
+    public override bool IsHarmful => true;
+
     [Tooltip("Maximum distance the target is dragged (metres).")]
     [Min(0f)] public float maxDistance = 8f;
     [Tooltip("The target stops this far from the anchor (metres).")]
@@ -538,10 +573,12 @@ public sealed class PeriodicEffectRunner : IAbilityRuntimeObject
     private float nextTick;
     private GameObject vfx;
     private bool disposed;
+    private DamageType damageType;
+    private ElementType element;
 
     /// <summary>Applies an over-time effect. <paramref name="perTick"/> negative = damage, positive = heal.</summary>
     public static void Apply(CombatEntity target, CombatEntity source, AbilityDefinition ability, object effect, float perTick, float interval, float duration,
-        EffectStacking stacking, int maxStacks, GameObject attachedVfx)
+        EffectStacking stacking, int maxStacks, GameObject attachedVfx, DamageType damageType = DamageType.Physical, ElementType element = ElementType.None)
     {
         if (target == null || duration <= 0f || Mathf.Approximately(perTick, 0f))
             return;
@@ -582,6 +619,8 @@ public sealed class PeriodicEffectRunner : IAbilityRuntimeObject
             interval = Mathf.Max(0.05f, interval),
             remaining = duration,
             nextTick = Mathf.Max(0.05f, interval),
+            damageType = damageType,
+            element = element,
         };
         if (attachedVfx != null)
             runner.vfx = AbilityPool.Spawn(attachedVfx, target.Center, target.transform.rotation, target.transform);
@@ -589,6 +628,33 @@ public sealed class PeriodicEffectRunner : IAbilityRuntimeObject
         if (perTick < 0f)
             target.RegisterPeriodicSource(source, duration);
         AbilityRuntime.Add(runner);
+    }
+
+    /// <summary>
+    /// How many over-time effects run on <paramref name="target"/>: damaging ones (poison, burn...) or healing ones,
+    /// optionally only of one element (None = any). Used by conditions such as combo branches ("target is burning").
+    /// </summary>
+    public static int CountOn(CombatEntity target, bool damaging, ElementType element = ElementType.None)
+    {
+        if (target == null)
+            return 0;
+        int n = 0;
+        foreach (KeyValuePair<Key, List<PeriodicEffectRunner>> kv in active)
+        {
+            if (!ReferenceEquals(kv.Key.target, target))
+                continue;
+            List<PeriodicEffectRunner> list = kv.Value;
+            for (int i = 0; i < list.Count; i++)
+            {
+                PeriodicEffectRunner r = list[i];
+                if (r.disposed || (r.perTick < 0f) != damaging)
+                    continue;
+                if (element != ElementType.None && r.element != element)
+                    continue;
+                n++;
+            }
+        }
+        return n;
     }
 
     public bool Tick(float dt)
@@ -609,6 +675,8 @@ public sealed class PeriodicEffectRunner : IAbilityRuntimeObject
                     ability = ability,
                     point = target.Center,
                     isPeriodic = true,
+                    type = damageType,
+                    element = element,
                 });
             }
             else

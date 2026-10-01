@@ -1029,12 +1029,13 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         CombatSettings settings = CombatSettings.Instance;
         if (Entity == null)
             return settings.enemyTelegraphColor;
-        if (Entity.Kind == CombatEntity.EntityKind.Player)
+        // Relative to the viewer: this machine's player (multiplayer: every client colours casts by its own relation).
+        CombatEntity viewer = PlayerLocator.Local;
+        if (viewer == null)
+            return Entity.Kind == CombatEntity.EntityKind.Player ? settings.aimPreviewColor : settings.enemyTelegraphColor;
+        if (viewer == Entity)
             return settings.aimPreviewColor;
-        CombatEntity player = CombatEntity.NearestPlayer(Entity.Position, out _);
-        if (player != null && CombatRelations.Get(Entity, player) != CombatRelation.Enemy)
-            return settings.allyTelegraphColor;
-        return settings.enemyTelegraphColor;
+        return CombatRelations.Get(Entity, viewer) == CombatRelation.Enemy ? settings.enemyTelegraphColor : settings.allyTelegraphColor;
     }
 
     // ------------------------------------------------------------------ resources

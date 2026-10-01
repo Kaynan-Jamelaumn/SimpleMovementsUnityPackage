@@ -188,11 +188,11 @@ needs a NavMeshAgent of the profile's agent type.
 | DungeonManager › Pause While Inside / Hide While Inside | empty | extra behaviours / objects to pause | Impl. |
 | Portal › (see [10 §2](10-Runtime-Session-Portals.md)) | | | Impl. |
 | DungeonSession.SpawnLift / ReentryCooldown (static) | 1 m / 3 s | arrival height, re-entry block | Impl. |
-| DungeonPortal › Action, Player Tag, Arm Delay | set by builder, Player, 1.5 s | | Impl. |
-| DungeonFloorStreamer › Streaming, Floors Around, Target, Player Tag | from profile | | Impl. |
-| DungeonRespawnDirector › Manager, Interval, Max Share Alive, Min Distance, Avoid Camera View, Player Tag | —, 20–45 s, 0.75, 25 m, on, Player | | Impl. |
-| DungeonHazard › Target Tag, Damage, Interval, Spike Rise, On Hit | Player, 10, 1 s, 0.25 | | Impl. (damage applied by your code) |
-| DungeonSecretDoor › Player Tag, Search Distance, Hold Time, Open Speed | Player, 1.8 m, 1.5 s, 1.2 m/s | | Impl. |
+| DungeonPortal › Action, Player Tag (fallback), Arm Delay | set by builder, Player, 1.5 s | players found by Combat Entity; only participants can use it | Impl. |
+| DungeonFloorStreamer › Streaming, Floors Around, Target | from profile | empty Target = every floor with a participant stays active | Impl. |
+| DungeonRespawnDirector › Manager, Interval, Max Share Alive, Min Distance, Avoid Camera View | —, 20–45 s, 0.75, 25 m, on | Min Distance from **every** player | Impl. |
+| DungeonHazard › Affects, Target Tag (fallback), Damage, Apply Damage, Interval, Spike Rise, On Hit | Players, —, 10, on, 1 s, 0.25 | damage through the combat system | Impl. |
+| DungeonSecretDoor › Search Distance, Hold Time, Open Speed | 1.8 m, 1.5 s, 1.2 m/s | any player can find it | Impl. |
 | DungeonFlicker › Amount, Speed | 0.25, 7 | | Impl. |
 
 ## 12. Constants in code (not settings)

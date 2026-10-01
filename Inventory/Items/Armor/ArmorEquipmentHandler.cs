@@ -1,378 +1,241 @@
-﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 
-// Specialized handler for armor equipment operations
+/// <summary>
+/// Armor operations on the inventory UI: moving pieces into and out of equipment slots, quick-equip, unequip all,
+/// wearing the most complete set. It only MOVES items between slots; what an item does while worn is applied by the
+/// <see cref="EquipmentManager"/>, which syncs with the equipment slots after every move (so a piece can never be
+/// applied twice or stay applied after it left its slot).
+/// </summary>
 public static class ArmorEquipmentHandler
 {
-    // Enhanced armor equipping with set bonus handling
-    public static void EquipArmor(InventorySlot slot, InventoryItem armorItem, PlayerStatusController playerStatusController)
+    /// <summary>Tells the character's equipment manager that the equipment slots changed.</summary>
+    public static void NotifyEquipmentChanged(PlayerStatusController playerStatusController)
     {
-        if (slot == null || armorItem?.itemScriptableObject == null) return;
-
-        var armorSO = armorItem.itemScriptableObject as ArmorSO;
-        if (armorSO == null) return;
-
-        // Check if slot is compatible
-        if (!IsSlotCompatibleWithArmor(slot, armorSO))
-        {
-            Debug.LogWarning($"Slot {slot.SlotType} is not compatible with armor {armorSO.name} ({armorSO.ArmorSlotType})");
+        if (playerStatusController == null)
             return;
-        }
-
-        // Handle equipment swap if slot is occupied
-        if (slot.heldItem != null)
-        {
-            var currentItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (currentItem != null && currentItem.isEquipped)
-            {
-                UnequipArmor(currentItem, playerStatusController);
-            }
-        }
-
-        // Equip the new armor
-        armorItem.SetEquipped(true);
-        armorSO.ApplyEquippedStats(true, playerStatusController);
-
-        // Play audio effect
-        PlayArmorEquipSound(armorSO, playerStatusController);
-
-        Debug.Log($"Equipped armor: {armorSO.name} in slot {slot.SlotType}");
+        EquipmentManager eq = EquipmentManager.For(playerStatusController);
+        if (eq != null && eq.IsInitialized)
+            eq.SyncFromInventory();
+        else
+            eq?.RequestSync();
     }
 
-    // Enhanced armor unequipping with set bonus handling
+    /// <summary>Called after an armor piece was placed in <paramref name="slot"/>: syncs the equipment.</summary>
+    public static void EquipArmor(InventorySlot slot, InventoryItem armorItem, PlayerStatusController playerStatusController)
+    {
+        if (slot == null || !(armorItem.Live()?.itemScriptableObject is ArmorSO armorSO))
+            return;
+        if (!IsSlotCompatibleWithArmor(slot, armorSO))
+        {
+            Debug.LogWarning($"[Armor] Slot {slot.SlotType} does not fit {armorSO.Name} ({armorSO.ArmorSlotType}).", slot);
+            return;
+        }
+        NotifyEquipmentChanged(playerStatusController);
+    }
+
+    /// <summary>Called after an armor piece left its equipment slot: syncs the equipment.</summary>
     public static void UnequipArmor(InventoryItem armorItem, PlayerStatusController playerStatusController)
     {
-        if (armorItem?.itemScriptableObject == null) return;
-
-        var armorSO = armorItem.itemScriptableObject as ArmorSO;
-        if (armorSO == null) return;
-
-        // Unequip the armor
-        armorItem.SetEquipped(false);
-        armorSO.ApplyEquippedStats(false, playerStatusController);
-
-        // Play audio effect
-        PlayArmorUnequipSound(armorSO, playerStatusController);
-
-        Debug.Log($"Unequipped armor: {armorSO.name}");
+        if (!(armorItem.Live()?.itemScriptableObject is ArmorSO))
+            return;
+        NotifyEquipmentChanged(playerStatusController);
     }
 
     // Check if a slot is compatible with a specific armor piece
     public static bool IsSlotCompatibleWithArmor(InventorySlot slot, ArmorSO armor)
     {
         if (slot == null || armor == null) return false;
-
-        // Check for exact slot type match
-        SlotType requiredSlotType = armor.GetSlotType();
-        return slot.SlotType == requiredSlotType || slot.SlotType == SlotType.Common;
+        return SlotTypeHelper.CanPlace(armor, slot.SlotType);
     }
 
-    // Find the appropriate slot for an armor piece
+    /// <summary>The equipment slot for a piece (an empty one first), or an empty inventory slot, or null.</summary>
     public static InventorySlot FindSlotForArmor(InventoryManager inventoryManager, ArmorSO armor)
     {
-        if (inventoryManager?.Slots == null || armor == null) return null;
+        if (inventoryManager == null || armor == null) return null;
+        SlotType required = armor.GetSlotType();
 
-        SlotType requiredSlotType = armor.GetSlotType();
-
-        // First try to find the exact slot type
-        foreach (var slotObj in inventoryManager.Slots)
+        InventorySlot occupied = null;
+        foreach (InventorySlot slot in inventoryManager.EquipmentSlots)
         {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.SlotType == requiredSlotType)
-            {
+            if (slot == null || slot.SlotType != required)
+                continue;
+            if (slot.heldItem == null)
                 return slot;
-            }
+            if (occupied == null)
+                occupied = slot;
         }
-
-        // If no specific slot found, try common slots
-        foreach (var slotObj in inventoryManager.Slots)
-        {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.SlotType == SlotType.Common && slot.heldItem == null)
-            {
-                return slot;
-            }
-        }
-
-        return null;
+        return occupied != null ? occupied : FindEmptyInventorySlot(inventoryManager);
     }
 
-    // Get all equipped armor pieces
+    /// <summary>Inventory items currently worn as armor.</summary>
     public static List<InventoryItem> GetAllEquippedArmor(InventoryManager inventoryManager)
     {
-        var equippedArmor = new List<InventoryItem>();
-
-        if (inventoryManager?.Slots == null) return equippedArmor;
-
-        foreach (var slotObj in inventoryManager.Slots)
-        {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
-
-            var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject is ArmorSO && inventoryItem.isEquipped)
-            {
-                equippedArmor.Add(inventoryItem);
-            }
-        }
-
-        return equippedArmor;
+        var result = new List<InventoryItem>();
+        EquipmentManager eq = ArmorSetUtils.GetEquipment(inventoryManager);
+        if (eq == null) return result;
+        foreach (EquipmentManager.Entry e in eq.Entries)
+            if (e.Item is ArmorSO && e.InventoryItem != null)
+                result.Add(e.InventoryItem);
+        return result;
     }
 
-    // Handle armor switching between slots
+    /// <summary>Swaps the items of two slots (when both fit), then syncs the equipment.</summary>
     public static void SwitchArmor(InventorySlot fromSlot, InventorySlot toSlot, PlayerStatusController playerStatusController)
     {
-        if (fromSlot?.heldItem == null || toSlot == null) return;
+        if (fromSlot.Live()?.heldItem == null || toSlot == null || fromSlot == toSlot) return;
 
         var fromItem = fromSlot.heldItem.GetComponent<InventoryItem>();
-        var fromArmor = fromItem?.itemScriptableObject as ArmorSO;
+        var toItem = toSlot.heldItem != null ? toSlot.heldItem.GetComponent<InventoryItem>() : null;
+        if (fromItem == null || !SlotTypeHelper.CanPlace(fromItem.itemScriptableObject, toSlot.SlotType))
+            return;
+        if (toItem != null && !SlotTypeHelper.CanPlace(toItem.itemScriptableObject, fromSlot.SlotType))
+            return;
 
-        if (fromArmor == null) return;
-
-        // Check compatibility
-        if (!IsSlotCompatibleWithArmor(toSlot, fromArmor)) return;
-
-        bool wasEquipped = fromItem.isEquipped;
-
-        // Handle item in target slot
-        InventoryItem toItem = null;
-        if (toSlot.heldItem != null)
-        {
-            toItem = toSlot.heldItem.GetComponent<InventoryItem>();
-            if (toItem != null && toItem.isEquipped)
-            {
-                UnequipArmor(toItem, playerStatusController);
-            }
-        }
-
-        // Move items
-        GameObject tempItem = fromSlot.heldItem;
-        fromSlot.SetHeldItem(toSlot.heldItem);
-        toSlot.SetHeldItem(tempItem);
-
-        // Re-equip if it was equipped before
-        if (wasEquipped)
-        {
-            EquipArmor(toSlot, fromItem, playerStatusController);
-        }
-
-        // Re-equip the other item if it was equipped
-        if (toItem != null && toItem.isEquipped && fromSlot.heldItem != null)
-        {
-            var toArmor = toItem.itemScriptableObject as ArmorSO;
-            if (toArmor != null && IsSlotCompatibleWithArmor(fromSlot, toArmor))
-            {
-                EquipArmor(fromSlot, toItem, playerStatusController);
-            }
-        }
+        GameObject moving = fromSlot.heldItem;
+        GameObject other = toSlot.heldItem;
+        fromSlot.SetHeldItem(other);
+        toSlot.SetHeldItem(moving);
+        NotifyEquipmentChanged(playerStatusController);
     }
 
     // Quick equip armor from inventory
     public static bool QuickEquipArmor(InventoryManager inventoryManager, ArmorSO armor, PlayerStatusController playerStatusController)
     {
-        var targetSlot = FindSlotForArmor(inventoryManager, armor);
-        if (targetSlot == null) return false;
-
-        // Find the armor in inventory
         var armorItem = FindArmorInInventory(inventoryManager, armor);
         if (armorItem == null) return false;
-
-        // Get the slot containing the armor
         var sourceSlot = FindSlotContaining(inventoryManager, armorItem);
         if (sourceSlot == null) return false;
 
-        // Move and equip
-        if (targetSlot.heldItem != null)
+        InventorySlot target = null;
+        SlotType required = armor.GetSlotType();
+        foreach (InventorySlot slot in inventoryManager.EquipmentSlots)
         {
-            // Swap items
-            SwitchArmor(sourceSlot, targetSlot, playerStatusController);
+            if (slot == null || slot.SlotType != required) continue;
+            if (slot == sourceSlot) return true; // already worn
+            if (target == null || (target.heldItem != null && slot.heldItem == null))
+                target = slot;
         }
-        else
-        {
-            // Move to empty slot
-            targetSlot.SetHeldItem(sourceSlot.heldItem);
-            sourceSlot.SetHeldItem(null);
-            EquipArmor(targetSlot, armorItem, playerStatusController);
-        }
+        if (target == null) return false;
 
+        SwitchArmor(sourceSlot, target, playerStatusController);
         return true;
     }
 
-    // Quick unequip all armor
+    /// <summary>Moves every worn armor piece to free inventory slots (pieces that do not fit stay worn).</summary>
     public static void UnequipAllArmor(InventoryManager inventoryManager, PlayerStatusController playerStatusController)
     {
-        var equippedArmor = GetAllEquippedArmor(inventoryManager);
-
-        foreach (var armorItem in equippedArmor)
+        if (inventoryManager == null) return;
+        int moved = 0;
+        foreach (InventorySlot slot in inventoryManager.EquipmentSlots)
         {
-            UnequipArmor(armorItem, playerStatusController);
+            if (slot.Live()?.heldItem == null || !(slot.heldItem.GetComponent<InventoryItem>()?.itemScriptableObject is ArmorSO))
+                continue;
+            InventorySlot free = FindEmptyInventorySlot(inventoryManager);
+            if (free == null)
+            {
+                Debug.LogWarning("[Armor] No free inventory slot to unequip into.");
+                break;
+            }
+            free.SetHeldItem(slot.heldItem);
+            slot.SetHeldItem(null);
+            moved++;
         }
-
-        Debug.Log($"Unequipped {equippedArmor.Count} armor pieces");
+        if (moved > 0)
+            NotifyEquipmentChanged(playerStatusController);
     }
 
-    // Optimize armor equipment for maximum set bonuses
+    /// <summary>Wears the set with the most different pieces in the inventory (if it reaches its minimum).</summary>
     public static void OptimizeArmorSets(InventoryManager inventoryManager, PlayerStatusController playerStatusController)
     {
-        // Get all available armor
         var allArmor = GetAllArmorInInventory(inventoryManager);
+        var bySet = allArmor
+            .Where(item => (item.itemScriptableObject as ArmorSO)?.BelongsToSet != null)
+            .GroupBy(item => ((ArmorSO)item.itemScriptableObject).BelongsToSet)
+            .Select(g => new { set = g.Key, items = g.GroupBy(i => i.itemScriptableObject).Select(x => x.First()).ToList() })
+            .OrderByDescending(x => x.items.Count)
+            .FirstOrDefault();
 
-        // Group by sets
-        var armorBySets = allArmor.Where(item => (item.itemScriptableObject as ArmorSO)?.IsPartOfSet() == true)
-                                .GroupBy(item => (item.itemScriptableObject as ArmorSO).BelongsToSet)
-                                .ToDictionary(g => g.Key, g => g.ToList());
+        if (bySet == null || bySet.items.Count < bySet.set.MinimumPiecesForSet)
+            return;
 
-        // Find the set with the most pieces
-        var bestSet = armorBySets.OrderByDescending(kvp => kvp.Value.Count).FirstOrDefault();
-
-        if (bestSet.Key != null && bestSet.Value.Count >= bestSet.Key.MinimumPiecesForSet)
-        {
-            // Unequip current armor
-            UnequipAllArmor(inventoryManager, playerStatusController);
-
-            // Equip the best set
-            foreach (var armorItem in bestSet.Value)
-            {
-                var armorSO = armorItem.itemScriptableObject as ArmorSO;
-                if (armorSO != null)
-                {
-                    var targetSlot = FindSlotForArmor(inventoryManager, armorSO);
-                    if (targetSlot != null)
-                    {
-                        var sourceSlot = FindSlotContaining(inventoryManager, armorItem);
-                        if (sourceSlot != null && sourceSlot != targetSlot)
-                        {
-                            targetSlot.SetHeldItem(sourceSlot.heldItem);
-                            sourceSlot.SetHeldItem(null);
-                        }
-                        EquipArmor(targetSlot, armorItem, playerStatusController);
-                    }
-                }
-            }
-
-            Debug.Log($"equipment for {bestSet.Key.SetName} set ({bestSet.Value.Count} pieces)");
-        }
+        foreach (InventoryItem item in bySet.items)
+            QuickEquipArmor(inventoryManager, (ArmorSO)item.itemScriptableObject, playerStatusController);
+        Debug.Log($"[Armor] Equipped the {bySet.set.SetName} set ({bySet.items.Count} pieces).");
     }
 
     // Helper methods
-    private static InventoryItem FindArmorInInventory(InventoryManager inventoryManager, ArmorSO armor)
+    private static IEnumerable<InventorySlot> AllSlots(InventoryManager inventoryManager)
+    {
+        if (inventoryManager == null) yield break;
+        if (inventoryManager.Slots != null)
+            foreach (GameObject go in inventoryManager.Slots)
+                if (go != null && go.TryGetComponent(out InventorySlot s)) yield return s;
+        if (inventoryManager.HotbarSlots != null)
+            foreach (GameObject go in inventoryManager.HotbarSlots)
+                if (go != null && go.TryGetComponent(out InventorySlot s)) yield return s;
+        foreach (InventorySlot s in inventoryManager.EquipmentSlots)
+            if (s != null) yield return s;
+    }
+
+    private static InventorySlot FindEmptyInventorySlot(InventoryManager inventoryManager)
     {
         if (inventoryManager?.Slots == null) return null;
+        foreach (GameObject go in inventoryManager.Slots)
+            if (go != null && go.TryGetComponent(out InventorySlot s) && s.heldItem == null)
+                return s;
+        return null;
+    }
 
-        foreach (var slotObj in inventoryManager.Slots)
+    private static InventoryItem FindArmorInInventory(InventoryManager inventoryManager, ArmorSO armor)
+    {
+        foreach (InventorySlot slot in AllSlots(inventoryManager))
         {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
-
-            var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject == armor)
-            {
-                return inventoryItem;
-            }
+            var item = slot.heldItem != null ? slot.heldItem.GetComponent<InventoryItem>() : null;
+            if (item != null && item.itemScriptableObject == armor)
+                return item;
         }
-
         return null;
     }
 
     private static InventorySlot FindSlotContaining(InventoryManager inventoryManager, InventoryItem item)
     {
-        if (inventoryManager?.Slots == null || item == null) return null;
-
-        foreach (var slotObj in inventoryManager.Slots)
-        {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem?.GetComponent<InventoryItem>() == item)
-            {
+        foreach (InventorySlot slot in AllSlots(inventoryManager))
+            if (slot.heldItem != null && slot.heldItem.GetComponent<InventoryItem>() == item)
                 return slot;
-            }
-        }
-
         return null;
     }
 
     private static List<InventoryItem> GetAllArmorInInventory(InventoryManager inventoryManager)
     {
         var allArmor = new List<InventoryItem>();
-
-        if (inventoryManager?.Slots == null) return allArmor;
-
-        foreach (var slotObj in inventoryManager.Slots)
+        foreach (InventorySlot slot in AllSlots(inventoryManager))
         {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
-
-            var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject is ArmorSO)
-            {
-                allArmor.Add(inventoryItem);
-            }
+            var item = slot.heldItem != null ? slot.heldItem.GetComponent<InventoryItem>() : null;
+            if (item.Live()?.itemScriptableObject is ArmorSO)
+                allArmor.Add(item);
         }
-
         return allArmor;
     }
 
-    private static void PlayArmorEquipSound(ArmorSO armor, PlayerStatusController playerStatusController)
-    {
-        if (armor.EquipArmorSound == null) return;
-
-        var audioSource = playerStatusController.GetComponent<AudioSource>();
-        if (audioSource != null)
-        {
-            audioSource.PlayOneShot(armor.EquipArmorSound);
-        }
-    }
-
-    private static void PlayArmorUnequipSound(ArmorSO armor, PlayerStatusController playerStatusController)
-    {
-        if (armor.UnequipArmorSound == null) return;
-
-        var audioSource = playerStatusController.GetComponent<AudioSource>();
-        if (audioSource != null)
-        {
-            audioSource.PlayOneShot(armor.UnequipArmorSound);
-        }
-    }
-
-    // Validation and debugging methods
+    /// <summary>Warns when two pieces are worn in the same slot type more times than there are slots (should not happen).</summary>
     public static bool ValidateArmorEquipment(InventoryManager inventoryManager)
     {
         bool isValid = true;
-        var equippedArmor = GetAllEquippedArmor(inventoryManager);
+        var slotCounts = new Dictionary<SlotType, int>();
+        foreach (InventorySlot s in inventoryManager.EquipmentSlots)
+            if (s != null) slotCounts[s.SlotType] = (slotCounts.TryGetValue(s.SlotType, out int n) ? n : 0) + 1;
 
-        // Check for duplicate slot types
-        var slotTypes = new Dictionary<ArmorSlotType, int>();
-
-        foreach (var armorItem in equippedArmor)
+        foreach (var group in GetAllEquippedArmor(inventoryManager).GroupBy(i => ((ArmorSO)i.itemScriptableObject).GetSlotType()))
         {
-            var armorSO = armorItem.itemScriptableObject as ArmorSO;
-            if (armorSO != null)
+            slotCounts.TryGetValue(group.Key, out int available);
+            if (group.Count() > available)
             {
-                if (slotTypes.ContainsKey(armorSO.ArmorSlotType))
-                {
-                    slotTypes[armorSO.ArmorSlotType]++;
-                    Debug.LogWarning($"Multiple {armorSO.ArmorSlotType} pieces equipped");
-                    isValid = false;
-                }
-                else
-                {
-                    slotTypes[armorSO.ArmorSlotType] = 1;
-                }
+                Debug.LogWarning($"[Armor] {group.Count()} pieces worn as {group.Key} but only {available} slot(s) exist.");
+                isValid = false;
             }
         }
-
         return isValid;
     }
 
@@ -382,31 +245,18 @@ public static class ArmorEquipmentHandler
         var equippedArmor = GetAllEquippedArmor(inventoryManager);
 
         if (equippedArmor.Count == 0)
-        {
-            report += "No armor equipped\n";
-            return report;
-        }
+            return report + "No armor equipped\n";
 
         report += $"Total armor pieces: {equippedArmor.Count}\n\n";
-
         foreach (var armorItem in equippedArmor)
         {
-            var armorSO = armorItem.itemScriptableObject as ArmorSO;
-            if (armorSO != null)
-            {
-                string setInfo = armorSO.IsPartOfSet() ? $" (Set: {armorSO.BelongsToSet.SetName})" : " (No set)";
-                report += $"{armorSO.ArmorSlotType}: {armorSO.name}{setInfo}\n";
-                report += $"  Defense: {armorSO.DefenseValue}, Magic Defense: {armorSO.MagicDefenseValue}\n";
-
-                if (armorSO.InherentTraits.Count > 0)
-                {
-                    report += $"  Traits: {string.Join(", ", armorSO.InherentTraits.Where(t => t != null).Select(t => t.Name))}\n";
-                }
-            }
+            var armorSO = (ArmorSO)armorItem.itemScriptableObject;
+            string setInfo = armorSO.IsPartOfSet() ? $" (Set: {armorSO.BelongsToSet.SetName})" : " (No set)";
+            report += $"{armorSO.ArmorSlotType}: {armorSO.Name}{setInfo}\n";
+            report += $"  Defense: {armorSO.GetEffectiveDefense():0.#}, Magic Defense: {armorSO.GetEffectiveMagicDefense():0.#}\n";
+            if (armorSO.InherentTraits.Count > 0)
+                report += $"  Traits: {string.Join(", ", armorSO.InherentTraits.Where(t => t != null).Select(t => t.Name))}\n";
         }
-
         return report;
     }
-
-
 }

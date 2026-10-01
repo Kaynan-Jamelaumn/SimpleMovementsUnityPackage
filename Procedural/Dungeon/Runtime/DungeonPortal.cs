@@ -23,7 +23,8 @@ namespace ProceduralDungeon
 
         [Tooltip("What stepping in does. Set by the builder: the entrance portal returns to the world; the exit portal uses the DungeonManager's Exit Portal Action.")]
         public PortalAction action = PortalAction.ReturnToWorld;
-        [Tooltip("Tag of the player (the collider may be on a child of the tagged object).")]
+        [Tooltip("Fallback only: players are recognised by their Combat Entity (multiplayer-safe). This tag is used for " +
+                 "player objects without a status controller (empty = no fallback).")]
         public string playerTag = "Player";
         [Tooltip("Seconds after appearing before the portal reacts (so arriving on it doesn't send you straight back).")]
         [Min(0f)] public float armDelay = 1.5f;
@@ -49,9 +50,14 @@ namespace ProceduralDungeon
                 DungeonSession.UsePortal(this, player);
         }
 
-        /// <summary>The tagged object behind the collider (preferring the one with the CharacterController), or null.</summary>
+        /// <summary>The player behind the collider (its Combat Entity; the tag only as a fallback), or null.</summary>
         private GameObject FindPlayer(Collider other)
         {
+            CombatEntity entity = PlayerLocator.FromCollider(other);
+            if (entity != null)
+                return PlayerLocator.MovableRoot(entity);
+            if (string.IsNullOrEmpty(playerTag))
+                return null;
             Transform tagged = null;
             for (Transform t = other.transform; t != null; t = t.parent)
             {

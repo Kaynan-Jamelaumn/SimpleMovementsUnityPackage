@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 
 [System.Serializable]
@@ -33,6 +33,10 @@ public class SlotManager
     // Properties
     public GameObject[] HotbarSlots => creationManager?.HotbarSlots;
     public GameObject[] InventorySlots => creationManager?.InventorySlots;
+    /// <summary>Parent of the (hand-placed) equipment slots, if assigned.</summary>
+    public Transform EquipmentSlotsParent => creationManager?.EquipmentSlotsParent;
+    public Transform HotbarSlotsParent => creationManager?.HotbarSlotsParent;
+    public Transform InventorySlotsParent => creationManager?.InventorySlotsParent;
     public SlotLayoutCalculator.LayoutData CurrentLayout => layoutCalculator?.CurrentLayout;
 
     // Legacy properties for compatibility

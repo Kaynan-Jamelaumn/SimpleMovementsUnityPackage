@@ -15,6 +15,9 @@ public class HitSettings
     [Tooltip("Walls between the centre of the hit and a character protect it.")]
     public bool blockedByObstacles = true;
 
+    [Tooltip("Optional: friendly fire of this hit, and which kinds of characters / factions it can reach. The defaults change nothing.")]
+    public TargetRules rules = new TargetRules();
+
     [Tooltip("Strength at the edge of the area compared to the centre (1 = same everywhere, 0.5 = half at the edge). Scales damage and displacement.")]
     [Range(0f, 1f)] public float edgeMultiplier = 1f;
 
@@ -32,6 +35,19 @@ public class HitSettings
     {
         this.filter = filter;
         this.effects = new List<AbilityEffect>(effects);
+    }
+
+    /// <summary>Does any effect hurt its target (friendly fire then decides for party members / allies)?</summary>
+    public bool IsHarmful
+    {
+        get
+        {
+            if (effects == null) return false;
+            for (int i = 0; i < effects.Count; i++)
+                if (effects[i] != null && effects[i].IsHarmful && effects[i].recipient == EffectRecipient.HitTarget)
+                    return true;
+            return false;
+        }
     }
 
     public float EstimateDamage(in AbilityStats s)

@@ -19,7 +19,7 @@
 ```mermaid
 flowchart TD
     A["Something is wrong"] --> B{"Does the portal react at all?"}
-    B -- no --> P["Validate Portal Setup:<br/>trigger, Player tag, CharacterController/Rigidbody,<br/>profile or manager, cooldown"]
+    B -- no --> P["Validate Portal Setup:<br/>trigger, PlayerStatusController (or Player tag), CharacterController/Rigidbody,<br/>profile or manager, cooldown"]
     B -- yes --> C{"Does generation succeed?<br/>(Failed event, console error)"}
     C -- no --> D["read the failed attempts in the report<br/>→ reproduce the seed in the Preview"]
     C -- yes --> E{"Visible in the Preview (layout)?"}

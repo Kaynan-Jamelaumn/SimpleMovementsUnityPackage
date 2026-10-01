@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 [System.Serializable]
 public class SlotUtilityManager
@@ -54,8 +54,8 @@ public class SlotUtilityManager
         // Set the shared containers for all slots
         InventorySlot.SetSharedContainers(inventoryItemsContainer, hotbarItemsContainer, equipmentItemsContainer);
 
-        Debug.Log($"Shared containers set up - Inventory: {inventoryItemsContainer?.name ?? "NULL"}, " +
-                  $"Hotbar: {hotbarItemsContainer?.name ?? "NULL"}, Equipment: {equipmentItemsContainer?.name ?? "NULL"}");
+        if (equipmentItemsContainer == null && equipmentSlotsParent == null)
+            Debug.LogWarning("[Inventory] No Equipment Slots Parent assigned in the Slot Manager: items cannot be shown in equipment slots. Use Tools > Inventory > UI Builder or assign it.");
     }
 
     private Transform CreateSharedContainer(string containerName, Transform parentTransform)
@@ -70,7 +70,6 @@ public class SlotUtilityManager
         Transform existingContainer = parentTransform.Find(containerName);
         if (existingContainer != null)
         {
-            Debug.Log($"Found existing container: {containerName}");
             return existingContainer;
         }
 
@@ -96,12 +95,15 @@ public class SlotUtilityManager
             containerObj.transform.SetAsLastSibling();
         }
 
+        // Not a cell of the parent's grid layout: it overlays the slots.
+        UnityEngine.UI.LayoutElement layoutElement = containerObj.AddComponent<UnityEngine.UI.LayoutElement>();
+        layoutElement.ignoreLayout = true;
+
         // Add CanvasGroup for potential fade effects
         CanvasGroup canvasGroup = containerObj.AddComponent<CanvasGroup>();
         canvasGroup.interactable = false; // Items should not block slot interactions
         canvasGroup.blocksRaycasts = false;
 
-        Debug.Log($"Created new container: {containerName}");
         return containerObj.transform;
     }
 

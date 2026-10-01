@@ -59,8 +59,14 @@ public class Portal : MonoBehaviour
     [SerializeField] private bool useSpawnerDifficulty = true;
 
     [Header("Player")]
-    [Tooltip("Tag of the player. The collider that enters may be on a child object: the tagged object (or the one with the CharacterController) is the one moved.")]
+    [Tooltip("Players are recognised by their Combat Entity (any character with a PlayerStatusController), so every " +
+             "player of a multiplayer game can use the portal and the one who entered is the one sent. This tag is only a " +
+             "fallback for player objects without a status controller (empty = no fallback).")]
     [SerializeField] private string playerTag = "Player";
+
+    [Tooltip("Party members of the entering player within this distance (metres) travel with them into the dungeon. " +
+             "0 = only the player who entered.")]
+    [SerializeField, Min(0f)] private float bringPartyWithin = 0f;
 
     [Tooltip("How far in front of the portal the player comes back (meters) - outside the trigger, so they aren't sent straight back in.")]
     [SerializeField, Min(0f)] private float returnDistance = 2.5f;
@@ -139,7 +145,7 @@ public class Portal : MonoBehaviour
                 Debug.LogError($"Portal '{name}': no dungeon to build - assign a Dungeon Manager prefab (with a profile) or a Dungeon Profile on the Portal component.", this);
                 return;
             }
-            DungeonSession.Enter(player, BuildRequest(), manager, dungeonProfile, dungeonOrigin, ReturnPose(player.transform));
+            DungeonSession.Enter(Group(player), BuildRequest(), manager, dungeonProfile, dungeonOrigin, ReturnPose(player.transform));
             if (DungeonSession.IsEntering)
                 OnEntered();
             return;
@@ -154,6 +160,7 @@ public class Portal : MonoBehaviour
         }
         SetControls(player, false);
         DontDestroyOnLoad(player);
+        sceneTraveller = player;
         SceneManager.sceneLoaded += OnSceneLoaded;
         SceneManager.LoadScene(sceneToLoad);
     }
@@ -161,6 +168,10 @@ public class Portal : MonoBehaviour
     // ------------------------------------------------------------------ closing after use
 
     private static bool pendingCompletion;
+    /// <summary>The player carried through the last scene load (placed in the new scene).</summary>
+    private static GameObject sceneTraveller;
+    private static readonly List<GameObject> groupBuffer = new List<GameObject>(4);
+    private static readonly List<CombatEntity> partyBuffer = new List<CombatEntity>(4);
     private static PortalSiteId pendingSite;
     private static float pendingReopen;
 
@@ -168,6 +179,25 @@ public class Portal : MonoBehaviour
     private static void ResetStatics()
     {
         pendingCompletion = false;
+        sceneTraveller = null;
+    }
+
+    /// <summary>The player who entered, then the party members travelling with them (Bring Party Within).</summary>
+    private List<GameObject> Group(GameObject player)
+    {
+        groupBuffer.Clear();
+        groupBuffer.Add(player);
+        CombatEntity entity = PlayerLocator.FromObject(player);
+        if (entity == null || bringPartyWithin <= 0f)
+            return groupBuffer;
+        PlayerLocator.PartyMembersNear(entity, bringPartyWithin, partyBuffer);
+        for (int i = 1; i < partyBuffer.Count; i++)
+        {
+            GameObject root = PlayerLocator.MovableRoot(partyBuffer[i]);
+            if (root != null && !groupBuffer.Contains(root))
+                groupBuffer.Add(root);
+        }
+        return groupBuffer;
     }
 
     private void OnEntered()
@@ -210,10 +240,18 @@ public class Portal : MonoBehaviour
 
     // ------------------------------------------------------------------ helpers
 
-    /// <summary>The player object behind a collider: the tagged ancestor, or the one with the CharacterController.</summary>
+    /// <summary>
+    /// The player object behind a collider: the player's Combat Entity (any player, multiplayer-safe), moved through
+    /// the object with its CharacterController; the tagged ancestor only as a fallback.
+    /// </summary>
     private GameObject FindPlayer(Collider other)
     {
         if (other == null)
+            return null;
+        CombatEntity entity = PlayerLocator.FromCollider(other);
+        if (entity != null)
+            return PlayerLocator.MovableRoot(entity);
+        if (string.IsNullOrEmpty(playerTag))
             return null;
         Transform tagged = null;
         for (Transform t = other.transform; t != null; t = t.parent)
@@ -234,7 +272,7 @@ public class Portal : MonoBehaviour
     {
         try
         {
-            return go.CompareTag(string.IsNullOrEmpty(playerTag) ? "Player" : playerTag);
+            return !string.IsNullOrEmpty(playerTag) && go.CompareTag(playerTag);
         }
         catch (UnityException)
         {
@@ -342,7 +380,9 @@ public class Portal : MonoBehaviour
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
-        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        // The player who went through the portal (kept with DontDestroyOnLoad), not "whoever has the Player tag".
+        GameObject player = sceneTraveller;
+        sceneTraveller = null;
         if (player == null)
             return;
         DungeonManager manager = FindAnyObjectByType<DungeonManager>();

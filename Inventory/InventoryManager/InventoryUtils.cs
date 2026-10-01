@@ -1,23 +1,35 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-// Centralized utility class for inventory operationsusing UnityEngine;
+// Centralized utility class for inventory operations
 public static class InventoryUtils
 {
+    /// <summary>
+    /// The only instance of <typeparamref name="T"/> in the loaded scenes, or null when there are none or several
+    /// (with several players a scene-wide search could return another player's component).
+    /// </summary>
+    public static T OnlyInstance<T>() where T : Object
+    {
+        T[] found = Object.FindObjectsByType<T>(FindObjectsSortMode.None);
+        return found.Length == 1 ? found[0] : null;
+    }
+
     //  slot compatibility checking for armor
+    /// <summary>
+    /// Can an item of this type go into the slot? Common slots take everything; special slots only their item type
+    /// (converted with <see cref="SlotTypeHelper"/> - casting ItemType to SlotType picked the wrong slot).
+    /// </summary>
     public static bool IsCompatibleSlot(InventorySlot slot, ItemType itemType)
     {
         if (slot == null) return false;
+        return slot.SlotType == SlotType.Common || SlotTypeHelper.ItemTypeToSlotType(itemType) == slot.SlotType;
+    }
 
-        // Handle armor compatibility
-        if (itemType == ItemType.Armor || SlotTypeHelper.ItemTypeToSlotType(itemType) != SlotType.Common)
-        {
-            var requiredSlotType = SlotTypeHelper.ItemTypeToSlotType(itemType);
-            return slot.SlotType == SlotType.Common || slot.SlotType == requiredSlotType;
-        }
-
-        return slot.SlotType == SlotType.Common || slot.SlotType == (SlotType)itemType;
+    /// <summary>Can this exact item go into the slot (armor uses its armor slot)?</summary>
+    public static bool IsCompatibleSlot(InventorySlot slot, ItemSO item)
+    {
+        return slot != null && item != null && SlotTypeHelper.CanPlace(item, slot.SlotType);
     }
 
     // compatibility check for armor pieces
@@ -58,10 +70,10 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
+            if (slot.Live()?.heldItem == null) continue;
 
             var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject is ArmorSO && inventoryItem.isEquipped)
+            if (inventoryItem.Live()?.itemScriptableObject is ArmorSO && inventoryItem.isEquipped)
             {
                 equippedSlots.Add(slot);
             }
@@ -80,10 +92,10 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
+            if (slot.Live()?.heldItem == null) continue;
 
             var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject is ArmorSO)
+            if (inventoryItem.Live()?.itemScriptableObject is ArmorSO)
             {
                 armorItems.Add(inventoryItem);
             }
@@ -164,7 +176,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null)
+            if (slot.Live()?.heldItem == null)
             {
                 if (requiredType == SlotType.Common || slot.SlotType == requiredType)
                 {
@@ -192,7 +204,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null && SlotTypeHelper.IsArmorSlot(slot.SlotType))
+            if (slot.Live()?.heldItem == null && SlotTypeHelper.IsArmorSlot(slot.SlotType))
             {
                 emptyArmorSlots.Add(slot);
             }
@@ -214,7 +226,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var heldItem = slot?.heldItem?.GetComponent<InventoryItem>();
+            var heldItem = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
             if (heldItem != null &&
                 heldItem.itemScriptableObject == itemSO &&
@@ -276,7 +288,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
             if (item != null)
                 totalWeight += item.totalWeight;
@@ -309,9 +321,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject == itemSO)
+            if (item.Live()?.itemScriptableObject == itemSO)
             {
                 // Armor pieces count as 1 regardless of stack
                 if (itemSO is ArmorSO)
@@ -404,7 +416,12 @@ public static class InventoryUtils
                         // Unequip if equipped
                         if (armor.isEquipped)
                         {
-                            var playerController = Object.FindAnyObjectByType <PlayerStatusController>();
+                            // The player who owns this inventory (its UI lives under the player), not any player.
+                            var playerController = slot.GetComponentInParent<PlayerStatusController>();
+                            if (playerController == null)
+                                playerController = slot.transform.root.GetComponentInChildren<PlayerStatusController>(true);
+                            if (playerController == null)
+                                playerController = OnlyInstance<PlayerStatusController>();
                             if (playerController != null)
                             {
                                 ArmorEquipmentHandler.UnequipArmor(armor, playerController);
@@ -429,9 +446,9 @@ public static class InventoryUtils
             if (slotObj == null || removedCount_NonArmor >= amountToRemove) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject == itemSO)
+            if (item.Live()?.itemScriptableObject == itemSO)
             {
                 int removeFromThisStack = Mathf.Min(item.stackCurrent, amountToRemove - removedCount_NonArmor);
 
@@ -460,7 +477,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem?.GetComponent<InventoryItem>() == item)
+            if (slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>() == item)
             {
                 return slot;
             }
@@ -478,9 +495,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject?.ItemType == itemType)
+            if (item.Live()?.itemScriptableObject.Live()?.ItemType == itemType)
             {
                 // Count armor pieces as 1 each
                 if (itemType == ItemType.Armor || itemType == ItemType.Helmet ||
@@ -503,9 +520,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject?.ItemType == itemType)
+            if (item.Live()?.itemScriptableObject.Live()?.ItemType == itemType)
                 items.Add(item);
         }
         return items;
@@ -521,9 +538,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject != null)
+            if (item.Live()?.itemScriptableObject != null)
             {
                 int countToAdd = (item.itemScriptableObject is ArmorSO) ? 1 : item.stackCurrent;
 
@@ -559,7 +576,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
             if (item != null && item.IsEmpty())
             {
@@ -576,8 +593,8 @@ public static class InventoryUtils
 
         for (int i = 0; i < slots.Length; i++)
         {
-            var slot = slots[i]?.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var slot = slots[i].Live()?.GetComponent<InventorySlot>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
             if (item != null)
             {
@@ -590,7 +607,7 @@ public static class InventoryUtils
             }
             else
             {
-                Debug.Log($"Slot {i} ({slot?.SlotType}): Empty");
+                Debug.Log($"Slot {i} ({slot.Live()?.SlotType}): Empty");
             }
         }
     }
@@ -628,9 +645,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var slotItem = slot?.heldItem?.GetComponent<InventoryItem>();
+            var slotItem = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (slotItem?.itemScriptableObject?.ItemType == itemType)
+            if (slotItem.Live()?.itemScriptableObject.Live()?.ItemType == itemType)
             {
                 item = slotItem;
                 return true;
@@ -648,7 +665,7 @@ public static class InventoryUtils
         foreach (var slot in equippedArmor)
         {
             var item = slot.heldItem.GetComponent<InventoryItem>();
-            var armorSO = item?.itemScriptableObject as ArmorSO;
+            var armorSO = item.Live()?.itemScriptableObject as ArmorSO;
 
             if (armorSO?.ArmorSlotType == slotType)
             {
@@ -669,9 +686,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var slotItem = slot?.heldItem?.GetComponent<InventoryItem>();
+            var slotItem = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (slotItem?.itemScriptableObject == itemSO)
+            if (slotItem.Live()?.itemScriptableObject == itemSO)
             {
                 item = slotItem;
                 return true;
@@ -690,19 +707,19 @@ public static class InventoryUtils
     //  slot utilities
     public static bool IsSlotEmpty(InventorySlot slot)
     {
-        return slot?.heldItem == null;
+        return slot.Live()?.heldItem == null;
     }
 
     public static bool SlotHasItem(InventorySlot slot, ItemSO itemSO)
     {
-        var item = slot?.heldItem?.GetComponent<InventoryItem>();
-        return item?.itemScriptableObject == itemSO;
+        var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
+        return item.Live()?.itemScriptableObject == itemSO;
     }
 
     public static bool SlotHasArmor(InventorySlot slot, ArmorSO armor)
     {
-        var item = slot?.heldItem?.GetComponent<InventoryItem>();
-        return item?.itemScriptableObject == armor;
+        var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
+        return item.Live()?.itemScriptableObject == armor;
     }
 
     //  validation helpers
@@ -830,12 +847,12 @@ public static class InventoryUtils
         // Empty slot
         if (slot.heldItem == null)
         {
-            return IsCompatibleSlot(slot, itemSO.ItemType) && quantity <= itemSO.StackMax;
+            return IsCompatibleSlot(slot, itemSO) && quantity <= itemSO.StackMax;
         }
 
         // Slot with item
         var item = slot.heldItem.GetComponent<InventoryItem>();
-        if (item?.itemScriptableObject == itemSO)
+        if (item.Live()?.itemScriptableObject == itemSO)
         {
             return (item.stackCurrent + quantity) <= item.stackMax;
         }
@@ -865,7 +882,7 @@ public static class InventoryUtils
         var emptySlots = FindEmptySlots(slots);
         foreach (var slot in emptySlots)
         {
-            if (IsCompatibleSlot(slot, itemSO.ItemType))
+            if (IsCompatibleSlot(slot, itemSO))
             {
                 totalSpace += itemSO.StackMax;
             }
@@ -880,7 +897,7 @@ public static class InventoryUtils
         if (slot == null || itemSO == null) return false;
 
         // Check slot type compatibility
-        if (!IsCompatibleSlot(slot, itemSO.ItemType)) return false;
+        if (!IsCompatibleSlot(slot, itemSO)) return false;
 
         // Check if slot can hold the quantity
         return CanSlotHoldQuantity(slot, itemSO, quantity);
@@ -930,7 +947,7 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
+            if (slot.Live()?.heldItem == null) continue;
 
             var item = slot.heldItem.GetComponent<InventoryItem>();
             if (item != null && item.IsEmpty())
@@ -952,9 +969,9 @@ public static class InventoryUtils
             if (slotObj == null) continue;
 
             var slot = slotObj.GetComponent<InventorySlot>();
-            var item = slot?.heldItem?.GetComponent<InventoryItem>();
+            var item = slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
 
-            if (item?.itemScriptableObject != null && !(item.itemScriptableObject is ArmorSO))
+            if (item.Live()?.itemScriptableObject != null && !(item.itemScriptableObject is ArmorSO))
             {
                 if (!itemGroups.ContainsKey(item.itemScriptableObject))
                 {

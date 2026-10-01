@@ -177,8 +177,8 @@ public class PlayerCameraController : MonoBehaviour
             elapsed += Time.deltaTime;
             float t = elapsed / settings.transitionDuration;
             float curveValue = settings.transitionCurve.Evaluate(t); // Use custom animation curve
-                // TODO: Add custom transition effects here (crossfade, position interpolation, etc.)
-                // Currently just handles timing - can be extended for visual effects
+                                                                     // TODO: Add custom transition effects here (crossfade, position interpolation, etc.)
+                                                                     // Currently just handles timing - can be extended for visual effects
 
             yield return null;
         }
@@ -420,8 +420,12 @@ public class PlayerCameraController : MonoBehaviour
             if (isActive)
             {
                 model.CameraTransform = camera.transform;
-                var brain = CinemachineCore.FindPotentialTargetBrain(camera.GetComponent<CinemachineVirtualCameraBase>());
-                brain?.ManualUpdate();
+                // Snap the brain to the new camera right away - only possible in ManualUpdate mode (in every other
+                // mode the brain updates itself this frame, and calling ManualUpdate only logs an error).
+                var vcam = camera.GetComponent<CinemachineVirtualCameraBase>();
+                var brain = vcam != null ? CinemachineCore.FindPotentialTargetBrain(vcam) : null;
+                if (brain != null && brain.UpdateMethod == CinemachineBrain.UpdateMethods.ManualUpdate)
+                    brain.ManualUpdate();
             }
         }
     }

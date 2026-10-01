@@ -76,6 +76,7 @@ public class TraitManager : MonoBehaviour
     [Tooltip("Armor sets can strengthen, extend or replace traits.")]
     [SerializeField] private ArmorSetManager armorSetManager;
     [SerializeField] private Dictionary<Trait, float> traitMultipliers = new Dictionary<Trait, float>();
+    [Tooltip("Traits currently granted by equipment (filled at runtime, one entry per grant). The player cannot remove them while they are listed.")]
     [SerializeField] private List<Trait> armorAppliedTraits = new List<Trait>();
 
     public event Action<Trait, float> OnTraitMultiplierChanged;
@@ -368,6 +369,26 @@ public class TraitManager : MonoBehaviour
     }
 
     public bool HasTrait(Trait trait) => trait != null && infoByTrait.TryGetValue(trait, out ActiveTraitInfo info) && info.isActive;
+
+    /// <summary>
+    /// Records that equipment (an item or an armor set) grants <paramref name="trait"/>: the player cannot remove it
+    /// while the equipment is worn. Call once per grant, together with <c>AddTrait(trait, true)</c>.
+    /// </summary>
+    public void RegisterEquipmentGrant(Trait trait)
+    {
+        if (trait != null)
+            armorAppliedTraits.Add(trait);
+    }
+
+    /// <summary>Releases one grant recorded by <see cref="RegisterEquipmentGrant"/> (before <c>RemoveTrait(trait, true)</c>).</summary>
+    public void UnregisterEquipmentGrant(Trait trait)
+    {
+        if (trait != null)
+            armorAppliedTraits.Remove(trait);
+    }
+
+    /// <summary>Is the trait currently granted by worn equipment?</summary>
+    public bool IsGrantedByEquipment(Trait trait) => trait != null && armorAppliedTraits.Contains(trait);
 
     /// <summary>The runtime record of a trait (points paid, grants, temporary time...), or null.</summary>
     public ActiveTraitInfo GetTraitInfo(Trait trait) => trait != null && infoByTrait.TryGetValue(trait, out ActiveTraitInfo info) ? info : null;

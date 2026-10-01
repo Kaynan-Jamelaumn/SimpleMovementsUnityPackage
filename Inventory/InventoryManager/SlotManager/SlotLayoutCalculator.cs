@@ -91,7 +91,7 @@ public class SlotLayoutCalculator
             return;
         }
 
-        RectTransform panelRect = inventorySlotsParent?.GetComponent<RectTransform>();
+        RectTransform panelRect = inventorySlotsParent.Live()?.GetComponent<RectTransform>();
         if (panelRect == null)
         {
             Debug.LogError("InventorySlotsParent is missing RectTransform component");

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "ComboTree", menuName = "Scriptable Objects/Weapon/ComboTree")]
@@ -12,9 +12,12 @@ public class ComboTree : ScriptableObject
     public List<ComboBranch> branches = new List<ComboBranch>();
 
     [Header("Tree Properties")]
+    [Tooltip("The combo resets after this many attacks.")]
     public int maxComboLength = 10;
+    [Tooltip("Seconds after an attack during which the next one continues the combo.")]
     public float baseComboWindow = 2.0f;
-    public float comboWindowDecayRate = 0.1f; // Window gets shorter with each hit
+    [Tooltip("Seconds the combo window shrinks per attack (never below 0.5 s).")]
+    public float comboWindowDecayRate = 0.1f;
 
     [Header("Tree Bonuses")]
     [Tooltip("Bonus damage per combo count")]
@@ -37,6 +40,8 @@ public class ComboTree : ScriptableObject
 
     private void BuildBranchMap()
     {
+        if (branchMap == null)
+            branchMap = new Dictionary<string, List<ComboBranch>>();
         branchMap.Clear();
         foreach (var branch in branches)
         {
@@ -56,6 +61,8 @@ public class ComboTree : ScriptableObject
 
     public List<ComboBranch> GetAvailableBranches(AttackType input, PlayerStatusController player, GameObject target, int comboCount, WeaponController weaponController)
     {
+        if (branchMap == null || branchMap.Count == 0)
+            BuildBranchMap();
         string key = GenerateBranchKey(input);
         if (!branchMap.ContainsKey(key))
             return new List<ComboBranch>();
@@ -67,9 +74,11 @@ public class ComboTree : ScriptableObject
                 availableBranches.Add(branch);
         }
 
-        // Sort by priority (finishers last, highest damage bonus first)
+        // Sort: highest priority first, then non-finishers before finishers, then the biggest damage bonus.
         availableBranches.Sort((a, b) =>
         {
+            if (a.priority != b.priority)
+                return b.priority.CompareTo(a.priority);
             if (a.isFinisher != b.isFinisher)
                 return a.isFinisher ? 1 : -1;
             return b.damageBonus.CompareTo(a.damageBonus);
@@ -132,6 +141,23 @@ public class ComboTree : ScriptableObject
 
     public List<ComboBranch> GetFinisherBranches()
     {
-        return branches.FindAll(b => b.isFinisher);
+        return branches.FindAll(b => b != null && b.isFinisher);
+    }
+
+    /// <summary>Configuration problems (inspector and validation window).</summary>
+    public void Validate(List<string> errors, List<string> warnings)
+    {
+        if (branches == null || branches.Count == 0)
+            warnings.Add($"Combo tree '{name}' has no branches.");
+        else
+            for (int i = 0; i < branches.Count; i++)
+            {
+                if (branches[i] == null) { warnings.Add($"Combo tree '{name}': branch {i + 1} is empty."); continue; }
+                branches[i].Validate($"Combo tree '{name}'", errors, warnings);
+            }
+        if (maxComboLength < 1)
+            errors.Add($"Combo tree '{name}': Max Combo Length must be at least 1.");
+        if (baseComboWindow <= 0f)
+            errors.Add($"Combo tree '{name}': Base Combo Window must be above 0.");
     }
 }

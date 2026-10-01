@@ -69,6 +69,23 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
 
     private void Awake()
     {
+        // Created first: when a missing reference disables this component during Awake, Unity calls OnDisable
+        // right away, and it must find the input already there.
+        playerInput = new PlayerInput();
+
+        // References placed on a child (the character model) or a parent are found as well, not only on this object.
+        AutoAssignReferences();
+        if (animationModel == null)
+        {
+            // The animation model only needs an Animator somewhere under the player: add it instead of failing.
+            Animator animator = GetComponentInChildren<Animator>(true);
+            if (animator != null)
+            {
+                animationModel = gameObject.AddComponent<PlayerAnimationModel>();
+                Debug.LogWarning($"[Movement] '{name}' had no PlayerAnimationModel; one was added (it uses the Animator on '{animator.name}'). Add it to the player prefab to keep it.", this);
+            }
+        }
+
         movementModel = this.CheckComponent(movementModel, nameof(movementModel));
         movementController = this.CheckComponent(movementController, nameof(movementController));
         statusController = this.CheckComponent(statusController, nameof(statusController));
@@ -77,7 +94,9 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         cameraModel = this.CheckComponent(cameraModel, nameof(cameraModel));
         cameraController = this.CheckComponent(cameraController, nameof(cameraController));
         availabilityStateMachine = this.CheckComponent(availabilityStateMachine, nameof(availabilityStateMachine));
-        playerInput = new PlayerInput();
+        if (!enabled)
+            return; // a required reference is missing (logged above): stay disabled instead of running half set up
+
         context = new MovementContext(
             movementModel,
             statusController,
@@ -92,15 +111,23 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         InitializeStates();
     }
 
+    protected override void Update()
+    {
+        // Remember jump presses (used by the states for a short buffer).
+        if (context != null && playerInput != null && playerInput.Player.Jump.WasPressedThisFrame())
+            context.RecordJumpPress();
+        base.Update();
+    }
+
     private void OnEnable()
     {
-        playerInput.Player.Enable();
+        playerInput?.Player.Enable();
     }
 
     private void OnDisable()
     {
         // Desabilita todas as ações do player input
-        playerInput.Player.Disable();
+        playerInput?.Player.Disable();
     }
 
 

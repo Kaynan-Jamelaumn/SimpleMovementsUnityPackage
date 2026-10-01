@@ -91,8 +91,9 @@ public class Player : MonoBehaviour
             return;
         }
 
-        var item = hitInfo.collider.gameObject.GetComponent<ItemPickable>();
-        var storage = hitInfo.collider.gameObject.GetComponent<Storage>();
+        // In parents too: a model's collider is often on a child of the object that has the component.
+        var item = hitInfo.collider.gameObject.GetComponentInParent<ItemPickable>();
+        var storage = hitInfo.collider.gameObject.GetComponentInParent<Storage>();
         var interactable = hitInfo.collider.gameObject.GetComponentInParent<Interactable>();
 
         if (item != null || storage != null || interactable != null)
@@ -165,8 +166,8 @@ public class Player : MonoBehaviour
         if (!IsValidHitInfo()) return;
 
         var pickableItem = hitInfo.collider.gameObject.GetComponentInParent<ItemPickable>();
-        var interactable = hitInfo.collider.GetComponent<Interactable>();
-        var storage = hitInfo.collider.GetComponent<Storage>();
+        var interactable = hitInfo.collider.GetComponentInParent<Interactable>();
+        var storage = hitInfo.collider.GetComponentInParent<Storage>();
 
         if (pickableItem != null)
         {
@@ -253,7 +254,6 @@ public class Player : MonoBehaviour
             yield break;
         }
 
-        GameObject interactableObject = hitInfo.collider.gameObject;
 
         if (fillingCircle != null)
             fillingCircle.fillAmount = 0f;
@@ -277,11 +277,14 @@ public class Player : MonoBehaviour
                 fillingCircle.fillAmount = 1f;
         }
 
-        // Complete the interaction
-        var itemPickable = interactableObject.GetComponent<ItemPickable>();
-        if (itemPickable != null && inventoryManager != null)
+        // Complete the interaction. The pickable is the component found when the interaction started - not the
+        // collider's object, which is often a child of the item (the pickup then did nothing).
+        if (interactable == null)
+            yield break; // picked or destroyed meanwhile
+        if (interactable is ItemPickable itemPickable)
         {
-            inventoryManager.ItemPicked(interactableObject);
+            if (inventoryManager != null)
+                inventoryManager.ItemPicked(itemPickable.gameObject);
         }
         else
         {

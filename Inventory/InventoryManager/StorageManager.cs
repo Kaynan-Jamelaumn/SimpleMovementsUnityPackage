@@ -81,24 +81,31 @@ public class StorageManager
 
     private void ClearExistingStorageItems()
     {
-        var itemsParent = storageParent.transform.GetChild(2);
-        for (int i = itemsParent.childCount - 1; i >= 0; i--)
-            Object.Destroy(itemsParent.GetChild(i).gameObject);
+        // Items live inside the storage slots (child 1 of the storage panel).
+        var slotsParent = storageParent.transform.GetChild(1);
+        for (int i = 0; i < slotsParent.childCount; i++)
+        {
+            var slot = slotsParent.GetChild(i).GetComponent<InventorySlot>();
+            if (slot != null && slot.heldItem != null)
+            {
+                Object.Destroy(slot.heldItem);
+                slot.heldItem = null;
+            }
+        }
     }
 
     private void CreateStorageItem(StorageItem storageItem, int index)
     {
+        var slotsParent = storageParent.transform.GetChild(1);
+        if (index >= slotsParent.childCount)
+            return;
+        var slot = slotsParent.GetChild(index).GetComponent<InventorySlot>();
+        if (slot == null)
+            return;
         var newItem = Object.Instantiate(itemPrefab);
         var itemComponent = newItem.GetComponent<InventoryItem>();
-
-        itemComponent.itemScriptableObject = storageItem.itemScriptableObject;
-        itemComponent.stackCurrent = storageItem.currentStack;
-
-        var slot = storageParent.transform.GetChild(1).GetChild(index);
-        newItem.transform.SetParent(slot.parent.parent.GetChild(2));
-        newItem.transform.localScale = Vector3.one;
-
-        slot.GetComponent<InventorySlot>().SetHeldItem(newItem);
+        itemComponent.Initialize(storageItem.itemScriptableObject, storageItem.currentStack, null);
+        slot.SetHeldItem(newItem);
     }
 
     private void SaveStorageItems(Storage storage)
@@ -111,7 +118,7 @@ public class StorageManager
             var slot = slotsParent.GetChild(i);
             var slotComponent = slot.GetComponent<InventorySlot>();
 
-            if (slot.gameObject.activeInHierarchy && slotComponent?.heldItem != null)
+            if (slot.gameObject.activeInHierarchy && slotComponent.Live()?.heldItem != null)
             {
                 var inventoryItem = slotComponent.heldItem.GetComponent<InventoryItem>();
                 storage.items.Add(new StorageItem(inventoryItem.stackCurrent, inventoryItem.itemScriptableObject));

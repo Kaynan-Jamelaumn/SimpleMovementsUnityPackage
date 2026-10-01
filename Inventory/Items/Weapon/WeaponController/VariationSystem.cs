@@ -1,9 +1,13 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Attack chains per input: pressing an input again within its action's Variant Time plays the next variation
+/// (base action, variation 1, variation 2... then the base action again).
+/// </summary>
 public class VariationSystem
 {
-    private WeaponController controller;
+    private readonly WeaponController controller;
     private readonly Dictionary<AttackType, VariationState> variationStates = new Dictionary<AttackType, VariationState>();
 
     public VariationSystem(WeaponController controller)
@@ -14,112 +18,97 @@ public class VariationSystem
     public void Initialize()
     {
         foreach (AttackType attackType in System.Enum.GetValues(typeof(AttackType)))
-        {
-            variationStates[attackType] = new VariationState();
-        }
+            if (!variationStates.ContainsKey(attackType))
+                variationStates[attackType] = new VariationState();
     }
 
+    private VariationState State(AttackType t)
+    {
+        if (!variationStates.TryGetValue(t, out VariationState s))
+            variationStates[t] = s = new VariationState();
+        return s;
+    }
+
+    /// <summary>
+    /// The action for an input and the variation to play (null = the base action). Step 0 of the chain is the base
+    /// action, step k the k-th variation. (It used to skip the first variation.)
+    /// </summary>
     public (AttackAction action, AttackVariation variation) GetAttackActionWithVariation(AttackType attackType)
     {
-        var baseAction = controller.EquippedWeapon.GetAction(attackType);
+        AttackAction baseAction = controller.EquippedWeapon != null ? controller.EquippedWeapon.GetAction(attackType) : null;
         if (baseAction == null) return (null, null);
 
-        var variationState = variationStates[attackType];
-
-        // Check if we're within variant time window
-        if (variationState.IsWithinVariantTime(baseAction.variantTime))
+        VariationState state = State(attackType);
+        int count = baseAction.GetVariationCount();
+        if (count == 0 || !state.IsWithinVariantTime(baseAction.variantTime))
         {
-            // Get the next variation
-            var variation = controller.EquippedWeapon.GetActionVariation(attackType, variationState.CurrentVariationIndex);
-            if (variation != null)
-            {
-                controller.LogDebug($"Using variation {variationState.CurrentVariationIndex} for {attackType}");
-                return (baseAction, variation);
-            }
+            state.Reset();
+            return (baseAction, null);
         }
-
-        // Reset to first variation (base action)
-        variationState.Reset();
-        controller.LogDebug($"Using base action for {attackType}");
-        return (baseAction, null);
+        int step = state.NextStep % (count + 1);
+        return (baseAction, step == 0 ? null : baseAction.variations[step - 1]);
     }
 
+    /// <summary>Advances the chain after an attack of this input started.</summary>
     public void UpdateVariationState(AttackType attackType, AttackAction action)
     {
-        var variationState = variationStates[attackType];
-        variationState.UpdateExecution();
-
-        // Increment to next variation for future use
-        int maxVariations = action.GetVariationCount();
-        if (maxVariations > 0)
-        {
-            variationState.CurrentVariationIndex = (variationState.CurrentVariationIndex + 1) % (maxVariations + 1);
-        }
-        else
-        {
-            variationState.CurrentVariationIndex = 0;
-        }
+        VariationState state = State(attackType);
+        int count = action != null ? action.GetVariationCount() : 0;
+        bool chaining = count > 0 && state.IsWithinVariantTime(action.variantTime);
+        int played = chaining ? state.NextStep % (count + 1) : 0;
+        state.NextStep = count > 0 ? (played + 1) % (count + 1) : 0;
+        state.UpdateExecution();
     }
 
     public void UpdateVariationTimers()
     {
+        WeaponSO weapon = controller.EquippedWeapon;
         foreach (var kvp in variationStates)
         {
             var state = kvp.Value;
-            var action = controller.EquippedWeapon?.GetAction(kvp.Key);
-
-            if (action != null && state.IsInVariantWindow && !state.IsWithinVariantTime(action.variantTime))
-            {
+            var action = weapon != null ? weapon.GetAction(kvp.Key) : null;
+            if (state.IsInVariantWindow && (action == null || !state.IsWithinVariantTime(action.variantTime)))
                 state.Reset();
-                controller.LogDebug($"Variation timer expired for {kvp.Key}");
-            }
         }
     }
 
-    public int GetCurrentVariationIndex(AttackType attackType)
-    {
-        return variationStates.TryGetValue(attackType, out var state) ? state.CurrentVariationIndex : 0;
-    }
+    /// <summary>The step of the chain the next press plays (0 = base action).</summary>
+    public int GetCurrentVariationIndex(AttackType attackType) => variationStates.TryGetValue(attackType, out var state) ? state.NextStep : 0;
 
     public bool IsInVariantWindow(AttackType attackType)
     {
         var action = controller.EquippedWeapon?.GetAction(attackType);
-        var state = variationStates.TryGetValue(attackType, out var s) ? s : null;
-
-        return action != null && state != null && state.IsWithinVariantTime(action.variantTime);
+        return action != null && variationStates.TryGetValue(attackType, out var s) && s.IsWithinVariantTime(action.variantTime);
     }
 
+    /// <summary>The variation the next press plays (null = the base action).</summary>
     public AttackVariation GetCurrentVariation(AttackType attackType)
     {
-        return controller.EquippedWeapon?.GetActionVariation(attackType, GetCurrentVariationIndex(attackType));
+        var action = controller.EquippedWeapon?.GetAction(attackType);
+        int step = GetCurrentVariationIndex(attackType);
+        return action == null || step <= 0 || step > action.GetVariationCount() ? null : action.variations[step - 1];
     }
 
     public void Reset()
     {
         foreach (var state in variationStates.Values)
-        {
             state.Reset();
-        }
     }
 
-    // Nested Classes
     private class VariationState
     {
-        public int CurrentVariationIndex;
-        public float LastExecutionTime;
+        public int NextStep;
+        public float LastExecutionTime = -999f;
         public bool IsInVariantWindow;
 
         public void Reset()
         {
-            CurrentVariationIndex = 0;
-            LastExecutionTime = 0f;
+            NextStep = 0;
+            LastExecutionTime = -999f;
             IsInVariantWindow = false;
         }
 
-        public bool IsWithinVariantTime(float variantTime)
-        {
-            return Time.time - LastExecutionTime <= variantTime;
-        }
+        public bool IsWithinVariantTime(float variantTime) => Time.time - LastExecutionTime <= variantTime;
 
         public void UpdateExecution()
         {

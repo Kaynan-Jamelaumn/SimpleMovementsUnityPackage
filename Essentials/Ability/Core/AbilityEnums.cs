@@ -49,13 +49,25 @@ public enum AbilityAimLock
 [Flags]
 public enum TargetFilter
 {
+    /// <summary>Nobody.</summary>
     None = 0,
+    /// <summary>The caster / attacker itself.</summary>
     Self = 1 << 0,
+    /// <summary>Characters of the same team (CombatEntity.Team).</summary>
     Allies = 1 << 1,
+    /// <summary>Hostile characters. For players: every character of another team.</summary>
     Enemies = 1 << 2,
+    /// <summary>Neither ally nor enemy (a mob another mob is not hostile to).</summary>
     Neutral = 1 << 3,
+    /// <summary>Everyone except the caster.</summary>
     AllButSelf = Allies | Enemies | Neutral,
+    /// <summary>Everyone, the caster included (the same as Unity's "Everything").</summary>
     All = Self | Allies | Enemies | Neutral,
+    /// <summary>
+    /// Members of the caster's party only (a party heal that skips other allies). Party members are also Allies, so
+    /// with Allies on this bit changes nothing.
+    /// </summary>
+    Party = 1 << 4,
 }
 
 /// <summary>How two combatants relate (see <see cref="CombatRelations"/>).</summary>
@@ -65,6 +77,8 @@ public enum CombatRelation
     Ally,
     Enemy,
     Neutral,
+    /// <summary>In the same party (a closer kind of ally: filters with Allies include party members).</summary>
+    Party,
 }
 
 /// <summary>

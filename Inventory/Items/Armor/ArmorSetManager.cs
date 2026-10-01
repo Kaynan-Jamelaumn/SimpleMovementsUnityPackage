@@ -1,30 +1,38 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using UnityEngine;
 
-
+/// <summary>
+/// Turns armor set bonuses on and off. After every equipment change it counts, for each set, the DIFFERENT pieces
+/// the character wears (from the <see cref="EquipmentManager"/>), works out which bonus tiers are reached (2/4, 3/4,
+/// 4/4...; tiers of the same Upgrade Group replace each other) and applies only the tiers that became active and
+/// removes only those that stopped - exactly, through effect handles. Nothing is added or subtracted by hand, so
+/// swapping pieces in any order can never stack a bonus twice or leave one behind.
+/// </summary>
+[DisallowMultipleComponent]
+[DefaultExecutionOrder(61)]
 public class ArmorSetManager : MonoBehaviour
 {
     [Header("Component References")]
+    [Tooltip("Found automatically when empty.")]
     [SerializeField] private PlayerStatusController playerStatusController;
+    [Tooltip("Found automatically when empty.")]
     [SerializeField] private TraitManager traitManager;
+    [Tooltip("Optional (reports and tools). Found automatically when empty.")]
     [SerializeField] private InventoryManager inventoryManager;
+    [Tooltip("Plays the set sounds. Empty = the AudioSource on the character.")]
     [SerializeField] private AudioSource audioSource;
 
     [Header("Set Management")]
+    [Tooltip("The sets the character currently wears pieces of (runtime view).")]
     [SerializeField] private List<ArmorSetTracker> trackedSets = new List<ArmorSetTracker>();
-    [SerializeField] private Dictionary<ArmorSet, ArmorSetTracker> setTrackers = new Dictionary<ArmorSet, ArmorSetTracker>();
-
-    [Header("Enhanced Trait System")]
-    [SerializeField] private Dictionary<Trait, float> traitMultipliers = new Dictionary<Trait, float>();
-    [SerializeField] private List<Trait> temporarySetTraits = new List<Trait>();
-
-    [Header("Active Mechanics")]
-    [SerializeField] private Dictionary<string, bool> activeMechanics = new Dictionary<string, bool>();
 
     [Header("Audio")]
+    [Tooltip("Played when a set becomes complete.")]
     [SerializeField] private AudioClip setActivatedSound;
+    [Tooltip("Played when a complete set is broken.")]
     [SerializeField] private AudioClip setDeactivatedSound;
 
     [Header("Debug")]
@@ -38,549 +46,437 @@ public class ArmorSetManager : MonoBehaviour
     public event Action<ArmorSetEffect> OnSetEffectDeactivated;
     public event Action<SpecialMechanic> OnSpecialMechanicActivated;
     public event Action<SpecialMechanic> OnSpecialMechanicDeactivated;
+    /// <summary>A bonus tier of a set turned on (true) or off (false).</summary>
+    public event Action<ArmorSet, ArmorSetEffect, bool> SetBonusChanged;
+    /// <summary>Raised once after any set changed (pieces, tiers, completion).</summary>
+    public event Action SetsChanged;
+
+    private sealed class ActiveTier
+    {
+        public ArmorSet set;
+        public ArmorSetEffect effect;
+        public readonly List<EquipmentEffectHandle> handles = new List<EquipmentEffectHandle>();
+        public float removeAt = float.PositiveInfinity; // lingering (Persist Duration) when finite
+    }
+
+    private sealed class SetState
+    {
+        public ArmorSet set;
+        public int count;
+        public bool complete;
+        public readonly List<EquipmentEffectHandle> visuals = new List<EquipmentEffectHandle>();
+        public bool visualsOn;
+        public bool completeVisualOn;
+        public readonly List<EquipmentEffectHandle> completeVisual = new List<EquipmentEffectHandle>();
+    }
+
+    private readonly Dictionary<ArmorSetEffect, ActiveTier> activeTiers = new Dictionary<ArmorSetEffect, ActiveTier>(ReferenceComparer<ArmorSetEffect>.Instance);
+    private readonly Dictionary<ArmorSet, SetState> states = new Dictionary<ArmorSet, SetState>(ReferenceComparer<ArmorSet>.Instance);
+    private readonly List<ItemSO> worn = new List<ItemSO>();
+    private readonly List<ArmorSetEffect> desiredBuffer = new List<ArmorSetEffect>();
+    private readonly HashSet<ArmorSetEffect> desired = new HashSet<ArmorSetEffect>(ReferenceComparer<ArmorSetEffect>.Instance);
+    private readonly List<ArmorSet> setBuffer = new List<ArmorSet>();
+    private readonly List<ActiveTier> tierBuffer = new List<ActiveTier>();
+    private EquipmentManager equipment;
+    private bool subscribed;
+    private bool refreshing;
+
+    public EquipmentManager Equipment => equipment;
 
     private void Awake()
     {
         if (playerStatusController == null)
-            playerStatusController = GetComponent<PlayerStatusController>();
-
+            playerStatusController = GetComponentInParent<PlayerStatusController>();
         if (traitManager == null)
-            traitManager = GetComponent<TraitManager>();
+            traitManager = playerStatusController != null && playerStatusController.TraitManager != null ? playerStatusController.TraitManager : GetComponent<TraitManager>();
+        if (audioSource == null)
+            audioSource = GetComponent<AudioSource>();
     }
+
+    private void OnEnable() => Subscribe();
 
     private void Start()
     {
-        // Initial scan for equipped armor
-        ScanForEquippedArmor();
+        Subscribe();
+        if (inventoryManager == null && equipment != null)
+            inventoryManager = equipment.Inventory;
     }
 
-    public void OnArmorEquipmentChanged(ArmorSO armor, bool equipped)
+    private void OnDisable()
     {
-        if (armor == null || !armor.IsPartOfSet()) return;
-
-        var tracker = GetOrCreateSetTracker(armor.BelongsToSet);
-        int previousCount = tracker.equippedCount;
-
-        if (equipped)
+        if (equipment != null && subscribed)
         {
-            tracker.AddPiece(armor);
+            equipment.Changed -= Refresh;
+            equipment.Context.Mechanics.Toggled -= HandleMechanicToggled;
         }
-        else
-        {
-            tracker.RemovePiece(armor);
-        }
-
-        // Check if equipped count changed
-        if (tracker.equippedCount != previousCount)
-        {
-            HandleSetChange(tracker, previousCount);
-        }
+        subscribed = false;
     }
 
-    private ArmorSetTracker GetOrCreateSetTracker(ArmorSet armorSet)
+    private void OnDestroy()
     {
-        if (!setTrackers.TryGetValue(armorSet, out ArmorSetTracker tracker))
+        foreach (ActiveTier t in activeTiers.Values)
+            EquipmentEffect.RevertAll(t.handles);
+        activeTiers.Clear();
+        foreach (SetState s in states.Values)
         {
-            tracker = new ArmorSetTracker { armorSet = armorSet };
-            setTrackers[armorSet] = tracker;
-            trackedSets.Add(tracker);
+            EquipmentEffect.RevertAll(s.visuals);
+            EquipmentEffect.RevertAll(s.completeVisual);
         }
-        return tracker;
+        states.Clear();
     }
 
-    private void HandleSetChange(ArmorSetTracker tracker, int previousCount)
+    private void Subscribe()
     {
-        tracker.UpdateActiveEffects();
+        if (subscribed)
+            return;
+        if (equipment == null)
+            equipment = EquipmentManager.For(this);
+        if (equipment == null)
+            return;
+        equipment.Changed += Refresh;
+        equipment.Context.Mechanics.Toggled += HandleMechanicToggled;
+        subscribed = true;
+        if (equipment.IsInitialized)
+            Refresh();
+    }
 
-        // Deactivate effects that no longer meet requirements
-        var previousEffects = tracker.armorSet.SetEffects
-            .Where(e => e.ShouldBeActive(previousCount))
-            .ToList();
+    private void HandleMechanicToggled(SpecialMechanic m, bool on)
+    {
+        if (on) OnSpecialMechanicActivated?.Invoke(m);
+        else OnSpecialMechanicDeactivated?.Invoke(m);
+    }
 
-        var currentEffects = tracker.activeEffects;
-
-        // Remove effects that are no longer active
-        foreach (var effect in previousEffects)
+    private void Update()
+    {
+        if (activeTiers.Count == 0)
+            return;
+        float now = Time.time;
+        float dt = Time.deltaTime;
+        tierBuffer.Clear();
+        tierBuffer.AddRange(activeTiers.Values);
+        for (int i = 0; i < tierBuffer.Count; i++)
         {
-            if (!currentEffects.Contains(effect))
+            ActiveTier t = tierBuffer[i];
+            if (now >= t.removeAt)
             {
-                DeactivateSetEffect(effect);
+                Deactivate(t);
+                SetsChanged?.Invoke();
+                continue;
+            }
+            List<EquipmentEffectHandle> hs = t.handles;
+            for (int h = 0; h < hs.Count; h++)
+            {
+                if (!hs[h].NeedsTick)
+                    continue;
+                try { hs[h].Tick(dt); }
+                catch (Exception e) { Debug.LogException(e, this); }
             }
         }
+        tierBuffer.Clear();
+    }
 
-        // Activate new effects
-        foreach (var effect in currentEffects)
+    // ------------------------------------------------------------------ reconcile
+    /// <summary>Recounts the worn pieces and applies/removes set bonus tiers to match. Safe to call any time.</summary>
+    public void Refresh()
+    {
+        if (refreshing)
+            return;
+        if (equipment == null)
         {
-            if (!previousEffects.Contains(effect))
-            {
-                ActivateSetEffect(effect);
-            }
+            Subscribe();
+            if (equipment == null)
+                return;
         }
-
-        // Fire events
-        OnSetPiecesChanged?.Invoke(tracker.armorSet, tracker.equippedCount);
-
-        // Check for set completion
-        bool wasComplete = previousCount >= GetRequiredPiecesForFullSet(tracker.armorSet);
-        bool isComplete = tracker.isSetComplete;
-
-        if (wasComplete != isComplete)
+        refreshing = true;
+        try
         {
-            OnSetCompleted?.Invoke(tracker.armorSet, isComplete);
-            if (!isComplete)
+            worn.Clear();
+            equipment.GetEquippedItems(worn);
+
+            // Sets worn now, plus sets that were worn before (so they can be switched off).
+            setBuffer.Clear();
+            foreach (ItemSO item in worn)
+                if (item is ArmorSO a && a.BelongsToSet != null && a.BelongsToSet.ContainsPiece(a) && !setBuffer.Contains(a.BelongsToSet))
+                    setBuffer.Add(a.BelongsToSet);
+            foreach (ArmorSet s in states.Keys)
+                if (!setBuffer.Contains(s))
+                    setBuffer.Add(s);
+
+            desired.Clear();
+            bool anyChange = false;
+            foreach (ArmorSet set in setBuffer)
             {
-                OnSetBroken?.Invoke(tracker.armorSet);
-            }
-            PlaySetSound(isComplete);
-        }
-    }
-
-    private void ActivateSetEffect(ArmorSetEffect effect)
-    {
-        LogDebug($"Activating set effect: {effect.effectName}");
-
-        // Apply new traits
-        ApplySetTraits(effect);
-
-        // Apply trait enhancements
-        ApplyTraitEnhancements(effect);
-
-        // Apply stat bonuses
-        ApplyStatBonuses(effect);
-
-        // Apply special mechanics
-        ApplySpecialMechanics(effect);
-
-        OnSetEffectActivated?.Invoke(effect);
-    }
-
-    private void DeactivateSetEffect(ArmorSetEffect effect)
-    {
-        LogDebug($"Deactivating set effect: {effect.effectName}");
-
-        // Remove special mechanics first
-        RemoveSpecialMechanics(effect);
-
-        // Remove stat bonuses
-        RemoveStatBonuses(effect);
-
-        // Remove trait enhancements
-        RemoveTraitEnhancements(effect);
-
-        // Remove set traits
-        RemoveSetTraits(effect);
-
-        OnSetEffectDeactivated?.Invoke(effect);
-    }
-
-    private void ApplySetTraits(ArmorSetEffect effect)
-    {
-        if (traitManager == null) return;
-
-        foreach (var trait in effect.traitsToApply)
-        {
-            if (trait != null)
-            {
-                traitManager.AddTrait(trait, true);
-                temporarySetTraits.Add(trait);
-                LogDebug($"Applied set trait: {trait.Name}");
-            }
-        }
-    }
-
-    private void RemoveSetTraits(ArmorSetEffect effect)
-    {
-        if (traitManager == null) return;
-
-        foreach (var trait in effect.traitsToApply)
-        {
-            if (trait != null)
-            {
-                traitManager.RemoveTrait(trait, true);
-                temporarySetTraits.Remove(trait);
-                LogDebug($"Removed set trait: {trait.Name}");
-            }
-        }
-    }
-
-    private void ApplyTraitEnhancements(ArmorSetEffect effect)
-    {
-        if (traitManager == null) return;
-
-        foreach (var enhancement in effect.traitEnhancements)
-        {
-            if (enhancement.originalTrait == null) continue;
-
-            if (!traitManager.HasTrait(enhancement.originalTrait)) continue;
-
-            switch (enhancement.enhancementType)
-            {
-                case TraitEnhancementType.Multiply:
-                    ApplyTraitMultiplier(enhancement);
-                    break;
-
-                case TraitEnhancementType.AddEffects:
-                    ApplyAdditionalTraitEffects(enhancement);
-                    break;
-
-                case TraitEnhancementType.Replace:
-                    ReplaceTraitTemporarily(enhancement);
-                    break;
-
-                case TraitEnhancementType.Upgrade:
-                    UpgradeToEnhancedTrait(enhancement);
-                    break;
+                int count = set.CountPieces(worn);
+                desiredBuffer.Clear();
+                set.GetActiveEffects(count, desiredBuffer);
+                foreach (ArmorSetEffect e in desiredBuffer)
+                    desired.Add(e);
+                anyChange |= UpdateSetState(set, count);
             }
 
-            LogDebug($"Applied trait enhancement: {enhancement.originalTrait.Name} -> {enhancement.enhancementType}");
-        }
-    }
-
-    private void RemoveTraitEnhancements(ArmorSetEffect effect)
-    {
-        if (traitManager == null) return;
-
-        foreach (var enhancement in effect.traitEnhancements)
-        {
-            if (enhancement.originalTrait == null) continue;
-
-            switch (enhancement.enhancementType)
+            // Tiers no longer reached: removed now, or after their Persist Duration.
+            tierBuffer.Clear();
+            tierBuffer.AddRange(activeTiers.Values);
+            foreach (ActiveTier t in tierBuffer)
             {
-                case TraitEnhancementType.Multiply:
-                    RemoveTraitMultiplier(enhancement);
-                    break;
-
-                case TraitEnhancementType.AddEffects:
-                    RemoveAdditionalTraitEffects(enhancement);
-                    break;
-
-                case TraitEnhancementType.Replace:
-                    RestoreOriginalTrait(enhancement);
-                    break;
-
-                case TraitEnhancementType.Upgrade:
-                    RevertFromEnhancedTrait(enhancement);
-                    break;
-            }
-        }
-    }
-
-    private void ApplyTraitMultiplier(TraitEnhancement enhancement)
-    {
-        traitMultipliers[enhancement.originalTrait] = enhancement.effectMultiplier;
-        // Notify TraitManager of the multiplier change
-        if (traitManager != null)
-        {
-            traitManager.NotifyTraitMultiplierChanged(enhancement.originalTrait, enhancement.effectMultiplier);
-        }
-    }
-
-    private void RemoveTraitMultiplier(TraitEnhancement enhancement)
-    {
-        traitMultipliers.Remove(enhancement.originalTrait);
-        if (traitManager != null)
-        {
-            traitManager.NotifyTraitMultiplierChanged(enhancement.originalTrait, 1f);
-        }
-    }
-
-    private void ApplyAdditionalTraitEffects(TraitEnhancement enhancement)
-    {
-        // Apply additional effects through the trait itself
-        foreach (var effect in enhancement.additionalEffects)
-        {
-            if (traitManager != null && playerStatusController != null)
-            {
-                // Apply the effect directly through TraitManager
-                var traitInfo = traitManager.ActiveTraitInfos.FirstOrDefault(t => t.trait == enhancement.originalTrait);
-                if (traitInfo != null)
+                if (desired.Contains(t.effect))
                 {
-                    // Apply the additional effect
-                    traitManager.ApplyTraitEffect(effect, enhancement.originalTrait);
+                    t.removeAt = float.PositiveInfinity; // back in time: keep it
+                    continue;
+                }
+                if (t.effect.persistDuration > 0f)
+                {
+                    if (float.IsPositiveInfinity(t.removeAt))
+                        t.removeAt = Time.time + t.effect.persistDuration;
+                }
+                else
+                {
+                    Deactivate(t);
+                    anyChange = true;
                 }
             }
-        }
+            tierBuffer.Clear();
 
-        if (traitManager != null)
+            // Newly reached tiers.
+            foreach (ArmorSet set in setBuffer)
+            {
+                if (set.SetEffects == null)
+                    continue;
+                foreach (ArmorSetEffect e in set.SetEffects)
+                {
+                    if (e == null || !desired.Contains(e) || activeTiers.ContainsKey(e))
+                        continue;
+                    Activate(set, e);
+                    anyChange = true;
+                }
+            }
+
+            foreach (ArmorSet set in setBuffer)
+                UpdateSetVisuals(set);
+
+            RebuildTrackers();
+            if (anyChange)
+                SetsChanged?.Invoke();
+        }
+        finally
         {
-            traitManager.NotifyTraitEffectsAdded(enhancement.originalTrait, enhancement.additionalEffects);
+            refreshing = false;
         }
     }
 
-    private void RemoveAdditionalTraitEffects(TraitEnhancement enhancement)
+    private bool UpdateSetState(ArmorSet set, int count)
     {
-        foreach (var effect in enhancement.additionalEffects)
+        if (!states.TryGetValue(set, out SetState st))
         {
-            if (traitManager != null && playerStatusController != null)
+            if (count == 0)
+                return false;
+            states[set] = st = new SetState { set = set };
+        }
+        int previous = st.count;
+        bool wasComplete = st.complete;
+        st.count = count;
+        st.complete = count > 0 && set.IsSetComplete(count);
+        if (previous == count && wasComplete == st.complete)
+            return false;
+
+        LogDebug($"{set.SetName}: {previous} -> {count} piece(s)");
+        OnSetPiecesChanged?.Invoke(set, count);
+        if (wasComplete != st.complete)
+        {
+            OnSetCompleted?.Invoke(set, st.complete);
+            if (!st.complete)
+                OnSetBroken?.Invoke(set);
+            if (equipment.IsInitialized)
+                PlaySetSound(st.complete, set);
+        }
+        return true;
+    }
+
+    private void UpdateSetVisuals(ArmorSet set)
+    {
+        if (!states.TryGetValue(set, out SetState st))
+            return;
+        bool anyTier = false;
+        foreach (ActiveTier t in activeTiers.Values)
+            if (t.set == set) { anyTier = true; break; }
+
+        // Each worn piece's "Set Visual Effect" while a bonus of its set is active.
+        if (anyTier != st.visualsOn)
+        {
+            EquipmentEffect.RevertAll(st.visuals);
+            st.visualsOn = anyTier;
+            if (anyTier)
             {
-                // Use the dedicated removal method
-                traitManager.RemoveTraitEffect(effect, enhancement.originalTrait);
+                var fx = new List<EquipmentEffect>();
+                foreach (ItemSO item in worn)
+                    if (item is ArmorSO a && set.ContainsPiece(a) && a.SetVisualEffect != null)
+                        fx.Add(new AttachedVisualEffect(a.SetVisualEffect));
+                EquipmentEffect.ApplyAll(fx, equipment.Context, 1f, set.SetName, st.visuals);
             }
         }
-
-        Debug.Log($"Removed {enhancement.additionalEffects.Count} additional effects from trait: {enhancement.originalTrait.Name}");
-    }
-    private void ReplaceTraitTemporarily(TraitEnhancement enhancement)
-    {
-        // Suspend (not remove) the original: its effects stop, but the points paid for it and its other grants are
-        // kept, so taking the set off gives it back exactly as it was (removing it used to refund its points for free).
-        if (!traitManager.SuspendTrait(enhancement.originalTrait))
-            traitManager.RemoveTrait(enhancement.originalTrait, true);
-        if (enhancement.enhancedTrait != null)
+        if (st.complete != st.completeVisualOn)
         {
-            traitManager.AddTrait(enhancement.enhancedTrait, true);
-            temporarySetTraits.Add(enhancement.enhancedTrait);
+            EquipmentEffect.RevertAll(st.completeVisual);
+            st.completeVisualOn = st.complete;
+            if (st.complete && set.SetCompleteEffect != null)
+                EquipmentEffect.ApplyAll(new List<EquipmentEffect> { new AttachedVisualEffect(set.SetCompleteEffect) }, equipment.Context, 1f, set.SetName, st.completeVisual);
+        }
+
+        if (st.count == 0 && !anyTier)
+        {
+            EquipmentEffect.RevertAll(st.visuals);
+            EquipmentEffect.RevertAll(st.completeVisual);
+            states.Remove(set);
         }
     }
 
-    private void RestoreOriginalTrait(TraitEnhancement enhancement)
+    private void Activate(ArmorSet set, ArmorSetEffect effect)
     {
-        if (enhancement.enhancedTrait != null)
+        var tier = new ActiveTier { set = set, effect = effect };
+        activeTiers[effect] = tier;
+        var effects = new List<EquipmentEffect>();
+        try { effect.CollectEffects(effects); }
+        catch (Exception e) { Debug.LogException(e, set); }
+        EquipmentEffect.ApplyAll(effects, equipment.Context, 1f, $"{set.SetName} ({effect.piecesRequired}) {effect.effectName}", tier.handles);
+
+        if (equipment.IsInitialized)
         {
-            traitManager.RemoveTrait(enhancement.enhancedTrait, true);
-            temporarySetTraits.Remove(enhancement.enhancedTrait);
+            if (effect.setActivationSound != null)
+                equipment.Context.PlayOneShot(effect.setActivationSound);
+            if (effect.setActivationParticles != null && equipment.Context.Body != null)
+            {
+                ParticleSystem ps = Instantiate(effect.setActivationParticles, equipment.Context.Body.position, Quaternion.identity);
+                ps.Play();
+                var main = ps.main;
+                Destroy(ps.gameObject, main.duration + main.startLifetime.constantMax + 0.5f);
+            }
         }
-        if (!traitManager.ResumeTrait(enhancement.originalTrait))
-            traitManager.AddTrait(enhancement.originalTrait, true);
+        LogDebug($"Activated {set.SetName} bonus '{effect.effectName}' ({tier.handles.Count} effect(s))");
+        OnSetEffectActivated?.Invoke(effect);
+        SetBonusChanged?.Invoke(set, effect, true);
     }
 
-    private void UpgradeToEnhancedTrait(TraitEnhancement enhancement)
+    private void Deactivate(ActiveTier tier)
     {
-        if (enhancement.enhancedTrait == null) return;
-        ReplaceTraitTemporarily(enhancement);
+        if (!activeTiers.Remove(tier.effect))
+            return;
+        EquipmentEffect.RevertAll(tier.handles);
+        LogDebug($"Deactivated {tier.set.SetName} bonus '{tier.effect.effectName}'");
+        OnSetEffectDeactivated?.Invoke(tier.effect);
+        SetBonusChanged?.Invoke(tier.set, tier.effect, false);
+        UpdateSetVisuals(tier.set);
+        RebuildTrackers();
     }
 
-    private void RevertFromEnhancedTrait(TraitEnhancement enhancement)
+    private void RebuildTrackers()
     {
-        RestoreOriginalTrait(enhancement);
-    }
-
-    private void ApplyStatBonuses(ArmorSetEffect effect)
-    {
-        // Use the EquippableSO system for stat bonuses
-        foreach (var statBonus in effect.statBonuses)
+        trackedSets.Clear();
+        foreach (SetState st in states.Values)
         {
-            ApplyStatBonus(statBonus, true);
-        }
-    }
-
-    private void RemoveStatBonuses(ArmorSetEffect effect)
-    {
-        foreach (var statBonus in effect.statBonuses)
-        {
-            ApplyStatBonus(statBonus, false);
-        }
-    }
-
-    private void ApplyStatBonus(EquippableEffect statBonus, bool isApplying)
-    {
-        // Create a temporary EquippableSO to use its effect system
-        var tempEquippable = ScriptableObject.CreateInstance<EquippableSO>();
-        tempEquippable.Effects.Add(statBonus);
-        tempEquippable.ApplyEquippedStats(isApplying, playerStatusController);
-        DestroyImmediate(tempEquippable);
-    }
-
-    private void ApplySpecialMechanics(ArmorSetEffect effect)
-    {
-        foreach (var mechanic in effect.specialMechanics)
-        {
-            ApplySpecialMechanic(mechanic);
+            var tracker = new ArmorSetTracker { armorSet = st.set };
+            foreach (ItemSO item in worn)
+                if (item is ArmorSO a && st.set.ContainsPiece(a))
+                    tracker.AddPiece(a);
+            foreach (ActiveTier t in activeTiers.Values)
+                if (t.set == st.set)
+                    tracker.activeEffects.Add(t.effect);
+            trackedSets.Add(tracker);
         }
     }
 
-    private void RemoveSpecialMechanics(ArmorSetEffect effect)
-    {
-        foreach (var mechanic in effect.specialMechanics)
-        {
-            RemoveSpecialMechanic(mechanic);
-        }
-    }
+    // ------------------------------------------------------------------ public API
+    /// <summary>Old notification from armor pieces: the counts now come from the equipment manager, so this only refreshes.</summary>
+    public void OnArmorEquipmentChanged(ArmorSO armor, bool equipped) => Refresh();
 
-    private void ApplySpecialMechanic(SpecialMechanic mechanic)
-    {
-        if (string.IsNullOrEmpty(mechanic.mechanicId)) return;
-
-        // Get or create the effect registry
-        var registry = EffectRegistry.Instance;
-        if (registry != null)
-        {
-            registry.ApplySpecialMechanic(mechanic, true);
-        }
-
-        activeMechanics[mechanic.mechanicId] = true;
-        OnSpecialMechanicActivated?.Invoke(mechanic);
-        LogDebug($"Applied special mechanic: {mechanic.mechanicName}");
-    }
-
-    private void RemoveSpecialMechanic(SpecialMechanic mechanic)
-    {
-        if (string.IsNullOrEmpty(mechanic.mechanicId)) return;
-
-        var registry = EffectRegistry.Instance;
-        if (registry != null)
-        {
-            registry.ApplySpecialMechanic(mechanic, false);
-        }
-
-        activeMechanics.Remove(mechanic.mechanicId);
-        OnSpecialMechanicDeactivated?.Invoke(mechanic);
-        LogDebug($"Removed special mechanic: {mechanic.mechanicName}");
-    }
-
-    // Public API methods
+    /// <summary>Sets the character wears at least one piece of.</summary>
     public List<ArmorSet> GetActiveSets()
     {
-        return trackedSets
-            .Where(t => t.equippedCount > 0)
-            .Select(t => t.armorSet)
-            .ToList();
+        return states.Values.Where(s => s.count > 0).Select(s => s.set).ToList();
     }
 
     public int GetEquippedPiecesCount(ArmorSet armorSet)
     {
-        return setTrackers.TryGetValue(armorSet, out ArmorSetTracker tracker) ? tracker.equippedCount : 0;
+        return armorSet != null && states.TryGetValue(armorSet, out SetState st) ? st.count : 0;
     }
 
     public bool IsSetComplete(ArmorSet armorSet)
     {
-        return setTrackers.TryGetValue(armorSet, out ArmorSetTracker tracker) && tracker.isSetComplete;
+        return armorSet != null && states.TryGetValue(armorSet, out SetState st) && st.complete;
     }
 
+    /// <summary>The bonus tiers of a set that are active right now (including ones lingering for their Persist Duration).</summary>
     public List<ArmorSetEffect> GetActiveSetEffects(ArmorSet armorSet)
     {
-        return setTrackers.TryGetValue(armorSet, out ArmorSetTracker tracker) ?
-            new List<ArmorSetEffect>(tracker.activeEffects) : new List<ArmorSetEffect>();
+        var list = new List<ArmorSetEffect>();
+        foreach (ActiveTier t in activeTiers.Values)
+            if (t.set == armorSet)
+                list.Add(t.effect);
+        return list.OrderBy(e => e.piecesRequired).ToList();
     }
 
-    public bool HasSpecialMechanic(string mechanicId)
-    {
-        return activeMechanics.ContainsKey(mechanicId) && activeMechanics[mechanicId];
-    }
+    public bool IsBonusActive(ArmorSetEffect effect) => effect != null && activeTiers.ContainsKey(effect);
 
-    public List<string> GetActiveSpecialMechanics()
-    {
-        return activeMechanics.Where(kvp => kvp.Value).Select(kvp => kvp.Key).ToList();
-    }
+    public bool HasSpecialMechanic(string mechanicId) => equipment != null && equipment.Context.Mechanics.IsActive(mechanicId);
 
-    // Utility methods
-    private void ScanForEquippedArmor()
-    {
-        if (inventoryManager == null) return;
+    public List<string> GetActiveSpecialMechanics() => equipment != null ? equipment.Context.Mechanics.ActiveIds.ToList() : new List<string>();
 
-        trackedSets.Clear();
-        setTrackers.Clear();
-
-        var slots = inventoryManager.Slots;
-        if (slots == null) return;
-
-        foreach (var slotObj in slots)
-        {
-            if (slotObj == null) continue;
-
-            var slot = slotObj.GetComponent<InventorySlot>();
-            if (slot?.heldItem == null) continue;
-
-            var inventoryItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (inventoryItem?.itemScriptableObject is ArmorSO armor && inventoryItem.isEquipped)
-            {
-                if (armor.IsPartOfSet())
-                {
-                    OnArmorEquipmentChanged(armor, true);
-                }
-            }
-        }
-    }
-
-    // Public method for manual scanning
+    /// <summary>Recounts everything (kept for older callers; equipment changes refresh automatically).</summary>
     public void ScanEquippedArmor()
     {
-        ScanForEquippedArmor();
+        if (equipment != null && equipment.IsInitialized)
+            equipment.SyncFromInventory();
+        Refresh();
     }
 
     // Get a status report of all armor sets
     public string GetSetStatusReport()
     {
-        System.Text.StringBuilder report = new System.Text.StringBuilder();
+        var report = new StringBuilder();
         report.AppendLine("=== Armor Set Status Report ===");
 
-        if (trackedSets.Count == 0)
+        if (states.Count == 0)
         {
-            report.AppendLine("No armor sets currently tracked.");
+            report.AppendLine("No armor sets currently worn.");
             return report.ToString();
         }
 
-        foreach (var tracker in trackedSets)
+        foreach (SetState st in states.Values)
         {
-            if (tracker.equippedCount > 0)
-            {
-                report.AppendLine($"\n{tracker.armorSet.SetName}:");
-                report.AppendLine($"  Pieces Equipped: {tracker.equippedCount}");
-                report.AppendLine($"  Is Complete: {tracker.isSetComplete}");
-
-                if (tracker.activeEffects.Count > 0)
-                {
-                    report.AppendLine("  Active Effects:");
-                    foreach (var effect in tracker.activeEffects)
-                    {
-                        report.AppendLine($"    - {effect.effectName} ({effect.piecesRequired} pieces)");
-                    }
-                }
-            }
+            report.AppendLine($"\n{st.set.SetName}:");
+            report.AppendLine($"  Pieces Equipped: {st.count}/{st.set.SetPieces.Count}");
+            report.AppendLine($"  Is Complete: {st.complete}");
+            foreach (string line in st.set.DescribeTiers(st.count))
+                report.AppendLine("  " + line);
         }
 
-        var activeMechanics = GetActiveSpecialMechanics();
-        if (activeMechanics.Count > 0)
+        var mechanics = GetActiveSpecialMechanics();
+        if (mechanics.Count > 0)
         {
             report.AppendLine("\nActive Special Mechanics:");
-            foreach (var mechanic in activeMechanics)
-            {
+            foreach (var mechanic in mechanics)
                 report.AppendLine($"  - {mechanic}");
-            }
         }
 
         return report.ToString();
     }
 
-    private int GetRequiredPiecesForFullSet(ArmorSet armorSet)
+    private void PlaySetSound(bool activated, ArmorSet set)
     {
-        if (armorSet == null) return 3;
-
-        // Use the highest pieces required from effects as the full set requirement
-        int maxRequired = 0;
-        foreach (var effect in armorSet.SetEffects)
-        {
-            if (effect.piecesRequired > maxRequired)
-                maxRequired = effect.piecesRequired;
-        }
-        return maxRequired > 0 ? maxRequired : 3;
-    }
-
-    private void PlaySetSound(bool activated)
-    {
-        if (audioSource == null) return;
-
-        var clip = activated ? setActivatedSound : setDeactivatedSound;
-        if (clip != null)
-        {
+        AudioClip clip = activated ? (set.SetCompleteSound != null ? set.SetCompleteSound : setActivatedSound) : setDeactivatedSound;
+        if (clip == null)
+            return;
+        if (audioSource != null)
             audioSource.PlayOneShot(clip);
-        }
+        else
+            equipment?.Context.PlayOneShot(clip);
     }
 
     private void LogDebug(string message)
     {
         if (enableDebugLogging)
-        {
-            Debug.Log($"[ArmorSetManager] {message}");
-        }
+            Debug.Log($"[ArmorSetManager] {message}", this);
     }
 
-    // Validation
-    private void OnValidate()
-    {
-        if (trackedSets != null)
-        {
-            trackedSets.RemoveAll(t => t == null || t.armorSet == null);
-        }
-    }
+    [ContextMenu("Log Set Status")]
+    private void DebugLogStatus() => Debug.Log(GetSetStatusReport(), this);
 }

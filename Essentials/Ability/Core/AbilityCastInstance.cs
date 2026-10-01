@@ -90,6 +90,8 @@ public sealed class AbilityCastInstance
     /// <summary>Team of the caster when the cast started (used if the caster is gone).</summary>
     public readonly string CasterTeam;
     public readonly CombatEntity.EntityKind CasterKind;
+    public readonly int CasterParty;
+    public readonly CombatFaction CasterFaction;
 
     public CombatEntity Target;
     public Vector3 AimPoint;
@@ -133,6 +135,8 @@ public sealed class AbilityCastInstance
         Stats = slot != null ? slot.Stats : AbilityStats.From(modifiers);
         CasterTeam = casterEntity != null ? casterEntity.Team : "";
         CasterKind = casterEntity != null ? casterEntity.Kind : CombatEntity.EntityKind.Other;
+        CasterParty = casterEntity != null ? casterEntity.PartyId : 0;
+        CasterFaction = casterEntity != null ? casterEntity.Faction : null;
         StartTime = Time.time;
         if (casterEntity != null)
         {
@@ -199,6 +203,15 @@ public sealed class AbilityCastInstance
             return CombatRelation.Neutral;
         if (CasterEntity != null)
             return CombatRelations.Get(CasterEntity, other);
+        // The caster is gone: the same order as CombatRelations.Get with what was known when it cast.
+        if (CasterParty != 0 && other.PartyId == CasterParty)
+            return CombatRelation.Party;
+        if (CasterFaction != null && other.Faction != null)
+        {
+            FactionStance stance = CasterFaction.StanceTowards(other.Faction);
+            if (stance == FactionStance.Ally) return CombatRelation.Ally;
+            if (stance == FactionStance.Enemy) return CombatRelation.Enemy;
+        }
         if (other.Team == CasterTeam)
             return CombatRelation.Ally;
         if (CasterKind == CombatEntity.EntityKind.Player || other.Kind == CombatEntity.EntityKind.Player)
@@ -235,7 +248,8 @@ public sealed class AbilityCastInstance
     {
         if (hit == null || target == null || !target.IsAlive)
             return false;
-        if (!Passes(hit.filter, target))
+        CombatRelation relation = RelationTo(target);
+        if (!CombatTargeting.CanHit(hit.filter, hit.rules, relation, target, hit.IsHarmful))
             return false;
         if (hit.blockedByObstacles && !CombatQuery.HasLineOfSight(origin + Vector3.up * 0.6f, target.Center))
             return false;
@@ -266,8 +280,17 @@ public sealed class AbilityCastInstance
                 continue;
             if (effect.chance < 1f && Random.value > effect.chance)
                 continue;
-            CombatRelation relation = RelationTo(target);
             if (!CombatRelations.Passes(effect.onlyAffects, relation))
+            {
+                // Friendly fire pulled a party member / ally into a harmful hit: its harmful effects still apply to them.
+                bool friendlyFire = effect.IsHarmful && (relation == CombatRelation.Party || relation == CombatRelation.Ally) &&
+                                    (effect.onlyAffects & (TargetFilter.Enemies | TargetFilter.Neutral)) != 0 &&
+                                    CombatTargeting.FriendlyFire(relation, hit.rules);
+                if (!friendlyFire)
+                    continue;
+            }
+            // Harm rule: damage, control, knockback and debuffs land on party members / allies only with friendly fire.
+            if (effect.IsHarmful && effect.recipient == EffectRecipient.HitTarget && !CombatTargeting.CanHarm(relation, hit.rules))
                 continue;
             if (effect.recipient == EffectRecipient.Caster)
             {

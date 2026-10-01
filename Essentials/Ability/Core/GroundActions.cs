@@ -509,7 +509,8 @@ public class ZoneAction : CastAction
             }
             if (action.showOutline)
             {
-                Color c = cast.RelationTo(CombatEntity.NearestPlayer(r.origin, out _)) == CombatRelation.Enemy
+                // Coloured for whoever looks at it: this machine's player (multiplayer: each client sees its own colours).
+                Color c = cast.RelationTo(PlayerLocator.Local) == CombatRelation.Enemy
                     ? CombatSettings.Instance.enemyTelegraphColor
                     : CombatSettings.Instance.allyTelegraphColor;
                 if (cast.Definition.presentation.telegraphColor.a > 0.01f)

@@ -30,6 +30,9 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
 
     [Tooltip("Combat team. Mobs of the same team are allies. Empty = the mob Type (mobs of the same type help each other).")]
     [SerializeField] protected string teamOverride = "";
+    [Tooltip("Faction of this mob (Wildlife, Bandits, Undead...): which factions it treats as allies or enemies. Empty = " +
+             "none (its team and AI decide, as before).")]
+    [SerializeField] protected CombatFaction faction;
 
     [Header("Wander")]
     [Tooltip("How far the animal can move in one go (used when no profile is assigned).")]
@@ -160,6 +163,8 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     public MobProfile ProfileAsset => profile;
 
     /// <summary>Team used for combat relations: the Team field, or the mob type.</summary>
+    public CombatFaction Faction => faction;
+
     public virtual string CombatTeam => !string.IsNullOrEmpty(teamOverride) ? teamOverride : (string.IsNullOrEmpty(type) ? name : type);
 
     /// <summary>Where the mob lives (its spawn point). The AI wanders, patrols and returns around it.</summary>

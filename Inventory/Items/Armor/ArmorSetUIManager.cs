@@ -8,44 +8,52 @@ using TMPro;
 public class ArmorSetUIManager : MonoBehaviour
 {
     [Header("Component References")]
+    [Tooltip("The player's set bonus manager (found on the player when empty).")]
     [SerializeField] private ArmorSetManager armorSetManager;
+    [Tooltip("The player's inventory (found on the player when empty).")]
     [SerializeField] private InventoryManager inventoryManager;
+    [Tooltip("Canvas of this UI (found in the parents when empty).")]
     [SerializeField] private Canvas armorSetCanvas;
+    [Tooltip("The window that is shown and hidden (Show / Hide / Toggle). Empty = the whole canvas (old behaviour: hides everything on it).")]
+    [SerializeField] private GameObject windowPanel;
 
     [Header("UI Panels")]
+    [Tooltip("Details of the selected set (name, icon, progress, pieces).")]
     [SerializeField] private GameObject setInfoPanel;
+    [Tooltip("List of the sets the player is wearing pieces of.")]
     [SerializeField] private GameObject setListPanel;
+    [Tooltip("Active and next bonuses of the selected set.")]
     [SerializeField] private GameObject setEffectPanel;
 
     [Header("Set Info Display")]
-    [SerializeField] private TextMeshProUGUI setNameText;
-    [SerializeField] private TextMeshProUGUI setDescriptionText;
-    [SerializeField] private Image setIconImage;
-    [SerializeField] private Slider setProgressSlider;
-    [SerializeField] private TextMeshProUGUI setProgressText;
+    [SerializeField, Tooltip("Name of the selected set.")] private TextMeshProUGUI setNameText;
+    [SerializeField, Tooltip("Description and bonus tiers of the selected set.")] private TextMeshProUGUI setDescriptionText;
+    [SerializeField, Tooltip("Icon of the selected set.")] private Image setIconImage;
+    [SerializeField, Tooltip("Worn pieces / total pieces.")] private Slider setProgressSlider;
+    [SerializeField, Tooltip("'2/4' text next to the progress bar.")] private TextMeshProUGUI setProgressText;
 
     [Header("Set Effects Display")]
-    [SerializeField] private Transform activeEffectsContainer;
-    [SerializeField] private Transform availableEffectsContainer;
-    [SerializeField] private GameObject setEffectPrefab;
+    [SerializeField, Tooltip("Where the active bonuses are listed.")] private Transform activeEffectsContainer;
+    [SerializeField, Tooltip("Where the bonuses not reached yet are listed.")] private Transform availableEffectsContainer;
+    [SerializeField, Tooltip("One bonus entry: an Image with children 'EffectName', 'EffectDescription', 'PiecesRequired' (TextMeshPro).")] private GameObject setEffectPrefab;
 
     [Header("Set List Display")]
-    [SerializeField] private Transform setListContainer;
-    [SerializeField] private GameObject setListItemPrefab;
+    [SerializeField, Tooltip("Where the set entries are listed.")] private Transform setListContainer;
+    [SerializeField, Tooltip("One set entry: a Button + Image with children 'SetName', 'Progress', 'Status' (TextMeshPro).")] private GameObject setListItemPrefab;
 
     [Header("Equipment Slots")]
-    [SerializeField] private Transform equipmentSlotsContainer;
-    [SerializeField] private GameObject equipmentSlotPrefab;
+    [SerializeField, Tooltip("Where the set's piece slots are shown.")] private Transform equipmentSlotsContainer;
+    [SerializeField, Tooltip("One piece slot: an Image with children 'Icon' (Image) and 'Name' (TextMeshPro).")] private GameObject equipmentSlotPrefab;
 
     [Header("Audio")]
-    [SerializeField] private AudioSource uiAudioSource;
-    [SerializeField] private AudioClip setCompleteSound;
-    [SerializeField] private AudioClip effectActivatedSound;
+    [SerializeField, Tooltip("Plays the sounds below (found on this object when empty).")] private AudioSource uiAudioSource;
+    [SerializeField, Tooltip("Played when a set becomes complete.")] private AudioClip setCompleteSound;
+    [SerializeField, Tooltip("Played when a set bonus activates.")] private AudioClip effectActivatedSound;
 
     [Header("Settings")]
-    [SerializeField] private bool showUIOnSetCompletion = true;
-    [SerializeField] private float autoHideDelay = 5f;
-    [SerializeField] private bool enableSetNotifications = true;
+    [SerializeField, Tooltip("Open the window on the set that was just completed.")] private bool showUIOnSetCompletion = true;
+    [SerializeField, Tooltip("Seconds before a window opened by a completion closes again (0 = stays open).")] private float autoHideDelay = 5f;
+    [SerializeField, Tooltip("Log set completions and bonus activations to the Console.")] private bool enableSetNotifications = true;
 
     // Current state
     private ArmorSet currentlyDisplayedSet;
@@ -81,11 +89,20 @@ public class ArmorSetUIManager : MonoBehaviour
 
     private void ValidateComponents()
     {
+        // The player this UI belongs to first (the UI usually sits on the player's canvas), the scene last.
         if (armorSetManager == null)
-            armorSetManager = Object.FindAnyObjectByType <ArmorSetManager>();
+            armorSetManager = GetComponentInParent<ArmorSetManager>(true);
+        if (armorSetManager == null && GetComponentInParent<PlayerStatusController>(true) is PlayerStatusController ps)
+            armorSetManager = ps.GetComponentInChildren<ArmorSetManager>(true);
+        if (armorSetManager == null)
+            armorSetManager = InventoryUtils.OnlyInstance<ArmorSetManager>(); // never another player's
 
         if (inventoryManager == null)
-            inventoryManager = Object.FindAnyObjectByType <InventoryManager>();
+            inventoryManager = GetComponentInParent<InventoryManager>(true);
+        if (inventoryManager == null && transform.root.GetComponentInChildren<InventoryManager>(true) is InventoryManager im)
+            inventoryManager = im;
+        if (inventoryManager == null)
+            inventoryManager = InventoryUtils.OnlyInstance<InventoryManager>();
 
         if (uiAudioSource == null)
             uiAudioSource = GetComponent<AudioSource>();
@@ -96,7 +113,8 @@ public class ArmorSetUIManager : MonoBehaviour
 
     private void InitializeUI()
     {
-        // Initialize UI panels
+        // Initialize UI panels (the window opens with the Sets button / key, or when a set is completed)
+        if (windowPanel != null) windowPanel.SetActive(false);
         if (setInfoPanel != null) setInfoPanel.SetActive(false);
         if (setListPanel != null) setListPanel.SetActive(true);
         if (setEffectPanel != null) setEffectPanel.SetActive(false);
@@ -119,7 +137,14 @@ public class ArmorSetUIManager : MonoBehaviour
             armorSetManager.OnSetBroken += HandleSetBroken;
             armorSetManager.OnSetEffectActivated += HandleSetEffectActivated;
             armorSetManager.OnSetEffectDeactivated += HandleSetEffectDeactivated;
+            armorSetManager.SetsChanged += HandleSetsChanged;
         }
+    }
+
+    private void HandleSetsChanged()
+    {
+        if (IsVisible)
+            RefreshAll();
     }
 
     private void UnsubscribeFromEvents()
@@ -131,6 +156,7 @@ public class ArmorSetUIManager : MonoBehaviour
             armorSetManager.OnSetBroken -= HandleSetBroken;
             armorSetManager.OnSetEffectActivated -= HandleSetEffectActivated;
             armorSetManager.OnSetEffectDeactivated -= HandleSetEffectDeactivated;
+            armorSetManager.SetsChanged -= HandleSetsChanged;
         }
     }
 
@@ -159,8 +185,11 @@ public class ArmorSetUIManager : MonoBehaviour
 
             if (showUIOnSetCompletion)
             {
-                DisplaySet(armorSet);
+                bool wasVisible = IsVisible;
+                currentlyDisplayedSet = armorSet;
                 ShowUI();
+                if (!wasVisible)
+                    AutoHideUI();
             }
 
             PlaySound(setCompleteSound);
@@ -209,32 +238,54 @@ public class ArmorSetUIManager : MonoBehaviour
     }
 
     // Public API
+    /// <summary>True while the window is shown.</summary>
+    public bool IsVisible => windowPanel != null ? windowPanel.activeInHierarchy : armorSetCanvas != null && armorSetCanvas.gameObject.activeInHierarchy;
+
     public void ShowUI()
     {
-        if (armorSetCanvas != null)
+        CancelInvoke(nameof(HideUI));
+        if (windowPanel != null)
+            windowPanel.SetActive(true);
+        else if (armorSetCanvas != null)
             armorSetCanvas.gameObject.SetActive(true);
 
+        // Show the first worn set when nothing is selected yet.
+        RefreshSetList();
+        if (currentlyDisplayedSet == null && armorSetManager != null)
+        {
+            var sets = armorSetManager.GetActiveSets();
+            if (sets.Count > 0) currentlyDisplayedSet = sets[0];
+        }
+        if (currentlyDisplayedSet != null)
+            DisplaySet(currentlyDisplayedSet);
+        else if (setInfoPanel != null)
+            setInfoPanel.SetActive(false);
+
+        Cursor.lockState = CursorLockMode.None; // the window is clicked with the mouse
+        Cursor.visible = true;
         OnUIOpened?.Invoke();
     }
 
     public void HideUI()
     {
-        if (armorSetCanvas != null)
+        CancelInvoke(nameof(HideUI));
+        if (windowPanel != null)
+            windowPanel.SetActive(false);
+        else if (armorSetCanvas != null)
             armorSetCanvas.gameObject.SetActive(false);
 
+        if (inventoryManager == null || !inventoryManager.IsInventoryOpened)
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
         OnUIClosed?.Invoke();
     }
 
     public void ToggleUI()
     {
-        if (armorSetCanvas != null)
-        {
-            bool isActive = armorSetCanvas.gameObject.activeSelf;
-            if (isActive)
-                HideUI();
-            else
-                ShowUI();
-        }
+        if (IsVisible) HideUI();
+        else ShowUI();
     }
 
     public void DisplaySet(ArmorSet armorSet)
@@ -243,6 +294,8 @@ public class ArmorSetUIManager : MonoBehaviour
 
         if (setInfoPanel != null)
             setInfoPanel.SetActive(true);
+        if (setEffectPanel != null)
+            setEffectPanel.SetActive(true); // hidden at start; it was never shown again
 
         UpdateSetInfo();
         UpdateSetEffects();
@@ -338,6 +391,10 @@ public class ArmorSetUIManager : MonoBehaviour
             var slotType = kvp.Key;
             var slotObj = kvp.Value;
 
+            // Only the slots this set has pieces for.
+            bool used = currentlyDisplayedSet.SetPieces.Any(p => p != null && p.ArmorSlotType == slotType);
+            if (slotObj != null && slotObj.activeSelf != used)
+                slotObj.SetActive(used);
             var equippedPiece = setArmor.FirstOrDefault(armor => armor.ArmorSlotType == slotType);
             UpdateEquipmentSlot(slotObj, equippedPiece);
         }
@@ -386,7 +443,7 @@ public class ArmorSetUIManager : MonoBehaviour
         var image = effectObj.GetComponent<Image>();
         if (image != null)
         {
-            image.color = isActive ? Color.green : Color.gray;
+            image.color = isActive ? new Color(0.3f, 0.75f, 0.4f, 0.35f) : new Color(1f, 1f, 1f, 0.06f);
         }
     }
 
@@ -425,7 +482,7 @@ public class ArmorSetUIManager : MonoBehaviour
         var image = listItemObj.GetComponent<Image>();
         if (image != null)
         {
-            image.color = isComplete ? Color.green : Color.yellow;
+            image.color = isComplete ? new Color(0.3f, 0.75f, 0.4f, 0.35f) : new Color(1f, 1f, 1f, 0.1f);
         }
     }
 
@@ -441,20 +498,25 @@ public class ArmorSetUIManager : MonoBehaviour
             if (iconImage != null && equippedArmor.Icon != null)
                 iconImage.sprite = equippedArmor.Icon;
 
+            if (iconImage != null)
+                iconImage.enabled = equippedArmor.Icon != null;
             if (nameText != null)
-                nameText.text = equippedArmor.name;
+                nameText.text = string.IsNullOrEmpty(equippedArmor.Name) ? equippedArmor.name : equippedArmor.Name;
 
-            slotObj.GetComponent<Image>().color = Color.green;
+            slotObj.GetComponent<Image>().color = new Color(0.3f, 0.75f, 0.4f, 0.5f);
         }
         else
         {
             if (iconImage != null)
+            {
                 iconImage.sprite = null;
+                iconImage.enabled = false;
+            }
 
             if (nameText != null)
                 nameText.text = "Empty";
 
-            slotObj.GetComponent<Image>().color = Color.gray;
+            slotObj.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
         }
     }
 

@@ -1,5 +1,9 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
+/// <summary>
+/// Inspector/debug view of one worn armor set: the pieces worn and the bonus tiers active. Filled by the
+/// <see cref="ArmorSetManager"/> after every equipment change (it is not the source of truth).
+/// </summary>
 [System.Serializable]
 public class ArmorSetTracker
 {
@@ -7,27 +11,13 @@ public class ArmorSetTracker
     public List<ArmorSO> equippedPieces = new List<ArmorSO>();
     public List<ArmorSetEffect> activeEffects = new List<ArmorSetEffect>();
 
+    /// <summary>Different pieces worn.</summary>
     public int equippedCount => equippedPieces.Count;
-    public bool isSetComplete => equippedCount >= GetRequiredPiecesForFullSet();
-
-    private int GetRequiredPiecesForFullSet()
-    {
-        // Fallback to checking the highest pieces required in effects
-        int maxRequired = 0;
-        if (armorSet != null && armorSet.SetEffects != null)
-        {
-            foreach (var effect in armorSet.SetEffects)
-            {
-                if (effect.piecesRequired > maxRequired)
-                    maxRequired = effect.piecesRequired;
-            }
-        }
-        return maxRequired > 0 ? maxRequired : 3; // Default to 3 if no effects defined
-    }
+    public bool isSetComplete => armorSet != null && armorSet.IsSetComplete(equippedCount);
 
     public void AddPiece(ArmorSO piece)
     {
-        if (!equippedPieces.Contains(piece))
+        if (piece != null && !equippedPieces.Contains(piece))
             equippedPieces.Add(piece);
     }
 
@@ -36,16 +26,11 @@ public class ArmorSetTracker
         equippedPieces.Remove(piece);
     }
 
+    /// <summary>Recomputes the tiers reached with the pieces listed (Upgrade Groups respected).</summary>
     public void UpdateActiveEffects()
     {
         activeEffects.Clear();
-
-        foreach (var effect in armorSet.SetEffects)
-        {
-            if (effect.ShouldBeActive(equippedCount))
-            {
-                activeEffects.Add(effect);
-            }
-        }
+        if (armorSet != null)
+            armorSet.GetActiveEffects(equippedCount, activeEffects);
     }
 }

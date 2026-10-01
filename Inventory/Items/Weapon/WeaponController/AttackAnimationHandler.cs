@@ -1,82 +1,75 @@
-﻿using UnityEngine;
+using UnityEngine;
 
+/// <summary>Plays the attack, charge and fallback animations of weapon attacks, and the attack sound.</summary>
 public class AttackAnimationHandler
 {
-    private WeaponController controller;
+    private readonly WeaponController controller;
+    private bool charging;
 
     public AttackAnimationHandler(WeaponController controller)
     {
         this.controller = controller;
     }
 
-    public void TriggerAttackAnimation(IAttackComponent component)
+    /// <summary>Plays the attack's clip stretched to <paramref name="duration"/> (or the animator trigger of its input).</summary>
+    public void TriggerAttackAnimation(IAttackComponent component, AttackType input, float duration, float speed)
     {
+        PlayAttackSound(component);
         var animController = controller.GetAnimController();
         if (animController == null)
-        {
-            controller.LogDebug("Animation controller is null!", true);
             return;
-        }
-
-        float duration = component.GetTotalDuration();
-        string attackName = (component as AttackVariation)?.variationName ??
-                           (component as AttackAction)?.actionName ?? "Unknown";
-        controller.LogDebug($"Triggering animation for {attackName} with duration: {duration}s");
 
         if (component.AnimationClip != null)
-        {
-            animController.PlayAttackAnimationWithDuration(
-                component.AnimationClip,
-                duration,
-                component.AnimationSpeed
-            );
-        }
+            animController.PlayAttackAnimationWithDuration(component.AnimationClip, duration, speed);
         else
-        {
-            // Use fallback trigger based on action type
-            // For variations, we need to get the action type from the current attack state
-            AttackType attackType = AttackType.Normal;
-
-            if (component is AttackAction action)
-            {
-                attackType = action.actionType;
-            }
-            else
-            {
-                // For AttackVariation, we need to get the attack type from the controller's current attack action
-                var currentAction = controller.CurrentAttackAction;
-                if (currentAction != null)
-                {
-                    attackType = currentAction.actionType;
-                }
-            }
-
-            string fallbackTrigger = GetFallbackAttackTrigger(attackType);
-            animController.TriggerAttackAnimationWithDuration(fallbackTrigger, duration, 0);
-        }
-
-        PlayAttackSound(component);
+            animController.TriggerAttackAnimationWithDuration(GetFallbackAttackTrigger(input), duration, 0);
     }
 
-    private string GetFallbackAttackTrigger(AttackType attackType)
+    /// <summary>Old overload (duration and speed from the attack itself).</summary>
+    public void TriggerAttackAnimation(IAttackComponent component)
+    {
+        AttackType input = component is AttackAction a ? a.actionType : controller.CurrentAttackAction != null ? controller.CurrentAttackAction.actionType : AttackType.Normal;
+        TriggerAttackAnimation(component, input, component.GetTotalDuration(), component.AnimationSpeed);
+    }
+
+    public void PlayChargeAnimation(AnimationClip clip)
+    {
+        var animController = controller.GetAnimController();
+        if (animController == null || clip == null)
+            return;
+        charging = true;
+        animController.PlayAnimation(clip);
+    }
+
+    public void StopChargeAnimation()
+    {
+        if (!charging)
+            return;
+        charging = false;
+        controller.GetAnimController()?.ResetAnimationState();
+    }
+
+    public void ForceEnd()
+    {
+        charging = false;
+        controller.GetAnimController()?.ForceEndAttackAnimation();
+    }
+
+    public static string GetFallbackAttackTrigger(AttackType attackType)
     {
         return attackType switch
         {
             AttackType.Light => "LightAttackTrigger",
             AttackType.Heavy => "HeavyAttackTrigger",
             AttackType.Special => "SpecialAttackTrigger",
-            AttackType.Normal => "AttackTrigger",
+            AttackType.Alternate => "AlternateAttackTrigger",
             _ => "AttackTrigger"
         };
     }
 
     private void PlayAttackSound(IAttackComponent component)
     {
-        AudioClip soundToPlay = component.AttackSound ?? controller.EquippedWeapon.AttackSound;
-        if (soundToPlay != null)
-        {
-            var player = controller.GetComponent<Player>();
-            player?.PlayerAudioSource?.PlayOneShot(soundToPlay);
-        }
+        AudioClip clip = component.AttackSound != null ? component.AttackSound : controller.EquippedWeapon != null ? controller.EquippedWeapon.AttackSound : null;
+        controller.PlaySound(clip);
     }
 }

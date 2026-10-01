@@ -35,6 +35,11 @@ public class InventoryItem : MonoBehaviour
     private void Awake()
     {
         uiCache = new UICache();
+        // Item prefabs built by hand often leave these empty: find them in the children.
+        if (iconImage == null)
+            iconImage = FindIconImage();
+        if (stackText == null)
+            stackText = GetComponentInChildren<Text>(true);
     }
 
     private void Start()
@@ -53,7 +58,7 @@ public class InventoryItem : MonoBehaviour
     // Initialize item from ItemPickable data
     public void Initialize(ItemPickable pickedItem)
     {
-        if (pickedItem?.itemScriptableObject == null) return;
+        if (pickedItem.Live()?.itemScriptableObject == null) return;
 
         itemScriptableObject = pickedItem.itemScriptableObject;
         stackCurrent = pickedItem.quantity;
@@ -62,15 +67,56 @@ public class InventoryItem : MonoBehaviour
 
         if (DurabilityList.Count > 0)
             durability = DurabilityList[DurabilityList.Count - 1];
+        else
+            durability = StartingDurability(itemScriptableObject);
 
         UpdateTotalWeight();
         uiCache.MarkForUpdate();
     }
 
+    // A child named "Icon", else the first child image, else the image on the item itself.
+    private Image FindIconImage()
+    {
+        Image own = GetComponent<Image>();
+        Image firstChild = null;
+        foreach (Image img in GetComponentsInChildren<Image>(true))
+        {
+            if (img == own) continue;
+            if (img.name.IndexOf("icon", System.StringComparison.OrdinalIgnoreCase) >= 0) return img;
+            if (firstChild == null) firstChild = img;
+        }
+        return firstChild != null ? firstChild : own;
+    }
+
+    /// <summary>Durability of a fresh item without a durability list: the item's Durability, or its Max Durability.</summary>
+    public static float StartingDurability(ItemSO item)
+    {
+        if (item == null) return 0f;
+        return item.Durability > 0 ? item.Durability : Mathf.Max(1, item.MaxDurability);
+    }
+
+    /// <summary>Sets up an item created by code (rewards, crafting): item, amount and durabilities.</summary>
+    public void Initialize(ItemSO item, int quantity, IList<int> durabilities = null)
+    {
+        itemScriptableObject = item;
+        stackMax = item != null ? Mathf.Max(1, item.StackMax) : 1;
+        stackCurrent = Mathf.Clamp(quantity, 1, stackMax);
+        DurabilityList = durabilities != null ? new List<int>(durabilities) : new List<int>();
+        durability = DurabilityList.Count > 0 ? DurabilityList[DurabilityList.Count - 1] : StartingDurability(item);
+        isEquipped = false;
+        UpdateTotalWeight();
+        uiCache?.MarkForUpdate();
+    }
+
+    /// <summary>Redraws the icon and stack count (after changing fields directly).</summary>
+    public void RefreshUI() => uiCache?.MarkForUpdate();
+
     // Initialize from ScriptableObject (for existing items)
     private void InitializeFromScriptableObject()
     {
         stackMax = itemScriptableObject.StackMax;
+        if (durability <= 0f && DurabilityList.Count == 0)
+            durability = StartingDurability(itemScriptableObject);
         UpdateTotalWeight();
         uiCache.MarkForUpdate();
     }
@@ -78,6 +124,13 @@ public class InventoryItem : MonoBehaviour
     // Optimized UI update with caching
     private void UpdateUI()
     {
+        // Stack counts are also changed directly by other code: watching the numbers keeps the text right.
+        if (uiCache.LastStack != stackCurrent || uiCache.LastStackMax != stackMax)
+        {
+            uiCache.LastStack = stackCurrent;
+            uiCache.LastStackMax = stackMax;
+            uiCache.MarkForUpdate();
+        }
         if (!uiCache.NeedsUpdate()) return;
 
         UpdateIcon();
@@ -87,7 +140,7 @@ public class InventoryItem : MonoBehaviour
 
     private void UpdateIcon()
     {
-        if (iconImage == null || itemScriptableObject?.Icon == null) return;
+        if (iconImage == null || itemScriptableObject.Live()?.Icon == null) return;
 
         if (uiCache.LastSprite != itemScriptableObject.Icon)
         {
@@ -214,7 +267,7 @@ public class InventoryItem : MonoBehaviour
     // Utility methods
     public bool IsEmpty() => stackCurrent <= 0;
     public bool IsFull() => stackCurrent >= stackMax;
-    public float GetWeightPerItem() => itemScriptableObject?.Weight ?? 0f;
+    public float GetWeightPerItem() => itemScriptableObject.Live()?.Weight ?? 0f;
     public bool IsValid() => itemScriptableObject != null && stackCurrent > 0 && stackCurrent <= stackMax;
 
     // Split item functionality
@@ -269,7 +322,7 @@ public class InventoryItem : MonoBehaviour
     // Debug information
     public string GetDebugInfo()
     {
-        return $"Item: {itemScriptableObject?.Name ?? "NULL"}, Stack: {stackCurrent}/{stackMax}, " +
+        return $"Item: {itemScriptableObject.Live()?.Name ?? "NULL"}, Stack: {stackCurrent}/{stackMax}, " +
                $"Weight: {totalWeight:F2}, Durability: {durability}, Equipped: {isEquipped}";
     }
 
@@ -282,6 +335,8 @@ public class InventoryItem : MonoBehaviour
     private class UICache
     {
         public Sprite LastSprite { get; set; }
+        public int LastStack { get; set; } = -1;
+        public int LastStackMax { get; set; } = -1;
         public string LastStackText { get; set; } = "";
         private bool needsUpdate = true;
 

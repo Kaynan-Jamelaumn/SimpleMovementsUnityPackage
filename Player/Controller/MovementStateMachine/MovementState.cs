@@ -25,7 +25,9 @@ public abstract class MovementState : BaseState<MovementStateMachine.EMovementSt
         return !Context.MovementModel.ShouldConsumeStamina || Context.StatusController.StaminaManager.HasEnougCurrentValue(staminaCost);
     }
 
-    protected bool TriggeredJump() => Context.PlayerInput.Player.Jump.triggered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost) && Context.AvailabilityState.CanMove();
+    // Buffered: the press is remembered for a moment (it used to count only on its exact frame, so presses right
+    // before or while landing were lost).
+    protected bool TriggeredJump() => Context.JumpPressBuffered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost) && Context.AvailabilityState.CanMove();
     protected bool TriggeredDash() => Context.PlayerInput.Player.Dash.triggered && CanDash() && Context.AvailabilityState.CanMove();
     protected bool TriggeredRoll() => Context.PlayerInput.Player.Roll.triggered && CanRoll() && Context.AvailabilityState.CanMove();
     protected bool IsMoving() => Context.PlayerInput.Player.Movement.ReadValue<Vector2>().sqrMagnitude != 0 && Context.AvailabilityState.CanMove();

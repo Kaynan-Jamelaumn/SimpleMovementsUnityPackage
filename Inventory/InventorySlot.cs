@@ -17,7 +17,7 @@ public enum SlotType
     Cloak,
     Amulet,    // Necklace/Trinket alternative
     Shoulders,
-    Leggings   
+    Leggings
 }
 
 public class InventorySlot : MonoBehaviour
@@ -82,58 +82,31 @@ public class InventorySlot : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// The item becomes a child of this slot, stretched over it. (Items used to go into a shared container and be
+    /// moved to the slot's screen position at that moment: a slot of a closed panel had not been laid out yet, so
+    /// picked-up items showed in the middle of the panel, and items dropped on the hotbar could end up hidden.)
+    /// </summary>
     private void SetupItemUI(GameObject item)
     {
-        Transform targetContainer = GetSharedContainer();
-
-        if (targetContainer == null)
-        {
-            Debug.LogError($"No shared container available for slot {gameObject.name}. " +
-                          $"IsHotbar: {isHotbarSlot}, SlotType: {slotType}");
-            return;
-        }
-
-        // Set the item's parent to the shared container
-        item.transform.SetParent(targetContainer, false);
-
-        // Position the item to match this slot's position
+        item.transform.SetParent(transform, false);
         PositionItemToSlot(item);
-
-        // Ensure proper layering (newer items on top)
-        item.transform.SetAsLastSibling();
+        item.transform.SetAsLastSibling(); // drawn above the slot's own graphics
+        if (!item.activeSelf)
+            item.SetActive(true);
     }
 
     private void PositionItemToSlot(GameObject item)
     {
         RectTransform itemRect = item.GetComponent<RectTransform>();
-        RectTransform slotRect = GetComponent<RectTransform>();
-
-        if (itemRect == null || slotRect == null) return;
-
-        // Convert slot's world position to the container's local space
-        Transform container = GetSharedContainer();
-        RectTransform containerRect = container.GetComponent<RectTransform>();
-
-        if (containerRect == null) return;
-
-        // Get slot position in world space
-        Vector3 slotWorldPos = slotRect.position;
-
-        // Convert to container's local space
-        Vector3 localPos = containerRect.InverseTransformPoint(slotWorldPos);
-
-        // Set item position and size
-        itemRect.localPosition = localPos;
+        if (itemRect == null) return;
+        itemRect.anchorMin = Vector2.zero;
+        itemRect.anchorMax = Vector2.one;
+        itemRect.pivot = Vector2.one * 0.5f;
+        itemRect.offsetMin = Vector2.zero;
+        itemRect.offsetMax = Vector2.zero;
         itemRect.localRotation = Quaternion.identity;
         itemRect.localScale = Vector3.one;
-
-        // Size the item to match the slot
-        itemRect.sizeDelta = slotRect.sizeDelta;
-
-        // Center the anchors
-        itemRect.anchorMin = Vector2.one * 0.5f;
-        itemRect.anchorMax = Vector2.one * 0.5f;
-        itemRect.pivot = Vector2.one * 0.5f;
     }
 
     private void ClearItemReference()

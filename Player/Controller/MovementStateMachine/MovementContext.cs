@@ -15,16 +15,17 @@ public class MovementContext
 
     public MovementContext(PlayerMovementModel movementModel, PlayerStatusController statusController,
         PlayerInput playerInput, PlayerMovementController movementController, PlayerAnimationModel animationModel,
-        PlayerCameraModel cameraModel, PlayerCameraController cameraController, AvailabilityStateMachine availabilityStateMachine) {
+        PlayerCameraModel cameraModel, PlayerCameraController cameraController, AvailabilityStateMachine availabilityStateMachine)
+    {
 
-            this.movementModel = movementModel;
-            this.statusController = statusController;
-            this.playerInput = playerInput;
-            this.movementController = movementController;
-            this.animationModel = animationModel;
-            this.cameraModel = cameraModel;
-            this.cameraController = cameraController;
-            this.availabilityStateMachine = availabilityStateMachine;
+        this.movementModel = movementModel;
+        this.statusController = statusController;
+        this.playerInput = playerInput;
+        this.movementController = movementController;
+        this.animationModel = animationModel;
+        this.cameraModel = cameraModel;
+        this.cameraController = cameraController;
+        this.availabilityStateMachine = availabilityStateMachine;
     }
     public PlayerMovementModel MovementModel => movementModel;
     public PlayerStatusController StatusController => statusController;
@@ -34,5 +35,13 @@ public class MovementContext
     public PlayerCameraModel CameraModel => cameraModel;
     public PlayerCameraController CameraController => cameraController;
     public AvailabilityStateMachine AvailabilityState => availabilityStateMachine;
+
+    /// <summary>Seconds a jump press is remembered (a press just before landing still jumps).</summary>
+    public float JumpBufferTime = 0.2f;
+    /// <summary>Time.time of the last jump press that has not been used yet.</summary>
+    public float LastJumpPressTime { get; private set; } = float.NegativeInfinity;
+    public void RecordJumpPress() => LastJumpPressTime = Time.time;
+    public void ConsumeJumpPress() => LastJumpPressTime = float.NegativeInfinity;
+    public bool JumpPressBuffered => Time.time - LastJumpPressTime <= JumpBufferTime;
 }
 

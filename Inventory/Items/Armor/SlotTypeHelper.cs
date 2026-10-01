@@ -1,6 +1,25 @@
-﻿// Helper class for slot type conversions - Updated for new armor types
+/// <summary>
+/// Slot rules and conversions between <see cref="ItemType"/>, <see cref="ArmorSlotType"/> and <see cref="SlotType"/>.
+/// Always convert with these helpers: the enums have different orders, so casting one to another picks the wrong slot.
+/// </summary>
 public static class SlotTypeHelper
 {
+    /// <summary>The special slot an item belongs in (Common = none: weapons, materials...).</summary>
+    public static SlotType RequiredSlot(ItemSO item)
+    {
+        if (item == null)
+            return SlotType.Common;
+        if (item is ArmorSO armor)
+            return ArmorSlotTypeToSlotType(armor.ArmorSlotType);
+        return ItemTypeToSlotType(item.ItemType);
+    }
+
+    /// <summary>Can <paramref name="item"/> be placed in a slot of this type? Common slots accept everything.</summary>
+    public static bool CanPlace(ItemSO item, SlotType slot) => slot == SlotType.Common || (item != null && RequiredSlot(item) == slot);
+
+    /// <summary>Does holding <paramref name="item"/> in a slot of this type equip it (apply its stats and effects)?</summary>
+    public static bool Equips(ItemSO item, SlotType slot) => item is EquippableSO && IsEquipmentSlot(slot) && RequiredSlot(item) == slot;
+
     // Convert ItemType to SlotType
     public static SlotType ItemTypeToSlotType(ItemType itemType)
     {

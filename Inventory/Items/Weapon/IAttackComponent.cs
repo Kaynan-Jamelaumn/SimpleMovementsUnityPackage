@@ -1,6 +1,7 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Read-only view of an attack's settings (implemented by <see cref="AttackComponent"/>).</summary>
 public interface IAttackComponent
 {
     float GetTotalDuration();
@@ -10,7 +11,7 @@ public interface IAttackComponent
     float ActiveFrames { get; }
     float RecoveryFrames { get; }
     float AnimationSpeed { get; }
-    float StaminaCost { get; }  // Added this
+    float StaminaCost { get; }
     bool LockMovement { get; }
     float MovementSpeedMultiplier { get; }
     Vector3 ForwardMovement { get; }

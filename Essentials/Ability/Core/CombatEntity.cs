@@ -44,6 +44,12 @@ public class CombatEntity : MonoBehaviour
     [Header("Identity")]
     [Tooltip("Team name. Same team = allies. Empty = automatic: 'Player' for players, the mob type for mobs.")]
     [SerializeField] private string teamOverride = "";
+    [Tooltip("Faction (Kingdom, Bandits, Wildlife...): decides allies, enemies and neutrals between characters of different " +
+             "teams. Empty = the Mob's faction, or none (then the team and AI decide, as before).")]
+    [SerializeField] private CombatFaction faction;
+    [Tooltip("Party id: characters with the same non-zero id are party members (never harmed by each other unless friendly " +
+             "fire is on). Usually set at runtime (CombatParties / your multiplayer code), 0 = no party.")]
+    [SerializeField] private int partyId;
 
     [Header("Body (0 = automatic from the collider / controller / NavMeshAgent)")]
     [Tooltip("Body radius used by hit shapes (metres). 0 = automatic.")]
@@ -125,6 +131,7 @@ public class CombatEntity : MonoBehaviour
     }
 
     private readonly List<ThreatEntry> threats = new List<ThreatEntry>(4);
+    private readonly List<IDamageTakenModifier> damageTakenModifiers = new List<IDamageTakenModifier>(2);
 
     // ------------------------------------------------------------------ registry
     private static readonly List<CombatEntity> all = new List<CombatEntity>(64);
@@ -426,6 +433,26 @@ public class CombatEntity : MonoBehaviour
         team = null;
     }
 
+    /// <summary>The faction: this entity's, else its Mob's, else its summoner's (null = none).</summary>
+    public CombatFaction Faction
+    {
+        get
+        {
+            if (faction != null) return faction;
+            if (Mob != null && Mob.Faction != null) return Mob.Faction;
+            return Summoner != null ? Summoner.Faction : null;
+        }
+    }
+
+    /// <summary>Changes the faction at runtime (charm, disguise, joining a guild). Null = back to the automatic one.</summary>
+    public void SetFaction(CombatFaction newFaction) => faction = newFaction;
+
+    /// <summary>Party id (0 = none). Summons belong to their summoner's party.</summary>
+    public int PartyId => partyId != 0 ? partyId : Summoner != null ? Summoner.PartyId : 0;
+
+    /// <summary>Joins party <paramref name="id"/> (0 = leaves the party).</summary>
+    public void SetParty(int id) => partyId = Mathf.Max(0, id);
+
     // ------------------------------------------------------------------ health
     public bool IsDead
     {
@@ -499,8 +526,8 @@ public class CombatEntity : MonoBehaviour
     }
 
     /// <summary>
-    /// Deals damage (reduced by <see cref="damageTakenMultiplier"/> and the health manager's damage factor). Returns
-    /// the health actually removed.
+    /// Deals damage (reduced by <see cref="damageTakenMultiplier"/>, the registered damage-taken modifiers - armor,
+    /// resistances - and the health manager's damage factor). Returns the health actually removed.
     /// </summary>
     public float ApplyDamage(DamageInfo info)
     {
@@ -509,6 +536,14 @@ public class CombatEntity : MonoBehaviour
 
         info.target = this;
         info.amount *= damageTakenMultiplier;
+        if (damageTakenModifiers.Count > 0)
+            info.amount = ApplyDamageTakenModifiers(info);
+        if (info.amount <= 0f)
+        {
+            // Fully resisted: the attacker is still remembered (aggro), but nothing else happens.
+            RecordAttacker(info.source, 0f);
+            return 0f;
+        }
         float removed = info.amount;
 
         if (Health != null)
@@ -538,6 +573,38 @@ public class CombatEntity : MonoBehaviour
         if (Health != null && Health.CurrentValue <= 0f)
             HandleDeath(info.source);
         return removed;
+    }
+
+    /// <summary>
+    /// Adds something that scales the damage this character takes (armor, resistances...). Adding the same modifier
+    /// twice has no effect. Remove it with <see cref="RemoveDamageTakenModifier"/> when it no longer applies.
+    /// </summary>
+    public void AddDamageTakenModifier(IDamageTakenModifier modifier)
+    {
+        if (modifier != null && !damageTakenModifiers.Contains(modifier))
+            damageTakenModifiers.Add(modifier);
+    }
+
+    public void RemoveDamageTakenModifier(IDamageTakenModifier modifier) => damageTakenModifiers.Remove(modifier);
+
+    private float ApplyDamageTakenModifiers(in DamageInfo info)
+    {
+        float amount = info.amount;
+        for (int i = 0; i < damageTakenModifiers.Count; i++)
+        {
+            IDamageTakenModifier m = damageTakenModifiers[i];
+            if (m == null)
+                continue;
+            try
+            {
+                amount = Mathf.Max(0f, m.ModifyDamageTaken(info, amount));
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, this);
+            }
+        }
+        return amount;
     }
 
     /// <summary>Heals (increased by the health manager's heal factor).</summary>
@@ -965,12 +1032,37 @@ public class CombatEntity : MonoBehaviour
 /// <summary>Who counts as an ally, an enemy or neutral.</summary>
 public static class CombatRelations
 {
+    /// <summary>
+    /// How <paramref name="to"/> relates to <paramref name="from"/>, checked in this order:
+    /// self → same party → factions (when both have one: ally / enemy; neutral falls through) → same team → players
+    /// (PvP rule) → the AI's hostility → summoner → default. Characters without parties or factions behave as before.
+    /// </summary>
     public static CombatRelation Get(CombatEntity from, CombatEntity to)
     {
         if (from == null || to == null)
             return CombatRelation.Neutral;
         if (from == to)
             return CombatRelation.Self;
+        if (CombatParties.SameParty(from, to))
+            return CombatRelation.Party;
+
+        CombatFaction fa = from.Faction, fb = to.Faction;
+        if (fa != null && fb != null)
+        {
+            FactionStance stance = fa.StanceTowards(fb);
+            if (stance == FactionStance.Ally) return CombatRelation.Ally;
+            if (stance == FactionStance.Enemy) return CombatRelation.Enemy;
+            // Neutral factions: the rules below (PvP, AI hostility) decide; players stay neutral to them.
+            if (from.Kind == CombatEntity.EntityKind.Player && to.Kind != CombatEntity.EntityKind.Player)
+                return CombatRelation.Neutral;
+        }
+        else if (fa != null || fb != null)
+        {
+            // Only one side has a faction: a faction hostile to everyone makes them enemies; otherwise as before.
+            FactionStance stance = fa != null ? fa.StanceTowards(null) : fb.StanceTowards(null);
+            if (stance == FactionStance.Enemy) return CombatRelation.Enemy;
+        }
+
         if (from.Team == to.Team)
             return CombatRelation.Ally;
 
@@ -996,6 +1088,7 @@ public static class CombatRelations
         switch (relation)
         {
             case CombatRelation.Self: return (filter & TargetFilter.Self) != 0;
+            case CombatRelation.Party: return (filter & (TargetFilter.Party | TargetFilter.Allies)) != 0; // party members are allies too
             case CombatRelation.Ally: return (filter & TargetFilter.Allies) != 0;
             case CombatRelation.Enemy: return (filter & TargetFilter.Enemies) != 0;
             default: return (filter & TargetFilter.Neutral) != 0;

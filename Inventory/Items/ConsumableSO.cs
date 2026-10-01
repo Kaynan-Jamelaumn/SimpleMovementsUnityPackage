@@ -65,7 +65,7 @@ public enum ConsumableEffectType
     OxygenHealFactor,
     HungerDamageFactor,
     ThirstDamageFactor,
-    SleepDamageFactor, 
+    SleepDamageFactor,
     BodyHeatDamageFactor,
     OxygenDamageFactor
 }
@@ -80,9 +80,13 @@ public enum ConsumableType
 public class ConsumableEffect
 {
     [Header("Effect Information")]
+    [Tooltip("What the effect changes: Hp heals, Stamina/Mana restore, Food/Drink feed, the Factor ones change how fast something heals or drains...")]
     public ConsumableEffectType effectType;
+    [Tooltip("Potion or Food (how the effect is labelled and grouped).")]
     public ConsumableType itemType;
+    [Tooltip("Name of the effect: effects with the same name refresh or stack instead of running twice.")]
     public string effectName;
+    [Tooltip("How much: health/stamina/mana points, food/water points, or percent for the Factor effects.")]
     public float amount;
 
     [Header("Effect Timing")]
@@ -96,8 +100,11 @@ public class ConsumableEffect
     public bool isStackable;
 
     [Header("Random Effect Values")]
+    [Tooltip("Pick the amount between Min Amount and Max Amount each time.")]
     public bool randomAmount;
+    [Tooltip("Pick the duration between Min and Max Time Buff Effect each time.")]
     public bool randomTimeBuffEffect;
+    [Tooltip("Pick the tick interval between Min and Max Tick Cooldown each time.")]
     public bool randomTickCooldown;
     public float minAmount;
     public float maxAmount;
@@ -139,6 +146,7 @@ public class ConsumableEffect
 public class ConsumableSO : ItemSO
 {
     [Header("Consumable Effects")]
+    [Tooltip("What using the item does. Use a preset (Presets… in the inspector) for common potions and food.")]
     [SerializeField]
     private List<ConsumableEffect> effects;
 

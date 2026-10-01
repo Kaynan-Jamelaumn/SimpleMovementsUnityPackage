@@ -1,134 +1,52 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Picks world items (<see cref="ItemPickable"/>) up into the inventory.</summary>
 public static class ItemPickUpHandler
 {
+    /// <summary>
+    /// Adds a picked world item: existing stacks first, then empty slots, splitting it into as many stacks as needed
+    /// (a pickup bigger than Stack Max used to become one oversized stack). Whatever does not fit stays in the world.
+    /// Returns true if at least part of it was picked up.
+    /// </summary>
     public static bool AddItemToInventory(InventoryManager inventoryManager, GameObject pickedItem, GameObject[] slots, GameObject itemPrefab, GameObject player)
     {
         if (!InventoryUtils.ValidateInventoryParameters(inventoryManager, pickedItem, slots, player))
-        {
             return false;
-        }
 
         try
         {
-            var pickedItemProperties = pickedItem.GetComponent<ItemPickable>();
-            if (pickedItemProperties?.itemScriptableObject == null)
+            var pickable = pickedItem.GetComponent<ItemPickable>();
+            if (pickable == null || pickable.itemScriptableObject == null)
             {
-                Debug.LogError("ItemPickable component or ScriptableObject is missing");
+                Debug.LogError("[Inventory] The picked object has no ItemPickable with an item assigned.", pickedItem);
                 return false;
             }
 
-            // Maintain original behavior: try stacking with ALL existing items first, then find empty slot
-            return TryStackWithAllExistingItems(slots, pickedItem, player) ||
-                   PlaceInFirstEmptySlot(inventoryManager, slots, pickedItem);
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"Error adding item to inventory: {e.Message}");
-            return false;
-        }
-    }
+            int quantity = Mathf.Max(1, pickable.quantity);
+            var durabilities = pickable.DurabilityList != null ? new List<int>(pickable.DurabilityList) : new List<int>();
+            int remaining = inventoryManager.AddItem(pickable.itemScriptableObject, quantity, durabilities);
 
-    private static bool TryStackWithAllExistingItems(GameObject[] slots, GameObject pickedItem, GameObject player)
-    {
-        var pickedItemProperties = pickedItem.GetComponent<ItemPickable>();
-        if (pickedItemProperties?.itemScriptableObject == null) return false;
-
-        // Go through ALL slots and try to stack with each compatible one
-        foreach (GameObject slotObj in slots)
-        {
-            var slot = slotObj?.GetComponent<InventorySlot>();
-            if (!IsValidSlotForStacking(slot)) continue;
-
-            var currentItem = slot.heldItem.GetComponent<InventoryItem>();
-            if (!CanItemsStack(currentItem, pickedItemProperties)) continue;
-
-            // Try to stack as much as possible with this slot
-            StackWithExistingItem(slot, pickedItem, player);
-
-            // If we've consumed all picked items, we're done
-            if (pickedItemProperties.quantity <= 0)
+            if (remaining <= 0)
             {
                 InventoryUtils.SafeDestroy(pickedItem);
                 return true;
             }
-        }
 
-        // If we still have items left, return false so it tries to find empty slot
-        return false;
-    }
-
-    private static bool IsValidSlotForStacking(InventorySlot slot)
-    {
-        return slot != null && slot.SlotType == SlotType.Common && !InventoryUtils.IsSlotEmpty(slot);
-    }
-
-    private static bool PlaceInFirstEmptySlot(InventoryManager inventoryManager, GameObject[] slots, GameObject pickedItem)
-    {
-        // Use InventoryUtils to find empty slot
-        var emptySlots = InventoryUtils.FindEmptySlots(slots);
-        if (emptySlots.Count == 0)
-        {
-            Debug.LogWarning("No empty slot available for item");
-            return false;
-        }
-
-        return PlaceInEmptySlot(inventoryManager, emptySlots[0], pickedItem);
-    }
-
-    private static void StackWithExistingItem(InventorySlot slot, GameObject pickedItem, GameObject player)
-    {
-        var currentItem = slot.heldItem.GetComponent<InventoryItem>();
-        var pickedItemProperties = pickedItem.GetComponent<ItemPickable>();
-
-        int availableSpace = currentItem.GetAvailableStackSpace();
-        if (availableSpace <= 0) return;
-
-        int amountToStack = Mathf.Min(pickedItemProperties.quantity, availableSpace);
-
-        // Transfer durability for the amount we're stacking
-        InventoryUtils.TransferDurabilityList(pickedItemProperties.DurabilityList, currentItem.DurabilityList, amountToStack);
-
-        // Update current item stack
-        currentItem.AddToStack(amountToStack);
-
-        // Update player weight
-        float weightPerItem = pickedItemProperties.itemScriptableObject.Weight;
-        InventoryUtils.UpdatePlayerWeight(player, amountToStack * weightPerItem);
-
-        // Reduce picked item quantity
-        pickedItemProperties.quantity -= amountToStack;
-    }
-
-    private static bool CanItemsStack(InventoryItem currentItem, ItemPickable pickedItemProperties)
-    {
-        return currentItem?.itemScriptableObject != null &&
-               pickedItemProperties?.itemScriptableObject != null &&
-               currentItem.itemScriptableObject == pickedItemProperties.itemScriptableObject;
-    }
-
-    private static bool PlaceInEmptySlot(InventoryManager inventoryManager, InventorySlot emptySlot, GameObject pickedItem)
-    {
-        if (emptySlot == null || inventoryManager == null || pickedItem == null)
-        {
-            Debug.LogWarning("Cannot place item: invalid parameters");
-            return false;
-        }
-
-        try
-        {
-            inventoryManager.InstantiateNewItem(emptySlot.gameObject, pickedItem);
-
-            if (pickedItem.scene.IsValid())
-            {
-                InventoryUtils.SafeDestroy(pickedItem);
-            }
-            return true;
+            // Partly picked: the rest stays on the ground with its durabilities.
+            int taken = quantity - remaining;
+            pickable.quantity = remaining;
+            // The inventory took durabilities from the end of the list: the first ones stay with the rest.
+            if (pickable.DurabilityList != null && pickable.DurabilityList.Count > remaining)
+                pickable.DurabilityList.RemoveRange(remaining, pickable.DurabilityList.Count - remaining);
+            if (taken == 0)
+                Debug.Log("[Inventory] No room for this item.");
+            return taken > 0;
         }
         catch (Exception e)
         {
-            Debug.LogError($"Error placing item in empty slot: {e.Message}");
+            Debug.LogError($"[Inventory] Error adding item to inventory: {e.Message}");
             return false;
         }
     }

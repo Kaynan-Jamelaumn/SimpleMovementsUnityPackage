@@ -154,9 +154,9 @@ public class AbilityEffectSO : AbilitySO
                 if (target != launcher && !target.transform.IsChildOf(launcher.transform))
                     return target;
             }
-            else if (target.CompareTag("Player") || target.CompareTag("Mob"))
+            else if (CombatEntity.Resolve(targetCollider) != null)
             {
-                return target;
+                return target; // any character (player or mob) - recognised by its Combat Entity, not by tags
             }
         }
         return null;

@@ -18,15 +18,12 @@ namespace ProceduralDungeon
         public Vector2 interval = new Vector2(20f, 45f);
         [Tooltip("At most this share of a floor's original mobs is alive at once through respawns.")]
         [Range(0f, 1f)] public float maxShareAlive = 0.75f;
-        [Tooltip("Never respawn closer than this to the player (meters).")]
+        [Tooltip("Never respawn closer than this to any player (meters).")]
         [Min(0f)] public float minDistance = 25f;
-        [Tooltip("Never respawn where the main camera can see.")]
+        [Tooltip("Never respawn where this machine's camera can see (other players' views are not known here).")]
         public bool avoidCameraView = true;
-        [Tooltip("Tag used to find the player.")]
-        public string playerTag = "Player";
 
         private float next;
-        private Transform player;
         private readonly Dictionary<int, int> startCount = new Dictionary<int, int>();
         private DungeonInstance tracked;
         private readonly System.Random random = new System.Random();
@@ -55,13 +52,8 @@ namespace ProceduralDungeon
                 return;
             next = Time.time + Next();
 
-            if (player == null)
-            {
-                GameObject p = GameObject.FindGameObjectWithTag(playerTag);
-                player = p != null ? p.transform : null;
-                if (player == null)
-                    return;
-            }
+            if (PlayerLocator.All.Count == 0)
+                return;
 
             int floor = d.CurrentFloor;
             int alive = 0;
@@ -80,8 +72,8 @@ namespace ProceduralDungeon
                 int index = random.Next(points.Count);
                 Placement p = points[index];
                 Vector3 world = d.CellToWorld(p.Floor, p.Cell, p.Height);
-                if ((world - player.position).sqrMagnitude < minDistance * minDistance)
-                    continue;
+                if (PlayerLocator.DistanceToNearest(world) < minDistance)
+                    continue; // too close to some player
                 if (frustum != null && GeometryUtility.TestPlanesAABB(frustum, new Bounds(world + Vector3.up, Vector3.one * 2f)))
                     continue;
                 Respawn(d, p);

@@ -1,7 +1,8 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+/// <summary>Equipment slot of an armor piece. Serialized as numbers in assets: only add new values at the END.</summary>
 public enum ArmorSlotType
 {
     Helmet,
@@ -19,23 +20,39 @@ public enum ArmorSlotType
     Amulet
 }
 
+/// <summary>
+/// A piece of armor (helmet, chestplate, ring, amulet...). While worn in its slot it gives its Defense and Magic
+/// Defense (which reduce Physical and Magical damage, see <see cref="CombatStats"/>), its elemental resistances, its
+/// inherent traits and every effect of <see cref="EquippableSO"/>. It can belong to an <see cref="ArmorSet"/>, whose
+/// bonuses activate as more pieces are worn.
+/// </summary>
 [CreateAssetMenu(fileName = "Armor", menuName = "Scriptable Objects/Item/Armor")]
 public class ArmorSO : EquippableSO
 {
     [Header("Armor Specific")]
+    [Tooltip("The equipment slot this piece is worn in.")]
     [SerializeField] private ArmorSlotType armorSlotType;
+    [Tooltip("Defense points while worn: reduce Physical damage (100 Defense = 50% less with the default curve).")]
     [SerializeField] private float defenseValue;
+    [Tooltip("Magic Resistance points while worn: reduce Magical damage (same curve as Defense).")]
     [SerializeField] private float magicDefenseValue;
+    [Tooltip("Multiplies Defense and Magic Defense (e.g. 0.8 for a worn-out piece, 1.2 for a reinforced one).")]
     [SerializeField] private float durabilityModifier = 1f;
+    [Tooltip("Less (or more, when negative) damage from an element while worn, e.g. +20% Fire.")]
+    [SerializeField] private List<ElementalResistance> elementalResistances = new List<ElementalResistance>();
 
     [Header("Armor Traits (Optional)")]
-    [Tooltip("Optional traits applied when this armor is equipped - NOT required for armor set effects")]
+    [Tooltip("Traits given while this piece is worn (free; the player cannot remove them). Not needed for armor set bonuses.")]
     [SerializeField] private List<Trait> inherentTraits = new List<Trait>();
+    [Tooltip("Give the Inherent Traits while worn.")]
     [SerializeField] private bool applyTraitsWhenEquipped = true;
 
     [Header("Visual & Audio")]
+    [Tooltip("The piece's model (for your character visuals; listen to EquipmentManager.ItemEquipped).")]
     [SerializeField] private GameObject armorModel;
+    [Tooltip("Played when the piece is put on.")]
     [SerializeField] private AudioClip equipArmorSound;
+    [Tooltip("Played when the piece is taken off.")]
     [SerializeField] private AudioClip unequipArmorSound;
 
     // Properties
@@ -47,6 +64,7 @@ public class ArmorSO : EquippableSO
     public float DefenseValue => defenseValue;
     public float MagicDefenseValue => magicDefenseValue;
     public float DurabilityModifier => durabilityModifier;
+    public List<ElementalResistance> ElementalResistances => elementalResistances ?? (elementalResistances = new List<ElementalResistance>());
     public List<Trait> InherentTraits => inherentTraits;
     public bool ApplyTraitsWhenEquipped => applyTraitsWhenEquipped;
     public GameObject ArmorModel => armorModel;
@@ -71,26 +89,7 @@ public class ArmorSO : EquippableSO
     }
 
     // Get the corresponding SlotType for compatibility with existing system
-    public SlotType GetSlotType()
-    {
-        return armorSlotType switch
-        {
-            ArmorSlotType.Helmet => SlotType.Helmet,
-            ArmorSlotType.Chestplate => SlotType.Armor,
-            ArmorSlotType.Leggings => SlotType.Leggings,
-            ArmorSlotType.Boots => SlotType.Boots,
-            ArmorSlotType.Gloves => SlotType.Gloves,
-            ArmorSlotType.Shield => SlotType.Shield,
-            ArmorSlotType.Ring => SlotType.Ring,
-            ArmorSlotType.Trinket => SlotType.Trinket,
-            ArmorSlotType.Cloak => SlotType.Cloak,
-            ArmorSlotType.Belt => SlotType.Belt,
-            ArmorSlotType.Shoulders => SlotType.Shoulders,
-            ArmorSlotType.Bracers => SlotType.Wrist,
-            ArmorSlotType.Amulet => SlotType.Amulet,
-            _ => SlotType.Common
-        };
-    }
+    public SlotType GetSlotType() => SlotTypeHelper.ArmorSlotTypeToSlotType(armorSlotType);
 
     // Check if this armor piece is part of a set
     public bool IsPartOfSet()
@@ -116,128 +115,57 @@ public class ArmorSO : EquippableSO
         return magicDefenseValue * durabilityModifier * multiplier;
     }
 
-    // Override ApplyEquippedStats to include armor-specific effects
-    public override void ApplyEquippedStats(bool shouldApply, PlayerStatusController statusController)
+    /// <summary>Defense, Magic Defense, resistances, inherent traits, then the equippable effects.</summary>
+    public override void CollectEquipEffects(List<EquipmentEffect> into)
     {
-        // Apply base equippable effects
-        base.ApplyEquippedStats(shouldApply, statusController);
+        var stats = new List<CombatStatModifier>(2);
+        float def = GetEffectiveDefense();
+        float mdef = GetEffectiveMagicDefense();
+        if (!Mathf.Approximately(def, 0f))
+            stats.Add(new CombatStatModifier(CombatStatType.Defense, def));
+        if (!Mathf.Approximately(mdef, 0f))
+            stats.Add(new CombatStatModifier(CombatStatType.MagicResistance, mdef));
+        bool anyResist = elementalResistances != null && elementalResistances.Count > 0;
+        if (stats.Count > 0 || anyResist)
+            into.Add(new CombatStatsEffect(stats, elementalResistances));
 
-        // Apply armor-specific defense
-        float defenseModifier = shouldApply ? 1f : -1f;
-        // Note: You'll need to add defense properties to PlayerStatusController
-        // For now, we'll use the existing system
+        if (applyTraitsWhenEquipped && inherentTraits != null && inherentTraits.Count > 0)
+            into.Add(new GrantTraitsEffect(inherentTraits));
 
-        // Apply inherent traits if enabled
-        if (applyTraitsWhenEquipped && statusController?.TraitManager != null)
-        {
-            foreach (var trait in inherentTraits)
-            {
-                if (trait != null)
-                {
-                    if (shouldApply)
-                    {
-                        statusController.TraitManager.AddTrait(trait, true); // Skip cost for armor traits
-                    }
-                    else
-                    {
-                        statusController.TraitManager.RemoveTrait(trait, true); // Force remove
-                    }
-                }
-            }
-        }
+        base.CollectEquipEffects(into);
+    }
 
-        // Notify armor set manager of equipment change
-        if (statusController?.ArmorSetManager != null)
-        {
-            statusController.ArmorSetManager.OnArmorEquipmentChanged(this, shouldApply);
-        }
+    public override void AppendTooltip(List<string> lines)
+    {
+        lines.Add($"{SlotTypeHelper.GetDisplayName(armorSlotType)}");
+        base.AppendTooltip(lines);
+    }
+
+    public override void ValidateItem(List<string> errors, List<string> warnings)
+    {
+        base.ValidateItem(errors, warnings);
+        if (itemType != ItemType.Armor)
+            errors.Add($"Item Type is '{itemType}'; armor must use 'Armor' (fixed automatically when the asset is saved).");
+        if (defenseValue < 0f || magicDefenseValue < 0f)
+            warnings.Add("Negative Defense or Magic Defense makes the wearer take MORE damage.");
+        if (durabilityModifier <= 0f)
+            warnings.Add("Durability Modifier is 0 or less: the piece gives no Defense.");
+        if (elementalResistances != null && elementalResistances.Any(r => r != null && r.element == ElementType.None))
+            errors.Add("An elemental resistance has no element (pick Fire, Ice...).");
+        if (inherentTraits != null && inherentTraits.Contains(null))
+            warnings.Add("Inherent Traits has empty entries.");
+        if (inherentTraits != null && inherentTraits.Count > 0 && !applyTraitsWhenEquipped)
+            warnings.Add("Inherent Traits are set but 'Apply Traits When Equipped' is off, so they are never given.");
     }
 
     // Validation method - SPECIFIC AND EXACT
-    private new void OnValidate()
+    protected override void OnValidate()
     {
-        List<string> errors = new List<string>();
-        List<string> warnings = new List<string>();
-
-        // CRITICAL CHECKS (will prevent armor set effects from working)
-
-        // 1. Item Type Check
+        // Armor always uses the Armor item type; the slot comes from Armor Slot Type.
         if (itemType != ItemType.Armor)
-        {
-            errors.Add($"CRITICAL: Item Type is '{itemType}'. Must be 'Armor' for armor set system to work.");
-            itemType = ItemType.Armor; // Auto-fix
-        }
-
-        // 2. Armor Set Reference Check
-        if (BelongsToArmorSet == null)
-        {
-            warnings.Add($"INFO: This armor is not part of any armor set. If you want set bonuses, assign 'Belongs To Armor Set' field.");
-        }
-        else
-        {
-            // 3. Bidirectional Reference Check
-            if (!BelongsToArmorSet.ContainsPiece(this))
-            {
-                errors.Add($"CRITICAL: Armor set '{BelongsToArmorSet.SetName}' does not include this armor in its 'Set Pieces' list.\n" +
-                          $"FIX: Open the armor set '{BelongsToArmorSet.name}' and add this armor to its 'Set Pieces' list, OR remove the 'Belongs To Armor Set' reference from this armor.");
-            }
-        }
-
-        // OPTIONAL CHECKS (won't prevent armor set effects, just best practices)
-
-        // 4. Name Check
-        if (string.IsNullOrEmpty(name) || name == "New Armor" || name.StartsWith("Armor"))
-        {
-            warnings.Add($"OPTIONAL: Armor name is '{name}'. Consider a more descriptive name like 'Iron Helmet' or 'Dragon Scale Boots'.");
-        }
-
-        // 5. Defense Values Check
-        if (defenseValue <= 0 && magicDefenseValue <= 0)
-        {
-            warnings.Add($"OPTIONAL: Both Defense Value and Magic Defense Value are {defenseValue}/{magicDefenseValue}. Consider adding defensive stats.");
-        }
-
-        // 6. Inherent Traits Check (CLARIFIED AS OPTIONAL)
-        if (inherentTraits != null)
-        {
-            int nullTraitCount = 0;
-            int costlyTraitCount = 0;
-
-            foreach (var trait in inherentTraits)
-            {
-                if (trait == null)
-                {
-                    nullTraitCount++;
-                }
-                else if (trait.cost > 0)
-                {
-                    costlyTraitCount++;
-                }
-            }
-
-            if (nullTraitCount > 0)
-            {
-                warnings.Add($"OPTIONAL: {nullTraitCount} empty inherent trait slot(s). Remove empty slots or assign traits. Note: Inherent traits are NOT required for armor set effects.");
-            }
-
-            if (costlyTraitCount > 0)
-            {
-                warnings.Add($"OPTIONAL: {costlyTraitCount} inherent trait(s) have cost > 0. Armor traits are usually free (cost = 0).");
-            }
-        }
-
-        //// Log errors and warnings
-        //foreach (string error in errors)
-        //{
-        //    Debug.LogError($"ARMOR '{name}': {error}", this);
-        //}
-
-        //foreach (string warning in warnings)
-        //{
-        //    Debug.LogWarning($"ARMOR '{name}': {warning}", this);
-        //}
-
-        // Call base validation
+            itemType = ItemType.Armor;
+        if (elementalResistances == null)
+            elementalResistances = new List<ElementalResistance>();
         base.OnValidate();
     }
 

@@ -1,29 +1,41 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+/// <summary>
+/// The current combo of a weapon controller: the inputs of the attacks made in a row (each within the combo window
+/// of the previous one), the hits and damage, and the rewards. It decides which combo attack an input performs:
+/// a <see cref="ComboTree"/> branch whose conditions hold, or a <see cref="ComboSequence"/> whose inputs end the
+/// current string.
+/// </summary>
 public class ComboSystem
 {
-    private WeaponController controller;
-    private readonly List<AttackType> currentComboSequence = new List<AttackType>();
-    private float lastAttackTime;
-    private float comboWindow = 3.0f;
+    /// <summary>The attack chosen for an input by the combo rules.</summary>
+    public struct ComboChoice
+    {
+        public AttackAction action;
+        public ComboBranch branch;
+        public ComboSequence sequence;
+        public float damageMultiplier;
+        public float critChanceBonus;
+        public bool IsValid => action != null;
+    }
 
-    // New fields for enhanced combo system
-    private ComboTree currentComboTree;
-    private List<ComboBranch> executedBranches = new List<ComboBranch>();
-    private int totalDamageDealt = 0;
-    private float comboScore = 0f;
+    private readonly WeaponController controller;
+    private readonly List<AttackType> currentComboSequence = new List<AttackType>();
+    private readonly List<ComboBranch> executedBranches = new List<ComboBranch>();
+    private float lastAttackTime = -999f;
+    private float comboStartTime;
+    private float comboWindow = 3.0f;
+    private int totalDamageDealt;
+    private float comboScore;
+    private float elementalStreak;
     private GameObject currentTarget;
+    private ComboTree currentComboTree;
 
     // Dependencies
     private AttackExecutor attackExecutor;
     private WeaponEffectsManager effectsManager;
-
-    // Properties for external access
-    public float ComboScore => comboScore;
-    public int ComboLength => currentComboSequence.Count;
-    public List<ComboBranch> ExecutedBranches => new List<ComboBranch>(executedBranches);
 
     public ComboSystem(WeaponController controller)
     {
@@ -36,230 +48,181 @@ public class ComboSystem
         this.effectsManager = effectsManager;
     }
 
-    public bool TryExecuteCombo(GameObject player, AttackType attackType)
+    // Properties for external access (UI, conditions)
+    public float ComboScore => comboScore;
+    public int ComboLength => currentComboSequence.Count;
+    public List<ComboBranch> ExecutedBranches => new List<ComboBranch>(executedBranches);
+    public IReadOnlyList<AttackType> Inputs => currentComboSequence;
+    /// <summary>Input of the previous attack in the current combo (null when no combo is running).</summary>
+    public AttackType? PreviousInput => currentComboSequence.Count > 0 ? currentComboSequence[currentComboSequence.Count - 1] : (AttackType?)null;
+    public float TimeSinceLastAttack => Time.time - lastAttackTime;
+    /// <summary>Hits in a row with the weapon's element (scaled by its Elemental Buildup Rate).</summary>
+    public float ElementalHitStreak => elementalStreak;
+    public GameObject CurrentTarget => currentTarget;
+    public int TotalDamageDealt => totalDamageDealt;
+
+    /// <summary>
+    /// The combo attack for <paramref name="input"/>, if any: a combo tree branch first (they have conditions), then
+    /// the longest combo sequence ending with the current inputs + this one.
+    /// </summary>
+    public ComboChoice Choose(GameObject player, AttackType input)
     {
-        // First check for branching combos
-        if (TryExecuteBranch(player, attackType))
-            return true;
+        var choice = new ComboChoice { damageMultiplier = 1f };
+        WeaponSO weapon = controller.EquippedWeapon;
+        if (!controller.EnableComboSystem || weapon == null)
+            return choice;
+        ExpireIfLate();
 
-        // Then check for traditional sequential combos
-        var testSequence = new List<AttackType>(currentComboSequence) { attackType };
-
-        var matchingCombo = controller.EquippedWeapon.GetMatchingComboSequence(testSequence.ToArray());
-        if (matchingCombo != null)
+        if (weapon.ComboTree != null)
         {
-            controller.LogDebug($"Executing combo: {matchingCombo.comboName}");
-            PerformComboFinisher(player, matchingCombo);
-            return true;
-        }
-
-        return false;
-    }
-
-    public bool TryExecuteBranch(GameObject player, AttackType attackType)
-    {
-        if (controller.EquippedWeapon?.ComboTree == null) return false;
-
-        var playerController = player.GetComponent<PlayerStatusController>();
-        var availableBranches = controller.EquippedWeapon.ComboTree.GetAvailableBranches(
-            attackType,
-            playerController,
-            currentTarget,
-            currentComboSequence.Count,
-            controller
-        );
-
-        if (availableBranches.Count > 0)
-        {
-            // Execute the highest priority branch (first in sorted list)
-            var branch = availableBranches[0];
-            ExecuteBranch(player, branch);
-            return true;
-        }
-
-        return false;
-    }
-
-    private void ExecuteBranch(GameObject player, ComboBranch branch)
-    {
-        controller.LogDebug($"Executing combo branch: {branch.branchName}");
-
-        // Apply weapon traits to the branch action
-        var playerController = player.GetComponent<PlayerStatusController>();
-        if (playerController != null && branch.branchAction != null)
-        {
-            controller.EquippedWeapon.ApplyWeaponTraitsToAttack(branch.branchAction, playerController);
-        }
-
-        // Apply branch damage bonus
-        if (branch.damageBonus > 0 && branch.branchAction != null)
-        {
-            // Store the damage bonus to be applied during the attack
-            StoreDamageBonus(branch.damageBonus);
-        }
-
-        // Play branch effects
-        if (branch.branchParticles != null)
-        {
-            var particles = Object.Instantiate(branch.branchParticles, controller.HandGameObject.transform);
-            particles.Play();
-        }
-
-        if (branch.branchSound != null)
-        {
-            player.GetComponent<Player>()?.PlayerAudioSource?.PlayOneShot(branch.branchSound);
-        }
-
-        // Execute the branch action
-        attackExecutor.StartAttack(player, branch.branchAction, null, null);
-
-        // Apply bonus effects to player
-        foreach (var effect in branch.bonusEffects)
-        {
-            if (effect != null && playerController != null)
+            PlayerStatusController ps = player != null ? player.GetComponentInParent<PlayerStatusController>() : null;
+            List<ComboBranch> branches = weapon.ComboTree.GetAvailableBranches(input, ps, currentTarget, currentComboSequence.Count, controller);
+            if (branches.Count > 0)
             {
-                playerController.ApplyEffect(effect, effect.amount, effect.timeBuffEffect, effect.tickCooldown);
+                ComboBranch b = branches[0];
+                TraitManager tm = ps != null ? ps.TraitManager : null;
+                choice.action = b.branchAction;
+                choice.branch = b;
+                choice.damageMultiplier = 1f + Mathf.Max(-0.99f, b.GetModifiedDamageBonus(tm, weapon));
+                return choice;
             }
         }
 
-        // Track branch execution
-        executedBranches.Add(branch);
-
-        if (branch.isFinisher || branch.resetsCombo)
+        if (weapon.ComboSequences != null && weapon.ComboSequences.Count > 0)
         {
-            FinishCombo(player, branch);
+            var test = new List<AttackType>(currentComboSequence) { input };
+            ComboSequence seq = weapon.GetComboEndingWith(test);
+            if (seq != null)
+            {
+                choice.action = seq.specialAction;
+                choice.sequence = seq;
+                choice.damageMultiplier = Mathf.Max(0f, seq.damageMultiplier);
+                choice.critChanceBonus = seq.criticalChanceBonus;
+            }
+        }
+        return choice;
+    }
+
+    /// <summary>Records an attack that started (called for every attack, combo or not).</summary>
+    public void RegisterAttack(GameObject player, AttackType input, in ComboChoice choice)
+    {
+        if (!controller.EnableComboSystem)
+            return;
+        WeaponSO weapon = controller.EquippedWeapon;
+        currentComboTree = weapon != null ? weapon.ComboTree : null;
+        comboWindow = currentComboTree != null ? currentComboTree.GetComboWindow(currentComboSequence.Count) : controller.DefaultComboWindow;
+        ExpireIfLate();
+        if (currentComboSequence.Count == 0)
+            comboStartTime = Time.time;
+
+        currentComboSequence.Add(input);
+        lastAttackTime = Time.time;
+        controller.LogDebug($"Combo: {GetComboString()}");
+
+        if (choice.branch != null)
+            OnBranchStarted(player, choice.branch);
+        else if (choice.sequence != null)
+            OnSequenceStarted(player, choice.sequence);
+
+        if (currentComboTree != null && currentComboSequence.Count >= Mathf.Max(1, currentComboTree.maxComboLength))
+        {
+            controller.LogDebug("Max combo length reached, resetting");
+            ClearComboSequence();
         }
     }
 
-    private void StoreDamageBonus(float bonus)
+    private void OnBranchStarted(GameObject player, ComboBranch branch)
     {
-        // This would need to be accessed by AttackExecutor during damage calculation
-        // For now, we'll store it as a property that can be accessed
-        controller.LogDebug($"Damage bonus stored: {bonus}");
+        controller.LogDebug($"Combo branch: {branch.branchName}");
+        effectsManager.PlayBranchEffects(player, branch);
+
+        PlayerStatusController ps = player != null ? player.GetComponentInParent<PlayerStatusController>() : null;
+        if (ps != null && branch.bonusEffects != null)
+            foreach (AttackEffect effect in branch.bonusEffects)
+                if (effect != null)
+                    ps.ApplyEffect(effect, effect.amount, effect.timeBuffEffect, effect.tickCooldown);
+
+        executedBranches.Add(branch);
+        if (branch.isFinisher || branch.resetsCombo)
+            FinishCombo(player, branch);
     }
 
-    public void PerformComboFinisher(GameObject player, ComboSequence combo)
+    private void OnSequenceStarted(GameObject player, ComboSequence combo)
     {
-        controller.LogDebug("Performing combo finisher");
+        controller.LogDebug($"Combo sequence: {combo.comboName}");
         effectsManager.PlayComboFinisherEffects(player, combo);
-        attackExecutor.StartAttack(player, combo.specialAction, null, combo);
+        if (combo.experienceBonus > 0)
+            GiveExperience(player, combo.experienceBonus);
+        comboScore = CalculateComboScore();
         ClearComboSequence();
     }
 
     private void FinishCombo(GameObject player, ComboBranch finisherBranch)
     {
-        // Calculate combo score based on branches executed
-        float score = CalculateComboScore();
-        comboScore = score;
-
-        // Apply bonus rewards
-        var playerController = player.GetComponent<PlayerStatusController>();
-        if (playerController?.XPManager != null && finisherBranch.experienceBonus > 0)
+        comboScore = CalculateComboScore();
+        PlayerStatusController ps = player != null ? player.GetComponentInParent<PlayerStatusController>() : null;
+        int exp = finisherBranch.GetModifiedExperienceBonus(ps != null ? ps.TraitManager : null, controller.EquippedWeapon);
+        if (exp > 0)
         {
-            int finalExp = finisherBranch.experienceBonus;
-
-            // Apply tree completion multiplier if applicable
-            if (controller.EquippedWeapon?.ComboTree != null && executedBranches.Count >= 5)
-            {
-                finalExp = Mathf.RoundToInt(finalExp * controller.EquippedWeapon.ComboTree.treeCompletionExpMultiplier);
-            }
-
-            playerController.XPManager.AddExperience(finalExp);
+            if (currentComboTree != null && executedBranches.Count >= 5)
+                exp = Mathf.RoundToInt(exp * currentComboTree.treeCompletionExpMultiplier);
+            GiveExperience(player, exp);
         }
-
-        // Visual feedback for combo completion
-        controller.LogDebug($"Combo finished! Score: {score}, Branches: {executedBranches.Count}");
-
-        // Reset combo state
-        if (finisherBranch.resetsCombo)
-        {
+        controller.LogDebug($"Combo finished! Score: {comboScore:0}, branches: {executedBranches.Count}");
+        if (finisherBranch.resetsCombo || finisherBranch.isFinisher)
             Reset();
-        }
+    }
+
+    private static void GiveExperience(GameObject player, int amount)
+    {
+        PlayerStatusController ps = player != null ? player.GetComponentInParent<PlayerStatusController>() : null;
+        if (ps != null && ps.XPManager != null)
+            ps.XPManager.AddExperience(amount);
     }
 
     private float CalculateComboScore()
     {
-        float score = currentComboSequence.Count * 100;
-        score += executedBranches.Count * 200;
-
-        // Bonus for branch variety
-        var uniqueBranches = executedBranches.Select(b => b.branchName).Distinct().Count();
-        score += uniqueBranches * 150;
-
-        // Damage dealt bonus
-        score *= (1f + (totalDamageDealt / 1000f));
-
-        // Time bonus (faster combos = higher score)
-        float comboTime = Time.time - (lastAttackTime - (currentComboSequence.Count * comboWindow));
-        float timeBonus = Mathf.Max(0, 2f - (comboTime / (currentComboSequence.Count + 1)));
-        score *= (1f + timeBonus);
-
-        return score;
+        float score = currentComboSequence.Count * 100f + executedBranches.Count * 200f;
+        score += executedBranches.Where(b => b != null).Select(b => b.branchName).Distinct().Count() * 150f;
+        score *= 1f + totalDamageDealt / 1000f;
+        float duration = Mathf.Max(0.1f, Time.time - comboStartTime);
+        float timeBonus = Mathf.Max(0f, 2f - duration / (currentComboSequence.Count + 1));
+        return score * (1f + timeBonus);
     }
 
-    public void UpdateComboSequence(AttackType attackType)
-    {
-        if (!controller.EnableComboSystem) return;
-
-        // Update combo tree reference if needed
-        if (controller.EquippedWeapon?.ComboTree != null)
-        {
-            currentComboTree = controller.EquippedWeapon.ComboTree;
-
-            // Use dynamic combo window from tree
-            comboWindow = currentComboTree.GetComboWindow(currentComboSequence.Count);
-        }
-
-        // Reset sequence if too much time has passed
-        if (Time.time - lastAttackTime > comboWindow)
-        {
-            ClearComboSequence();
-        }
-
-        currentComboSequence.Add(attackType);
-        lastAttackTime = Time.time;
-
-        controller.LogDebug($"Combo sequence: {string.Join(" -> ", currentComboSequence)}");
-
-        // Check if we've hit max combo length
-        if (currentComboTree != null && currentComboSequence.Count >= currentComboTree.maxComboLength)
-        {
-            controller.LogDebug("Max combo length reached, resetting");
-            Reset();
-        }
-    }
-
-    public void UpdateComboTimer()
-    {
-        if (currentComboSequence.Count > 0 && Time.time - lastAttackTime > comboWindow)
-        {
-            ClearComboSequence();
-        }
-    }
-
-    public void SetCurrentTarget(GameObject target)
+    /// <summary>A hit landed (damage dealt, whether it carried the weapon's element).</summary>
+    public void RegisterHit(GameObject target, float damage, bool elemental)
     {
         currentTarget = target;
+        totalDamageDealt += Mathf.RoundToInt(damage);
+        WeaponSO weapon = controller.EquippedWeapon;
+        if (elemental)
+            elementalStreak += weapon != null ? Mathf.Max(0f, weapon.ElementalBuildupRate) : 1f;
+        else
+            elementalStreak = 0f;
     }
 
-    public void AddDamageDealt(int damage)
-    {
-        totalDamageDealt += damage;
-    }
-
+    /// <summary>Damage multiplier from the combo tree's per-hit bonus.</summary>
     public float GetCurrentComboDamageMultiplier()
     {
-        if (currentComboTree != null)
-        {
-            return currentComboTree.GetComboDamageMultiplier(currentComboSequence.Count);
-        }
-        return 1f;
+        return currentComboTree != null ? currentComboTree.GetComboDamageMultiplier(currentComboSequence.Count) : 1f;
     }
+
+    public void UpdateComboTimer() => ExpireIfLate();
+
+    private void ExpireIfLate()
+    {
+        if (currentComboSequence.Count > 0 && !attackExecutor.IsAttacking && Time.time - lastAttackTime > comboWindow)
+            ClearComboSequence();
+    }
+
+    public void SetCurrentTarget(GameObject target) => currentTarget = target;
+    public void AddDamageDealt(int damage) => totalDamageDealt += damage;
 
     public void ClearComboSequence()
     {
         currentComboSequence.Clear();
-        controller.LogDebug("Combo sequence cleared");
+        elementalStreak = 0f;
     }
 
     public List<AttackType> GetCurrentComboSequence() => new List<AttackType>(currentComboSequence);
@@ -272,15 +235,11 @@ public class ComboSystem
         comboScore = 0f;
         currentTarget = null;
         currentComboTree = null;
-        lastAttackTime = 0f;
+        lastAttackTime = -999f;
     }
 
     // Helper methods for UI display
-    public string GetComboString()
-    {
-        if (currentComboSequence.Count == 0) return "";
-        return string.Join(" → ", currentComboSequence);
-    }
+    public string GetComboString() => currentComboSequence.Count == 0 ? "" : string.Join(" → ", currentComboSequence);
 
     public float GetComboTimeRemaining()
     {

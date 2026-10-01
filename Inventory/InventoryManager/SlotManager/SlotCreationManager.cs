@@ -183,7 +183,7 @@ public class SlotCreationManager
 
                 // Handle item cleanup before destroying slot
                 InventorySlot slotComponent = child.GetComponent<InventorySlot>();
-                if (slotComponent?.heldItem != null)
+                if (slotComponent != null && slotComponent.heldItem != null)
                 {
                     DropItemFromSlot(slotComponent);
                 }
@@ -196,14 +196,20 @@ public class SlotCreationManager
     private void DestroySlot(GameObject slot)
     {
         if (Application.isPlaying)
+        {
+            // Destroy happens at the end of the frame: hide and detach now so the grid never shows old and new slots
+            // together (the editor's preview slots are replaced this way when the game starts).
+            slot.SetActive(false);
+            slot.transform.SetParent(null, false);
             Object.Destroy(slot);
+        }
         else
             Object.DestroyImmediate(slot);
     }
 
     private void DropItemFromSlot(InventorySlot slot)
     {
-        if (slot?.heldItem == null) return;
+        if (slot.Live()?.heldItem == null) return;
 
         InventoryItem item = slot.heldItem.GetComponent<InventoryItem>();
         if (item != null)
@@ -228,17 +234,9 @@ public class SlotCreationManager
 
     private void CreateDroppedItem(InventoryItem item, Vector3 position)
     {
-        if (item?.itemScriptableObject?.Prefab == null) return;
-
-        GameObject droppedItem = Object.Instantiate(item.itemScriptableObject.Prefab, position, Quaternion.identity);
-        ItemPickable pickableComponent = droppedItem.GetComponent<ItemPickable>();
-
-        if (pickableComponent != null)
-        {
-            pickableComponent.itemScriptableObject = item.itemScriptableObject;
-            pickableComponent.quantity = item.stackCurrent;
-            pickableComponent.DurabilityList = new List<int>(item.DurabilityList);
-        }
+        if (item.Live()?.itemScriptableObject.Live()?.Prefab == null) return;
+        // Same as dropping by hand: pickable again (collider, layer, on the ground).
+        ItemHandler.SpawnWorldItem(item.itemScriptableObject, item.stackCurrent, item.DurabilityList, position, player);
     }
 
     public void RefreshAllItemPositions()
@@ -253,8 +251,8 @@ public class SlotCreationManager
 
         foreach (var slotObj in slots)
         {
-            var slot = slotObj?.GetComponent<InventorySlot>();
-            slot?.RefreshItemPosition();
+            var slot = slotObj.Live()?.GetComponent<InventorySlot>();
+            slot.Live()?.RefreshItemPosition();
         }
     }
 

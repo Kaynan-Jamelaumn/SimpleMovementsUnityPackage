@@ -122,7 +122,11 @@ public sealed class MobBrain : ICombatHostility
         CombatEntity self = ctx.Entity;
         if (other == null || other == self || !other.IsAlive || self == null)
             return MobRelationKind.Neutral;
-        if (other.Team == self.Team)
+        if (other.Team == self.Team || CombatParties.SameParty(self, other))
+            return MobRelationKind.Ally;
+        // Factions: allied factions never fight; hostile ones fight on sight (below, after taunts and threats).
+        FactionStance? stance = FactionStanceTowards(self, other);
+        if (stance == FactionStance.Ally)
             return MobRelationKind.Ally;
         if (self.TauntedBy == other)
             return MobRelationKind.Enemy;
@@ -154,6 +158,9 @@ public sealed class MobBrain : ICombatHostility
             }
         }
 
+        if (stance == FactionStance.Enemy)
+            return ctx.Profile.whenAttacked == MobReaction.Flee && !Cornered ? MobRelationKind.Threat : MobRelationKind.Enemy;
+
         List<string> preys = ctx.MobReference.PreysReference;
         Mob otherMob = other.Mob;
         if (otherMob != null)
@@ -178,6 +185,16 @@ public sealed class MobBrain : ICombatHostility
                 return Cornered ? MobRelationKind.Enemy : MobRelationKind.Threat;
         }
         return MobRelationKind.Neutral;
+    }
+
+    /// <summary>The faction stance between two characters (null when factions do not decide: none, or neutral).</summary>
+    private static FactionStance? FactionStanceTowards(CombatEntity self, CombatEntity other)
+    {
+        CombatFaction a = self.Faction, b = other.Faction;
+        if (a == null && b == null)
+            return null;
+        FactionStance s = a != null ? a.StanceTowards(b) : b.StanceTowards(null);
+        return s == FactionStance.Neutral ? (FactionStance?)null : s;
     }
 
     private MobRelationKind ReactionToAttacker()

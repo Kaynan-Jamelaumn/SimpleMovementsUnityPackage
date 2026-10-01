@@ -21,6 +21,12 @@ public struct DamageInfo
     public bool sourceInferred;
     /// <summary>Damage sent back by a reaction (Thorns): other reactions ignore it, so two of them cannot loop.</summary>
     public bool isReflected;
+    /// <summary>How the damage is resisted: Physical by Defense, Magical by Magic Resistance, True by neither.</summary>
+    public DamageType type;
+    /// <summary>Element of the damage (None = plain). Elemental resistances apply to it.</summary>
+    public ElementType element;
+    /// <summary>The weapon that dealt it (null for abilities, hazards, falls...).</summary>
+    public WeaponSO weapon;
 }
 
 /// <summary>A sound made in the world that AI can hear (footsteps, spells, fights).</summary>

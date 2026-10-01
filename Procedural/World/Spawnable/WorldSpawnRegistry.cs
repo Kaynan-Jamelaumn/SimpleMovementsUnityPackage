@@ -179,8 +179,9 @@ public static class WorldSpawnRegistry
     private static readonly List<Transform> FallbackOnly = new List<Transform>();
 
     /// <summary>
-    /// The player transforms with <paramref name="playerTag"/> (searched at most once a second per tag). Falls back to
-    /// <paramref name="fallback"/> (EndlessTerrain's viewer) when nothing has the tag.
+    /// Every player: the registered player Combat Entities (multiplayer-safe, no tags), plus objects with
+    /// <paramref name="playerTag"/> that are not registered players (searched at most once a second per tag). Falls back
+    /// to <paramref name="fallback"/> (EndlessTerrain's viewer) when there is none.
     /// </summary>
     public static List<Transform> GetPlayers(string playerTag, Transform fallback)
     {
@@ -194,13 +195,17 @@ public static class WorldSpawnRegistry
         {
             cache.NextSearch = Time.unscaledTime + 1f;
             cache.Found.Clear();
+            IReadOnlyList<CombatEntity> registered = CombatEntity.Players;
+            for (int i = 0; i < registered.Count; i++)
+                if (registered[i] != null && !cache.Found.Contains(registered[i].transform))
+                    cache.Found.Add(registered[i].transform);
             if (!string.IsNullOrEmpty(playerTag))
             {
                 try
                 {
                     foreach (GameObject go in GameObject.FindGameObjectsWithTag(playerTag))
-                        if (go != null)
-                            cache.Found.Add(go.transform);
+                        if (go != null && PlayerLocator.FromObject(go) == null && !cache.Found.Contains(go.transform))
+                            cache.Found.Add(go.transform); // tagged objects that are not registered players
                 }
                 catch (UnityException)
                 {

@@ -1,6 +1,6 @@
-﻿
 using UnityEngine;
 
+/// <summary>Moves quantity between two stacks of the same item (durability and weight follow the items).</summary>
 public static class StackOperations
 {
     public static void FillStack(InventorySlot slot, InventoryItem slotHeldItem, InventoryItem draggedItem, GameObject lastItemSlotObject)
@@ -8,55 +8,42 @@ public static class StackOperations
         int itemsToFillStack = slotHeldItem.stackMax - slotHeldItem.stackCurrent;
 
         if (itemsToFillStack >= draggedItem.stackCurrent)
-        {
             FillEntireStack(slotHeldItem, draggedItem);
-        }
         else
-        {
             FillPartialStack(slotHeldItem, draggedItem, itemsToFillStack, lastItemSlotObject);
-        }
     }
 
     private static void FillEntireStack(InventoryItem slotHeldItem, InventoryItem draggedItem)
     {
-        slotHeldItem.stackCurrent += draggedItem.stackCurrent;
         slotHeldItem.DurabilityList.AddRange(draggedItem.DurabilityList);
-        slotHeldItem.totalWeight += draggedItem.totalWeight;
+        slotHeldItem.stackCurrent += draggedItem.stackCurrent;
+        slotHeldItem.UpdateTotalWeight();
+        slotHeldItem.RefreshUI();
 
         Object.Destroy(draggedItem.gameObject);
     }
 
     private static void FillPartialStack(InventoryItem slotHeldItem, InventoryItem draggedItem, int itemsToFillStack, GameObject lastItemSlotObject)
     {
-        // Transfer durability items
-        for (int j = 0; j < itemsToFillStack; j++)
+        // Durability entries travel with the items
+        for (int j = 0; j < itemsToFillStack && draggedItem.DurabilityList.Count > 0; j++)
         {
-            if (draggedItem.DurabilityList.Count > 0)
-            {
-                slotHeldItem.DurabilityList.Add(draggedItem.DurabilityList[^1]);
-                draggedItem.DurabilityList.RemoveAt(draggedItem.DurabilityList.Count - 1);
-            }
+            slotHeldItem.DurabilityList.Add(draggedItem.DurabilityList[^1]);
+            draggedItem.DurabilityList.RemoveAt(draggedItem.DurabilityList.Count - 1);
         }
-
-        // Update weights and stacks
-        float weightPerItem = draggedItem.itemScriptableObject.Weight;
-        slotHeldItem.totalWeight += weightPerItem * itemsToFillStack;
-        draggedItem.totalWeight -= weightPerItem * itemsToFillStack;
 
         slotHeldItem.stackCurrent += itemsToFillStack;
         draggedItem.stackCurrent -= itemsToFillStack;
+        slotHeldItem.UpdateTotalWeight();
+        draggedItem.UpdateTotalWeight();
+        slotHeldItem.RefreshUI();
+        draggedItem.RefreshUI();
 
-        // Return remaining items to last slot using new slot system
-        var lastSlot = lastItemSlotObject.GetComponent<InventorySlot>();
+        // The rest goes back to where it came from
+        var lastSlot = lastItemSlotObject != null ? lastItemSlotObject.GetComponent<InventorySlot>() : null;
         if (lastSlot != null)
-        {
             lastSlot.SetHeldItem(draggedItem.gameObject);
-        }
         else
-        {
-            Debug.LogError("LastItemSlotObject does not have InventorySlot component");
-            // Fallback to old method
-            lastItemSlotObject.GetComponent<InventorySlot>().SetHeldItem(draggedItem.gameObject);
-        }
+            Debug.LogError("[Inventory] The item's previous slot has no InventorySlot component.");
     }
 }

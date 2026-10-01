@@ -33,7 +33,7 @@ sequenceDiagram
     participant Wk as Worker thread
     participant B as DungeonBuilder
     participant I as DungeonInstance
-    Pl->>WP: OnTriggerEnter (tagged Player)
+    Pl->>WP: OnTriggerEnter (a player's Combat Entity)
     WP->>WP: guards (not inside, not entering, cooldown over, profile set)
     WP->>S: Enter(player, BuildRequest(), manager, profile, origin, ReturnPose)
     S->>S: remember return pose, controls off
@@ -85,13 +85,21 @@ flowchart TD
 | Dungeon Seed | 0 | 0 = derived from the world seed + portal position (stable per portal) |
 | Dungeon Size | Medium | size class |
 | Dungeon Difficulty / Use Spawner Difficulty | 1 / on | difficulty; spawned portals use the spawner's distance-based difficulty |
-| Player Tag | Player | who can enter |
+| Player Tag | Player | **fallback only**: players are recognised by their Combat Entity (any character with a `PlayerStatusController`), so every player of a multiplayer game can enter and the one who entered is sent |
+| Bring Party Within | 0 m | party members of the entering player within this distance travel with them (0 = only the player who entered) |
 | Return Distance | 2.5 m | where the player comes back (outside the trigger) |
 | Despawn Time / random range | 0 | 0 = the portal stays |
 | Scene To Load / Position | — | scene mode only |
 
 The portal adds a trigger box around its renderers if it has no trigger collider. The player needs a
 CharacterController or a Rigidbody, otherwise trigger events don't fire.
+
+**Several players.** `DungeonSession` keeps the list of players inside (`DungeonSession.Participants`,
+`IsParticipant`, `NearestParticipant`): the player who entered and the party members who came with them. They are
+placed around the spawn, only participants can use the dungeon's portals, the whole group leaves (or goes deeper)
+together and everyone returns around the world portal. Floors with any participant stay active; secret doors open
+for any player; respawns keep away from every player; traps hurt every player (see
+[Inventory 09 §6](../Inventory/09-Teams-Factions-and-Targeting.md)).
 
 ## 3. Entering and leaving (state machine)
 

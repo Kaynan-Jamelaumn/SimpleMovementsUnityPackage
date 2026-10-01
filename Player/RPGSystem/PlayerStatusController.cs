@@ -78,6 +78,9 @@ public class PlayerStatusController : BaseStatusController
 
     private void Awake()
     {
+        // Register as a player right away (PlayerLocator, portals, spawners, AI), not on the first hit.
+        PlayerLocator.Register(gameObject);
+
         // Cache components
         CacheComponents();
 

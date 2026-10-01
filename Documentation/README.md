@@ -1,11 +1,58 @@
-# Procedural Generation — Technical Documentation
+# Simple Movements — Documentation
 
-Documentation for the two procedural systems in `Assets/Scripts/Procedural/`. 
+Guides for every system in `Assets/Scripts/`. Each part has a README with its chapters; the **setup** chapters are
+step-by-step, the others explain how the system works and what every setting does.
 
-| Part | Folder | Chapters | Start with |
-|---|---|---|---|
-| **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | 20 | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
-| **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | 14 | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
+| Part | Folder | Start with |
+|---|---|---|
+| **Player** — the player prefab and its scripts: movement and input, stamina and status bars, classes, traits, experience, camera, animation, ability keys | [`Player/`](Player/README.md) | [Player 01 — Setup](Player/01-Player-Setup.md) |
+| **Mobs** — creatures and enemies: setup, AI profiles, perception, temperament, combat, abilities, animation, death, spawning | [`Mobs/`](Mobs/README.md) | [Mobs 01 — Setup](Mobs/01-Mob-Setup.md) |
+| **Inventory, items, armor and weapons** — inventory UI, items, equipment, armor sets, weapons and attacks, teams / factions / friendly fire | [`Inventory/`](Inventory/README.md) | [Inventory 08 — Setup Guide](Inventory/08-Setup-Guide.md) |
+| **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
+| **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
+
+## How the parts fit together
+
+```mermaid
+flowchart LR
+    subgraph Character["Characters"]
+        P["Player<br/>(movement, status, traits, abilities)"]
+        M["Mobs<br/>(AI, abilities)"]
+    end
+    subgraph Items["Inventory"]
+        I["InventoryManager"] --> E["EquipmentManager"]
+        E --> W["Weapon in hand<br/>(WeaponController)"]
+        E --> A["Armor, armor sets"]
+    end
+    subgraph Combat["Combat core (Essentials)"]
+        CE["CombatEntity<br/>(health, team, faction, party)"] --> R["Relations & targeting"]
+        AB["Abilities"]
+    end
+    subgraph World["Procedural"]
+        T["Terrain world"] --> D["Dungeons"]
+    end
+    P --> I
+    W --> CE
+    A --> P
+    P --> CE
+    M --> CE
+    P --> AB
+    M --> AB
+    T -- "spawns" --> M
+    D -- "spawns" --> M
+```
+
+* The **player** owns the inventory; items in equipment slots and the weapon in hand change the player's stats,
+  traits and attacks.
+* The **player** and **mobs** are both `CombatEntity`s: weapons, abilities and AI all damage, heal and target them
+  through the same combat core (teams, factions, parties, friendly fire).
+* The **terrain** and **dungeons** spawn mobs; dungeons are entered through world portals.
+
+---
+
+# Procedural generation
+
+Documentation for the two procedural systems in `Assets/Scripts/Procedural/`.
 
 ## How the two systems meet
 

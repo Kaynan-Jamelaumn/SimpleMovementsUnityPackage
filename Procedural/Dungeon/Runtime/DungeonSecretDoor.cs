@@ -11,9 +11,7 @@ namespace ProceduralDungeon
     /// </summary>
     public class DungeonSecretDoor : MonoBehaviour
     {
-        [Tooltip("Tag of the player who can find the passage.")]
-        public string playerTag = "Player";
-        [Tooltip("How close the player must stand to the wall to search it (meters).")]
+        [Tooltip("How close a player must stand to the wall to search it (meters). Any player can find it (multiplayer-safe).")]
         [Min(0f)] public float searchDistance = 1.8f;
         [Tooltip("Seconds the player must stay that close before the wall opens.")]
         [Min(0f)] public float holdTime = 1.5f;
@@ -24,8 +22,6 @@ namespace ProceduralDungeon
 
         public event Action<DungeonSecretDoor> Opened;
 
-        private Transform player;
-        private float nextSearch;
         private float held;
         private Vector3 closed;
         private float height = 3f;
@@ -47,17 +43,9 @@ namespace ProceduralDungeon
                 transform.localPosition = Vector3.MoveTowards(transform.localPosition, closed + Vector3.down * height, openSpeed * Time.deltaTime);
                 return;
             }
-            if (player == null && Time.time >= nextSearch)
-            {
-                nextSearch = Time.time + 1f;
-                GameObject p = GameObject.FindGameObjectWithTag(playerTag);
-                player = p != null ? p.transform : null;
-            }
-            if (player == null)
-                return;
-            Vector3 d = player.position - transform.position;
-            d.y = 0f;
-            held = d.magnitude <= searchDistance ? held + Time.deltaTime : Mathf.Max(0f, held - Time.deltaTime);
+            // Any living player searching the wall (not "the object tagged Player": several players may be inside).
+            bool searching = PlayerLocator.AnyWithin(transform.position, searchDistance);
+            held = searching ? held + Time.deltaTime : Mathf.Max(0f, held - Time.deltaTime);
             if (held >= holdTime)
                 Open();
         }

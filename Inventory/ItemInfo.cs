@@ -1,12 +1,17 @@
-using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using TMPro;
 using UnityEngine.InputSystem;
-using Unity.VisualScripting.Antlr3.Runtime.Misc;
 
+/// <summary>
+/// The item tooltip panel (right click on a slot): name, price, weight, quantity, type, description, and - when the
+/// Item Stats text is assigned - what the item does (stats, effects, attacks, set bonuses), durability and whether it
+/// is equipped. Every text field is optional.
+/// </summary>
 public class ItemInfo : MonoBehaviour
 {
+    [Tooltip("Found automatically when empty.")]
     [SerializeField] private InventoryManager inventoryManager;
     [SerializeField] private InventoryItem clickedItem;
     [SerializeField] private TextMeshProUGUI itemName;
@@ -15,32 +20,43 @@ public class ItemInfo : MonoBehaviour
     [SerializeField] private TextMeshProUGUI itemType;
     [SerializeField] private TextMeshProUGUI itemDescription;
     [SerializeField] private TextMeshProUGUI itemQuantity;
-    // Start is called before the first frame update
+    [Tooltip("Optional: what the item does (stats, effects, attacks, set bonuses), durability and equipped state.")]
+    [SerializeField] private TextMeshProUGUI itemStats;
 
-    private void SetItemInfoText(string itemNameText, string itemPriceText, string itemWeightText, string itemQuantityText, string itemTypeText, string itemDescriptionText)
+    private readonly List<string> lines = new List<string>();
+
+    public InventoryItem ShownItem => clickedItem;
+
+    private void Awake()
     {
-        itemName.text = itemNameText;
-        itemPrice.text = itemPriceText;
-        itemWeight.text = itemWeightText;
-        itemQuantity.text = itemQuantityText;
-        itemType.text = itemTypeText;
-        itemDescription.text = itemDescriptionText;
+        if (inventoryManager == null)
+        {
+            // This player's inventory first; a scene-wide search only when there is exactly one (multiplayer-safe).
+            inventoryManager = GetComponentInParent<InventoryManager>();
+            if (inventoryManager == null)
+                inventoryManager = transform.root.GetComponentInChildren<InventoryManager>(true);
+            if (inventoryManager == null)
+                inventoryManager = InventoryUtils.OnlyInstance<InventoryManager>();
+        }
     }
+
+    private static void Set(TextMeshProUGUI field, string text)
+    {
+        if (field != null)
+            field.text = text;
+    }
+
     private void PositionRelativeToMouse(Vector2 mousePosition)
     {
         RectTransform itemInfoRectTransform = GetComponent<RectTransform>();
-
-        // Retrieve canvas and itemInfo dimensions
         RectTransform canvasRectTransform = itemInfoRectTransform.root.GetComponent<RectTransform>();
-        float canvasHeight = canvasRectTransform.rect.height;
+        if (canvasRectTransform == null)
+            return;
         float canvasWidth = canvasRectTransform.rect.width;
         float imageHeight = itemInfoRectTransform.rect.height;
         float imageWidth = itemInfoRectTransform.rect.width;
 
-        // Calculate new position based on mouse position
         Vector2 newPosition;
-
-        // Check if the lower part of the itemInfo goes beyond the canvas
         if (mousePosition.y - imageHeight * 0.5f < 0)
         {
             newPosition = new Vector2(mousePosition.x + imageWidth, imageHeight * 0.5f);
@@ -51,35 +67,65 @@ public class ItemInfo : MonoBehaviour
                 Mathf.Min(mousePosition.x + imageWidth, canvasWidth - imageWidth * 0.5f),
                 Mathf.Max(mousePosition.y - imageHeight * 0.5f, imageHeight * 0.5f));
         }
-        // Set the itemInfo position
         itemInfoRectTransform.position = newPosition;
     }
 
+    /// <summary>Splits the shown stack in two (button on the panel).</summary>
     public void SplitItem()
     {
-        //inventoryManager.SplitItemIntoNewStack(clickedItem);
-        Debug.Log("split");
+        if (inventoryManager == null || clickedItem == null)
+            return;
         SplitItemHandler.SplitItemIntoNewStack(inventoryManager, clickedItem, inventoryManager.Slots, inventoryManager.Player);
+        gameObject.SetActive(false);
     }
 
     public void ShowItemInfo(InventoryItem itemToShow)
     {
-        transform.gameObject.SetActive(true);
+        if (itemToShow == null || itemToShow.itemScriptableObject == null)
+        {
+            gameObject.SetActive(false);
+            return;
+        }
+        gameObject.SetActive(true);
         clickedItem = itemToShow;
-        SetItemInfoText(
-            $"{clickedItem.itemScriptableObject.Name}",
-            $"Price: {clickedItem.itemScriptableObject.Price}",
-            $"Weight: {clickedItem.totalWeight} Kg",
-            $"Quantity: {clickedItem.stackCurrent}/{clickedItem.stackMax}",
-            $"{clickedItem.itemScriptableObject.ItemType}",
-            $"{clickedItem.itemScriptableObject.Description}");
+        ItemSO so = clickedItem.itemScriptableObject;
+        Set(itemName, so.Name);
+        Set(itemPrice, $"Price: {so.Price}");
+        Set(itemWeight, $"Weight: {clickedItem.totalWeight:0.##} Kg");
+        Set(itemQuantity, $"Quantity: {clickedItem.stackCurrent}/{clickedItem.stackMax}");
+        Set(itemType, so is ArmorSO armor ? $"{so.ItemType} ({armor.ArmorSlotType})" : so is WeaponSO weapon && weapon.Category != WeaponCategory.None ? $"{so.ItemType} ({weapon.Category})" : so.ItemType.ToString());
+        Set(itemDescription, so.Description);
+        if (itemStats != null)
+            itemStats.text = BuildStats(clickedItem);
 
-        // Get mouse position relative to the screen
-        Vector2 mousePosition = Mouse.current.position.ReadValue();
-
-        // Position itemInfo relative to the mouse cursor
-        PositionRelativeToMouse(mousePosition);
+        if (Mouse.current != null)
+            PositionRelativeToMouse(Mouse.current.position.ReadValue());
     }
 
-}
+    /// <summary>The tooltip body: effects, set bonuses, durability, equipped state.</summary>
+    public string BuildStats(InventoryItem item)
+    {
+        lines.Clear();
+        ItemSO so = item.itemScriptableObject;
+        so.AppendTooltip(lines);
 
+        if (so is EquippableSO eq && eq.BelongsToArmorSet != null)
+        {
+            ArmorSet set = eq.BelongsToArmorSet;
+            int worn = inventoryManager != null && inventoryManager.ArmorSetManager != null ? inventoryManager.ArmorSetManager.GetEquippedPiecesCount(set) : 0;
+            lines.Add($"{set.SetName} ({worn}/{set.SetPieces.Count}):");
+            foreach (string tier in set.DescribeTiers(worn))
+                lines.Add("  " + tier);
+        }
+
+        if (so.MaxDurability > 1 || so.DurabilityReductionPerUse > 0 && !(so is ConsumableSO))
+            lines.Add($"Durability: {item.durability:0}/{so.MaxDurability}");
+        if (item.isEquipped)
+            lines.Add("Equipped");
+
+        var sb = new StringBuilder();
+        foreach (string l in lines)
+            sb.AppendLine(l);
+        return sb.ToString();
+    }
+}

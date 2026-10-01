@@ -9,6 +9,7 @@ public class JumpingState : MovementState
 
     public override void EnterState()
     {
+        Context.ConsumeJumpPress();
         // Use SpeedManager for movement speed during jump
         bool isRunning = Context.AnimationModel.GetAnimationBool("IsRunning");
 
@@ -61,8 +62,9 @@ public class JumpingState : MovementState
 
     public override MovementStateMachine.EMovementState GetNextState()
     {
-        // Stay in jumping state while not grounded
-        if (!Context.MovementController.IsGrounded())
+        // Stay in the jump while rising or in the air. On the first frame the player has not left the ground yet:
+        // checking only "grounded" ended the jump right away and reset its speed, so jumps sometimes did nothing.
+        if (Context.MovementModel.VerticalVelocity > 0f || !Context.MovementController.IsGrounded())
             return StateKey;
 
         // Once grounded, transition based on input

@@ -7,7 +7,7 @@ using Object = UnityEngine.Object;
 namespace ProceduralDungeon
 {
     /// <summary>
-    /// Moves the player between the world and a dungeon:
+    /// Moves the player (and, optionally, the party members with them) between the world and a dungeon:
     /// <list type="number">
     /// <item>Enter: remembers where the player stood, freezes their controls, pauses the world (terrain streaming,
     /// weather, world spawners - so nothing keeps generating around the dungeon's position), starts generation.</item>
@@ -42,10 +42,49 @@ namespace ProceduralDungeon
         public static event Action<bool> Exited;
         public static event Action<string> Failed;
 
-        private static GameObject player;
-        private static Vector3 returnPosition;
-        private static Quaternion returnRotation;
+        /// <summary>One player in the dungeon: the object that is moved and where it goes back to.</summary>
+        private struct Traveller
+        {
+            public GameObject root;
+            public Vector3 returnPosition;
+            public Quaternion returnRotation;
+        }
+
+        private static readonly List<Traveller> travellers = new List<Traveller>(4);
+        private static readonly List<GameObject> participants = new List<GameObject>(4);
         private static bool ownsManager;
+
+        /// <summary>The players in (or entering) the dungeon - the one who entered first. Empty outside dungeons.</summary>
+        public static IReadOnlyList<GameObject> Participants => participants;
+
+        /// <summary>Is <paramref name="go"/> (or the player it belongs to) in the dungeon?</summary>
+        public static bool IsParticipant(GameObject go)
+        {
+            if (go == null)
+                return false;
+            for (int i = 0; i < participants.Count; i++)
+            {
+                GameObject p = participants[i];
+                if (p != null && (go == p || go.transform.IsChildOf(p.transform) || p.transform.IsChildOf(go.transform)))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>The participant closest to <paramref name="position"/> (null when nobody is in the dungeon).</summary>
+        public static Transform NearestParticipant(Vector3 position)
+        {
+            Transform best = null;
+            float bestSqr = float.MaxValue;
+            for (int i = 0; i < participants.Count; i++)
+            {
+                GameObject p = participants[i];
+                if (p == null) continue;
+                float d = (p.transform.position - position).sqrMagnitude;
+                if (d < bestSqr) { bestSqr = d; best = p.transform; }
+            }
+            return best;
+        }
 
         // Static state survives play-mode entry when domain reload is disabled: start clean every time.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -55,7 +94,8 @@ namespace ProceduralDungeon
             IsEntering = false;
             Manager = null;
             CurrentRequest = null;
-            player = null;
+            travellers.Clear();
+            participants.Clear();
             ownsManager = false;
             lastExit = -100f;
             Entered = null;
@@ -71,18 +111,40 @@ namespace ProceduralDungeon
         public static void Enter(GameObject who, DungeonRequest request, DungeonManager managerOrPrefab = null, DungeonProfile profile = null,
             Vector3? origin = null, Pose? returnPose = null)
         {
-            if (who == null || IsEntering || !CanEnter)
+            if (who == null)
+                return;
+            Enter(new[] { who }, request, managerOrPrefab, profile, origin, returnPose);
+        }
+
+        /// <summary>
+        /// Sends a group into a dungeon (the player who entered first, then the party members travelling with them).
+        /// Everyone is placed around the spawn and comes back around <paramref name="returnPose"/>.
+        /// </summary>
+        public static void Enter(IReadOnlyList<GameObject> group, DungeonRequest request, DungeonManager managerOrPrefab = null,
+            DungeonProfile profile = null, Vector3? origin = null, Pose? returnPose = null)
+        {
+            if (group == null || group.Count == 0 || group[0] == null || IsEntering || !CanEnter)
                 return;
             bool switching = InDungeon;
             if (switching)
                 ClearDungeon(false);
 
             IsEntering = true;
-            player = who;
             if (!switching)
             {
-                returnPosition = returnPose.HasValue ? returnPose.Value.position : who.transform.position;
-                returnRotation = returnPose.HasValue ? returnPose.Value.rotation : who.transform.rotation;
+                travellers.Clear();
+                participants.Clear();
+                GameObject first = group[0];
+                Vector3 basePos = returnPose.HasValue ? returnPose.Value.position : first.transform.position;
+                Quaternion baseRot = returnPose.HasValue ? returnPose.Value.rotation : first.transform.rotation;
+                for (int i = 0; i < group.Count; i++)
+                {
+                    GameObject g = group[i];
+                    if (g == null || participants.Contains(g))
+                        continue;
+                    travellers.Add(new Traveller { root = g, returnPosition = basePos + Offset(i, baseRot), returnRotation = baseRot });
+                    participants.Add(g);
+                }
             }
             SetControls(false);
 
@@ -109,24 +171,28 @@ namespace ProceduralDungeon
             ClearDungeon(true);
             DungeonAtmosphere.Restore();
             DungeonWorldPause.Resume();
-            Teleport(returnPosition, returnRotation);
+            TeleportHome();
             SetControls(true);
             InDungeon = false;
             IsEntering = false;
             lastExit = Time.time;
+            travellers.Clear();
+            participants.Clear();
             Exited?.Invoke(completed);
         }
 
-        /// <summary>Called by <see cref="DungeonPortal"/>.</summary>
+        /// <summary>
+        /// Called by <see cref="DungeonPortal"/>. Only a participant can use a dungeon portal; the whole group travels
+        /// with them (leaving, completing, or going deeper).
+        /// </summary>
         public static void UsePortal(DungeonPortal portal, GameObject who)
         {
-            if (!InDungeon || IsEntering)
+            if (!InDungeon || IsEntering || !IsParticipant(who))
                 return;
-            player = who;
             switch (portal.action)
             {
                 case DungeonPortal.PortalAction.NextDungeon:
-                    Enter(who, (CurrentRequest ?? new DungeonRequest()).Next(), Manager);
+                    Enter(new List<GameObject>(participants), (CurrentRequest ?? new DungeonRequest()).Next(), Manager);
                     break;
                 case DungeonPortal.PortalAction.CompleteDungeon:
                     Exit(true);
@@ -170,7 +236,8 @@ namespace ProceduralDungeon
                 Manager.Failed -= OnFailed;
             }
             Pose spawn = dungeon.PlayerSpawn;
-            Teleport(spawn.position + Vector3.up * SpawnLift, spawn.rotation);
+            for (int i = 0; i < travellers.Count; i++)
+                Teleport(travellers[i].root, spawn.position + Offset(i, spawn.rotation) + Vector3.up * SpawnLift, spawn.rotation);
             DungeonAtmosphere.Apply(dungeon.Profile.Theme);
             SetControls(true);
             InDungeon = true;
@@ -188,11 +255,13 @@ namespace ProceduralDungeon
             ClearDungeon(true);
             DungeonAtmosphere.Restore();
             DungeonWorldPause.Resume();
-            Teleport(returnPosition, returnRotation);
+            TeleportHome();
             SetControls(true);
             InDungeon = false;
             IsEntering = false;
             lastExit = Time.time;
+            travellers.Clear();
+            participants.Clear();
             Failed?.Invoke(message);
         }
 
@@ -209,27 +278,45 @@ namespace ProceduralDungeon
             }
         }
 
-        private static void SetControls(bool on)
+        /// <summary>Spot of the i-th traveller around a point: the first on it, the others on a ring beside it.</summary>
+        private static Vector3 Offset(int index, Quaternion facing)
         {
-            if (player == null)
-                return;
-            var movement = player.GetComponent<PlayerMovementController>();
-            if (movement != null)
-                movement.enabled = on;
-            var cc = player.GetComponent<CharacterController>();
-            if (cc != null)
-                cc.enabled = on;
+            if (index <= 0)
+                return Vector3.zero;
+            float angle = 90f + (index - 1) * 60f; // right, then around
+            return Quaternion.Euler(0f, angle, 0f) * (facing * Vector3.forward) * 1.4f;
         }
 
-        private static void Teleport(Vector3 position, Quaternion rotation)
+        private static void SetControls(bool on)
         {
-            if (player == null)
+            foreach (Traveller t in travellers)
+            {
+                if (t.root == null)
+                    continue;
+                var movement = t.root.GetComponent<PlayerMovementController>();
+                if (movement != null)
+                    movement.enabled = on;
+                var cc = t.root.GetComponent<CharacterController>();
+                if (cc != null)
+                    cc.enabled = on;
+            }
+        }
+
+        private static void TeleportHome()
+        {
+            foreach (Traveller t in travellers)
+                Teleport(t.root, t.returnPosition, t.returnRotation);
+        }
+
+        private static void Teleport(GameObject who, Vector3 position, Quaternion rotation)
+        {
+            if (who == null)
                 return;
-            var cc = player.GetComponent<CharacterController>();
+            var cc = who.GetComponent<CharacterController>();
             bool was = cc != null && cc.enabled;
             if (cc != null)
                 cc.enabled = false;
-            player.transform.SetPositionAndRotation(position, rotation);
+            who.transform.SetPositionAndRotation(position, rotation);
             if (cc != null)
                 cc.enabled = was;
             Physics.SyncTransforms();

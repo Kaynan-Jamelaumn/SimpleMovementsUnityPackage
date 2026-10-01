@@ -1,19 +1,7 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
-public enum ElementType
-{
-    None,
-    Fire,
-    Ice,
-    Lightning,
-    Poison,
-    Holy,
-    Dark,
-    Wind,
-    Earth,
-    Water
-}
+// ElementType lives in Essentials/Ability/Core/DamageTypes.cs (shared by weapons, abilities and armor).
 
 [System.Serializable]
 public class ElementalReaction

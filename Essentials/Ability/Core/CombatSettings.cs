@@ -22,6 +22,15 @@ public class CombatSettings : ScriptableObject
     [Tooltip("Players can damage other players with abilities (PvP). Off = players are allies.")]
     public bool playersCanHurtEachOther = false;
 
+    [Tooltip("FRIENDLY FIRE between party members. Off: damage, control, knockback and debuffs never land on party members " +
+             "(heals and buffs still do). On: harmful hits also hit party members caught in them, even when the attack " +
+             "targets enemies only. Each attack / hit can override it (Target Rules ▸ Friendly Fire).")]
+    public bool partyFriendlyFire = false;
+
+    [Tooltip("FRIENDLY FIRE between allies that are not in the same party (same team or allied factions). Off: harmful " +
+             "effects never land on them. On: harmful hits also hit allies caught in them.")]
+    public bool allyFriendlyFire = false;
+
     [Tooltip("When a character loses health without a known attacker (e.g. a weapon hit that does not report its source), the nearest player within this distance is treated as the attacker (for aggro and absorption). 0 = never guess.")]
     [Min(0f)] public float unattributedDamageRadius = 8f;
 

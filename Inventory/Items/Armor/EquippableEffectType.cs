@@ -1,6 +1,8 @@
-﻿using UnityEngine;
+using UnityEngine;
 
-// Enum covering all status effects available in PlayerStatusController
+/// <summary>
+/// The classic equipment stats. Serialized as numbers in assets: only add new values at the END.
+/// </summary>
 public enum EquippableEffectType
 {
     // Core Stats
@@ -77,78 +79,69 @@ public enum EquippableEffectType
     // PoisonResistance, MovementSilence, NightVision, BetterLoot, ExperienceBonus
 }
 
-// Represents a single equippable effect that can be applied by equipment
+/// <summary>
+/// One classic equipment stat: an effect type and an amount (+20 Max Hp, +0.5 Hp Regeneration...). Used by the items'
+/// "Effects" list and the armor set bonuses' "Stat Bonuses". Applied and removed exactly by the equipment system
+/// (see <see cref="LegacyStatPool"/>); the combat stats (Strength ... Casting Speed) go to <see cref="CombatStats"/>.
+/// </summary>
 [System.Serializable]
 public class EquippableEffect
 {
     [Header("Effect Configuration")]
+    [Tooltip("What this changes. Max values and regeneration are flat amounts; the Heal/Damage Factors are percentages (+15 = 15%); Speed Factor 0.2 = +20% speed; Speed Multiplier 1.2 = +20% speed; the combat stats are Combat Stats points/percentages.")]
     public EquippableEffectType effectType;
 
-    [Tooltip("The amount of the effect to apply")]
+    [Tooltip("The amount (see the effect type for its units). Negative values are penalties.")]
     public float amount;
 
-    [Tooltip("Human-readable description of this effect")]
+    [Tooltip("Optional text for tooltips. Empty = generated from the type and amount.")]
     public string effectDescription;
 
     [Header("Duration Settings")]
-    [Tooltip("Duration of the effect (0 = permanent while equipped)")]
+    [Tooltip("Seconds the effect lasts after the item is equipped (0 = the whole time it is equipped).")]
     public float duration = 0f;
 
-    [Tooltip("Whether this is a temporary effect")]
+    [Tooltip("Marks the effect as temporary. It only expires when Duration is above 0.")]
     public bool isTemporary = false;
 
     [Header("Stacking")]
-    [Tooltip("Can this effect stack with similar effects")]
+    [Tooltip("On: adds up with the same effect type from other items. Off: of all non-stacking effects of this type, only the strongest counts.")]
     public bool canStack = true;
 
-    [Tooltip("Maximum number of stacks allowed")]
+    [Tooltip("Stacking effects: at most this many of this effect type count (strongest first). 0 or 1 = no limit.")]
     public int maxStacks = 1;
 
     [Header("Conditional Application")]
-    [Tooltip("Chance for this effect to apply (0-1)")]
+    [Tooltip("Chance (0-1) that the effect applies, rolled once each time the item is equipped.")]
     [Range(0f, 1f)]
     public float applicationChance = 1f;
 
-    [Tooltip("Minimum player level required for this effect")]
+    [Tooltip("The effect only applies from this player level on (it turns on by itself when the player levels up).")]
     public int minimumLevel = 1;
 
     [Header("Visual/Audio")]
-    [Tooltip("Particle effect to play when this effect is applied")]
+    [Tooltip("Spawned on the character while the effect is active.")]
     public GameObject effectPrefab;
 
-    [Tooltip("Sound to play when this effect is applied")]
+    [Tooltip("Played when the effect turns on.")]
     public AudioClip effectSound;
 
-    // Get a formatted description of this effect
-    public string GetFormattedDescription()
+    /// <summary>True when the effect expires after <see cref="duration"/> seconds.</summary>
+    public bool IsTimed => duration > 0f;
+
+    /// <summary>Tooltip text: the custom description, or a generated one ("+20 Max Health").</summary>
+    public string GetFormattedDescription(float strength = 1f)
     {
         if (!string.IsNullOrEmpty(effectDescription))
             return effectDescription;
-
-        // Generate description based on effect type and amount
-        string sign = amount >= 0 ? "+" : "";
-        return effectType switch
-        {
-            EquippableEffectType.MaxHp => $"{sign}{amount} Health",
-            EquippableEffectType.MaxStamina => $"{sign}{amount} Stamina",
-            EquippableEffectType.MaxMana => $"{sign}{amount} Mana",
-            EquippableEffectType.Speed => $"{sign}{amount} Speed",
-            EquippableEffectType.HpRegeneration => $"{sign}{amount} HP/sec",
-            EquippableEffectType.StaminaRegeneration => $"{sign}{amount} Stamina/sec",
-            EquippableEffectType.ManaRegeneration => $"{sign}{amount} Mana/sec",
-            EquippableEffectType.HpHealFactor => $"{sign}{(amount * 100f):F0}% Healing Received",
-            EquippableEffectType.HpDamageFactor => $"{sign}{(amount * 100f):F0}% Damage Taken",
-            EquippableEffectType.MaxWeight => $"{sign}{amount} Carry Weight",
-            EquippableEffectType.Strength => $"{sign}{amount} Strength",
-            EquippableEffectType.Agility => $"{sign}{amount} Agility",
-            EquippableEffectType.Intelligence => $"{sign}{amount} Intelligence",
-            EquippableEffectType.Endurance => $"{sign}{amount} Endurance",
-            EquippableEffectType.Defense => $"{sign}{amount} Defense",
-            EquippableEffectType.MagicResistance => $"{sign}{amount} Magic Resistance",
-            EquippableEffectType.CriticalChance => $"{sign}{amount:F1}% Critical Chance",
-            EquippableEffectType.CriticalDamage => $"{sign}{amount:F0}% Critical Damage",
-            _ => $"{effectType}: {sign}{amount}"
-        };
+        string text = LegacyEquipmentStats.Describe(effectType, amount * strength);
+        if (IsTimed)
+            text += $" for {duration:0.#}s";
+        if (minimumLevel > 1)
+            text += $" (level {minimumLevel}+)";
+        if (applicationChance < 1f)
+            text += $" ({applicationChance * 100f:0}% chance)";
+        return text;
     }
 
     // Check if this effect should be applied based on conditions
@@ -163,6 +156,18 @@ public class EquippableEffect
         return randomValue <= applicationChance;
     }
 
+    /// <summary>Reports configuration problems.</summary>
+    public void Validate(string owner, System.Collections.Generic.List<string> errors, System.Collections.Generic.List<string> warnings)
+    {
+        if (Mathf.Approximately(amount, 0f))
+            warnings.Add($"{owner}: {effectType} has an amount of 0 (it does nothing).");
+        if (isTemporary && duration <= 0f)
+            warnings.Add($"{owner}: {effectType} is marked temporary but its Duration is 0, so it never expires.");
+        if (applicationChance <= 0f)
+            warnings.Add($"{owner}: {effectType} has a 0% application chance and never applies.");
+        if (effectType == EquippableEffectType.SpeedMultiplier && amount > 0f && amount < 0.5f)
+            warnings.Add($"{owner}: Speed Multiplier {amount} slows the character down a lot (1 = unchanged, 1.2 = +20%). Did you mean Speed Factor?");
+    }
 
     // Check if this effect modifies a core stat
     public bool IsCoreStat()
