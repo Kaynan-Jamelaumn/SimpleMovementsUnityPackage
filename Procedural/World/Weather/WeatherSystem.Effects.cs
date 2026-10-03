@@ -110,7 +110,7 @@ public partial class WeatherSystem
         if (RenderSettings.sun != null)
             return RenderSettings.sun;
         Light brightest = null;
-        foreach (Light light in FindObjectsByType<Light>(FindObjectsSortMode.None))
+        foreach (Light light in FindObjectsByType<Light>(FindObjectsInactive.Exclude))
             if (light.type == LightType.Directional && (brightest == null || light.intensity > brightest.intensity))
                 brightest = light;
         return brightest;

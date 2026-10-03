@@ -45,6 +45,9 @@ public class TraitManager : MonoBehaviour
     [SerializeField] private int availableTraitPoints = 10;
     [Tooltip("Maximum number of traits the character can have at once.")]
     [SerializeField] private int maxTraits = 10;
+    [Tooltip("Traits with an active skill on their own key (an ability) a character may pick. Movement traits (double jump, " +
+             "wall climb, glide) do not count; traits given by the race, class or equipment do not count either.")]
+    [SerializeField, Min(0)] private int maxActiveTraits = 1;
     [Tooltip("Allow picking negative traits (drawbacks that give points back).")]
     [SerializeField] private bool allowNegativeTraits = true;
 
@@ -105,6 +108,7 @@ public class TraitManager : MonoBehaviour
         public float multiplier = 1f;
         public AppliedModifiers passives;
         public AppliedModifiers legacy;
+        public object combatToken;
         public readonly List<TraitBehaviour> behaviours = new List<TraitBehaviour>();
         public readonly List<TraitBehaviour> templates = new List<TraitBehaviour>();
     }
@@ -404,6 +408,11 @@ public class TraitManager : MonoBehaviour
         if (trait.cost > availableTraitPoints) return $"Needs {trait.cost} points ({availableTraitPoints} left).";
         if (activeTraits.Count >= maxTraits) return $"Already has the maximum of {maxTraits} traits.";
         if (!allowNegativeTraits && trait.IsNegative) return "Negative traits are not allowed.";
+        if (trait.HasActiveSkill && PickedActiveTraits() >= maxActiveTraits)
+            return maxActiveTraits <= 1 ? "Only one active trait per character." : $"Only {maxActiveTraits} active traits per character.";
+        CharacterIdentity identity = Identity;
+        string archetypeRule = TraitRules.WhyNot(trait, identity != null ? identity.Archetypes : null);
+        if (archetypeRule != null) return archetypeRule;
         foreach (Trait r in trait.requiredTraits)
             if (r != null && !HasTrait(r)) return $"Requires {r.Name}.";
         foreach (Trait i in trait.incompatibleTraits)
@@ -417,6 +426,29 @@ public class TraitManager : MonoBehaviour
     }
 
     public bool CanAddTrait(Trait trait) => WhyCannotAdd(trait) == null;
+
+    /// <summary>How many active-skill traits are allowed per character.</summary>
+    public int MaxActiveTraits => maxActiveTraits;
+
+    /// <summary>Active-skill traits the character picked (not those granted by race, class or equipment).</summary>
+    public int PickedActiveTraits()
+    {
+        int n = 0;
+        foreach (ActiveTraitInfo info in activeTraits)
+            if (info.trait != null && info.trait.HasActiveSkill && !armorAppliedTraits.Contains(info.trait))
+                n++;
+        return n;
+    }
+
+    /// <summary>The character's race / class (null when it has no Character Identity).</summary>
+    public CharacterIdentity Identity
+    {
+        get
+        {
+            CharacterIdentity id = GetComponentInParent<CharacterIdentity>();
+            return id != null ? id : GetComponentInChildren<CharacterIdentity>();
+        }
+    }
 
     public bool CanRemoveTrait(Trait trait)
     {
@@ -489,6 +521,7 @@ public class TraitManager : MonoBehaviour
         runtimes[trait] = rt;
         rt.passives = ApplyModifiers(trait.modifiers, rt.multiplier, trait.Name);
         rt.legacy = ApplyModifiers(MapLegacy(trait.effects, trait), rt.multiplier, trait.Name + " (legacy)");
+        ApplyCombatStats(rt);
         foreach (TraitBehaviour template in trait.behaviours)
         {
             if (template == null)
@@ -509,6 +542,7 @@ public class TraitManager : MonoBehaviour
             SafeCall(() => b.OnRemoved(Context), b);
         RevertModifiers(rt.legacy);
         RevertModifiers(rt.passives);
+        RevertCombatStats(rt);
         runtimes.Remove(trait);
     }
 
@@ -523,6 +557,8 @@ public class TraitManager : MonoBehaviour
         RevertModifiers(rt.passives);
         rt.passives = ApplyModifiers(rt.trait.modifiers, multiplier, rt.trait.Name);
         rt.legacy = ApplyModifiers(MapLegacy(rt.trait.effects, rt.trait), multiplier, rt.trait.Name + " (legacy)");
+        RevertCombatStats(rt);
+        ApplyCombatStats(rt);
         for (int i = 0; i < rt.behaviours.Count; i++)
         {
             TraitBehaviour b = rt.behaviours[i];
@@ -537,6 +573,31 @@ public class TraitManager : MonoBehaviour
             rt.behaviours[i] = fresh;
             SafeCall(() => fresh.OnAdded(Context), fresh);
         }
+    }
+
+    // A trait's combat stats, resistances and scaling go to the character's Combat Stats as one entry (exact removal).
+    private void ApplyCombatStats(TraitRuntime rt)
+    {
+        Trait t = rt.trait;
+        if (t == null || !t.HasCombatStats)
+            return;
+        CombatStats cs = CombatStats.For(this, addIfMissing: true);
+        if (cs == null)
+            return;
+        bool hasStats = (t.combatStats != null && t.combatStats.Count > 0) || (t.resistances != null && t.resistances.Count > 0);
+        object stats = hasStats ? cs.AddModifiers(t.Name, t.combatStats, t.resistances, rt.multiplier) : null;
+        object scaling = t.scalingRules != null && t.scalingRules.Count > 0 ? cs.AddScaling(t.Name + " (scaling)", t.scalingRules, rt.multiplier) : null;
+        rt.combatToken = new object[] { cs, stats, scaling };
+    }
+
+    private static void RevertCombatStats(TraitRuntime rt)
+    {
+        if (rt.combatToken is object[] a && a[0] is CombatStats cs && cs != null)
+        {
+            if (a[1] != null) cs.RemoveModifiers(a[1]);
+            if (a[2] != null) cs.RemoveModifiers(a[2]);
+        }
+        rt.combatToken = null;
     }
 
     private List<TraitModifier> MapLegacy(List<TraitEffect> effects, Trait trait)
@@ -658,10 +719,10 @@ public class TraitManager : MonoBehaviour
             case TraitStat.MaxStamina:
             case TraitStat.MaxMana:
             case TraitStat.CarryWeight:
-            {
-                StatusManager sm = Manager(stat);
-                return sm != null ? sm.MaxValue : float.NaN;
-            }
+                {
+                    StatusManager sm = Manager(stat);
+                    return sm != null ? sm.MaxValue : float.NaN;
+                }
             case TraitStat.MoveSpeed:
                 return playerController != null && playerController.SpeedManager != null ? playerController.SpeedManager.BaseSpeed : float.NaN;
             case TraitStat.SprintSpeed:
@@ -688,13 +749,13 @@ public class TraitManager : MonoBehaviour
             case TraitStat.SprintSpeed:
             case TraitStat.CrouchSpeed:
             case TraitStat.JumpForce:
-            {
-                bool pct = mode == TraitModifierMode.Percent || stat == TraitStat.SprintSpeed || stat == TraitStat.CrouchSpeed;
-                float b = PercentBase(stat);
-                if (float.IsNaN(b))
-                    return 0f;
-                return AddRaw(stat, pct ? b * v / 100f : v);
-            }
+                {
+                    bool pct = mode == TraitModifierMode.Percent || stat == TraitStat.SprintSpeed || stat == TraitStat.CrouchSpeed;
+                    float b = PercentBase(stat);
+                    if (float.IsNaN(b))
+                        return 0f;
+                    return AddRaw(stat, pct ? b * v / 100f : v);
+                }
             default:
                 // Regeneration, healing received, damage taken, stamina cost: plain additive values.
                 return AddRaw(stat, v);
@@ -711,7 +772,9 @@ public class TraitManager : MonoBehaviour
         PlayerMovementModel move = Context.Movement;
         switch (stat)
         {
-            case TraitStat.MaxHealth: case TraitStat.MaxStamina: case TraitStat.MaxMana:
+            case TraitStat.MaxHealth:
+            case TraitStat.MaxStamina:
+            case TraitStat.MaxMana:
                 if (sm == null) return 0f;
                 sm.ModifyMaxValue(amount);
                 return amount;
@@ -719,7 +782,9 @@ public class TraitManager : MonoBehaviour
                 if (!(sm is WeightManager wm)) return 0f;
                 wm.ModifyMaxWeight(amount);
                 return amount;
-            case TraitStat.HealthRegen: case TraitStat.StaminaRegen: case TraitStat.ManaRegen:
+            case TraitStat.HealthRegen:
+            case TraitStat.StaminaRegen:
+            case TraitStat.ManaRegen:
                 if (sm == null) return 0f;
                 sm.ModifyIncrementValue(amount);
                 return amount;
@@ -727,17 +792,18 @@ public class TraitManager : MonoBehaviour
                 if (sm == null) return 0f;
                 sm.ModifyIncrementFactor(amount);
                 return amount;
-            case TraitStat.DamageTaken: case TraitStat.StaminaCost:
+            case TraitStat.DamageTaken:
+            case TraitStat.StaminaCost:
                 if (sm == null) return 0f;
                 sm.ModifyDecrementFactor(amount);
                 return amount;
             case TraitStat.MoveSpeed:
-            {
-                if (speed == null) return 0f;
-                float before = speed.BaseSpeed;
-                speed.ModifyBaseSpeed(amount); // clamps at 0: record what really changed
-                return speed.BaseSpeed - before;
-            }
+                {
+                    if (speed == null) return 0f;
+                    float before = speed.BaseSpeed;
+                    speed.ModifyBaseSpeed(amount); // clamps at 0: record what really changed
+                    return speed.BaseSpeed - before;
+                }
             case TraitStat.SprintSpeed:
                 if (speed == null) return 0f;
                 speed.SpeedWhileRunningMultiplier += amount;

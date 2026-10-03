@@ -9,7 +9,7 @@ using UnityEngine.Rendering;
 /// Previews one attack of a weapon without entering Play Mode: plays (or scrubs) its animation on a character in the
 /// scene and draws, in the Scene view, the area it hits - coloured by phase (yellow wind-up, red while it hits, grey
 /// recovery) and moving with the attack's lunge - plus the weapon's range and its old Attack Cast around the hand.
-/// Open it with the ▶ buttons of the weapon inspector or Tools ▸ Inventory ▸ Attack Preview.
+/// Open it with the ▶ buttons of the weapon inspector or Tools ▸ SimpleMovements ▸ Inventory ▸ Attack Preview.
 /// </summary>
 public class AttackPreviewWindow : EditorWindow
 {
@@ -65,7 +65,7 @@ public class AttackPreviewWindow : EditorWindow
         SceneView.RepaintAll();
     }
 
-    [MenuItem("Tools/Inventory/Attack Preview")]
+    [MenuItem("Tools/SimpleMovements/Inventory/Attack Preview")]
     private static void OpenFromMenu() => Open(Selection.activeObject as WeaponSO, AttackType.Normal, 0);
 
     private void OnEnable()
@@ -691,36 +691,36 @@ public class AttackPreviewWindow : EditorWindow
         switch (v.shape)
         {
             case WeaponBlade.VolumeShape.Sphere:
-            {
-                float r = v.radius * scale;
-                Handles.DrawWireDisc(pose.a, Vector3.up, r);
-                Handles.DrawWireDisc(pose.a, Vector3.right, r);
-                Handles.DrawWireDisc(pose.a, Vector3.forward, r);
-                break;
-            }
+                {
+                    float r = v.radius * scale;
+                    Handles.DrawWireDisc(pose.a, Vector3.up, r);
+                    Handles.DrawWireDisc(pose.a, Vector3.right, r);
+                    Handles.DrawWireDisc(pose.a, Vector3.forward, r);
+                    break;
+                }
             case WeaponBlade.VolumeShape.Box:
-            {
-                Matrix4x4 old = Handles.matrix;
-                Handles.matrix = Matrix4x4.TRS(pose.a, pose.rotation, Vector3.one);
-                Handles.DrawWireCube(Vector3.zero, v.HalfExtents(scale) * 2f);
-                Handles.matrix = old;
-                break;
-            }
+                {
+                    Matrix4x4 old = Handles.matrix;
+                    Handles.matrix = Matrix4x4.TRS(pose.a, pose.rotation, Vector3.one);
+                    Handles.DrawWireCube(Vector3.zero, v.HalfExtents(scale) * 2f);
+                    Handles.matrix = old;
+                    break;
+                }
             default:
-            {
-                float r = v.radius * scale;
-                Vector3 axis = pose.b - pose.a;
-                Vector3 dir = axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.up;
-                Vector3 side = Vector3.Cross(dir, Mathf.Abs(dir.y) < 0.9f ? Vector3.up : Vector3.right).normalized * r;
-                Vector3 side2 = Vector3.Cross(dir, side).normalized * r;
-                Handles.DrawWireDisc(pose.a, dir, r);
-                Handles.DrawWireDisc(pose.b, dir, r);
-                Handles.DrawAAPolyLine(thickness, pose.a + side, pose.b + side);
-                Handles.DrawAAPolyLine(thickness, pose.a - side, pose.b - side);
-                Handles.DrawAAPolyLine(thickness, pose.a + side2, pose.b + side2);
-                Handles.DrawAAPolyLine(thickness, pose.a - side2, pose.b - side2);
-                break;
-            }
+                {
+                    float r = v.radius * scale;
+                    Vector3 axis = pose.b - pose.a;
+                    Vector3 dir = axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.up;
+                    Vector3 side = Vector3.Cross(dir, Mathf.Abs(dir.y) < 0.9f ? Vector3.up : Vector3.right).normalized * r;
+                    Vector3 side2 = Vector3.Cross(dir, side).normalized * r;
+                    Handles.DrawWireDisc(pose.a, dir, r);
+                    Handles.DrawWireDisc(pose.b, dir, r);
+                    Handles.DrawAAPolyLine(thickness, pose.a + side, pose.b + side);
+                    Handles.DrawAAPolyLine(thickness, pose.a - side, pose.b - side);
+                    Handles.DrawAAPolyLine(thickness, pose.a + side2, pose.b + side2);
+                    Handles.DrawAAPolyLine(thickness, pose.a - side2, pose.b - side2);
+                    break;
+                }
         }
     }
 
@@ -811,14 +811,14 @@ public static class AttackPreviewUtility
             case HitDetectionMode.WeaponCast:
                 return weapon != null && weapon.attackCast != null ? $"Weapon Cast - {weapon.attackCast.castType} {weapon.attackCast.castSize:0.#} m at the hand" : "Weapon Cast (not set)";
             case HitDetectionMode.WeaponBlade:
-            {
-                if (weapon == null) return "Weapon Blade";
-                var used = new List<WeaponBlade>();
-                weapon.ActiveVolumes(c, used);
-                var names = new List<string>();
-                foreach (WeaponBlade v in used) names.Add(v.Describe());
-                return $"Weapon Blade - {(names.Count > 0 ? string.Join(", ", names) : "no volume")}, follows the animation";
-            }
+                {
+                    if (weapon == null) return "Weapon Blade";
+                    var used = new List<WeaponBlade>();
+                    weapon.ActiveVolumes(c, used);
+                    var names = new List<string>();
+                    foreach (WeaponBlade v in used) names.Add(v.Describe());
+                    return $"Weapon Blade - {(names.Count > 0 ? string.Join(", ", names) : "no volume")}, follows the animation";
+                }
             default:
                 return "nothing directly (only its behaviours: projectiles, abilities...)";
         }
@@ -839,13 +839,13 @@ public static class AttackPreviewUtility
                 float size = cast.castType == CastBase.CastType.Box ? cast.boxSize.magnitude * 0.5f : cast.castSize;
                 return 0.5f + new Vector2(cast.customOrigin.x, cast.customOrigin.z).magnitude + size + lunge;
             case HitDetectionMode.WeaponBlade:
-            {
-                var used = new List<WeaponBlade>();
-                weapon.ActiveVolumes(c, used);
-                float best = 0f;
-                foreach (WeaponBlade v in used) best = Mathf.Max(best, v.Reach(areaScale));
-                return ArmReach + best + lunge;
-            }
+                {
+                    var used = new List<WeaponBlade>();
+                    weapon.ActiveVolumes(c, used);
+                    float best = 0f;
+                    foreach (WeaponBlade v in used) best = Mathf.Max(best, v.Reach(areaScale));
+                    return ArmReach + best + lunge;
+                }
             default:
                 return 0f;
         }

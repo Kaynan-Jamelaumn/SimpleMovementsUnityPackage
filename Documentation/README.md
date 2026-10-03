@@ -7,7 +7,7 @@ step-by-step, the others explain how the system works and what every setting doe
 |---|---|---|
 | **Player** — the player prefab and its scripts: movement and input, stamina and status bars, classes, traits, experience, camera, animation, ability keys | [`Player/`](Player/README.md) | [Player 01 — Setup](Player/01-Player-Setup.md) |
 | **Mobs** — creatures and enemies: setup, AI profiles, perception, temperament, combat, abilities, animation, death, spawning | [`Mobs/`](Mobs/README.md) | [Mobs 01 — Setup](Mobs/01-Mob-Setup.md) |
-| **Inventory, items, armor and weapons** — inventory UI, items, equipment, armor sets, weapons and attacks, teams / factions / friendly fire | [`Inventory/`](Inventory/README.md) | [Inventory 08 — Setup Guide](Inventory/08-Setup-Guide.md) |
+| **Inventory, items, armor and weapons** — inventory UI (slots or grid), items, equipment, armor sets, weapons and attacks, dual wielding, shields and blocking, ranged weapons and ammo, body-part damage, equipment visuals, quickslots, teams / factions / friendly fire | [`Inventory/`](Inventory/README.md) | [Inventory 08 — Setup Guide](Inventory/08-Setup-Guide.md) |
 | **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
 | **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
 
@@ -77,6 +77,27 @@ flowchart LR
 
 The dungeon reuses terrain infrastructure (`TerrainWorkerPool`, `PlacementRandom`, `MeshColliderBaker`,
 `GenerationStats`, `WorldSpawnRegistry`) but no terrain data. It is built far below the world (y = −10 000).
+
+## Editor menus
+
+Everything is under one **SimpleMovements** entry in each menu.
+
+| Menu | Contents |
+|---|---|
+| *Assets ▸ Create ▸ SimpleMovements ▸ Character* | Player Class, Character Archetype (Race - Class), Archetype Presets (races, class archetypes), Trait, Trait From Preset…, Trait Database |
+| *… ▸ Items* | Weapon, Weapon From Template, Armor, Ammo (+ Ammo Preset), Consumable (+ Consumable Preset), Equippable (Accessory), Armor Set, Combo Tree, Random Item Spawns (Storage) |
+| *… ▸ Abilities* | Ability Definition, Ability From Preset…, Ability Database, Absorption Settings |
+| *… ▸ Combat* | Combat Settings, Faction, Body Part Profile, Elemental Reactions |
+| *… ▸ Mobs* / *World* / *Dungeon* | Mob Profile (+ presets) / Biome / dungeon profiles, themes, tables, room templates |
+| *… ▸ Legacy* | Old ability assets (AbilityEffectSO, PlayerAbilitySO) and the old Player Class template, kept for existing assets — use the entries above for new ones |
+| *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database (Resources) |
+| *… ▸ Player* | Add Player Setup Validator To Selection, Auto-Setup All Players In Scene |
+| *… ▸ Scene UI* | Build Character Creation Screen, Build Pause & Settings Menu |
+| *… ▸ Inventory* | UI Builder, Auto-Build UI When Missing, Armor Set Wizard, Attack Preview, Grid Inventory |
+| *… ▸ Mobs* | Create New Mob, Add Missing Components, Spawnable Mob Helper, Help |
+| *… ▸ Validate* | Validate All Abilities / Players / Traits |
+| *… ▸ Dungeon* / *Legacy* | Dungeon tools / Convert Selected Legacy Abilities |
+| *GameObject ▸ SimpleMovements* | Quick Setup Mob (right-click a model) |
 
 ## Reading order
 

@@ -51,14 +51,14 @@ manager and the **player class**. Other systems reach the player's stats through
 
 Inspector tools: **Complete Setup Wizard**, **Auto-Assign All Components**, **Create Missing Components**, the
 *Setup … Only* buttons, **Validate Setup**, **Validate Status Values**, **Apply Reasonable Defaults**,
-**Log Component Hierarchy**. *Tools ▸ Player Status ▸ Validate All Controllers / Auto-Setup All Controllers* run them
+**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Validate All Players* and *Tools ▸ SimpleMovements ▸ Player ▸ Auto-Setup All Players In Scene* run them
 on every player in the open scenes.
 
 ---
 
 ## 3. Player classes
 
-*Assets ▸ Create ▸ Scriptable Objects ▸ Player Class* (or *Assets ▸ Create ▸ Player Status ▸ Player Class Template*).
+*Assets ▸ Create ▸ SimpleMovements ▸ Character ▸ Player Class* (or *Assets ▸ Create ▸ SimpleMovements ▸ Legacy ▸ Player Class (Old Template)*).
 
 | Section | Fields |
 |---|---|
@@ -68,6 +68,12 @@ on every player in the open scenes.
 | Special Stats | Critical chance, critical damage, attack speed, casting speed |
 | Leveling | Stat gains per level and stat multipliers |
 | Traits | Available, exclusive and **starting** traits, trait points, preferred / difficult trait types (cheaper / more expensive) |
+| Archetype | Optional `CharacterArchetype`: growth per level, attribute scaling, passives, abilities, trait affinities |
+
+The **Combat** and **Special** stats reach the combat system through a `CharacterIdentity` on the player (Critical
+Damage counts above 150, Attack / Casting Speed above 1), and level-up points spent on Strength, Agility, Intelligence
+or Endurance are added to Combat Stats. Races, class archetypes, the full stat reference, buffs / debuffs and threat
+are in [06 — Races, Classes, Advanced Stats, Buffs & Threat](06-Races-Classes-Stats-and-Threat.md).
 
 `PlayerStartItemController` gives each class its starting items (a list of item prefabs per class name).
 
@@ -75,7 +81,7 @@ on every player in the open scenes.
 
 ## 4. Traits
 
-A trait is an asset (*Assets ▸ Create ▸ Scriptable Objects ▸ Trait*, or **Trait From Preset…**):
+A trait is an asset (*Assets ▸ Create ▸ SimpleMovements ▸ Character ▸ Trait*, or **Trait From Preset…**):
 
 | Part | What it does |
 |---|---|
@@ -84,6 +90,13 @@ A trait is an asset (*Assets ▸ Create ▸ Scriptable Objects ▸ Trait*, or **
 | **Behaviours** | Things the trait lets the character *do* or reacts with: double jump, wall climb, glide, an ability on a key, second wind, life steal… (picked from a dropdown) |
 | Dependencies | Incompatible traits, required traits, exclusive groups (Tall / Short) |
 | Legacy Effects | Old string-based effects (still applied; weapons read some of them) |
+
+**Active traits.** A trait whose behaviour is *Active Ability On A Key* is an **active trait**: it gives an ability on
+its own key. A character can **pick only one** (*Trait Manager ▸ Max Active Traits* and *Character Creation UI ▸ Max
+Active Traits*, default 1); the creation screen marks them *[Active]* and refuses a second one. Traits that only use
+existing keys (Double Jump, Wall Climb, Glide) are not active traits, and traits given by the race, class or equipment
+do not count. The key: the behaviour's *Input* if assigned, else the first input action named *ActiveTrait*,
+*TraitAbility* or *UseTrait* (rebindable in the settings), else the *Fallback Key* (J).
 
 The `TraitManager` (on the player) applies and removes traits **exactly** (every change is recorded and undone),
 counts points, enforces dependencies, supports temporary traits, and tracks who granted a trait (the player, armor,
@@ -98,7 +111,7 @@ traits.RemoveTrait(myTrait);                      // refunds exactly what was pa
 ```
 
 The **Trait Database** (`Resources/TraitDatabase`) lists every trait of the game for the character creation screen
-and lookups. *Tools ▸ Traits ▸ Validate All Traits* checks them all.
+and lookups. *Tools ▸ SimpleMovements ▸ Validate ▸ Validate All Traits* checks them all.
 
 ### Weapon traits vs player traits
 

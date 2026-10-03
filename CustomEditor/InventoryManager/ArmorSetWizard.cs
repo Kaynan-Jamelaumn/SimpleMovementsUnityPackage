@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Tools ▸ Inventory ▸ Armor Set Wizard: creates an armor set and its pieces in one go (already linked both ways),
+/// Tools ▸ SimpleMovements ▸ Inventory ▸ Armor Set Wizard: creates an armor set and its pieces in one go (already linked both ways),
 /// with the usual 2 / 3 / 4-piece bonus tiers ready to fill in.
 /// </summary>
 public class ArmorSetWizard : EditorWindow
@@ -25,7 +25,7 @@ public class ArmorSetWizard : EditorWindow
     private bool requireAll;
     private Vector2 scroll;
 
-    [MenuItem("Tools/Inventory/Armor Set Wizard")]
+    [MenuItem("Tools/SimpleMovements/Inventory/Armor Set Wizard")]
     public static void Open()
     {
         var w = GetWindow<ArmorSetWizard>("Armor Set Wizard");

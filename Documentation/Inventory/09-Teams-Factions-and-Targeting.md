@@ -62,7 +62,7 @@ Characters **without** factions or parties behave exactly as before.
 
 ### Factions
 
-*Assets ▸ Create ▸ Scriptable Objects ▸ Combat ▸ Faction*:
+*Assets ▸ Create ▸ SimpleMovements ▸ Combat ▸ Faction*:
 
 | Field | Meaning |
 |---|---|
@@ -155,3 +155,40 @@ damage, knockback or harmful on-hit effects.
   server and every client agree.
 * Run hit detection and damage on the server (authority); clients only show results.
 * The AI hostility layer depends on each mob's memory, so mobs should run on the server.
+
+---
+
+## 6. Finding players (no tags, any number of players)
+
+Gameplay never identifies players by **tag** or **layer**: a player is a `CombatEntity` of kind *Player* (any
+character with a `PlayerStatusController`; it registers itself on Awake). `PlayerLocator` is the one place to ask:
+
+| Call | Returns |
+|---|---|
+| `PlayerLocator.FromCollider(collider)` | The player a collider (any child collider) belongs to — *who entered this trigger* |
+| `PlayerLocator.All` | Every player |
+| `PlayerLocator.Nearest(position)` / `DistanceToNearest(position)` / `AnyWithin(position, r)` | Proximity |
+| `PlayerLocator.MovableRoot(player)` | The object to teleport (the one with the CharacterController) |
+| `PlayerLocator.PartyMembersNear(player, r, list)` | Who travels with a player |
+| `PlayerLocator.Local` | **This machine's** player (camera, UI, telegraph colours). Set it from your networking code when the local player spawns; with one player it is that player |
+
+What uses it:
+
+| System | Before | Now |
+|---|---|---|
+| World portal | the object with the `Player` tag | the player whose collider entered; optional **Bring Party Within** |
+| Portal into another scene | `FindGameObjectWithTag("Player")` after loading | the player who went through |
+| Dungeon session | one player | `Participants`: every player who entered; they leave together |
+| Dungeon portals | tag | the player who entered (participants only) |
+| Floor streaming | the tagged player's floor | every floor with a participant |
+| Secret doors | the tagged player | any player searching |
+| Respawns | distance to the tagged player | distance to every player |
+| Traps (`DungeonHazard`) | tag; damage left to your code | *Affects* (players / mobs / others); damage through the combat system |
+| World mob / portal spawners | tagged objects | registered players (tagged objects as an extra) |
+| Telegraph colours | relation to the nearest player | relation to `PlayerLocator.Local` |
+| Inventory / armor set UI lookups | "any inventory in the scene" | the player's own (scene search only when there is exactly one) |
+| Old `AbilityEffectSO` | `Player` / `Mob` tags | any Combat Entity |
+
+Tags are still fine for **non-gameplay identity** (terrain chunks use a `Ground` tag); they are no longer needed on
+players.
+

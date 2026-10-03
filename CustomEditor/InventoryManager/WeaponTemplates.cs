@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Ready-made movesets for weapons (Apply Template in the weapon inspector, or Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ Weapon
+/// Ready-made movesets for weapons (Apply Template in the weapon inspector, or Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Weapon
 /// From Template). They only use data - attacks, chains, charge, hit shapes, on-hit effects and behaviours - so
 /// everything can be tuned afterwards. Animations, sounds and abilities are left for you to assign.
 /// </summary>
@@ -20,11 +20,19 @@ public static class WeaponTemplates
         Axe,
         Bow,
         Staff,
+        Crossbow,
+        ThrowingKnife,
+        Pistol,
     }
 
     public static void Apply(WeaponSO weapon, Template t)
     {
         Undo.RecordObject(weapon, $"Apply {t} template");
+        // A template sets the whole moveset: no leftover projectile or guard from what the weapon was before.
+        weapon.SetRanged(null);
+        ShieldDefense noGuard = ShieldDefense.WeaponGuard();
+        noGuard.enabled = false;
+        weapon.SetGuard(noGuard);
         switch (t)
         {
             case Template.Sword:
@@ -38,9 +46,15 @@ public static class WeaponTemplates
                 weapon.SetStats(WeaponCategory.Greatsword, 18f, 26f, 0.05f, 1.8f, 1.2f, WeaponScaling.Strength);
                 weapon.SetAction(AttackType.Normal, Chain("Cleave", 2, 0.22f, 0.2f, 0.45f, 1.3f, 14f, Cone(2.8f, 160f)));
                 var slam = Charged(Attack("Ground Slam", 0.3f, 0.12f, 0.6f, 1.8f, 22f, Circle(1.5f)), 0.4f, 1.6f, 2.5f, 1.6f);
-                slam.behaviours.Add(new AreaBurstBehaviour { when = AttackMoment.ActiveStart, shape = HitShape.CircleShape(3.5f), weaponDamageFraction = 0.6f,
-                    effects = new List<AbilityEffect> { new StunEffect { duration = 0.8f } } });
+                slam.behaviours.Add(new AreaBurstBehaviour
+                {
+                    when = AttackMoment.ActiveStart,
+                    shape = HitShape.CircleShape(3.5f),
+                    weaponDamageFraction = 0.6f,
+                    effects = new List<AbilityEffect> { new StunEffect { duration = 0.8f } }
+                });
                 weapon.SetAction(AttackType.Heavy, slam);
+                weapon.SetGuard(ShieldDefense.WeaponGuard()); // two-handed: no shield, so it parries with the blade
                 break;
             case Template.Dagger:
                 weapon.SetStats(WeaponCategory.Dagger, 6f, 9f, 0.18f, 2f, 0f, WeaponScaling.Agility);
@@ -78,52 +92,118 @@ public static class WeaponTemplates
                 weapon.SetAction(AttackType.Heavy, Charged(Attack("Overhead Chop", 0.25f, 0.15f, 0.5f, 1.7f, 16f, Cone(2.3f, 60f)), 0.3f, 1.1f, 2.2f, 1f));
                 break;
             case Template.Bow:
-            {
-                weapon.SetStats(WeaponCategory.Bow, 12f, 16f, 0.1f, 2f, 0f, WeaponScaling.Agility);
-                var shot = Charged(Attack("Draw And Release", 0.05f, 0.02f, 0.3f, 1f, 6f, null), 0.2f, 1.2f, 2.5f, 1f);
-                shot.hitDetection = HitDetectionMode.None;
-                shot.charge.moveSpeedWhileCharging = 0.45f;
-                shot.charge.earlyRelease = ChargeSettings.EarlyRelease.NormalAttack;
-                shot.behaviours.Add(new CastAbilityBehaviour { when = AttackMoment.ActiveStart, aim = CastAbilityBehaviour.Aim.Forward, forwardDistance = 20f });
-                weapon.SetAction(AttackType.Normal, shot);
-                var bash = Attack("Bow Bash", 0.08f, 0.12f, 0.3f, 0.5f, 5f, Cone(1.8f, 90f));
-                bash.onHitEffects.Add(new KnockbackEffect { distance = 2f });
-                weapon.SetAction(AttackType.Alternate, bash);
-                break;
-            }
-            case Template.Staff:
-            {
-                weapon.SetStats(WeaponCategory.Staff, 8f, 11f, 0.05f, 1.6f, 0f, WeaponScaling.Intelligence);
-                var bolt = Chain("Arcane Bolt", 3, 0.12f, 0.02f, 0.3f, 1f, 4f, null);
-                bolt.hitDetection = HitDetectionMode.None;
-                bolt.damageType = DamageType.Magical;
-                bolt.behaviours.Add(new CastAbilityBehaviour { when = AttackMoment.ActiveStart, aim = CastAbilityBehaviour.Aim.Target, forwardDistance = 15f });
-                foreach (AttackVariation v in bolt.variations)
                 {
-                    v.hitDetection = HitDetectionMode.None;
-                    v.damageType = DamageType.Magical;
-                    v.behaviours.Add(new CastAbilityBehaviour { when = AttackMoment.ActiveStart, aim = CastAbilityBehaviour.Aim.Target, forwardDistance = 15f });
+                    weapon.SetStats(WeaponCategory.Bow, 12f, 16f, 0.1f, 2f, 0f, WeaponScaling.Agility);
+                    // Hold to draw, release to loose an arrow (the Bow mechanic sets the draw; arrows are Ammo items of type Arrow).
+                    var shot = Attack("Draw And Release", 0.05f, 0.02f, 0.3f, 1f, 2f, null);
+                    weapon.SetAction(AttackType.Normal, shot);
+                    weapon.SetRanged(new DrawMechanic { firingAttacks = new List<AttackType> { AttackType.Normal } });
+                    var bash = Attack("Bow Bash", 0.08f, 0.12f, 0.3f, 0.5f, 5f, Cone(1.8f, 90f));
+                    bash.onHitEffects.Add(new KnockbackEffect { distance = 2f });
+                    weapon.SetAction(AttackType.Alternate, bash);
+                    break;
                 }
-                weapon.SetAction(AttackType.Normal, bolt);
-                var nova = Charged(Attack("Nova", 0.2f, 0.1f, 0.5f, 1.3f, 18f, Circle(3.5f)), 0.4f, 1.5f, 2.2f, 1.5f);
-                nova.damageType = DamageType.Magical;
-                nova.onHitEffects.Add(new KnockbackEffect { distance = 3f });
-                weapon.SetAction(AttackType.Heavy, nova);
-                break;
-            }
+            case Template.Staff:
+                {
+                    weapon.SetStats(WeaponCategory.Staff, 8f, 11f, 0.05f, 1.6f, 0f, WeaponScaling.Intelligence);
+                    var bolt = Chain("Arcane Bolt", 3, 0.12f, 0.02f, 0.3f, 1f, 4f, null);
+                    bolt.hitDetection = HitDetectionMode.None;
+                    bolt.damageType = DamageType.Magical;
+                    bolt.behaviours.Add(new CastAbilityBehaviour { when = AttackMoment.ActiveStart, aim = CastAbilityBehaviour.Aim.Target, forwardDistance = 15f });
+                    foreach (AttackVariation v in bolt.variations)
+                    {
+                        v.hitDetection = HitDetectionMode.None;
+                        v.damageType = DamageType.Magical;
+                        v.behaviours.Add(new CastAbilityBehaviour { when = AttackMoment.ActiveStart, aim = CastAbilityBehaviour.Aim.Target, forwardDistance = 15f });
+                    }
+                    weapon.SetAction(AttackType.Normal, bolt);
+                    var nova = Charged(Attack("Nova", 0.2f, 0.1f, 0.5f, 1.3f, 18f, Circle(3.5f)), 0.4f, 1.5f, 2.2f, 1.5f);
+                    nova.damageType = DamageType.Magical;
+                    nova.onHitEffects.Add(new KnockbackEffect { distance = 3f });
+                    weapon.SetAction(AttackType.Heavy, nova);
+                    weapon.SetGuard(ShieldDefense.WeaponGuard());
+                    break;
+                }
+            case Template.Crossbow:
+                {
+                    weapon.SetStats(WeaponCategory.Crossbow, 18f, 24f, 0.12f, 2.2f, 0.5f, WeaponScaling.Agility);
+                    weapon.SetAction(AttackType.Normal, Attack("Shoot", 0.05f, 0.02f, 0.35f, 1f, 2f, null));
+                    var stock = Attack("Stock Strike", 0.1f, 0.12f, 0.35f, 0.5f, 6f, Cone(1.7f, 80f));
+                    stock.onHitEffects.Add(new KnockbackEffect { distance = 1.5f });
+                    weapon.SetAction(AttackType.Alternate, stock);
+                    var bolts = new MagazineMechanic
+                    {
+                        magazineSize = 1,
+                        reloadTime = 1.8f,
+                        velocity = 75f,
+                        damageMultiplier = 1.2f,
+                        spread = 0.3f,
+                        firingAttacks = new List<AttackType> { AttackType.Normal },
+                    };
+                    bolts.ammo.ammoType = "Bolt";
+                    bolts.projectile.gravity = 5f;
+                    bolts.projectile.pierce = 1;
+                    weapon.SetRanged(bolts);
+                    break;
+                }
+            case Template.ThrowingKnife:
+                {
+                    weapon.SetStats(WeaponCategory.Thrown, 7f, 10f, 0.15f, 2f, 0f, WeaponScaling.Agility);
+                    weapon.SetAction(AttackType.Normal, Attack("Throw", 0.08f, 0.02f, 0.3f, 1f, 4f, null));
+                    weapon.SetAction(AttackType.Alternate, Chain("Slash", 2, 0.06f, 0.1f, 0.2f, 0.6f, 4f, Cone(1.6f, 80f)));
+                    weapon.SetRanged(new ThrowMechanic());
+                    weapon.SetHandling(WeaponGrip.OneHanded, OffHandUse.Allowed);
+                    var so = new SerializedObject(weapon);
+                    SerializedProperty stack = so.FindProperty("stackMax");
+                    if (stack.intValue < 2) stack.intValue = 10; // thrown knives stack; one leaves the stack per throw
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                    break;
+                }
+            case Template.Pistol:
+                {
+                    weapon.SetStats(WeaponCategory.Other, 14f, 18f, 0.1f, 2f, 0.3f, WeaponScaling.Agility);
+                    weapon.SetAction(AttackType.Normal, Attack("Fire", 0.02f, 0.02f, 0.15f, 1f, 0f, null));
+                    var gun = new MagazineMechanic
+                    {
+                        magazineSize = 8,
+                        reloadTime = 1.4f,
+                        fireInterval = 0.22f,
+                        velocity = 140f,
+                        spread = 0.8f,
+                        bloomPerShot = 1.2f,
+                        maxBloom = 5f,
+                        firingAttacks = new List<AttackType> { AttackType.Normal },
+                    };
+                    gun.ammo.ammoType = "Bullet";
+                    gun.projectile.gravity = 0f;
+                    gun.projectile.stickInSurfaces = false;
+                    gun.projectile.recoverChance = 0f;
+                    gun.projectile.damageAtMaxDistance = 0.5f;
+                    weapon.SetRanged(gun);
+                    weapon.SetHandling(WeaponGrip.OneHanded, OffHandUse.Allowed);
+                    break;
+                }
         }
+        weapon.SetGridSize(ItemPresets.SuggestGridSize(weapon), true);
         EditorUtility.SetDirty(weapon);
-        Debug.Log($"[Weapons] Applied the {t} template to '{weapon.name}'. Assign animations and sounds{(t == Template.Bow || t == Template.Staff ? ", and the ability of the Cast Ability behaviours" : "")}.", weapon);
+        string extra = t == Template.Staff ? ", and the ability of the Cast Ability behaviours"
+            : t == Template.Bow ? ", and create Arrows (Ammo of type Arrow)"
+            : t == Template.Crossbow ? ", and create Bolts (Ammo of type Bolt)"
+            : t == Template.Pistol ? ", and create Bullets (Ammo of type Bullet)" : "";
+        Debug.Log($"[Weapons] Applied the {t} template to '{weapon.name}'. Assign animations and sounds{extra}.", weapon);
     }
 
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Sword", priority = 100)] private static void CreateSword() => Create(Template.Sword);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Greatsword", priority = 101)] private static void CreateGreatsword() => Create(Template.Greatsword);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Dagger", priority = 102)] private static void CreateDagger() => Create(Template.Dagger);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Spear", priority = 103)] private static void CreateSpear() => Create(Template.Spear);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Hammer", priority = 104)] private static void CreateHammer() => Create(Template.Hammer);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Axe", priority = 105)] private static void CreateAxe() => Create(Template.Axe);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Bow", priority = 106)] private static void CreateBow() => Create(Template.Bow);
-    [MenuItem("Assets/Create/Scriptable Objects/Item/Weapon From Template/Staff", priority = 107)] private static void CreateStaff() => Create(Template.Staff);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Sword", priority = 100)] private static void CreateSword() => Create(Template.Sword);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Greatsword", priority = 101)] private static void CreateGreatsword() => Create(Template.Greatsword);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Dagger", priority = 102)] private static void CreateDagger() => Create(Template.Dagger);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Spear", priority = 103)] private static void CreateSpear() => Create(Template.Spear);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Hammer", priority = 104)] private static void CreateHammer() => Create(Template.Hammer);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Axe", priority = 105)] private static void CreateAxe() => Create(Template.Axe);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Bow", priority = 106)] private static void CreateBow() => Create(Template.Bow);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Staff", priority = 107)] private static void CreateStaff() => Create(Template.Staff);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Crossbow", priority = 108)] private static void CreateCrossbow() => Create(Template.Crossbow);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Throwing Knife", priority = 109)] private static void CreateKnife() => Create(Template.ThrowingKnife);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Pistol", priority = 110)] private static void CreatePistol() => Create(Template.Pistol);
 
     private static void Create(Template t)
     {
@@ -138,7 +218,7 @@ public static class WeaponTemplates
         string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{t}.asset");
         AssetDatabase.CreateAsset(weapon, path);
         var so = new SerializedObject(weapon);
-        so.FindProperty("name").stringValue = t.ToString();
+        so.FindProperty("name").stringValue = ObjectNames.NicifyVariableName(t.ToString());
         so.FindProperty("stackMax").intValue = 1;
         so.FindProperty("maxDurability").intValue = 200;
         so.FindProperty("durability").intValue = 200;

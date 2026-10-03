@@ -136,7 +136,7 @@ public class AbilityPresentation
 /// effects), animation, AI hints and absorption rules. Per-character differences (an absorbed weaker copy, an elite
 /// buff) are expressed with <see cref="AbilityModifierSet"/>s so the asset itself is never modified at runtime.
 /// </summary>
-[CreateAssetMenu(fileName = "New Ability", menuName = "Scriptable Objects/Ability/Ability Definition", order = -10)]
+[CreateAssetMenu(fileName = "New Ability", menuName = "SimpleMovements/Abilities/Ability Definition", order = -10)]
 public class AbilityDefinition : ScriptableObject
 {
     [Header("Identity")]
@@ -186,6 +186,10 @@ public class AbilityDefinition : ScriptableObject
     [Min(0f)] public float staminaCost = 0f;
     [Tooltip("Health paid to cast. It can never kill the caster.")]
     [Min(0f)] public float healthCost = 0f;
+
+    [Header("Threat")]
+    [Tooltip("Multiplies the threat its damage generates on mobs (2 = a tank's strike, 0.5 = a subtle spell, 0 = no threat).")]
+    [Min(0f)] public float threatMultiplier = 1f;
 
     [Header("Targeting")]
     public AbilityTargeting targeting = new AbilityTargeting();

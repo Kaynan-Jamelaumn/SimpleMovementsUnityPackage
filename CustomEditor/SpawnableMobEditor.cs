@@ -9,7 +9,7 @@ using System.Collections.Generic;
 /// </summary>
 public class SpawnableMobEditor : EditorWindow
 {
-    [MenuItem("Tools/Spawnable Mob Helper")]
+    [MenuItem("Tools/SimpleMovements/Mobs/Spawnable Mob Helper")]
     public static void ShowWindow()
     {
         GetWindow<SpawnableMobEditor>("Mob Biome Helper");

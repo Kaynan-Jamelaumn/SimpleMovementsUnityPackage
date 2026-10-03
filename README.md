@@ -33,8 +33,8 @@ Start at the **[documentation index](Documentation/README.md)**.
 
 1. Copy (or clone) this repository into your project as `Assets/Scripts/`.
 2. Install the packages listed above (*Window ▸ Package Manager*).
-3. Create the shared settings assets: *Tools ▸ Abilities ▸ Create Combat Settings (Resources)* and
-   *Tools ▸ Traits ▸ Create Trait Database (Resources)*.
+3. Create the shared settings assets: *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Combat Settings (Resources)* and
+   *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Trait Database (Resources)*.
 4. Follow the setup guides:
    * [Set up the player](Documentation/Player/01-Player-Setup.md)
    * [Set up a mob](Documentation/Mobs/01-Mob-Setup.md)

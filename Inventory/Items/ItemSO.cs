@@ -22,7 +22,9 @@ public enum ItemType
     Bracers,
     Ring,
     Leggings,
-    Amulet
+    Amulet,
+    /// <summary>Arrows, bolts, bullets (<see cref="AmmoSO"/>).</summary>
+    Ammo
 }
 /// <summary>
 /// Base of every item asset: name, icon, stack size, weight, durability, cooldown, how it sits in the hand and how it
@@ -92,6 +94,25 @@ public abstract class ItemSO : ScriptableObject
     [Tooltip("Seconds the interact key must be held to pick the item up from the world (0 = instant).")]
     [SerializeField] protected float pickUpTime;
 
+    // Grid inventory
+    [Header("Grid Inventory")]
+    [Tooltip("Cells the item takes in the GRID inventory (width × height): 1×1 potion, 1×2 dagger, 1×3 sword, 2×2 helmet, 2×3 " +
+             "chestplate, 2×4 greatsword. Only used when the Inventory Manager's Use Grid Inventory is on.")]
+    [SerializeField] protected Vector2Int gridSize = new Vector2Int(1, 1);
+    [Tooltip("The player may turn it sideways in the grid (R / right click while dragging, or R over it).")]
+    [SerializeField] protected bool canRotateInGrid = true;
+    [Tooltip("Optional picture drawn in the item's grid shape (a tall sword picture for a 1×3 sword): it fills the item's cells " +
+             "without stretching. Empty = the Icon.")]
+    [SerializeField] protected Sprite gridIcon;
+    [Tooltip("Turns the icon in the grid (degrees). Most RPG icons draw swords, spears and staves diagonally: 45 or -45 stands " +
+             "them up so they fill a tall item's cells. 0 = as drawn.")]
+    [SerializeField, Range(-180f, 180f)] protected float gridIconAngle = 0f;
+
+    // How it looks on the character
+    [Header("Equipment Visuals")]
+    [Tooltip("How the item shows on the character when it is in a hand: its model, the pose in the off hand, where it is sheathed.")]
+    [SerializeField] protected ItemVisualSettings visuals = new ItemVisualSettings();
+
     // Properties
     public float PickUpTime => pickUpTime;
     public string Name => name;
@@ -113,6 +134,25 @@ public abstract class ItemSO : ScriptableObject
     public AnimationClip UseAnimation => useAnimation;
     public AudioClip UseAudioClip => useAudioClip;
     public ParticleSystem UseParticles => useParticles;
+    /// <summary>Cells in the grid inventory (at least 1×1).</summary>
+    public Vector2Int GridSize => new Vector2Int(Mathf.Max(1, gridSize.x), Mathf.Max(1, gridSize.y));
+    public bool CanRotateInGrid => canRotateInGrid;
+    /// <summary>The picture shown in the grid inventory (the Grid Icon, else the Icon).</summary>
+    public Sprite GridIcon => gridIcon != null ? gridIcon : icon;
+    /// <summary>A picture made for the grid shape was assigned.</summary>
+    public bool HasGridIcon => gridIcon != null;
+    public float GridIconAngle => gridIconAngle;
+    public ItemVisualSettings Visuals => visuals ?? (visuals = new ItemVisualSettings());
+
+    /// <summary>Can it be put in a consumable quickslot (potions, food, buffs, throwables)?</summary>
+    public virtual bool CanUseFromQuickSlot => false;
+
+    /// <summary>Sets the grid size (editor tools, presets).</summary>
+    public void SetGridSize(Vector2Int size, bool rotatable = true)
+    {
+        gridSize = new Vector2Int(Mathf.Clamp(size.x, 1, 10), Mathf.Clamp(size.y, 1, 10));
+        canRotateInGrid = rotatable;
+    }
 
     /// <summary>
     /// The effects this item applies while it is equipped (armor in its slot, a weapon in hand). Called each time the
@@ -235,6 +275,10 @@ public abstract class ItemSO : ScriptableObject
         // Ensure stack max is at least 1
         if (stackMax < 1)
             stackMax = 1;
+
+        gridSize = new Vector2Int(Mathf.Clamp(gridSize.x, 1, 10), Mathf.Clamp(gridSize.y, 1, 10));
+        if (visuals == null)
+            visuals = new ItemVisualSettings();
 
         // Ensure durability is valid
         if (maxDurability < 1)

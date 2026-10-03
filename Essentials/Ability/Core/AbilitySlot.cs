@@ -1,6 +1,17 @@
 using System;
 using UnityEngine;
 
+/// <summary>Where an ability slot's ability comes from (cost / cooldown reduction can count for one origin only).</summary>
+public enum AbilitySlotSource
+{
+    /// <summary>The character's own abilities (ability keys, mob abilities).</summary>
+    Skill,
+    /// <summary>Granted by a trait, a race or a class (innate).</summary>
+    Innate,
+    /// <summary>Granted by an item (equipment, a weapon).</summary>
+    Item,
+}
+
 /// <summary>
 /// One ability a character can use, with its own modifiers, charges and cooldown. The phase follows the player's
 /// ability states: Ready → Casting → Launching → Active → InCooldown → Ready.
@@ -44,6 +55,8 @@ public class AbilitySlot
     [NonSerialized] public AbilityCaster Owner;
     /// <summary>What the slot was granted from (absorbed ability data), if anything.</summary>
     [NonSerialized] public AbilityGrant Grant;
+    /// <summary>Where the ability comes from: the character's own skills, a trait / race / class, or an item (scoped stats).</summary>
+    [NonSerialized] public AbilitySlotSource Source = AbilitySlotSource.Skill;
 
     /// <summary>Raised when the phase changes (slot, previous, new).</summary>
     public event Action<AbilitySlot, AbilityPhase, AbilityPhase> PhaseChanged;
@@ -70,6 +83,7 @@ public class AbilitySlot
             {
                 // Slot modifiers, then the character's own (traits, buffs).
                 stats = AbilityStats.From(modifiers, Owner != null ? Owner.CharacterModifiers : null);
+                Owner?.ApplyLayers(ref stats, this);
                 statsSource = modifiers;
                 statsOwnerVersion = ownerVersion;
                 statsValid = true;

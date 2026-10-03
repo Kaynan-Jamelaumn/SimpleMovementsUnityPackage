@@ -64,6 +64,9 @@ public abstract class AbilityEffect
     /// <summary>Name shown in the dropdown and in tooltips.</summary>
     public virtual string MenuName => AbilityTypeNames.Nice(GetType());
 
+    /// <summary>The chance of this hit, after the caster's stats (Status Chance for damage over time and debuffs).</summary>
+    public virtual float ChanceFor(in EffectContext ctx) => chance;
+
     /// <summary>Applies the effect. Called only when chance and filters passed.</summary>
     public abstract void Apply(ref EffectContext ctx);
 
@@ -110,6 +113,8 @@ public class DamageEffect : AbilityEffect
     [Range(0f, 1f)] public float criticalChance = 0f;
     [Tooltip("Damage multiplier of critical hits.")]
     [Min(1f)] public float criticalMultiplier = 1.5f;
+    [Tooltip("The caster's Critical Chance and Critical Damage stats (and Agility) add to the values above.")]
+    public bool useCasterCritical = true;
     [Tooltip("Physical is reduced by the target's Defense, Magical by its Magic Resistance, True by neither.")]
     public DamageType damageType = DamageType.Physical;
     [Tooltip("Element of the damage. Targets with a resistance to it (armor, traits) take less. None = plain damage.")]
@@ -122,9 +127,17 @@ public class DamageEffect : AbilityEffect
         float dmg = amount * ctx.stats.damage * ctx.multiplier;
         if (variance > 0f)
             dmg *= UnityEngine.Random.Range(1f - variance, 1f + variance);
-        bool crit = criticalChance > 0f && UnityEngine.Random.value < criticalChance;
+        // The caster's Critical Chance and Critical Damage stats add to the effect's own.
+        float chance = criticalChance, multiplier = criticalMultiplier;
+        CombatStats casterStats = useCasterCritical && ctx.caster != null ? ctx.caster.Stats : null;
+        if (casterStats != null)
+        {
+            chance += casterStats.CritChanceBonus(casterStats.WieldedCategory);
+            multiplier += casterStats.CritDamageBonus(casterStats.WieldedCategory);
+        }
+        bool crit = chance > 0f && UnityEngine.Random.value < chance;
         if (crit)
-            dmg *= criticalMultiplier;
+            dmg *= Mathf.Max(1f, multiplier);
         ctx.target.ApplyDamage(new DamageInfo
         {
             amount = dmg,
@@ -135,6 +148,7 @@ public class DamageEffect : AbilityEffect
             isCritical = crit,
             type = damageType,
             element = element,
+            threatMultiplier = ctx.Ability != null ? ctx.Ability.threatMultiplier : (float?)null,
         });
     }
 
@@ -178,8 +192,28 @@ public class DamageOverTimeEffect : AbilityEffect
         if (ctx.target == null)
             return;
         float perTick = damagePerTick * ctx.stats.damage * ctx.multiplier;
-        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, -perTick, tickInterval, duration * ctx.stats.duration, stacking, maxStacks, attachedVfx,
+        float time = duration * ctx.stats.duration;
+        // The caster's Debuff Strength / Duration (for this element: poison strength...) and the target's Status Resistance.
+        CombatStats caster = ctx.caster != null ? ctx.caster.Stats : null;
+        if (caster != null)
+        {
+            perTick *= caster.DebuffStrengthMultiplier(element);
+            time *= caster.DebuffDurationMultiplier(element);
+        }
+        CombatStats target = ctx.target.Stats;
+        if (target != null)
+            time *= target.StatusTakenMultiplier(element);
+        if (time <= 0.01f)
+            return;
+        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, -perTick, tickInterval, time, stacking, maxStacks, attachedVfx,
             damageType, element);
+    }
+
+    /// <summary>The caster's Status Chance (for this element) raises the chance.</summary>
+    public override float ChanceFor(in EffectContext ctx)
+    {
+        CombatStats caster = ctx.caster != null ? ctx.caster.Stats : null;
+        return Mathf.Clamp01(chance + (caster != null ? caster.StatusChanceBonus(element) : 0f));
     }
 
     public override float EstimateDamage(in AbilityStats s) => damagePerTick * s.damage * Mathf.Floor(duration * s.duration / tickInterval);
@@ -215,8 +249,15 @@ public class HealEffect : AbilityEffect
             ctx.target.ApplyHeal(total, ctx.caster);
             return;
         }
+        // A heal over time is a buff: the caster's Buff Duration lengthens it (same healing per second, so more in total).
+        CombatStats caster = ctx.caster != null ? ctx.caster.Stats : null;
+        float perSecond = total / d;
+        if (caster != null)
+            d *= caster.BuffDurationMultiplier;
+        if (d <= 0.05f)
+            return;
         int ticks = Mathf.Max(1, Mathf.FloorToInt(d / tickInterval));
-        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, total / ticks, tickInterval, d, EffectStacking.Refresh, 1, null);
+        PeriodicEffectRunner.Apply(ctx.target, ctx.caster, ctx.Ability, this, perSecond * d / ticks, tickInterval, d, EffectStacking.Refresh, 1, null);
     }
 
     public override string Describe(in AbilityStats s) =>
@@ -226,6 +267,13 @@ public class HealEffect : AbilityEffect
 [Serializable, AbilityMenu("Support/Cleanse", "Removes stun, silence, root, slow and taunt.", 2)]
 public class CleanseEffect : AbilityEffect
 {
+    [Tooltip("Removes stuns, roots, slows, silences and taunts.")]
+    public bool removeControl = true;
+    [Tooltip("Removes timed debuffs (Stat Buff or Debuff effects that are debuffs).")]
+    public bool removeDebuffs = true;
+    [Tooltip("Removes damage-over-time effects (poison, bleeding, burning...).")]
+    public bool removeDamageOverTime = false;
+
     public CleanseEffect()
     {
         onlyAffects = TargetFilter.Self | TargetFilter.Allies;
@@ -233,11 +281,49 @@ public class CleanseEffect : AbilityEffect
 
     public override void Apply(ref EffectContext ctx)
     {
-        if (ctx.target != null)
+        if (ctx.target == null)
+            return;
+        if (removeControl)
             ctx.target.ClearControl();
+        if (removeDebuffs)
+        {
+            TimedStatModifiers t = ctx.target.GetComponent<TimedStatModifiers>();
+            if (t != null)
+                t.RemoveDebuffs();
+        }
+        if (removeDamageOverTime)
+            PeriodicEffectRunner.RemoveHarmful(ctx.target);
     }
 
-    public override string Describe(in AbilityStats s) => "Removes crowd control";
+    public override string Describe(in AbilityStats s)
+    {
+        var parts = new List<string>();
+        if (removeControl) parts.Add("crowd control");
+        if (removeDebuffs) parts.Add("debuffs");
+        if (removeDamageOverTime) parts.Add("damage over time");
+        return parts.Count == 0 ? "Cleanse (nothing selected)" : "Removes " + string.Join(", ", parts);
+    }
+}
+
+/// <summary>Removes the target's timed buffs (dispel / purge on enemies).</summary>
+[Serializable, AbilityMenu("Support/Dispel Buffs", "Removes the hit enemies' timed buffs (Stat Buff or Debuff effects that are buffs).", 5)]
+public class DispelEffect : AbilityEffect
+{
+    public DispelEffect()
+    {
+        onlyAffects = TargetFilter.Enemies;
+    }
+
+    public override bool IsHarmful => true;
+
+    public override void Apply(ref EffectContext ctx)
+    {
+        TimedStatModifiers t = ctx.target != null ? ctx.target.GetComponent<TimedStatModifiers>() : null;
+        if (t != null)
+            t.RemoveBuffs();
+    }
+
+    public override string Describe(in AbilityStats s) => "Removes buffs";
 }
 
 [Serializable, AbilityMenu("Support/Invulnerability", "The target takes no damage for a short time.", 3)]
@@ -651,6 +737,29 @@ public sealed class PeriodicEffectRunner : IAbilityRuntimeObject
                     continue;
                 if (element != ElementType.None && r.element != element)
                     continue;
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /// <summary>Ends every damaging over-time effect on <paramref name="target"/> (cleanse). Returns how many.</summary>
+    public static int RemoveHarmful(CombatEntity target)
+    {
+        if (target == null)
+            return 0;
+        int n = 0;
+        foreach (KeyValuePair<Key, List<PeriodicEffectRunner>> kv in active)
+        {
+            if (!ReferenceEquals(kv.Key.target, target))
+                continue;
+            List<PeriodicEffectRunner> list = kv.Value;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].disposed || list[i].perTick >= 0f || list[i].remaining <= 0f)
+                    continue;
+                list[i].remaining = 0f; // finishes (and is disposed) on its next tick
+                list[i].nextTick = float.MaxValue;
                 n++;
             }
         }

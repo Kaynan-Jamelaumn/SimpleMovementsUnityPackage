@@ -8,12 +8,20 @@ using UnityEngine;
 public class VariationSystem
 {
     private readonly WeaponController controller;
+    private readonly System.Func<WeaponSO> weaponSource;
     private readonly Dictionary<AttackType, VariationState> variationStates = new Dictionary<AttackType, VariationState>();
 
-    public VariationSystem(WeaponController controller)
+    public VariationSystem(WeaponController controller) : this(controller, null) { }
+
+    /// <summary>Chains of the weapon <paramref name="weapon"/> returns (the off hand has its own); null = the main weapon.</summary>
+    public VariationSystem(WeaponController controller, System.Func<WeaponSO> weapon)
     {
         this.controller = controller;
+        weaponSource = weapon;
     }
+
+    /// <summary>The weapon whose chains this state follows.</summary>
+    public WeaponSO Weapon => weaponSource != null ? weaponSource() : controller.EquippedWeapon;
 
     public void Initialize()
     {
@@ -35,7 +43,8 @@ public class VariationSystem
     /// </summary>
     public (AttackAction action, AttackVariation variation) GetAttackActionWithVariation(AttackType attackType)
     {
-        AttackAction baseAction = controller.EquippedWeapon != null ? controller.EquippedWeapon.GetAction(attackType) : null;
+        WeaponSO w = Weapon;
+        AttackAction baseAction = w != null ? w.GetAction(attackType) : null;
         if (baseAction == null) return (null, null);
 
         VariationState state = State(attackType);
@@ -62,7 +71,7 @@ public class VariationSystem
 
     public void UpdateVariationTimers()
     {
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = Weapon;
         foreach (var kvp in variationStates)
         {
             var state = kvp.Value;
@@ -77,14 +86,14 @@ public class VariationSystem
 
     public bool IsInVariantWindow(AttackType attackType)
     {
-        var action = controller.EquippedWeapon?.GetAction(attackType);
+        var action = Weapon?.GetAction(attackType);
         return action != null && variationStates.TryGetValue(attackType, out var s) && s.IsWithinVariantTime(action.variantTime);
     }
 
     /// <summary>The variation the next press plays (null = the base action).</summary>
     public AttackVariation GetCurrentVariation(AttackType attackType)
     {
-        var action = controller.EquippedWeapon?.GetAction(attackType);
+        var action = Weapon?.GetAction(attackType);
         int step = GetCurrentVariationIndex(attackType);
         return action == null || step <= 0 || step > action.GetVariationCount() ? null : action.variations[step - 1];
     }

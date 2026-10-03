@@ -13,9 +13,10 @@ their attacks, and the equipment layer that turns worn/held items into stats, tr
 | [04 — Armor & Armor Sets](04-Armor-and-Sets.md) | `ArmorSO`, `ArmorSet` tiers (2/4, 3/4, 4/4), upgrade groups, `ArmorSetManager` |
 | [05 — Weapons & Attacks](05-Weapons-and-Attacks.md) | `WeaponSO`, attacks, chains, charge/hold, alternate attacks, behaviours, combos, the runtime |
 | [06 — Editor Tools](06-Editor-Tools.md) | Inspectors, validation, UI Builder, Armor Set Wizard, weapon templates, tests |
-| [07 — Changes & Migration](07-Changes-and-Migration.md) | Bugs fixed, behaviour changes, removed/renamed files, how to upgrade existing assets |
 | [08 — Setup Guide](08-Setup-Guide.md) | **Step by step**: the inventory on the player, any item, consumables, armor, armor sets, weapons (templates, hit detection, a hammer with a ground slam) |
 | [09 — Teams, Factions & Targeting](09-Teams-Factions-and-Targeting.md) | Layers vs relations vs filters, teams, factions, parties, friendly fire, recipes, multiplayer |
+| [10 — Hands, Shields, Ranged & Body Parts](10-Hands-Shields-Ranged-and-Body-Parts.md) | One/two-handed and dual-wielded weapons, body-part damage, shield blocking and parries, bows / crossbows / firearms / throwing and ammo, equipment visuals, consumable quickslots, controls |
+| [11 — Grid Inventory](11-Grid-Inventory.md) | The optional grid mode: settings, item sizes, rotation, drag and drop, switching modes, limitations |
 
 ## Five-minute setup
 
@@ -25,9 +26,9 @@ their attacks, and the equipment layer that turns worn/held items into stats, tr
    prompt - with the slot and item prefabs, and wires every reference ([06 §3a](06-Editor-Tools.md)). The inventory
    inspector's **Build / Repair UI Now** does the same on demand; **UI Builder…** lets you choose sizes and slots.
 3. The `InventoryManager` inspector now shows no problems; any that remain have a **Fix** button.
-4. Create items with **Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ …**. For a weapon, start from
-   **Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ Weapon From Template ▸ Sword** (or any other template) and adjust it.
-5. Create an armor set with **Tools ▸ Inventory ▸ Armor Set Wizard**, then fill in its bonus tiers.
+4. Create items with **Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ …**. For a weapon, start from
+   **Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Weapon From Template ▸ Sword** (or any other template) and adjust it.
+5. Create an armor set with **Tools ▸ SimpleMovements ▸ Inventory ▸ Armor Set Wizard**, then fill in its bonus tiers.
 6. Press Play. In the `InventoryManager` inspector's **Live (Play Mode)** section, give yourself items and watch the equipment,
    stats and set bonuses update.
 

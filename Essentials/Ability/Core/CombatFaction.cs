@@ -14,7 +14,7 @@ public enum FactionStance
 /// (or Mob). Factions decide who is an ally, an enemy or neutral; they have nothing to do with physics Layers.
 /// Relations are symmetric: listing Bandits as an enemy of Kingdom makes Kingdom an enemy of Bandits too.
 /// </summary>
-[CreateAssetMenu(fileName = "Faction", menuName = "Scriptable Objects/Combat/Faction")]
+[CreateAssetMenu(fileName = "Faction", menuName = "SimpleMovements/Combat/Faction")]
 public class CombatFaction : ScriptableObject
 {
     [Tooltip("Name shown in tooltips and debug output. Empty = the asset name.")]

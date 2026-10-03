@@ -142,7 +142,7 @@ public class ConsumableEffect
     }
 }
 
-[CreateAssetMenu(fileName = "Consumable", menuName = "Scriptable Objects/Item/Consumable")]
+[CreateAssetMenu(fileName = "Consumable", menuName = "SimpleMovements/Items/Consumable", order = 4)]
 public class ConsumableSO : ItemSO
 {
     [Header("Consumable Effects")]
@@ -161,6 +161,9 @@ public class ConsumableSO : ItemSO
     public float effectDelay = 0f;
 
     public List<ConsumableEffect> Effects => effects;
+
+    /// <summary>Potions, food and buffs can be used from quickslots.</summary>
+    public override bool CanUseFromQuickSlot => true;
 
     private static readonly Dictionary<ConsumableEffectType, Func<PlayerStatusController, bool>> StatusManagerChecks =
         new Dictionary<ConsumableEffectType, Func<PlayerStatusController, bool>>

@@ -36,7 +36,7 @@ flowchart LR
 
 ## Five-minute mob
 
-1. *Tools ▸ Mob Setup ▸ Create New Mob* (or right-click a model in the Hierarchy ▸ *Mob Setup ▸ Quick Setup Mob*).
+1. *Tools ▸ SimpleMovements ▸ Mobs ▸ Create New Mob* (or right-click a model in the Hierarchy ▸ *SimpleMovements ▸ Quick Setup Mob*).
 2. Put your model under **Model / VisualModel** and assign its **Animator Controller**.
 3. On the mob: set **Type** (e.g. `Wolf`) and **Preys** (`Player` to attack players).
 4. Assign a **Mob Profile** — *Create From Preset ▾* in the mob's inspector (Predator, Brute, Archer, Prey Animal…).

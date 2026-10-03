@@ -7,8 +7,13 @@ using UnityEngine;
 /// charges it while the input is held, then plays its timeline - startup, active (hits), recovery - and lets a
 /// buffered next attack cancel the recovery from the attack's Cancel Point. Speed, cost and damage follow the weapon,
 /// the attack, the combo, the charge, the wielder's traits and <see cref="CombatStats"/>. Hits go through the combat
-/// system (<see cref="CombatEntity.ApplyDamage"/>), so defense, resistances, aggro, kill credit and every on-hit
-/// reaction see them. Nothing in the weapon assets is ever modified.
+/// system (<see cref="CombatEntity.ApplyDamage"/>), so defense, resistances, body parts, blocks, aggro, kill credit and
+/// every on-hit reaction see them. Nothing in the weapon assets is ever modified.
+/// <para>
+/// Each attack belongs to a hand (<see cref="WeaponHand"/>): the main hand, or the off hand while dual wielding
+/// (<see cref="AttackType.OffHand"/>), with its own chains and combos. Ranged weapons fire their projectiles when the
+/// attack strikes (<see cref="RangedMechanic"/>): the draw of a bow is the attack's charge.
+/// </para>
 /// </summary>
 public class AttackExecutor
 {
@@ -19,12 +24,30 @@ public class AttackExecutor
         public AttackComponent component;
         public AttackAction action;
         public AttackVariation variation;
+        /// <summary>The input pressed (OffHand for the off-hand input).</summary>
         public AttackType input;
+        /// <summary>The input of the hand's own weapon the attack was chosen for (chains, the hand's combos).</summary>
+        public AttackType handInput;
         public ComboSystem.ComboChoice choice;
         public GameObject player;
         public TraitManager traits;
         public CombatStats stats;
         public bool enhanced;
+        // The hand attacking
+        public WeaponHand hand;
+        public WeaponSO weapon;
+        public InventoryItem item;
+        public Transform socket;
+        public ComboSystem combo;
+        public VariationSystem variations;
+        public bool offHandWeaponRun;
+        public ChargeSettings charge;
+        // Ranged
+        public RangedMechanic ranged;
+        public AmmoSO ammo;
+        public bool pendingThrow;
+        public float projectileFraction = 1f;
+        // Timeline
         public float speed = 1f;
         public float startup, active, recovery;
         public float phaseTime;
@@ -40,6 +63,7 @@ public class AttackExecutor
         public HitSettings onHit;
         public AbilityModifierSet onHitModifiers;
         public bool harmful;
+        public DamageDelivery delivery = DamageDelivery.Melee;
         // Weapon Blade: the held model, its markers, and last frame's blade (the sweep starts there)
         public Transform bladeModel;
         public readonly List<VolumeRun> volumes = new List<VolumeRun>(2);
@@ -53,6 +77,18 @@ public class AttackExecutor
         public bool moveApplied;
         public float previousCastMove = 1f;
         public float speedDelta;
+
+        /// <summary>A copy carried by a projectile: the attack's numbers and effects, its own hit records.</summary>
+        public Running CloneForProjectile(float fraction)
+        {
+            var c = (Running)MemberwiseClone();
+            c.projectileFraction = fraction;
+            c.delivery = DamageDelivery.Projectile;
+            c.moveApplied = false;
+            c.chargeVfx = null;
+            c.pendingThrow = false;
+            return c;
+        }
     }
 
     /// <summary>One hit volume during an attack: its markers on the held model and last frame's pose (the sweep starts there).</summary>
@@ -76,7 +112,6 @@ public class AttackExecutor
 
     // Dependencies
     private ComboSystem comboSystem;
-    private VariationSystem variationSystem;
     private InputBufferSystem inputBufferSystem;
     private AttackAnimationHandler animationHandler;
     private WeaponEffectsManager effectsManager;
@@ -90,8 +125,7 @@ public class AttackExecutor
         InputBufferSystem inputBufferSystem, AttackAnimationHandler animationHandler,
         WeaponEffectsManager effectsManager)
     {
-        this.comboSystem = comboSystem;
-        this.variationSystem = variationSystem;
+        this.comboSystem = comboSystem; // the main hand's (each attack uses its own hand's chains and combos)
         this.inputBufferSystem = inputBufferSystem;
         this.animationHandler = animationHandler;
         this.effectsManager = effectsManager;
@@ -105,8 +139,10 @@ public class AttackExecutor
     public AttackVariation CurrentAttackVariation => run?.variation;
     public IAttackComponent CurrentAttackComponent => run?.component;
     public AttackType? CurrentInput => run != null ? run.input : (AttackType?)null;
+    /// <summary>The hand of the attack running (null when idle).</summary>
+    public WeaponHand CurrentHand => run?.hand;
     /// <summary>Charge (0-1) of the attack being charged or performed.</summary>
-    public float ChargeRatio => run == null ? 0f : phase == Phase.Charging ? run.component.charge.Ratio(run.chargeHeld) : run.chargeRatio;
+    public float ChargeRatio => run == null ? 0f : phase == Phase.Charging ? run.charge.Ratio(run.chargeHeld) : run.chargeRatio;
     /// <summary>Seconds the current charge has been held.</summary>
     public float ChargeHeldTime => run != null && phase == Phase.Charging ? run.chargeHeld : 0f;
 
@@ -126,13 +162,16 @@ public class AttackExecutor
     public void PerformAttack(GameObject player, AttackType attackType) => BeginInput(player, attackType, false, true);
 
     /// <summary>
-    /// The input of <paramref name="attackType"/> was pressed. Starts the attack (or its charge) now, or buffers it
-    /// while the current attack cannot be cancelled yet. Returns true if something started.
+    /// The input of <paramref name="attackType"/> was pressed (<see cref="AttackType.OffHand"/> = the off-hand weapon).
+    /// Starts the attack (or its charge) now, or buffers it while the current attack cannot be cancelled yet. Returns
+    /// true if something started.
     /// </summary>
     public bool BeginInput(GameObject player, AttackType attackType, bool fromBuffer = false, bool alreadyReleased = false)
     {
-        WeaponSO weapon = controller.EquippedWeapon;
-        if (weapon == null)
+        bool offPress = attackType == AttackType.OffHand;
+        WeaponHand mainHand = controller.MainHand;
+        WeaponHand offHand = controller.OffHand;
+        if (offPress ? offHand.Weapon == null && mainHand.Weapon == null : mainHand.Weapon == null)
             return false;
         if (player == null)
             player = controller.PlayerObject;
@@ -151,17 +190,48 @@ public class AttackExecutor
             return false;
         }
 
-        // Pick the attack.
-        ComboSystem.ComboChoice choice = comboSystem.Choose(player, attackType);
-        AttackAction action;
+        // Pick the hand and the attack.
+        WeaponHand hand = offPress ? offHand : mainHand;
+        AttackType handInput = attackType;
+        ComboSystem.ComboChoice choice = default;
+        AttackAction action = null;
         AttackVariation variation = null;
-        if (choice.IsValid)
-            action = choice.action;
-        else
-            (action, variation) = variationSystem.GetAttackActionWithVariation(attackType);
-        if (action == null)
+        bool offWeaponRun = false;
+        if (!offPress)
         {
-            controller.LogDebug($"The weapon has no {attackType} attack.");
+            choice = mainHand.Combo.Choose(player, attackType);
+            if (choice.IsValid) action = choice.action;
+            else (action, variation) = mainHand.Variations.GetAttackActionWithVariation(attackType);
+        }
+        else
+        {
+            // 1) A combo of the main weapon that ends with the off-hand input (left-right combos).
+            if (mainHand.Weapon != null)
+            {
+                ComboSystem.ComboChoice mixed = mainHand.Combo.Choose(player, AttackType.OffHand);
+                if (mixed.IsValid)
+                {
+                    choice = mixed;
+                    action = mixed.action;
+                    hand = mainHand;
+                }
+            }
+            // 2) The off-hand weapon's own attack, with its own chain and combos.
+            if (action == null && offHand.Weapon != null)
+            {
+                hand = offHand;
+                offWeaponRun = true;
+                handInput = offHand.Weapon.Handling.offHandAttack == AttackType.OffHand ? AttackType.Normal : offHand.Weapon.Handling.offHandAttack;
+                using (controller.ConditionsFor(offHand))
+                    choice = offHand.Combo.Choose(player, handInput);
+                if (choice.IsValid) action = choice.action;
+                else (action, variation) = offHand.Variations.GetAttackActionWithVariation(handInput);
+            }
+        }
+        WeaponSO weapon = hand.Weapon;
+        if (action == null || weapon == null)
+        {
+            controller.LogDebug(offPress ? "No off-hand attack (no off-hand weapon, or it has no attack for its Off Hand Attack)." : $"The weapon has no {attackType} attack.");
             return false;
         }
 
@@ -179,12 +249,30 @@ public class AttackExecutor
             action = action,
             variation = variation,
             input = attackType,
+            handInput = handInput,
             choice = choice,
             player = player,
             traits = traits,
             stats = controller.Stats,
             enhanced = action.HasEnhancementTrait(traits, weapon, out _),
+            hand = hand,
+            weapon = weapon,
+            item = hand.Item,
+            socket = controller.SocketFor(hand.Side),
+            combo = hand.Combo,
+            variations = hand.Variations,
+            offHandWeaponRun = offWeaponRun,
         };
+
+        // Ranged: does this attack fire, and can it (ammo, magazine, reload, fire interval)?
+        RangedMechanic ranged = weapon.Ranged;
+        if (ranged != null && ranged.Fires(action.actionType))
+        {
+            r.ranged = ranged;
+            if (!CanFire(r, ranged))
+                return false;
+        }
+        r.charge = (r.ranged != null ? r.ranged.OverrideCharge(component.charge) : null) ?? component.charge;
 
         float cost = StaminaCost(r, weapon);
         if (!controller.HasStamina(cost))
@@ -193,7 +281,7 @@ public class AttackExecutor
             controller.RaiseAttackFailed(attackType, "stamina");
             return false;
         }
-        if (controller.IsHeldItemBroken)
+        if (WeaponController.IsBroken(r.item, weapon))
         {
             controller.LogDebug("The weapon is broken (durability 0).");
             controller.RaiseAttackFailed(attackType, "broken");
@@ -204,7 +292,7 @@ public class AttackExecutor
         if (phase == Phase.Recovery)
             End(false);
 
-        ChargeSettings charge = component.charge;
+        ChargeSettings charge = r.charge;
         if (charge != null && charge.enabled)
         {
             if (alreadyReleased)
@@ -219,6 +307,59 @@ public class AttackExecutor
             return true;
         }
         Start(r, 0f);
+        return true;
+    }
+
+    /// <summary>Ammo, magazine, reload and fire interval of a firing attack. False = it cannot fire now (feedback given).</summary>
+    private bool CanFire(Running r, RangedMechanic m)
+    {
+        WeaponHand h = r.hand;
+        if (Time.time < h.nextFireTime)
+            return false;
+        if (h.reloading)
+        {
+            if (m is MagazineMechanic one && one.reloadOneAtATime && h.Loaded > 0)
+                controller.CancelReload(h); // firing interrupts a shell-by-shell reload
+            else
+            {
+                controller.RaiseAttackFailed(r.input, "reloading");
+                return false;
+            }
+        }
+        if (m.UsesMagazine)
+        {
+            if (h.Loaded < 1)
+            {
+                if (m is MagazineMechanic mag && mag.autoReloadWhenEmpty && controller.TryStartReload(h))
+                {
+                    controller.RaiseAttackFailed(r.input, "reloading");
+                    return false;
+                }
+                controller.PlaySound(m.emptySound);
+                controller.RaiseAttackFailed(r.input, "empty");
+                return false;
+            }
+            r.ammo = h.loadedAmmo;
+            return true;
+        }
+        if (m.ammo != null && m.ammo.Needed)
+        {
+            int have = controller.CountAmmo(m.ammo, h.loadedAmmo, out AmmoSO best);
+            if (have < m.ammo.perShot)
+            {
+                controller.PlaySound(m.emptySound);
+                controller.RaiseAttackFailed(r.input, "ammo");
+                return false;
+            }
+            r.ammo = best;
+            h.loadedAmmo = best;
+        }
+        if (!controller.CanPayShotCosts(m, out string missing))
+        {
+            controller.PlaySound(m.emptySound);
+            controller.RaiseAttackFailed(r.input, missing);
+            return false;
+        }
         return true;
     }
 
@@ -249,10 +390,12 @@ public class AttackExecutor
         phase = Phase.Charging;
         r.chargeHeld = 0f;
         r.ctx = BuildContext(r);
-        ApplyMovement(r, r.component.charge.moveSpeedWhileCharging, false);
-        animationHandler.PlayChargeAnimation(r.component.charge.chargeAnimation);
-        if (r.component.charge.chargingVfx != null && controller.HandTransform != null)
-            r.chargeVfx = UnityEngine.Object.Instantiate(r.component.charge.chargingVfx, controller.HandTransform, false);
+        ApplyMovement(r, r.charge.moveSpeedWhileCharging, false);
+        animationHandler.PlayChargeAnimation(r.charge.chargeAnimation);
+        if (r.charge.chargingVfx != null && r.socket != null)
+            r.chargeVfx = UnityEngine.Object.Instantiate(r.charge.chargingVfx, r.socket, false);
+        if (r.ranged is DrawMechanic draw)
+            controller.PlaySound(draw.drawSound);
         RunBehaviours(r, AttackMoment.ChargeStart);
         controller.LogDebug($"Charging {r.component.DisplayName}");
     }
@@ -260,7 +403,7 @@ public class AttackExecutor
     private void ReleaseCharge()
     {
         Running r = run;
-        ChargeSettings charge = r.component.charge;
+        ChargeSettings charge = r.charge;
         float ratio = charge.Ratio(r.chargeHeld);
         bool early = r.chargeHeld < charge.minChargeTime;
         StopChargeVisuals(r);
@@ -290,6 +433,7 @@ public class AttackExecutor
         cost = weapon.CalculateTraitModifiedStaminaCost(cost);
         if (r.enhanced) cost *= r.action.EnhancedStaminaCostMultiplier;
         if (r.stats != null) cost *= r.stats.AttackStaminaMultiplier(weapon.Category);
+        if (r.offHandWeaponRun) cost *= Mathf.Max(0f, weapon.Handling.offHandStaminaMultiplier);
         return Mathf.Max(0f, cost);
     }
 
@@ -298,52 +442,44 @@ public class AttackExecutor
         var ctx = new AttackContext
         {
             Controller = controller,
-            Weapon = controller.EquippedWeapon,
+            Weapon = r.weapon,
             Attack = r.component,
             Input = r.input,
             Attacker = controller.Entity,
             AttackerObject = r.player != null ? r.player : controller.PlayerObject,
-            Hand = controller.HandTransform,
+            Hand = r.socket,
         };
-        ctx.DealWeaponDamage = (target, fraction) => DealWeaponDamage(r, target, fraction, target != null ? target.Center : Vector3.zero, false);
+        ctx.DealWeaponDamage = (target, fraction) => DealWeaponDamage(r, target, fraction, target != null ? target.Center : Vector3.zero, false, null);
         return ctx;
     }
 
     private void Start(Running r, float chargeRatio)
     {
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = r.weapon;
         run = r;
         r.chargeRatio = chargeRatio;
         if (r.ctx == null)
             r.ctx = BuildContext(r);
 
+        // The weapon goes to the hand (sheathed weapons are drawn) before its model is measured.
+        controller.DrawWeapons();
+
         // Cost and wear
         controller.ConsumeStamina(StaminaCost(r, weapon));
-        controller.ConsumeDurability();
+        controller.ConsumeDurability(r.item, weapon);
 
-        // Combo and chain bookkeeping
-        comboSystem.RegisterAttack(r.player, r.input, r.choice);
+        // Combo and chain bookkeeping (of the hand attacking; an off-hand attack also counts in the main combo string)
+        r.combo.RegisterAttack(r.player, r.offHandWeaponRun ? r.handInput : r.input, r.choice);
         if (!r.choice.IsValid)
-            variationSystem.UpdateVariationState(r.input, r.action);
+            r.variations.UpdateVariationState(r.offHandWeaponRun ? r.handInput : r.input, r.action);
+        if (r.offHandWeaponRun && controller.MainHand.Weapon != null)
+            controller.MainHand.Combo.RegisterAttack(r.player, AttackType.OffHand, default);
 
         // Numbers
         AttackComponent c = r.component;
-        ChargeSettings charge = c.charge;
+        ChargeSettings charge = r.charge;
         bool charged = charge != null && charge.enabled;
-        float damage = c.damageMultiplier * r.choice.damageMultiplier * comboSystem.GetCurrentComboDamageMultiplier();
-        if (charged) damage *= charge.DamageMultiplier(chargeRatio);
-        if (r.enhanced) damage *= r.action.EnhancedDamageMultiplier;
-        r.numbers = new WeaponHitResolver.AttackNumbers
-        {
-            damageMultiplier = damage,
-            critChanceBonus = c.criticalChanceBonus + r.choice.critChanceBonus + (r.stats != null ? r.stats.CritChanceBonus(weapon.Category) : 0f),
-            critDamageBonus = r.stats != null ? r.stats.CritDamageBonus(weapon.Category) : 0f,
-            element = c.elementOverride != ElementType.None ? c.elementOverride : weapon.ElementType,
-            damageType = c.damageType,
-        };
-        r.ctx.ChargeRatio = chargeRatio;
-        r.ctx.DamageMultiplier = damage;
-        r.ctx.AreaMultiplier = charged ? charge.AreaMultiplier(chargeRatio) : 1f;
+        float damage = ComputeNumbers(r, chargeRatio);
 
         // Speed and timeline
         float speed = Mathf.Max(0.05f, c.animationSpeed) * weapon.AttackSpeedMultiplier * LegacySpeedMultiplier(r, weapon);
@@ -363,9 +499,9 @@ public class AttackExecutor
 
         // Harmful attacks (damage, knockback, harmful effects) are the ones friendly fire can turn on friends.
         r.harmful = (c.DealsWeaponDamage && weapon.MaxDamage > 0f) || c.EffectsDealDamage() || c.knockbackMultiplier * weapon.KnockBack > 0.01f ||
-                    HasHarmful(c.onHitEffects);
+                    HasHarmful(c.onHitEffects) || r.ranged != null;
         // Weapon Blade: the held model and the hit volumes this attack uses (and the one that touches the ground)
-        r.bladeModel = controller.HeldModel;
+        r.bladeModel = controller.HeldModelFor(r.hand.Side);
         r.volumes.Clear();
         r.contact = null;
         weapon.ActiveVolumes(c, volumeBuffer);
@@ -378,27 +514,126 @@ public class AttackExecutor
                 : r.volumes.Count > 0 ? r.volumes[0] : MakeRun(r, weapon.Blade);
         }
 
-        if (c.onHitEffects != null && c.onHitEffects.Count > 0)
-        {
-            r.onHit = new HitSettings { filter = TargetFilter.All, blockedByObstacles = false, effects = c.onHitEffects, rules = c.targetRules };
-            r.onHitModifiers = new AbilityModifierSet { label = "Weapon attack", damageMultiplier = damage, areaMultiplier = r.ctx.AreaMultiplier };
-        }
+        SetupOnHit(r, damage);
 
         phase = Phase.Startup;
         float total = r.startup + r.active + r.recovery;
-        animationHandler.TriggerAttackAnimation(c, r.input, total, r.speed);
-        effectsManager.StartTrail(c);
+        animationHandler.TriggerAttackAnimation(c, r.input, total, r.speed, weapon);
+        effectsManager.StartTrail(c, r.socket);
         ApplyMovement(r, c.LockMovement ? 0f : c.MovementSpeedMultiplier, true);
         ApplyForwardMovement(r);
-        if (c.hitDetection != HitDetectionMode.None && controller.Entity != null)
+        if (c.hitDetection != HitDetectionMode.None && r.ranged == null && controller.Entity != null)
             CombatEvents.RaiseMeleeSwing(controller.Entity);
 
-        controller.LogDebug($"Attack {c.DisplayName} ({r.input}) speed x{r.speed:0.##}, damage x{damage:0.##}{(charged ? $", charge {chargeRatio:P0}" : "")}");
+        controller.LogDebug($"Attack {c.DisplayName} ({r.input}{(r.hand.IsMain ? "" : ", off hand")}) speed x{r.speed:0.##}, damage x{damage:0.##}{(charged ? $", charge {chargeRatio:P0}" : "")}");
         RunBehaviours(r, AttackMoment.Start);
         controller.RaiseAttackStarted(r.input, c);
 
         if (r.startup <= 0f)
             EnterActive(r);
+    }
+
+    /// <summary>The attack's numbers (combo, charge, enhancement, off hand, stats). Returns the damage multiplier.</summary>
+    private float ComputeNumbers(Running r, float chargeRatio)
+    {
+        WeaponSO weapon = r.weapon;
+        AttackComponent c = r.component;
+        ChargeSettings charge = r.charge;
+        bool charged = charge != null && charge.enabled;
+        float damage = c.damageMultiplier * (r.choice.IsValid ? r.choice.damageMultiplier : 1f) * (r.combo != null ? r.combo.GetCurrentComboDamageMultiplier() : 1f);
+        if (charged) damage *= charge.DamageMultiplier(chargeRatio);
+        if (r.enhanced) damage *= r.action.EnhancedDamageMultiplier;
+        if (r.offHandWeaponRun) damage *= Mathf.Max(0f, weapon.Handling.offHandDamageMultiplier);
+        r.numbers = new WeaponHitResolver.AttackNumbers
+        {
+            damageMultiplier = damage,
+            critChanceBonus = c.criticalChanceBonus + r.choice.critChanceBonus + (r.stats != null ? r.stats.CritChanceBonus(weapon.Category) : 0f),
+            critDamageBonus = r.stats != null ? r.stats.CritDamageBonus(weapon.Category) : 0f,
+            element = c.elementOverride != ElementType.None ? c.elementOverride : weapon.ElementType,
+            damageType = c.damageType,
+        };
+        r.ctx.ChargeRatio = chargeRatio;
+        r.ctx.DamageMultiplier = damage;
+        r.ctx.AreaMultiplier = charged ? charge.AreaMultiplier(chargeRatio) : 1f;
+        return damage;
+    }
+
+    /// <summary>The attack's on-hit effects (with the ammo's).</summary>
+    private static void SetupOnHit(Running r, float damage)
+    {
+        AttackComponent c = r.component;
+        List<AbilityEffect> hitEffects = c.onHitEffects;
+        if (r.ranged != null && r.ammo != null && r.ammo.OnHitEffects.Count > 0)
+        {
+            hitEffects = new List<AbilityEffect>(c.onHitEffects ?? new List<AbilityEffect>());
+            hitEffects.AddRange(r.ammo.OnHitEffects);
+        }
+        if (hitEffects != null && hitEffects.Count > 0)
+        {
+            r.onHit = new HitSettings { filter = TargetFilter.All, blockedByObstacles = false, effects = hitEffects, rules = c.targetRules };
+            r.onHitModifiers = new AbilityModifierSet { label = "Weapon attack", damageMultiplier = damage, areaMultiplier = r.ctx.AreaMultiplier };
+        }
+    }
+
+    /// <summary>
+    /// Throws one <paramref name="weapon"/> (a throwable in a quickslot) right away, from the weapon hand, without changing
+    /// the weapon held or running an attack timeline: its Normal attack's numbers and on-hit effects, a medium throw.
+    /// The unit thrown leaves <paramref name="item"/>'s stack. Returns false when it cannot be thrown now.
+    /// </summary>
+    public bool QuickFire(WeaponSO weapon, InventoryItem item)
+    {
+        if (weapon == null || weapon.Ranged == null || !controller.CanActNow() || phase == Phase.Charging)
+            return false;
+        AttackAction action = weapon.GetAction(AttackType.Normal);
+        if (action == null)
+            return false;
+        RangedMechanic m = weapon.Ranged;
+        var hand = new WeaponHand(WeaponHandSide.Main) { Weapon = weapon, Item = item, Combo = controller.MainHand.Combo, Variations = controller.MainHand.Variations };
+        var r = new Running
+        {
+            component = action,
+            action = action,
+            input = AttackType.Normal,
+            handInput = AttackType.Normal,
+            choice = new ComboSystem.ComboChoice { damageMultiplier = 1f },
+            player = controller.PlayerObject,
+            traits = controller.Traits,
+            stats = controller.Stats,
+            hand = hand,
+            weapon = weapon,
+            item = item,
+            socket = controller.HandTransform,
+            combo = controller.MainHand.Combo,
+            variations = controller.MainHand.Variations,
+            ranged = m,
+        };
+        if (!CanFire(r, m))
+            return false;
+        r.charge = m.OverrideCharge(action.charge) ?? action.charge;
+        float stamina = StaminaCost(r, weapon);
+        if (!controller.HasStamina(stamina))
+        {
+            controller.RaiseAttackFailed(AttackType.Normal, "stamina");
+            return false;
+        }
+        controller.ConsumeStamina(stamina);
+        r.ctx = BuildContext(r);
+        r.chargeHeld = m is ThrowMechanic th ? th.fullThrowTime * 0.6f : 0f;
+        float damage = ComputeNumbers(r, r.charge != null && r.charge.enabled ? r.charge.Ratio(r.chargeHeld) : 0f);
+        r.classicEffects.AddRange(action.Effects);
+        weapon.CollectSpecialTraitEffects(r.classicEffects);
+        r.harmful = true;
+        SetupOnHit(r, damage);
+        controller.DrawWeapons();
+        if (phase == Phase.Idle)
+            animationHandler.TriggerAttackAnimation(action, AttackType.Normal, Mathf.Max(0.1f, action.GetTotalDuration()), 1f, weapon);
+        FireRanged(r);
+        if (r.pendingThrow)
+        {
+            r.pendingThrow = false;
+            controller.SpendThrownItem(item);
+        }
+        return true;
     }
 
     /// <summary>Old string trait effects of the wielder that change stamina costs ("staminacost" consumption rates).</summary>
@@ -443,12 +678,12 @@ public class AttackExecutor
     {
         if (run == null || phase == Phase.Idle)
             return;
-        if (controller.EquippedWeapon == null)
+        Running r = run;
+        if (r.weapon == null || r.hand.Weapon != r.weapon)
         {
-            Cancel();
+            Cancel(); // the weapon left the hand
             return;
         }
-        Running r = run;
         switch (phase)
         {
             case Phase.Charging:
@@ -483,8 +718,16 @@ public class AttackExecutor
 
     private void TickCharge(Running r, float dt)
     {
-        ChargeSettings charge = r.component.charge;
-        r.chargeHeld += dt;
+        ChargeSettings charge = r.charge;
+        // Charge Speed (per weapon category) for every charge; Draw Speed too for bows / crossbows / thrown weapons.
+        float chargeRate = 1f;
+        if (r.stats != null && r.weapon != null)
+        {
+            chargeRate = r.stats.ChargeSpeedMultiplier(r.weapon.Category);
+            if (r.ranged != null)
+                chargeRate *= r.stats.DrawSpeedMultiplier;
+        }
+        r.chargeHeld += dt * chargeRate;
         if (charge.staminaPerSecond > 0f)
         {
             float drain = charge.staminaPerSecond * dt;
@@ -499,7 +742,7 @@ public class AttackExecutor
         {
             r.fullChargeFired = true;
             if (charge.fullChargeVfx != null)
-                AbilityPool.PlayVfx(charge.fullChargeVfx, controller.HandTransform != null ? controller.HandTransform.position : r.ctx.Origin + Vector3.up, Quaternion.identity, 0f, 1f, controller.HandTransform);
+                AbilityPool.PlayVfx(charge.fullChargeVfx, r.socket != null ? r.socket.position : r.ctx.Origin + Vector3.up, Quaternion.identity, 0f, 1f, r.socket);
             controller.PlaySound(charge.fullChargeSound);
             r.ctx.ChargeRatio = 1f;
             RunBehaviours(r, AttackMoment.FullCharge);
@@ -512,6 +755,10 @@ public class AttackExecutor
     {
         phase = Phase.Active;
         r.phaseTime = 0f;
+        if (r.ranged != null)
+            FireRanged(r);
+        if (run != r)
+            return;
         RunBehaviours(r, AttackMoment.ActiveStart);
         DetectHits(r); // a zero-length active phase still hits once
         if (run == r && phase == Phase.Active && r.component.impact != null && r.component.impact.enabled &&
@@ -526,6 +773,125 @@ public class AttackExecutor
         }
     }
 
+    // ------------------------------------------------------------------ ranged
+    /// <summary>Fires the attack's projectiles: draw / charge → strength, the crosshair → direction, ammo and magazine spent.</summary>
+    private void FireRanged(Running r)
+    {
+        RangedMechanic m = r.ranged;
+        WeaponHand h = r.hand;
+        RangedShot shot = m.Shot(new RangedShotInput { heldSeconds = r.chargeHeld, chargeRatio = r.chargeRatio, bloom = h.bloom });
+
+        // Spend
+        if (m.UsesMagazine)
+            h.Loaded = Mathf.Max(0, h.Loaded - 1);
+        else if (m.ammo != null && m.ammo.Needed && r.ammo != null)
+            controller.SpendAmmo(r.ammo, m.ammo.perShot);
+        if (shot.stamina > 0f)
+            controller.ConsumeStamina(shot.stamina);
+        controller.PayShotCosts(m);
+        if (m.ConsumesWeaponItem)
+            r.pendingThrow = true; // spent when the throw ends (the hand keeps the model until then)
+        h.nextFireTime = Time.time + m.FireInterval;
+        if (m is MagazineMechanic mag)
+            h.bloom = Mathf.Min(mag.maxBloom, h.bloom + mag.bloomPerShot);
+
+        // Where from, where to
+        Transform model = r.bladeModel != null ? r.bladeModel : controller.HeldModelFor(h.Side);
+        Transform muzzle = model != null ? WeaponBlade.FindMarker(model, m.muzzleMarker) : null;
+        Vector3 from = muzzle != null ? muzzle.position : model != null ? model.position : r.socket != null ? r.socket.position : r.ctx.Origin + Vector3.up * 1.4f;
+        Vector3 aimPoint = controller.AimPoint(from, m.aimDistance, m.aimAtCrosshair);
+        Vector3 baseDir = aimPoint - from;
+        if (baseDir.sqrMagnitude < 1e-4f)
+            baseDir = r.ctx.Forward;
+        baseDir.Normalize();
+        if (shot.loft > 0f)
+        {
+            Vector3 right = Vector3.Cross(Vector3.up, baseDir);
+            if (right.sqrMagnitude > 1e-6f)
+                baseDir = Quaternion.AngleAxis(-shot.loft, right.normalized) * baseDir;
+        }
+
+        // The shot's strength rides on the numbers (draw, ammo).
+        float ammoMultiplier = r.ammo != null ? r.ammo.DamageMultiplier : 1f;
+        r.numbers.damageMultiplier *= Mathf.Max(0f, shot.damageMultiplier) * ammoMultiplier;
+        if (r.ammo != null && r.ammo.Element != ElementType.None)
+            r.numbers.element = r.ammo.Element;
+        r.ctx.DamageMultiplier = r.numbers.damageMultiplier;
+        if (r.onHitModifiers != null)
+            r.onHitModifiers.damageMultiplier = r.numbers.damageMultiplier;
+
+        ProjectileSettings ps = m.projectile ?? new ProjectileSettings();
+        GameObject prefab = r.ammo != null && r.ammo.ProjectilePrefab != null ? r.ammo.ProjectilePrefab : ps.prefab;
+        if (prefab == null && m.ConsumesWeaponItem)
+            prefab = r.weapon.Visuals.ModelFor(r.weapon);
+        float velocity = Mathf.Max(0.1f, shot.velocity) * (r.ammo != null ? r.ammo.VelocityMultiplier : 1f);
+        ItemSO recoverItem = m.ConsumesWeaponItem ? r.weapon : r.ammo != null && r.ammo.Recoverable ? r.ammo : null;
+        IList<int> recoverDurability = null;
+        if (m.ConsumesWeaponItem && r.item != null && r.item.durability > 0f)
+            recoverDurability = new List<int> { Mathf.RoundToInt(r.item.durability) };
+        CombatEntity shooter = controller.Entity;
+        int count = Mathf.Max(1, shot.projectiles);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 dir = Spread(baseDir, shot.spread);
+            Running shotRun = r.CloneForProjectile(1f);
+            WeaponProjectile.Launch(new WeaponProjectile.LaunchData
+            {
+                prefab = prefab,
+                position = from,
+                velocity = dir * velocity,
+                settings = ps,
+                shooter = shooter,
+                shooterObject = r.ctx.AttackerObject,
+                recoverItem = recoverItem,
+                recoverDurability = recoverDurability,
+                canHit = e => CanProjectileHit(shotRun, e),
+                onHitCharacter = (e, point, d, col, fraction) => ProjectileHit(shotRun, e, point, d, col, fraction),
+                onHitObject = (col, point, d) => TryHitObject(shotRun, col, point),
+            });
+        }
+        if (m.muzzleVfx != null)
+            AbilityPool.PlayVfx(m.muzzleVfx, from, Quaternion.LookRotation(baseDir), 0f);
+        controller.PlaySound(m.fireSound);
+        if (shooter != null)
+            CombatEvents.EmitNoise(from, 18f, shooter, 0.7f);
+        controller.RaiseRangedFired(h.Side, count);
+        controller.LogDebug($"Fired {count} projectile(s) at {velocity:0} m/s, damage x{r.numbers.damageMultiplier:0.##}, spread {shot.spread:0.#}°");
+    }
+
+    private static Vector3 Spread(Vector3 dir, float halfAngle)
+    {
+        if (halfAngle <= 0.01f)
+            return dir;
+        // Uniform-ish inside the cone: a random angle around the axis, a random tilt up to the half angle.
+        Vector3 axis = Vector3.Cross(dir, Vector3.up);
+        if (axis.sqrMagnitude < 1e-6f)
+            axis = Vector3.Cross(dir, Vector3.right);
+        axis.Normalize();
+        float tilt = Mathf.Sqrt(UnityEngine.Random.value) * halfAngle;
+        Vector3 tilted = Quaternion.AngleAxis(tilt, axis) * dir;
+        return Quaternion.AngleAxis(UnityEngine.Random.Range(0f, 360f), dir) * tilted;
+    }
+
+    private bool CanProjectileHit(Running r, CombatEntity target)
+    {
+        CombatEntity attacker = controller.Entity;
+        if (target == null || target == attacker || !target.IsAlive)
+            return false;
+        if (attacker == null)
+            return r.ctx.AttackerObject == null || !target.transform.IsChildOf(r.ctx.AttackerObject.transform);
+        return CombatTargeting.CanHit(r.component.hitFilter, r.component.targetRules, CombatRelations.Get(attacker, target), target, r.harmful);
+    }
+
+    private void ProjectileHit(Running r, CombatEntity target, Vector3 point, Vector3 dir, Collider col, float fraction)
+    {
+        if (target == null || !target.IsAlive)
+            return;
+        r.projectileFraction = fraction;
+        r.ctx.HitCount++;
+        ProcessHit(r, target, point, col, dir);
+    }
+
     // ------------------------------------------------------------------ hits
     private HitDetectionMode ResolveDetection(AttackComponent c, WeaponSO weapon)
     {
@@ -536,46 +902,64 @@ public class AttackExecutor
 
     private void DetectHits(Running r)
     {
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = r.weapon;
         AttackComponent c = r.component;
         switch (ResolveDetection(c, weapon))
         {
             case HitDetectionMode.HitShape:
-            {
-                if (c.hitShape == null) return;
-                Vector3 origin = r.ctx.Origin;
-                Quaternion rot = Quaternion.LookRotation(r.ctx.Forward, Vector3.up);
-                ResolvedShape shape = ResolvedShape.Resolve(c.hitShape, origin, rot, r.ctx.AreaMultiplier);
-                CombatQuery.Overlap(shape, entityBuffer);
-                if (c.maxTargets > 0 && entityBuffer.Count > 1)
-                    CombatQuery.SortByDistance(entityBuffer, origin);
-                for (int i = 0; i < entityBuffer.Count && run == r; i++)
-                    TryHit(r, entityBuffer[i], entityBuffer[i].Center);
-                entityBuffer.Clear();
-                if (run == r)
-                    HitObjectsInShape(r, shape, c.hitShape.Reach(r.ctx.AreaMultiplier));
-                break;
-            }
+                {
+                    if (c.hitShape == null) return;
+                    Vector3 origin = r.ctx.Origin;
+                    Quaternion rot = Quaternion.LookRotation(r.ctx.Forward, Vector3.up);
+                    ResolvedShape shape = ResolvedShape.Resolve(c.hitShape, origin, rot, r.ctx.AreaMultiplier);
+                    CombatQuery.Overlap(shape, entityBuffer);
+                    if (c.maxTargets > 0 && entityBuffer.Count > 1)
+                        CombatQuery.SortByDistance(entityBuffer, origin);
+                    for (int i = 0; i < entityBuffer.Count && run == r; i++)
+                        TryHit(r, entityBuffer[i], StrikePoint(r, entityBuffer[i]), null);
+                    entityBuffer.Clear();
+                    if (run == r)
+                        HitObjectsInShape(r, shape, c.hitShape.Reach(r.ctx.AreaMultiplier));
+                    break;
+                }
             case HitDetectionMode.WeaponBlade:
                 DetectBlade(r, weapon);
                 break;
             case HitDetectionMode.WeaponCast:
-            {
-                if (weapon.attackCast == null) return;
-                Transform from = controller.HandTransform != null ? controller.HandTransform : controller.transform;
-                Collider[] hits = weapon.attackCast.DetectObjects(from);
-                for (int i = 0; i < hits.Length && run == r; i++)
                 {
-                    Collider col = hits[i];
-                    if (col == null || IsOwnCollider(col)) continue;
-                    CombatEntity e = CombatEntity.Resolve(col);
-                    Vector3 point = col.bounds.center;
-                    if (e != null) TryHit(r, e, point);
-                    else TryHitObject(r, col, point);
+                    if (weapon.attackCast == null) return;
+                    Transform from = r.socket != null ? r.socket : controller.transform;
+                    Collider[] hits = weapon.attackCast.DetectObjects(from);
+                    for (int i = 0; i < hits.Length && run == r; i++)
+                    {
+                        Collider col = hits[i];
+                        if (col == null || IsOwnCollider(col)) continue;
+                        CombatEntity e = CombatEntity.Resolve(col);
+                        Vector3 point = col.bounds.center;
+                        if (e != null) TryHit(r, e, point, col);
+                        else TryHitObject(r, col, point);
+                    }
+                    break;
                 }
-                break;
-            }
         }
+    }
+
+    /// <summary>
+    /// Where a shape hit lands on a body: at the height of the weapon hand at that moment of the animation (an overhead
+    /// blow lands high, a sweep low), on the side facing the attacker. Unanimated attacks hit the body's centre.
+    /// </summary>
+    private Vector3 StrikePoint(Running r, CombatEntity e)
+    {
+        if (e == null)
+            return Vector3.zero;
+        if (r.socket == null || r.component.AnimationClip == null)
+            return e.Center;
+        Vector3 basePos = e.BasePosition;
+        float y = Mathf.Clamp(r.socket.position.y, basePos.y + e.Height * 0.05f, basePos.y + e.Height * 0.98f);
+        Vector3 axis = new Vector3(basePos.x, y, basePos.z);
+        Vector3 toward = r.ctx.Origin - axis;
+        toward.y = 0f;
+        return toward.sqrMagnitude > 1e-6f ? axis + toward.normalized * e.Radius : axis;
     }
 
     private bool IsOwnCollider(Collider col)
@@ -603,7 +987,7 @@ public class AttackExecutor
     /// <summary>Where a volume is this frame (false when there is no hand / model).</summary>
     private bool VolumeNow(Running r, VolumeRun vr, out VolumePose pose)
     {
-        Transform model = r.bladeModel != null ? r.bladeModel : controller.HandTransform;
+        Transform model = r.bladeModel != null ? r.bladeModel : r.socket;
         if (model == null || vr == null || vr.volume == null)
         {
             pose = default;
@@ -647,7 +1031,7 @@ public class AttackExecutor
                     Vector3 bottom = e.BasePosition + Vector3.up * e.Radius;
                     Vector3 top = e.BasePosition + Vector3.up * Mathf.Max(e.Radius, e.Height - e.Radius);
                     if (vol.Touches(p, scale, bottom, top, e.Radius, out Vector3 point))
-                        TryHit(r, e, point);
+                        TryHit(r, e, point, null);
                 }
 
                 // Props and tools (trees, rocks) the volume passes through
@@ -781,6 +1165,8 @@ public class AttackExecutor
             : null;
         AbilityCastInstance cast = null;
         int count = 0;
+        DamageDelivery previous = r.delivery;
+        r.delivery = DamageDelivery.Area;
         for (int i = 0; i < entityBuffer.Count && run == r; i++)
         {
             CombatEntity e = entityBuffer[i];
@@ -795,7 +1181,7 @@ public class AttackExecutor
             float d = new Vector2(e.Position.x - point.x, e.Position.z - point.z).magnitude;
             float strength = Mathf.Lerp(1f, imp.edgeMultiplier, Mathf.Clamp01(d / reach));
             if (imp.damageMultiplier > 0f && (attacker == null || CombatTargeting.CanHarm(rel, imp.rules)))
-                DealWeaponDamage(r, e, imp.damageMultiplier * strength, e.Center, false);
+                DealWeaponDamage(r, e, imp.damageMultiplier * strength, e.Center, false, null);
             if (hitSettings != null && e.IsAlive)
             {
                 if (cast == null)
@@ -809,6 +1195,7 @@ public class AttackExecutor
             r.ctx.LastHitTarget = e;
             r.ctx.LastHitPoint = e.Center;
         }
+        r.delivery = previous;
         entityBuffer.Clear();
         if (run == r)
             HitObjectsInShape(r, shape, reach);
@@ -842,7 +1229,7 @@ public class AttackExecutor
             var key = hittable as UnityEngine.Object;
             if (key == null || !r.hitObjects.Add(key))
                 return;
-            WeaponSO weapon = controller.EquippedWeapon;
+            WeaponSO weapon = r.weapon;
             var info = new WeaponHitInfo
             {
                 weapon = weapon,
@@ -861,13 +1248,13 @@ public class AttackExecutor
         BaseStatusController status = col.GetComponentInParent<BaseStatusController>();
         if (status != null && r.hitObjects.Add(status))
         {
-            WeaponHitResolver.ApplyClassicEffects(r.classicEffects, controller.EquippedWeapon, controller.Entity, r.ctx.AttackerObject,
+            WeaponHitResolver.ApplyClassicEffects(r.classicEffects, r.weapon, controller.Entity, r.ctx.AttackerObject,
                 null, status.gameObject, r.numbers.damageMultiplier, r.numbers.damageType, r.numbers.element, point, r.ctx.Forward);
             effectsManager.PlayHitEffects(r.component, point);
         }
     }
 
-    private void TryHit(Running r, CombatEntity target, Vector3 point)
+    private void TryHit(Running r, CombatEntity target, Vector3 point, Collider col)
     {
         CombatEntity attacker = controller.Entity;
         if (target == null || target == attacker || !target.IsAlive)
@@ -894,21 +1281,30 @@ public class AttackExecutor
             return;
         }
         r.hitTimes[target] = now;
-        ProcessHit(r, target, point);
+        r.ctx.HitCount++;
+        ProcessHit(r, target, point, col, CombatQuery.FlatDirection(r.ctx.Origin, target.Position, r.ctx.Forward));
     }
 
-    private void ProcessHit(Running r, CombatEntity target, Vector3 point)
+    private void ProcessHit(Running r, CombatEntity target, Vector3 point, Collider col, Vector3 dir)
     {
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = r.weapon;
         CombatEntity attacker = controller.Entity;
-        Vector3 dir = CombatQuery.FlatDirection(r.ctx.Origin, target.Position, r.ctx.Forward);
-        r.ctx.HitCount++;
         // A party member / ally the filter selected (a support attack) only gets the helpful parts, unless friendly fire.
         bool canHarm = attacker == null || CombatTargeting.CanHarm(CombatRelations.Get(attacker, target), r.component.targetRules);
 
         float dealt = 0f;
-        if (canHarm && r.component.DealsWeaponDamage && weapon.MaxDamage > 0f)
-            dealt = DealWeaponDamage(r, target, 1f, point, true);
+        bool blockedFully = false;
+        if (canHarm && (r.component.DealsWeaponDamage || r.delivery == DamageDelivery.Projectile) && weapon.MaxDamage > 0f)
+            dealt = DealWeaponDamage(r, target, r.projectileFraction, point, col, dir, out blockedFully);
+
+        // A fully blocked or parried hit lands nothing else (no knockback, no status effects).
+        if (blockedFully)
+        {
+            comboSystemOf(r).RegisterHit(target.gameObject, 0f, false);
+            r.ctx.LastHitTarget = target;
+            r.ctx.LastHitPoint = point;
+            return;
+        }
 
         // Knockback
         float knock = weapon.KnockBack * r.component.knockbackMultiplier * (r.stats != null ? r.stats.KnockbackMultiplier(weapon.Category) : 1f);
@@ -956,7 +1352,7 @@ public class AttackExecutor
         if (r.component.hitSound != null)
             AbilityPool.PlaySound(r.component.hitSound, point, 1f);
 
-        comboSystem.RegisterHit(target.gameObject, dealt, r.numbers.element != ElementType.None);
+        comboSystemOf(r).RegisterHit(target.gameObject, dealt, r.numbers.element != ElementType.None);
         r.ctx.LastHitTarget = target;
         r.ctx.LastHitPoint = point;
         RunBehaviours(r, AttackMoment.EachHit);
@@ -964,19 +1360,32 @@ public class AttackExecutor
         controller.LogDebug($"Hit {target.name} for {dealt:0.#}");
     }
 
+    private ComboSystem comboSystemOf(Running r) => r.combo ?? comboSystem;
+
     /// <summary>Deals a fraction of this attack's weapon damage to a character. Returns the damage dealt.</summary>
-    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, bool direct)
+    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, bool direct, Collider col) =>
+        DealWeaponDamage(r, target, fraction, point, col, Vector3.zero, out _);
+
+    /// <summary>
+    /// Deals weapon damage. <paramref name="hitDirection"/> = the way the hit travels (zero = from the attacker to the
+    /// target); <paramref name="stopped"/> = a block or parry stopped it completely.
+    /// </summary>
+    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, Collider col, Vector3 hitDirection, out bool stopped)
     {
-        WeaponSO weapon = controller.EquippedWeapon;
+        stopped = false;
+        WeaponSO weapon = r.weapon;
         if (target == null || !target.IsAlive || weapon == null || fraction <= 0f)
             return 0f;
         CombatEntity attacker = controller.Entity;
         ElementType targetElement = r.numbers.element != ElementType.None ? WeaponHitResolver.GetTargetElement(target.gameObject) : ElementType.None;
         float dmg = WeaponHitResolver.RollDamage(weapon, r.numbers, r.traits, r.stats, targetElement, out bool crit) * fraction;
+        if (r.ammo != null && r.delivery == DamageDelivery.Projectile && !Mathf.Approximately(r.ammo.BonusDamage, 0f))
+            dmg = Mathf.Max(0f, dmg + r.ammo.BonusDamage * fraction);
         if (dmg <= 0f)
             return 0f;
-        Vector3 dir = CombatQuery.FlatDirection(r.ctx.Origin, target.Position, r.ctx.Forward);
-        return target.ApplyDamage(new DamageInfo
+        Vector3 dir = hitDirection.sqrMagnitude > 1e-6f ? hitDirection.normalized : CombatQuery.FlatDirection(r.ctx.Origin, target.Position, r.ctx.Forward);
+        int stoppedBefore = target.StoppedHitCount;
+        float dealt = target.ApplyDamage(new DamageInfo
         {
             amount = dmg,
             source = attacker,
@@ -987,7 +1396,15 @@ public class AttackExecutor
             type = r.numbers.damageType,
             element = r.numbers.element,
             weapon = weapon,
+            delivery = r.delivery,
+            hitCollider = col,
+            aimedBodyPart = r.component.aimedBodyPart,
+            guardDamage = r.component.guardDamage,
+            unblockable = r.component.unblockable,
+            threatMultiplier = r.component.threatMultiplier,
         });
+        stopped = target.StoppedHitCount != stoppedBefore; // a full block or a parry
+        return dealt;
     }
 
     // ------------------------------------------------------------------ movement
@@ -1076,6 +1493,11 @@ public class AttackExecutor
             animationHandler.ForceEnd();
         phase = Phase.Idle;
         run = null;
+        if (r.pendingThrow)
+        {
+            r.pendingThrow = false;
+            controller.SpendThrownItem(r.item); // the thrown unit leaves the stack (the inventory updates the hand)
+        }
         controller.RaiseAttackEnded(r.input, r.component, interrupted);
     }
 
@@ -1112,7 +1534,7 @@ public class AttackExecutor
     {
 #if UNITY_EDITOR
         if (run == null || handTransform == null) return;
-        string info = $"Attack: {run.component.DisplayName} ({run.input})\n" +
+        string info = $"Attack: {run.component.DisplayName} ({run.input}{(run.hand != null && !run.hand.IsMain ? ", off hand" : "")})\n" +
                       $"Phase: {phase} {run.phaseTime:0.00}s\n" +
                       $"Speed x{run.speed:0.##}  Damage x{run.numbers.damageMultiplier:0.##}\n" +
                       $"Charge: {ChargeRatio:P0}  Hits: {run.hitTimes.Count}";

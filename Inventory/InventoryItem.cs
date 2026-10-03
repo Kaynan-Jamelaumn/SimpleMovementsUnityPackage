@@ -16,6 +16,10 @@ public class InventoryItem : MonoBehaviour
     public float timeSinceLastUse;
     public float durability;
     public bool isEquipped;
+    [Tooltip("Rounds loaded in a magazine weapon (crossbow, firearm); -1 = not loaded yet.")]
+    [HideInInspector] public int loadedRounds = -1;
+    [Tooltip("Turned sideways in the grid inventory (width and height swapped).")]
+    [HideInInspector] public bool gridRotated;
 
     [Header("UI Components")]
     [SerializeField] private Image iconImage;

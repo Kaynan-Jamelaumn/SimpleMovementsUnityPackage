@@ -51,7 +51,8 @@ public class TraitSelectionManager
             return;
         }
 
-        List<Trait> availableTraits = selectedClass.GetSelectableTraits();
+        // The class's traits (or every trait) plus the race's offered traits, minus what the race / class forbids.
+        List<Trait> availableTraits = TraitRules.Selectable(selectedClass, mainUI.Archetypes, mainUI.AllTraits);
 
         if (availableTraits.Count == 0)
         {
@@ -89,6 +90,7 @@ public class TraitSelectionManager
         }
 
         GameObject buttonObj = Object.Instantiate(prefabToUse, container);
+        buttonObj.SetActive(true); // the template may be an inactive scene object
         Button button = buttonObj.GetComponent<Button>();
 
         if (button == null)
@@ -101,9 +103,8 @@ public class TraitSelectionManager
         var buttonText = buttonObj.GetComponentInChildren<TMP_Text>();
         if (buttonText != null)
         {
-            var selectedClass = mainUI.SelectedClass;
-            int cost = selectedClass != null ? selectedClass.GetTraitCost(trait) : trait.cost;
-            buttonText.text = $"{trait.Name} ({cost})";
+            int cost = mainUI.TraitCost(trait);
+            buttonText.text = trait.HasActiveSkill ? $"{trait.Name} ({cost})  <color=#7FB2FF>[Active]</color>" : $"{trait.Name} ({cost})";
         }
 
         // Capture trait reference for closure
@@ -128,7 +129,7 @@ public class TraitSelectionManager
         // Visual feedback for affordability
         if (!isSelected && mainUI.SelectedClass != null)
         {
-            int cost = mainUI.SelectedClass.GetTraitCost(trait);
+            int cost = mainUI.TraitCost(trait);
             button.interactable = mainUI.CurrentTraitPoints >= cost;
 
             if (mainUI.CurrentTraitPoints < cost)
@@ -177,9 +178,8 @@ public class TraitSelectionManager
 
         if (references.traitDetailCost != null)
         {
-            var selectedClass = mainUI.SelectedClass;
-            int cost = selectedClass != null ? selectedClass.GetTraitCost(trait) : trait.cost;
-            references.traitDetailCost.text = $"Cost: {cost}";
+            int cost = mainUI.TraitCost(trait);
+            references.traitDetailCost.text = cost != trait.cost ? $"Cost: {cost} (normally {trait.cost})" : $"Cost: {cost}";
         }
 
         // Update button states
@@ -188,7 +188,7 @@ public class TraitSelectionManager
             references.addTraitButton.gameObject.SetActive(canAdd);
             if (canAdd && mainUI.SelectedClass != null)
             {
-                int cost = mainUI.SelectedClass.GetTraitCost(trait);
+                int cost = mainUI.TraitCost(trait);
                 references.addTraitButton.interactable = mainUI.CurrentTraitPoints >= cost && !mainUI.SelectedTraits.Contains(trait) && ruleProblem == null;
             }
         }
@@ -208,7 +208,7 @@ public class TraitSelectionManager
 
         if (selectedTrait == null || selectedClass == null) return;
 
-        int cost = selectedClass.GetTraitCost(selectedTrait);
+        int cost = mainUI.TraitCost(selectedTrait);
 
         string ruleProblem = RuleProblem(selectedTrait);
         if (ruleProblem != null)
@@ -251,7 +251,7 @@ public class TraitSelectionManager
         if (mainUI.SelectedTraits.Contains(selectedTrait))
         {
             mainUI.RemoveTraitFromSelected(selectedTrait);
-            int cost = selectedClass.GetTraitCost(selectedTrait);
+            int cost = mainUI.TraitCost(selectedTrait);
             mainUI.ModifyTraitPoints(cost);
 
             RefreshTraitDisplays();
@@ -268,11 +268,15 @@ public class TraitSelectionManager
         var chosen = new List<Trait>(mainUI.SelectedTraits);
         if (mainUI.SelectedClass != null)
             chosen.AddRange(mainUI.SelectedClass.GetStartingTraits());
+        foreach (CharacterArchetype a in mainUI.Archetypes)
+            if (a != null) chosen.AddRange(a.innateTraits);
         return chosen;
     }
 
     /// <summary>Why the trait cannot be added to the current choice (required / incompatible / exclusive), or null.</summary>
-    private string RuleProblem(Trait trait) => TraitRules.WhyCannotCombine(trait, ChosenTraits());
+    private string RuleProblem(Trait trait) => TraitRules.WhyNot(trait, mainUI.Archetypes)
+                                               ?? TraitRules.WhyTooManyActive(trait, mainUI.SelectedTraits, mainUI.MaxActiveTraits)
+                                               ?? TraitRules.WhyCannotCombine(trait, ChosenTraits());
 
     /// <summary>Why the trait cannot be removed (another chosen trait requires it), or null.</summary>
     private string RemovalProblem(Trait trait)

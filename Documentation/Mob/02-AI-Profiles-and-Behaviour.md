@@ -66,7 +66,7 @@ stateDiagram-v2
 
 ## 3. `MobProfile`
 
-One asset per mob type (*Assets ▸ Create ▸ Scriptable Objects ▸ Mob ▸ Mob Profile*, or
+One asset per mob type (*Assets ▸ Create ▸ SimpleMovements ▸ Mobs ▸ Mob Profile*, or
 *Mob Profile From Preset…*). Every field has a tooltip; the main ones:
 
 | Section | Fields |
@@ -113,6 +113,12 @@ For every character it perceives, the brain decides one of: **Ally**, **Neutral*
 6. **Players**: Enemy when `Player` is in *Preys*; Threat when skittish (*Flee From Players Within*).
 7. Otherwise Neutral.
 
+**Which enemy it attacks** (Mob Profile ▸ Threat ▸ *Use Threat Table*, on by default): the one with the most threat —
+damage, healing its enemies, crowd control, taunts, being noticed, with a head start for the first one. It keeps its
+target until another exceeds it by the switch margin (110% in melee, 130% at range, × *Threat Loyalty*) after a minimum
+time on target; threat fades when nothing new happens. Formulas, the Threat stat and multiplayer notes:
+[Player 06 §6](../Player/06-Races-Classes-Stats-and-Threat.md#6-threat-and-aggro-mobs-multiplayer).
+
 **Aggression** then decides whether it *starts* a fight with an Enemy (Passive and Defensive wait to be attacked;
 Territorial only inside its territory).
 
@@ -121,7 +127,7 @@ Territorial only inside its territory).
 ## 5. Teams and factions
 
 * **Team** — the simple way: mobs of the same Type (or Team Override) never hurt each other and help each other.
-* **Faction** — a `CombatFaction` asset (*Create ▸ Scriptable Objects ▸ Combat ▸ Faction*) with allies, enemies and a
+* **Faction** — a `CombatFaction` asset (*Create ▸ SimpleMovements ▸ Combat ▸ Faction*) with allies, enemies and a
   default attitude. Use it when several types share a side (Bandits: archers, brutes and their boss) or sides fight
   each other (Undead vs Kingdom). Set it on the mob component or its `CombatEntity`.
 

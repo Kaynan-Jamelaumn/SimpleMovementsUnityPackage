@@ -38,6 +38,25 @@ public class PauseMenuManager : MonoBehaviour
     public bool canPauseDuringCutscenes = false;  // Allow/prevent pausing during cutscenes
     public bool preventPauseInMenus = true;       // Prevent pausing in main menu scenes
 
+    // Opening the menu - the manager reads its own key, so nothing has to be wired on a Player Input component
+    [Header("Opening")]
+    [Tooltip("Key that opens / closes the menu (also goes back from a settings page). None = only the Pause action / OnPause event.")]
+    public Key pauseKey = Key.Escape;
+    [Tooltip("The gamepad Start button opens / closes the menu too.")]
+    public bool gamepadStartButton = true;
+    [Tooltip("Only pause while a player is in the game (not on the character creation screen or a menu scene).")]
+    public bool onlyWhenPlayerExists = true;
+    [Tooltip("Escape closes an open inventory first instead of pausing.")]
+    public bool closeInventoryFirst = true;
+    [Tooltip("Turn the player's gameplay input off while paused, so clicks on the menu never attack or jump.")]
+    public bool pauseGameplayInput = true;
+
+    [Header("Scenes")]
+    [Tooltip("Scene loaded by the Main Menu button (must be in Build Settings; the button hides itself otherwise).")]
+    public string mainMenuSceneName = "MainMenu";
+    [Tooltip("Optional: the Main Menu button (hidden when the scene above is not in Build Settings).")]
+    public UnityEngine.UI.Button mainMenuButton;
+
     // Resume Countdown Feature - Optional countdown before resuming gameplay
     [Header("Resume Countdown")]
     public bool useResumeCountdown = false;       // Enable 3-2-1 countdown before resume
@@ -74,10 +93,81 @@ public class PauseMenuManager : MonoBehaviour
     {
         InitializeComponents();  // Initialize UI components and states
         EnsureGameIsUnpaused(); // Force game to start in unpaused state
+        if (mainMenuButton != null)
+            mainMenuButton.gameObject.SetActive(HasMainMenuScene);
     }
+
+    private int lastToggleFrame = -1;
+
+    // The pause key and the gamepad Start button, read directly (works without any input wiring).
+    void Update()
+    {
+        if (Instance != this || !isInitialized)
+            return;
+        bool pressed = false;
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null && pauseKey != Key.None && keyboard[pauseKey].wasPressedThisFrame)
+            pressed = true;
+        Gamepad pad = Gamepad.current;
+        if (gamepadStartButton && pad != null && pad.startButton.wasPressedThisFrame)
+            pressed = true;
+        if (pressed)
+            HandlePauseKey();
+    }
+
+    /// <summary>
+    /// What the pause key does: while rebinding a key nothing (Escape cancels the rebind); in a settings page go back;
+    /// while paused resume; with an inventory open close it; otherwise pause.
+    /// </summary>
+    public void HandlePauseKey()
+    {
+        if (Time.frameCount == lastToggleFrame || KeyRebindingMenu.IsRebinding)
+            return;
+        lastToggleFrame = Time.frameCount;
+        if (IsPaused)
+        {
+            PauseMenuSettings settings = GetComponentInChildren<PauseMenuSettings>(true);
+            if (settings == null && pauseMenuUI != null)
+                settings = pauseMenuUI.GetComponentInChildren<PauseMenuSettings>(true);
+            if (settings != null && settings.HandleBack())
+                return;
+            ResumeGame();
+            return;
+        }
+        if (!CanPause())
+            return;
+        if (closeInventoryFirst && CloseOpenInventory())
+            return;
+        PauseGame();
+    }
+
+    private static bool CloseOpenInventory()
+    {
+        bool closed = false;
+        foreach (InventoryManager inv in FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude))
+        {
+            if (inv != null && inv.IsInventoryOpened)
+            {
+                inv.CloseInventory();
+                closed = true;
+            }
+        }
+        return closed;
+    }
+
+    /// <summary>A player is in the game (a Player Status Controller is active).</summary>
+    public static bool PlayerInGame => FindAnyObjectByType<PlayerStatusController>() != null;
+
+    /// <summary>The Main Menu scene can be loaded (it is in Build Settings).</summary>
+    public bool HasMainMenuScene => !string.IsNullOrEmpty(mainMenuSceneName) && Application.CanStreamedLevelBeLoaded(mainMenuSceneName);
 
     void OnDestroy()
     {
+        if (Instance == this && IsPaused)
+        {
+            Time.timeScale = originalTimeScale;
+            InputBindingStore.SetGameplayInputEnabled(true);
+        }
         CleanupSingleton(); // Clean up singleton reference on destruction
     }
 
@@ -155,8 +245,9 @@ public class PauseMenuManager : MonoBehaviour
             pauseCanvasGroup.blocksRaycasts = false;  // UI doesn't block mouse/touch input
         }
 
-        // Set cursor to game mode (hidden and locked)
-        SetCursorState(false);
+        // Set cursor to game mode (hidden and locked) - only in game: a creation screen or menu keeps its cursor
+        if (!onlyWhenPlayerExists || PlayerInGame)
+            SetCursorState(false);
 
         // Restore normal audio volume
         RestoreAudioVolume();
@@ -178,11 +269,9 @@ public class PauseMenuManager : MonoBehaviour
     // New Input System Callback - Handles pause input from Input Action
     public void OnPause(InputAction.CallbackContext context)
     {
-        // Only respond to key press (not hold or release)
-        if (context.performed && CanPause())
-        {
-            TogglePause();
-        }
+        // Only respond to key press (not hold or release); same rules as the pause key
+        if (context.performed)
+            HandlePauseKey();
     }
 
     // Pause Permission System - Checks various conditions before allowing pause
@@ -195,6 +284,9 @@ public class PauseMenuManager : MonoBehaviour
 
         // Check main menu restrictions
         if (isInMainMenu && preventPauseInMenus) return false;
+
+        // Only in game: no pause menu on the character creation screen
+        if (onlyWhenPlayerExists && !PlayerInGame) return false;
 
         return true; // All conditions passed
     }
@@ -231,6 +323,10 @@ public class PauseMenuManager : MonoBehaviour
         // Show and unlock cursor for menu navigation
         SetCursorState(true);
 
+        // Clicks on the menu must not reach the game (attacks, jumps, inventory)
+        if (pauseGameplayInput)
+            InputBindingStore.SetGameplayInputEnabled(false);
+
         // Use SoundManager for audio management if available
         if (SoundManager.Instance != null)
         {
@@ -251,7 +347,7 @@ public class PauseMenuManager : MonoBehaviour
 
         // Display pause menu with smooth transition
         ShowPauseUI();
-    }   
+    }
 
 
     // Resume Entry Point - Handles countdown or immediate resume
@@ -330,6 +426,7 @@ public class PauseMenuManager : MonoBehaviour
         // Restore normal game state
         Time.timeScale = originalTimeScale; // Resume game time
         SetCursorState(false);              // Hide and lock cursor
+        InputBindingStore.SetGameplayInputEnabled(true);
 
         // Use SoundManager for audio management if available
         if (SoundManager.Instance != null)
@@ -529,7 +626,13 @@ public class PauseMenuManager : MonoBehaviour
         }
 
         Time.timeScale = originalTimeScale; // Restore time scale before scene change
-        SceneManager.LoadScene("MainMenu");
+        InputBindingStore.SetGameplayInputEnabled(true);
+        if (!HasMainMenuScene)
+        {
+            Debug.LogWarning($"[Pause] Scene '{mainMenuSceneName}' is not in Build Settings.");
+            return;
+        }
+        SceneManager.LoadScene(mainMenuSceneName);
     }
 
 

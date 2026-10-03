@@ -32,6 +32,26 @@ public enum DamageType
 /// <see cref="CombatEntity.AddDamageTakenModifier"/>. Modifiers run in registration order, after the entity's
 /// <see cref="CombatEntity.damageTakenMultiplier"/> and before the health manager's damage factor.
 /// </summary>
+/// <summary>What caused threat (threat meters, network sync, debugging).</summary>
+public enum ThreatKind
+{
+    Damage,
+    Healing,
+    Control,
+    Taunt,
+    Detection,
+    Other,
+}
+
+/// <summary>
+/// Changes the damage a character DEALS (registered on the attacker's <see cref="CombatEntity"/>): elemental damage
+/// bonuses and other outgoing modifiers. Runs before the target's interceptors and damage-taken modifiers.
+/// </summary>
+public interface IDamageDealtModifier
+{
+    float ModifyDamageDealt(in DamageInfo info, float amount);
+}
+
 public interface IDamageTakenModifier
 {
     /// <summary>
@@ -39,6 +59,19 @@ public interface IDamageTakenModifier
     /// <paramref name="info"/> tells who hit, with what type and element. Return 0 to ignore the hit completely.
     /// </summary>
     float ModifyDamageTaken(in DamageInfo info, float amount);
+}
+
+/// <summary>
+/// Defense that depends on where a hit lands: only the armour covering the struck body part protects fully
+/// (implemented by <see cref="BodyPartController"/>, read by <see cref="CombatStats"/>).
+/// </summary>
+public interface ILocationalDefense
+{
+    /// <summary>
+    /// The Defense (or Magic Resistance) points that protect against <paramref name="info"/>; <paramref name="total"/> is
+    /// the character's full value (innate + every armour piece + buffs).
+    /// </summary>
+    float DefenseAgainst(in DamageInfo info, CombatStatType stat, float total);
 }
 
 /// <summary>Short words for tooltips: "fire ", "magical ", or "" for plain physical damage.</summary>

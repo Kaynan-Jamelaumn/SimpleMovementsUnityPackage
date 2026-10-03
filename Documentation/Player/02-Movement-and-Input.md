@@ -59,8 +59,8 @@ Stamina costs only apply when the model's **Should Consume Stamina** is on.
   multiplier 2 → 0.92 m.
 * **Jump buffering**: a press is remembered for *Jump Buffer Time* (0.2 s, `MovementContext`). Pressing slightly
   before landing, or on a frame the state machine is busy, still jumps.
-* The jump lasts while the player moves upward or is in the air; it ends on landing. (It used to end on its first
-  frame because the player was still touching the ground, and the jump was lost.)
+* The jump lasts while the player moves upward or is in the air and ends on landing, so a jump started while the
+  feet still touch the ground is never lost.
 * The ground check is a short ray from the feet (`PlayerMovementController.IsGrounded`). The *Shell* object of the
   Movement Model is its origin: put it at the feet.
 
@@ -91,7 +91,7 @@ Other systems find their actions **by name**, so missing ones are simply unused:
 | Ability keys | Chosen per key in the ability key inspector | — |
 
 Camera look, zoom, interaction and the extra attack inputs come through a **Player Input** component's events
-([01 §5](01-Player-Setup.md)).
+([01 §7](01-Player-Setup.md#7-input)).
 
 `SharedPlayerInput` keeps **one** generated `PlayerInput` per player for every reader (each `new PlayerInput()`
 otherwise builds and enables a full copy of the actions). It counts holders and enables, so one component turning

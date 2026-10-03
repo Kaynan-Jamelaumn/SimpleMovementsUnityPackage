@@ -40,7 +40,7 @@ Step-by-step recipes. The reference for every field is in chapters 02–05; the 
 
 ## 2. Any item
 
-1. *Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ …* (Consumable, Equippable, Armor, Weapon).
+1. *Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ …* (Consumable, Equippable, Armor, Weapon).
 2. At the top of the inspector, **Quick Setup**:
    * **Auto-Fill** — display name from the asset name; icon and prefab found by name (`IronSword`,
      `IronSword_Icon`…); slot, category or food / potion guessed from the name; stack size and durability.
@@ -67,7 +67,7 @@ particles) plays when it is used.
 
 ## 3. Armor
 
-1. *Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ Armor*.
+1. *Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Armor*.
 2. **Armor Slot** — Helmet, Armor, Leggings, Boots, Gloves, Shield, Ring, Amulet… (it only fits its slot).
 3. **Presets… ▸ Material** — Cloth, Leather, Chainmail, Iron, Steel, Mythril (defense scaled by slot).
 4. Defense, Magic Resistance, elemental resistances, durability; **Equip Effects** for anything else (stats, procs,
@@ -78,7 +78,7 @@ particles) plays when it is used.
 
 ## 4. An armor set
 
-1. *Tools ▸ Inventory ▸ Armor Set Wizard*: name, colour, folder, material, which pieces, defense per piece, which
+1. *Tools ▸ SimpleMovements ▸ Inventory ▸ Armor Set Wizard*: name, colour, folder, material, which pieces, defense per piece, which
    tiers (2 / 3 / 4 pieces). It creates the set and every piece, linked both ways.
 2. Open the **Armor Set** asset and fill in the **bonus tiers** (each tier = effects active from N worn pieces).
    The **Bonus Simulator** shows which tiers are active for 1…N pieces.
@@ -93,7 +93,7 @@ Existing armor: set *Belongs To Set* on each piece and press **Add pieces that r
 
 ### Fastest: from a template
 
-*Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ Weapon From Template ▸* Sword, Greatsword, Dagger, Spear, **Hammer**,
+*Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Weapon From Template ▸* Sword, Greatsword, Dagger, Spear, **Hammer**,
 Axe, Bow or Staff. You get a full moveset (chains, charged attacks, alternate attack, on-hit effects). Then:
 
 1. **Quick Setup ▸ Auto-Fill** and assign the **Prefab** (the model in the hand) and **Icon**.
@@ -170,10 +170,38 @@ Game Rule / Never / Always, kinds of characters, only / ignore factions). A supp
 
 ---
 
+## 5a. Shields, dual wielding, a bow, quickslots, the grid
+
+Details in [10](10-Hands-Shields-Ranged-and-Body-Parts.md) and [11](11-Grid-Inventory.md).
+
+**A shield.** Create armor (*Item ▸ Armor*), set **Armor Slot Type = Shield**, then *Presets ▸ Shield Defense ▸
+Round Shield*. Equip it in the **Off Hand** slot; hold **Block** (right mouse without a Block action) with a
+one-handed weapon. A two-handed weapon stows it.
+
+**Dual wielding.** Two one-handed weapons that can be dual wielded (swords, daggers, axes, maces...): one in the
+hotbar, one in the **Off Hand** slot. Attack with the off hand using the *OffHandAttack* action (or right mouse);
+Handling ▸ *Off Hand Attack* picks which of its attacks it performs.
+
+**A bow.** *Weapon From Template ▸ Bow*, then *Ranged Weapon ▸ Create Ammo* (or *Ammo Preset ▸ Arrows*). Put arrows
+in the inventory, hold the attack to draw, release to shoot. Crossbow / Pistol: *Weapon From Template*, bolts /
+bullets, **R** reloads.
+
+**Body parts.** Turn on *Combat Settings ▸ Body Parts For Every Character* (or add a `BodyPartController` to a
+character). Headshots now deal ×1.6 and only the helmet protects them. For exact hits, add `BodyPartHitbox`
+colliders on the bones.
+
+**Visuals.** On by default: weapons show in the hand while fighting and on the back / hip after 6 s. Give items an
+*Equipment Visuals ▸ Model* and *Sheath* when the default is not right; armor gets *Armor Visuals*.
+
+**Quickslots.** On by default (4 slots beside the hotbar, keys Z X C V). Drag a potion onto a quickslot, press its key.
+
+**Grid inventory.** Inventory Manager ▸ *Grid Inventory ▸ Use Grid Inventory*, *Rebuild UI For This Mode*, then
+*Suggest Item Sizes…*. Drag items around; **R** or right click turns them.
+
 ## 6. Test it
 
 * `InventoryManager` inspector ▸ **Live (Play Mode)**: give yourself any item, see equipped items, combat stats,
   active set bonuses and the weapon's current attack.
-* Weapon inspector ▸ **▶** / *Tools ▸ Inventory ▸ Attack Preview*: scrub an attack without Play mode.
+* Weapon inspector ▸ **▶** / *Tools ▸ SimpleMovements ▸ Inventory ▸ Attack Preview*: scrub an attack without Play mode.
 * In Play mode, select the player: the Weapon Controller's gizmo draws the active attack's real hit area, its phase
   and the weapon's range. *Debug Mode* on the Weapon Controller logs attacks, hits and combos.

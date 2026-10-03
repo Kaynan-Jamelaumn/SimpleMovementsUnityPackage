@@ -10,14 +10,14 @@ public static class AbilityToolsMenu
     private const string ResourcesFolder = "Assets/Resources";
 
     // ------------------------------------------------------------------ legacy conversion
-    [MenuItem("Tools/Abilities/Convert Selected Legacy Abilities/For Player")]
+    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Player")]
     private static void ConvertForPlayer() => ConvertSelected(false);
 
-    [MenuItem("Tools/Abilities/Convert Selected Legacy Abilities/For Mobs")]
+    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Mobs")]
     private static void ConvertForMobs() => ConvertSelected(true);
 
-    [MenuItem("Tools/Abilities/Convert Selected Legacy Abilities/For Player", true)]
-    [MenuItem("Tools/Abilities/Convert Selected Legacy Abilities/For Mobs", true)]
+    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Player", true)]
+    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Mobs", true)]
     private static bool CanConvert()
     {
         foreach (Object o in Selection.objects)
@@ -48,13 +48,13 @@ public static class AbilityToolsMenu
     public static AbilityDefinition ConvertToAsset(AbilityEffectSO legacy, bool forMob) => AbilityToolsMenuBridge.Convert(legacy, forMob);
 
     // ------------------------------------------------------------------ settings assets
-    [MenuItem("Tools/Abilities/Create Combat Settings (Resources)")]
+    [MenuItem("Tools/SimpleMovements/Project Setup/Create Combat Settings (Resources)")]
     private static void CreateCombatSettings() => CreateInResources<CombatSettings>("CombatSettings");
 
-    [MenuItem("Tools/Abilities/Create Absorption Settings (Resources)")]
+    [MenuItem("Tools/SimpleMovements/Project Setup/Create Absorption Settings (Resources)")]
     private static void CreateAbsorptionSettings() => CreateInResources<AbsorptionSettings>("AbsorptionSettings");
 
-    [MenuItem("Tools/Abilities/Create Ability Database (Resources)")]
+    [MenuItem("Tools/SimpleMovements/Project Setup/Create Ability Database (Resources)")]
     private static void CreateDatabase()
     {
         AbilityDatabase db = CreateInResources<AbilityDatabase>("AbilityDatabase");
@@ -91,7 +91,7 @@ public static class AbilityToolsMenu
     }
 
     // ------------------------------------------------------------------ validation
-    [MenuItem("Tools/Abilities/Validate All Abilities")]
+    [MenuItem("Tools/SimpleMovements/Validate/Validate All Abilities")]
     private static void ValidateAll()
     {
         int count = 0, errorCount = 0, warningCount = 0;
@@ -130,7 +130,7 @@ public static class AbilityToolsMenu
     }
 
     // ------------------------------------------------------------------ presets
-    [MenuItem("Assets/Create/Scriptable Objects/Ability/Ability From Preset...", false, -9)]
+    [MenuItem("Assets/Create/SimpleMovements/Abilities/Ability From Preset...", false, -9)]
     private static void CreateFromPreset()
     {
         string folder = SelectedFolder();
@@ -152,7 +152,7 @@ public static class AbilityToolsMenu
         menu.ShowAsContext();
     }
 
-    [MenuItem("Assets/Create/Scriptable Objects/Mob/Mob Profile From Preset...", false, 1)]
+    [MenuItem("Assets/Create/SimpleMovements/Mobs/Mob Profile From Preset...", false, 1)]
     private static void CreateMobProfilePreset()
     {
         string folder = SelectedFolder();

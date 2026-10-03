@@ -4,7 +4,7 @@ using UnityEngine;
 /// <summary>
 /// Turns the old <see cref="AbilityEffectSO"/> assets (and <see cref="AbilityHolder"/> entries) into
 /// <see cref="AbilityDefinition"/>s so existing prefabs keep working with the new system. Conversions are cached;
-/// the editor menu "Tools > Abilities > Convert Selected Legacy Abilities" saves them as real assets you can tune.
+/// the editor menu "Tools > SimpleMovements > Legacy > Convert Selected Legacy Abilities" saves them as real assets you can tune.
 /// </summary>
 public static class LegacyAbilityConverter
 {
@@ -343,20 +343,20 @@ public static class LegacyAbilityConverter
         switch (c.castType)
         {
             case CastBase.CastType.Box:
-            {
-                Vector3 size = c.boxSize != Vector3.zero ? c.boxSize : Vector3.one * Mathf.Max(0.5f, c.castSize);
-                return new HitShape
                 {
-                    type = HitShapeType.Rectangle,
-                    width = Mathf.Max(0.05f, size.x),
-                    length = Mathf.Max(0.05f, size.z),
-                    height = Mathf.Max(0.1f, size.y),
-                    baseOffset = c.customOrigin.y - size.y * 0.5f,
-                    startAtOrigin = false,
-                    offset = new Vector3(c.customOrigin.x, 0f, c.customOrigin.z),
-                    yaw = Mathf.DeltaAngle(0f, c.customAngle.y),
-                };
-            }
+                    Vector3 size = c.boxSize != Vector3.zero ? c.boxSize : Vector3.one * Mathf.Max(0.5f, c.castSize);
+                    return new HitShape
+                    {
+                        type = HitShapeType.Rectangle,
+                        width = Mathf.Max(0.05f, size.x),
+                        length = Mathf.Max(0.05f, size.z),
+                        height = Mathf.Max(0.1f, size.y),
+                        baseOffset = c.customOrigin.y - size.y * 0.5f,
+                        startAtOrigin = false,
+                        offset = new Vector3(c.customOrigin.x, 0f, c.customOrigin.z),
+                        yaw = Mathf.DeltaAngle(0f, c.customAngle.y),
+                    };
+                }
             case CastBase.CastType.Capsule:
                 return new HitShape
                 {

@@ -30,6 +30,13 @@ public abstract class AbilitiesState : BaseState<AbilitiesStateMachine.EAbilitie
         return a == null || a.CanCastSpells();
     }
 
+    /// <summary>The player's inventory is open: ability keys are left to it (R rotates grid items, Z-V use quickslots...).</summary>
+    protected bool InventoryOpen()
+    {
+        PlayerAbilityController c = Context.AbilityController;
+        return c != null && InventoryManager.IsOpenFor(c);
+    }
+
     private static bool IsKeyReady(AbilityStateMachine machine) =>
         machine.CurrentState != null && machine.CurrentState.StateKey == AbilityStateMachine.EAbilityState.Ready && machine.HasAbility;
 
@@ -37,7 +44,7 @@ public abstract class AbilitiesState : BaseState<AbilitiesStateMachine.EAbilitie
     protected bool IsAbilityTriggered(int index)
     {
         List<AbilityAction> actions = Context.AbilityAction;
-        if (actions == null || index < 0 || index >= actions.Count)
+        if (actions == null || index < 0 || index >= actions.Count || InventoryOpen())
             return false;
         AbilityStateMachine machine = actions[index] != null ? actions[index].AbilityStateMachine : null;
         if (machine == null)
@@ -56,7 +63,7 @@ public abstract class AbilitiesState : BaseState<AbilitiesStateMachine.EAbilitie
     protected void TriggerPressedAbilities()
     {
         List<AbilityAction> actions = Context.AbilityAction;
-        if (actions == null)
+        if (actions == null || InventoryOpen())
             return;
         PlayerAbilityController controller = Context.AbilityController;
         bool buffering = Context.InputBufferTime > 0f;
@@ -133,7 +140,7 @@ public abstract class AbilitiesState : BaseState<AbilitiesStateMachine.EAbilitie
     /// <summary>While abilities are blocked, presses are only remembered (cast when abilities are free again).</summary>
     protected void BufferPressedAbilities()
     {
-        if (Context.InputBufferTime <= 0f)
+        if (Context.InputBufferTime <= 0f || InventoryOpen())
             return;
         List<AbilityAction> actions = Context.AbilityAction;
         if (actions == null)

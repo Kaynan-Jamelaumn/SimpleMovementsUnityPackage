@@ -66,7 +66,7 @@ public static class ArmorEquipmentHandler
             if (occupied == null)
                 occupied = slot;
         }
-        return occupied != null ? occupied : FindEmptyInventorySlot(inventoryManager);
+        return occupied != null ? occupied : FindEmptyInventorySlot(inventoryManager, armor);
     }
 
     /// <summary>Inventory items currently worn as armor.</summary>
@@ -132,14 +132,13 @@ public static class ArmorEquipmentHandler
         {
             if (slot.Live()?.heldItem == null || !(slot.heldItem.GetComponent<InventoryItem>()?.itemScriptableObject is ArmorSO))
                 continue;
-            InventorySlot free = FindEmptyInventorySlot(inventoryManager);
-            if (free == null)
+            // The bag decides where it fits (the grid inventory places it by its size).
+            InventoryItem piece = slot.heldItem.GetComponent<InventoryItem>();
+            if (!inventoryManager.PlaceInBag(piece))
             {
-                Debug.LogWarning("[Armor] No free inventory slot to unequip into.");
+                Debug.LogWarning("[Armor] No free inventory space to unequip into.");
                 break;
             }
-            free.SetHeldItem(slot.heldItem);
-            slot.SetHeldItem(null);
             moved++;
         }
         if (moved > 0)
@@ -179,13 +178,12 @@ public static class ArmorEquipmentHandler
             if (s != null) yield return s;
     }
 
-    private static InventorySlot FindEmptyInventorySlot(InventoryManager inventoryManager)
+    /// <summary>A free place in the bag for <paramref name="item"/> (grid-aware: covered grid cells are not free).</summary>
+    private static InventorySlot FindEmptyInventorySlot(InventoryManager inventoryManager, ItemSO item)
     {
-        if (inventoryManager?.Slots == null) return null;
-        foreach (GameObject go in inventoryManager.Slots)
-            if (go != null && go.TryGetComponent(out InventorySlot s) && s.heldItem == null)
-                return s;
-        return null;
+        if (inventoryManager == null) return null;
+        InventorySlot s = inventoryManager.FindFreeSlotFor(item, false);
+        return s != null && !s.IsHotbarSlot ? s : null;
     }
 
     private static InventoryItem FindArmorInInventory(InventoryManager inventoryManager, ArmorSO armor)

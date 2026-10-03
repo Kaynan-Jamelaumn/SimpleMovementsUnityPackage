@@ -4,7 +4,7 @@ public static class ItemUsageHandler
 {
     public static InventoryItem GetHeldItem(InventorySlot selectedSlot)
     {
-        if (selectedSlot?.heldItem == null)
+        if (selectedSlot.Live()?.heldItem == null)
         {
             Debug.LogWarning("Selected slot or held item is null");
             return null;
@@ -19,9 +19,12 @@ public static class ItemUsageHandler
         return null;
     }
 
-    public static bool HandleCooldown(InventoryItem heldItem)
+    public static bool HandleCooldown(InventoryItem heldItem) => HandleCooldown(heldItem, null);
+
+    /// <summary>Checks and starts the item's cooldown; <paramref name="owner"/>'s Cooldown Reduction (items) shortens it.</summary>
+    public static bool HandleCooldown(InventoryItem heldItem, Component owner)
     {
-        if (heldItem?.itemScriptableObject == null)
+        if (heldItem.Live()?.itemScriptableObject == null)
         {
             Debug.LogWarning("Held item or its scriptable object is null");
             return false;
@@ -33,7 +36,7 @@ public static class ItemUsageHandler
             return false;
         }
 
-        var cooldown = heldItem.itemScriptableObject.Cooldown;
+        float cooldown = owner != null ? CombatStats.ItemCooldown(owner, heldItem.itemScriptableObject.Cooldown) : heldItem.itemScriptableObject.Cooldown;
         if (cooldown > 0)
         {
             heldItem.timeSinceLastUse = Time.time + cooldown;
@@ -92,7 +95,7 @@ public static class ItemUsageHandler
             return false;
         }
 
-        if (heldItem?.itemScriptableObject == null)
+        if (heldItem.Live()?.itemScriptableObject == null)
         {
             Debug.LogError("Held item or its scriptable object is null");
             return false;
@@ -128,7 +131,7 @@ public static class ItemUsageHandler
 
     private static bool ValidateItemHandlingParameters(GameObject player, Transform handParent, InventorySlot selectedSlot, InventoryItem heldItem)
     {
-        return player != null && handParent != null && selectedSlot != null && heldItem?.itemScriptableObject != null;
+        return player != null && handParent != null && selectedSlot != null && heldItem.Live()?.itemScriptableObject != null;
     }
 
     private static bool ShouldProcessDurability(InventoryItem heldItem)
@@ -139,31 +142,41 @@ public static class ItemUsageHandler
                (!(heldItem.itemScriptableObject is WeaponSO) && heldItem.itemScriptableObject.ShouldBeDestroyedOn0UsesLeft);
     }
 
-    private static void ProcessItemDurability(GameObject player, InventoryItem heldItem)
+    private static void ProcessItemDurability(GameObject player, InventoryItem heldItem) => ConsumeOneUse(player, heldItem);
+
+    /// <summary>
+    /// One use of a stack item (a sip of a potion, a bite of food): its uses left (durability) go down, and when the unit is
+    /// used up one leaves the stack (the player's weight follows) and the next unit starts with its own uses. Returns true
+    /// when a whole unit was used up. The stack may reach 0: the caller removes the emptied item.
+    /// </summary>
+    public static bool ConsumeOneUse(GameObject player, InventoryItem heldItem)
     {
-        if (heldItem.durability > 0)
-        {
-            heldItem.durability -= heldItem.itemScriptableObject.DurabilityReductionPerUse;
+        if (heldItem == null || heldItem.itemScriptableObject == null || heldItem.stackCurrent <= 0)
+            return false;
+        int perUse = heldItem.itemScriptableObject.DurabilityReductionPerUse;
+        if (perUse <= 0)
+            return false; // reusable: never used up
+        // A unit with no uses recorded is a fresh one (the next unit of a stack used to keep 0 here, so only the
+        // first unit of a stack was ever spent).
+        if (heldItem.durability <= 0f)
+            heldItem.durability = InventoryItem.StartingDurability(heldItem.itemScriptableObject);
+        heldItem.durability -= perUse;
+        if (heldItem.durability > 0f)
+            return false;
 
-            if (heldItem.durability <= 0)
-            {
-                DecreaseItemStack(player, heldItem);
-
-                if (heldItem.DurabilityList?.Count > 0)
-                {
-                    UpdateItemDurability(heldItem);
-                }
-                else if (heldItem.stackCurrent <= 0)
-                {
-                    heldItem.durability = 0;
-                }
-            }
-        }
+        DecreaseItemStack(player, heldItem);
+        if (heldItem.DurabilityList?.Count > 0)
+            UpdateItemDurability(heldItem);
+        else
+            heldItem.durability = heldItem.stackCurrent > 0 ? InventoryItem.StartingDurability(heldItem.itemScriptableObject) : 0f;
+        heldItem.UpdateTotalWeight();
+        heldItem.RefreshUI();
+        return true;
     }
 
     private static void UpdateItemDurability(InventoryItem heldItem)
     {
-        if (heldItem?.DurabilityList?.Count > 0)
+        if (heldItem.Live()?.DurabilityList?.Count > 0)
         {
             heldItem.durability = heldItem.DurabilityList[^1];
             heldItem.DurabilityList.RemoveAt(heldItem.DurabilityList.Count - 1);
@@ -172,7 +185,7 @@ public static class ItemUsageHandler
 
     private static void DecreaseItemStack(GameObject player, InventoryItem heldItem)
     {
-        if (player == null || heldItem?.itemScriptableObject == null) return;
+        if (player == null || heldItem.Live()?.itemScriptableObject == null) return;
 
         heldItem.stackCurrent--;
 
@@ -190,21 +203,12 @@ public static class ItemUsageHandler
             selectedSlot.heldItem = null;
         }
 
-        if (heldItem?.gameObject != null)
+        if (heldItem.Live()?.gameObject != null)
         {
             Object.Destroy(heldItem.gameObject);
         }
 
-        if (handParent != null)
-        {
-            for (int i = handParent.childCount - 1; i >= 0; i--)
-            {
-                var child = handParent.GetChild(i);
-                if (child?.gameObject != null)
-                {
-                    Object.Destroy(child.gameObject);
-                }
-            }
-        }
+        // Only the hotbar's model (the hand bone's own children stay).
+        HotbarHandler.ClearHand(handParent);
     }
 }

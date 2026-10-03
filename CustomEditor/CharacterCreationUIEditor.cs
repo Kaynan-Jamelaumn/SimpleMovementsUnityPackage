@@ -16,6 +16,9 @@ public class CharacterCreationUIEditor : Editor
     {
         serializedObject.Update();
 
+        // Build / rebuild the screen, refresh the lists (Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Character Creation Screen)
+        CharacterCreationBuildTools.Draw(characterUI, serializedObject);
+
         // Draw default inspector first
         DrawDefaultInspector();
 

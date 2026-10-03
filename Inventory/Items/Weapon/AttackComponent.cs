@@ -192,6 +192,17 @@ public abstract class AttackComponent : IAttackComponent
     [Tooltip("Seconds before the same target can be hit again during the active phase (multi-hit attacks). 0 = once per attack.")]
     [Min(0f)] public float rehitInterval = 0f;
 
+    [Header("Body Parts & Blocking")]
+    [Tooltip("Body part this attack aims at, by name (Legs for a leg sweep, Head for an overhead blow). Empty = where it lands " +
+             "(the blade's contact point, the projectile's impact, or the height of the weapon hand). Only matters for targets with body parts.")]
+    public string aimedBodyPart = "";
+    [Tooltip("Multiplies the stamina a blocked hit costs the defender: heavy blows break guards (2 = twice as tiring to block).")]
+    [Min(0f)] public float guardDamage = 1f;
+    [Tooltip("Shields and weapon guards cannot block it (grabs, curses, a guard-ignoring thrust).")]
+    public bool unblockable = false;
+    [Tooltip("Multiplies the threat this attack generates on mobs (2 = a taunting shield bash, 0.5 = a sneaky stab).")]
+    [Min(0f)] public float threatMultiplier = 1f;
+
     [Header("Impact (ground slam)")]
     [Tooltip("A second hit where the weapon strikes the ground: its own area around the impact point, damage and effects.")]
     public ImpactSettings impact = new ImpactSettings();
@@ -483,12 +494,12 @@ public class WeaponBlade
             case VolumeShape.Sphere:
                 return pose.a + Vector3.down * radius * scale;
             case VolumeShape.Box:
-            {
-                Vector3 h = HalfExtents(scale);
-                Vector3 up = Quaternion.Inverse(pose.rotation) * Vector3.up;
-                float drop = Mathf.Abs(up.x) * h.x + Mathf.Abs(up.y) * h.y + Mathf.Abs(up.z) * h.z;
-                return pose.a + Vector3.down * drop;
-            }
+                {
+                    Vector3 h = HalfExtents(scale);
+                    Vector3 up = Quaternion.Inverse(pose.rotation) * Vector3.up;
+                    float drop = Mathf.Abs(up.x) * h.x + Mathf.Abs(up.y) * h.y + Mathf.Abs(up.z) * h.z;
+                    return pose.a + Vector3.down * drop;
+                }
             default:
                 return (pose.a.y < pose.b.y ? pose.a : pose.b) + Vector3.down * radius * scale;
         }
@@ -503,40 +514,40 @@ public class WeaponBlade
         switch (shape)
         {
             case VolumeShape.Sphere:
-            {
-                Vector3 onBody = ClosestOnSegment(bodyBottom, bodyTop, pose.a);
-                float reach = radius * scale + bodyRadius;
-                point = pose.a + Vector3.ClampMagnitude(onBody - pose.a, radius * scale);
-                return (onBody - pose.a).sqrMagnitude <= reach * reach;
-            }
-            case VolumeShape.Box:
-            {
-                // Closest box point to a few points along the body (exact enough for character-sized bodies).
-                Vector3 h = HalfExtents(scale);
-                Quaternion inv = Quaternion.Inverse(pose.rotation);
-                float best = float.MaxValue;
-                point = pose.a;
-                for (int i = 0; i <= 4; i++)
                 {
-                    Vector3 p = Vector3.Lerp(bodyBottom, bodyTop, i / 4f);
-                    Vector3 local = inv * (p - pose.a);
-                    Vector3 clamped = new Vector3(Mathf.Clamp(local.x, -h.x, h.x), Mathf.Clamp(local.y, -h.y, h.y), Mathf.Clamp(local.z, -h.z, h.z));
-                    float d = (local - clamped).sqrMagnitude;
-                    if (d < best)
-                    {
-                        best = d;
-                        point = pose.a + pose.rotation * clamped;
-                    }
+                    Vector3 onBody = ClosestOnSegment(bodyBottom, bodyTop, pose.a);
+                    float reach = radius * scale + bodyRadius;
+                    point = pose.a + Vector3.ClampMagnitude(onBody - pose.a, radius * scale);
+                    return (onBody - pose.a).sqrMagnitude <= reach * reach;
                 }
-                return best <= bodyRadius * bodyRadius;
-            }
+            case VolumeShape.Box:
+                {
+                    // Closest box point to a few points along the body (exact enough for character-sized bodies).
+                    Vector3 h = HalfExtents(scale);
+                    Quaternion inv = Quaternion.Inverse(pose.rotation);
+                    float best = float.MaxValue;
+                    point = pose.a;
+                    for (int i = 0; i <= 4; i++)
+                    {
+                        Vector3 p = Vector3.Lerp(bodyBottom, bodyTop, i / 4f);
+                        Vector3 local = inv * (p - pose.a);
+                        Vector3 clamped = new Vector3(Mathf.Clamp(local.x, -h.x, h.x), Mathf.Clamp(local.y, -h.y, h.y), Mathf.Clamp(local.z, -h.z, h.z));
+                        float d = (local - clamped).sqrMagnitude;
+                        if (d < best)
+                        {
+                            best = d;
+                            point = pose.a + pose.rotation * clamped;
+                        }
+                    }
+                    return best <= bodyRadius * bodyRadius;
+                }
             default:
-            {
-                ClosestPoints(pose.a, pose.b, bodyBottom, bodyTop, out Vector3 onBlade, out Vector3 onBody);
-                float reach = radius * scale + bodyRadius;
-                point = onBlade;
-                return (onBlade - onBody).sqrMagnitude <= reach * reach;
-            }
+                {
+                    ClosestPoints(pose.a, pose.b, bodyBottom, bodyTop, out Vector3 onBlade, out Vector3 onBody);
+                    float reach = radius * scale + bodyRadius;
+                    point = onBlade;
+                    return (onBlade - onBody).sqrMagnitude <= reach * reach;
+                }
         }
     }
 

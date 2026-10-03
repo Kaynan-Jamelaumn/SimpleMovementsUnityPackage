@@ -612,7 +612,7 @@ public class AbilityOnKeyEffect : EquipmentEffect
     {
         if (ability == null)
             return null;
-        var runtime = new ActiveAbilityTrait { ability = ability, modifiers = modifiers, input = input };
+        var runtime = new ActiveAbilityTrait { ability = ability, modifiers = modifiers, input = input, grantedBy = ctx.GrantSource };
         return BehaviourHandle.Start(ctx, runtime, strength);
     }
 
@@ -1158,16 +1158,16 @@ public class WhileConditionEffect : EquipmentEffect
             case Condition.InCombat: return InCombat(e);
             case Condition.OutOfCombat: return !InCombat(e);
             case Condition.WieldingWeapon:
-            {
-                CombatStats cs = ctx.Stats;
-                if (cs == null || cs.WieldedWeapon == null) return false;
-                return weapon == WeaponCategory.None || cs.WieldedCategory == weapon;
-            }
+                {
+                    CombatStats cs = ctx.Stats;
+                    if (cs == null || cs.WieldedWeapon == null) return false;
+                    return weapon == WeaponCategory.None || cs.WieldedCategory == weapon;
+                }
             default:
-            {
-                CombatStats cs = ctx.Stats;
-                return cs == null || cs.WieldedWeapon == null;
-            }
+                {
+                    CombatStats cs = ctx.Stats;
+                    return cs == null || cs.WieldedWeapon == null;
+                }
         }
     }
 

@@ -6,7 +6,7 @@ using UnityEngine;
 /// Ready-made traits: passive bonuses, drawbacks (negative cost), active movement skills (double jump, wall climb,
 /// glide), abilities on a key (barrier, blink), reactions (second wind, vampiric, undying, thorns, on-kill rewards,
 /// out-of-combat regeneration) and situational bonuses (last stand, battle focus, mana surge).
-/// Used by Assets ▸ Create ▸ Scriptable Objects ▸ Trait From Preset... and the Trait / Trait Database inspectors.
+/// Used by Assets ▸ Create ▸ SimpleMovements ▸ Character ▸ Trait From Preset... and the Trait / Trait Database inspectors.
 /// </summary>
 public static class TraitPresets
 {

@@ -12,9 +12,13 @@ public class AttackAnimationHandler
     }
 
     /// <summary>Plays the attack's clip stretched to <paramref name="duration"/> (or the animator trigger of its input).</summary>
-    public void TriggerAttackAnimation(IAttackComponent component, AttackType input, float duration, float speed)
+    public void TriggerAttackAnimation(IAttackComponent component, AttackType input, float duration, float speed) =>
+        TriggerAttackAnimation(component, input, duration, speed, null);
+
+    /// <summary>As above; <paramref name="weapon"/> is the weapon attacking (its Attack Sound plays when the attack has none).</summary>
+    public void TriggerAttackAnimation(IAttackComponent component, AttackType input, float duration, float speed, WeaponSO weapon)
     {
-        PlayAttackSound(component);
+        PlayAttackSound(component, weapon);
         var animController = controller.GetAnimController();
         if (animController == null)
             return;
@@ -63,13 +67,16 @@ public class AttackAnimationHandler
             AttackType.Heavy => "HeavyAttackTrigger",
             AttackType.Special => "SpecialAttackTrigger",
             AttackType.Alternate => "AlternateAttackTrigger",
+            AttackType.OffHand => "OffHandAttackTrigger",
             _ => "AttackTrigger"
         };
     }
 
-    private void PlayAttackSound(IAttackComponent component)
+    private void PlayAttackSound(IAttackComponent component, WeaponSO weapon)
     {
-        AudioClip clip = component.AttackSound != null ? component.AttackSound : controller.EquippedWeapon != null ? controller.EquippedWeapon.AttackSound : null;
+        if (weapon == null)
+            weapon = controller.EquippedWeapon;
+        AudioClip clip = component.AttackSound != null ? component.AttackSound : weapon != null ? weapon.AttackSound : null;
         controller.PlaySound(clip);
     }
 }

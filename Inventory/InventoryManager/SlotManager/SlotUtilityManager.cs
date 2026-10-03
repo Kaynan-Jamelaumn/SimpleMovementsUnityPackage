@@ -55,7 +55,7 @@ public class SlotUtilityManager
         InventorySlot.SetSharedContainers(inventoryItemsContainer, hotbarItemsContainer, equipmentItemsContainer);
 
         if (equipmentItemsContainer == null && equipmentSlotsParent == null)
-            Debug.LogWarning("[Inventory] No Equipment Slots Parent assigned in the Slot Manager: items cannot be shown in equipment slots. Use Tools > Inventory > UI Builder or assign it.");
+            Debug.LogWarning("[Inventory] No Equipment Slots Parent assigned in the Slot Manager: items cannot be shown in equipment slots. Use Tools > SimpleMovements > Inventory > UI Builder or assign it.");
     }
 
     private Transform CreateSharedContainer(string containerName, Transform parentTransform)

@@ -111,7 +111,7 @@ public class MobAbilityControllerEditor : AbilityCasterEditor
         EditorGUILayout.EndHorizontal();
         Mob m = c.GetComponent<Mob>();
         if (m == null)
-            EditorGUILayout.HelpBox("No Mob / MobActionsController on this object. Add one (or use Tools ▸ Mob Setup ▸ Add Missing Components).", MessageType.Error);
+            EditorGUILayout.HelpBox("No Mob / MobActionsController on this object. Add one (or use Tools ▸ SimpleMovements ▸ Mobs ▸ Add Missing Components).", MessageType.Error);
     }
 
     // ------------------------------------------------------------------ 1. slots

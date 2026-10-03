@@ -86,8 +86,8 @@ public class ComboCondition
                 break;
 
             case ConditionType.WeaponTraitRequired:
-                result = requiredTrait != null && weaponController != null && weaponController.EquippedWeapon != null &&
-                         weaponController.EquippedWeapon.HasTrait(requiredTrait);
+                result = requiredTrait != null && weaponController != null && weaponController.ConditionWeapon != null &&
+                         weaponController.ConditionWeapon.HasTrait(requiredTrait);
                 break;
 
             case ConditionType.ComboCount:
@@ -113,22 +113,22 @@ public class ComboCondition
                 break;
 
             case ConditionType.TargetHealthBelow:
-            {
-                CombatEntity e = target != null ? CombatEntity.Resolve(target) : null;
-                result = e != null && e.IsAlive && e.HealthRatio < threshold;
-                break;
-            }
+                {
+                    CombatEntity e = target != null ? CombatEntity.Resolve(target) : null;
+                    result = e != null && e.IsAlive && e.HealthRatio < threshold;
+                    break;
+                }
 
             case ConditionType.ChargedAttack:
                 result = weaponController != null && weaponController.PendingChargeRatio >= Mathf.Max(0.01f, threshold);
                 break;
 
             case ConditionType.InAir:
-            {
-                CharacterController cc = player != null ? player.GetComponentInChildren<CharacterController>() : null;
-                result = cc != null && !cc.isGrounded;
-                break;
-            }
+                {
+                    CharacterController cc = player != null ? player.GetComponentInChildren<CharacterController>() : null;
+                    result = cc != null && !cc.isGrounded;
+                    break;
+                }
         }
 
         return inverse ? !result : result;

@@ -18,6 +18,10 @@ public class PauseMenuSettings : MonoBehaviour
     public GameObject audioPanel;
     public GameObject graphicsPanel;
     public GameObject controlsPanel;
+    [Tooltip("Key bindings page (Key Rebinding Menu).")]
+    public GameObject keyBindingsPanel;
+    [Tooltip("Character page (Character Sheet Menu): class, race, stats, traits, abilities.")]
+    public GameObject characterPanel;
 
     [Header("Audio Settings")]
     public AudioMixerGroup masterMixer;
@@ -319,7 +323,7 @@ public class PauseMenuSettings : MonoBehaviour
         mainCamera = Camera.main;
         if (mainCamera == null)
         {
-            mainCamera = FindAnyObjectByType <Camera>();
+            mainCamera = FindAnyObjectByType<Camera>();
         }
     }
 
@@ -779,6 +783,7 @@ public class PauseMenuSettings : MonoBehaviour
         }
 
         PlayerPrefs.SetFloat(MOUSE_SENSITIVITY_KEY, sensitivity);
+        LookSettings.Sensitivity = sensitivity; // read by the player camera
         UpdatePlayerControllerSetting("mouseSensitivity", sensitivity);
         PlayButtonSoundIfInitialized();
     }
@@ -786,6 +791,7 @@ public class PauseMenuSettings : MonoBehaviour
     public void SetInvertMouse(bool invert)
     {
         PlayerPrefs.SetInt(INVERT_MOUSE_KEY, invert ? 1 : 0);
+        LookSettings.InvertY = invert; // read by the player camera
         UpdatePlayerControllerSetting("invertMouse", invert);
         PlayButtonSoundIfInitialized();
     }
@@ -817,14 +823,14 @@ public class PauseMenuSettings : MonoBehaviour
 
         foreach (string controllerName in commonControllerNames)
         {
-            var controller = FindAnyObjectByType <MonoBehaviour>();
+            var controller = FindAnyObjectByType<MonoBehaviour>();
             if (controller != null && controller.GetType().Name.Contains(controllerName))
             {
                 return controller;
             }
         }
 
-        return FindAnyObjectByType <MonoBehaviour>();
+        return FindAnyObjectByType<MonoBehaviour>();
     }
 
     // Use reflection to dynamically update player controller settings
@@ -872,6 +878,44 @@ public class PauseMenuSettings : MonoBehaviour
         ShowSubPanel(controlsPanel);
     }
 
+    public void ShowKeyBindingsPanel()
+    {
+        ShowSubPanel(keyBindingsPanel);
+    }
+
+    public void ShowCharacterPanel()
+    {
+        ShowSubPanel(characterPanel);
+    }
+
+    /// <summary>Opens the settings straight on the character page (the pause menu's Character button).</summary>
+    public void OpenCharacterSheet()
+    {
+        ShowSettingsPanel();
+        ShowSubPanel(characterPanel);
+    }
+
+    /// <summary>True while the settings window is open.</summary>
+    public bool IsSettingsOpen => settingsPanel != null && settingsPanel.activeInHierarchy;
+
+    /// <summary>
+    /// The pause key pressed in the settings: a page goes back to the settings list, the list goes back to the pause
+    /// menu. Returns false when the settings are not open (the pause menu then resumes the game).
+    /// </summary>
+    public bool HandleBack()
+    {
+        if (!IsSettingsOpen)
+            return false;
+        bool onPage = (audioPanel != null && audioPanel.activeSelf) || (graphicsPanel != null && graphicsPanel.activeSelf) ||
+                      (controlsPanel != null && controlsPanel.activeSelf) || (keyBindingsPanel != null && keyBindingsPanel.activeSelf) ||
+                      (characterPanel != null && characterPanel.activeSelf);
+        if (onPage && settingsMainContent != null)
+            BackToSettings();
+        else
+            BackToMainMenu();
+        return true;
+    }
+
     // Helper method to switch between settings sub-panels
     private void ShowSubPanel(GameObject targetPanel)
     {
@@ -879,6 +923,8 @@ public class PauseMenuSettings : MonoBehaviour
         SetPanelActive(audioPanel, false);
         SetPanelActive(graphicsPanel, false);
         SetPanelActive(controlsPanel, false);
+        SetPanelActive(keyBindingsPanel, false);
+        SetPanelActive(characterPanel, false);
         SetPanelActive(targetPanel, true);
         PlayButtonSoundIfInitialized();
     }
@@ -902,6 +948,8 @@ public class PauseMenuSettings : MonoBehaviour
         SetPanelActive(audioPanel, false);
         SetPanelActive(graphicsPanel, false);
         SetPanelActive(controlsPanel, false);
+        SetPanelActive(keyBindingsPanel, false);
+        SetPanelActive(characterPanel, false);
     }
 
     // Utility Methods

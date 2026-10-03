@@ -53,12 +53,13 @@ public class PlayerCameraView : MonoBehaviour
         if (!value.started) return;
         controller.ChangeCamera();
     }
-    
+
     public void OnLook(InputAction.CallbackContext context)
     {
         if (model.IsFirstPerson)
         {
-            Vector2 lookDelta = context.ReadValue<Vector2>();
+            // Sensitivity and Y inversion from the settings menu.
+            Vector2 lookDelta = LookSettings.Apply(context.ReadValue<Vector2>());
 
             // Clamp vertical rotation
             model.CurrentVerticalRotation += lookDelta.y;
@@ -74,7 +75,7 @@ public class PlayerCameraView : MonoBehaviour
             };
         }
     }
-    
+
     public void OnZoom(InputAction.CallbackContext context)
     {
         if (context.started)
@@ -120,12 +121,12 @@ public class PlayerCameraView : MonoBehaviour
     // Event handlers
     private void OnCameraChangedHandler(GameObject oldCamera, GameObject newCamera)
     {
-     //   Debug.Log($"Camera changed from {(oldCamera ? oldCamera.name : "None")} to {newCamera.name}");
+        //   Debug.Log($"Camera changed from {(oldCamera ? oldCamera.name : "None")} to {newCamera.name}");
     }
 
     private void OnFirstPersonChangedHandler(bool isFirstPerson)
     {
-       // Debug.Log($"First person mode: {isFirstPerson}");
+        // Debug.Log($"First person mode: {isFirstPerson}");
     }
 
     private void OnFOVChangedHandler(float fov)

@@ -72,6 +72,7 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         // Created first: when a missing reference disables this component during Awake, Unity calls OnDisable
         // right away, and it must find the input already there.
         playerInput = new PlayerInput();
+        InputBindingStore.Register(playerInput.asset); // the saved key bindings
 
         // References placed on a child (the character model) or a parent are found as well, not only on this object.
         AutoAssignReferences();

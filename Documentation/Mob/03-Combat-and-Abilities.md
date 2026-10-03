@@ -89,4 +89,18 @@ are never harmed unless friendly fire allows it. See
 | Absorb Chance Per Kill | % chance per kill (× the profile's *Absorb Chance Multiplier*) |
 | Shares | Which ability is granted when the roll succeeds; buttons: **Split Evenly**, **Fit to 100%**, **By AI Priority**, **All 0%** |
 
-Global rules are in *Absorption Settings* (*Tools ▸ Abilities ▸ Create Absorption Settings (Resources)*).
+Global rules are in *Absorption Settings* (*Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Absorption Settings (Resources)*).
+
+## 7. Blocking, body parts and ranged weapons on mobs
+
+Mobs share the player's combat components ([Inventory 10](../Inventory/10-Hands-Shields-Ranged-and-Body-Parts.md)):
+
+* **Blocking:** add a `BlockController`. A mob without a Weapon Controller blocks with its *Shield Item* (a shield
+  armor asset) or *Innate Defense* (on with *Use Innate Defense*). It raises its guard when it sees a melee swing
+  coming (*AI Block Chance*, *Reaction Time*, *Hold Time*), sometimes when an enemy is close, and lowers it to attack.
+  Arrows, spells and true damage follow the shield's rules like for the player.
+* **Body parts:** add a `BodyPartController` (or turn on *Combat Settings ▸ Body Parts For Every Character*). The
+  built-in humanoid profile is used unless you assign one; give non-humanoids (wolves, spiders) their own profile.
+  `BodyPartHitbox` colliders on bones make hits exact.
+* **Shields block mob attacks too:** a mob's melee hit from inside the player's shield arc, and its projectiles, are
+  blocked; *Guard Damage* on its attacks breaks guards faster; *Unblockable* attacks ignore shields.

@@ -499,7 +499,7 @@ public class PlayerStatusControllerEditor : Editor
 
     private void FindAllStatusControllersInScene()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsSortMode.None);
+        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         Debug.Log($"[PlayerStatusEditor] Found {controllers.Length} PlayerStatusController(s) in scene:");
 
         foreach (var controller in controllers)
@@ -512,10 +512,10 @@ public class PlayerStatusControllerEditor : Editor
 // Menu items for quick access
 public class PlayerStatusEditorMenu
 {
-    [MenuItem("Tools/Player Status/Validate All Controllers")]
+    [MenuItem("Tools/SimpleMovements/Validate/Validate All Players")]
     static void ValidateAllControllers()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsSortMode.None);
+        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         foreach (var controller in controllers)
         {
             var helper = new PlayerStatusSetupHelper(controller);
@@ -524,10 +524,10 @@ public class PlayerStatusEditorMenu
         }
     }
 
-    [MenuItem("Tools/Player Status/Auto-Setup All Controllers")]
+    [MenuItem("Tools/SimpleMovements/Player/Auto-Setup All Players In Scene")]
     static void AutoSetupAllControllers()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsSortMode.None);
+        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         int setupCount = 0;
 
         foreach (var controller in controllers)
@@ -542,7 +542,7 @@ public class PlayerStatusEditorMenu
         EditorUtility.DisplayDialog("Auto-Setup Complete", $"Completed auto-setup for {setupCount} PlayerStatusController(s)", "OK");
     }
 
-    [MenuItem("Assets/Create/Player Status/Player Class Template")]
+    [MenuItem("Assets/Create/SimpleMovements/Legacy/Player Class (Old Template)")]
     static void CreatePlayerClassTemplate()
     {
         var template = ScriptableObject.CreateInstance<PlayerClass>();

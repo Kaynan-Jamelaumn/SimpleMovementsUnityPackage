@@ -11,7 +11,7 @@ public static class InventoryUtils
     /// </summary>
     public static T OnlyInstance<T>() where T : Object
     {
-        T[] found = Object.FindObjectsByType<T>(FindObjectsSortMode.None);
+        T[] found = Object.FindObjectsByType<T>(FindObjectsInactive.Exclude);
         return found.Length == 1 ? found[0] : null;
     }
 

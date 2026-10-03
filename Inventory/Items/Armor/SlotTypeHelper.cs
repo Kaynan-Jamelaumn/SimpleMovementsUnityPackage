@@ -1,3 +1,6 @@
+using UnityEditor;
+
+
 /// <summary>
 /// Slot rules and conversions between <see cref="ItemType"/>, <see cref="ArmorSlotType"/> and <see cref="SlotType"/>.
 /// Always convert with these helpers: the enums have different orders, so casting one to another picks the wrong slot.
@@ -14,8 +17,33 @@ public static class SlotTypeHelper
         return ItemTypeToSlotType(item.ItemType);
     }
 
-    /// <summary>Can <paramref name="item"/> be placed in a slot of this type? Common slots accept everything.</summary>
-    public static bool CanPlace(ItemSO item, SlotType slot) => slot == SlotType.Common || (item != null && RequiredSlot(item) == slot);
+    /// <summary>
+    /// Can <paramref name="item"/> be placed in a slot of this type? Common slots accept everything. The Shield slot is the
+    /// OFF HAND: it takes shields and one-handed weapons that can be dual wielded (see <see cref="HandRules"/>).
+    /// </summary>
+    public static bool CanPlace(ItemSO item, SlotType slot)
+    {
+        if (slot == SlotType.Common)
+            return true;
+        if (item == null)
+            return false;
+        if (slot == SlotType.Shield && item is WeaponSO)
+            return HandRules.CanHoldInOffHand(item, out _);
+        return RequiredSlot(item) == slot;
+    }
+
+    /// <summary>Why <paramref name="item"/> cannot go in the slot (empty when it can): shown to the player.</summary>
+    public static string WhyCannotPlace(ItemSO item, SlotType slot)
+    {
+        if (item == null || CanPlace(item, slot))
+            return "";
+        if (slot == SlotType.Shield)
+        {
+            HandRules.CanHoldInOffHand(item, out string reason);
+            return reason;
+        }
+        return $"{item.Name} does not go in the {GetDisplayName(slot)} slot.";
+    }
 
     /// <summary>Does holding <paramref name="item"/> in a slot of this type equip it (apply its stats and effects)?</summary>
     public static bool Equips(ItemSO item, SlotType slot) => item is EquippableSO && IsEquipmentSlot(slot) && RequiredSlot(item) == slot;
@@ -147,7 +175,7 @@ public static class SlotTypeHelper
             SlotType.Leggings => "Leggings",
             SlotType.Boots => "Boots",
             SlotType.Gloves => "Gloves",
-            SlotType.Shield => "Shield",
+            SlotType.Shield => "Off Hand",
             SlotType.Ring => "Ring",
             SlotType.Trinket => "Trinket",
             SlotType.Cloak => "Cloak",

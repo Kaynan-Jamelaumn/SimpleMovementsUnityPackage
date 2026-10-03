@@ -6,7 +6,8 @@ using UnityEngine;
 /// <summary>
 /// Weapon inspector, in sections: Item, Damage, Attacks (one tab per input, every attack grouped into Timing, Cost &amp;
 /// Movement, Damage, Hit Area with a top-down drawing of what it hits, On Hit, Charge, Behaviours, Sound &amp; Visual,
-/// Chain and Traits, each with a ▶ Preview), Hit Area &amp; Range, Combos, Traits &amp; While Wielded, Animation &amp; Sound.
+/// Chain and Traits, each with a ▶ Preview), Hands &amp; Guard, Ranged Weapon, Hit Area &amp; Range, Combos, Traits &amp; While
+/// Wielded, Animation &amp; Sound.
 /// Every section says in plain words what its settings do and how they differ from the look-alike ones.
 /// </summary>
 [CustomEditor(typeof(WeaponSO), true)]
@@ -60,6 +61,8 @@ public class WeaponSOEditor : ItemSOEditor
         EditorGUILayout.LabelField("Attacks at a glance", EditorStyles.boldLabel);
         foreach (AttackType t in System.Enum.GetValues(typeof(AttackType)))
         {
+            if ((int)t >= InputHelp.Length)
+                continue; // Off Hand: not an action of its own (section Hands & Guard)
             AttackAction a = weapon.GetAction(t);
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -83,7 +86,18 @@ public class WeaponSOEditor : ItemSOEditor
                     AttackPreviewWindow.Open(weapon, t, 0);
             }
         }
+        EditorGUILayout.LabelField(HandsSummary(weapon), EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndVertical();
+    }
+
+    /// <summary>"Two-handed (Auto: Greatsword) · guards · Bow (draw and release)".</summary>
+    private static string HandsSummary(WeaponSO weapon)
+    {
+        WeaponHandling h = weapon.Handling;
+        string hands = h.Describe(weapon.Category) + (h.grip == WeaponGrip.Auto ? $" (Auto: {weapon.Category})" : "");
+        string guard = weapon.Guard != null ? "can guard (block)" : "no guard";
+        string ranged = weapon.Ranged != null ? weapon.Ranged.MenuName : "melee";
+        return $"Hands: {hands} · {guard} · {ranged}";
     }
 
     // ------------------------------------------------------------------ sections
@@ -102,14 +116,19 @@ public class WeaponSOEditor : ItemSOEditor
         {
             P("name", "description", "itemType", "icon", "prefab");
             Sub("Inventory");
-            P("stackMax", "weight", "price", "pickUpTime");
+            P("stackMax", "weight", "price", "pickUpTime", "gridSize", "canRotateInGrid", "gridIcon", "gridIconAngle");
             Sub("Durability");
             P("maxDurability", "durability", "durabilityReductionPerUse", "shouldBeDestroyedOn0UsesLeft", "cooldown");
             Sub("In the hand");
             P("position", "rotation", "scale");
+            Sub("On the character (Equipment Visuals)");
+            Help("The model shown in the hand and where it is carried when sheathed (back, hip...). Needs an Equipment Visuals " +
+                 "component on the character (the Inventory Manager adds one).");
+            P("visuals");
         }
-        else Mark("name", "description", "itemType", "icon", "prefab", "stackMax", "weight", "price", "pickUpTime", "maxDurability",
-                  "durability", "durabilityReductionPerUse", "shouldBeDestroyedOn0UsesLeft", "cooldown", "position", "rotation", "scale");
+        else Mark("name", "description", "itemType", "icon", "prefab", "stackMax", "weight", "price", "pickUpTime", "gridSize", "canRotateInGrid", "gridIcon", "gridIconAngle",
+                  "maxDurability", "durability", "durabilityReductionPerUse", "shouldBeDestroyedOn0UsesLeft", "cooldown", "position", "rotation",
+                  "scale", "visuals");
         // Use Feedback belongs to usable items (potions, food); weapons play their attacks' animation and sound instead.
         Mark("useAnimation", "useAudioClip", "useParticles");
 
@@ -118,10 +137,18 @@ public class WeaponSOEditor : ItemSOEditor
         else Mark("weaponCategory", "scaling", "minDamage", "maxDamage", "criticalChance", "criticalDamageMultiplier", "knockBack", "attackSpeed",
                   "elementType", "elementalBuildupRate", "toolType", "toolDamage");
 
+        if (Section("Hands & Guard", "One or two hands, dual wielding, and guarding (blocking) with the weapon itself.", false))
+            DrawHands(weapon);
+        else Mark("handling", "guard");
+
         if (Section("Attacks", "One attack per input. Pressing the same input again within 'Variant Time' plays the next hit of its chain. " +
                                "▶ previews an attack: its animation on the character in the scene and the area it hits in the Scene view.", true))
             DrawAttacks(weapon);
         else Mark(ActionFields);
+
+        if (Section("Ranged Weapon", null, weapon.Ranged != null))
+            DrawRanged(weapon);
+        else Mark("ranged");
 
         if (Section("Hit Area & Range", null, false))
             DrawRange(weapon);
@@ -267,6 +294,12 @@ public class WeaponSOEditor : ItemSOEditor
         AttackPreviewUtility.DrawTimeline(bar, obj, AttackPreviewUtility.Duration(weapon, obj));
         EditorGUILayout.LabelField($"{AttackPreviewUtility.Duration(weapon, obj):0.##} s in game · {obj.StaminaCost:0.#} stamina · reach " +
                                    $"{AttackPreviewUtility.Reach(weapon, obj):0.#} m", EditorStyles.centeredGreyMiniLabel);
+        if (weapon.Ranged != null && weapon.Ranged.Fires(type))
+        {
+            bool drawn = weapon.Ranged is DrawMechanic dm && dm.style != DrawStyle.QuickOnly || weapon.Ranged is ThrowMechanic th && th.chargeable;
+            EditorGUILayout.HelpBox($"Fires a projectile when it strikes (start of Active) - {weapon.Ranged.MenuName}, section Ranged Weapon." +
+                                    (drawn ? " Holding the input draws / winds up; the mechanic replaces this attack's Charge." : ""), MessageType.Info);
+        }
 
         bool g;
         g = Group(a, "timing", "Animation & Timing", "Startup (wind-up, yellow) → Active (it hits, red) → Recovery (grey). Seconds at speed 1; " +
@@ -335,6 +368,11 @@ public class WeaponSOEditor : ItemSOEditor
         g = Group(a, "onhit", "On Hit", "What happens to each character hit: status effects (burn, poison, slow, stun, knockback, life steal...), " +
                                         "an effect spawned on them and the Hit Sound (the sound of the hit landing).");
         R(a, used, g, "onHitEffects", "hitVfx", "hitSound");
+
+        g = Group(a, "bodyblock", "Body Part & Blocking", "Aimed Body Part: the part this attack aims at (Legs for a sweep, Head for an overhead " +
+                                                          "blow); empty = where it lands. Guard Damage: how tiring it is to block (2 = twice the " +
+                                                          "stamina; heavy blows break guards). Unblockable: shields and weapon guards cannot stop it.");
+        R(a, used, g, "aimedBodyPart", "guardDamage", "unblockable");
 
         g = Group(a, "charge", obj.charge != null && obj.charge.enabled ? "Charge (on)" : "Charge (off)",
             "Hold the input to charge, release to attack: more damage and a bigger area the longer it is held.");
@@ -412,7 +450,7 @@ public class WeaponSOEditor : ItemSOEditor
                 {
                     list.DeleteArrayElementAtIndex(i);
                     serializedObject.ApplyModifiedProperties();
-                        GUIUtility.ExitGUI();
+                    GUIUtility.ExitGUI();
                 }
             }
             if (el.isExpanded && v != null)
@@ -461,6 +499,128 @@ public class WeaponSOEditor : ItemSOEditor
         to.hitSound = from.hitSound;
     }
 
+    // ------------------------------------------------------------------ hands, guard
+    private void DrawHands(WeaponSO weapon)
+    {
+        Help("MAIN HAND = the weapon of the selected hotbar slot. OFF HAND = the Off Hand equipment slot (the old Shield slot): a shield, " +
+             "or a one-handed weapon that can be dual wielded. A TWO-HANDED weapon stows the off-hand item while it is held: its defense, " +
+             "blocking and effects are off until the two-handed weapon leaves the hand (the item stays in its slot).");
+        P("handling");
+        WeaponHandling h = weapon.Handling;
+        var lines = new List<string> { h.Describe(weapon.Category) + (h.grip == WeaponGrip.Auto ? $" (Auto: from the category {weapon.Category})" : "") };
+        if (weapon.CanBeOffHand)
+        {
+            AttackAction off = weapon.GetAction(h.offHandAttack);
+            if (h.offHandAttack == AttackType.OffHand)
+                lines.Add("Off Hand Attack cannot be 'Off Hand': pick the attack of this weapon the off hand performs (Normal, Light...).");
+            else if (off != null)
+                lines.Add($"In the off hand: the Off Hand input performs its {h.offHandAttack} attack '{off.DisplayName}'" +
+                          (Mathf.Approximately(h.offHandDamageMultiplier, 1f) ? "" : $" at ×{h.offHandDamageMultiplier:0.##} damage") + ".");
+            else
+                lines.Add($"In the off hand it has no {h.offHandAttack} attack, so the Off Hand input does nothing: pick another Off Hand Attack.");
+        }
+        EditorGUILayout.HelpBox(string.Join("\n", lines), MessageType.None);
+
+        Sub("Guard (blocking with the weapon)");
+        Help("Lets the Block input guard with this weapon when the off hand holds no shield (a greatsword or staff parry). Off by default; " +
+             "shields use their own Shield Defense (on the shield armor).");
+        P("guard");
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button(new GUIContent("Weapon Guard Preset", "On: partial reduction, costly in stamina, quick parries, no bash.")))
+                SetGuard(weapon, ShieldDefense.WeaponGuard());
+            using (new EditorGUI.DisabledScope(weapon.Guard == null))
+            {
+                if (GUILayout.Button(new GUIContent("Turn Off", "This weapon cannot guard.")))
+                {
+                    SerializedProperty enabled = serializedObject.FindProperty("guard")?.FindPropertyRelative("enabled");
+                    if (enabled != null)
+                        enabled.boolValue = false;
+                }
+            }
+        }
+    }
+
+    private void SetGuard(WeaponSO weapon, ShieldDefense defense)
+    {
+        serializedObject.ApplyModifiedProperties();
+        Undo.RecordObject(weapon, "Weapon guard preset");
+        weapon.SetGuard(defense);
+        EditorUtility.SetDirty(weapon);
+        serializedObject.Update();
+        GUIUtility.ExitGUI();
+    }
+
+    // ------------------------------------------------------------------ ranged
+    private static readonly Dictionary<string, int> ammoCounts = new Dictionary<string, int>(System.StringComparer.OrdinalIgnoreCase);
+    private static double ammoScanTime;
+
+    private void DrawRanged(WeaponSO weapon)
+    {
+        Help("Bows, crossbows, firearms and throwing weapons. Pick a mechanic: Bow (hold to draw, release to loose), Magazine (crossbow, " +
+             "firearm: loaded rounds and reloads) or Throw (the weapon itself flies). The attacks keep their timing, animation, stamina, " +
+             "on-hit effects and behaviours; those in Firing Attacks fire a projectile when they strike. Empty = a melee weapon.");
+        P("ranged");
+        RangedMechanic r = weapon.Ranged;
+        if (r == null)
+            return;
+        var lines = new List<string>();
+        r.Describe(lines);
+        if (r.firingAttacks != null)
+            foreach (AttackType t in r.firingAttacks)
+                if (weapon.GetAction(t) == null)
+                    lines.Add($"⚠ Fires on {t}, but the weapon has no {t} attack.");
+        if (r.projectile != null)
+            lines.Add($"Range ≈ {r.projectile.maxDistance:0} m · gravity {r.projectile.gravity:0.#}" + (r.projectile.pierce > 0 ? $" · pierces {r.projectile.pierce}" : "") +
+                      (r.projectile.explosionRadius > 0f ? $" · explodes ({r.projectile.explosionRadius:0.#} m)" : ""));
+        EditorGUILayout.HelpBox(string.Join("\n", lines), MessageType.None);
+
+        if (r.ammo != null && r.ammo.Needed)
+        {
+            int count = AmmoAssets(r.ammo.ammoType);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField(count > 0 ? $"{count} ammo item(s) of type '{r.ammo.ammoType}' in the project."
+                    : $"No ammo item of type '{r.ammo.ammoType}' yet: the weapon cannot fire without one in the inventory.", EditorStyles.wordWrappedMiniLabel);
+                if (GUILayout.Button(new GUIContent("Create Ammo", $"Creates an Ammo item of type '{r.ammo.ammoType}' next to the weapon."), GUILayout.Width(90f)))
+                    CreateAmmo(weapon, r.ammo.ammoType);
+            }
+        }
+    }
+
+    private static int AmmoAssets(string ammoType)
+    {
+        if (EditorApplication.timeSinceStartup >= ammoScanTime)
+        {
+            ammoScanTime = EditorApplication.timeSinceStartup + 3.0;
+            ammoCounts.Clear();
+            foreach (string guid in AssetDatabase.FindAssets("t:AmmoSO"))
+            {
+                var a = AssetDatabase.LoadAssetAtPath<AmmoSO>(AssetDatabase.GUIDToAssetPath(guid));
+                if (a == null || string.IsNullOrWhiteSpace(a.AmmoType)) continue;
+                string k = a.AmmoType.Trim();
+                ammoCounts[k] = ammoCounts.TryGetValue(k, out int n) ? n + 1 : 1;
+            }
+        }
+        return ammoType != null && ammoCounts.TryGetValue(ammoType.Trim(), out int c) ? c : 0;
+    }
+
+    private static void CreateAmmo(WeaponSO weapon, string ammoType)
+    {
+        string path = AssetDatabase.GetAssetPath(weapon);
+        string dir = string.IsNullOrEmpty(path) ? "Assets" : System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
+        var ammo = CreateInstance<AmmoSO>();
+        var so = new SerializedObject(ammo);
+        so.FindProperty("ammoType").stringValue = ammoType.Trim();
+        so.FindProperty("name").stringValue = ammoType.Trim() + "s";
+        so.ApplyModifiedPropertiesWithoutUndo();
+        AssetDatabase.CreateAsset(ammo, AssetDatabase.GenerateUniqueAssetPath($"{dir}/{ammoType.Trim()}s.asset"));
+        AssetDatabase.SaveAssets();
+        ammoScanTime = 0;
+        EditorGUIUtility.PingObject(ammo);
+        Debug.Log($"[Items] Created ammo '{ammo.name}' (type {ammoType}) for {weapon.name}.", ammo);
+    }
+
     // ------------------------------------------------------------------ range
     private void DrawRange(WeaponSO weapon)
     {
@@ -475,6 +635,11 @@ public class WeaponSOEditor : ItemSOEditor
         {
             AttackAction a = weapon.GetAction(t);
             if (a == null) continue;
+            if (weapon.Ranged != null && weapon.Ranged.Fires(t))
+            {
+                rows.Add($"{t}: fires a projectile (up to {weapon.Ranged.projectile?.maxDistance ?? 0f:0} m, section Ranged Weapon)");
+                continue;
+            }
             HitDetectionMode mode = AttackPreviewUtility.Detection(weapon, a);
             rows.Add($"{t}: {AttackPreviewUtility.DescribeDetection(weapon, a, mode, 1f)} → reach {AttackPreviewUtility.Reach(weapon, a):0.#} m" +
                      (a.ForwardMovement.sqrMagnitude > 0.0001f ? " (lunge included)" : ""));

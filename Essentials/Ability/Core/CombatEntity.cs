@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using static Readme;
 
 /// <summary>Crowd-control and displacement kinds a character can be immune to (bosses, constructs...).</summary>
 [Flags]
@@ -95,6 +96,8 @@ public class CombatEntity : MonoBehaviour
     public event Action<float> Healed;
     /// <summary>Raised once when this character dies (killer may be null).</summary>
     public event Action<CombatEntity> Died;
+    /// <summary>Raised when this character is revived / respawned (timed buffs and debuffs are cleared).</summary>
+    public event Action Revived;
     /// <summary>
     /// Asked when damage would kill this character, before it dies. A handler that restores some health and returns
     /// true saves it (e.g. the Cheat Death trait). Handlers are asked in order until one saves it.
@@ -102,6 +105,11 @@ public class CombatEntity : MonoBehaviour
     public event Func<DamageInfo, bool> LethalDamage;
     /// <summary>Raised when crowd control is applied (type, duration, source).</summary>
     public event Action<ControlType, float, CombatEntity> ControlApplied;
+    /// <summary>Raised when a hit was stopped completely before reaching health (fully blocked or parried).</summary>
+    public event Action<DamageInfo> DamageStopped;
+
+    /// <summary>How many hits were stopped completely (blocks, parries) so far: attackers compare it to know a hit was stopped.</summary>
+    public int StoppedHitCount { get; private set; }
 
     // ------------------------------------------------------------------ state
     private float stunUntil, silenceUntil, rootUntil, slowUntil, tauntUntil, invulnerableUntil;
@@ -126,12 +134,23 @@ public class CombatEntity : MonoBehaviour
     private struct ThreatEntry
     {
         public CombatEntity entity;
+        /// <summary>Threat at <see cref="lastTime"/> (it fades after that, see <see cref="Decayed"/>).</summary>
         public float threat;
         public float lastTime;
     }
 
+    private readonly List<IDamageDealtModifier> damageDealtModifiers = new List<IDamageDealtModifier>(1);
+
+    /// <summary>The character's combat stats (set by <see cref="CombatStats"/> itself), or null.</summary>
+    public CombatStats Stats { get; internal set; }
+
+    /// <summary>Raised when threat is added (source, amount added, kind): threat meters, network sync.</summary>
+    public event Action<CombatEntity, float, ThreatKind> ThreatAdded;
+
     private readonly List<ThreatEntry> threats = new List<ThreatEntry>(4);
     private readonly List<IDamageTakenModifier> damageTakenModifiers = new List<IDamageTakenModifier>(2);
+    private readonly List<IDamageInterceptor> damageInterceptors = new List<IDamageInterceptor>(2);
+    private readonly List<IDisplacementModifier> displacementModifiers = new List<IDisplacementModifier>(1);
 
     // ------------------------------------------------------------------ registry
     private static readonly List<CombatEntity> all = new List<CombatEntity>(64);
@@ -236,6 +255,7 @@ public class CombatEntity : MonoBehaviour
     private void Awake()
     {
         CacheComponents();
+        BodyPartController.EnsureFor(this);
     }
 
     private void OnEnable()
@@ -337,6 +357,9 @@ public class CombatEntity : MonoBehaviour
         return best;
     }
 
+    /// <summary>Measures the body again after its size changed (Character Body height).</summary>
+    public void RemeasureBody() => MeasureBody();
+
     private void MeasureBody()
     {
         float r = 0.5f, h = 2f;
@@ -387,6 +410,20 @@ public class CombatEntity : MonoBehaviour
 
     public Vector3 Position => transform.position;
     public Vector3 Center => BasePosition + Vector3.up * (height * 0.5f);
+
+    /// <summary>
+    /// The point of this character's body (an upright capsule) facing <paramref name="from"/>, at <paramref name="from"/>'s
+    /// height (kept within the body): where a blow or a shot coming from there lands.
+    /// </summary>
+    public Vector3 SurfacePointToward(Vector3 from)
+    {
+        Vector3 b = BasePosition;
+        float y = Mathf.Clamp(from.y, b.y + 0.02f, b.y + Mathf.Max(0.05f, height) - 0.02f);
+        var axis = new Vector3(b.x, y, b.z);
+        Vector3 flat = from - axis;
+        flat.y = 0f;
+        return flat.sqrMagnitude > 1e-6f ? axis + flat.normalized * radius : axis;
+    }
     public Vector3 AimPosition => aimPoint != null ? aimPoint.position : BasePosition + Vector3.up * (height * 0.7f);
     public Vector3 Forward => transform.forward;
     public TargetVolume Volume => new TargetVolume(BasePosition, radius, height);
@@ -535,7 +572,18 @@ public class CombatEntity : MonoBehaviour
             return 0f;
 
         info.target = this;
+        // The attacker's outgoing modifiers first (elemental damage...), then this character's.
+        if (info.source != null && info.source != this && info.source.damageDealtModifiers.Count > 0)
+            info.amount = info.source.ApplyDamageDealtModifiers(info);
         info.amount *= damageTakenMultiplier;
+        if (damageInterceptors.Count > 0 && !RunInterceptors(ref info))
+        {
+            // Stopped before reaching health (a full block, a parry): the attacker is remembered (aggro), nothing else.
+            StoppedHitCount++;
+            RecordAttacker(info.source, 0f);
+            DamageStopped?.Invoke(info);
+            return 0f;
+        }
         if (damageTakenModifiers.Count > 0)
             info.amount = ApplyDamageTakenModifiers(info);
         if (info.amount <= 0f)
@@ -566,7 +614,7 @@ public class CombatEntity : MonoBehaviour
         }
 
         info.amount = removed;
-        RecordAttacker(info.source, removed);
+        RecordAttacker(info.source, removed, info.threatMultiplier ?? 1f);
         Damaged?.Invoke(info);
         CombatEvents.RaiseDamaged(info);
 
@@ -586,6 +634,77 @@ public class CombatEntity : MonoBehaviour
     }
 
     public void RemoveDamageTakenModifier(IDamageTakenModifier modifier) => damageTakenModifiers.Remove(modifier);
+
+    /// <summary>Adds something that scales the damage this character DEALS (elemental damage bonuses...).</summary>
+    public void AddDamageDealtModifier(IDamageDealtModifier modifier)
+    {
+        if (modifier != null && !damageDealtModifiers.Contains(modifier))
+            damageDealtModifiers.Add(modifier);
+    }
+
+    public void RemoveDamageDealtModifier(IDamageDealtModifier modifier) => damageDealtModifiers.Remove(modifier);
+
+    private float ApplyDamageDealtModifiers(in DamageInfo info)
+    {
+        float amount = info.amount;
+        for (int i = 0; i < damageDealtModifiers.Count; i++)
+        {
+            IDamageDealtModifier m = damageDealtModifiers[i];
+            if (m == null || (m is UnityEngine.Object o && o == null))
+                continue;
+            try { amount = Mathf.Max(0f, m.ModifyDamageDealt(info, amount)); }
+            catch (Exception e) { Debug.LogException(e, this); }
+        }
+        return amount;
+    }
+
+    /// <summary>
+    /// Adds something that sees each hit before armour and resistances (body parts, shield blocks). Adding the same one
+    /// twice has no effect; they run in <see cref="IDamageInterceptor.InterceptOrder"/>.
+    /// </summary>
+    public void AddDamageInterceptor(IDamageInterceptor interceptor)
+    {
+        if (interceptor == null || damageInterceptors.Contains(interceptor))
+            return;
+        int i = 0;
+        while (i < damageInterceptors.Count && damageInterceptors[i].InterceptOrder <= interceptor.InterceptOrder)
+            i++;
+        damageInterceptors.Insert(i, interceptor);
+    }
+
+    public void RemoveDamageInterceptor(IDamageInterceptor interceptor) => damageInterceptors.Remove(interceptor);
+
+    /// <summary>Adds something that changes the knockbacks and pulls this character receives (a raised shield).</summary>
+    public void AddDisplacementModifier(IDisplacementModifier modifier)
+    {
+        if (modifier != null && !displacementModifiers.Contains(modifier))
+            displacementModifiers.Add(modifier);
+    }
+
+    public void RemoveDisplacementModifier(IDisplacementModifier modifier) => displacementModifiers.Remove(modifier);
+
+    /// <summary>Runs the interceptors in order. False = the hit was stopped completely.</summary>
+    private bool RunInterceptors(ref DamageInfo info)
+    {
+        for (int i = 0; i < damageInterceptors.Count; i++)
+        {
+            IDamageInterceptor x = damageInterceptors[i];
+            if (x == null || (x is UnityEngine.Object o && o == null))
+                continue;
+            try
+            {
+                if (!x.InterceptDamage(ref info))
+                    return false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, this);
+            }
+            if (info.amount <= 0f)
+                return false;
+        }
+        return true;
+    }
 
     private float ApplyDamageTakenModifiers(in DamageInfo info)
     {
@@ -612,9 +731,37 @@ public class CombatEntity : MonoBehaviour
     {
         if (IsDead || amount <= 0f || Health == null)
             return;
+        float before = Health.CurrentValue;
         Health.AddCurrentValue(amount);
         lastKnownHealth = Health.CurrentValue;
         Healed?.Invoke(amount);
+        float healed = Mathf.Max(0f, Health.CurrentValue - before);
+        if (source != null && healed > 0f)
+            SpreadHealingThreat(source, healed);
+    }
+
+    /// <summary>
+    /// Healing makes the healer a threat to every mob already fighting the healed character (shared between them).
+    /// </summary>
+    private void SpreadHealingThreat(CombatEntity healer, float healed)
+    {
+        float perPoint = CombatSettings.Instance.threatPerHealing;
+        if (perPoint <= 0f)
+            return;
+        IReadOnlyList<CombatEntity> all = All;
+        int count = 0;
+        for (int i = 0; i < all.Count; i++)
+            if (all[i] != null && all[i] != healer && all[i] != this && all[i].IsAlive && all[i].GetThreat(this) > 0f)
+                count++;
+        if (count == 0)
+            return;
+        float share = healed * perPoint / count;
+        for (int i = 0; i < all.Count; i++)
+        {
+            CombatEntity mob = all[i];
+            if (mob != null && mob != healer && mob != this && mob.IsAlive && mob.GetThreat(this) > 0f)
+                mob.AddThreat(healer, share, ThreatKind.Healing);
+        }
     }
 
     /// <summary>
@@ -630,13 +777,13 @@ public class CombatEntity : MonoBehaviour
         RecordAttacker(source, 0f);
     }
 
-    private void RecordAttacker(CombatEntity source, float amount)
+    private void RecordAttacker(CombatEntity source, float amount, float threatScale = 1f)
     {
         if (source == null || source == this)
             return;
         lastAttacker = source;
         lastAttackTime = Time.time;
-        AddThreat(source, Mathf.Max(1f, amount));
+        AddThreat(source, Mathf.Max(1f, amount) * CombatSettings.Instance.threatPerDamage * Mathf.Max(0f, threatScale), ThreatKind.Damage);
         source.NoteAttacked(this);
     }
 
@@ -664,34 +811,96 @@ public class CombatEntity : MonoBehaviour
         lastAttacker = null;
         if (Kind == EntityKind.Player && Availability != null)
             Availability.Revive();
+        Revived?.Invoke();
     }
 
     // ------------------------------------------------------------------ threat (used by mob AI)
-    public void AddThreat(CombatEntity source, float amount)
+    /// <summary>
+    /// Adds threat as it is (no multipliers): scripts and older callers. Prefer <see cref="AddThreat(CombatEntity, float, ThreatKind)"/>.
+    /// </summary>
+    public void AddThreat(CombatEntity source, float amount) => AddThreatRaw(source, amount, ThreatKind.Other);
+
+    /// <summary>
+    /// Adds threat from <paramref name="source"/>, scaled by its Threat stat. The first character to cause threat on this
+    /// one (by attacking or being noticed) gets the First Contact head start. Threat fades after a while without new
+    /// threat (Combat Settings ▸ Threat). Runs on the authority (server / host) in multiplayer; clients only need the
+    /// resulting target.
+    /// </summary>
+    public void AddThreat(CombatEntity source, float amount, ThreatKind kind)
+    {
+        if (source == null || source == this || amount <= 0f)
+            return;
+        CombatStats st = source.Stats;
+        if (st != null)
+            amount *= st.ThreatMultiplier;
+        AddThreatRaw(source, amount, kind);
+    }
+
+    private void AddThreatRaw(CombatEntity source, float amount, ThreatKind kind)
     {
         if (source == null || source == this)
             return;
+        float now = Time.time;
+        bool firstEver = true;
+        for (int i = 0; i < threats.Count; i++)
+        {
+            if (threats[i].entity != null && threats[i].entity.IsAlive && Decayed(threats[i], now) > 0.01f)
+            {
+                firstEver = false;
+                break;
+            }
+        }
         for (int i = 0; i < threats.Count; i++)
         {
             if (threats[i].entity == source)
             {
                 ThreatEntry t = threats[i];
-                t.threat += amount;
-                t.lastTime = Time.time;
+                t.threat = Decayed(t, now) + amount;
+                t.lastTime = now;
                 threats[i] = t;
+                ThreatAdded?.Invoke(source, amount, kind);
                 return;
             }
         }
-        threats.Add(new ThreatEntry { entity = source, threat = amount, lastTime = Time.time });
+        float bonus = firstEver ? CombatSettings.Instance.firstContactThreat * Mathf.Max(10f, MaxHealth) : 0f;
+        threats.Add(new ThreatEntry { entity = source, threat = amount + bonus, lastTime = now });
+        ThreatAdded?.Invoke(source, amount + bonus, kind);
     }
 
-    /// <summary>Threat accumulated from <paramref name="source"/>, decaying after <paramref name="memory"/> seconds.</summary>
+    /// <summary>A taunt: <paramref name="taunter"/> goes above everyone else's threat (and stays there after the taunt).</summary>
+    public void TauntThreat(CombatEntity taunter)
+    {
+        if (taunter == null || taunter == this)
+            return;
+        float top = 0f;
+        float now = Time.time;
+        for (int i = 0; i < threats.Count; i++)
+            if (threats[i].entity != taunter)
+                top = Mathf.Max(top, Decayed(threats[i], now));
+        float mine = GetThreat(taunter, float.MaxValue);
+        float wanted = Mathf.Max(top * CombatSettings.Instance.tauntThreatMultiplier, 1f);
+        if (wanted > mine)
+            AddThreatRaw(taunter, wanted - mine, ThreatKind.Taunt);
+    }
+
+    /// <summary>The threat of an entry now, after fading.</summary>
+    private static float Decayed(in ThreatEntry t, float now)
+    {
+        CombatSettings cs = CombatSettings.Instance;
+        float idle = now - t.lastTime - cs.threatDecayDelay;
+        if (idle <= 0f || cs.threatDecayPerSecond <= 0f)
+            return t.threat;
+        return t.threat * Mathf.Pow(1f - Mathf.Clamp01(cs.threatDecayPerSecond), idle);
+    }
+
+    /// <summary>Threat accumulated from <paramref name="source"/> (after fading), 0 when forgotten for <paramref name="memory"/> seconds.</summary>
     public float GetThreat(CombatEntity source, float memory = 20f)
     {
+        float now = Time.time;
         for (int i = 0; i < threats.Count; i++)
         {
             if (threats[i].entity == source)
-                return Time.time - threats[i].lastTime > memory ? 0f : threats[i].threat;
+                return now - threats[i].lastTime > memory ? 0f : Decayed(threats[i], now);
         }
         return 0f;
     }
@@ -701,21 +910,54 @@ public class CombatEntity : MonoBehaviour
     {
         CombatEntity best = null;
         float bestThreat = 0f;
+        float now = Time.time;
         for (int i = threats.Count - 1; i >= 0; i--)
         {
             ThreatEntry t = threats[i];
-            if (t.entity == null || t.entity.IsDead || Time.time - t.lastTime > memory)
+            if (t.entity == null || t.entity.IsDead || now - t.lastTime > memory)
             {
                 threats.RemoveAt(i);
                 continue;
             }
-            if (t.threat > bestThreat)
+            float v = Decayed(t, now);
+            if (v > bestThreat)
             {
-                bestThreat = t.threat;
+                bestThreat = v;
                 best = t.entity;
             }
         }
         return best;
+    }
+
+    /// <summary>The threat table now (after fading), highest first: threat meters, debugging, network sync.</summary>
+    public List<KeyValuePair<CombatEntity, float>> GetThreatTable(List<KeyValuePair<CombatEntity, float>> into = null)
+    {
+        into = into ?? new List<KeyValuePair<CombatEntity, float>>();
+        into.Clear();
+        float now = Time.time;
+        for (int i = 0; i < threats.Count; i++)
+            if (threats[i].entity != null && threats[i].entity.IsAlive)
+                into.Add(new KeyValuePair<CombatEntity, float>(threats[i].entity, Decayed(threats[i], now)));
+        into.Sort((a, b) => b.Value.CompareTo(a.Value));
+        return into;
+    }
+
+    /// <summary>Lowers the threat of <paramref name="source"/> (fade, vanish, threat-drop abilities). Never below 0.</summary>
+    public void ReduceThreat(CombatEntity source, float amount)
+    {
+        if (source == null || amount <= 0f)
+            return;
+        float now = Time.time;
+        for (int i = 0; i < threats.Count; i++)
+        {
+            if (threats[i].entity != source)
+                continue;
+            ThreatEntry t = threats[i];
+            t.threat = Mathf.Max(0f, Decayed(t, now) - amount);
+            t.lastTime = now;
+            threats[i] = t;
+            return;
+        }
     }
 
     public void ClearThreat() => threats.Clear();
@@ -751,7 +993,10 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public float CastMoveMultiplier { get; set; } = 1f;
 
-    /// <summary>Movement speed multiplier from crowd control and casting (0 when stunned or rooted).</summary>
+    /// <summary>Movement multiplier while guarding (set by the <see cref="BlockController"/>; 1 = free).</summary>
+    public float GuardMoveMultiplier { get; set; } = 1f;
+
+    /// <summary>Movement speed multiplier from crowd control, casting and guarding (0 when stunned or rooted).</summary>
     public float MoveSpeedMultiplier
     {
         get
@@ -759,7 +1004,7 @@ public class CombatEntity : MonoBehaviour
             if (IsStunned || IsRooted)
                 return 0f;
             float m = IsSlowed ? 1f - slowFraction : 1f;
-            return m * Mathf.Clamp01(CastMoveMultiplier);
+            return m * Mathf.Clamp01(CastMoveMultiplier) * Mathf.Clamp01(GuardMoveMultiplier);
         }
     }
 
@@ -778,7 +1023,11 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public bool ApplyControl(ControlType type, float duration, CombatEntity source, float magnitude = 0f)
     {
-        duration *= controlDurationMultiplier;
+        duration *= controlDurationMultiplier; // traits (Control Duration Taken)
+        if (Stats != null)
+            duration *= Stats.ControlTakenMultiplier; // Crowd Control Resistance
+        if (source != null && source != this && source.Stats != null)
+            duration *= source.Stats.ControlDealtMultiplier; // the attacker's Crowd Control Duration
         if (IsDead || duration <= 0f)
             return false;
         float until = Time.time + duration;
@@ -824,7 +1073,13 @@ public class CombatEntity : MonoBehaviour
         }
 
         if (source != null && source != this)
-            RecordAttacker(source, 0f);
+        {
+            RecordAttacker(source, 0f, 0f);
+            if (type == ControlType.Taunt)
+                TauntThreat(source);
+            else
+                AddThreat(source, CombatSettings.Instance.threatPerControl * Mathf.Max(10f, MaxHealth), ThreatKind.Control);
+        }
         ControlApplied?.Invoke(type, duration, source);
         return true;
     }
@@ -852,6 +1107,14 @@ public class CombatEntity : MonoBehaviour
             return false;
         if ((immunities & (isPull ? ControlImmunity.Pull : ControlImmunity.Knockback)) != 0)
             return false;
+        for (int i = 0; i < displacementModifiers.Count; i++)
+        {
+            IDisplacementModifier m = displacementModifiers[i];
+            if (m == null || (m is UnityEngine.Object o && o == null))
+                continue;
+            try { displacement = m.ModifyDisplacement(displacement, source, isPull); }
+            catch (Exception e) { Debug.LogException(e, this); }
+        }
         if (displacement.sqrMagnitude < 1e-4f)
             return false;
         ForcedMovement.GetOrAdd(this).Begin(displacement, Mathf.Max(0.05f, duration), arcHeight, false);

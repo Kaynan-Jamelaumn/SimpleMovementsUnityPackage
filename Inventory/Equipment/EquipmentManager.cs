@@ -53,6 +53,7 @@ public class EquipmentManager : MonoBehaviour
     private readonly List<Entry> entries = new List<Entry>();
     private readonly Dictionary<object, Entry> byKey = new Dictionary<object, Entry>(ReferenceComparer<object>.Instance);
     private readonly Dictionary<InventoryItem, InventorySlot> desired = new Dictionary<InventoryItem, InventorySlot>(ReferenceComparer<InventoryItem>.Instance);
+    private readonly HashSet<InventoryItem> suppressed = new HashSet<InventoryItem>(ReferenceComparer<InventoryItem>.Instance);
     private readonly List<EquipmentEffectHandle> tickList = new List<EquipmentEffectHandle>();
     private readonly List<ItemSO> itemsBuffer = new List<ItemSO>();
     private readonly Dictionary<ItemSO, Stack<object>> legacyKeys = new Dictionary<ItemSO, Stack<object>>(ReferenceComparer<ItemSO>.Instance);
@@ -223,6 +224,8 @@ public class EquipmentManager : MonoBehaviour
     public void SyncFromSlots(IEnumerable<InventorySlot> slots)
     {
         desired.Clear();
+        if (suppressed.Count > 0)
+            suppressed.RemoveWhere(i => i == null); // destroyed items
         if (slots != null)
         {
             foreach (InventorySlot slot in slots)
@@ -232,6 +235,8 @@ public class EquipmentManager : MonoBehaviour
                 InventoryItem inv = slot.heldItem.GetComponent<InventoryItem>();
                 if (inv == null || inv.itemScriptableObject == null || !SlotTypeHelper.Equips(inv.itemScriptableObject, slot.SlotType))
                     continue;
+                if (suppressed.Contains(inv))
+                    continue; // stowed (an off-hand shield while a two-handed weapon is held)
                 desired[inv] = slot;
             }
         }
@@ -256,6 +261,32 @@ public class EquipmentManager : MonoBehaviour
         }
         desired.Clear();
         EndBatch();
+    }
+
+    /// <summary>
+    /// Stows (or un-stows) an item that sits in an equipment slot: while stowed it stays in its slot but nothing it does
+    /// applies (an off-hand shield while a two-handed weapon is held). Takes effect at the next sync. Returns true if it changed.
+    /// </summary>
+    public bool SetSuppressed(InventoryItem item, bool suppress)
+    {
+        if (item == null)
+            return false;
+        bool changed = suppress ? suppressed.Add(item) : suppressed.Remove(item);
+        if (changed)
+            RequestSync();
+        return changed;
+    }
+
+    /// <summary>Is the item stowed (in its slot, but not applied)?</summary>
+    public bool IsSuppressed(InventoryItem item) => item != null && suppressed.Contains(item);
+
+    /// <summary>Un-stows every item.</summary>
+    public void ClearSuppressed()
+    {
+        if (suppressed.Count == 0)
+            return;
+        suppressed.Clear();
+        RequestSync();
     }
 
     // ------------------------------------------------------------------ manual equipping

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Ready-made ability setups: a starting point for designers (Assets > Create > Scriptable Objects > Ability > Ability From Preset, or Apply Preset in the ability inspector) and the mob's
+/// Ready-made ability setups: a starting point for designers (Assets > Create > SimpleMovements > Abilities > Ability From Preset, or Apply Preset in the ability inspector) and the mob's
 /// automatic basic attack. Each method returns a new, unsaved <see cref="AbilityDefinition"/>.
 /// </summary>
 public static class AbilityPresets

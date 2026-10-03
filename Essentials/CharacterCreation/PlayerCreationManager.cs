@@ -43,6 +43,12 @@ public class PlayerCreationManager
             return;
         }
 
+        if (mainUI.RaceRequired && mainUI.SelectedRace == null)
+        {
+            mainUI.OnCreationError("Cannot create player: no race selected");
+            return;
+        }
+
         try
         {
             // Spawn player prefab
@@ -79,6 +85,16 @@ public class PlayerCreationManager
         {
             try
             {
+                // Race, height and class archetype: applied by the character's identity (added when needed).
+                if (mainUI.SelectedRace != null || selectedClass.archetype != null || playerObj.GetComponentInChildren<CharacterIdentity>(true) != null)
+                {
+                    CharacterIdentity identity = CharacterIdentity.For(statusController);
+                    identity.SetRace(mainUI.SelectedRace);
+                    if (mainUI.SelectedHeight > 0f)
+                        identity.SetHeight(mainUI.SelectedHeight);
+                    mainUI.DebugLog($"Set race: {(mainUI.SelectedRace != null ? mainUI.SelectedRace.Name : "none")}, height {mainUI.SelectedHeight:0.00} m");
+                }
+
                 // Set player class
                 statusController.SetPlayerClass(selectedClass);
                 mainUI.DebugLog($"Set player class: {CharacterCreationValidator.GetClassNameSafe(selectedClass)}");

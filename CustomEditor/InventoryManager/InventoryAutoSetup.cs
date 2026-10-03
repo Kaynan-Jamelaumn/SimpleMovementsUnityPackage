@@ -13,13 +13,13 @@ using UnityEngine;
 /// <item>select a player or an inventory whose UI is missing.</item>
 /// </list>
 /// Only what is missing is created (see <see cref="InventoryUIBuilder.MissingParts"/>), once per object and editor
-/// session, and it can be undone. Turn it off with Tools ▸ Inventory ▸ Auto-Build UI When Missing.
+/// session, and it can be undone. Turn it off with Tools ▸ SimpleMovements ▸ Inventory ▸ Auto-Build UI When Missing.
 /// </summary>
 [InitializeOnLoad]
 public static class InventoryAutoSetup
 {
     private const string PrefKey = "Inventory.AutoBuildUI";
-    private const string MenuPath = "Tools/Inventory/Auto-Build UI When Missing";
+    private const string MenuPath = "Tools/SimpleMovements/Inventory/Auto-Build UI When Missing";
 
     private static readonly HashSet<GameObject> handled = new HashSet<GameObject>();
     private static readonly HashSet<GameObject> queue = new HashSet<GameObject>();
@@ -163,7 +163,7 @@ public static class InventoryAutoSetup
             if (!string.IsNullOrEmpty(assetPath) && InventoryUIBuilder.BuildInPrefabAsset(assetPath))
             {
                 Debug.Log($"[Inventory] Built the missing UI in the prefab '{assetPath}' ({string.Join(", ", missing)}); '{root.name}' and every other " +
-                          "instance get it from the prefab. (Turn this off with Tools ▸ Inventory ▸ Auto-Build UI When Missing.)",
+                          "instance get it from the prefab. (Turn this off with Tools ▸ SimpleMovements ▸ Inventory ▸ Auto-Build UI When Missing.)",
                           AssetDatabase.LoadAssetAtPath<GameObject>(assetPath));
                 return true;
             }
@@ -180,7 +180,7 @@ public static class InventoryAutoSetup
         InventoryManager built = InventoryUIBuilder.Build(manager, player, InventoryUIBuildSettings.FromManager(manager), select: false);
         string where = stageRoot != null ? "Save the prefab to keep it." : "";
         Debug.Log($"[Inventory] Built the missing UI for '{root.name}': {string.Join(", ", missing)}. {where} " +
-                  "(Turn this off with Tools ▸ Inventory ▸ Auto-Build UI When Missing.)", built);
+                  "(Turn this off with Tools ▸ SimpleMovements ▸ Inventory ▸ Auto-Build UI When Missing.)", built);
         return true;
     }
 

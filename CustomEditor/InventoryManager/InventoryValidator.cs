@@ -177,7 +177,83 @@ public static class InventoryValidator
         if (storage != null && storage.transform.childCount < 2)
             issues.Add(new InventoryIssue(MessageType.Error, $"Storage panel '{storage.name}' needs two children: 0 = background, 1 = slots."));
 
+        CheckGridInventory(issues, manager, so, inventoryParentSlots);
+        CheckHands(issues, manager, so, equipmentPanel, equipmentParent, equipmentSlots, player);
         return issues;
+    }
+
+    // ------------------------------------------------------------------ grid inventory
+    private static double nextItemScan;
+    private static readonly List<string> oversizedItems = new List<string>();
+    private static int scannedColumns, scannedRows;
+
+    private static void CheckGridInventory(List<InventoryIssue> issues, InventoryManager manager, SerializedObject so, Transform inventorySlotsParent)
+    {
+        SerializedProperty use = so.FindProperty("useGridInventory");
+        SerializedProperty g = so.FindProperty("gridSettings");
+        if (use == null || g == null || !use.boolValue)
+            return;
+        int columns = Mathf.Clamp(g.FindPropertyRelative("columns").intValue, 2, 30);
+        int rows = Mathf.Clamp(g.FindPropertyRelative("rows").intValue, 2, 30);
+
+        if (inventorySlotsParent != null && !(inventorySlotsParent is RectTransform))
+            issues.Add(new InventoryIssue(MessageType.Error, "Use Grid Inventory is on, but the Inventory Slots Parent is not a UI object: the grid cannot be drawn (the classic slots are used)."));
+
+        // The preview cells of the edit-time UI (the game builds the real cells at start).
+        if (!Application.isPlaying && inventorySlotsParent != null)
+        {
+            int preview = inventorySlotsParent.GetComponentsInChildren<InventorySlot>(true).Length;
+            if (preview != columns * rows)
+                issues.Add(new InventoryIssue(MessageType.Info,
+                    $"The inventory panel previews {preview} slot(s); the grid has {columns} × {rows} = {columns * rows} cells (built when the game starts). " +
+                    "Rebuild the UI to preview the grid.", "Rebuild UI", () => InventoryAutoSetup.TryBuild(manager.gameObject, force: true)));
+        }
+
+        // Items that can never fit the grid, in either orientation.
+        if (EditorApplication.timeSinceStartup >= nextItemScan || scannedColumns != columns || scannedRows != rows)
+        {
+            nextItemScan = EditorApplication.timeSinceStartup + 15.0;
+            scannedColumns = columns;
+            scannedRows = rows;
+            oversizedItems.Clear();
+            foreach (string guid in AssetDatabase.FindAssets("t:ItemSO"))
+            {
+                var item = AssetDatabase.LoadAssetAtPath<ItemSO>(AssetDatabase.GUIDToAssetPath(guid));
+                if (item == null) continue;
+                Vector2Int size = item.GridSize;
+                bool fits = size.x <= columns && size.y <= rows || item.CanRotateInGrid && size.y <= columns && size.x <= rows;
+                if (!fits)
+                    oversizedItems.Add($"{item.name} ({size.x}×{size.y})");
+            }
+        }
+        if (oversizedItems.Count > 0)
+            issues.Add(new InventoryIssue(MessageType.Warning,
+                $"{oversizedItems.Count} item(s) are bigger than the {columns} × {rows} grid and can never be put in the inventory (they go to the hotbar or " +
+                $"are dropped): {string.Join(", ", oversizedItems.Take(6))}{(oversizedItems.Count > 6 ? "…" : "")}. Enlarge the grid or make them smaller."));
+    }
+
+    // ------------------------------------------------------------------ hands
+    private static void CheckHands(List<InventoryIssue> issues, InventoryManager manager, SerializedObject so, GameObject equipmentPanel,
+        Transform equipmentParent, List<InventorySlot> equipmentSlots, GameObject player)
+    {
+        if ((equipmentPanel != null || equipmentParent != null) && equipmentSlots.Count > 0 && !equipmentSlots.Any(s => s != null && s.SlotType == SlotType.Shield))
+            issues.Add(new InventoryIssue(MessageType.Info,
+                "The equipment panel has no Off Hand slot (Slot Type Shield): shields and a second weapon (dual wielding) cannot be held.",
+                "Build UI…", () => InventoryUIBuilderWindow.Open(manager)));
+
+        var wc = so.FindProperty("weaponController").objectReferenceValue as WeaponController;
+        if (wc == null && player != null)
+            wc = player.GetComponentInChildren<WeaponController>();
+        if (wc != null && wc.offHandGameObject == null)
+        {
+            Animator animator = wc.GetComponentInParent<Animator>();
+            if (animator == null && player != null)
+                animator = player.GetComponentInChildren<Animator>();
+            if (animator == null || !animator.isHuman)
+                issues.Add(new InventoryIssue(MessageType.Info,
+                    "Weapon Controller ▸ Off Hand Game Object is empty and the character is not a Humanoid: off-hand weapons and shields are held " +
+                    "at the main hand. Assign the left hand bone."));
+        }
     }
 
     // ------------------------------------------------------------------ helpers

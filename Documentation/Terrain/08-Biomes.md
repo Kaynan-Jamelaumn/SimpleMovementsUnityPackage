@@ -16,7 +16,7 @@ biome is where**, so that:
 - borders are gradual (height, textures and objects transition);
 - the same seed always gives the same layout.
 
-In this project a biome is an **asset** (`Assets > Create > Scriptable Objects > Biome`) listed in
+In this project a biome is an **asset** (`Assets > Create > SimpleMovements > World > Biome`) listed in
 `TerrainGenerator > Biomes` together with its objects (`BiomeInstance { BiomePrefab, runtimeObjects }`). A biome
 **does not** by itself decide water type or ocean: oceans come from the continent field, and rivers flow through any
 biome.

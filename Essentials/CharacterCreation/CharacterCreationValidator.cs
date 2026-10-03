@@ -39,7 +39,7 @@ public class CharacterCreationValidator
 
     private void ValidateUISetup()
     {
-        var eventSystem = Object.FindAnyObjectByType <UnityEngine.EventSystems.EventSystem>();
+        var eventSystem = Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>();
         if (eventSystem == null)
         {
             mainUI.DebugLogError("NO EVENTSYSTEM FOUND! Please add an EventSystem to your scene");
@@ -269,7 +269,8 @@ public class CharacterCreationValidator
 
         try
         {
-            return trait.GetFormattedDescription() ?? "No description available";
+            // Coloured: green = helps, red = hurts (TextMeshPro rich text).
+            return StatText.RichDescription(trait);
         }
         catch
         {

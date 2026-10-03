@@ -7,6 +7,8 @@
 | **Problems** | Everything `InventoryValidator` finds, with severity, explanation and a **Fix** button when it can be fixed automatically (see §2) |
 | **References** | Item prefab, panels, hand, camera, player and player systems, grouped; **Auto-assign** finds them on the player and in the hierarchy |
 | **Slots** | Hotbar / inventory slot counts, Slot Manager and Layout Manager settings |
+| **Grid Inventory** | *Use Grid Inventory*, the grid settings, **Rebuild UI For This Mode**, **Suggest Item Sizes…**; in Play Mode the grid's state (items, free cells, consistency), **Switch To Grid / Slots** and **Resize And Re-pack** ([11](11-Grid-Inventory.md)) |
+| **Hands, Visuals & Quickslots** | Equipment visuals, shield blocking, quickslots and messages on / off; in Play Mode what each hand holds (stowed, dual wielding) and the quickslots with their counts ([10](10-Hands-Shields-Ranged-and-Body-Parts.md)) |
 | **Layout Presets** | One-click layout presets and grid settings |
 | **Live (Play Mode)** | Give / remove any item, open/close the inventory, force an equipment sync, and see what is equipped, the combat stats, active set bonuses and the weapon's state (current attack, chain step, combo) |
 | **Settings Export / Import** | Copies the manager's settings to / from JSON |
@@ -29,7 +31,7 @@ Checked, with automatic fixes where possible:
 
 `InventoryValidator.Validate(manager)` can also be called from your own tools or tests.
 
-## 3. UI Builder — *Tools ▸ Inventory ▸ UI Builder*
+## 3. UI Builder — *Tools ▸ SimpleMovements ▸ Inventory ▸ UI Builder*
 
 Generates and wires the full inventory UI:
 
@@ -89,7 +91,7 @@ It creates only what is missing, once per object and editor session, as one undo
   inspector shows it with a **Remove extras** button.
 * The inventory inspector has **Build / Repair UI Now** (the same, on demand) and **UI Builder…** (choose sizes,
   counts, equipment slots and colours). Turn the automatic part off with
-  *Tools ▸ Inventory ▸ Auto-Build UI When Missing*.
+  *Tools ▸ SimpleMovements ▸ Inventory ▸ Auto-Build UI When Missing*.
 
 ### Armor Sets window (`ArmorSetUIManager`)
 
@@ -114,7 +116,7 @@ and by itself when a set is completed (closing again after *Auto Hide Delay*).
   Requirements), **Hit Area & Range** (what each attack reaches, **Set Max Range From Attacks**, the old Attack Cast),
   **Combos**, **Traits & While Wielded** (the difference spelled out; a warning when a trait is in both),
   **Animation & Sound**. Use Feedback is hidden (weapons do not use it). Every section explains its fields.
-* **Attack Preview** (▶, or *Tools ▸ Inventory ▸ Attack Preview*): plays or scrubs an attack (any input, any
+* **Attack Preview** (▶, or *Tools ▸ SimpleMovements ▸ Inventory ▸ Attack Preview*): plays or scrubs an attack (any input, any
   chain hit, any charge) on the character in the scene - the selected object, the prefab being edited or the
   player - without Play Mode. In the Scene view it draws, coloured by phase (yellow wind-up, red hitting, grey
   recovery): the Hit Shape (moving with the lunge, with its height band), or for **Weapon Blade** attacks a
@@ -143,9 +145,23 @@ At the top of every item inspector: the icon, a one-line summary and
 * **Presets…** - armor: **materials** Cloth, Leather, Chainmail, Iron, Steel, Mythril (scaled by slot; jewelry gives
   magic resistance only); weapons: **movesets** (the templates) and **tiers** Wooden → Legendary (damage, crit,
   durability, weight, value by category); consumables: minor/normal/greater health, regeneration, mana and stamina
-  potions, bread, cooked meat, apple, water. Also *Create ▸ Scriptable Objects ▸ Item ▸ Consumable Preset*.
+  potions, bread, cooked meat, apple, water. Also *Create ▸ SimpleMovements ▸ Items ▸ Consumable Preset*.
 
 Every field of the item assets has a tooltip (units and examples). The Armor Set Wizard has a **Material** option.
+
+### Grid size, shields, ammo, hands and ranged
+
+* **Every item:** a drawing of its grid footprint under the quick setup, buttons for common sizes and **Usual: W×H**.
+* **Armor:** *Shield Defense* is shown only for shields; **Presets ▸ Shield Defense** (Buckler, Round, Kite, Tower)
+  and a summary of what the shield blocks.
+* **Ammo:** presets (arrows, broadheads, bolts, bullets, shells, darts, stones) and the weapons that fire it.
+  *Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Ammo Preset* creates one.
+* **Weapon:** *Hands & Guard* (grip, dual wielding, off-hand attack, Weapon Guard preset) and *Ranged Weapon*
+  (mechanic, a summary, a warning for firing inputs without an attack, the matching ammo in the project with
+  **Create Ammo**). Each attack has a *Body Part & Blocking* group (aimed part, guard damage, unblockable) and says
+  when it fires a projectile. "Attacks at a glance" ends with the hands / guard / ranged summary.
+* **Validator:** warns when the grid preview does not match the grid, when items are bigger than the grid, when the
+  equipment panel has no Off Hand slot, and when the off hand has no bone on a non-Humanoid.
 
 ## 5. Armor sets
 
@@ -153,12 +169,12 @@ Every field of the item assets has a tooltip (units and examples). The Armor Set
   set without being listed), a piece list with **Link** buttons, **Add pieces that reference this set**, **Link all
   pieces**, **Remove empty**, a drop area for armor assets, and a **Bonus Simulator**: a slider for the number of
   worn pieces showing exactly which tiers are active (upgrade groups included) and the next threshold.
-* **Armor Set Wizard** (*Tools ▸ Inventory ▸ Armor Set Wizard*): name, colour, folder, which pieces, defense per
+* **Armor Set Wizard** (*Tools ▸ SimpleMovements ▸ Inventory ▸ Armor Set Wizard*): name, colour, folder, which pieces, defense per
   piece, and which 2 / 3 / 4-piece tiers; creates the set and all pieces already linked both ways.
 
 ## 6. Weapon templates
 
-*Assets ▸ Create ▸ Scriptable Objects ▸ Item ▸ Weapon From Template*, or **Apply Template…** on a weapon:
+*Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Weapon From Template*, or **Apply Template…** on a weapon:
 
 | Template | Moveset |
 |---|---|
@@ -168,8 +184,14 @@ Every field of the item assets has a tooltip (units and examples). The Armor Set
 | Spear | Thrust chain (line hits), charged impaling lunge, knockback sweep |
 | Hammer | Smash chain with a chance to stun, charged earthquake (earth, slows) |
 | Axe | Chop chain with a chance to bleed, charged overhead chop |
-| Bow | Charged draw-and-release that casts a projectile ability (assign it), knockback bow bash |
-| Staff | 3-bolt magic chain casting at the target (assign the ability), charged knockback nova |
+| Bow | Draw-and-release with the **Bow mechanic** (arrows = Ammo of type Arrow), knockback bow bash |
+| Staff | 3-bolt magic chain casting at the target (assign the ability), charged knockback nova, weapon guard |
+| Crossbow | Magazine of 1 bolt (slow reload, pierces 1), stock strike on Alternate |
+| Throwing Knife | Throw mechanic (stack of 10, recoverable), slash chain on Alternate, dual-wieldable |
+| Pistol | Magazine of 8 bullets, fire interval, bloom, damage falloff with distance, one-handed |
+
+The Greatsword and Staff templates also turn on the weapon **Guard**. Every template sets the usual **grid size**
+and clears a ranged mechanic or guard left from before.
 
 Templates only fill data (timings, damage, shapes, charge, behaviours, on-hit effects); animations, sounds and
 abilities are left for you. Applying a template can be undone.
@@ -192,3 +214,17 @@ with the Unity Test Framework):
 | Slot rules | Every armor type fits and equips only in its slot and converts back |
 | Combo sequences | Match the end of the input history |
 | Weapon templates | Every template produces a valid weapon |
+
+`CustomEditor/Items/Tests/CombatInventoryFeatureTests.cs`:
+
+| Test | Checks |
+|---|---|
+| Grid placement | No overlap, nothing out of bounds or at negative positions, `At`, free cells, consistency |
+| Grid move / swap / remove | Moving over its own cells, swaps only when both fit (a refused swap changes nothing), freed cells |
+| Grid rotation search | A 1×3 item fits a 2-row grid only turned |
+| Hand rules | Two-handed from category and grip; off-hand rules; a two-handed weapon stows the shield; dual wielding |
+| Shield coverage | Front arc only; True damage is never blocked |
+| Body parts | Humanoid bands (head, torso, arms at the side, legs), multipliers, armour coverage |
+| Bow | A full draw is stronger, faster and more accurate; over-holding shakes |
+| Ammo | Matches by type, ignoring case |
+| Grid sizes | Suggested size by kind; clamping to 1–10 |

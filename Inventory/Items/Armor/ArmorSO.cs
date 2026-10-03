@@ -26,7 +26,7 @@ public enum ArmorSlotType
 /// inherent traits and every effect of <see cref="EquippableSO"/>. It can belong to an <see cref="ArmorSet"/>, whose
 /// bonuses activate as more pieces are worn.
 /// </summary>
-[CreateAssetMenu(fileName = "Armor", menuName = "Scriptable Objects/Item/Armor")]
+[CreateAssetMenu(fileName = "Armor", menuName = "SimpleMovements/Items/Armor", order = 2)]
 public class ArmorSO : EquippableSO
 {
     [Header("Armor Specific")]
@@ -47,9 +47,17 @@ public class ArmorSO : EquippableSO
     [Tooltip("Give the Inherent Traits while worn.")]
     [SerializeField] private bool applyTraitsWhenEquipped = true;
 
+    [Header("Shield (Shield slot only)")]
+    [Tooltip("What the shield does when raised (block input): protected arc and body parts, damage reduction, stamina per hit, " +
+             "guard break, parry window, shield bash. Only used by pieces worn in the Shield / Off Hand slot.")]
+    [SerializeField] private ShieldDefense shieldDefense = ShieldDefense.Round();
+
     [Header("Visual & Audio")]
-    [Tooltip("The piece's model (for your character visuals; listen to EquipmentManager.ItemEquipped).")]
+    [Tooltip("The piece's model, worn on the character by the Equipment Visuals component (skinned or attached to a bone, see " +
+             "Armor Visuals). Shields: the model in the off hand / on the back (empty = the item's Prefab).")]
     [SerializeField] private GameObject armorModel;
+    [Tooltip("How the model is worn: bound to the skeleton (skinned) or attached to the slot's bone, pairs, offsets, character parts hidden.")]
+    [SerializeField] private ArmorVisualSettings armorVisuals = new ArmorVisualSettings();
     [Tooltip("Played when the piece is put on.")]
     [SerializeField] private AudioClip equipArmorSound;
     [Tooltip("Played when the piece is taken off.")]
@@ -68,6 +76,14 @@ public class ArmorSO : EquippableSO
     public List<Trait> InherentTraits => inherentTraits;
     public bool ApplyTraitsWhenEquipped => applyTraitsWhenEquipped;
     public GameObject ArmorModel => armorModel;
+    public ArmorVisualSettings ArmorVisuals => armorVisuals ?? (armorVisuals = new ArmorVisualSettings());
+    /// <summary>Is this piece a shield (worn in the Shield / Off Hand slot)?</summary>
+    public bool IsShield => armorSlotType == ArmorSlotType.Shield;
+    /// <summary>The shield's block settings (null when the piece is not a shield or cannot block).</summary>
+    public ShieldDefense ShieldDefense => IsShield && shieldDefense != null && shieldDefense.enabled ? shieldDefense : null;
+
+    /// <summary>Replaces the shield settings (presets, editor tools).</summary>
+    public void SetShieldDefense(ShieldDefense defense) => shieldDefense = defense;
     public AudioClip EquipArmorSound => equipArmorSound;
     public AudioClip UnequipArmorSound => unequipArmorSound;
 
@@ -138,6 +154,8 @@ public class ArmorSO : EquippableSO
     public override void AppendTooltip(List<string> lines)
     {
         lines.Add($"{SlotTypeHelper.GetDisplayName(armorSlotType)}");
+        if (ShieldDefense != null)
+            ShieldDefense.Describe(lines);
         base.AppendTooltip(lines);
     }
 
@@ -156,6 +174,8 @@ public class ArmorSO : EquippableSO
             warnings.Add("Inherent Traits has empty entries.");
         if (inherentTraits != null && inherentTraits.Count > 0 && !applyTraitsWhenEquipped)
             warnings.Add("Inherent Traits are set but 'Apply Traits When Equipped' is off, so they are never given.");
+        if (IsShield && shieldDefense != null)
+            shieldDefense.Validate("Shield", errors, warnings);
     }
 
     // Validation method - SPECIFIC AND EXACT
@@ -166,6 +186,10 @@ public class ArmorSO : EquippableSO
             itemType = ItemType.Armor;
         if (elementalResistances == null)
             elementalResistances = new List<ElementalResistance>();
+        if (shieldDefense == null)
+            shieldDefense = ShieldDefense.Round();
+        if (armorVisuals == null)
+            armorVisuals = new ArmorVisualSettings();
         base.OnValidate();
     }
 

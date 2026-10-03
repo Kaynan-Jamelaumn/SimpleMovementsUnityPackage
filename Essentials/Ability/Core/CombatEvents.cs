@@ -27,6 +27,65 @@ public struct DamageInfo
     public ElementType element;
     /// <summary>The weapon that dealt it (null for abilities, hazards, falls...).</summary>
     public WeaponSO weapon;
+
+    // ---------------------------------------------------------------- hit location and defence
+    /// <summary>How the hit arrived (melee swing, projectile, area...). Unknown for older callers.</summary>
+    public DamageDelivery delivery;
+    /// <summary>The collider that was struck (blade or projectile hits), or null. Body-part hitboxes use it.</summary>
+    public Collider hitCollider;
+    /// <summary>
+    /// A body part the attacker aimed at by name ("Head", "Legs"...), e.g. a leg sweep. Empty = from where it hit.
+    /// The target's <see cref="BodyPartController"/> resolves it in its own profile.
+    /// </summary>
+    public string aimedBodyPart;
+    /// <summary>The body part that was hit (set by the target's <see cref="BodyPartController"/>; null = not tracked).</summary>
+    public BodyPartDefinition bodyPart;
+    /// <summary>Shields and weapon guards cannot block it (grabs, curses...).</summary>
+    public bool unblockable;
+    /// <summary>Scales the threat this hit generates (an ability's or attack's Threat Multiplier). Null = 1.</summary>
+    public float? threatMultiplier;
+    /// <summary>Multiplies the stamina a blocked hit costs the defender: heavy attacks break guards (0 = 1).</summary>
+    public float guardDamage;
+    /// <summary>True when a block reduced or stopped this hit (set by the defender's <see cref="BlockController"/>).</summary>
+    public bool blocked;
+    /// <summary>True when the hit was parried: no damage, the attacker staggered.</summary>
+    public bool parried;
+    /// <summary>Damage the block removed (before armour).</summary>
+    public float blockedAmount;
+}
+
+/// <summary>How a hit arrived. Serialized as numbers: only add new values at the end.</summary>
+public enum DamageDelivery
+{
+    /// <summary>Not reported (older code, scripts).</summary>
+    Unknown,
+    /// <summary>A weapon swing or a melee ability.</summary>
+    Melee,
+    /// <summary>An arrow, bolt, bullet, thrown weapon or spell projectile.</summary>
+    Projectile,
+    /// <summary>An explosion, a slam, an aura.</summary>
+    Area,
+    /// <summary>Damage over time.</summary>
+    Periodic,
+}
+
+/// <summary>
+/// Sees (and may change or stop) a hit before armour and resistances: body-part location, shield blocks, parries.
+/// Register one with <see cref="CombatEntity.AddDamageInterceptor"/>. Interceptors run in <see cref="InterceptOrder"/>.
+/// </summary>
+public interface IDamageInterceptor
+{
+    /// <summary>Lower runs first. Body parts use 0 (the location is known), blocking uses 100.</summary>
+    int InterceptOrder { get; }
+
+    /// <summary>Changes the hit in place (amount, body part, flags). Return false to stop it completely (no damage).</summary>
+    bool InterceptDamage(ref DamageInfo info);
+}
+
+/// <summary>Changes knockbacks and pulls a character receives (a raised shield holds its ground).</summary>
+public interface IDisplacementModifier
+{
+    Vector3 ModifyDisplacement(Vector3 displacement, CombatEntity source, bool isPull);
 }
 
 /// <summary>A sound made in the world that AI can hear (footsteps, spells, fights).</summary>
@@ -62,6 +121,8 @@ public static class CombatEvents
     public static event Action<CombatEntity> MeleeSwingStarted;
     /// <summary>A mob asks nearby allies for help against a target (caller, target).</summary>
     public static event Action<CombatEntity, CombatEntity> HelpRequested;
+    /// <summary>A hit was blocked or parried (the info's target is the defender, <c>parried</c> tells which).</summary>
+    public static event Action<DamageInfo> Blocked;
 
     public static void RaiseCastStarted(AbilityCastInstance cast) => CastStarted?.Invoke(cast);
     public static void RaiseCastReleased(AbilityCastInstance cast) => CastReleased?.Invoke(cast);
@@ -70,6 +131,7 @@ public static class CombatEvents
     public static void RaiseKilled(CombatEntity victim, CombatEntity killer) => Killed?.Invoke(victim, killer);
     public static void RaiseMeleeSwing(CombatEntity attacker) => MeleeSwingStarted?.Invoke(attacker);
     public static void RaiseHelpRequested(CombatEntity caller, CombatEntity target) => HelpRequested?.Invoke(caller, target);
+    public static void RaiseBlocked(in DamageInfo info) => Blocked?.Invoke(info);
 
     /// <summary>Makes a noise AI within <paramref name="radius"/> can hear.</summary>
     public static void EmitNoise(Vector3 position, float radius, CombatEntity source, float intensity = 0.5f)
@@ -91,5 +153,6 @@ public static class CombatEvents
         Noise = null;
         MeleeSwingStarted = null;
         HelpRequested = null;
+        Blocked = null;
     }
 }

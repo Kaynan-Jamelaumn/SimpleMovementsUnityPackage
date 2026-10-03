@@ -66,6 +66,42 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         CharacterModifiers = modifiers;
         CharacterModifiersVersion++;
     }
+
+    private readonly Dictionary<string, AbilityModifierSet> modifierLayers = new Dictionary<string, AbilityModifierSet>();
+    private readonly Dictionary<AbilitySlotSource, AbilityModifierSet> scopedModifiers = new Dictionary<AbilitySlotSource, AbilityModifierSet>();
+
+    /// <summary>
+    /// A named layer of modifiers for EVERY ability, kept apart from the traits' set (the combat stats use "Combat
+    /// Stats": crowd-control duration, attribute scaling). Null removes the layer.
+    /// </summary>
+    public void SetModifierLayer(string key, AbilityModifierSet modifiers)
+    {
+        if (string.IsNullOrEmpty(key))
+            return;
+        if (modifiers == null) modifierLayers.Remove(key);
+        else modifierLayers[key] = modifiers;
+        CharacterModifiersVersion++;
+    }
+
+    /// <summary>
+    /// Modifiers for the abilities of one origin only: the character's own skills, abilities granted by traits / race /
+    /// class, or by items (cost and cooldown reduction that only count for one of them). Null removes them.
+    /// </summary>
+    public void SetScopedModifiers(AbilitySlotSource source, AbilityModifierSet modifiers)
+    {
+        if (modifiers == null) scopedModifiers.Remove(source);
+        else scopedModifiers[source] = modifiers;
+        CharacterModifiersVersion++;
+    }
+
+    /// <summary>Adds the layers and the slot's scoped modifiers to <paramref name="stats"/>.</summary>
+    internal void ApplyLayers(ref AbilityStats stats, AbilitySlot slot)
+    {
+        foreach (KeyValuePair<string, AbilityModifierSet> kv in modifierLayers)
+            stats.Apply(kv.Value);
+        if (slot != null && scopedModifiers.TryGetValue(slot.Source, out AbilityModifierSet scoped))
+            stats.Apply(scoped);
+    }
     public int SlotCount => slots.Count;
     public Animator Animator => animator;
 
@@ -564,22 +600,22 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
                 return;
 
             case AbilityAimLock.FollowCaster:
-            {
-                Vector3 forward = CombatQuery.FlatDirection(Vector3.zero, transform.forward, c.AimDirection);
-                float dist = CombatQuery.FlatDistance(c.CasterPosition, c.AimPoint);
-                c.AimDirection = forward;
-                c.AimPoint = SnapIfNeeded(c.Definition, Entity.Position + forward * dist);
-                return;
-            }
+                {
+                    Vector3 forward = CombatQuery.FlatDirection(Vector3.zero, transform.forward, c.AimDirection);
+                    float dist = CombatQuery.FlatDistance(c.CasterPosition, c.AimPoint);
+                    c.AimDirection = forward;
+                    c.AimPoint = SnapIfNeeded(c.Definition, Entity.Position + forward * dist);
+                    return;
+                }
 
             default:
-            {
-                if (c.Target == null || !c.Target.IsAlive)
+                {
+                    if (c.Target == null || !c.Target.IsAlive)
+                        return;
+                    ComputeDesiredAim(c, c.Target, out Vector3 point, out Vector3 dir);
+                    TurnAimToward(c, point, dir, dt);
                     return;
-                ComputeDesiredAim(c, c.Target, out Vector3 point, out Vector3 dir);
-                TurnAimToward(c, point, dir, dt);
-                return;
-            }
+                }
         }
     }
 
@@ -1041,7 +1077,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     // ------------------------------------------------------------------ resources
     protected virtual bool HasResources(AbilityDefinition def, in AbilityStats s)
     {
-        float m = def.manaCost * s.cost, st = def.staminaCost * s.cost, hp = def.healthCost * s.cost;
+        float m = def.manaCost * s.cost * s.manaCost, st = def.staminaCost * s.cost, hp = def.healthCost * s.cost;
         if (m > 0f && mana != null && !mana.HasEnougCurrentValue(m))
             return false;
         if (st > 0f && stamina != null && !stamina.HasEnougCurrentValue(st))
@@ -1055,7 +1091,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     {
         AbilityDefinition def = c.Definition;
         AbilityStats s = c.Stats;
-        float m = def.manaCost * s.cost, st = def.staminaCost * s.cost, hp = def.healthCost * s.cost;
+        float m = def.manaCost * s.cost * s.manaCost, st = def.staminaCost * s.cost, hp = def.healthCost * s.cost;
         if (m > 0f && mana != null)
         {
             mana.ConsumeMana(m);
@@ -1136,19 +1172,19 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         switch (settings.fullSlotsPolicy)
         {
             case FullSlotsPolicy.ReplaceOldestAbsorbed:
-            {
-                float oldest = float.MaxValue;
-                for (int i = 0; i < slots.Count; i++)
                 {
-                    AbilitySlot s = slots[i];
-                    if (s?.Grant != null && s.Grant.receivedTime < oldest && s.cast == null && CanUseSlotForGrant(i))
+                    float oldest = float.MaxValue;
+                    for (int i = 0; i < slots.Count; i++)
                     {
-                        oldest = s.Grant.receivedTime;
-                        replace = i;
+                        AbilitySlot s = slots[i];
+                        if (s?.Grant != null && s.Grant.receivedTime < oldest && s.cast == null && CanUseSlotForGrant(i))
+                        {
+                            oldest = s.Grant.receivedTime;
+                            replace = i;
+                        }
                     }
+                    break;
                 }
-                break;
-            }
             case FullSlotsPolicy.ReplaceLastSlot:
                 for (int i = slots.Count - 1; i >= 0; i--)
                 {

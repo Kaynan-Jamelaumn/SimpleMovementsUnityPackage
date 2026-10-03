@@ -38,6 +38,10 @@ public class TraitEditor : Editor
             "BEHAVIOURS are things the trait lets the character do or reacts with: Double Jump, Wall Climb, Glide, an ability on a " +
             "key (Guardian Barrier, Blink), Second Wind, Life Steal, Cheat Death, Thorns, regeneration out of combat, rewards on kill, " +
             "or extra modifiers only in a situation (below 30% health, in the air, in combat, while casting...).\n\n" +
+            "COMBAT STATS (players and mobs): Critical Chance, Armor Penetration, Threat, Cooldown Reduction, Height... and element-" +
+            "limited ones (Status Resistance + Poison = poison resistance). They stack with race, class, equipment and buffs.\n\n" +
+            "ONLY FOR: races / classes that may take the trait (empty = everyone). Races and classes can also forbid traits, make " +
+            "them cheaper or dearer, and make them stronger or weaker (Enhance Trait effect).\n\n" +
             "COST: positive = costs trait points; negative = a drawback that gives points back. Only points actually paid are " +
             "refunded when it is removed (armor, sets and the class grant traits for free).\n" +
             "Every change is undone exactly when the trait is removed; percent bonuses follow level-ups.");
@@ -55,6 +59,20 @@ public class TraitEditor : Editor
         if (showPreview)
             EditorGUILayout.LabelField(t.GetFormattedDescription(), EditorStyles.wordWrappedLabel);
         EditorGUILayout.EndVertical();
+
+        // Active traits: one per character.
+        if (t.HasActiveSkill)
+        {
+            string key = "";
+            foreach (TraitBehaviour bh in t.behaviours)
+                if (bh is ActiveAbilityTrait at) key = at.KeyText;
+            EditorGUILayout.HelpBox("ACTIVE TRAIT: gives an ability on its own key" + (key.Length > 0 ? $" ({key})" : "") +
+                                    ". A character can pick only one active trait (Trait Manager ▸ Max Active Traits). Movement traits such as " +
+                                    "Double Jump, Wall Climb and Glide use existing keys and do not count.", MessageType.Info);
+        }
+        else if (t.Kind != TraitKind.Passive)
+            EditorGUILayout.HelpBox("Uses existing keys (jump, movement): not counted as an active trait, any number can be picked.", MessageType.None);
+        CharacterArchetypeEditor.DrawChanges(StatText.Of(t));
 
         // Buttons.
         EditorGUILayout.BeginHorizontal();
@@ -211,7 +229,7 @@ public class TraitEditor : Editor
 /// <summary>Trait menus: create from preset, validate all traits, create the Resources trait database.</summary>
 public static class TraitToolsMenu
 {
-    [MenuItem("Assets/Create/Scriptable Objects/Trait From Preset...", false, 0)]
+    [MenuItem("Assets/Create/SimpleMovements/Character/Trait From Preset...", false, 0)]
     private static void CreateFromPreset()
     {
         string folder = SelectedFolder();
@@ -231,7 +249,7 @@ public static class TraitToolsMenu
         menu.ShowAsContext();
     }
 
-    [MenuItem("Tools/Traits/Validate All Traits")]
+    [MenuItem("Tools/SimpleMovements/Validate/Validate All Traits")]
     private static void ValidateAll()
     {
         int n = 0, errorCount = 0, warningCount = 0;
@@ -251,7 +269,7 @@ public static class TraitToolsMenu
         Debug.Log($"Validated {n} traits: {errorCount} errors, {warningCount} warnings.");
     }
 
-    [MenuItem("Tools/Traits/Create Trait Database (Resources)")]
+    [MenuItem("Tools/SimpleMovements/Project Setup/Create Trait Database (Resources)")]
     private static void CreateDatabase()
     {
         TraitDatabase existing = Resources.Load<TraitDatabase>("TraitDatabase");

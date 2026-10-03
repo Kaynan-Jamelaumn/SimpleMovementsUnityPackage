@@ -110,37 +110,52 @@ public static class HotbarHandler
         // Clean up current hand item
         ClearHandItems(handParent);
 
-        // Get selected slot with safety checks
-        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length) return;
+        InventoryItem heldItem = CurrentSlotInventoryItem(hotbarSlots);
 
-        var slotObject = hotbarSlots[selectedHotbarSlot];
-        if (slotObject == null) return;
+        // Equipment Visuals show (and sheathe) the item in hand themselves: one model, moved between hand and sheath.
+        EquipmentVisuals visuals = EquipmentVisuals.For(handParent);
+        if (visuals != null && visuals.isActiveAndEnabled)
+        {
+            visuals.SetMainHandSocket(handParent);
+            visuals.SetMainHandItem(heldItem);
+            return;
+        }
 
-        var selectedSlot = slotObject.GetComponent<InventorySlot>();
-        if (selectedSlot == null) return;
-
-        // Check if heldItem exists and is properly assigned
-        if (selectedSlot.heldItem == null) return;
-
-        var heldItem = selectedSlot.heldItem.GetComponent<InventoryItem>();
         if (heldItem.Live()?.itemScriptableObject.Live()?.Prefab != null)
         {
             InstantiateHandItem(heldItem, handParent);
         }
     }
 
-    // Efficiently clear all hand items
+    private static InventoryItem CurrentSlotInventoryItem(GameObject[] hotbarSlots)
+    {
+        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length) return null;
+        var slotObject = hotbarSlots[selectedHotbarSlot];
+        if (slotObject == null) return null;
+        var selectedSlot = slotObject.GetComponent<InventorySlot>();
+        if (selectedSlot == null || selectedSlot.heldItem == null) return null;
+        return selectedSlot.heldItem.GetComponent<InventoryItem>();
+    }
+
+    /// <summary>
+    /// Removes the models the hotbar put in the hand. Only those: the hand bone's own children (fingers, sockets) used to
+    /// be destroyed with them when the hand parent was the hand bone itself.
+    /// </summary>
+    public static void ClearHand(Transform handParent) => ClearHandItems(handParent);
+
     private static void ClearHandItems(Transform handParent)
     {
         if (handParent == null) return;
 
-        // Destroy in reverse order for performance
         for (int i = handParent.childCount - 1; i >= 0; i--)
         {
             var child = handParent.GetChild(i);
-            if (child != null)
+            if (child != null && child.GetComponent<HeldItemModel>() != null)
                 Object.Destroy(child.gameObject);
         }
+        if (currentHandItem != null && currentHandItem.transform.parent == handParent)
+            Object.Destroy(currentHandItem);
+        currentHandItem = null;
     }
 
     // Create and configure hand item
@@ -149,7 +164,9 @@ public static class HotbarHandler
         try
         {
             var itemSO = inventoryItem.itemScriptableObject;
-            var newItem = Object.Instantiate(itemSO.Prefab, handParent);
+            GameObject model = itemSO.Visuals.model != null ? itemSO.Visuals.model : itemSO.Prefab;
+            var newItem = Object.Instantiate(model, handParent);
+            newItem.AddComponent<HeldItemModel>();
 
             ConfigureHandItem(newItem, itemSO);
             currentHandItem = newItem;

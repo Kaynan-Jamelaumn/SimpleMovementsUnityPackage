@@ -6,12 +6,12 @@ using UnityEditor;
 
 /// <summary>
 /// Quick setup for mobs: adds and wires every component the mob AI needs.
-/// Tools > Mob Setup > Create New Mob, or right-click a GameObject > Mob Setup > Quick Setup Mob.
+/// Tools > SimpleMovements > Mobs > Create New Mob, or right-click a GameObject > SimpleMovements > Quick Setup Mob.
 /// </summary>
 public class MobQuickSetup : MonoBehaviour
 {
 #if UNITY_EDITOR
-    [MenuItem("Tools/Mob Setup/Create New Mob")]
+    [MenuItem("Tools/SimpleMovements/Mobs/Create New Mob")]
     private static void CreateNewMob()
     {
         GameObject mobObject = new GameObject("NewMob");
@@ -21,7 +21,7 @@ public class MobQuickSetup : MonoBehaviour
         EditorGUIUtility.PingObject(mobObject);
     }
 
-    [MenuItem("GameObject/Mob Setup/Quick Setup Mob", false, 0)]
+    [MenuItem("GameObject/SimpleMovements/Quick Setup Mob", false, 0)]
     private static void QuickSetupSelectedMob(MenuCommand menuCommand)
     {
         GameObject mobObject = menuCommand.context as GameObject;
@@ -29,10 +29,10 @@ public class MobQuickSetup : MonoBehaviour
             MobSetupUtility.SetupMob(mobObject, false);
     }
 
-    [MenuItem("GameObject/Mob Setup/Quick Setup Mob", true)]
+    [MenuItem("GameObject/SimpleMovements/Quick Setup Mob", true)]
     private static bool ValidateQuickSetupMob() => Selection.activeGameObject != null;
 
-    [MenuItem("Tools/Mob Setup/Add Missing Components")]
+    [MenuItem("Tools/SimpleMovements/Mobs/Add Missing Components")]
     private static void AddMissingComponents()
     {
         GameObject selected = Selection.activeGameObject;
@@ -44,12 +44,12 @@ public class MobQuickSetup : MonoBehaviour
         MobSetupUtility.SetupMob(selected, false);
     }
 
-    [MenuItem("Tools/Mob Setup/Help")]
+    [MenuItem("Tools/SimpleMovements/Mobs/Help")]
     private static void ShowHelp()
     {
         EditorUtility.DisplayDialog("Mob Setup Help", @"MOB QUICK SETUP
 
-Right-click a GameObject > Mob Setup > Quick Setup Mob, or Tools > Mob Setup > Create New Mob.
+Right-click a GameObject > SimpleMovements > Quick Setup Mob, or Tools > SimpleMovements > Mobs > Create New Mob.
 
 ADDS (only what is missing):
 - CapsuleCollider, kinematic Rigidbody (a physics Rigidbody fights the NavMeshAgent)

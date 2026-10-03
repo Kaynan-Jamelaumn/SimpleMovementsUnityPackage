@@ -43,6 +43,7 @@ public class WeaponManager
 
         equippedWeapon = weaponSO;
         heldItem = item;
+        controller.OnMainWeaponChanged(weaponSO, item);
         stateCoordinator?.ResetAllStates();
 
         EquipmentManager eq = controller.Equipment;
@@ -79,6 +80,7 @@ public class WeaponManager
 
         equippedWeapon = null;
         heldItem = null;
+        controller.OnMainWeaponChanged(null, null);
         if (playEffects)
         {
             controller.PlaySound(old.UnequipSound);

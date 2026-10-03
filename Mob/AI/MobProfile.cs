@@ -55,9 +55,9 @@ public enum MobPatrolMode
 /// Everything that makes a mob type behave the way it does: temperament, senses, movement, fighting style, dodging,
 /// fleeing, animation parameters and performance. One profile can be shared by every mob of a type; different types
 /// get different profiles. Mobs without a profile build one from their old Mob fields automatically.
-/// Create with Assets > Create > Scriptable Objects > Mob > Mob Profile (or a preset from the same menu).
+/// Create with Assets > Create > SimpleMovements > Mobs > Mob Profile (or a preset from the same menu).
 /// </summary>
-[CreateAssetMenu(fileName = "MobProfile", menuName = "Scriptable Objects/Mob/Mob Profile", order = 0)]
+[CreateAssetMenu(fileName = "MobProfile", menuName = "SimpleMovements/Mobs/Mob Profile", order = 0)]
 public class MobProfile : ScriptableObject
 {
     // ------------------------------------------------------------------ temperament
@@ -196,6 +196,14 @@ public class MobProfile : ScriptableObject
 
     [Tooltip("Seconds between the end of one attack and the start of the next (on top of cooldowns).")]
     [Min(0f)] public float minTimeBetweenAttacks = 0.4f;
+
+    [Header("Threat")]
+    [Tooltip("Pick targets by THREAT: the first character to attack or be noticed is the target, and others take over by " +
+             "causing more threat (damage, healing its enemies, crowd control, taunts) by the switch margins of Combat " +
+             "Settings ▸ Threat. Off = the older scoring (distance, visibility, threat as one factor).")]
+    public bool useThreatTable = true;
+    [Tooltip("Multiplies the switch margins for this mob (2 = very loyal to its target, 0.5 = fickle). 1 = Combat Settings.")]
+    [Min(0.1f)] public float threatLoyalty = 1f;
 
     [Header("Dodging")]
     [Tooltip("Chance to dodge a telegraphed attack it is standing in (per attack).")]

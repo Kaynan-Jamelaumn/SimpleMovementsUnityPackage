@@ -12,12 +12,17 @@ public class WeaponEffectsManager
     }
 
     /// <summary>Attaches the attack's trail to the weapon hand for the duration of the attack.</summary>
-    public void StartTrail(IAttackComponent component)
+    public void StartTrail(IAttackComponent component) => StartTrail(component, null);
+
+    /// <summary>Attaches the attack's trail to <paramref name="socket"/> (the hand attacking; null = the main hand).</summary>
+    public void StartTrail(IAttackComponent component, Transform socket)
     {
         StopTrail();
-        if (component?.TrailEffect == null || controller.HandTransform == null)
+        if (socket == null)
+            socket = controller.HandTransform;
+        if (component?.TrailEffect == null || socket == null)
             return;
-        trail = Object.Instantiate(component.TrailEffect, controller.HandTransform, false);
+        trail = Object.Instantiate(component.TrailEffect, socket, false);
     }
 
     public void StopTrail()

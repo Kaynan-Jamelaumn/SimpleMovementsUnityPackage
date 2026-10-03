@@ -197,8 +197,11 @@ public class ExperienceManager : MonoBehaviour
                 case "agility":
                 case "intelligence":
                 case "endurance":
-                    // These might need special handling depending on your implementation
-                    Debug.Log($"Upgraded {statType} by {amount} (combat stat - implement as needed)");
+                    // Combat attributes go to Combat Stats through the character's identity (kept for saving).
+                    CombatStatType attribute = statType == "strength" ? CombatStatType.Strength
+                        : statType == "agility" ? CombatStatType.Agility
+                        : statType == "intelligence" ? CombatStatType.Intelligence : CombatStatType.Endurance;
+                    CharacterIdentity.For(controller).AddAttribute(attribute, amount);
                     break;
                 default:
                     Debug.LogWarning($"Stat upgrade for {statType} not implemented yet");

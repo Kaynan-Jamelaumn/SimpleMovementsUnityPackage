@@ -34,6 +34,15 @@ public class InventoryUIBuildSettings
     public bool buildInteractionPrompt = true;
     [Tooltip("The Armor Sets window (worn sets, set details, pieces, bonuses) wired to an ArmorSetUIManager, and a Sets button on the inventory.")]
     public bool buildArmorSetUI = true;
+    [Tooltip("Lay the inventory out as the Inventory Manager's grid (Use Grid Inventory): Grid Columns × Grid Rows cells. " +
+             "Taken from the manager; the hotbar, equipment and storage stay slots.")]
+    public bool gridInventory;
+    public int gridColumns = 10;
+    public int gridRows = 6;
+    [Tooltip("0 = the Slot Size.")]
+    public float gridCellSize = 56f;
+    public float gridSpacing = 2f;
+    public float gridPadding = 8f;
     public string prefabFolder = "Assets/Inventory/Generated";
     public Color panelColor = new Color(0.08f, 0.09f, 0.11f, 0.92f);
     public Color slotColor = new Color(1f, 1f, 1f, 0.12f);
@@ -49,9 +58,33 @@ public class InventoryUIBuildSettings
             var so = new SerializedObject(manager);
             s.hotbarSlots = Mathf.Clamp(so.FindProperty("numberOfHotBarSlots").intValue, 1, 9);
             s.inventorySlots = Mathf.Max(1, so.FindProperty("numberOfInventorySlots").intValue);
+            s.ReadGrid(so);
         }
         return s;
     }
+
+    /// <summary>Takes the grid options (Use Grid Inventory, Grid Settings) of the manager.</summary>
+    public void ReadGrid(SerializedObject managerObject)
+    {
+        SerializedProperty use = managerObject.FindProperty("useGridInventory");
+        SerializedProperty g = managerObject.FindProperty("gridSettings");
+        if (use == null || g == null)
+            return;
+        gridInventory = use.boolValue;
+        gridColumns = Mathf.Clamp(g.FindPropertyRelative("columns").intValue, 2, 30);
+        gridRows = Mathf.Clamp(g.FindPropertyRelative("rows").intValue, 2, 30);
+        gridCellSize = Mathf.Max(0f, g.FindPropertyRelative("cellSize").floatValue);
+        gridSpacing = Mathf.Max(0f, g.FindPropertyRelative("spacing").floatValue);
+        gridPadding = Mathf.Max(0f, g.FindPropertyRelative("padding").floatValue);
+    }
+
+    /// <summary>Cells across (grid) or columns of slots.</summary>
+    public int InventoryColumns => gridInventory ? gridColumns : inventoryColumns;
+    /// <summary>Cells (grid) or slots of the inventory.</summary>
+    public int InventoryCells => gridInventory ? gridColumns * gridRows : inventorySlots;
+    public float InventoryCellSize => gridInventory && gridCellSize > 0f ? gridCellSize : slotSize;
+    public float InventorySpacing => gridInventory ? gridSpacing : spacing;
+    public float InventoryPadding => gridInventory ? gridPadding : spacing;
 }
 
 /// <summary>
@@ -150,8 +183,23 @@ public static class InventoryUIBuilder
         // Inventory panel
         GameObject inventoryPanelGo = so.FindProperty("inventoryParent").objectReferenceValue as GameObject;
         Transform inventoryPanel = inventoryPanelGo != null ? inventoryPanelGo.transform : FindOrCreateChild(root, "InventoryPanel", false);
-        int rows = Mathf.CeilToInt(s.inventorySlots / (float)Mathf.Max(1, s.inventoryColumns));
-        Vector2 gridSize = new Vector2(s.inventoryColumns * (s.slotSize + s.spacing) + s.spacing, rows * (s.slotSize + s.spacing) + s.spacing);
+        // Grid inventory (Use Grid Inventory on the manager): Grid Columns × Grid Rows cells of the grid's size; else the slots.
+        s.ReadGrid(so);
+        int columns = Mathf.Max(1, s.InventoryColumns);
+        int rows = Mathf.CeilToInt(s.InventoryCells / (float)columns);
+        float cellSize = s.InventoryCellSize, cellSpacing = s.InventorySpacing, cellPadding = s.InventoryPadding;
+        Vector2 gridSize = new Vector2(columns * cellSize + (columns - 1) * cellSpacing + cellPadding * 2f,
+                                       rows * cellSize + (rows - 1) * cellSpacing + cellPadding * 2f);
+        if (inventoryPanelGo != null && s.gridInventory)
+        {
+            // An existing panel takes the grid's size (the grid resizes it the same way when the game starts).
+            var prt = inventoryPanel as RectTransform;
+            if (prt != null && Mathf.Approximately(prt.anchorMin.x, prt.anchorMax.x) && Mathf.Approximately(prt.anchorMin.y, prt.anchorMax.y))
+            {
+                Record(prt, "Fit inventory panel to the grid");
+                prt.sizeDelta = gridSize + new Vector2(24f, 64f);
+            }
+        }
         if (inventoryPanelGo == null)
         {
             // The panel itself has no image: its Background child is drawn above the drop zone, so releasing an item
@@ -171,12 +219,14 @@ public static class InventoryUIBuilder
             rt.offsetMin = new Vector2(12f, 12f); rt.offsetMax = new Vector2(-12f, -52f);
             return t;
         });
-        GridLayoutGroup inventoryGrid = Grid(inventorySlotsParent, s, s.inventoryColumns);
+        GridLayoutGroup inventoryGrid = Grid(inventorySlotsParent, cellSize, cellSpacing, cellPadding, columns);
+        if (s.gridInventory)
+            inventoryGrid.childAlignment = TextAnchor.UpperLeft; // as the grid places its cells (from the top-left)
 
         // Preview slots, so the hotbar and the grid are visible while editing. At runtime the inventory replaces them
-        // with the configured number of slots (Number Of Hot Bar Slots / Number Of Inventory Slots).
+        // with the configured number of slots (Number Of Hot Bar Slots / Number Of Inventory Slots, or the grid's cells).
         PreviewSlots(hotbarSlotsParent, slotPrefab, s.hotbarSlots, "HotbarSlot_", true);
-        PreviewSlots(inventorySlotsParent, slotPrefab, s.inventorySlots, "InventorySlot_", false);
+        PreviewSlots(inventorySlotsParent, slotPrefab, s.InventoryCells, "InventorySlot_", false);
 
         // Drop zone (behind the panel content, larger than the screen)
         if (s.buildDropZone && inventoryPanel.GetComponentInChildren<InventoryDropZone>(true) == null && inventoryPanel.Find("DropItem") == null)
@@ -863,12 +913,15 @@ public static class InventoryUIBuilder
         img.color = color;
     }
 
-    private static GridLayoutGroup Grid(Transform parent, InventoryUIBuildSettings s, int columns)
+    private static GridLayoutGroup Grid(Transform parent, InventoryUIBuildSettings s, int columns) => Grid(parent, s.slotSize, s.spacing, s.spacing, columns);
+
+    private static GridLayoutGroup Grid(Transform parent, float cellSize, float spacing, float padding, int columns)
     {
         var grid = GetOrAdd<GridLayoutGroup>(parent.gameObject);
-        grid.cellSize = new Vector2(s.slotSize, s.slotSize);
-        grid.spacing = new Vector2(s.spacing, s.spacing);
-        grid.padding = new RectOffset((int)s.spacing, (int)s.spacing, (int)s.spacing, (int)s.spacing);
+        grid.cellSize = new Vector2(cellSize, cellSize);
+        grid.spacing = new Vector2(spacing, spacing);
+        int pad = Mathf.RoundToInt(padding);
+        grid.padding = new RectOffset(pad, pad, pad, pad);
         grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         grid.constraintCount = Mathf.Max(1, columns);
         grid.childAlignment = TextAnchor.MiddleCenter;
@@ -913,7 +966,21 @@ public static class InventoryUIBuilder
         // Existing slots of each type are kept; missing ones (counting duplicates such as two rings) are added.
         var existing = new Dictionary<SlotType, int>();
         foreach (InventorySlot slot in parent.GetComponentsInChildren<InventorySlot>(true))
+        {
             existing[slot.SlotType] = (existing.TryGetValue(slot.SlotType, out int n) ? n : 0) + 1;
+            // The Shield slot is the Off Hand now (shields and dual-wielded weapons): older built labels are renamed.
+            if (slot.SlotType == SlotType.Shield && slot.transform.parent != null)
+            {
+                Transform label = slot.transform.parent.Find("Label");
+                TextMeshProUGUI tmp = label != null ? label.GetComponent<TextMeshProUGUI>() : null;
+                if (tmp != null && tmp.text == "Shield")
+                {
+                    Record(tmp, "Rename the Shield slot");
+                    tmp.text = SlotTypeHelper.GetDisplayName(SlotType.Shield);
+                    EditorUtility.SetDirty(tmp);
+                }
+            }
+        }
         var wanted = new Dictionary<SlotType, int>();
         foreach (SlotType type in s.equipmentSlots)
         {

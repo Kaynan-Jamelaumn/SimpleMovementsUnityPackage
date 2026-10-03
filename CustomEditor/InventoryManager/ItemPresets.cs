@@ -14,6 +14,8 @@ using UnityEngine;
 /// <item><b>Armor materials</b> (Cloth … Mythril), scaled by the armor slot.</item>
 /// <item><b>Weapon tiers</b> (Wooden … Legendary), scaled by the weapon category.</item>
 /// <item><b>Consumables</b>: health, mana, stamina and regeneration potions, food and water.</item>
+/// <item><b>Ammo</b>: arrows, bolts, bullets, shells, darts and stones.</item>
+/// <item><b>Grid sizes</b>: the usual footprint of each kind of item in the grid inventory.</item>
 /// </list>
 /// Every change goes through SerializedObject, so it can be undone.
 /// </summary>
@@ -58,14 +60,23 @@ public static class ItemPresets
 
         switch (item)
         {
-            case WeaponSO _:
+            case WeaponSO weapon:
                 {
                     SetEnum(itemType, (int)ItemType.Weapon, "type Weapon", changes);
                     SerializedProperty cat = so.FindProperty("weaponCategory");
                     if (cat.enumValueIndex == (int)WeaponCategory.None && GuessCategory(words, out WeaponCategory c))
                         SetEnum(cat, (int)c, $"category {c}", changes);
-                    if (stackMax.intValue != 1) { stackMax.intValue = 1; changes.Add("stack 1"); }
+                    // Thrown weapons that leave the stack (knives, javelins) stack; the others are one per slot.
+                    bool thrownStack = weapon.Ranged != null && weapon.Ranged.ConsumesWeaponItem;
+                    if (thrownStack && stackMax.intValue < 2) { stackMax.intValue = 10; changes.Add("stack 10 (thrown)"); }
+                    else if (!thrownStack && stackMax.intValue != 1) { stackMax.intValue = 1; changes.Add("stack 1"); }
                     if (maxDur.intValue <= 0) { maxDur.intValue = 200; changes.Add("durability 200"); }
+                    break;
+                }
+            case AmmoSO _:
+                {
+                    SetEnum(itemType, (int)ItemType.Ammo, "type Ammo", changes);
+                    if (stackMax.intValue < 1) { stackMax.intValue = 50; changes.Add("stack 50"); }
                     break;
                 }
             case ArmorSO _:
@@ -426,8 +437,146 @@ public static class ItemPresets
         so.ApplyModifiedProperties();
     }
 
+    // ================================================================== ammo
+    public enum Ammo { Arrows, BroadheadArrows, Bolts, Bullets, Shells, Darts, Stones }
+
+    /// <summary>Sets the ammo type, its effect on the shot, stack size, weight and price.</summary>
+    public static void ApplyAmmo(AmmoSO ammo, Ammo preset)
+    {
+        var so = new SerializedObject(ammo);
+        string type;
+        float damage = 1f, bonus = 0f, velocity = 1f, weight, price;
+        int stack;
+        switch (preset)
+        {
+            case Ammo.BroadheadArrows: type = "Arrow"; damage = 1.25f; velocity = 0.95f; stack = 50; weight = 0.06f; price = 2f; break;
+            case Ammo.Bolts: type = "Bolt"; stack = 40; weight = 0.08f; price = 1.5f; break;
+            case Ammo.Bullets: type = "Bullet"; stack = 60; weight = 0.02f; price = 1f; break;
+            case Ammo.Shells: type = "Shell"; stack = 30; weight = 0.05f; price = 2f; break;
+            case Ammo.Darts: type = "Dart"; bonus = 1f; stack = 40; weight = 0.02f; price = 1f; break;
+            case Ammo.Stones: type = "Stone"; damage = 0.8f; stack = 30; weight = 0.1f; price = 0f; break;
+            default: type = "Arrow"; stack = 50; weight = 0.05f; price = 1f; break;
+        }
+        so.FindProperty("ammoType").stringValue = type;
+        so.FindProperty("damageMultiplier").floatValue = damage;
+        so.FindProperty("bonusDamage").floatValue = bonus;
+        so.FindProperty("velocityMultiplier").floatValue = velocity;
+        so.FindProperty("stackMax").intValue = stack;
+        so.FindProperty("weight").floatValue = weight;
+        so.FindProperty("price").floatValue = price;
+        so.FindProperty("itemType").enumValueIndex = (int)ItemType.Ammo;
+        SerializedProperty n = so.FindProperty("name");
+        if (string.IsNullOrWhiteSpace(n.stringValue))
+            n.stringValue = ObjectNames.NicifyVariableName(preset.ToString());
+        so.ApplyModifiedProperties();
+    }
+
+    // ================================================================== grid inventory sizes
+    /// <summary>
+    /// The usual size of an item in the grid inventory (cells across × down), from its kind: potions, food, ammo and
+    /// jewelry 1×1, daggers and wands 1×2, swords, maces and tools 1×3, spears and staves 1×4, axes 2×3, greatswords,
+    /// hammers and bows 2×4, crossbows 3×2, helmets, boots, gloves and most shields 2×2, chest armor 2×3.
+    /// </summary>
+    public static Vector2Int SuggestGridSize(ItemSO item)
+    {
+        switch (item)
+        {
+            case WeaponSO w:
+                switch (w.Category)
+                {
+                    case WeaponCategory.Fist:
+                    case WeaponCategory.Thrown: return new Vector2Int(1, 1);
+                    case WeaponCategory.Dagger:
+                    case WeaponCategory.Wand: return new Vector2Int(1, 2);
+                    case WeaponCategory.Sword:
+                    case WeaponCategory.Mace:
+                    case WeaponCategory.Tool: return new Vector2Int(1, 3);
+                    case WeaponCategory.Axe: return new Vector2Int(2, 3);
+                    case WeaponCategory.Spear:
+                    case WeaponCategory.Staff: return new Vector2Int(1, 4);
+                    case WeaponCategory.Greatsword:
+                    case WeaponCategory.Hammer:
+                    case WeaponCategory.Bow: return new Vector2Int(2, 4);
+                    case WeaponCategory.Crossbow: return new Vector2Int(3, 2);
+                    case WeaponCategory.Shield: return new Vector2Int(2, 2);
+                    default: return new Vector2Int(1, 2);
+                }
+            case ArmorSO a:
+                switch (a.ArmorSlotType)
+                {
+                    case ArmorSlotType.Chestplate: return new Vector2Int(2, 3);
+                    case ArmorSlotType.Shield:
+                        ShieldDefense d = a.ShieldDefense;
+                        return d != null && d.coverageAngle >= 160f ? new Vector2Int(2, 3) : new Vector2Int(2, 2);
+                    case ArmorSlotType.Helmet:
+                    case ArmorSlotType.Leggings:
+                    case ArmorSlotType.Boots:
+                    case ArmorSlotType.Gloves:
+                    case ArmorSlotType.Shoulders:
+                    case ArmorSlotType.Cloak: return new Vector2Int(2, 2);
+                    case ArmorSlotType.Belt: return new Vector2Int(2, 1);
+                    case ArmorSlotType.Bracers: return new Vector2Int(1, 2);
+                    default: return new Vector2Int(1, 1); // rings, amulets, trinkets
+                }
+            default:
+                return new Vector2Int(1, 1); // potions, food, ammo, materials
+        }
+    }
+
+    /// <summary>
+    /// Gives the item assets of the project their suggested grid size (<paramref name="onlyOneByOne"/>: only those still
+    /// at 1×1, the default). With <paramref name="dryRun"/> nothing changes; <paramref name="changes"/> lists what would.
+    /// Returns how many items change.
+    /// </summary>
+    public static int ApplySuggestedGridSizes(bool onlyOneByOne, bool dryRun, List<string> changes = null)
+    {
+        int count = 0;
+        foreach (string guid in AssetDatabase.FindAssets("t:ItemSO"))
+        {
+            var item = AssetDatabase.LoadAssetAtPath<ItemSO>(AssetDatabase.GUIDToAssetPath(guid));
+            if (item == null)
+                continue;
+            Vector2Int now = item.GridSize;
+            if (onlyOneByOne && now != Vector2Int.one)
+                continue;
+            Vector2Int suggested = SuggestGridSize(item);
+            if (suggested == now)
+                continue;
+            count++;
+            changes?.Add($"{item.name}: {now.x}×{now.y} → {suggested.x}×{suggested.y}");
+            if (dryRun)
+                continue;
+            Undo.RecordObject(item, "Suggested grid sizes");
+            item.SetGridSize(suggested, item.CanRotateInGrid);
+            EditorUtility.SetDirty(item);
+        }
+        if (!dryRun && count > 0)
+            AssetDatabase.SaveAssets();
+        return count;
+    }
+
+    /// <summary>Asks, then gives the 1×1 item assets of the project their suggested grid size.</summary>
+    [MenuItem("Tools/SimpleMovements/Inventory/Grid Inventory/Suggest Sizes For 1x1 Items")]
+    public static void SuggestGridSizesWithDialog()
+    {
+        var changes = new List<string>();
+        int n = ApplySuggestedGridSizes(true, true, changes);
+        if (n == 0)
+        {
+            EditorUtility.DisplayDialog("Grid sizes", "No item to change: every 1×1 item is meant to be 1×1 (potions, food, ammo, jewelry) " +
+                                                      "or already has its own size.", "OK");
+            return;
+        }
+        string list = string.Join("\n", changes.GetRange(0, Mathf.Min(20, changes.Count))) + (changes.Count > 20 ? $"\n… and {changes.Count - 20} more" : "");
+        if (!EditorUtility.DisplayDialog("Grid sizes", $"Give {n} item(s) the usual size of their kind in the grid inventory? (Undo restores them.)\n\n{list}",
+                "Apply", "Cancel"))
+            return;
+        ApplySuggestedGridSizes(true, false);
+        Debug.Log($"[Items] Grid sizes suggested for {n} item(s):\n{string.Join("\n", changes)}");
+    }
+
     // ================================================================== create menus
-    private const string ConsumableMenu = "Assets/Create/Scriptable Objects/Item/Consumable Preset/";
+    private const string ConsumableMenu = "Assets/Create/SimpleMovements/Items/Consumable Preset/";
     [MenuItem(ConsumableMenu + "Minor Health Potion", priority = 120)] private static void CMinor() => CreateConsumable(Consumable.MinorHealthPotion);
     [MenuItem(ConsumableMenu + "Health Potion", priority = 121)] private static void CHealth() => CreateConsumable(Consumable.HealthPotion);
     [MenuItem(ConsumableMenu + "Greater Health Potion", priority = 122)] private static void CGreater() => CreateConsumable(Consumable.GreaterHealthPotion);
@@ -438,6 +587,23 @@ public static class ItemPresets
     [MenuItem(ConsumableMenu + "Cooked Meat", priority = 141)] private static void CMeat() => CreateConsumable(Consumable.CookedMeat);
     [MenuItem(ConsumableMenu + "Apple", priority = 142)] private static void CApple() => CreateConsumable(Consumable.Apple);
     [MenuItem(ConsumableMenu + "Water Bottle", priority = 143)] private static void CWater() => CreateConsumable(Consumable.WaterBottle);
+
+    private const string AmmoMenu = "Assets/Create/SimpleMovements/Items/Ammo Preset/";
+    [MenuItem(AmmoMenu + "Arrows", priority = 160)] private static void AArrows() => CreateAmmo(Ammo.Arrows);
+    [MenuItem(AmmoMenu + "Broadhead Arrows", priority = 161)] private static void ABroadhead() => CreateAmmo(Ammo.BroadheadArrows);
+    [MenuItem(AmmoMenu + "Bolts", priority = 162)] private static void ABolts() => CreateAmmo(Ammo.Bolts);
+    [MenuItem(AmmoMenu + "Bullets", priority = 163)] private static void ABullets() => CreateAmmo(Ammo.Bullets);
+    [MenuItem(AmmoMenu + "Shells", priority = 164)] private static void AShells() => CreateAmmo(Ammo.Shells);
+    [MenuItem(AmmoMenu + "Darts", priority = 165)] private static void ADarts() => CreateAmmo(Ammo.Darts);
+    [MenuItem(AmmoMenu + "Stones", priority = 166)] private static void AStones() => CreateAmmo(Ammo.Stones);
+
+    private static void CreateAmmo(Ammo preset)
+    {
+        var item = ScriptableObject.CreateInstance<AmmoSO>();
+        CreateAsset(item, ObjectNames.NicifyVariableName(preset.ToString()));
+        ApplyAmmo(item, preset);
+        AutoFill(item);
+    }
 
     private static void CreateConsumable(Consumable preset)
     {

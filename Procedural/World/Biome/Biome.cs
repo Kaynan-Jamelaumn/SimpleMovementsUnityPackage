@@ -9,7 +9,7 @@ using UnityEngine;
 /// including its height range, texture, terrain variation, and associated objects.
 /// </summary>
 //[System.Serializable]
-[CreateAssetMenu(menuName = "Scriptable Objects/Biome", fileName = "NewBiome")]
+[CreateAssetMenu(menuName = "SimpleMovements/World/Biome", fileName = "NewBiome")]
 public class Biome : ScriptableObject
 {
     /// <summary>Name of the biome-RECOMMENDED TO BE UNIQUE.</summary>

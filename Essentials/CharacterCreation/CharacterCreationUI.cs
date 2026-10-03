@@ -48,6 +48,22 @@ public class CharacterCreationUI : MonoBehaviour
     [Header("Database References")]
     [SerializeField] private List<PlayerClass> availableClasses = new List<PlayerClass>();
 
+    [Header("Races (optional)")]
+    [Tooltip("Races the player can pick (Character Archetype assets). Empty = no race step (classes only).")]
+    [SerializeField] private List<CharacterArchetype> availableRaces = new List<CharacterArchetype>();
+    [Tooltip("A race must be picked before the character can be created.")]
+    [SerializeField] private bool raceRequired = true;
+    [Tooltip("Where the race buttons go (the Class Button Prefab is used for them).")]
+    [SerializeField] private Transform raceListContainer;
+    [SerializeField] private TMP_Text raceDescription;
+    [Tooltip("Optional height slider (limited to the race's height range).")]
+    [SerializeField] private Slider heightSlider;
+    [SerializeField] private TMP_Text heightText;
+    [Tooltip("Every trait, for races / classes without their own trait list (the class's list is used when it has one).")]
+    [SerializeField] private List<Trait> allTraits = new List<Trait>();
+    [Tooltip("Active traits (an ability on its own key) the player may pick. Movement traits (double jump, wall climb, glide) do not count.")]
+    [SerializeField, Min(0)] private int maxActiveTraits = 1;
+
     [Header("Audio Settings")]
     [SerializeField] private bool enableAudioFeedback = true;
     [SerializeField] private string buttonClickSoundName = "UI_ButtonClick";
@@ -58,6 +74,12 @@ public class CharacterCreationUI : MonoBehaviour
     [SerializeField] private string characterCreateSoundName = "UI_CharacterCreate";
     [SerializeField] private string errorSoundName = "UI_Error";
 
+    [Header("Cursor & Flow")]
+    [Tooltip("Show the mouse cursor while this screen is open, and lock it for the game once the character is created.")]
+    [SerializeField] private bool manageCursor = true;
+    [Tooltip("Objects shown only while choosing (e.g. a preview camera); turned off when the character is created.")]
+    [SerializeField] private List<GameObject> hideOnCreate = new List<GameObject>();
+
     [Header("Debug Settings")]
     [SerializeField] private bool enableDebugLogs = true;
 
@@ -67,9 +89,13 @@ public class CharacterCreationUI : MonoBehaviour
     private TraitSelectionManager traitManager;
     private PlayerCreationManager playerManager;
     private UIDisplayManager displayManager;
+    private RaceSelectionManager raceManager;
 
     // Current state
     private PlayerClass selectedClass;
+    private CharacterArchetype selectedRace;
+    private float selectedHeight;
+    private readonly List<CharacterArchetype> archetypes = new List<CharacterArchetype>();
     private Trait selectedTrait;
     private List<Trait> selectedTraits = new List<Trait>();
     private int currentTraitPoints;
@@ -88,9 +114,41 @@ public class CharacterCreationUI : MonoBehaviour
     public List<Trait> SelectedTraits => selectedTraits;
     public int CurrentTraitPoints => currentTraitPoints;
     public bool EnableDebugLogs => enableDebugLogs;
+    public CharacterArchetype SelectedRace => selectedRace;
+    /// <summary>Picked height in metres (0 = the race's default).</summary>
+    public float SelectedHeight => selectedHeight;
+    public bool HasRaces => availableRaces != null && availableRaces.Exists(r => r != null);
+    public bool RaceRequired => raceRequired && HasRaces;
+    public List<Trait> AllTraits => allTraits;
+    public int MaxActiveTraits => maxActiveTraits;
+
+    /// <summary>The archetypes the character will have: the race and the class's archetype.</summary>
+    public IList<CharacterArchetype> Archetypes
+    {
+        get
+        {
+            archetypes.Clear();
+            if (selectedRace != null) archetypes.Add(selectedRace);
+            if (selectedClass != null && selectedClass.archetype != null && !archetypes.Contains(selectedClass.archetype))
+                archetypes.Add(selectedClass.archetype);
+            return archetypes;
+        }
+    }
+
+    /// <summary>What a trait costs for the current class and race.</summary>
+    public int TraitCost(Trait trait) => TraitRules.Cost(trait, selectedClass, Archetypes);
+
+    /// <summary>Trait points before any trait is picked: the class's points plus the race / class archetype bonuses.</summary>
+    public int StartingTraitPoints => (selectedClass != null ? selectedClass.traitPoints : 0) + TraitRules.BonusPoints(Archetypes);
 
     private void Start()
     {
+        if (manageCursor)
+        {
+            Cursor.visible = true;
+            Cursor.lockState = CursorLockMode.None;
+        }
+        PauseMenuManager.Instance?.SetMainMenuState(true); // no pause menu while creating the character
         InitializeComponents();
         validator.ValidateSetup();
         SetupUI();
@@ -104,6 +162,14 @@ public class CharacterCreationUI : MonoBehaviour
         classManager = new ClassSelectionManager(this, GetClassUIReferences(), displayManager, null); // traitManager will be set after creation
         traitManager = new TraitSelectionManager(this, GetTraitUIReferences(), displayManager);
         playerManager = new PlayerCreationManager(this, GetPlayerCreationReferences(), characterNameInput);
+        raceManager = new RaceSelectionManager(this, new RaceSelectionManager.RaceUIReferences
+        {
+            raceListContainer = raceListContainer,
+            raceButtonPrefab = classButtonPrefab,
+            raceDescription = raceDescription,
+            heightSlider = heightSlider,
+            heightText = heightText,
+        });
 
         // Set trait manager reference in class manager
         classManager.SetTraitManager(traitManager);
@@ -115,6 +181,7 @@ public class CharacterCreationUI : MonoBehaviour
         displayManager.InitializePanelStates();
         displayManager.InitializeContainers();
         classManager.LoadAvailableClasses(availableClasses);
+        raceManager.LoadRaces(availableRaces);
         displayManager.UpdateCreateButtonState();
     }
 
@@ -146,11 +213,38 @@ public class CharacterCreationUI : MonoBehaviour
     public void SetSelectedClass(PlayerClass playerClass)
     {
         selectedClass = playerClass;
-        currentTraitPoints = playerClass != null ? playerClass.traitPoints : 0;
+        currentTraitPoints = StartingTraitPoints;
         selectedTraits.Clear();
 
         if (playerClass != null)
             PlayUISound(classSelectSoundName);
+    }
+
+    /// <summary>
+    /// Picks a race. Refused (false) when the race cannot be combined with the chosen class. The chosen traits are reset,
+    /// because what is allowed and what it costs depend on the race.
+    /// </summary>
+    public bool TrySelectRace(CharacterArchetype race)
+    {
+        if (race != null && selectedClass != null && selectedClass.archetype != null && !race.IsCompatibleWith(selectedClass.archetype))
+        {
+            OnCreationError($"{race.Name} cannot be a {selectedClass.GetClassName()}.");
+            return false;
+        }
+        selectedRace = race;
+        selectedHeight = race != null && race.setsHeight ? race.ClampHeight(selectedHeight > 0f ? selectedHeight : race.defaultHeight) : 0f;
+        PlayUISound(classSelectSoundName);
+        if (selectedClass != null)
+            traitManager.ClearSelectedTraits(); // resets the points with the new race and reloads the list
+        displayManager.UpdateTraitPointsDisplay();
+        displayManager.UpdateCreateButtonState();
+        DebugLog($"Selected race: {(race != null ? race.Name : "none")}");
+        return true;
+    }
+
+    public void SetSelectedHeight(float metres)
+    {
+        selectedHeight = selectedRace != null ? selectedRace.ClampHeight(metres) : Mathf.Max(0f, metres);
     }
 
     public void SetSelectedTrait(Trait trait)
@@ -300,6 +394,14 @@ public class CharacterCreationUI : MonoBehaviour
     public void OnPlayerCreatedSuccess(GameObject playerObj)
     {
         OnPlayerCreated?.Invoke(playerObj);
+        PauseMenuManager.Instance?.SetMainMenuState(false);
+        foreach (GameObject go in hideOnCreate)
+            if (go != null) go.SetActive(false);
+        if (manageCursor)
+        {
+            Cursor.visible = false;
+            Cursor.lockState = CursorLockMode.Locked;
+        }
         gameObject.SetActive(false);
     }
 
@@ -314,6 +416,8 @@ public class CharacterCreationUI : MonoBehaviour
     public void ResetCharacterCreation()
     {
         selectedClass = null;
+        selectedRace = null;
+        selectedHeight = 0f;
         selectedTrait = null;
         selectedTraits.Clear();
         currentTraitPoints = 0;
@@ -339,6 +443,11 @@ public class CharacterCreationUI : MonoBehaviour
     [ContextMenu("Test Select First Class")]
     public void TestSelectFirstClass()
     {
+        if (classManager == null)
+        {
+            Debug.LogWarning("[CharacterCreationUI] Test First Class works in Play Mode (the screen is set up when Play starts).");
+            return;
+        }
         if (availableClasses != null && availableClasses.Count > 0 && availableClasses[0] != null)
         {
             classManager.SelectClass(availableClasses[0]);
@@ -381,7 +490,10 @@ public class CharacterCreationUI : MonoBehaviour
     [ContextMenu("Validate Prefab Setup")]
     public void ValidatePrefabSetupManual()
     {
-        validator.ValidatePrefabReferences();
+        // Works in edit mode too: the validator is otherwise only created when Play starts.
+        if (validator == null)
+            validator = new CharacterCreationValidator(this, GetAllUIReferences());
+        validator.ValidateSetup();
     }
 
     [ContextMenu("Test Audio Integration")]

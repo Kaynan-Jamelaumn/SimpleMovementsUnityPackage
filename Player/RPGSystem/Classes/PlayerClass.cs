@@ -91,56 +91,85 @@ public class PassiveAbility
     public List<TraitEffect> effects = new List<TraitEffect>();
 }
 
-[CreateAssetMenu(fileName = "New Player Class", menuName = "Scriptable Objects/Player Class")]
+[CreateAssetMenu(fileName = "New Player Class", menuName = "SimpleMovements/Character/Player Class", order = 0)]
 public class PlayerClass : ScriptableObject
 {
     [Header("Basic Info")]
+    [Tooltip("Name shown to the player. Empty = the asset name.")]
     public string className;
     [TextArea(3, 5)]
+    [Tooltip("Shown on the character creation screen and the character sheet.")]
     public string classDescription;
     [TextArea(2, 4)]
+    [Tooltip("Optional story text (not used by the game logic).")]
     public string classLore;
+    [Tooltip("Icon on the creation screen.")]
     public Sprite classIcon;
+    [Tooltip("Colour used for the class in the UI.")]
     public Color classColor = Color.white;
 
     [Header("Base Stats")]
+    [Tooltip("Max health the class starts with (set on the Health Manager when the class is applied).")]
     public float health = 100f;
+    [Tooltip("Max stamina the class starts with.")]
     public float stamina = 100f;
+    [Tooltip("Max mana the class starts with.")]
     public float mana = 100f;
+    [Tooltip("Base walking speed (m/s).")]
     public float speed = 5f;
+    [Tooltip("Max hunger (survival).")]
     public float hunger = 100f;
+    [Tooltip("Max thirst (survival).")]
     public float thirst = 100f;
+    [Tooltip("Carry weight capacity.")]
     public float weight = 30f;
+    [Tooltip("Max sleep / energy (survival).")]
     public float sleep = 100f;
+    [Tooltip("Max sanity.")]
     public float sanity = 100f;
+    [Tooltip("Max body heat (temperature).")]
     public float bodyHeat = 100f;
+    [Tooltip("Max oxygen (breath).")]
     public float oxygen = 100f;
 
     [Header("Combat Stats")]
+    [Tooltip("Strength points: more damage with Strength weapons. Applied to Combat Stats by a Character Identity.")]
     public float strength = 10f;
+    [Tooltip("Agility points: faster attacks, more crit chance, more damage with Agility weapons.")]
     public float agility = 10f;
+    [Tooltip("Intelligence points: more ability damage, more damage with Intelligence weapons.")]
     public float intelligence = 10f;
+    [Tooltip("Endurance points: +5 max health each (Combat Stats setting).")]
     public float endurance = 10f;
+    [Tooltip("Armour points: less physical damage taken.")]
     public float defense = 5f;
+    [Tooltip("Magic resistance points: less magical damage taken.")]
     public float magicResistance = 5f;
 
     [Header("Special Stats")]
+    [Tooltip("Critical chance in percent points added to attacks.")]
     public float criticalChance = 5f;
+    [Tooltip("Critical multiplier in percent. 150 = normal; anything above adds critical damage (175 = +25%).")]
     public float criticalDamage = 150f;
+    [Tooltip("Weapon attack speed multiplier. 1 = normal, 1.1 = 10% faster.")]
     public float attackSpeed = 1f;
+    [Tooltip("Ability casting speed multiplier. 1 = normal, 1.2 = 20% faster casts.")]
     public float castingSpeed = 1f;
 
     [Header("Leveling")]
+    [Tooltip("How much each stat rises when the player spends a stat point on it (level-up).")]
     public StatGains baseStatGains;
+    [Tooltip("Multipliers on those gains for this class (a Mage gets more from Intelligence).")]
     public StatMultipliers statMultipliers;
 
-    [Header("Trait System - SINGLE SOURCE OF TRUTH")]
-    [Tooltip("Traits this class can select during character creation")]
+    [Header("Traits")]
+    [Tooltip("Traits the player can pick at character creation with this class (empty = every creation trait).")]
     public List<Trait> availableTraits = new List<Trait>();
-    [Tooltip("Traits that ONLY this class can use")]
+    [Tooltip("Traits listed only for this class (also add the class archetype to the trait's 'Only For' to forbid it elsewhere).")]
     public List<Trait> exclusiveTraits = new List<Trait>();
-    [Tooltip("Traits this class starts with for free")]
+    [Tooltip("Traits every character of this class gets for free.")]
     public List<Trait> startingTraits = new List<Trait>();
+    [Tooltip("Trait points to spend at character creation (races can add or remove some).")]
     public int traitPoints = 10;
 
     [Header("Trait Type Preferences")]
@@ -158,10 +187,13 @@ public class PlayerClass : ScriptableObject
     public float difficultCostMultiplier = 1.5f;
 
     [Header("Class Progression")]
+    [Tooltip("Level milestones: traits, abilities and bonus points unlocked at given levels.")]
     public ClassProgression progression;
 
     [Header("Starting Equipment")]
+    [Tooltip("Item prefabs given at the start (Player Start Item Controller).")]
     public List<GameObject> startingItems = new List<GameObject>();
+    [Tooltip("Names of skills the class starts with (for your own systems).")]
     public List<string> startingSkills = new List<string>();
 
     [Header("Class Relationships")]
@@ -171,8 +203,15 @@ public class PlayerClass : ScriptableObject
     public List<PlayerClass> incompatibleClasses = new List<PlayerClass>();
 
     [Header("Audio & Visual")]
+    [Tooltip("Played when the class is picked on the creation screen.")]
     public AudioClip classSelectionSound;
+    [Tooltip("Optional effect shown with the class.")]
     public GameObject classVisualEffect;
+
+    [Header("Archetype (optional)")]
+    [Tooltip("Extra class data shared with the race system: combat stats per level, attribute scaling, passives, racial-style " +
+             "abilities, trait affinities. A Character Identity on the player applies it together with the race.")]
+    public CharacterArchetype archetype;
 
     // Properties
     public string GetClassName() => string.IsNullOrEmpty(className) ? name : className;
@@ -210,6 +249,54 @@ public class PlayerClass : ScriptableObject
 
         // Can select if it's in available traits or exclusive traits, but not if it's already a starting trait
         return (availableTraits.Contains(trait) || exclusiveTraits.Contains(trait)) && !startingTraits.Contains(trait);
+    }
+
+    /// <summary>The class's combat stats as Combat Stats modifiers (Character Identity applies them).</summary>
+    public List<CombatStatModifier> GetCombatStatModifiers()
+    {
+        var list = new List<CombatStatModifier>();
+        void Add(CombatStatType stat, float v)
+        {
+            if (Mathf.Abs(v) > 0.0001f) list.Add(new CombatStatModifier(stat, v));
+        }
+        Add(CombatStatType.Strength, strength);
+        Add(CombatStatType.Agility, agility);
+        Add(CombatStatType.Intelligence, intelligence);
+        Add(CombatStatType.Endurance, endurance);
+        Add(CombatStatType.Defense, defense);
+        Add(CombatStatType.MagicResistance, magicResistance);
+        Add(CombatStatType.CriticalChance, criticalChance);
+        Add(CombatStatType.CriticalDamage, criticalDamage - 150f);           // 150 = the normal critical multiplier
+        Add(CombatStatType.AttackSpeed, (attackSpeed - 1f) * 100f);        // 1 = normal speed
+        Add(CombatStatType.CastingSpeed, (castingSpeed - 1f) * 100f);
+        return list;
+    }
+
+    /// <summary>Setup problems (inspector).</summary>
+    public void Validate(List<string> errors, List<string> warnings)
+    {
+        if (health <= 0f) errors.Add("Health must be above 0.");
+        if (speed <= 0f) errors.Add("Speed must be above 0.");
+        if (criticalDamage < 100f) warnings.Add("Critical Damage below 100 makes critical hits weaker than normal hits.");
+        if (attackSpeed <= 0f || castingSpeed <= 0f) errors.Add("Attack and Casting Speed must be above 0 (1 = normal).");
+        if (traitPoints < 0) warnings.Add("Trait Points is negative: the player starts in debt.");
+        foreach (Trait t in startingTraits)
+        {
+            if (t == null) continue;
+            if (availableTraits.Contains(t) || exclusiveTraits.Contains(t))
+                warnings.Add($"'{t.Name}' is a starting trait and also selectable: it will not be offered (already owned).");
+        }
+        int activeStart = startingTraits.FindAll(t => t != null && t.HasActiveSkill).Count;
+        if (activeStart > 1)
+            warnings.Add($"{activeStart} starting traits are active traits; players normally get only one.");
+        foreach (TraitType tt in preferredTraitTypes)
+            if (difficultTraitTypes.Contains(tt)) errors.Add($"Trait type {tt} is both preferred and difficult.");
+        if (availableTraits.Contains(null) || exclusiveTraits.Contains(null) || startingTraits.Contains(null))
+            warnings.Add("A trait list has empty entries.");
+        if (archetype != null && archetype.kind == ArchetypeKind.Race)
+            warnings.Add($"The linked archetype '{archetype.Name}' is a Race: a class's archetype is usually of kind Class.");
+        if (incompatibleClasses.Contains(this) || compatibleClasses.Contains(this))
+            warnings.Add("The class lists itself as compatible / incompatible.");
     }
 
     public int GetTraitCost(Trait trait)

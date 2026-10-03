@@ -22,6 +22,9 @@ public class InventoryManagerEditor : Editor
     private bool showLayout;
     private bool showRuntime = true;
     private bool showSettingsIo;
+    private bool showGrid = true;
+    private bool showHands;
+    private int resizeColumns, resizeRows;
 
     // Runtime tools
     private ItemSO giveItem;
@@ -40,6 +43,8 @@ public class InventoryManagerEditor : Editor
         styles = new InventoryEditorStyles();
         showReferences = SessionState.GetBool("InvEditor.refs", true);
         showRuntime = SessionState.GetBool("InvEditor.runtime", true);
+        showGrid = SessionState.GetBool("InvEditor.grid", true);
+        showHands = SessionState.GetBool("InvEditor.hands", false);
         Revalidate();
     }
 
@@ -64,6 +69,8 @@ public class InventoryManagerEditor : Editor
         EditorGUI.BeginChangeCheck();
         DrawReferences();
         DrawSlotConfiguration();
+        DrawGridInventory();
+        DrawHandsAndQuickslots();
         if (EditorGUI.EndChangeCheck())
         {
             serializedObject.ApplyModifiedProperties();
@@ -200,10 +207,136 @@ public class InventoryManagerEditor : Editor
             return;
         EditorGUILayout.BeginVertical(styles.BoxStyle);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfHotBarSlots"), new GUIContent("Hotbar Slots", "Hotbar slots created at start (number keys 1-9 select them)."));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfInventorySlots"), new GUIContent("Inventory Slots", "Inventory slots created at start."));
+        using (new EditorGUI.DisabledScope(serializedObject.FindProperty("useGridInventory").boolValue))
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("numberOfInventorySlots"), new GUIContent("Inventory Slots",
+                "Inventory slots created at start (classic mode). With Use Grid Inventory the grid's columns × rows are used instead."));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("slotManager"), true);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("uiLayoutManager"), true);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("specialEffectIds"), true);
+        EditorGUILayout.EndVertical();
+    }
+
+    // ------------------------------------------------------------------ grid inventory
+    private void DrawGridInventory()
+    {
+        showGrid = EditorGUILayout.Foldout(showGrid, "Grid Inventory", true, styles.SubHeaderStyle);
+        SessionState.SetBool("InvEditor.grid", showGrid);
+        if (!showGrid)
+            return;
+        EditorGUILayout.BeginVertical(styles.BoxStyle);
+        SerializedProperty use = serializedObject.FindProperty("useGridInventory");
+        SerializedProperty settings = serializedObject.FindProperty("gridSettings");
+        EditorGUILayout.PropertyField(use, new GUIContent("Use Grid Inventory", use.tooltip));
+        if (!use.boolValue)
+        {
+            EditorGUILayout.LabelField("Off: the classic inventory (one item per slot, Inventory Slots above). Items keep their Grid Size for when it is turned on.",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+        else
+        {
+            int cols = settings.FindPropertyRelative("columns").intValue, rows = settings.FindPropertyRelative("rows").intValue;
+            EditorGUILayout.LabelField($"{cols} × {rows} = {cols * rows} cells. Items take their Grid Size (Item ▸ Grid Inventory); R or right click " +
+                                       "while dragging turns them. The hotbar, equipment and storage stay slots; Inventory Slots is not used.",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+        EditorGUILayout.PropertyField(settings, new GUIContent("Grid Settings"), true);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            using (new EditorGUI.DisabledScope(Application.isPlaying || EditorUtility.IsPersistent(manager)))
+            {
+                if (GUILayout.Button(new GUIContent("Rebuild UI For This Mode", "Rebuilds the inventory panel's preview cells for the grid (or the slots) so the layout matches while editing.")))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    InventoryAutoSetup.TryBuild(manager.gameObject, force: true);
+                    serializedObject.Update();
+                    Revalidate();
+                }
+            }
+            if (GUILayout.Button(new GUIContent("Suggest Item Sizes…", "Gives 1×1 item assets the usual size of their kind (swords 1×3, helmets 2×2...).")))
+                ItemPresets.SuggestGridSizesWithDialog();
+        }
+
+        if (Application.isPlaying)
+        {
+            EditorGUILayout.Space(2);
+            EditorGUILayout.LabelField("Live", EditorStyles.boldLabel);
+            GridInventory grid = manager.Grid;
+            if (grid != null)
+            {
+                GridInventoryModel<InventoryItem> m = grid.Model;
+                EditorGUILayout.LabelField($"Grid {grid.Columns} × {grid.Rows}: {m.Count} item(s), {m.FreeCells} free cell(s)" +
+                                           (m.IsConsistent(out string problem) ? "" : $"  ⚠ {problem}"), EditorStyles.wordWrappedMiniLabel);
+            }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                bool on = manager.Grid != null;
+                if (GUILayout.Button(on ? "Switch To Slots" : "Switch To Grid"))
+                {
+                    if (!manager.SetGridInventory(!on))
+                        Debug.LogWarning("[Inventory] The switch was refused: some items would not fit (see the message above, or set Overflow to Hotbar Then Drop).", manager);
+                    serializedObject.Update();
+                }
+            }
+            if (manager.Grid != null)
+            {
+                if (resizeColumns <= 0) resizeColumns = manager.Grid.Columns;
+                if (resizeRows <= 0) resizeRows = manager.Grid.Rows;
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    resizeColumns = EditorGUILayout.IntSlider("Columns", resizeColumns, 2, 30);
+                }
+                resizeRows = EditorGUILayout.IntSlider("Rows", resizeRows, 2, 30);
+                if (GUILayout.Button(new GUIContent("Resize And Re-pack", "Re-packs the items into the new size (refused when they would not fit, unless Overflow is Hotbar Then Drop).")))
+                {
+                    if (!manager.ResizeGrid(resizeColumns, resizeRows))
+                        Debug.LogWarning("[Inventory] Resize refused: the items would not fit.", manager);
+                    serializedObject.Update();
+                }
+            }
+        }
+        EditorGUILayout.EndVertical();
+    }
+
+    // ------------------------------------------------------------------ hands, visuals, quickslots
+    private void DrawHandsAndQuickslots()
+    {
+        showHands = EditorGUILayout.Foldout(showHands, "Hands, Visuals & Quickslots", true, styles.SubHeaderStyle);
+        SessionState.SetBool("InvEditor.hands", showHands);
+        if (!showHands)
+            return;
+        EditorGUILayout.BeginVertical(styles.BoxStyle);
+        EditorGUILayout.LabelField("Main hand = the selected hotbar item. Off hand = the Off Hand equipment slot (a shield, or a weapon that can be dual " +
+                                   "wielded). A two-handed weapon stows the off-hand item. These options add the matching components to the player at start.",
+            EditorStyles.wordWrappedMiniLabel);
+        Field("equipmentVisuals");
+        Field("shieldBlocking");
+        Field("quickSlots");
+        Field("showFeedbackMessages");
+        Field("feedback");
+
+        if (Application.isPlaying)
+        {
+            HandState h = manager.Hands;
+            EditorGUILayout.Space(2);
+            EditorGUILayout.LabelField("Live", EditorStyles.boldLabel);
+            string main = h.mainWeapon != null ? h.mainWeapon.Name + (h.IsTwoHanded ? " (two-handed)" : "") : "no weapon";
+            string off = manager.OffHandItem != null ? manager.OffHandItem.itemScriptableObject.Name + (h.offHandSuppressed ? " (stowed)" : "") : "empty";
+            EditorGUILayout.LabelField($"Main hand: {main} · Off hand: {off}" + (h.IsDualWielding ? " · dual wielding" : ""), EditorStyles.wordWrappedMiniLabel);
+            if (!string.IsNullOrEmpty(h.reason))
+                EditorGUILayout.LabelField(h.reason, EditorStyles.wordWrappedMiniLabel);
+            QuickSlotBar q = manager.QuickSlots;
+            if (q != null)
+            {
+                var parts = new List<string>();
+                for (int i = 0; i < q.SlotCount; i++)
+                {
+                    ItemSO a = q.Get(i);
+                    parts.Add($"{i + 1}: {(a != null ? $"{a.Name} ×{q.Count(i)}" : "—")}");
+                }
+                EditorGUILayout.LabelField("Quickslots  " + string.Join("   ", parts), EditorStyles.wordWrappedMiniLabel);
+            }
+        }
         EditorGUILayout.EndVertical();
     }
 
@@ -248,7 +381,9 @@ public class InventoryManagerEditor : Editor
             return;
 
         EditorGUILayout.BeginVertical(styles.BoxStyle);
-        EditorGUILayout.LabelField($"Slots: {manager.NumberOfHotBarSlots} hotbar, {manager.NumberOfInventorySlots} inventory, {manager.EquipmentSlots.Count} equipment");
+        EditorGUILayout.LabelField($"Slots: {manager.NumberOfHotBarSlots} hotbar, " +
+                                   (manager.Grid != null ? $"grid {manager.Grid.Columns} × {manager.Grid.Rows}" : $"{manager.NumberOfInventorySlots} inventory") +
+                                   $", {manager.EquipmentSlots.Count} equipment");
         EditorGUILayout.LabelField($"Carried weight: {manager.GetTotalInventoryWeight():0.#} kg");
 
         // Give / remove items

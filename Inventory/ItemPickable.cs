@@ -16,6 +16,9 @@ public class ItemPickable : Interactable
         set { durabilityList = value; }
     }
 
+    [Tooltip("Turn slowly in place while lying in the world (off for arrows stuck in a wall).")]
+    public bool spinInWorld = true;
+
     private float rotationSpeed = 50f;
     //private float bounceHeight = 0.1f;
     //private float bounceSpeed = 1.5f;
@@ -32,7 +35,8 @@ public class ItemPickable : Interactable
     void Update()
     {
         // Aplica a rotaзгo ao objeto
-        transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime);
+        if (spinInWorld)
+            transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime);
 
         // Aplica a pulsaзгo (bounce) ao objeto
         //float bounceY = originalPosition.y + Mathf.Sin(Time.time * bounceSpeed) * bounceHeight;

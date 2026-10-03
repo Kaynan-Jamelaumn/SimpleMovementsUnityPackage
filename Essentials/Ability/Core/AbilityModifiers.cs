@@ -56,6 +56,8 @@ public class AbilityModifierSet
     [Header("Cost")]
     [Tooltip("Multiplies mana, stamina and health costs.")]
     [Min(0f)] public float costMultiplier = 1f;
+    [Tooltip("Multiplies only the mana cost (on top of Cost Multiplier). Mana Cost Reduction stats use it. 0 counts as 1.")]
+    [Min(0f)] public float manaCostMultiplier = 1f;
 
     public static AbilityModifierSet CreateIdentity() => new AbilityModifierSet();
 
@@ -68,7 +70,7 @@ public class AbilityModifierSet
         Mathf.Approximately(cooldownMultiplier, 1f) && Mathf.Approximately(castTimeMultiplier, 1f) &&
         Mathf.Approximately(durationMultiplier, 1f) && Mathf.Approximately(rangeMultiplier, 1f) &&
         Mathf.Approximately(areaMultiplier, 1f) && Mathf.Approximately(projectileSpeedMultiplier, 1f) &&
-        Mathf.Approximately(costMultiplier, 1f) && projectileCountDelta == 0 && projectileCountOverride < 0 &&
+        Mathf.Approximately(costMultiplier, 1f) && Mathf.Approximately(manaCostMultiplier, 1f) && projectileCountDelta == 0 && projectileCountOverride < 0 &&
         volleyCountDelta == 0 && pierceDelta == 0 && summonCountDelta == 0 && extraCharges == 0;
 
     /// <summary>Returns a new set equal to this one followed by <paramref name="other"/>.</summary>
@@ -131,13 +133,24 @@ public class AbilityModifierSet
 /// </summary>
 public struct AbilityStats
 {
-    public float damage, heal, control, displacement, cooldown, castTime, duration, range, area, projectileSpeed, cost;
+    public float damage, heal, control, displacement, cooldown, castTime, duration, range, area, projectileSpeed, cost, manaCost;
     public int projectileCountDelta, projectileCountOverride, volleyCountDelta, pierceDelta, summonCountDelta, extraCharges;
 
     public static AbilityStats Identity => new AbilityStats
     {
-        damage = 1f, heal = 1f, control = 1f, displacement = 1f, cooldown = 1f, castTime = 1f, duration = 1f,
-        range = 1f, area = 1f, projectileSpeed = 1f, cost = 1f, projectileCountOverride = -1,
+        damage = 1f,
+        heal = 1f,
+        control = 1f,
+        displacement = 1f,
+        cooldown = 1f,
+        castTime = 1f,
+        duration = 1f,
+        range = 1f,
+        area = 1f,
+        projectileSpeed = 1f,
+        cost = 1f,
+        manaCost = 1f,
+        projectileCountOverride = -1,
     };
 
     public static AbilityStats From(AbilityModifierSet a, AbilityModifierSet b = null)
@@ -163,6 +176,7 @@ public struct AbilityStats
         area *= m.areaMultiplier;
         projectileSpeed *= m.projectileSpeedMultiplier;
         cost *= m.costMultiplier;
+        manaCost *= m.manaCostMultiplier > 0f ? m.manaCostMultiplier : 1f; // 0 = unset (older data); use Cost Multiplier 0 for free
         projectileCountDelta += m.projectileCountDelta;
         if (m.projectileCountOverride >= 0)
             projectileCountOverride = m.projectileCountOverride;

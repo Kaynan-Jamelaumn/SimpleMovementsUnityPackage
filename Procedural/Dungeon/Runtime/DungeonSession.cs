@@ -389,7 +389,7 @@ namespace ProceduralDungeon
 #if UNITY_6000_4_OR_NEWER
             return Object.FindObjectsByType<T>();
 #else
-            return Object.FindObjectsByType<T>(FindObjectsSortMode.None);
+            return Object.FindObjectsByType<T>(FindObjectsInactive.Exclude);
 #endif
         }
 

@@ -210,7 +210,7 @@ public class TraitManagerEditor : Editor
             AbilityEditorUI.Add(issues, MessageType.Error, "No PlayerStatusController on this object or a parent: stat modifiers have nothing to change.");
         if (serializedObject.FindProperty("traitDatabase").objectReferenceValue == null && Resources.Load<TraitDatabase>("TraitDatabase") == null)
             AbilityEditorUI.Add(issues, MessageType.Warning, "No Trait Database assigned or in Resources: the character creation screen has no traits to show.", "Create",
-                () => EditorApplication.ExecuteMenuItem("Tools/Traits/Create Trait Database (Resources)"));
+                () => EditorApplication.ExecuteMenuItem("Tools/SimpleMovements/Project Setup/Create Trait Database (Resources)"));
 
         List<Trait> start = m.StartingTraits.Where(t => t != null).ToList();
         if (m.StartingTraits.Count != start.Count)

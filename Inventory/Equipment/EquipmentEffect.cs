@@ -210,6 +210,12 @@ public sealed class EquipmentContext
     /// <summary>Name of the item or set bonus being applied right now (labels for debug output).</summary>
     public string CurrentSource { get; set; } = "Equipment";
 
+    /// <summary>
+    /// What grants the effects being applied: items (default) or the character itself (race, class: Innate). Abilities
+    /// granted on a key remember it, so cost / cooldown stats scoped to items or to innate abilities apply to them.
+    /// </summary>
+    public AbilitySlotSource GrantSource { get; set; } = AbilitySlotSource.Item;
+
     public TraitMultiplierRegistry TraitMultipliers { get; }
     public TraitReplacementRegistry TraitReplacements { get; }
     public MechanicRegistry Mechanics { get; }

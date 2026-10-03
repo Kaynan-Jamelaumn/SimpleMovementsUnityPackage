@@ -244,6 +244,35 @@ public sealed class AbilityCastInstance
     /// Applies <paramref name="hit"/> to one character if it passes the filter (and line of sight when required).
     /// Returns true if the character was hit.
     /// </summary>
+    /// <summary>
+    /// Where a hit from <paramref name="origin"/> lands on <paramref name="target"/> (body parts use it): a projectile where it
+    /// is; an area around the caster (a claw, a slam) at the caster's strike height, with a little variation; an area on
+    /// the ground at the target's middle.
+    /// </summary>
+    private Vector3 HitPoint(CombatEntity target, Vector3 origin)
+    {
+        CombatSettings settings = CombatSettings.Instance;
+        Vector3 strike = origin;
+        CombatEntity caster = CasterEntity;
+        Vector3 flat = caster != null ? origin - caster.Position : Vector3.positiveInfinity;
+        flat.y = 0f;
+        if (caster != null && caster != target && flat.sqrMagnitude <= (caster.Radius + 1f) * (caster.Radius + 1f))
+        {
+            strike = caster.BasePosition + Vector3.up * caster.Height * settings.abilityStrikeHeight;
+            if (settings.abilityStrikeSpread > 0f)
+                strike.y += Random.Range(-settings.abilityStrikeSpread, settings.abilityStrikeSpread) * target.Height;
+            // From the caster's side of the target.
+            Vector3 toward = caster.Position;
+            toward.y = strike.y;
+            strike = toward;
+        }
+        else if (origin.y <= target.BasePosition.y + target.Height * 0.15f)
+        {
+            strike.y = target.Center.y; // an area on the ground (a blast, a pool): the middle of the body
+        }
+        return target.SurfacePointToward(strike);
+    }
+
     public bool ApplyHit(HitSettings hit, CombatEntity target, Vector3 origin, Vector3 direction, float multiplier = 1f)
     {
         if (hit == null || target == null || !target.IsAlive)
@@ -266,7 +295,7 @@ public sealed class AbilityCastInstance
             caster = CasterEntity,
             hitEntity = target,
             origin = origin,
-            point = target.Center,
+            point = HitPoint(target, origin),
             direction = direction,
             multiplier = multiplier,
             stats = Stats,
@@ -278,7 +307,8 @@ public sealed class AbilityCastInstance
             AbilityEffect effect = effects[i];
             if (effect == null)
                 continue;
-            if (effect.chance < 1f && Random.value > effect.chance)
+            float effectChance = effect.ChanceFor(ctx);
+            if (effectChance < 1f && Random.value > effectChance)
                 continue;
             if (!CombatRelations.Passes(effect.onlyAffects, relation))
             {

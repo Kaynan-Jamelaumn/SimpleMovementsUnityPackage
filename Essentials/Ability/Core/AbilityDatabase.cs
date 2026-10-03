@@ -3,10 +3,10 @@ using UnityEngine;
 
 /// <summary>
 /// The list of every ability in the game, looked up by id. Saves store ability ids, so absorbed abilities can be
-/// restored after loading. Optional: create one (Assets > Create > Scriptable Objects > Ability > Ability Database),
+/// restored after loading. Optional: create one (Assets > Create > SimpleMovements > Abilities > Ability Database),
 /// press "Collect All Abilities" in its inspector, and put it in a Resources folder named exactly "AbilityDatabase".
 /// </summary>
-[CreateAssetMenu(fileName = "AbilityDatabase", menuName = "Scriptable Objects/Ability/Ability Database", order = 10)]
+[CreateAssetMenu(fileName = "AbilityDatabase", menuName = "SimpleMovements/Abilities/Ability Database", order = 10)]
 public class AbilityDatabase : ScriptableObject
 {
     [Tooltip("Every ability that can be saved, absorbed or looked up by id.")]

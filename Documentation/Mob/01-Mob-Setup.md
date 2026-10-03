@@ -10,7 +10,7 @@
 
 | Needed | Why |
 |---|---|
-| **Combat Settings** in `Resources` (*Tools ▸ Abilities ▸ Create Combat Settings (Resources)*) | Character layers (abilities only hit colliders on them), AI budgets (how many mobs attack at once), telegraphs |
+| **Combat Settings** in `Resources` (*Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Combat Settings (Resources)*) | Character layers (abilities only hit colliders on them), AI budgets (how many mobs attack at once), telegraphs |
 | A baked **NavMesh** (AI Navigation package: a `NavMeshSurface`, or the terrain / dungeon builds it) | Mobs walk on it |
 | The mob's model with an **Animator** | Optional, but mobs without animation look frozen |
 
@@ -18,8 +18,8 @@
 
 ## 2. Quick setup
 
-*Tools ▸ Mob Setup ▸ Create New Mob* creates a new mob; right-click an existing object ▸
-*Mob Setup ▸ Quick Setup Mob* turns it into one; the mob inspector's **Auto-Configure All Components** does the same.
+*Tools ▸ SimpleMovements ▸ Mobs ▸ Create New Mob* creates a new mob; right-click an existing object ▸
+*SimpleMovements ▸ Quick Setup Mob* turns it into one; the mob inspector's **Auto-Configure All Components** does the same.
 They add **only what is missing** and keep existing settings:
 
 | Added | Why |
@@ -37,7 +37,7 @@ They add **only what is missing** and keep existing settings:
 *Create New Mob* also creates a **`<Type> Profile`** asset and, when the mob would use the invisible automatic bite,
 a **`<Type> Basic Attack`** ability asset, so both can be seen and edited.
 
-*Tools ▸ Mob Setup ▸ Add Missing Components* repairs the selected mob; *Tools ▸ Mob Setup ▸ Help* summarises the steps.
+*Tools ▸ SimpleMovements ▸ Mobs ▸ Add Missing Components* repairs the selected mob; *Tools ▸ SimpleMovements ▸ Mobs ▸ Help* summarises the steps.
 
 ---
 

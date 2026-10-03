@@ -23,7 +23,7 @@ public class ElementalReaction
     }
 }
 
-[CreateAssetMenu(fileName = "ElementalSystem", menuName = "Scriptable Objects/ElementalSystem")]
+[CreateAssetMenu(fileName = "ElementalSystem", menuName = "SimpleMovements/Combat/Elemental Reactions")]
 public class ElementalSystem : ScriptableObject
 {
     [Header("Elemental Reactions")]

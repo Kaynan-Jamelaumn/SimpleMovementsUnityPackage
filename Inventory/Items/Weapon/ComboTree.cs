@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "ComboTree", menuName = "Scriptable Objects/Weapon/ComboTree")]
+[CreateAssetMenu(fileName = "ComboTree", menuName = "SimpleMovements/Items/Combo Tree", order = 21)]
 public class ComboTree : ScriptableObject
 {
     [Header("Tree Configuration")]

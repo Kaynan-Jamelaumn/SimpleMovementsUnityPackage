@@ -33,7 +33,10 @@ public class ItemSOEditor : Editor
 
         DrawProblems();
         if (!serializedObject.isEditingMultipleObjects)
+        {
             DrawQuickSetup();
+            DrawGridFootprint();
+        }
         DrawToolsTop();
         EditorGUILayout.Space(2);
         DrawFields();
@@ -108,6 +111,116 @@ public class ItemSOEditor : Editor
         EditorGUILayout.EndVertical();
     }
 
+    private static readonly Vector2Int[] CommonGridSizes =
+    {
+        new Vector2Int(1, 1), new Vector2Int(1, 2), new Vector2Int(2, 2), new Vector2Int(1, 3), new Vector2Int(2, 3), new Vector2Int(3, 2),
+    };
+
+    /// <summary>
+    /// The item's size in the grid inventory (Inventory Manager ▸ Use Grid Inventory): a drawing of the cells it takes,
+    /// common sizes and the usual size of its kind. The classic slots ignore it.
+    /// </summary>
+    private void DrawGridFootprint()
+    {
+        SerializedProperty size = serializedObject.FindProperty("gridSize");
+        SerializedProperty rotate = serializedObject.FindProperty("canRotateInGrid");
+        SerializedProperty angleProp = serializedObject.FindProperty("gridIconAngle");
+        SerializedProperty gridIconProp = serializedObject.FindProperty("gridIcon");
+        if (size == null)
+            return;
+        Vector2Int s = size.vector2IntValue;
+        s = new Vector2Int(Mathf.Clamp(s.x, 1, 10), Mathf.Clamp(s.y, 1, 10));
+        EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+        // How it looks in the grid: its cells and its icon, laid out as the grid draws it.
+        const float box = 76f;
+        Rect area = GUILayoutUtility.GetRect(box, box, GUILayout.Width(box), GUILayout.Height(box));
+        float cell = Mathf.Min(22f, (box - 2f) / Mathf.Max(s.x, s.y));
+        var block = new Rect(area.x + (box - s.x * cell) * 0.5f, area.y + (box - s.y * cell) * 0.5f, s.x * cell, s.y * cell);
+        EditorGUI.DrawRect(area, new Color(0f, 0f, 0f, 0.15f));
+        for (int y = 0; y < s.y; y++)
+            for (int x = 0; x < s.x; x++)
+                EditorGUI.DrawRect(new Rect(block.x + x * cell + 0.5f, block.y + y * cell + 0.5f, cell - 1f, cell - 1f), new Color(0.35f, 0.6f, 0.95f, 0.45f));
+        Sprite sprite = Item.GridIcon;
+        if (sprite != null && sprite.texture != null)
+        {
+            float angle = Item.HasGridIcon || angleProp == null ? 0f : angleProp.floatValue;
+            Vector2 sz = IconSize(new Vector2(block.width - 2f, block.height - 2f), sprite, angle, Item.HasGridIcon);
+            Rect r = new Rect(block.center - sz * 0.5f, sz);
+            Rect uv = sprite.textureRect;
+            uv = new Rect(uv.x / sprite.texture.width, uv.y / sprite.texture.height, uv.width / sprite.texture.width, uv.height / sprite.texture.height);
+            Matrix4x4 old = GUI.matrix;
+            GUI.BeginClip(area);
+            r.position -= area.position;
+            GUIUtility.RotateAroundPivot(angle, r.center);
+            GUI.DrawTextureWithTexCoords(r, sprite.texture, uv, true);
+            GUI.matrix = old;
+            GUI.EndClip();
+        }
+
+        EditorGUILayout.BeginVertical();
+        bool turns = rotate != null && rotate.boolValue && s.x != s.y;
+        EditorGUILayout.LabelField(new GUIContent($"Grid inventory: {s.x} × {s.y} cells" + (turns ? $" (or {s.y} × {s.x} turned)" : ""),
+            "Cells the item takes when the Inventory Manager uses the grid inventory; the classic slots ignore it. " +
+            "Can Rotate In Grid lets players turn it (R while dragging or hovering)."), EditorStyles.miniBoldLabel);
+        Vector2Int suggested = ItemPresets.SuggestGridSize(Item);
+        EditorGUILayout.BeginHorizontal();
+        for (int i = 0; i < CommonGridSizes.Length; i++)
+        {
+            Vector2Int c = CommonGridSizes[i];
+            GUIStyle style = i == 0 ? EditorStyles.miniButtonLeft : i == CommonGridSizes.Length - 1 ? EditorStyles.miniButtonRight : EditorStyles.miniButtonMid;
+            if (GUILayout.Toggle(s == c, $"{c.x}×{c.y}", style, GUILayout.MinWidth(30f)) && s != c)
+                size.vector2IntValue = c;
+        }
+        using (new EditorGUI.DisabledScope(suggested == s))
+        {
+            if (GUILayout.Button(new GUIContent($"Usual: {suggested.x}×{suggested.y}", "The usual size of this kind of item (weapon category, armor slot)."),
+                    EditorStyles.miniButton, GUILayout.MinWidth(70f)))
+                size.vector2IntValue = suggested;
+        }
+        EditorGUILayout.EndHorizontal();
+
+        if (angleProp != null && gridIconProp != null)
+        {
+            if (gridIconProp.objectReferenceValue != null)
+            {
+                EditorGUILayout.LabelField("Grid Icon set: drawn in the item's shape, it fills the cells as drawn.", EditorStyles.wordWrappedMiniLabel);
+            }
+            else if (s.x != s.y)
+            {
+                EditorGUILayout.LabelField("A square icon cannot fill a long item without stretching. Diagonal icons (most swords, spears, " +
+                                           "staves) can be stood up; or give the item a Grid Icon drawn in its shape.", EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Turn icon", GUILayout.Width(60f));
+                foreach (float a in new[] { 0f, 45f, -45f, 90f })
+                {
+                    bool on = Mathf.Approximately(angleProp.floatValue, a);
+                    if (GUILayout.Toggle(on, a == 0f ? "as drawn" : $"{a:+0;-0}°", EditorStyles.miniButton, GUILayout.MinWidth(46f)) && !on)
+                        angleProp.floatValue = a;
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+        EditorGUILayout.EndVertical();
+        EditorGUILayout.EndHorizontal();
+    }
+
+    /// <summary>The icon's size in an area, as the grid draws it (see GridInventoryView.Style).</summary>
+    private static Vector2 IconSize(Vector2 area, Sprite sp, float angle, bool madeForShape)
+    {
+        float aspect = sp.rect.height > 0f ? sp.rect.width / sp.rect.height : 1f;
+        if (Mathf.Abs(angle) > 0.01f)
+        {
+            float rad = angle * Mathf.Deg2Rad, cos = Mathf.Abs(Mathf.Cos(rad)), sin = Mathf.Abs(Mathf.Sin(rad));
+            float h = area.y >= area.x ? area.y / (aspect * sin + cos) : area.x / (aspect * cos + sin);
+            h = Mathf.Min(h, Mathf.Max(area.x, area.y));
+            return new Vector2(h * aspect, h);
+        }
+        // Proportions kept: as big as fits.
+        float scale = Mathf.Min(area.x / Mathf.Max(1f, sp.rect.width), area.y / Mathf.Max(1f, sp.rect.height));
+        return new Vector2(sp.rect.width * scale, sp.rect.height * scale);
+    }
+
     /// <summary>Runs <paramref name="apply"/> on the item and refreshes the inspector.</summary>
     protected void ApplyPreset(string label, System.Action apply)
     {
@@ -150,6 +263,36 @@ public class ArmorSOEditor : ItemSOEditor
             menu.AddItem(new GUIContent($"Material/{m}"), false, () =>
                 ApplyPreset($"{captured} armor", () => ItemPresets.ApplyArmor(armor, captured)));
         }
+        if (armor.IsShield)
+        {
+            AddShieldPreset(menu, armor, "Buckler (small, quick, great parries)", ShieldDefense.Buckler);
+            AddShieldPreset(menu, armor, "Round Shield (all-rounder)", ShieldDefense.Round);
+            AddShieldPreset(menu, armor, "Kite Shield (wide, solid)", ShieldDefense.Kite);
+            AddShieldPreset(menu, armor, "Tower Shield (a wall: slow, no parry)", ShieldDefense.Tower);
+        }
+        else
+        {
+            menu.AddDisabledItem(new GUIContent("Shield Defense/(only for armor in the Shield slot)"));
+        }
+    }
+
+    private void AddShieldPreset(GenericMenu menu, ArmorSO armor, string label, System.Func<ShieldDefense> make)
+    {
+        menu.AddItem(new GUIContent("Shield Defense/" + label), false, () => ApplyPreset(label, () =>
+        {
+            Undo.RecordObject(armor, "Shield preset");
+            armor.SetShieldDefense(make());
+            EditorUtility.SetDirty(armor);
+        }));
+    }
+
+    /// <summary>Every field; Shield Defense only for shields (it does nothing on other armor).</summary>
+    protected override void DrawFields()
+    {
+        if (serializedObject.isEditingMultipleObjects || ((ArmorSO)target).IsShield)
+            DrawPropertiesExcluding(serializedObject, "m_Script");
+        else
+            DrawPropertiesExcluding(serializedObject, "m_Script", "shieldDefense");
     }
 
     protected override void DrawToolsTop()
@@ -179,6 +322,69 @@ public class ArmorSOEditor : ItemSOEditor
         {
             EditorGUILayout.LabelField("Not part of an armor set.", EditorStyles.miniLabel);
         }
+        if (armor.IsShield)
+        {
+            EditorGUILayout.Space(2);
+            ShieldDefense defense = armor.ShieldDefense;
+            if (defense == null)
+            {
+                EditorGUILayout.LabelField("Shield: blocking is off (Shield Defense ▸ Enabled) - only its Defense counts.", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                var lines = new List<string>();
+                defense.Describe(lines);
+                foreach (string l in lines)
+                    EditorGUILayout.LabelField("Shield: " + l, EditorStyles.wordWrappedMiniLabel);
+            }
+            EditorGUILayout.LabelField("Worn in the Off Hand slot; stowed (no defense, no blocking) while a two-handed weapon is in the main hand.",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+        EditorGUILayout.EndVertical();
+    }
+}
+
+/// <summary>Ammo inspector: presets and the weapons that fire it.</summary>
+[CustomEditor(typeof(AmmoSO), true)]
+[CanEditMultipleObjects]
+public class AmmoSOEditor : ItemSOEditor
+{
+    private double nextScan;
+    private readonly List<WeaponSO> firedBy = new List<WeaponSO>();
+
+    protected override void AddPresets(GenericMenu menu)
+    {
+        var ammo = (AmmoSO)target;
+        foreach (ItemPresets.Ammo a in System.Enum.GetValues(typeof(ItemPresets.Ammo)))
+        {
+            ItemPresets.Ammo captured = a;
+            menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(a.ToString())), false, () =>
+                ApplyPreset(captured.ToString(), () => ItemPresets.ApplyAmmo(ammo, captured)));
+        }
+    }
+
+    protected override void DrawToolsTop()
+    {
+        if (serializedObject.isEditingMultipleObjects)
+            return;
+        var ammo = (AmmoSO)target;
+        if (EditorApplication.timeSinceStartup >= nextScan)
+        {
+            nextScan = EditorApplication.timeSinceStartup + 3.0;
+            firedBy.Clear();
+            foreach (string guid in AssetDatabase.FindAssets("t:WeaponSO"))
+            {
+                var w = AssetDatabase.LoadAssetAtPath<WeaponSO>(AssetDatabase.GUIDToAssetPath(guid));
+                if (w != null && w.Ranged != null && w.Ranged.ammo != null && w.Ranged.ammo.Accepts(ammo))
+                    firedBy.Add(w);
+            }
+        }
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField($"Ammo type '{ammo.AmmoType}'", EditorStyles.boldLabel);
+        if (firedBy.Count == 0)
+            EditorGUILayout.LabelField("No weapon fires it yet: a ranged weapon's Ammo ▸ Ammo Type must be the same word.", EditorStyles.wordWrappedMiniLabel);
+        else
+            EditorGUILayout.LabelField("Fired by: " + string.Join(", ", firedBy.Select(w => w.Name)), EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.EndVertical();
     }
 }

@@ -60,6 +60,7 @@ public class UIDisplayManager
     public void UpdateCreateButtonState()
     {
         bool canCreate = mainUI.SelectedClass != null &&
+                        (!mainUI.RaceRequired || mainUI.SelectedRace != null) &&
                         references.characterNameInput != null &&
                         !string.IsNullOrEmpty(references.characterNameInput.text.Trim());
 

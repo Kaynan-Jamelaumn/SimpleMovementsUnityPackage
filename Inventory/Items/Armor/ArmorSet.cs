@@ -11,7 +11,7 @@ using UnityEngine;
 /// This file used to be named ArmorSetSO.cs; Unity needs a ScriptableObject's file to carry its class name, so it was
 /// renamed (keeping the same .meta GUID, existing set assets keep working).
 /// </remarks>
-[CreateAssetMenu(fileName = "New Armor Set", menuName = "Scriptable Objects/Armor Set")]
+[CreateAssetMenu(fileName = "New Armor Set", menuName = "SimpleMovements/Items/Armor Set", order = 20)]
 public class ArmorSet : ScriptableObject
 {
     [Header("Set Information")]

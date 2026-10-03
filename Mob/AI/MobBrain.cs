@@ -574,6 +574,8 @@ public sealed class MobBrain : ICombatHostility
     }
 
     // ------------------------------------------------------------------ targets
+    private float targetSince = -999f;
+
     private void SelectTarget(float now)
     {
         CombatEntity self = ctx.Entity;
@@ -586,6 +588,9 @@ public sealed class MobBrain : ICombatHostility
             SetTarget(taunter);
             return;
         }
+
+        if (p.useThreatTable && SelectTargetByThreat(now))
+            return;
 
         CombatEntity best = null;
         float bestScore = 0f;
@@ -623,12 +628,71 @@ public sealed class MobBrain : ICombatHostility
         SetTarget(best);
     }
 
+    /// <summary>
+    /// Threat-based targeting: every noticed enemy gets a little detection threat (the first noticed gets the first-contact
+    /// head start); the current target is kept until someone exceeds its threat by the switch margin (larger for
+    /// characters out of melee range), after a minimum time on target. Returns false when nobody has threat (the
+    /// regular scoring decides).
+    /// </summary>
+    private bool SelectTargetByThreat(float now)
+    {
+        CombatEntity self = ctx.Entity;
+        MobProfile p = ctx.Profile;
+        CombatSettings cs = CombatSettings.Instance;
+        float memory = p.memoryDuration * 2f;
+        IReadOnlyList<MobMemoryEntry> entries = ctx.Memory.Entries;
+
+        CombatEntity best = null;
+        float bestThreat = 0f;
+        float currentThreat = 0f;
+        bool currentValid = false;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            MobMemoryEntry e = entries[i];
+            CombatEntity other = e.entity;
+            if (other == null || !other.IsAlive || !e.detected || e.relation != MobRelationKind.Enemy)
+                continue;
+            if (now - e.lastSensedTime > p.memoryDuration || !WillingToFight(e))
+                continue;
+            if (self.GetThreat(other, memory) <= 0f && cs.detectionThreat > 0f)
+                self.AddThreat(other, cs.detectionThreat * Mathf.Max(10f, self.MaxHealth), ThreatKind.Detection);
+            float threat = self.GetThreat(other, memory);
+            // Cannot reach the current target and has no ranged attack: others may take over.
+            if (other == Target && unreachableSince > 0f && now - unreachableSince > 2f && !HasUsableRangedAbility())
+                threat *= 0.3f;
+            if (other == Target)
+            {
+                currentValid = true;
+                currentThreat = threat;
+            }
+            if (threat > bestThreat)
+            {
+                bestThreat = threat;
+                best = other;
+            }
+        }
+        if (best == null)
+            return false;
+        if (currentValid && best != Target)
+        {
+            float distance = Vector3.Distance(self.Position, best.Position);
+            float margin = (distance <= cs.threatMeleeRange ? cs.threatSwitchMarginMelee : cs.threatSwitchMarginRanged);
+            margin = 1f + (margin - 1f) * Mathf.Max(0.1f, p.threatLoyalty);
+            bool tooSoon = now - targetSince < cs.threatMinTimeOnTarget;
+            if (tooSoon || bestThreat < currentThreat * margin)
+                best = Target;
+        }
+        SetTarget(best);
+        return true;
+    }
+
     private void SetTarget(CombatEntity t)
     {
         if (t == Target)
             return;
         CombatEntity old = Target;
         Target = t;
+        targetSince = Time.time;
         hasPlan = false;
         unreachableSince = -1f;
         if (t != null && Mode == MobMode.Combat)

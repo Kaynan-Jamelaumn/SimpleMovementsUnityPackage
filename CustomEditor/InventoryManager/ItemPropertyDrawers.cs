@@ -138,7 +138,11 @@ public class EquippableEffectDrawer : PropertyDrawer
     }
 }
 
-/// <summary>A combat stat modifier on one line: stat, value (units in the tooltip), weapon filter.</summary>
+/// <summary>
+/// A combat stat modifier on one line: stat, value (units in the tooltip), and the filter the stat uses - the element
+/// for element-aware stats (Poison Damage = Elemental Damage limited to Poison), the kind of ability for cooldown / mana
+/// cost stats, otherwise the weapon category.
+/// </summary>
 [CustomPropertyDrawer(typeof(CombatStatModifier))]
 public class CombatStatModifierDrawer : PropertyDrawer
 {
@@ -150,15 +154,46 @@ public class CombatStatModifierDrawer : PropertyDrawer
         var stat = property.FindPropertyRelative("stat");
         var value = property.FindPropertyRelative("value");
         var weapon = property.FindPropertyRelative("onlyWithWeapon");
-        CombatStatInfo info = CombatStatInfo.Get((CombatStatType)stat.enumValueIndex);
+        var element = property.FindPropertyRelative("onlyElement");
+        var scope = property.FindPropertyRelative("scope");
+        var type = (CombatStatType)stat.enumValueIndex;
+        CombatStatInfo info = CombatStatInfo.Get(type);
         int indent = EditorGUI.indentLevel;
         EditorGUI.indentLevel = 0;
         float w = position.width;
         EditorGUI.PropertyField(new Rect(position.x, position.y, w * 0.42f - 4f, position.height), stat, new GUIContent("", info.description));
         EditorGUI.PropertyField(new Rect(position.x + w * 0.42f, position.y, w * 0.2f - 16f, position.height), value, new GUIContent("", info.description));
         EditorGUI.LabelField(new Rect(position.x + w * 0.62f - 14f, position.y, 14f, position.height), info.isPercent ? "%" : "", EditorStyles.miniLabel);
-        EditorGUI.PropertyField(new Rect(position.x + w * 0.62f, position.y, w * 0.38f, position.height), weapon,
-            new GUIContent("", "Only while wielding a weapon of this category (None = always)."));
+        var last = new Rect(position.x + w * 0.62f, position.y, w * 0.38f, position.height);
+        if (CombatStatInfo.UsesElement(type) && element != null)
+            EditorGUI.PropertyField(last, element, new GUIContent("", "Only for this element (None = every element). Poison here = poison damage / strength / chance / resistance."));
+        else if (CombatStatInfo.UsesScope(type) && scope != null)
+            EditorGUI.PropertyField(last, scope, new GUIContent("", "Which abilities: skills, innate (race / class / trait abilities), items (granted abilities and consumables), or everything."));
+        else
+            EditorGUI.PropertyField(last, weapon, new GUIContent("", "Only while wielding a weapon of this category (None = always)."));
+        EditorGUI.indentLevel = indent;
+        EditorGUI.EndProperty();
+    }
+}
+
+/// <summary>A scaling rule on one line: "[Agility] gives [0.3] [Critical Chance] per point".</summary>
+[CustomPropertyDrawer(typeof(StatScalingRule))]
+public class StatScalingRuleDrawer : PropertyDrawer
+{
+    public override float GetPropertyHeight(SerializedProperty property, GUIContent label) => EditorGUIUtility.singleLineHeight;
+
+    public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
+    {
+        EditorGUI.BeginProperty(position, label, property);
+        int indent = EditorGUI.indentLevel;
+        EditorGUI.indentLevel = 0;
+        float w = position.width;
+        const string tip = "Each point of the first stat gives this much of the second (e.g. Agility gives 0.3 Critical Chance). Uses the raw totals, so rules never chain.";
+        EditorGUI.PropertyField(new Rect(position.x, position.y, w * 0.32f, position.height), property.FindPropertyRelative("from"), new GUIContent("", tip));
+        EditorGUI.LabelField(new Rect(position.x + w * 0.32f + 2f, position.y, 34f, position.height), "gives", EditorStyles.miniLabel);
+        EditorGUI.PropertyField(new Rect(position.x + w * 0.32f + 36f, position.y, w * 0.18f - 38f, position.height), property.FindPropertyRelative("perPoint"), new GUIContent("", tip));
+        EditorGUI.PropertyField(new Rect(position.x + w * 0.5f, position.y, w * 0.34f, position.height), property.FindPropertyRelative("to"), new GUIContent("", tip));
+        EditorGUI.LabelField(new Rect(position.x + w * 0.84f + 4f, position.y, w * 0.16f - 4f, position.height), "per point", EditorStyles.miniLabel);
         EditorGUI.indentLevel = indent;
         EditorGUI.EndProperty();
     }
@@ -231,3 +266,4 @@ public class ComboConditionDrawer : PropertyDrawer
     }
 }
 #endif
+    

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -22,6 +23,7 @@ public class ComboSystem
     }
 
     private readonly WeaponController controller;
+    private readonly Func<WeaponSO> weaponSource;
     private readonly List<AttackType> currentComboSequence = new List<AttackType>();
     private readonly List<ComboBranch> executedBranches = new List<ComboBranch>();
     private float lastAttackTime = -999f;
@@ -37,10 +39,17 @@ public class ComboSystem
     private AttackExecutor attackExecutor;
     private WeaponEffectsManager effectsManager;
 
-    public ComboSystem(WeaponController controller)
+    public ComboSystem(WeaponController controller) : this(controller, null) { }
+
+    /// <summary>A combo state for the weapon <paramref name="weapon"/> returns (the off hand has its own); null = the main weapon.</summary>
+    public ComboSystem(WeaponController controller, Func<WeaponSO> weapon)
     {
         this.controller = controller;
+        weaponSource = weapon;
     }
+
+    /// <summary>The weapon whose combos this state follows.</summary>
+    public WeaponSO Weapon => weaponSource != null ? weaponSource() : controller.EquippedWeapon;
 
     public void SetDependencies(AttackExecutor attackExecutor, WeaponEffectsManager effectsManager)
     {
@@ -68,7 +77,7 @@ public class ComboSystem
     public ComboChoice Choose(GameObject player, AttackType input)
     {
         var choice = new ComboChoice { damageMultiplier = 1f };
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = Weapon;
         if (!controller.EnableComboSystem || weapon == null)
             return choice;
         ExpireIfLate();
@@ -108,7 +117,7 @@ public class ComboSystem
     {
         if (!controller.EnableComboSystem)
             return;
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = Weapon;
         currentComboTree = weapon != null ? weapon.ComboTree : null;
         comboWindow = currentComboTree != null ? currentComboTree.GetComboWindow(currentComboSequence.Count) : controller.DefaultComboWindow;
         ExpireIfLate();
@@ -161,7 +170,7 @@ public class ComboSystem
     {
         comboScore = CalculateComboScore();
         PlayerStatusController ps = player != null ? player.GetComponentInParent<PlayerStatusController>() : null;
-        int exp = finisherBranch.GetModifiedExperienceBonus(ps != null ? ps.TraitManager : null, controller.EquippedWeapon);
+        int exp = finisherBranch.GetModifiedExperienceBonus(ps != null ? ps.TraitManager : null, Weapon);
         if (exp > 0)
         {
             if (currentComboTree != null && executedBranches.Count >= 5)
@@ -195,7 +204,7 @@ public class ComboSystem
     {
         currentTarget = target;
         totalDamageDealt += Mathf.RoundToInt(damage);
-        WeaponSO weapon = controller.EquippedWeapon;
+        WeaponSO weapon = Weapon;
         if (elemental)
             elementalStreak += weapon != null ? Mathf.Max(0f, weapon.ElementalBuildupRate) : 1f;
         else

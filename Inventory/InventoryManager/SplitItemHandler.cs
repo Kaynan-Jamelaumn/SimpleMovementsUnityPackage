@@ -28,20 +28,14 @@ public static class SplitItemHandler
 
         try
         {
-            // Use InventoryUtils to find empty slot
-            var emptySlots = InventoryUtils.FindEmptySlots(slots);
-            if (emptySlots.Count == 0)
+            // A free place in the same part of the inventory (hotbar or bag) - the grid inventory checks the item's size.
+            InventorySlot source = inventoryManager.FindSlotHolding(pickedItem.gameObject);
+            InventorySlot emptySlot = inventoryManager.FindFreeSlotFor(pickedItem.itemScriptableObject, source != null && source.IsHotbarSlot);
+            if (emptySlot == null)
             {
                 Debug.LogWarning("No empty slot available for splitting");
+                inventoryManager.ShowMessage("No room to split the stack.");
                 return false;
-            }
-
-            InventorySlot source = pickedItem.GetComponentInParent<InventorySlot>();
-            InventorySlot emptySlot = emptySlots[0];
-            if (source != null)
-            {
-                InventorySlot sameSection = emptySlots.Find(s => s != null && s.IsHotbarSlot == source.IsHotbarSlot);
-                if (sameSection != null) emptySlot = sameSection;
             }
             int quantityToTransfer = amount >= 1
                 ? Mathf.Clamp(amount, 1, pickedItem.stackCurrent - 1)
@@ -65,9 +59,15 @@ public static class SplitItemHandler
         UpdateOriginalItem(originalItem, player, quantityToTransfer);
 
         // Create new item in target slot
-        CreateAndAssignNewItem(inventoryManager, originalItem, targetSlot, quantityToTransfer, durabilityToTransfer);
+        if (CreateAndAssignNewItem(inventoryManager, originalItem, targetSlot, quantityToTransfer, durabilityToTransfer))
+            return true;
 
-        return true;
+        // It could not be created there: everything goes back to the original stack (nothing is lost).
+        originalItem.AddToStack(quantityToTransfer);
+        originalItem.DurabilityList.AddRange(durabilityToTransfer);
+        InventoryUtils.UpdatePlayerWeight(player, quantityToTransfer * originalItem.itemScriptableObject.Weight);
+        originalItem.RefreshUI();
+        return false;
     }
 
     private static List<int> PrepareDurabilityTransfer(InventoryItem originalItem, int quantity)
@@ -98,7 +98,7 @@ public static class SplitItemHandler
         InventoryUtils.UpdatePlayerWeight(player, -weightToRemove);
     }
 
-    private static void CreateAndAssignNewItem(
+    private static bool CreateAndAssignNewItem(
         InventoryManager inventoryManager,
         InventoryItem originalItem,
         InventorySlot emptySlot,
@@ -108,10 +108,10 @@ public static class SplitItemHandler
         if (inventoryManager == null || originalItem.Live()?.itemScriptableObject == null || emptySlot == null)
         {
             Debug.LogError("Cannot create new item: invalid parameters");
-            return;
+            return false;
         }
 
-        inventoryManager.CreateItemInSlot(emptySlot, originalItem.itemScriptableObject, quantity, durabilityList, true);
+        return inventoryManager.CreateItemInSlot(emptySlot, originalItem.itemScriptableObject, quantity, durabilityList, true) != null;
     }
 
     private static bool ValidateInputs(InventoryManager inventoryManager, InventoryItem pickedItem, GameObject[] slots, GameObject player)

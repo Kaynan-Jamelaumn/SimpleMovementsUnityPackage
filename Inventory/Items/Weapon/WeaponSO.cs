@@ -9,7 +9,7 @@ using System.Linq;
 /// conditional branches (<see cref="ComboTree"/>) add combos. While wielded it can give passive effects and traits
 /// (<see cref="EquipmentEffect"/>). Everything is data: new weapons need no code.
 /// </summary>
-[CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Item/Weapon")]
+[CreateAssetMenu(fileName = "Weapon", menuName = "SimpleMovements/Items/Weapon", order = 0)]
 public class WeaponSO : ItemSO
 {
     [Header("Weapon Attributes")]
@@ -31,6 +31,18 @@ public class WeaponSO : ItemSO
     [SerializeField] private float attackSpeed;
     [Tooltip("Attribute (Combat Stats) that increases this weapon's damage.")]
     [SerializeField] private WeaponScaling scaling = WeaponScaling.None;
+
+    [Header("Handling")]
+    [Tooltip("One- or two-handed, dual wielding, and what the weapon does from the off hand. Auto values follow the Weapon Category.")]
+    [SerializeField] private WeaponHandling handling = new WeaponHandling();
+    [Tooltip("Blocking with the weapon itself (a greatsword or staff guard, a parrying dagger): used when no shield is held. Off by default.")]
+    [SerializeField] private ShieldDefense guard = DisabledGuard();
+
+    [Header("Ranged Weapon")]
+    [Tooltip("Makes the weapon shoot: Bow (draw and release), Magazine (crossbow, firearm: rounds and reload) or Throw (the weapon " +
+             "itself is thrown). Its firing attacks keep their timing, animation, stamina and on-hit effects and fire a projectile " +
+             "when they strike. None = a melee weapon.")]
+    [SerializeReference, SubclassSelector] private RangedMechanic ranged;
 
     [Header("Animation System")]
     [Tooltip("Animations of this weapon (idle, attacks...). Optional: each attack can also have its own clip.")]
@@ -114,7 +126,40 @@ public class WeaponSO : ItemSO
     [Tooltip("Played when the weapon leaves the hand.")]
     [SerializeField] private AudioClip unequipSound;
 
+    private static ShieldDefense DisabledGuard()
+    {
+        ShieldDefense g = ShieldDefense.WeaponGuard();
+        g.enabled = false;
+        return g;
+    }
+
     // Properties
+    public WeaponHandling Handling => handling ?? (handling = new WeaponHandling());
+    /// <summary>Needs both hands (stows the off-hand item while held).</summary>
+    public bool IsTwoHanded => Handling.IsTwoHanded(weaponCategory);
+    /// <summary>Can be held in the off hand next to a one-handed main weapon.</summary>
+    public bool CanBeOffHand => Handling.CanBeOffHand(weaponCategory);
+    /// <summary>The weapon's guard (blocking with it), or null when it cannot block.</summary>
+    public ShieldDefense Guard => guard != null && guard.enabled ? guard : null;
+    /// <summary>The ranged mechanic (bow, magazine, throw), or null for melee weapons.</summary>
+    public RangedMechanic Ranged => ranged;
+    public bool IsRanged => ranged != null;
+    /// <summary>Throwing weapons can be used from quickslots (a quick throw).</summary>
+    public override bool CanUseFromQuickSlot => ranged is ThrowMechanic;
+
+    /// <summary>Replaces the ranged mechanic (templates, editor tools).</summary>
+    public void SetRanged(RangedMechanic mechanic) => ranged = mechanic;
+
+    /// <summary>Replaces the guard (templates, editor tools).</summary>
+    public void SetGuard(ShieldDefense defense) => guard = defense;
+
+    /// <summary>Sets how the weapon is held (templates, editor tools).</summary>
+    public void SetHandling(WeaponGrip grip, OffHandUse offHand)
+    {
+        Handling.grip = grip;
+        Handling.offHand = offHand;
+    }
+
     public ToolType ToolType => toolType;
     public WeaponCategory Category => weaponCategory;
     public WeaponScaling Scaling => scaling;
@@ -234,6 +279,10 @@ public class WeaponSO : ItemSO
         SyncActionType(alternateAction, AttackType.Alternate);
         if (maxDamage < minDamage)
             maxDamage = minDamage;
+        if (handling == null)
+            handling = new WeaponHandling();
+        if (guard == null)
+            guard = DisabledGuard();
     }
 
     private static void SyncActionType(AttackAction action, AttackType expected)
@@ -327,6 +376,9 @@ public class WeaponSO : ItemSO
             lines.Add($"{criticalChance * 100f:0}% critical chance (x{criticalDamageMultiplier:0.##})");
         if (scaling != WeaponScaling.None)
             lines.Add($"Scales with {scaling}");
+        lines.Add(Handling.Describe(weaponCategory));
+        ranged?.Describe(lines);
+        Guard?.Describe(lines);
         foreach (AttackType t in System.Enum.GetValues(typeof(AttackType)))
         {
             AttackAction a = GetAction(t);
@@ -375,6 +427,23 @@ public class WeaponSO : ItemSO
         if (comboTree != null)
             comboTree.Validate(errors, warnings);
         EquipmentEffect.ValidateAll(passiveEffects, "While Wielded", errors, warnings);
+        if (Handling.grip == WeaponGrip.TwoHanded && Handling.offHand == OffHandUse.Allowed)
+            warnings.Add("Handling: a two-handed weapon can never be held in the off hand ('Off Hand: Allowed' is ignored).");
+        if (Handling.offHandAttack == AttackType.OffHand)
+            errors.Add("Handling ▸ Off Hand Attack cannot be 'OffHand': pick which of this weapon's attacks (Normal, Light...) it performs.");
+        else if (CanBeOffHand && GetAction(Handling.offHandAttack) == null)
+            warnings.Add($"Handling ▸ Off Hand Attack is {Handling.offHandAttack}, which this weapon does not have: it cannot attack from the off hand.");
+        if (guard != null && guard.enabled)
+            guard.Validate("Guard", errors, warnings);
+        if (ranged != null)
+        {
+            ranged.Validate("Ranged", errors, warnings);
+            foreach (AttackType t in ranged.firingAttacks ?? new List<AttackType>())
+                if (t != AttackType.OffHand && GetAction(t) == null)
+                    warnings.Add($"Ranged ▸ Firing Attacks lists {t}, which this weapon does not have.");
+            if (ranged is ThrowMechanic th && th.consumesItem && stackMax <= 1)
+                warnings.Add("A thrown weapon with Stack Max 1 is gone after one throw (until picked up again): raise Stack Max for knives, javelins.");
+        }
         if (applyTraitsToWielder && (weaponTraits == null || weaponTraits.Count == 0))
             warnings.Add("'Apply Traits To Wielder' is on but the weapon has no traits.");
     }

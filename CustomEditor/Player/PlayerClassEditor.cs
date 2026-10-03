@@ -36,8 +36,44 @@ public class PlayerClassEditor : Editor
     {
         serializedObject.Update();
 
+        // Summary, checks and how the class fits with races and archetypes.
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField(playerClass.GetClassName(), EditorStyles.boldLabel);
+        EditorGUILayout.LabelField($"Health {playerClass.health:0} · Stamina {playerClass.stamina:0} · Mana {playerClass.mana:0} · Speed {playerClass.speed:0.#} · " +
+                                   $"{playerClass.traitPoints} trait points" + (playerClass.archetype != null ? $" · archetype: {playerClass.archetype.Name}" : ""),
+            EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.LabelField("A Player Class sets the starting status values, the trait lists and points, and the basic combat block. " +
+                                   "Link a Character Archetype (kind Class) for growth per level, stat scaling, passives and class abilities. " +
+                                   "Races are separate archetypes (kind Race).", EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.EndVertical();
+        var errors = new List<string>();
+        var warnings = new List<string>();
+        playerClass.Validate(errors, warnings);
+        foreach (string e in errors) EditorGUILayout.HelpBox(e, MessageType.Error);
+        foreach (string w in warnings) EditorGUILayout.HelpBox(w, MessageType.Warning);
+        if (playerClass.archetype == null && GUILayout.Button(new GUIContent("Create Class Archetype", "Creates a Character Archetype of kind Class next to this asset and links it.")))
+        {
+            var a = ScriptableObject.CreateInstance<CharacterArchetype>();
+            a.kind = ArchetypeKind.Class;
+            a.displayName = playerClass.GetClassName();
+            a.setsHeight = false;
+            string folder = System.IO.Path.GetDirectoryName(AssetDatabase.GetAssetPath(playerClass)).Replace('\\', '/');
+            AssetDatabase.CreateAsset(a, AssetDatabase.GenerateUniqueAssetPath($"{folder}/{playerClass.GetClassName()} Archetype.asset"));
+            Undo.RecordObject(playerClass, "Link Class Archetype");
+            playerClass.archetype = a;
+            EditorUtility.SetDirty(playerClass);
+            AssetDatabase.SaveAssets();
+        }
+
         // Draw default inspector first
         DrawDefaultInspector();
+
+        // The class's combat block reaches Combat Stats through a Character Identity on the player.
+        var combat = playerClass.GetCombatStatModifiers();
+        EditorGUILayout.HelpBox(
+            "Combat Stats are applied by a Character Identity on the player (with the linked Archetype, if any):\n" +
+            (combat.Count > 0 ? string.Join(", ", combat.ConvertAll(m => m.Describe())) : "(none)") +
+            "\nCritical Damage counts above 150, Attack / Casting Speed above 1.", MessageType.Info);
 
         EditorGUILayout.Space(10);
 

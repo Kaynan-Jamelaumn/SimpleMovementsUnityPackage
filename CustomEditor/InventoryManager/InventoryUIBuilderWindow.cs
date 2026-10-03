@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>Tools ▸ Inventory ▸ UI Builder: options and the build button.</summary>
+/// <summary>Tools ▸ SimpleMovements ▸ Inventory ▸ UI Builder: options and the build button.</summary>
 public class InventoryUIBuilderWindow : EditorWindow
 {
     [SerializeField] private InventoryManager manager;
@@ -12,7 +12,7 @@ public class InventoryUIBuilderWindow : EditorWindow
     private Vector2 scroll;
     private bool showEquipment = true;
 
-    [MenuItem("Tools/Inventory/UI Builder", priority = 0)]
+    [MenuItem("Tools/SimpleMovements/Inventory/UI Builder", priority = 0)]
     public static void OpenFromMenu() => Open(Selection.activeGameObject != null ? Selection.activeGameObject.GetComponentInParent<InventoryManager>() : null);
 
     public static void Open(InventoryManager target)
@@ -45,6 +45,14 @@ public class InventoryUIBuilderWindow : EditorWindow
         settings.hotbarSlots = EditorGUILayout.IntSlider("Hotbar Slots", settings.hotbarSlots, 1, 9);
         settings.inventorySlots = EditorGUILayout.IntSlider("Inventory Slots", settings.inventorySlots, 1, 120);
         settings.inventoryColumns = EditorGUILayout.IntSlider("Inventory Columns", settings.inventoryColumns, 1, 16);
+        if (manager != null)
+        {
+            settings.ReadGrid(new SerializedObject(manager));
+            if (settings.gridInventory)
+                EditorGUILayout.HelpBox($"Grid inventory is on (Inventory Manager ▸ Grid Inventory): the inventory panel is built as its grid, " +
+                                        $"{settings.gridColumns} × {settings.gridRows} cells of {settings.InventoryCellSize:0} px. Inventory Slots / Columns " +
+                                        "above are the classic layout, used when the grid is off.", MessageType.Info);
+        }
 
         EditorGUILayout.Space();
         settings.buildEquipment = EditorGUILayout.ToggleLeft("Equipment panel", settings.buildEquipment, EditorStyles.boldLabel);

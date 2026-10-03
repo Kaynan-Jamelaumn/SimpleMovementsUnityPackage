@@ -134,6 +134,12 @@ public abstract class TraitBehaviour
     /// <summary>True when the player triggers it (a key or a jump); false for automatic reactions.</summary>
     public virtual bool IsActive => false;
 
+    /// <summary>
+    /// True for a real active skill on its own key (an ability), which counts toward the one-active-trait-per-character
+    /// limit. Movement extras used with existing keys (double jump, wall climb, glide) do not count.
+    /// </summary>
+    public virtual bool CountsAsActiveTrait => false;
+
     public abstract string Describe();
     public virtual void OnAdded(TraitContext ctx) { }
     public virtual void OnRemoved(TraitContext ctx) { }
@@ -352,16 +358,59 @@ public class ActiveAbilityTrait : TraitBehaviour
     public AbilityDefinition ability;
     [Tooltip("Changes applied on top of the ability for this trait.")]
     public AbilityModifierSet modifiers = new AbilityModifierSet();
-    [Tooltip("The key (input action) that casts it. Empty = only scripts/UI can use it (TraitManager.TryActivate).")]
+    [Tooltip("Optional: a specific input action that casts it. Empty = the first action found by the names below, else the fallback controls.")]
     public InputActionReference input;
+    [Tooltip("Input actions looked up by name in the player's input actions when Input is empty (the first one found is used). " +
+             "Add an action named 'ActiveTrait' to the input actions to make the key rebindable in the settings menu.")]
+    public string[] actionNames = { "ActiveTrait", "TraitAbility", "UseTrait" };
+    [Tooltip("Fallback control for keyboard / mouse (or any device), used when the input actions have none of the actions above. " +
+             "Click the field to pick a control. Empty = none.")]
+    [UnityEngine.InputSystem.Layouts.InputControl(layout = "Button")]
+    public string fallbackControl = "<Keyboard>/j";
+    [Tooltip("Fallback control for a gamepad, joystick or any other device, used together with the one above. Empty = none.")]
+    [UnityEngine.InputSystem.Layouts.InputControl(layout = "Button")]
+    public string fallbackGamepadControl = "<Gamepad>/select";
 
     [NonSerialized] private int slot = -1;
     [NonSerialized] private PlayerAbilityController owner;
+    [NonSerialized] private CombatInputBinding binding;
+    [NonSerialized] private InputAction fallbackAction;
+    /// <summary>Who grants the ability (traits, race and class: Innate; equipment: Item) - scoped cost / cooldown stats.</summary>
+    [NonSerialized] public AbilitySlotSource grantedBy = AbilitySlotSource.Innate;
 
     public override bool IsActive => true;
+    public override bool CountsAsActiveTrait => true;
     public override string Describe() => ability != null
-        ? $"Active: {ability.DisplayName}" + (input != null && input.action != null ? $" ({input.action.name})" : "") + (string.IsNullOrEmpty(ability.description) ? "." : $" - {ability.description}")
+        ? $"Active: {ability.DisplayName} ({KeyText})" + (string.IsNullOrEmpty(ability.description) ? "." : $" - {ability.description}")
         : "Active ability (none assigned).";
+
+    /// <summary>The fallback controls as readable text ("J / Select").</summary>
+    public string FallbackText
+    {
+        get
+        {
+            var parts = new List<string>();
+            foreach (string path in new[] { fallbackControl, fallbackGamepadControl })
+                if (!string.IsNullOrWhiteSpace(path))
+                    parts.Add(InputControlPath.ToHumanReadableString(path, InputControlPath.HumanReadableStringOptions.OmitDevice));
+            return parts.Count > 0 ? string.Join(" / ", parts) : "no key";
+        }
+    }
+
+    /// <summary>The key that casts it: the bound action, else the action names, else the fallback controls.</summary>
+    public string KeyText
+    {
+        get
+        {
+            if (binding != null && binding.Action != null)
+                return InputDeviceTracker.DisplayString(binding.Action) is string k && k.Length > 0 ? k : binding.Action.name;
+            if (fallbackAction != null)
+                return InputDeviceTracker.DisplayString(fallbackAction) is string f && f.Length > 0 ? f : FallbackText;
+            if (input != null && input.action != null)
+                return input.action.name;
+            return actionNames != null && actionNames.Length > 0 ? $"'{actionNames[0]}' action or {FallbackText}" : FallbackText;
+        }
+    }
 
     public override string LiveStatus
     {
@@ -394,15 +443,40 @@ public class ActiveAbilityTrait : TraitBehaviour
         }
         // Reuses a free extra slot, so gaining and losing the trait never grows the slot list.
         slot = owner.AcquireExtraSlot(ability, BuildModifiers());
-        if (input != null && input.action != null)
-            input.action.Enable();
+        if (slot >= 0 && slot < owner.Slots.Count && owner.Slots[slot] != null)
+            owner.Slots[slot].Source = grantedBy;
+        // The key: the assigned action, else an action found by name, else the fallback controls (any device).
+        binding = CombatInputBinding.Create(ctx.Manager, input, actionNames, Key.None, MouseFallback.None, $"Active trait '{ability.DisplayName}'");
+        if (!binding.HasAction)
+        {
+            fallbackAction = new InputAction($"ActiveTrait ({ability.DisplayName})", InputActionType.Button);
+            int added = 0;
+            foreach (string path in new[] { fallbackControl, fallbackGamepadControl })
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                fallbackAction.AddBinding(path);
+                added++;
+            }
+            if (added > 0)
+            {
+                fallbackAction.Enable();
+                Debug.Log($"[Traits] '{ability.DisplayName}' uses the fallback controls {FallbackText}: add an input action named " +
+                          $"'{(actionNames != null && actionNames.Length > 0 ? actionNames[0] : "ActiveTrait")}' to make it rebindable in the settings.", ctx.Manager);
+            }
+            else
+            {
+                fallbackAction.Dispose();
+                fallbackAction = null;
+            }
+        }
     }
 
     public override void Tick(TraitContext ctx, float dt)
     {
-        if (owner == null || slot < 0 || input == null || input.action == null)
+        if (owner == null || slot < 0)
             return;
-        if (input.action.triggered && ctx.CanAct)
+        bool pressed = (binding != null && binding.HasAction && binding.Pressed) || (fallbackAction != null && fallbackAction.WasPressedThisFrame());
+        if (pressed && ctx.CanAct && !InputBindingStore.GameplayInputPaused)
             owner.TryCastFromInput(slot);
     }
 
@@ -426,14 +500,19 @@ public class ActiveAbilityTrait : TraitBehaviour
         if (owner != null && slot >= 0)
             owner.ReleaseExtraSlot(slot);
         slot = -1;
+        binding?.Dispose();
+        binding = null;
+        fallbackAction?.Dispose();
+        fallbackAction = null;
     }
 
     public override void Validate(List<string> errors, List<string> warnings)
     {
         if (ability == null)
             errors.Add("Active Ability On A Key: no ability assigned.");
-        if (input == null)
-            warnings.Add("Active Ability On A Key: no input, so only scripts or UI (TraitManager.TryActivate) can use it.");
+        if (input == null && (actionNames == null || actionNames.Length == 0) &&
+            string.IsNullOrWhiteSpace(fallbackControl) && string.IsNullOrWhiteSpace(fallbackGamepadControl))
+            warnings.Add("Active Ability On A Key: no input, no action names and no fallback controls, so only scripts or UI (TraitManager.TryActivate) can use it.");
     }
 
     public override TraitBehaviour CreateRuntimeCopy()
@@ -441,6 +520,8 @@ public class ActiveAbilityTrait : TraitBehaviour
         var copy = (ActiveAbilityTrait)base.CreateRuntimeCopy();
         copy.slot = -1;
         copy.owner = null;
+        copy.binding = null;
+        copy.fallbackAction = null;
         return copy;
     }
 }

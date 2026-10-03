@@ -7,10 +7,10 @@ using static AbilityStateMachine;
 /// <summary>
 /// Legacy ability asset. Still supported: player slots and mobs convert it automatically to an
 /// <see cref="AbilityDefinition"/> at runtime (see <see cref="LegacyAbilityConverter"/>), and
-/// Tools > Abilities > Convert Selected Legacy Abilities turns it into a real Ability Definition asset you can extend with
+/// Tools > SimpleMovements > Legacy > Convert Selected Legacy Abilities turns it into a real Ability Definition asset you can extend with
 /// the new shapes, projectiles, surges, walls, summons and AI settings.
 /// </summary>
-[CreateAssetMenu(fileName = "Ability", menuName = "Scriptable Objects/Ability/Ability (Legacy)")]
+[CreateAssetMenu(fileName = "Ability", menuName = "SimpleMovements/Legacy/Ability (AbilityEffectSO)", order = 100)]
 public class AbilityEffectSO : AbilitySO
 {
     [SerializeField] public List<AttackEffect> effects;

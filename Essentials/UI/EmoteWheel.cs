@@ -53,6 +53,7 @@ public class EmoteWheel : MonoBehaviour
     {
         // Initialize input system
         inputActions = new PlayerInput();
+        InputBindingStore.Register(inputActions.asset); // the saved key bindings
         playerActionMap = inputActions.asset.FindActionMap("Player");
 
         // Calculate deadzone as squared value for optimized distance comparison

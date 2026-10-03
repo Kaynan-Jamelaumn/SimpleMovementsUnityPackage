@@ -73,9 +73,9 @@ public class TraitEffect
 /// second wind, life steal, modifiers while at low health...</item>
 /// </list>
 /// Positive traits cost trait points; negative traits (drawbacks) have a negative cost and give points back.
-/// Create with Assets ▸ Create ▸ Scriptable Objects ▸ Trait (or Trait From Preset...).
+/// Create with Assets ▸ Create ▸ SimpleMovements ▸ Character ▸ Trait (or Trait From Preset...).
 /// </summary>
-[CreateAssetMenu(fileName = "New Trait", menuName = "Scriptable Objects/Trait")]
+[CreateAssetMenu(fileName = "New Trait", menuName = "SimpleMovements/Character/Trait", order = 10)]
 public class Trait : ScriptableObject
 {
     [Header("Basic Info")]
@@ -124,6 +124,19 @@ public class Trait : ScriptableObject
     [Tooltip("Played when the trait is gained.")]
     public AudioClip acquisitionSound;
 
+    [Header("Combat Stats")]
+    [Tooltip("Combat stats while the character has the trait (players and mobs): Critical Chance, Armor Penetration, Poison " +
+             "resistance (Status Resistance limited to Poison), Threat, Cooldown Reduction, Height...")]
+    public List<CombatStatModifier> combatStats = new List<CombatStatModifier>();
+    [Tooltip("Elemental resistances while the character has the trait (negative = weakness).")]
+    public List<ElementalResistance> resistances = new List<ElementalResistance>();
+    [Tooltip("Attribute scaling while the character has the trait (+0.2 Critical Chance per Agility...).")]
+    public List<StatScalingRule> scalingRules = new List<StatScalingRule>();
+
+    [Header("Race / Class Restrictions")]
+    [Tooltip("Only characters of one of these races / classes / backgrounds can take it. Empty = everyone.")]
+    public List<CharacterArchetype> onlyFor = new List<CharacterArchetype>();
+
     // Properties
     public bool IsPositive => cost > 0;
     public bool IsNegative => cost < 0;
@@ -153,6 +166,15 @@ public class Trait : ScriptableObject
         var lines = new List<string>();
         foreach (TraitModifier m in modifiers)
             if (m != null) lines.Add(m.Describe());
+        if (combatStats != null)
+            foreach (CombatStatModifier m in combatStats)
+                if (m != null) lines.Add(m.Describe());
+        if (resistances != null)
+            foreach (ElementalResistance r in resistances)
+                if (r != null) lines.Add(r.Describe());
+        if (scalingRules != null)
+            foreach (StatScalingRule r in scalingRules)
+                if (r != null) lines.Add(r.Describe());
         foreach (TraitBehaviour b in behaviours)
             if (b != null) lines.Add(b.Describe());
         foreach (TraitEffect effect in effects)
@@ -162,13 +184,15 @@ public class Trait : ScriptableObject
         }
         if (lines.Count > 0)
             desc += (string.IsNullOrEmpty(desc) ? "" : "\n\n") + "Effects:\n• " + string.Join("\n• ", lines);
+        if (onlyFor != null && onlyFor.Exists(a => a != null))
+            desc += (string.IsNullOrEmpty(desc) ? "" : "\n") + "Only for: " + string.Join(", ", onlyFor.FindAll(a => a != null).ConvertAll(a => a.Name));
         return desc;
     }
 
     /// <summary>Setup problems (shown by the inspector and Validate All).</summary>
     public void Validate(List<string> errors, List<string> warnings)
     {
-        if (modifiers.Count == 0 && behaviours.Count == 0 && effects.Count == 0)
+        if (modifiers.Count == 0 && behaviours.Count == 0 && effects.Count == 0 && HasNoCombatStats)
             warnings.Add($"{Name}: does nothing (no modifiers, behaviours or effects).");
         int good = 0, bad = 0;
         foreach (TraitModifier m in modifiers)
@@ -203,6 +227,38 @@ public class Trait : ScriptableObject
         foreach (Trait r in requiredTraits)
             if (r != null && r.requiredTraits.Contains(this))
                 errors.Add($"{Name}: '{r.Name}' and this trait require each other - neither can be taken first.");
+    }
+
+    /// <summary>
+    /// The trait gives a real active skill on its own key (an ability). A character can pick only one such trait
+    /// (Trait Manager ▸ Max Active Traits); double jump, wall climb and glide do not count.
+    /// </summary>
+    public bool HasActiveSkill
+    {
+        get
+        {
+            foreach (TraitBehaviour b in behaviours)
+                if (b != null && b.CountsAsActiveTrait) return true;
+            return false;
+        }
+    }
+
+    private bool HasNoCombatStats => (combatStats == null || combatStats.Count == 0) && (resistances == null || resistances.Count == 0) &&
+                                     (scalingRules == null || scalingRules.Count == 0);
+
+    /// <summary>Has combat stats, resistances or scaling to add to the character's Combat Stats.</summary>
+    public bool HasCombatStats => !HasNoCombatStats;
+
+    /// <summary>Can a character made of <paramref name="archetypes"/> take it ("Only For")?</summary>
+    public bool IsAllowedFor(IList<CharacterArchetype> archetypes)
+    {
+        if (onlyFor == null || !onlyFor.Exists(a => a != null))
+            return true;
+        if (archetypes == null)
+            return false;
+        foreach (CharacterArchetype a in archetypes)
+            if (a != null && onlyFor.Contains(a)) return true;
+        return false;
     }
 
     private void OnValidate()

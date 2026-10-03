@@ -7,7 +7,7 @@ using UnityEngine;
 /// abilities on keys, on-hit / when-hit effects, conditional effects, visuals). It can belong to an
 /// <see cref="ArmorSet"/>. Equipping and unequipping are automatic (<see cref="EquipmentManager"/>).
 /// </summary>
-[CreateAssetMenu(fileName = "Equippable", menuName = "Scriptable Objects/Item/Equippable")]
+[CreateAssetMenu(fileName = "Equippable", menuName = "SimpleMovements/Items/Equippable (Accessory)", order = 5)]
 public class EquippableSO : ItemSO
 {
     [Header("Equippable Effect")]

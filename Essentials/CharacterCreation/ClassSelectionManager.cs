@@ -120,6 +120,13 @@ public class ClassSelectionManager
             return;
         }
 
+        CharacterArchetype race = mainUI.SelectedRace;
+        if (race != null && playerClass.archetype != null && !race.IsCompatibleWith(playerClass.archetype))
+        {
+            mainUI.OnCreationError($"{race.Name} cannot be a {CharacterCreationValidator.GetClassNameSafe(playerClass)}.");
+            return;
+        }
+
         // Update visual selection state
         UpdateClassButtonStates(playerClass);
 
@@ -205,7 +212,7 @@ public class ClassSelectionManager
 
         if (references.classTraitPoints != null)
         {
-            references.classTraitPoints.text = $"Trait Points: {selectedClass.traitPoints}";
+            references.classTraitPoints.text = $"Trait Points: {mainUI.StartingTraitPoints}";
         }
 
         DisplayUniqueTraits();

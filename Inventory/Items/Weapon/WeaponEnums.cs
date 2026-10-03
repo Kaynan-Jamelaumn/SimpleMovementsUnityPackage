@@ -27,6 +27,11 @@ public enum AttackType
     Special,
     /// <summary>Secondary attack (right click, alternate fire, shield bash...).</summary>
     Alternate,
+    /// <summary>
+    /// The OFF-HAND weapon's attack while dual wielding (not an action slot: the off-hand weapon performs its own attack,
+    /// see Handling ▸ Off Hand Attack). Combo sequences of the main weapon can use it for left-right combos.
+    /// </summary>
+    OffHand,
 }
 
 /// <summary>Weapon family. Used by equipment bonuses ("+15% damage with swords") and conditions.</summary>

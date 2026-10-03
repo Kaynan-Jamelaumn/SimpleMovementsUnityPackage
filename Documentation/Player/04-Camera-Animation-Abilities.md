@@ -23,7 +23,7 @@ The camera uses **Cinemachine**. Put your Cinemachine cameras under the player (
 
 `PlayerCameraController` switches cameras, zooms and shakes them (each camera gets a
 `CinemachineBasicMultiChannelPerlin` for shake). `PlayerCameraView` receives the input events: **Look**, **Zoom**,
-**Change Camera**, **First Person**, **Third Person** (wire them on the Player Input component, [01 §5](01-Player-Setup.md)).
+**Change Camera**, **First Person**, **Third Person** (wire them on the Player Input component, [01 §7](01-Player-Setup.md#7-input)).
 The scene camera needs a `CinemachineBrain`.
 
 ---
@@ -82,11 +82,11 @@ click-to-confirm previews, and lists every key in its inspector.
 1. Select the player's `PlayerAbilityController` (or `AbilitiesStateMachine`).
 2. Add a key, pick its **input action** (▾ lists the project's actions) and its **Ability**.
 3. Create the ability with **Preset ▾** (saved next to the player prefab) or
-   *Assets ▸ Create ▸ Scriptable Objects ▸ Ability ▸ Ability From Preset…*, then edit it.
+   *Assets ▸ Create ▸ SimpleMovements ▸ Abilities ▸ Ability From Preset…*, then edit it.
 4. In Play mode, **Cast Now** tests a key.
 
 Repair tools: **Repair Ability Keys**, **Add Keys For Unused**, **Remove Broken**, **Auto-assign References**.
-Old `AbilityEffectSO` abilities can be converted (*Tools ▸ Abilities ▸ Convert Selected Legacy Abilities ▸ For Player*).
+Old `AbilityEffectSO` abilities can be converted (*Tools ▸ SimpleMovements ▸ Legacy ▸ Convert Selected Legacy Abilities ▸ For Player*).
 
 ### Ability Definition, in short
 

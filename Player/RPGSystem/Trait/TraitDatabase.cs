@@ -9,7 +9,7 @@ using UnityEngine;
 /// Every trait of the game. Put it in a Resources folder named "TraitDatabase" so the character creation screen and
 /// the Trait Manager find it at runtime.
 /// </summary>
-[CreateAssetMenu(fileName = "Trait Database", menuName = "Scriptable Objects/Trait Database")]
+[CreateAssetMenu(fileName = "Trait Database", menuName = "SimpleMovements/Character/Trait Database", order = 12)]
 public class TraitDatabase : ScriptableObject
 {
     [Header("All Available Traits")]
@@ -45,7 +45,7 @@ public class TraitDatabase : ScriptableObject
 
                 if (instance == null)
                 {
-                    Debug.LogError("TraitDatabase not found! Please create one using 'Create > Scriptable Objects > Trait Database'");
+                    Debug.LogError("TraitDatabase not found! Please create one using 'Create > SimpleMovements > Character > Trait Database'");
                 }
             }
             return instance;

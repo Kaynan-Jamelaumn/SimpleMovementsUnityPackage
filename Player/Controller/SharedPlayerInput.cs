@@ -40,6 +40,7 @@ public static class SharedPlayerInput
         if (!byRoot.TryGetValue(root, out Entry e) || e.input == null)
         {
             e = new Entry { root = root, input = new PlayerInput() };
+            InputBindingStore.Register(e.input.asset); // the saved key bindings
             byRoot[root] = e;
             byInput[e.input] = e;
         }
