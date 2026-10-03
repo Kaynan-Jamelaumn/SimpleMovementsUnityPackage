@@ -4,11 +4,13 @@ using UnityEngine;
 namespace ProceduralDungeon
 {
     /// <summary>
-    /// Stage 1. Decides the dungeon's shape before any floor exists: floor count, each floor's size, position,
-    /// style, openness, complexity and difficulty; then the anchors every floor must honour - the entrance, the
-    /// exit, and the stair wells and drops between consecutive floors (placed where both floors have room, with each
-    /// floor's way down far from its way in). Because anchors are fixed first, each floor can be laid out on its own
-    /// (in parallel) and still line up with its neighbours.
+    /// Stage 1. Decides the dungeon's shape before any floor exists: floor count, each floor's style (first: it decides
+    /// how tall the floor is, so how far below the floor above it sits), size, position, openness, complexity and
+    /// difficulty; then the anchors every floor must honour - the entrance, the exit, and the stair wells, drops and
+    /// climbing shafts between consecutive floors (placed where both floors have room, with each floor's way down far
+    /// from its way in). A dungeon of only Tower floors is one tower: its floors stack exactly and a spiral staircase in a
+    /// central core joins them. Because anchors are fixed first, each floor can be laid out on its own (in parallel) and
+    /// still line up with its neighbours.
     /// </summary>
     public sealed class MacroPlanStage : IDungeonStage
     {
@@ -30,30 +32,78 @@ namespace ProceduralDungeon
             int floorCount = request.floorCount > 0 ? request.floorCount : rng.Range(range.x, range.y + 1);
             floorCount = Mathf.Clamp(floorCount, 1, 64);
 
-            // A floor must hold a stair well plus a landing at each end, with margins.
-            int minSide = p.StairLength + p.Links.landingSize.max * 2 + p.Links.edgeMargin * 2 + 2;
-            var baseCells = new Vector2Int(Mathf.Max(minSide, size.floorCells.x), Mathf.Max(minSide, size.floorCells.y));
-            float variation = Mathf.Clamp(p.FootprintVariation, 0f, 0.4f);
+            // 1. Styles first: a floor's style decides how tall it is, so how far below the floor above it sits.
+            var styles = new FloorStyle[floorCount];
+            FloorStyle previous = FloorStyle.Rooms;
+            for (int f = 0; f < floorCount; f++)
+            {
+                styles[f] = request.overrideStyle ? request.style : PickStyle(p, f, f == 0 ? (FloorStyle?)null : previous, rng);
+                previous = styles[f];
+            }
+            if (!request.overrideStyle && p.OverrideLastFloorStyle)
+                styles[floorCount - 1] = p.LastFloorStyle;
+            bool tower = true;
+            foreach (FloorStyle st in styles)
+                tower &= st == FloorStyle.Tower;
+
+            // 2. Heights: each floor sits below the one above by what its own ceilings need (plus a chasm's depth).
+            var above = new float[floorCount];
+            var baseY = new float[floorCount];
+            int longestStair = 3;
+            float largest = 0f;
+            for (int f = 0; f < floorCount; f++)
+            {
+                above[f] = p.SpacingFor(styles[f]) + (f > 0 ? ChasmDepth(p, styles[f - 1]) : 0f);
+                baseY[f] = f == 0 ? 0f : baseY[f - 1] - above[f];
+                if (f > 0)
+                    longestStair = Mathf.Max(longestStair, p.StairLengthFor(above[f]));
+                largest = Mathf.Max(largest, above[f]);
+            }
+            layout.FloorSpacing = largest;
+
+            // 3. Footprints. A floor must hold a stair well plus a landing at each end, with margins; a tower's floors
+            // share one footprint around the stair core.
+            int minSide = tower ? TowerPlanner.MinSide(p) : longestStair + p.Links.landingSize.max * 2 + p.Links.edgeMargin * 2 + 2;
+            Vector2Int baseCells;
+            float variation;
+            if (tower)
+            {
+                int d = Mathf.Max(minSide, p.Tower.diameter.Random(rng));
+                baseCells = new Vector2Int(d, d);
+                variation = 0f;
+            }
+            else
+            {
+                baseCells = new Vector2Int(Mathf.Max(minSide, size.floorCells.x), Mathf.Max(minSide, size.floorCells.y));
+                variation = Mathf.Clamp(p.FootprintVariation, 0f, 0.4f);
+            }
             int gridW = Mathf.CeilToInt(baseCells.x * (1f + variation)) + GridPad * 2;
             int gridH = Mathf.CeilToInt(baseCells.y * (1f + variation)) + GridPad * 2;
             layout.Width = gridW;
             layout.Height = gridH;
 
-            FloorStyle previous = FloorStyle.Rooms;
             for (int f = 0; f < floorCount; f++)
             {
                 int w = Mathf.Clamp(Mathf.RoundToInt(baseCells.x * (1f + rng.Range(-variation, variation))), minSide, gridW - GridPad * 2);
                 int h = Mathf.Clamp(Mathf.RoundToInt(baseCells.y * (1f + rng.Range(-variation, variation))), minSide, gridH - GridPad * 2);
                 int x = GridPad + rng.Range(0, gridW - GridPad * 2 - w + 1);
                 int y = GridPad + rng.Range(0, gridH - GridPad * 2 - h + 1);
+                if (tower)
+                {
+                    x = (gridW - w) / 2;
+                    y = (gridH - h) / 2;
+                }
 
                 var spec = new FloorSpec
                 {
                     Index = f,
+                    Style = styles[f],
                     Footprint = new RectInt(x, y, w, h),
                     IsFirst = f == 0,
                     IsLast = f == floorCount - 1,
-                    BaseY = -f * p.FloorSpacing,
+                    BaseY = baseY[f],
+                    SpacingAbove = above[f],
+                    MaxCeiling = p.MaxCeilingFor(p.SpacingFor(styles[f])),
                     Openness = p.Openness.Lerp(rng.Value()),
                     Complexity = p.Complexity.Lerp(rng.Value()),
                     Difficulty = Mathf.Max(0.1f, request.difficulty) * (1f + p.DifficultyPerFloor * f + 0.25f * request.depth),
@@ -61,8 +111,6 @@ namespace ProceduralDungeon
                     CavernWeight = p.Hybrid.cavernWeight,
                     RuinsWeight = p.Hybrid.ruinsWeight,
                 };
-                spec.Style = request.overrideStyle ? request.style : PickStyle(p, f, f == 0 ? (FloorStyle?)null : previous, rng);
-                previous = spec.Style;
 
                 var floor = new FloorLayout { Index = f, Spec = spec, Grid = new TileGrid(gridW, gridH) };
                 TileGrid grid = floor.Grid;
@@ -73,13 +121,49 @@ namespace ProceduralDungeon
                 layout.Floors.Add(floor);
             }
 
-            new AnchorPlanner(ctx, rng).Plan();
+            RollModifiers(ctx);
+            if (tower)
+                new TowerPlanner(ctx, rng).Plan();
+            else
+                new AnchorPlanner(ctx, rng).Plan();
+        }
+
+        /// <summary>Extra room below a floor for its chasm (islands, the void), so the drop looks deep.</summary>
+        public static float ChasmDepth(CompiledProfile p, FloorStyle style)
+        {
+            switch (style)
+            {
+                case FloorStyle.Islands: return p.Islands != null ? Mathf.Max(0f, p.Islands.chasmDepth) : 0f;
+                case FloorStyle.Astral: return p.Astral != null ? Mathf.Max(0f, p.Astral.voidDepth) : 0f;
+                default: return 0f;
+            }
+        }
+
+        /// <summary>Floor modifiers (flooded, molten...), on their own random stream so they never move the layout.</summary>
+        private static void RollModifiers(DungeonContext ctx)
+        {
+            FloorModifierSettings fm = ctx.Profile.FloorModifiers;
+            if (fm == null || fm.chance <= 0f)
+                return;
+            DungeonRandom rng = ctx.Random("FloorModifiers");
+            int count = System.Enum.GetValues(typeof(FloorModifier)).Length;
+            var weights = new float[count];
+            for (int m = 1; m < count; m++)
+                weights[m] = Mathf.Max(0f, fm.Weight((FloorModifier)m));
+            foreach (FloorLayout floor in ctx.Layout.Floors)
+            {
+                bool roll = rng.Chance(fm.chance);
+                int pick = rng.WeightedIndex(weights);
+                if (roll && floor.Index >= fm.firstFloor && pick > 0)
+                    floor.Spec.Modifier = (FloorModifier)pick;
+            }
         }
 
         private static FloorStyle PickStyle(CompiledProfile p, int floor, FloorStyle? previous, DungeonRandom rng)
         {
-            var weights = new float[5];
-            for (int s = 0; s < 5; s++)
+            int styleCount = System.Enum.GetValues(typeof(FloorStyle)).Length;
+            var weights = new float[styleCount];
+            for (int s = 0; s < styleCount; s++)
             {
                 var style = (FloorStyle)s;
                 float w = Mathf.Max(0f, p.Styles.Get(style));
@@ -138,7 +222,9 @@ namespace ProceduralDungeon
                     if (rng.Chance(p.Links.extraStairChance))
                         PlaceStairs(f, arrival, false);
                 if (rng.Chance(p.Links.dropChance))
-                    PlaceDrop(f);
+                    PlaceDrop(f, LinkKind.Drop);
+                if (rng.Chance(p.Links.climbChance))
+                    PlaceDrop(f, LinkKind.Climb);
 
                 arrival = main.LowerLanding;
             }
@@ -317,7 +403,7 @@ namespace ProceduralDungeon
         private VerticalLink PlaceStairs(int upper, Vector2Int arrival, bool main)
         {
             int lower = upper + 1;
-            int length = p.StairLength;
+            int length = p.StairLengthFor(layout.Floors[upper].Spec.BaseY - layout.Floors[lower].Spec.BaseY);
             int width = Mathf.Clamp(p.Links.stairWidth, 1, 4);
             if (!TryIntersect(layout.Floors[upper].Spec.Footprint, layout.Floors[lower].Spec.Footprint, out RectInt shared))
                 return null;
@@ -386,12 +472,17 @@ namespace ProceduralDungeon
             return link;
         }
 
-        // ------------------------------------------------------------------ drops
+        // ------------------------------------------------------------------ drops and climbs
 
-        private VerticalLink PlaceDrop(int upper)
+        /// <summary>
+        /// A pit in a room of the upper floor over a room of the lower floor: a one-way drop, or (climb) a shaft with vines
+        /// that is climbed both ways.
+        /// </summary>
+        private VerticalLink PlaceDrop(int upper, LinkKind kind)
         {
             int lower = upper + 1;
-            int size = Mathf.Clamp(p.Links.dropSize, 1, 3);
+            bool climb = kind == LinkKind.Climb;
+            int size = climb ? Mathf.Clamp(p.Links.climbSize, 1, 2) : Mathf.Clamp(p.Links.dropSize, 1, 3);
             if (!TryIntersect(layout.Floors[upper].Spec.Footprint, layout.Floors[lower].Spec.Footprint, out RectInt shared))
                 return null;
             shared = Shrink(shared, p.Links.edgeMargin);
@@ -411,7 +502,7 @@ namespace ProceduralDungeon
                 var link = new VerticalLink
                 {
                     Id = layout.Links.Count,
-                    Kind = LinkKind.Drop,
+                    Kind = kind,
                     UpperFloor = upper,
                     LowerFloor = lower,
                     Footprint = pit,
@@ -422,11 +513,13 @@ namespace ProceduralDungeon
                 layout.Links.Add(link);
                 layout.Floors[upper].Anchors.Add(new Anchor
                 {
-                    Kind = AnchorKind.DropSource, Floor = upper, Room = room, Cell = upL, LinkId = link.Id, Facing = Dir4.East, Shaft = pit,
+                    Kind = climb ? AnchorKind.ClimbTop : AnchorKind.DropSource, Floor = upper, Room = room, Cell = upL, LinkId = link.Id,
+                    Facing = Dir4.East, Shaft = pit,
                 });
                 layout.Floors[lower].Anchors.Add(new Anchor
                 {
-                    Kind = AnchorKind.DropLanding, Floor = lower, Room = room, Cell = lowL, LinkId = link.Id, Facing = Dir4.North, NoCeiling = pit,
+                    Kind = climb ? AnchorKind.ClimbBottom : AnchorKind.DropLanding, Floor = lower, Room = room, Cell = lowL, LinkId = link.Id,
+                    Facing = Dir4.North, NoCeiling = pit,
                 });
                 occupied[upper].Add(room);
                 occupied[lower].Add(room);

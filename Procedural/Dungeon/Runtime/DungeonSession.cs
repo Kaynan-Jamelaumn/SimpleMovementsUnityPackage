@@ -162,11 +162,27 @@ namespace ProceduralDungeon
             Manager.Generate(CurrentRequest);
         }
 
+        /// <summary>
+        /// The party's checkpoint inside the current dungeon (set by rest fountains), null until one is used. Respawn code
+        /// can send fallen players here. Cleared when the dungeon is left.
+        /// </summary>
+        public static Pose? Checkpoint { get; private set; }
+
+        /// <summary>Raised when a rest point sets a new checkpoint.</summary>
+        public static event Action<Pose> CheckpointSet;
+
+        public static void SetCheckpoint(Pose pose)
+        {
+            Checkpoint = pose;
+            CheckpointSet?.Invoke(pose);
+        }
+
         /// <summary>Leaves the dungeon and returns the player where they entered.</summary>
         public static void Exit(bool completed)
         {
             if (!InDungeon && !IsEntering)
                 return;
+            Checkpoint = null;
             SetControls(false);
             ClearDungeon(true);
             DungeonAtmosphere.Restore();
@@ -308,7 +324,8 @@ namespace ProceduralDungeon
                 Teleport(t.root, t.returnPosition, t.returnRotation);
         }
 
-        private static void Teleport(GameObject who, Vector3 position, Quaternion rotation)
+        /// <summary>Moves a character at once (its CharacterController is switched off for the move).</summary>
+        public static void Teleport(GameObject who, Vector3 position, Quaternion rotation)
         {
             if (who == null)
                 return;
@@ -453,6 +470,51 @@ namespace ProceduralDungeon
             RenderSettings.fogColor = theme.fogColor;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = theme.fogDensity;
+        }
+
+        /// <summary>
+        /// The theme's atmosphere adjusted for a floor modifier: flooded floors are blue-green and misty, molten ones glow
+        /// red, overgrown ones green, dark ones nearly black with thick fog, frozen ones cold and pale. Does nothing when the
+        /// theme doesn't apply an atmosphere.
+        /// </summary>
+        public static void ApplyModifier(DungeonTheme theme, FloorModifier modifier)
+        {
+            if (theme == null || !theme.applyAtmosphere)
+                return;
+            Apply(theme);
+            Color ambient = theme.ambientLight, fogColor = theme.fogColor;
+            float density = theme.fogDensity;
+            switch (modifier)
+            {
+                case FloorModifier.Flooded:
+                    ambient = Color.Lerp(ambient, new Color(0.08f, 0.16f, 0.18f), 0.6f);
+                    fogColor = Color.Lerp(fogColor, new Color(0.04f, 0.1f, 0.12f), 0.7f);
+                    density *= 1.35f;
+                    break;
+                case FloorModifier.Molten:
+                    ambient = Color.Lerp(ambient, new Color(0.28f, 0.1f, 0.05f), 0.65f);
+                    fogColor = Color.Lerp(fogColor, new Color(0.18f, 0.05f, 0.02f), 0.75f);
+                    density *= 0.85f;
+                    break;
+                case FloorModifier.Overgrown:
+                    ambient = Color.Lerp(ambient, new Color(0.08f, 0.17f, 0.08f), 0.55f);
+                    fogColor = Color.Lerp(fogColor, new Color(0.04f, 0.09f, 0.04f), 0.65f);
+                    density *= 1.15f;
+                    break;
+                case FloorModifier.Darkness:
+                    ambient *= 0.3f;
+                    fogColor *= 0.4f;
+                    density *= 1.9f;
+                    break;
+                case FloorModifier.Frozen:
+                    ambient = Color.Lerp(ambient, new Color(0.17f, 0.21f, 0.28f), 0.65f);
+                    fogColor = Color.Lerp(fogColor, new Color(0.16f, 0.2f, 0.26f), 0.7f);
+                    density *= 1.2f;
+                    break;
+            }
+            RenderSettings.ambientLight = ambient;
+            RenderSettings.fogColor = fogColor;
+            RenderSettings.fogDensity = density;
         }
 
         public static void Restore()

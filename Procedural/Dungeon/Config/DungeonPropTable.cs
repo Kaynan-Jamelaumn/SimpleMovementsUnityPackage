@@ -23,7 +23,7 @@ namespace ProceduralDungeon
         public GameObject prefab;
         [Tooltip("Built-in stand-in used when Prefab is empty (torch, brazier, crystal, barrel, crate, altar, trap...).")]
         public DungeonPrimitive placeholder = DungeonPrimitive.Barrel;
-        [Tooltip("Where in an area it goes: Anywhere, Wall Adjacent (against a wall), Center, Corner, Corridor, Doorway, Dead End, Chokepoint, or Transition (where zone styles meet).")]
+        [Tooltip("Where in an area it goes: Anywhere, Wall Adjacent (against a wall), Center, Corner, Corridor, Doorway, Dead End, Chokepoint, Transition (where zone styles meet), Back Wall (the wall farthest from the ways in, facing the room) or Off Path (away from the route through the floor).")]
         public PropPlacement placement = PropPlacement.WallAdjacent;
         [Tooltip("Only in areas with these roles (empty = any).")]
         public List<AreaRole> roles = new List<AreaRole>();
@@ -33,6 +33,8 @@ namespace ProceduralDungeon
         public ZoneMask styles = ZoneMask.All;
         [Tooltip("Only on the entrance-to-exit route, only off it, or anywhere.")]
         public MainPathFilter mainPath = MainPathFilter.Any;
+        [Tooltip("Only on floors with these modifiers (Normal = floors without one). Nothing ticked = every floor.")]
+        public FloorModifierMask modifiers = FloorModifierMask.Any;
         [Tooltip("Chance per area to place any.")]
         [Range(0f, 1f)] public float chance = 1f;
         [Tooltip("How many per area (before the density term).")]

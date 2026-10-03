@@ -33,16 +33,24 @@ flowchart TD
     B -- no --> D
     C --> D{"last floor?"}
     D -- yes --> E["PlaceExit: exit portal on the<br/>departure room's back wall"]
-    D -- no --> F
-    E --> F["PlaceBosses: a boss encounter in each Boss area"]
-    F --> G["PlaceEncounters: mob packs from per-area budgets<br/>+ corridor wanderers"]
-    G --> H["PlaceLoot: treasure, boss, secret, dead ends, rooms"]
-    H --> I["PlaceProps: every prop entry by its rule"]
-    I --> J["stop anywhere once Max Placements Per Floor (500)"]
+    D -- no --> R
+    E --> R["ReserveLocks: pick the vault doors and the shortcut<br/>(only where nothing gets cut off)"]
+    R --> RC["ReserveCrossings: teleport pads, magic paintings,<br/>moving platforms on their connections"]
+    RC --> F["PlaceBosses: a boss encounter in each Boss area"]
+    F --> EL["PlaceElites: the toughest allowed mob in<br/>Guardian and Throne rooms (scaled, tier +1)"]
+    EL --> G["PlaceEncounters: mob packs from per-area budgets<br/>+ corridor wanderers (never on bridges); ambush rooms and pit fights<br/>split into waves; barracks soldiers put to sleep"]
+    G --> H["PlaceLoot: treasure, boss, secret, special rooms,<br/>dead ends, rooms"]
+    H --> RF["PlaceRoomFixtures: nests, the wine cellar's lever and barrel stash,<br/>the gas chamber's cloud and valve"]
+    RF --> I["PlaceProps: every prop entry by its rule<br/>(roles, area tags, floor modifier filter, fewer lights on dark floors)"]
+    I --> MC["PlaceMechanics: keys and locked doors, puzzle plates,<br/>room controllers and gates, the shortcut door,<br/>altar rewards, shifting walls, a roaming mini-boss"]
+    MC --> TR["PlaceTraps: tripwires and arrow launchers in long corridors"]
+    TR --> J["stop anywhere once Max Placements Per Floor (500)"]
     J --> K["after all floors: no PlayerSpawn → ctx.Fail"]
 ```
 
-**Order matters.** Portals and the spawn claim their cells first, then bosses, packs, loot and props. Spacing checks
+**Order matters.** Portals and the spawn claim their cells first, the lock cells and crossings are reserved, then
+bosses, elites, packs, loot, room fixtures, props and the mechanics. The newer rooms and mechanics are described in
+[15](15-Types-Special-Rooms-Mechanics.md) and [16](16-Towers-Cities-Hives-Chasms.md). Spacing checks
 use three `SpatialHash2D` indexes (occupied, mobs, loot), so later items keep clear of earlier ones.
 
 ## 3. Portals and the player spawn
@@ -68,10 +76,10 @@ room's exits. The entrance portal leads back to the world, and the exit portal c
 
 ```mermaid
 flowchart TD
-    A["area"] --> B["role multiplier:<br/>Entrance, Exit, Rest, StairsUp, DropLanding, Boss → 0<br/>StairsDown, DropSource → 0.4 · Secret → 0.6<br/>Treasure → 1.3 · Arena → 2.2 · Hall → 1.2 · other → 1"]
+    A["area"] --> B["role multiplier:<br/>Entrance, Exit, Rest, StairsUp, DropLanding, Boss → 0<br/>StairsDown, DropSource → 0.4 · Secret → 0.6<br/>Treasure → 1.3 · Arena → 2.2 · Ambush → 2<br/>Trap Room, Puzzle → 0 · Guardian, Throne → 0.6<br/>Vault 0.4 · Garden 0.6 · Library 0.7 · Laboratory 0.8<br/>Armory 1.1 · Prison 1.2 · Hall → 1.2 · other → 1"]
     B --> C{"multiplier > 0 and the template<br/>allows population?"}
     C -- no --> X["no mobs"]
-    C -- yes --> D["budget = Encounter Density × cells / 100<br/>× area difficulty × multiplier<br/>× (1 on the main path, 0.85 off it)"]
+    C -- yes --> D["budget = Encounter Density × cells / 100<br/>× area difficulty × multiplier<br/>× (1 on the main path, 0.85 off it)<br/>× (1 + Dark Encounter Bonus on dark floors)"]
     D --> E["whole = floor(budget), +1 with chance = fraction"]
     E --> F["loop (≤ 32 tries, while budget left)"]
     F --> G["PickEncounter: entries allowed here<br/>(not boss, floors, progress, styles, roles)<br/>with Cost ≤ remaining budget, weighted"]
@@ -105,6 +113,14 @@ on deeper floors) never gets a mob. Nothing waits at the spawn or at the bottom 
 **Corridor wanderers:** each routed connection at least 8 cells long has a *Corridor Encounter Chance* (0.12) to get
 one mob (cost ≤ 2) somewhere in its middle (not the first or last 2 cells).
 
+**Elites:** each Guardian (Mini Boss) and Throne area gets the highest-cost encounter allowed there, on its most
+central cell, scaled by *Elite Scale* (1.3) with *Elite Tier Bonus* (+1); the room's ordinary packs (×0.6) are its
+guards.
+
+**Ambush waves:** an Ambush area's packs are split into *Ambush Waves* (2–3) groups. The first wave is dormant until
+players enter; each next wave appears when the previous one is dead. A crypt that rolls *Crypt Ambush Chance* is treated the
+same way ("the dead rise").
+
 **Bosses:** each Boss area gets one boss encounter (entries marked *Boss*), placed on the cell **farthest from the
 walls** (the middle of the arena) and facing the floor's arrival.
 
@@ -116,6 +132,11 @@ flowchart TD
     B -- Treasure --> T["Treasure Room Loot 2-4, tier bonus +1"]
     B -- Boss --> BO["Boss Loot 1-2, tier bonus +2"]
     B -- Secret --> S["1-2, tier bonus +1"]
+    B -- Vault --> V["Vault Loot 3-5, tier bonus +2"]
+    B -- "Trap Room" --> TR["Challenge Loot 1-2, +1,<br/>at the far end from the entry"]
+    B -- "Puzzle, Ambush,<br/>Guardian, Throne" --> CH["Challenge Loot 1-2, +1,<br/>dormant until solved / cleared"]
+    B -- "Crypt" --> CR["1, +1 (dormant when it locks)"]
+    B -- "Armory / Laboratory /<br/>Library, Prison" --> AR["1-2 / 1 / 1 at 50 %"]
     B -- None --> N{"dead end?"}
     N -- yes --> N1["1 with Dead End Loot Chance (0.55)"]
     N -- no --> N2["1 with Room Loot Chance (0.15)"]
@@ -125,18 +146,24 @@ flowchart TD
     S --> P
     N1 --> P
     N2 --> P
+    V --> P
+    TR --> P
+    CH --> P
+    CR --> P
+    AR --> P
     P --> Q["maxTier = floor(progress × 2 + bonus + (floor difficulty − 1))<br/>entries: floors, progress, styles, tier ≤ maxTier<br/>weight × (1 + tier × bonus × 0.5)"]
     Q --> R["FindSpot(entry placement rule, loot spacing 2)"]
 ```
 
 Higher tiers appear **later along the path, in rewarding rooms, and in harder dungeons**. The bonus also tilts the
-weights towards high tiers in treasure and boss rooms.
+weights towards high tiers in treasure and boss rooms. **Dormant** loot (the boss's, a puzzle's, a cleared room's)
+is built hidden and appears when the room's event completes.
 
 ## 6. Props
 
 ```mermaid
 flowchart TD
-    A["each prop entry"] --> B{"floor range ok?"}
+    A["each prop entry"] --> B{"floor range ok and<br/>Modifiers allow the floor's modifier?"}
     B -- no --> X["skip"]
     B -- yes --> C{"placement: Corridor, Transition or Chokepoint?"}
     C -- yes --> D["for each routed connection:<br/>style from kind (Tunnel = Cavern, Breach = Ruins, else Built)<br/>Transition only on Breaches<br/>progress = average of both ends, main-path filter"]
@@ -145,7 +172,7 @@ flowchart TD
     E --> U
     U --> F{"rand < Chance?"}
     F -- no --> X
-    F -- yes --> G["count = Per Area roll + Per Hundred Cells × cells / 100<br/>(fraction → +1 by chance)"]
+    F -- yes --> G["count = Per Area roll + Per Hundred Cells × cells / 100<br/>(fraction → +1 by chance)<br/>Lights on dark floors × Dark Light Share,<br/>except boss, rest and shrine rooms"]
     G --> H["FindSpot × count (stops when none fits)"]
 ```
 
@@ -161,6 +188,8 @@ flowchart TD
 | **Doorway** | next to a door | facing the door |
 | **Chokepoint** | `Chokepoint` flag | random yaw |
 | **Transition** | `Rubble` flag (where caves meet built structure) | random yaw |
+| **Back Wall** | wall distance < 1.6, a solid 4-neighbour, not near a door (most central first) | pushed 0.3 into the wall, facing the room's middle |
+| **Off Path** | not main path, not a chokepoint, wall distance ≥ 1.4, not near a door | random yaw (hazards that must never block the way) |
 
 Every spot must also be ≥ *Spacing* from others of the same entry, ≥ *Away From Mobs* from mobs, ≥ 0.9 from any other
 placement, and not a door, landing or occupied cell.
@@ -182,6 +211,99 @@ placement, and not a door, landing or occupied cell.
 | Bookshelf | Interactable | Wall Adjacent | Built | 1–3 | 0 | 2 | 0.8 | Secret, Treasure, Shrine |
 | Spike Trap | Hazard | Corridor (progress 0.15–1) | Built, Ruins | 1 | 0 | 6 | 0.2 | — |
 | Pillar | Decoration | Corner | Built | 4 | 0 | 2 | 0.35 | Arena, Boss |
+| Library Shelves | Decoration | Wall Adjacent | Built, Ruins | 3–5 | 3 | 1.6 | 1 | Library |
+| Reading Table | Decoration | Center | all | 1–2 | 0 | 3 | 1 | Library, Laboratory, Prison |
+| Candles | Light | Anywhere | all | 2–3 | 0.5 | 2.5 | 1 | Library, Crypt, Shrine |
+| Weapon Rack | Decoration | Wall Adjacent | all | 2–4 | 1 | 2 | 1 | Armory |
+| Armor Stand | Decoration | Wall Adjacent | all | 1–3 | 0 | 2.2 | 1 | Armory, Throne |
+| Supply Crates | Decoration | Corner | all | 1–3 | 0 | 1.5 | 1 | Armory |
+| Cell Cage | Decoration | Wall Adjacent | all | 2–4 | 1 | 2.6 | 1 | Prison |
+| Remains | Decoration | Anywhere | all | 1–3 | 0 | 2 | 1 | Prison, Crypt, Trap Room |
+| Sarcophagus | Decoration | Anywhere | all | 2–4 | 2.5 | 2.6 | 1 | Crypt |
+| Cobwebs | Decoration | Corner (2.2 m up) | all | 1–3 | 0 | 2 | 0.8 | Crypt, Prison, Library |
+| Alchemy Table | Decoration | Wall Adjacent | all | 1–3 | 0.5 | 2.2 | 1 | Laboratory |
+| Cauldron | Light | Center | all | 1 | 0 | 3 | 1 | Laboratory |
+| Overgrowth | Decoration | Wall Adjacent | all | 2–5 | 2 | 1.5 | 1 | Garden |
+| Garden Mushrooms | Decoration | Anywhere | all | 2–4 | 1 | 2 | 1 | Garden |
+| Healing Herbs | Interactable | Anywhere | all | 1–2 | 0 | 3 | 1 | Garden |
+| Throne | Point Of Interest | Back Wall | all | 1 | 0 | 4 | 1 | Throne |
+| Banners | Decoration | Wall Adjacent | Built, Ruins | 2–4 | 0 | 2.5 | 1 | Throne, Boss, Armory |
+| Statue | Decoration | Corner | all | 2–4 | 0 | 3 | 1 | Throne, Shrine, Puzzle, Vault |
+| Treasure Pedestal | Decoration | Center | all | 1–2 | 0 | 2.5 | 1 | Vault |
+| Spike Floor | Hazard | Anywhere | all | 2 | 7 | 1.6 | 1 | Trap Room |
+| Fire Jet | Hazard | Anywhere | all | 1 | 5 | 2.2 | 1 | Trap Room |
+| Blade Pendulum | Hazard | Center | all | 1–2 | 0 | 4 | 1 | Trap Room |
+| Dart Wall | Hazard | Wall Adjacent | all | 1–3 | 0 | 3 | 1 | Trap Room |
+| Corridor Darts | Hazard | Corridor (progress 0.3–1) | Built, Ruins | 1 | 0 | 8 | 0.12 | — |
+| Egg Sacs | Decoration | Anywhere | all | 2–4 | 1 | 2 | 1 | Nest |
+| Gnawed Bones | Decoration | Anywhere | all | 1–3 | 0 | 2 | 1 | Nest, Gas Chamber |
+| Blood Altar | Interactable | Back Wall | all | 1 | 0 | 4 | 1 | Gambling |
+| Cursed Altar | Interactable | Wall Adjacent | all | 1 | 0 | 4 | 0.7 | Gambling |
+| Ritual Candles | Light | Anywhere | all | 2–4 | 0 | 2 | 1 | Gambling |
+| Long Table | Decoration | Center | all | 1–2 | 0 | 3.5 | 1 | Kitchen |
+| Benches | Decoration | Anywhere | all | 2–3 | 0 | 2.2 | 1 | Kitchen |
+| Stove | Light | Wall Adjacent | all | 1 | 0 | 3 | 1 | Kitchen |
+| Pots of Stew | Interactable | Wall Adjacent | all | 1–2 | 0 | 2 | 1 | Kitchen |
+| Kitchen Barrels | Decoration | Corner | all | 1–3 | 0 | 1.2 | 1 | Kitchen |
+| Paintings | Decoration | Wall Adjacent | all | 4–8 | 3 | 2.2 | 1 | Gallery |
+| Gallery Statues | Decoration | Corner | all | 1–3 | 0 | 3 | 1 | Gallery |
+| Viewing Bench | Decoration | Center | all | 1 | 0 | 3 | 0.8 | Gallery |
+| Bunks | Decoration | Wall Adjacent | all | 3–6 | 4 | 1.4 | 1 | Barracks |
+| Barracks Rack | Decoration | Wall Adjacent | all | 1–2 | 0 | 2 | 1 | Barracks |
+| Spectators | Decoration | Wall Adjacent | all | 3–6 | 2 | 3.4 | 1 | Colosseum |
+| Arena Braziers | Light | Corner | all | 2–4 | 0 | 3 | 1 | Colosseum |
+| Arena Banners | Decoration | Wall Adjacent | all | 2–4 | 0 | 3 | 1 | Colosseum |
+| Planters | Decoration | Wall Adjacent | all | 2–4 | 2 | 2.2 | 1 | Greenhouse |
+| Rare Herbs | Interactable | Anywhere | all | 1–2 | 0 | 3 | 1 | Greenhouse |
+| Poisonous Plants | Hazard | Anywhere | all | 2–4 | 2 | 2 | 1 | Greenhouse |
+| Greenhouse Vines | Decoration | Wall Adjacent | all | 1–3 | 0 | 1.5 | 1 | Greenhouse |
+| Wine Racks | Decoration | Wall Adjacent | all | 2–4 | 2 | 1.8 | 1 | Wine Cellar |
+| Wine Barrels | Decoration | Wall Adjacent | all | 3–6 | 3 | 1.4 | 1 | Wine Cellar |
+| Cellar Cobwebs | Decoration | Corner (2.2 m up) | all | 1–2 | 0 | 2 | 0.8 | Wine Cellar |
+| Map Table | Interactable | Center | all | 1 | 0 | 4 | 1 | Map Room |
+| Chart Shelves | Decoration | Wall Adjacent | all | 1–2 | 0 | 2 | 1 | Map Room |
+| Map Room Candles | Light | Corner | all | 1–2 | 0 | 2 | 1 | Map Room |
+| Gas Vents | Decoration | Anywhere | all | 2–4 | 2 | 2.5 | 1 | Gas Chamber |
+| Swinging Log | Hazard | Corridor (progress 0.25–1) | all | 1 | 0 | 10 | 0.1 | — |
+| Stalactites | Decoration | Anywhere | Cavern | 0–3 | 1 | 3 | 0.5 | — |
+
+Floor style props (*Area Tag* set, so only in areas the newer layouts tag):
+
+| Entry | Kind | Placement | Per area | Per 100 cells | Spacing | Chance | Area tag |
+|---|---|---|---|---|---|---|---|
+| Street Lamps | Light | Wall Adjacent | 1–2 | 3 | 6 | 1 | Street |
+| Carts | Decoration | Wall Adjacent | 0–1 | 0.5 | 8 | 0.5 | Street |
+| Plaza Well | Point Of Interest | Center | 1 | 0 | 5 | 0.6 | Plaza |
+| Market Stalls | Decoration | Anywhere | 2–4 | 2 | 3.5 | 0.9 | Plaza |
+| Plaza Lamps | Light | Corner | 2–4 | 0 | 5 | 1 | Plaza |
+| Ruined Walls | Decoration | Anywhere | 2–4 | 2 | 2.5 | 1 | Ruin |
+| Hoard Gold | Decoration | Anywhere | 6–12 | 1 | 2.2 | 1 | Den |
+| Dragon Bones | Decoration | Off Path | 1–2 | 0 | 6 | 1 | Den |
+| Den Stalactites | Decoration | Anywhere | 3–6 | 1 | 4 | 1 | Den |
+| Hive Egg Sacs | Decoration | Wall Adjacent | 0–2 | 1 | 2.5 | 0.7 | Hive |
+| Hive Fungus | Light | Wall Adjacent | 0–2 | 1 | 3 | 0.8 | Hive |
+| Brood Eggs | Decoration | Anywhere | 3–6 | 2 | 2 | 1 | Brood |
+| Brood Fungus | Light | Wall Adjacent | 1–3 | 1 | 3 | 1 | Brood |
+| Star Motes | Light | Anywhere | 1–3 | 1 | 4 | 1 | Platform |
+| Island Crystals | Light | Wall Adjacent | 0–2 | 1 | 4 | 0.6 | Island |
+
+Floor modifier props (*Modifiers* set, so only on those floors):
+
+| Entry | Kind | Placement | Styles | Per area | Per 100 cells | Spacing | Chance | Modifier |
+|---|---|---|---|---|---|---|---|---|
+| Lava Pool | Hazard | Off Path | Cavern, Ruins | 0–1 | 1.6 | 5 | 0.9 | Molten |
+| Spore Vent | Hazard | Off Path | all | 0–1 | 0.8 | 6 | 0.8 | Overgrown |
+| Roots | Decoration | Wall Adjacent | all | 0–2 | 2.5 | 1.5 | 0.9 | Overgrown |
+| Glowcaps | Light | Anywhere | all | 0–2 | 1.5 | 3 | 0.9 | Overgrown |
+| Ice Crystals | Light | Wall Adjacent | all | 0–2 | 1.8 | 3 | 0.9 | Frozen |
+| Dark Cobwebs | Decoration | Corner (2.2 m up) | all | 0–2 | 0 | 2 | 0.6 | Darkness |
+| Giant Roots | Decoration | Off Path | all | 0–1 | 0.8 | 6 | 0.7 | Overgrown |
+
+**Fill Missing Role Props** (on by default): when a profile has its own prop table, every special room (Library,
+Armory, Prison, Crypt, Laboratory, Garden, Throne, Trap Room, Vault, Shrine, Rest, Nest, Gambling, Kitchen, Gallery,
+Barracks, Colosseum, Greenhouse, Wine Cellar, Map Room, Gas Chamber), every floor style tag (Street, Plaza, Ruin, Den,
+Hive, Brood, Platform, Island), the swinging logs and every floor modifier that the table has no entry for gets the
+built-in entries above, so new rooms are never empty with an older table.
 
 Default loot: Chest (weight 1, tier 0, wall), Ornate Chest (0.5, tier 1, progress ≥ 0.4), Urn (0.7, tier 0, corner,
 built/ruins). Default encounters: Placeholder Mob (cost 1, packs of 1–3), Placeholder Brute (cost 3, progress ≥ 0.3,
@@ -193,7 +315,7 @@ tier 1), Placeholder Boss (boss, cost 10, tier 2).
 |---|---|
 | **Encounter** (`DungeonEncounterTable`) | Name, Prefab (NavMeshAgent of the profile's agent type), Placeholder, Boss, Weight, Cost, Pack Size, Pack Radius, Min/Max Floor, Progress, Styles, Roles (empty = any area except Entrance, Rest and landings), Clearance, Tier. The inspector's **Import** copies the world's `SpawnableMob` list (prefab, weight, rarity, pack behaviour; biome and height preferences don't apply underground). |
 | **Loot** (`DungeonLootTable`) | Name, Prefab, Placeholder, Weight, Tier, Progress, Styles, Placement, Min/Max Floor |
-| **Prop** (`DungeonPropTable`) | Name, Kind, Prefab, Placeholder, Placement, Roles, Area Tag, Styles, Main Path (Any / Only / Off), Chance, Per Area, Per Hundred Cells, Spacing, Away From Mobs, Progress, Min/Max Floor, Height Offset, Scale, Light Colour/Range (primitives) |
+| **Prop** (`DungeonPropTable`) | Name, Kind, Prefab, Placeholder, Placement, Roles, Area Tag, Styles, Modifiers, Main Path (Any / Only / Off), Chance, Per Area, Per Hundred Cells, Spacing, Away From Mobs, Progress, Min/Max Floor, Height Offset, Scale, Light Colour/Range (primitives) |
 
 Profile › Population also has *Default Loot*, *Default Props* and *Placeholder Mobs* (use the built-ins when a table
 is missing or a mob has no prefab).
@@ -228,4 +350,6 @@ Dungeon Preview: **Placements** toggle (dots per placement), hover to read an ar
 | Too many mobs deep down | Difficulty Per Floor, depth chain, Arena multiplier | lower Encounter Density or Difficulty Per Floor |
 | Loot always tier 0 | progress/difficulty low, higher tiers' Progress ranges exclude early rooms | check tiers and progress ranges |
 | Props missing in template rooms | template *Allow Population* off | enable it |
+| A special room is empty | own prop table without entries for it and *Fill Missing Role Props* off | turn it on, or **Add Missing Built-in Props** on the table |
+| Boss/puzzle loot not visible | it is dormant until the room's event completes | kill the boss / solve the puzzle |
 | Torches too dense | Per Hundred Cells high, Spacing low | lower density / raise spacing |

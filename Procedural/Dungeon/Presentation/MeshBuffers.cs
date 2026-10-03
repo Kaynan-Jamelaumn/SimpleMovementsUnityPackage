@@ -14,7 +14,11 @@ namespace ProceduralDungeon
         CaveCeiling = 5,
         Trim = 6,
         Stairs = 7,
-        Count = 8,
+        /// <summary>Water of flooded floors (no collider: players wade through it).</summary>
+        Liquid = 8,
+        /// <summary>The dark bottom of a chasm or the void (unlit).</summary>
+        Void = 9,
+        Count = 10,
     }
 
     /// <summary>
@@ -154,7 +158,11 @@ namespace ProceduralDungeon
     {
         public int Floor;
         public readonly List<MeshBuffers> Chunks = new List<MeshBuffers>();
-        /// <summary>Link visuals built into this (the lower) floor, keyed by link id.</summary>
+        /// <summary>Water surface of a flooded floor (built without a collider), or null.</summary>
+        public MeshBuffers Liquid;
+        /// <summary>The bottom of the floor's chasm (with a collider that catches fallers, kept out of the NavMesh), or null.</summary>
+        public MeshBuffers Void;
+        /// <summary>Link visuals built into this floor (the lower floor; a spiral's top landing goes to the upper floor), keyed by link id.</summary>
         public readonly List<LinkMeshData> Links = new List<LinkMeshData>();
     }
 
@@ -167,5 +175,11 @@ namespace ProceduralDungeon
         /// <summary>Stairs: points for a NavMeshLink across the top edge (local to the lower floor).</summary>
         public Vector3 LinkStart, LinkEnd;
         public float LinkWidth;
+        /// <summary>False for pieces without a NavMeshLink (a spiral's top landing).</summary>
+        public bool NavLink = true;
+        /// <summary>The NavMeshLink works both ways (stairs, spirals, climbs; drops are one way).</summary>
+        public bool Bidirectional = true;
+        /// <summary>Climbs: the shaft's climbable volume (local to the floor it is built into).</summary>
+        public Bounds ClimbVolume;
     }
 }

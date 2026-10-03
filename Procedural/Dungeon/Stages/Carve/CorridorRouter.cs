@@ -93,7 +93,7 @@ namespace ProceduralDungeon
             {
                 A = area.Id,
                 B = -1,
-                Natural = area.Style == ZoneStyle.Cavern,
+                Natural = area.Style == ZoneStyle.Cavern && !floor.Spec.Style.HasChasm(),
                 TargetPredicate = reached,
             };
             List<int> sources = EntryCells(area, out ends.OutsideA, out _);
@@ -115,6 +115,8 @@ namespace ProceduralDungeon
             if (other < 0 || other == area.Id)
                 other = floor.ArrivalArea;
             ConnectionKind kind = ends.Natural || floor.Areas[other].Style == ZoneStyle.Cavern ? (ends.Natural && floor.Areas[other].Style == ZoneStyle.Cavern ? ConnectionKind.Tunnel : ConnectionKind.Breach) : ConnectionKind.Corridor;
+            if (floor.Spec.Style.HasChasm())
+                kind = ConnectionKind.Bridge;   // over a chasm, a repair is a walkway (no doors)
             Connection c = floor.AddConnection(area.Id, other, kind);
             c.IsRepair = true;
             c.Width = 1;

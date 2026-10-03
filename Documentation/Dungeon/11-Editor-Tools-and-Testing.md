@@ -11,6 +11,7 @@
 | Menu | What it does |
 |---|---|
 | **Tools › SimpleMovements › Dungeon › Create Default Setup…** | asks for a folder and creates: `DungeonTheme`, `DungeonLoot` (default loot copied in), `DungeonProps` (the built-in prop set), `DungeonEncounters` (empty — fill it or *Import* world mobs), `Template_PillaredHall` (Shape Mask example), `Template_LegacyRoom` (legacy RoomBehaviour example), `DungeonProfile` wired to all of them, a **Dungeon Manager prefab**, and a **World Portal prefab** pointing at that manager |
+| **… › Create Dungeon Type › Crypt / Deep Caves / Fortress / Labyrinth / Sunken Temple / Volcanic Forge / Cathedral / Prison / Frozen Depths / Overgrown Ruins / Tower / Undercity / Fungal Hive / Chasm Islands / Dragon's Den / Astral Void…** | the same complete setup, with the profile set to that type ([15 §2](15-Types-Special-Rooms-Mechanics.md#2-dungeon-types)) and the theme's colours and atmosphere to match; asset names start with the type |
 | **… › Add Dungeon Manager To Scene** | a DungeonManager object in the open scene (for testing without portals) |
 | **… › Open Preview** | opens the Dungeon Preview window |
 | **… › Create World Portal Prefab…** | builds a ready portal prefab (stone frame, glowing surface, light, trigger box, `Portal` wired to a Dungeon Manager prefab) with its two materials, and offers to add it to the scene's `EndlessTerrain` portal list |
@@ -41,7 +42,7 @@ flowchart TD
     A["pick a Profile"] --> B["Seed (Random / Prev / Next), Size,<br/>Floors (0 = profile), optional Style override"]
     B --> C["Generate: CompiledProfile + DungeonPipeline<br/>(synchronous, in the editor)"]
     C --> D["one texture per floor (DungeonPreviewTexture)"]
-    D --> E["view mode: Roles · Styles · Heights ·<br/>Distance · Wall Distance · Zones"]
+    D --> E["view mode: Roles · Styles · Heights ·<br/>Distance · Wall Distance · Zones · Ceilings"]
     D --> F["overlays: Main path · Doors · Placements, zoom"]
     D --> G["hover: cell / area details (role, progress, difficulty, heights)"]
     C --> H["generation report: stage times, warnings, retries"]
@@ -57,6 +58,11 @@ flowchart TD
 | Distance | walking distance from the floor's arrival |
 | Wall Distance | distance to the nearest wall (open spaces bright) |
 | Zones | hybrid zones |
+| Ceilings | floor-to-ceiling height: dark = low, bright = tall; vaults show as gradients |
+
+Floor tabs show each floor's style and modifier (e.g. "2: Caverns (Flooded)"). Special rooms have their own colours
+in the Roles view; placements show keys (yellow), vault doors (white), gates (cyan), plates (purple) and shortcut
+doors (green).
 
 **Batch test** generates many seeds and reports: success count and retries (attempts per dungeon), average and max
 time (single thread), floors per dungeon, areas per floor, loops per floor, dead-end share, main-path length,
@@ -67,7 +73,8 @@ whether generation stays reliable.
 
 | Inspector | Adds |
 |---|---|
-| **DungeonProfile** | what is required, what is optional and what the profile falls back to; Open Preview |
+| **DungeonProfile** | the effective floor spacing (raised to fit the ceilings), stair length and ceiling heights; **Ceiling Heights** buttons (Classic, Standard, Tall, Cathedral) and a Height Scale slider; **Dungeon Type** + Apply (optionally also the theme's colours); Open Preview, Quick Test (20 seeds), Default Roles, **Add Special Rooms**; what is required, what is optional and what the profile falls back to |
+| **DungeonPropTable** | **Add Missing Built-in Props**: appends the built-in entries (special-room furniture, traps, floor-modifier hazards) the table lacks, by name |
 | **DungeonEncounterTable** | **Import** button: copies a world `SpawnableMob` list (prefab, weight, rarity, packs) through serialization |
 | **DungeonManager** | how it is used by portals, and in Play mode its status, progress and test buttons (generate, clear) |
 | **Portal** (`PortalEditor`) | a status box listing what is missing, and a button to add the trigger collider |
@@ -83,10 +90,18 @@ Unity Test Framework is installed (`UNITY_INCLUDE_TESTS`).
 
 | Test | Checks |
 |---|---|
-| `EveryStyleProducesTraversableDungeons` | every style × 8 seeds × sizes: every area reachable from its floor's arrival, departure reachable, link landings walkable |
+| `EveryStyleProducesTraversableDungeons` | every style (13) × 8 seeds × sizes: every area reachable from its floor's arrival (crossing teleporters and platforms), departure reachable, link landings walkable |
 | `MixedDungeonsHaveEntranceExitBossAndSpawn` | 15 mixed dungeons: spawn and portals valid, main path from floor 0 to the last floor, exactly one boss room |
 | `SameSeedSameDungeon` | two generations of the same Large request have identical fingerprints |
 | `MeshesAreBuilt` | mesh data for every floor, every link meshed on its lower floor |
+| `EveryDungeonTypeGenerates` | every dungeon type (17) × 4 seeds: traversable, locks safe |
+| `LocksNeverCutAnythingOffAndKeysAreReachable` | 30 dungeons: with every vault door and shortcut closed, only vault cells become unreachable, and every key can be reached |
+| `CeilingsAreTallAndFitBetweenFloors` | headroom ≥ Min Headroom everywhere, ceilings below MaxCeiling, the tallest rooms above 8 m, floor spacing makes room |
+| `AmbushMobsWaitInWaves` | ambush rooms' mobs are hidden in waves 1+ and the room has its event controller |
+| `FloorsNeverOverlap` | every type, 3 floors: wherever the floor below has open space, the floor above (its ground or its chasm's bottom) stays above that space's ceiling |
+| `TowerIsOneContinuousSpiral` | tower dungeons: one spiral flight per pair of floors, each continuing the one above, one doorway per floor |
+| `JumpsAndChasmsHoldTogether` | islands and astral floors: a chasm with depth, every teleporter pair has two ends, every moving platform has a track between two ledges, traversable |
+| `SpecialRoomsGetTheirMechanics` | 60 large dungeons: cellar levers open secret doors, valves shut gas chambers, altar rewards have their altar, pit fights have a hidden champion, sleepers are in barracks |
 
 ## 5. Verification done during development
 

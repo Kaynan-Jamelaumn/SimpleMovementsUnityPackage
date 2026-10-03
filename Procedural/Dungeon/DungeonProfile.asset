@@ -15,6 +15,18 @@ MonoBehaviour:
   cellSize: 1.5
   floorSpacing: 10
   maxStairSlope: 33
+  ceilings:
+    heightScale: 1
+    extraPerRoomCell: 0.4
+    sizeScalingFrom: 6
+    maxSizeBonus: 5
+    vaultChance: 0.9
+    vaultMinCells: 70
+    vaultHeight: 5
+    minHeadroom: 2.6
+    doorHeight: 4
+    autoFloorSpacing: 1
+    rockBetweenFloors: 0.8
   floorCount: {x: 2, y: 4}
   sizeClasses:
   - size: 0
@@ -31,20 +43,30 @@ MonoBehaviour:
     floorCount: {x: 4, y: 7}
   footprintVariation: 0.15
   openness:
-    min: 0.3
-    max: 0.75
+    min: 0.6
+    max: 0.95
   complexity:
-    min: 0.3
-    max: 0.75
+    min: 0.25
+    max: 0.6
   styles:
-    rooms: 1
-    bsp: 0.6
-    caverns: 0.8
-    hybrid: 0.9
-    gridMaze: 0.15
-  naturalWeightPerFloor: 0.25
+    rooms: 1.2
+    bsp: 0.3
+    caverns: 0
+    hybrid: 0.2
+    gridMaze: 0
+    citadel: 0.8
+    catacombs: 0.3
+    tower: 0
+    undercity: 0
+    hive: 0
+    islands: 0
+    den: 0
+    astral: 0
+  naturalWeightPerFloor: 0
   repeatStylePenalty: 0.45
   difficultyPerFloor: 0.2
+  overrideLastFloorStyle: 0
+  lastFloorStyle: 11
   rooms:
     coverage:
       min: 0.2
@@ -89,11 +111,15 @@ MonoBehaviour:
       rectangle: 3
       lShape: 1
       tShape: 0.6
-      cross: 0.5
+      cross: 1
       circle: 0.6
       composite: 1
-      pillaredHall: 0.5
+      pillaredHall: 1.5
       ruined: 0
+      octagon: 1.2
+      ring: 0.25
+      apse: 1.2
+      diamond: 0.25
     aspectVariation: 0.35
     spacing:
       min: 2
@@ -101,9 +127,9 @@ MonoBehaviour:
     tightPackingChance: 0.15
     placementAttempts: 700
     spreadCandidates: 4
-    roomCeiling: 4
-    hallCeiling: 6.5
-    corridorCeiling: 3.2
+    roomCeiling: 8
+    hallCeiling: 14
+    corridorCeiling: 5.5
   bsp:
     minLeafSize: 11
     splitRatio:
@@ -135,12 +161,12 @@ MonoBehaviour:
     floorHeightAmplitude: 1.1
     floorHeightScale: 0.07
     heightSmoothing: 5
-    ceilingBase: 3.2
-    ceilingPerWallDistance: 0.55
+    ceilingBase: 6
+    ceilingPerWallDistance: 0.9
     ceilingLimits:
-      min: 2.8
-      max: 7.5
-    ceilingNoise: 0.7
+      min: 5
+      max: 17
+    ceilingNoise: 0.8
     wallRoughness: 0.3
     wallBulge: 0.3
   hybrid:
@@ -151,12 +177,170 @@ MonoBehaviour:
     ruinsWeight: 0.5
     ruinsErosion: 0.35
   maze:
-    blockSize: 7
-    gap: 2
+    blockSize: 5
+    gap: 3
     pruneFraction:
       min: 0
-      max: 0.35
+      max: 0.15
     templates: []
+  citadel:
+    keepSize:
+      min: 0.2
+      max: 0.3
+    keepOctagon: 1
+    keepRound: 0.7
+    keepCross: 0.5
+    keepPillared: 0.8
+    keepCloister: 0.5
+    roomSize:
+      min: 4
+      max: 7
+    ringGap:
+      min: 3
+      max: 5
+    roomSpacing: 3
+    maxRings: 3
+    gates:
+      min: 2
+      max: 4
+    ringLinkChance: 0.7
+    cornerTowers: 1
+    towerSize:
+      min: 6
+      max: 8
+  catacombs:
+    pitch:
+      min: 10
+      max: 14
+    chamberSize:
+      min: 3
+      max: 5
+    hallChance: 0.15
+    hallSize:
+      min: 6
+      max: 8
+    galleryWidth:
+      min: 2
+      max: 3
+    loopChance:
+      min: 0.1
+      max: 0.35
+    nicheChance:
+      min: 0.25
+      max: 0.6
+    nicheEvery:
+      min: 3
+      max: 5
+    nicheSize:
+      min: 2
+      max: 3
+    nicheDepth:
+      min: 2
+      max: 3
+  tower:
+    diameter:
+      min: 28
+      max: 36
+    coreSize: 5
+    ringWidth:
+      min: 2
+      max: 3
+    chambers:
+      min: 4
+      max: 8
+    greatHallChance: 0.2
+    spiralSlope: 40
+    newelRadius: 1.1
+    balconyChance: 0.3
+  undercity:
+    avenueWidth:
+      min: 3
+      max: 4
+    streetWidth:
+      min: 2
+      max: 3
+    blockSize:
+      min: 10
+      max: 16
+    plazaChance: 0.35
+    plazaSize:
+      min: 7
+      max: 11
+    roomsPerBuilding:
+      min: 1
+      max: 3
+    ruinChance: 0.12
+    skyHeight:
+      min: 13
+      max: 17
+    interiorCeiling: 4.5
+    roofAbove:
+      min: 0.8
+      max: 4
+  hive:
+    cellRadius:
+      min: 2.8
+      max: 4.5
+    wall:
+      min: 1
+      max: 2
+    missingChance: 0.18
+    joinChance:
+      min: 0.25
+      max: 0.6
+    broodChance: 0.18
+    wobble: 0.4
+    ceiling:
+      min: 3.6
+      max: 6.5
+  islands:
+    islandRadius:
+      min: 3
+      max: 5.5
+    gap:
+      min: 3
+      max: 6
+    platformShare: 0.3
+    bridgeWidth:
+      min: 1
+      max: 2
+    rimWidth: 2
+    ceiling:
+      min: 10
+      max: 14
+    chasmDepth: 6
+  den:
+    caveShare:
+      min: 0.3
+      max: 0.45
+    sideTunnels:
+      min: 3
+      max: 6
+    sideCaveSize:
+      min: 5
+      max: 9
+    caveHeight: 16
+    hoardPiles:
+      min: 6
+      max: 12
+  astral:
+    platformRadius:
+      min: 3
+      max: 5
+    gap:
+      min: 4
+      max: 8
+    portalShare: 0.45
+    platformShare: 0.25
+    ceiling:
+      min: 12
+      max: 16
+    voidDepth: 8
+    flipInterval:
+      min: 35
+      max: 70
+    flipDuration: 6
+    floatHeight: 3
   connections:
     loopChance:
       min: 0.08
@@ -184,6 +368,8 @@ MonoBehaviour:
     maxExtraStairs: 1
     dropChance: 0.3
     dropSize: 2
+    climbChance: 0.12
+    climbSize: 1
     edgeMargin: 4
     anchorSpacing: 3
     entranceSize:
@@ -213,9 +399,11 @@ MonoBehaviour:
     styles: 7
     chance: 1
     weight: 1
-    templates:
-    - {fileID: 11400000, guid: dac05e3ab9b29b54fa377ce40cc2eb44, type: 2}
+    templates: []
     secretEntrance: 0
+    ceilingHeight: 10
+    vaulted: 1
+    hiddenRoom: 0
   - name: Treasure
     role: 8
     tag: 
@@ -238,6 +426,9 @@ MonoBehaviour:
     weight: 1
     templates: []
     secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
   - name: Rest
     role: 9
     tag: 
@@ -260,6 +451,9 @@ MonoBehaviour:
     weight: 1
     templates: []
     secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
   - name: Arena
     role: 10
     tag: 
@@ -282,13 +476,16 @@ MonoBehaviour:
     weight: 1
     templates: []
     secretEntrance: 0
+    ceilingHeight: 8
+    vaulted: 0
+    hiddenRoom: 0
   - name: Shrine
     role: 11
     tag: 
     required: 0
     perFloor:
-      min: 0
-      max: 1
+      min: 1
+      max: 2
     maxTotal: -1
     minFloor: 0
     maxFloor: -1
@@ -300,10 +497,13 @@ MonoBehaviour:
     size: 0
     minCells: 0
     styles: 5
-    chance: 0.4
+    chance: 0.8
     weight: 1
     templates: []
     secretEntrance: 0
+    ceilingHeight: 7
+    vaulted: 1
+    hiddenRoom: 0
   - name: Secret
     role: 12
     tag: 
@@ -326,6 +526,456 @@ MonoBehaviour:
     weight: 1
     templates: []
     secretEntrance: 1
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Guardian
+    role: 14
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.35
+      max: 0.9
+    placement: 2
+    size: 3
+    minCells: 36
+    styles: 7
+    chance: 0.4
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 8
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Vault
+    role: 15
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.2
+      max: 1
+    placement: 1
+    size: 2
+    minCells: 12
+    styles: 5
+    chance: 0.35
+    weight: 1.2
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Trap Gauntlet
+    role: 16
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.15
+      max: 1
+    placement: 3
+    size: 2
+    minCells: 24
+    styles: 7
+    chance: 0.35
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Puzzle
+    role: 17
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 2
+    minCells: 30
+    styles: 5
+    chance: 0.3
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 6
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Ambush
+    role: 18
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.25
+      max: 0.85
+    placement: 2
+    size: 2
+    minCells: 30
+    styles: 7
+    chance: 0.3
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Library
+    role: 19
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 2
+    minCells: 24
+    styles: 5
+    chance: 0.5
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 7
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Armory
+    role: 20
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 0
+    size: 2
+    minCells: 20
+    styles: 5
+    chance: 0.3
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Crypt
+    role: 22
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 0
+    minCells: 24
+    styles: 5
+    chance: 0.5
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 6
+    vaulted: 1
+    hiddenRoom: 0
+  - name: Throne
+    role: 25
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: 1
+    minFloor: 1
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.5
+      max: 1
+    placement: 2
+    size: 3
+    minCells: 45
+    styles: 1
+    chance: 0.5
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 10
+    vaulted: 1
+    hiddenRoom: 0
+  - name: Cursed Altars
+    role: 27
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 1
+    minCells: 14
+    styles: 5
+    chance: 0.25
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 6.5
+    vaulted: 1
+    hiddenRoom: 0
+  - name: Kitchen
+    role: 28
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 0
+    size: 2
+    minCells: 24
+    styles: 5
+    chance: 0.25
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Gallery
+    role: 29
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 2
+    minCells: 24
+    styles: 1
+    chance: 0.6
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 6.5
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Pit Fight
+    role: 31
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: 1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0.3
+      max: 0.95
+    placement: 2
+    size: 3
+    minCells: 60
+    styles: 7
+    chance: 0.25
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 10
+    vaulted: 0
+    hiddenRoom: 0
+  - name: Greenhouse
+    role: 32
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 3
+    size: 2
+    minCells: 24
+    styles: 7
+    chance: 0.2
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 7
+    vaulted: 1
+    hiddenRoom: 0
+  - name: Wine Cellar
+    role: 33
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 1
+    placement: 0
+    size: 2
+    minCells: 18
+    styles: 5
+    chance: 0.25
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 1
+  - name: Map Room
+    role: 34
+    tag: 
+    required: 0
+    perFloor:
+      min: 0
+      max: 1
+    maxTotal: -1
+    minFloor: 0
+    maxFloor: -1
+    lastFloorOnly: 0
+    progress:
+      min: 0
+      max: 0.6
+    placement: 0
+    size: 1
+    minCells: 12
+    styles: 5
+    chance: 0.3
+    weight: 1
+    templates: []
+    secretEntrance: 0
+    ceilingHeight: 0
+    vaulted: 0
+    hiddenRoom: 0
+  mechanics:
+    lockBossRoom: 1
+    lockArenas: 1
+    lockGuardianRooms: 1
+    ambushWaves:
+      min: 2
+      max: 3
+    cryptAmbushChance: 0.5
+    eliteScale: 1.3
+    eliteTierBonus: 1
+    vaultKeys: 1
+    puzzlePlates:
+      min: 3
+      max: 4
+    shortcutChance: 0.4
+    maxGatesPerRoom: 8
+    pitFightWaves:
+      min: 3
+      max: 4
+    championScale: 1.45
+    sleeperShare: 0.8
+    nestsPerRoom:
+      min: 1
+      max: 2
+    roamerChance: 0.35
+    roamerScale: 1.3
+    shiftingChance: 0.25
+    shiftingShare: 0.6
+    shiftInterval:
+      min: 90
+      max: 180
+    tripwireChance: 0.15
+    chasmFallRule: 2
+    fallDamage: 0.2
+    voidFogDepth: 1.6
+  floorModifiers:
+    chance: 0.15
+    firstFloor: 1
+    flooded: 0.3
+    molten: 0
+    overgrown: 0.3
+    darkness: 0.7
+    frozen: 0.2
+    waterLevel: 0.35
+    darkLightShare: 0.2
+    darkEncounterBonus: 0.25
+    atmosphere: 1
   population:
     encounters: {fileID: 0}
     loot: {fileID: 11400000, guid: e5946760227527e4487bb06fb097d291, type: 2}
@@ -343,8 +993,15 @@ MonoBehaviour:
     bossLoot:
       min: 1
       max: 2
-    deadEndLootChance: 0.55
+    deadEndLootChance: 0.75
     roomLootChance: 0.15
+    vaultLoot:
+      min: 3
+      max: 5
+    challengeLoot:
+      min: 1
+      max: 2
+    fillMissingRoleProps: 1
     maxPlacementsPerFloor: 500
   theme: {fileID: 11400000, guid: 0edd8d8779458d24a8b7298ee3d751d2, type: 2}
   build:

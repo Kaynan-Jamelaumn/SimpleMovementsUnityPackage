@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -20,6 +20,15 @@ public static class InputBindingStore
 
     private static readonly List<InputActionAsset> assets = new List<InputActionAsset>();
     private static readonly List<InputActionMap> pausedMaps = new List<InputActionMap>();
+
+    /// <summary>An action created at runtime because the input actions did not have it (added to every copy).</summary>
+    private struct CreatedAction
+    {
+        public string map, name;
+        public string[] paths;
+    }
+
+    private static readonly List<CreatedAction> createdActions = new List<CreatedAction>();
     private static bool hooked;
 
     /// <summary>Raised after the bindings changed (rebind, reset): key prompts refresh.</summary>
@@ -33,6 +42,7 @@ public static class InputBindingStore
     {
         assets.Clear();
         pausedMaps.Clear();
+        createdActions.Clear();
         GameplayInputPaused = false;
         Changed = null;
         if (hooked)
@@ -78,11 +88,39 @@ public static class InputBindingStore
         ApplyToPlayerInputComponents();
     }
 
-    /// <summary>Applies the saved bindings to one copy of the input actions.</summary>
+    /// <summary>
+    /// Records an action created at runtime (<see cref="InputActionResolver.Create"/>) and adds it to every other copy of
+    /// the input actions, so all the player's components, the Player Input component and the Key Bindings menu see it.
+    /// </summary>
+    public static void RememberCreatedAction(string map, string name, IList<string> paths)
+    {
+        foreach (CreatedAction c in createdActions)
+            if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))
+                return;
+        createdActions.Add(new CreatedAction { map = map, name = name, paths = paths != null ? new List<string>(paths).ToArray() : new string[0] });
+        assets.RemoveAll(a => a == null);
+        foreach (InputActionAsset a in assets)
+            AddCreatedActions(a);
+        foreach (UnityEngine.InputSystem.PlayerInput pi in UnityEngine.Object.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
+            if (pi != null && pi.actions != null) AddCreatedActions(pi.actions);
+        Changed?.Invoke();
+    }
+
+    private static void AddCreatedActions(InputActionAsset asset)
+    {
+        if (asset == null)
+            return;
+        foreach (CreatedAction c in createdActions)
+            if (asset.FindAction(c.name, false) == null)
+                InputActionResolver.Create(asset, c.name, c.paths, out _, c.map, remember: false);
+    }
+
+    /// <summary>Applies the saved bindings (and the actions created at runtime) to one copy of the input actions.</summary>
     public static void Apply(InputActionAsset asset)
     {
         if (asset == null)
             return;
+        AddCreatedActions(asset);
         string json = SavedJson;
         try
         {

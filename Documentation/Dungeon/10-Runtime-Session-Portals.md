@@ -172,10 +172,12 @@ Reusing the generator's own placements keeps respawns under the same rules: neve
 | Component | Behaviour | Fields (defaults) |
 |---|---|---|
 | **DungeonPortal** | on trigger enter by the player (after *Arm Delay*): `DungeonSession.UsePortal` → Return To World / Complete Dungeon / Next Dungeon | action, Player Tag, Arm Delay 1.5 s |
-| **DungeonSecretDoor** | a wall block that sinks into the floor when the player stays within *Search Distance* for *Hold Time*, or when `Open()` is called; carves the NavMesh only while closed | Search Distance 1.8 m, Hold Time 1.5 s, Open Speed 1.2 m/s; `Opened` event |
-| **DungeonHazard** | while a *Target Tag* collider stays in the trigger: a hit every *Interval* → `onHit` UnityEvent and static `AnyHit(hazard, target, damage)` (your health system applies the damage); spikes pop up | Damage 10, Interval 1 s, Spike Rise 0.25 |
+| **DungeonSecretDoor** | a wall block that sinks into the floor when the player stays within *Search Distance* for *Hold Time* (only when *Searchable*: a wine cellar's lever door is not), or when `Open()` is called; carves the NavMesh only while closed | Searchable on, Search Distance 1.8 m, Hold Time 1.5 s, Open Speed 1.2 m/s; `Opened` event |
+| **DungeonHazard** | while a character it affects (players by default, by Combat Entity) stays in the trigger: a hit every *Interval* through the combat system, plus `onHit` and static `AnyHit(hazard, target, damage)`. Constant, or Cycle (dangerous only while active; "Active" children shown then) | Damage 10, Interval 1 s, Spike Rise 0.25, Timing, Active / Inactive Seconds, Phase Offset, Damage Type, Element |
+| **Room mechanics** | gates, vault doors and keys, shortcut doors, puzzles and plates, blade and dart traps, swinging logs, tripwires, rest fountains, shrines, chests, herbs, nests, altars, breakable barrels, levers, gas, map tables, sleepers, roamers, shifting walls, spectators, per-floor atmosphere | see [15 §5](15-Types-Special-Rooms-Mechanics.md#5-mechanics--runtime) |
+| **Floor mechanics** | chasm falls, moving platforms, teleporters, climbing vines, astral gravity flips | see [16](16-Towers-Cities-Hives-Chasms.md) |
 | **DungeonFlicker** | flame-like light intensity | Amount 0.25, Speed 7 |
-| **DungeonSpawned** | on every spawned object: kind, floor, area, tier, group, placement index, entry name, `Dungeon`, `Area`; `Destroyed` event | set by the builder |
+| **DungeonSpawned** | on every spawned object: kind, floor, area, tier, group, placement index, entry name, link, order (asleep / roaming / champion), `Dungeon`, `Area`; `Destroyed` event | set by the builder |
 
 ## 7. Gameplay API (`DungeonInstance`)
 
@@ -184,17 +186,25 @@ Reusing the generator's own placements keeps respawns under the same rules: neve
 | `PlayerSpawn`, `EntrancePortal`, `ExitPortal` | world `Pose`s |
 | `FloorCount`, `CurrentFloor`, `FloorEntered` event, `IsFullyBuilt`, `FullyBuilt` event | floor state |
 | `FloorRoot(f)` | the floor's transform |
-| `CellToWorld(floor, cell[, height])`, `WorldToCell(world, out floor, out cell)`, `FloorAt(world)` | coordinate conversion |
+| `CellToWorld(floor, cell[, height])`, `WorldToCell(world, out floor, out cell)`, `FloorAt(world)` | coordinate conversion (a floor's band reaches down to the top of the floor below, so chasms belong to their floor) |
 | `IsWalkable(world)`, `TryGetArea(world, out area)` | grid queries |
 | `AreasWithRole(role, floor = −1)`, `AreasWithTag(tag, floor = −1)` | e.g. find the boss room |
 | `PathDepth(world)` | walking distance (cells) from the entrance along the main path; −1 if unreachable |
 | `Spawned(kind)`, `Placements(kind, floor)` | spawned objects / planned placements |
+| `SpawnedIn(floor, area)` | the objects of one area, hidden ones included (an event room's mobs, gates, reward) |
+| `IsFloorPopulated(floor)`, `HasRoomEvent(floor, area)`, `ModifierOf(floor)` | a floor's mobs are placed; the area runs an event; the floor's modifier |
+| `Stats` (`DungeonRunStats`), `RoomCompleted(floor, area)` event | kills, elites, bosses, chests, keys, secrets, puzzles, cleared rooms, shrines, shortcuts, time |
+| `SecretDoorAt(floor, cell)` | the secret door in a cell (levers open them) |
+| `IsMapped(floor)`, `RevealMap(floor)`, `FloorMapped` event | a floor's map, revealed by its map table and shown by `DungeonMapOverlay` |
+| `SpawnMob(encounter, floor, area, tier, world, yaw)` | spawns and registers a mob like the dungeon's own (nests use it): the prefab, or a stand-in |
 | `Layout`, `Profile`, `Seed`, `Manager` | raw data |
 
 `DungeonManager` events: `Ready` (first floors playable), `Completed` (every floor built), `Failed(message)`,
 `Cleared`. Also `Progress` (0–1), `Status`, `LastReport`, `Generate(request)`, `GenerateImmediate(request)` (editor
 and tests: synchronous, no frame budget), `Cancel()` and `Clear()`. `DungeonSession` events: `Entered`, `Exited(bool
-completed)` and `Failed`.
+completed)` and `Failed`; `Checkpoint` (set by rest fountains, cleared on leaving) and `CheckpointSet`;
+`Teleport(who, position, rotation)` moves a character at once (used by falls and teleporters).
+`DungeonMessages.Shown(text, important)` carries the mechanics' messages to any UI.
 
 ```csharp
 // Example: react when the boss dies. Deeper floors (and their mobs) may still be building when the player

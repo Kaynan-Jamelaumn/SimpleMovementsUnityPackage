@@ -35,12 +35,35 @@ namespace ProceduralDungeon
 
         private Transform[] floorRoots;
         private readonly Dictionary<PlacementKind, List<DungeonSpawned>> spawned = new Dictionary<PlacementKind, List<DungeonSpawned>>();
+        private readonly Dictionary<long, List<DungeonSpawned>> byArea = new Dictionary<long, List<DungeonSpawned>>();
+        private readonly HashSet<int> populatedFloors = new HashSet<int>();
+        private readonly HashSet<long> eventAreas = new HashSet<long>();
+        private readonly Dictionary<long, DungeonSecretDoor> secretDoors = new Dictionary<long, DungeonSecretDoor>();
+        private readonly HashSet<int> mappedFloors = new HashSet<int>();
+
+        /// <summary>Makes a stand-in mob for an encounter without a prefab (set by the builder).</summary>
+        internal Func<EncounterInfo, int, GameObject> PlaceholderMob;
+
+        /// <summary>A floor's map was revealed (a map table): floor.</summary>
+        public event Action<int> FloorMapped;
+
+        /// <summary>What happened in this run: kills, chests, keys, secrets, puzzles, cleared rooms...</summary>
+        public DungeonRunStats Stats { get; } = new DungeonRunStats();
+
+        /// <summary>A room's event finished: (floor, area) - a locked room cleared, an ambush beaten, a puzzle solved.</summary>
+        public event Action<int, int> RoomCompleted;
+
+        private static long AreaKey(int floor, int area) => ((long)floor << 32) | (uint)area;
 
         internal void Initialize(DungeonLayout layout, CompiledProfile profile, Transform[] floors)
         {
             Layout = layout;
             Profile = profile;
             floorRoots = floors;
+            Stats.startedAt = Time.time;
+            foreach (Placement p in layout.Placements)
+                if (p.Kind == PlacementKind.RoomController)
+                    eventAreas.Add(AreaKey(p.Floor, p.Area));
         }
 
         public Transform FloorRoot(int floor) => floorRoots != null && floor >= 0 && floor < floorRoots.Length ? floorRoots[floor] : null;
@@ -68,12 +91,22 @@ namespace ProceduralDungeon
             return new Pose(CellToWorld(pose.Floor, pose.Cell, pose.Height), transform.rotation * Quaternion.Euler(0f, pose.Yaw, 0f));
         }
 
-        /// <summary>The floor whose height band contains a world position.</summary>
+        /// <summary>
+        /// The floor whose height band contains a world position: a floor's band reaches down to the top of the floor
+        /// below (its tallest ceiling), so a chasm's depths still belong to the floor they cut through. Floors may be
+        /// spaced differently.
+        /// </summary>
         public int FloorAt(Vector3 world)
         {
-            Vector3 local = transform.InverseTransformPoint(world);
-            int floor = Mathf.FloorToInt((-local.y + Layout.FloorSpacing * 0.5f) / Layout.FloorSpacing);
-            return Mathf.Clamp(floor, 0, FloorCount - 1);
+            float y = transform.InverseTransformPoint(world).y;
+            for (int f = 0; f < FloorCount - 1; f++)
+            {
+                FloorSpec below = Layout.Floors[f + 1].Spec;
+                float top = Mathf.Min(below.BaseY + below.MaxCeiling, Layout.Floors[f].Spec.BaseY - 0.5f);
+                if (y >= top)
+                    return f;
+            }
+            return FloorCount - 1;
         }
 
         /// <summary>The cell under a world position (on the floor whose band it's in). False outside the grid.</summary>
@@ -172,6 +205,88 @@ namespace ProceduralDungeon
             return list;
         }
 
+        /// <summary>Spawned objects of one area (mobs, loot, props, gates, plates...) that still exist, hidden ones included.</summary>
+        public List<DungeonSpawned> SpawnedIn(int floor, int area)
+        {
+            var list = new List<DungeonSpawned>();
+            if (byArea.TryGetValue(AreaKey(floor, area), out List<DungeonSpawned> all))
+                foreach (DungeonSpawned s in all)
+                    if (s != null)
+                        list.Add(s);
+            return list;
+        }
+
+        /// <summary>The floor's mobs have been placed (its NavMesh is baked).</summary>
+        public bool IsFloorPopulated(int floor) => populatedFloors.Contains(floor);
+
+        /// <summary>The area runs an event (locked room, ambush, puzzle): respawns stay out of it.</summary>
+        public bool HasRoomEvent(int floor, int area) => eventAreas.Contains(AreaKey(floor, area));
+
+        /// <summary>The modifier of a floor (flooded, molten...).</summary>
+        public FloorModifier ModifierOf(int floor) => floor >= 0 && floor < FloorCount ? Layout.Floors[floor].Spec.Modifier : FloorModifier.None;
+
+        /// <summary>The secret door in a cell of a floor (cell index), or null.</summary>
+        public DungeonSecretDoor SecretDoorAt(int floor, int cell) => secretDoors.TryGetValue(AreaKey(floor, cell), out DungeonSecretDoor d) ? d : null;
+
+        internal void RegisterSecretDoor(int floor, int cell, DungeonSecretDoor door) => secretDoors[AreaKey(floor, cell)] = door;
+
+        /// <summary>Has a floor's map been revealed (by its map table)?</summary>
+        public bool IsMapped(int floor) => mappedFloors.Contains(floor);
+
+        /// <summary>Reveals a floor's map (the map overlay shows it from now on).</summary>
+        public void RevealMap(int floor)
+        {
+            if (floor < 0 || floor >= FloorCount || !mappedFloors.Add(floor))
+                return;
+            FloorMapped?.Invoke(floor);
+        }
+
+        /// <summary>
+        /// Spawns a mob of an encounter at a world position, tagged and registered like the dungeon's own (nests, respawns):
+        /// its prefab, or a stand-in when it has none. Null when it has neither.
+        /// </summary>
+        public GameObject SpawnMob(EncounterInfo e, int floor, int area, int tier, Vector3 world, float yaw)
+        {
+            if (e == null)
+                return null;
+            Transform floorRoot = FloorRoot(floor);
+            Transform parent = floorRoot != null ? floorRoot.Find("Mobs") : null;
+            if (parent == null)
+                parent = floorRoot != null ? floorRoot : transform;
+            if (UnityEngine.AI.NavMesh.SamplePosition(world, out UnityEngine.AI.NavMeshHit hit, 2.5f, UnityEngine.AI.NavMesh.AllAreas))
+                world = hit.position;
+            Quaternion rot = transform.rotation * Quaternion.Euler(0f, yaw, 0f);
+            GameObject go;
+            if (e.HasPrefab && e.Prefab != null)
+            {
+                go = Instantiate(e.Prefab, world, rot, parent);
+                var agent = go.GetComponent<UnityEngine.AI.NavMeshAgent>();
+                if (agent != null && agent.isActiveAndEnabled)
+                    agent.Warp(world);
+            }
+            else if (PlaceholderMob != null)
+            {
+                go = PlaceholderMob(e, UnityEngine.Random.Range(0, 1000));
+                go.transform.SetParent(parent, true);
+                go.transform.SetPositionAndRotation(world, rot);
+            }
+            else
+            {
+                return null;
+            }
+            var tag = go.GetComponent<DungeonSpawned>();
+            if (tag == null)
+                tag = go.AddComponent<DungeonSpawned>();
+            tag.kind = PlacementKind.Mob;
+            tag.floor = floor;
+            tag.area = area;
+            tag.tier = tier;
+            tag.entryName = e.Name;
+            tag.placementIndex = -1;
+            Register(tag);
+            return go;
+        }
+
         /// <summary>Every vertical link (stairs and drops) with its world-space landing positions.</summary>
         public IReadOnlyList<VerticalLink> Links => Layout.Links;
 
@@ -183,7 +298,34 @@ namespace ProceduralDungeon
             if (!spawned.TryGetValue(s.kind, out List<DungeonSpawned> list))
                 spawned[s.kind] = list = new List<DungeonSpawned>();
             list.Add(s);
+            if (s.area >= 0)
+            {
+                long key = AreaKey(s.floor, s.area);
+                if (!byArea.TryGetValue(key, out List<DungeonSpawned> inArea))
+                    byArea[key] = inArea = new List<DungeonSpawned>();
+                inArea.Add(s);
+            }
+            if (s.kind == PlacementKind.Mob || s.kind == PlacementKind.Boss)
+            {
+                CombatEntity e = s.GetComponentInChildren<CombatEntity>(true);
+                if (e != null)
+                {
+                    bool elite = s.elite, boss = s.kind == PlacementKind.Boss;
+                    e.Died += _ =>
+                    {
+                        Stats.Bump(ref Stats.mobsKilled);
+                        if (elite) Stats.Bump(ref Stats.elitesKilled);
+                        if (boss) Stats.Bump(ref Stats.bossesKilled);
+                    };
+                }
+            }
         }
+
+        internal void MarkFloorPopulated(int floor) => populatedFloors.Add(floor);
+
+        internal void RaiseRoomCompleted(int floor, int area) => RoomCompleted?.Invoke(floor, area);
+
+        private void OnDestroy() => DungeonKeyRing.Clear(this);
 
         internal void SetCurrentFloor(int floor)
         {

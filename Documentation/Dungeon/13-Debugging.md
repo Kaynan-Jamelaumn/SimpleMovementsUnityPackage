@@ -59,6 +59,25 @@ style override) and the profile. Read the seed from `DungeonInstance.Seed`, or t
 | **Same dungeon from different portals** | — | same 8 m cell; forced Dungeon Seed | portal positions/seed | move the portal or change the seed |
 | **Different dungeon from the same portal** | — | the portal's position changed; world seed changed; request seed 0 | Portal seed and position | set Dungeon Seed or keep positions stable |
 | **Next Dungeon never ends** | endless chain | Exit Portal Action = Next Dungeon | DungeonManager | expected; use Complete Dungeon to finish |
+| **Ceilings still low** | old heights after updating | the profile asset keeps its saved values (Classic 4 / 6.5 / 3.2 m) | profile inspector › Heights (effective spacing, tallest ceiling) | click *Ceiling Heights › Standard / Tall / Cathedral* or raise *Height Scale* |
+| **Ceilings flat at one height** | tall rooms cut off | *Auto Floor Spacing* off and Floor Spacing too small (report warning "Floor spacing … is tight") | report warnings | turn Auto Floor Spacing on or raise Floor Spacing |
+| **Very long stairs** | stair wells span most of a floor | tall presets raise the effective floor spacing (Cathedral ≈ 26 m) | inspector's effective spacing | raise *Max Stair Slope*, lower *Height Scale*, or use Tall instead of Cathedral |
+| **No special rooms** | only boss/treasure/arena rooms | the profile's Roles list predates them | Roles list | *Add Special Rooms* on the profile, or apply a Dungeon Type |
+| **Special rooms empty** | no furniture | own prop table and *Fill Missing Role Props* off | Population › Fill Missing Role Props | turn it on, or *Add Missing Built-in Props* on the table |
+| **Room doors won't open** | players locked in | the room's event is running: mobs still alive (some may be out of sight), or a puzzle unsolved | `DungeonRoomEvent` / `DungeonPuzzle` state in the inspector | kill the remaining mobs; the gates also reopen when no living player has been in the room for *Leave Grace* (4 s), e.g. after a wipe |
+| **Vault door won't open** | "Locked. The Vault Key must be somewhere on this floor." | the floor's key not yet picked up | Preview › Placements (key dot) | find the key; it is always reachable without the vault |
+| **Shortcut door won't open** | "It doesn't open from this side." | it opens only from its far side | — | expected: reach it from the other side |
+| **Mobs pop in** | mobs appear suddenly | ambush waves / rising crypts are dormant until players enter | Room event mode | expected; lower *Ambush Waves* or *Crypt Ambush Chance* |
+| **Floor is dark / flooded / burning** | unusual floor | a floor modifier was rolled | Preview floor label, `DungeonInstance.ModifierOf(floor)` | Floor Modifiers › Chance 0 to disable |
+| **Mobs walk through closed gates** | — | the NavMesh was baked with the barrier closed, or the agent ignores obstacles | barrier's NavMeshObstacle (carving) | barriers must come from the builder (it prepares them before the bake) |
+| **Fell into a chasm and died** | death on an islands / astral floor | the last floor (Floor Below Else Death), or Chasm Fall = Death | Mechanics › Chasm Fall | Floor Below (back to the ledge on the last floor) |
+| **Mobs don't follow across the void** | mobs stop at the edge | the NavMesh doesn't cross platforms, portals or bridges' gaps | — | expected: mobs keep to their island |
+| **Teleporter does nothing** | standing on a pad | its partner (same link, same floor) is missing, or the player was sent less than Cooldown ago | `DungeonTeleporter.Partner` | keep both pads; wait 2.5 s |
+| **Can't climb the vines** | — | no `PlayerMovementModel` on the player, or the input actions lack Jump / Movement / Crouch | player setup | add them |
+| **Walls move by themselves** | passages close and open | a shifting floor (`DungeonShiftingFloor`) | Mechanics › Shifting Chance | expected; nothing is ever cut off; 0 to disable |
+| **Arrows fire from the walls** | a click, then darts | a tripwire in the corridor | — | crouch to step over it |
+| **A nest keeps spawning** | endless mobs | nests hatch until destroyed | `DungeonNest` | destroy it (weapons, or stand at it and use it) |
+| **The map won't open** | Map key does nothing | the floor's map isn't revealed; the "Map" action is bound elsewhere | Key Bindings | find the floor's map room |
 
 ## 4. Reading generation failures
 

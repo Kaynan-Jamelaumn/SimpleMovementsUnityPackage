@@ -7,10 +7,12 @@ namespace ProceduralDungeon
     /// <summary>
     /// Stage 8. Decides what goes where - as data only, the build step creates the objects:
     /// the entrance portal against the entrance room's back wall with the player spawn in front of it, the exit
-    /// portal, bosses in boss rooms, mob packs spent from a per-area budget (difficulty x progress x size x role,
-    /// never near the spawn, never in doorways), loot (treasure rooms, bosses, secret rooms, dead ends), and props from
-    /// the prop table (lights along walls, points of interest in role rooms, hazards in corridors, rubble at breaches,
-    /// decorations), each with its placement rule and spacing.
+    /// portal, the gates and locked doors of event rooms and vaults, bosses in boss rooms, elites in guardian and throne
+    /// rooms, mob packs spent from a per-area budget (difficulty x progress x size x role, never near the spawn, never in
+    /// doorways - ambush waves hidden until sprung), loot (treasure rooms, bosses, vaults, challenge rooms, dead ends),
+    /// props from the prop table (lights, points of interest and themed furniture in special rooms, traps, the floor
+    /// modifier's hazards, decorations), and finally the mechanics: vault keys, puzzle plates, room events and shortcut
+    /// doors (see PopulationFeatures.cs).
     /// </summary>
     public sealed class PopulationStage : IDungeonStage
     {
@@ -28,7 +30,7 @@ namespace ProceduralDungeon
         }
     }
 
-    internal sealed class FloorPopulator
+    internal sealed partial class FloorPopulator
     {
         private readonly DungeonContext ctx;
         private readonly FloorLayout floor;
@@ -64,10 +66,16 @@ namespace ProceduralDungeon
                 PlaceEntrance();
             if (floor.Spec.IsLast)
                 PlaceExit();
+            ReserveLocks();
+            ReserveCrossings();
             PlaceBosses();
+            PlaceElites();
             PlaceEncounters();
             PlaceLoot();
+            PlaceRoomFixtures();
             PlaceProps();
+            PlaceMechanics();
+            PlaceTraps();
             return placements;
         }
 
@@ -127,13 +135,13 @@ namespace ProceduralDungeon
             return list;
         }
 
-        /// <summary>Direction of a solid 4-neighbour (a wall to put something against), or -1.</summary>
+        /// <summary>Direction of a rock 4-neighbour (a wall to put something against - not a chasm's edge), or -1.</summary>
         private int WallSide(int cell)
         {
             for (int d = 0; d < 4; d++)
             {
                 int nb = g.Neighbor(cell, d);
-                if (nb >= 0 && g.Type[nb] == CellType.Solid)
+                if (nb >= 0 && g.Type[nb] == CellType.Solid && !g.IsChasm(nb))
                     return d;
             }
             return -1;
@@ -311,6 +319,42 @@ namespace ProceduralDungeon
                     return 1.3f;
                 case AreaRole.Arena:
                     return 2.2f;
+                case AreaRole.TrapRoom:
+                case AreaRole.Puzzle:
+                    return 0f;
+                case AreaRole.Ambush:
+                    return 2f;
+                case AreaRole.MiniBoss:
+                case AreaRole.Throne:
+                    return 0.6f;
+                case AreaRole.Vault:
+                    return 0.4f;
+                case AreaRole.Garden:
+                    return 0.6f;
+                case AreaRole.Library:
+                    return 0.7f;
+                case AreaRole.Laboratory:
+                    return 0.8f;
+                case AreaRole.Armory:
+                    return 1.1f;
+                case AreaRole.Prison:
+                    return 1.2f;
+                case AreaRole.Nest:
+                    return 0.5f;
+                case AreaRole.Gambling:
+                case AreaRole.GasChamber:
+                case AreaRole.MapRoom:
+                    return 0f;
+                case AreaRole.Kitchen:
+                    return 0.9f;
+                case AreaRole.Gallery:
+                case AreaRole.Greenhouse:
+                case AreaRole.WineCellar:
+                    return 0.6f;
+                case AreaRole.Barracks:
+                    return 1.5f;
+                case AreaRole.Colosseum:
+                    return 2.4f;
                 default:
                     return area.Kind == AreaKind.Hall ? 1.2f : 1f;
             }
@@ -321,6 +365,7 @@ namespace ProceduralDungeon
             if (p.Encounters.Count == 0)
                 return;
 
+            float floorBonus = floor.Spec.Modifier == FloorModifier.Darkness ? 1f + Mathf.Max(0f, p.FloorModifiers.darkEncounterBonus) : 1f;
             foreach (Area area in floor.Areas)
             {
                 if (Full)
@@ -328,7 +373,8 @@ namespace ProceduralDungeon
                 float mult = RoleMultiplier(area);
                 if (mult <= 0f || !TemplateAllowsPopulation(area))
                     continue;
-                float budget = pop.encounterDensity * area.Cells.Count / 100f * area.Difficulty * mult * (area.OnMainPath ? 1f : 0.85f);
+                int firstPlacement = placements.Count;
+                float budget = pop.encounterDensity * area.Cells.Count / 100f * area.Difficulty * mult * floorBonus * (area.OnMainPath ? 1f : 0.85f);
                 int whole = Mathf.FloorToInt(budget);
                 if (rng.Value() < budget - whole)
                     whole++;
@@ -349,12 +395,18 @@ namespace ProceduralDungeon
                         break;
                     whole -= e.Cost * placed;
                 }
+                if (area.Role == AreaRole.Colosseum)
+                    PitFight(area, firstPlacement);
+                else if (IsAmbush(area))
+                    MakeWaves(firstPlacement);
+                else if (area.Role == AreaRole.Barracks)
+                    PutToSleep(firstPlacement);
             }
 
             // Wandering mobs in long corridors.
             foreach (Connection c in floor.Connections)
             {
-                if (Full || c.Failed || c.Cells.Count < 8 || !rng.Chance(pop.corridorEncounterChance))
+                if (Full || c.Failed || c.Cells.Count < 8 || c.Kind == ConnectionKind.Bridge || !rng.Chance(pop.corridorEncounterChance))
                     continue;
                 Area near = floor.Areas[c.A];
                 EncounterInfo e = PickEncounter(near, false, 2);
@@ -440,24 +492,49 @@ namespace ProceduralDungeon
                 if (!TemplateAllowsPopulation(area))
                     continue;
                 int count = 0, tierBonus = 0;
+                bool dormant = false, farEnd = false;
                 switch (area.Role)
                 {
                     case AreaRole.Treasure: count = pop.treasureRoomLoot.Random(rng); tierBonus = 1; break;
-                    case AreaRole.Boss: count = pop.bossLoot.Random(rng); tierBonus = 2; break;
+                    case AreaRole.Boss: count = pop.bossLoot.Random(rng); tierBonus = 2; dormant = LocksRoom(area); break;
                     case AreaRole.Secret: count = rng.Range(1, 3); tierBonus = 1; break;
+                    case AreaRole.Vault: count = pop.vaultLoot.Random(rng); tierBonus = 2; break;
+                    case AreaRole.TrapRoom: count = pop.challengeLoot.Random(rng); tierBonus = 1; farEnd = true; break;
+                    case AreaRole.Puzzle: count = pop.challengeLoot.Random(rng); tierBonus = 1; dormant = true; break;
+                    case AreaRole.Ambush:
+                    case AreaRole.MiniBoss:
+                    case AreaRole.Throne:
+                        count = pop.challengeLoot.Random(rng); tierBonus = 1; dormant = LocksRoom(area); break;
+                    case AreaRole.Crypt: count = 1; tierBonus = 1; dormant = LocksRoom(area); break;
+                    case AreaRole.Armory: count = rng.Range(1, 3); break;
+                    case AreaRole.Laboratory: count = 1; break;
+                    case AreaRole.Library:
+                    case AreaRole.Prison:
+                    case AreaRole.Kitchen:
+                    case AreaRole.Gallery:
+                    case AreaRole.Greenhouse:
+                        count = rng.Chance(0.5f) ? 1 : 0; break;
+                    case AreaRole.Barracks: count = rng.Range(1, 3); break;
+                    case AreaRole.Nest: count = pop.challengeLoot.Random(rng); tierBonus = 1; dormant = true; break;
+                    case AreaRole.Colosseum: count = pop.challengeLoot.Random(rng) + 1; tierBonus = 2; dormant = LocksRoom(area); break;
+                    case AreaRole.GasChamber: count = pop.challengeLoot.Random(rng); tierBonus = 1; farEnd = true; break;
                     case AreaRole.None:
                         if (area.IsLeaf ? rng.Chance(pop.deadEndLootChance) : rng.Chance(pop.roomLootChance))
                             count = 1;
                         break;
                 }
+                List<int> spots = farEnd ? FarEnd(area) : area.Cells;
                 for (int k = 0; k < count && !Full; k++)
                 {
                     LootInfo entry = PickLoot(area, tierBonus);
                     if (entry == null)
                         break;
-                    if (!FindSpot(area.Cells, entry.Placement, loot, 2f, 0f, out int cell, out Vector2 pos, out float yaw))
+                    if (!FindSpot(spots, farEnd ? PropPlacement.Anywhere : entry.Placement, loot, 2f, 0f, out int cell, out Vector2 pos, out float yaw) &&
+                        !(farEnd && FindSpot(area.Cells, entry.Placement, loot, 2f, 0f, out cell, out pos, out yaw)))
                         break;
-                    Add(PlacementKind.Loot, PlacementTable.Loot, entry.Index, cell, pos, yaw, 0f, -1, 1f, entry.Tier, 0.8f);
+                    int index = Add(PlacementKind.Loot, PlacementTable.Loot, entry.Index, cell, pos, yaw, 0f, -1, 1f, entry.Tier, 0.8f);
+                    if (dormant)
+                        SetDormant(index, 0);
                     loot.Add(pos, entry.Index, 0.8f);
                 }
             }
@@ -491,6 +568,8 @@ namespace ProceduralDungeon
                     return;
                 if (floor.Index < e.MinFloor || (e.MaxFloor >= 0 && floor.Index > e.MaxFloor))
                     continue;
+                if (!e.Modifiers.Allows(floor.Spec.Modifier))
+                    continue;
                 if (!propHashes.TryGetValue(e.Index, out SpatialHash2D<int> hash))
                     propHashes[e.Index] = hash = new SpatialHash2D<int>(Mathf.Max(2f, e.Spacing));
 
@@ -511,7 +590,7 @@ namespace ProceduralDungeon
                         float progress = (floor.Areas[c.A].Progress + floor.Areas[c.B].Progress) * 0.5f;
                         if (!e.Progress.Contains(progress) || !MainPathOk(e.MainPath, c.OnMainPath))
                             continue;
-                        PlaceUnit(e, c.Cells, hash);
+                        PlaceUnit(e, c.Cells, hash, DarkLightFactor(e, null));
                     }
                 }
                 else
@@ -528,7 +607,7 @@ namespace ProceduralDungeon
                             continue;
                         if (e.Placement == PropPlacement.DeadEnd && !area.IsLeaf)
                             continue;
-                        PlaceUnit(e, area.Cells, hash);
+                        PlaceUnit(e, area.Cells, hash, DarkLightFactor(e, area));
                     }
                 }
             }
@@ -539,9 +618,20 @@ namespace ProceduralDungeon
             return filter == MainPathFilter.Any || (filter == MainPathFilter.OnlyMainPath) == onMainPath;
         }
 
-        private void PlaceUnit(PropInfo e, List<int> cells, SpatialHash2D<int> hash)
+        /// <summary>Dark floors keep only a share of their lights (special rooms keep theirs).</summary>
+        private float DarkLightFactor(PropInfo e, Area area)
         {
-            if (!rng.Chance(e.Chance))
+            if (e.Kind != PlacementKind.Light || floor.Spec.Modifier != FloorModifier.Darkness)
+                return 1f;
+            if (area != null && (area.Role == AreaRole.Boss || area.Role == AreaRole.Rest || area.Role == AreaRole.Shrine ||
+                                 area.Role == AreaRole.Entrance || area.Role == AreaRole.Exit))
+                return 1f;
+            return Mathf.Clamp01(p.FloorModifiers.darkLightShare);
+        }
+
+        private void PlaceUnit(PropInfo e, List<int> cells, SpatialHash2D<int> hash, float chanceFactor = 1f)
+        {
+            if (!rng.Chance(e.Chance * chanceFactor))
                 return;
             float extra = e.PerHundredCells * cells.Count / 100f;
             int count = e.PerArea.Random(rng) + Mathf.FloorToInt(extra) + (rng.Value() < extra - Mathf.Floor(extra) ? 1 : 0);
@@ -603,14 +693,40 @@ namespace ProceduralDungeon
                         if (!g.Has(c, CellFlags.Rubble))
                             continue;
                         break;
+                    case PropPlacement.BackWall:
+                        if (wall[c] >= 1.6f || WallSide(c) < 0 || NearDoor(c))
+                            continue;
+                        break;
+                    case PropPlacement.OffPath:
+                        if (g.Has(c, CellFlags.MainPath | CellFlags.Chokepoint) || wall[c] < 1.4f || NearDoor(c))
+                            continue;
+                        break;
                 }
                 candidates.Add(c);
             }
             if (candidates.Count == 0)
                 return false;
 
+            Vector2 middle = Vector2.zero;
             if (placement == PropPlacement.Center)
                 candidates.Sort((a, b) => wall[b].CompareTo(wall[a]));
+            else if (placement == PropPlacement.BackWall)
+            {
+                // The wall cell farthest from the ways in (a throne faces whoever comes in).
+                List<int> ways = WaysIn(cells);
+                foreach (int c in cells)
+                    middle += CellPos(c);
+                middle /= Mathf.Max(1, cells.Count);
+                var score = new Dictionary<int, float>();
+                foreach (int c in candidates)
+                {
+                    float nearest = float.MaxValue;
+                    foreach (int o in ways)
+                        nearest = Mathf.Min(nearest, (CellPos(o) - CellPos(c)).sqrMagnitude);
+                    score[c] = ways.Count > 0 ? nearest : 0f;
+                }
+                candidates.Sort((a, b) => score[b].CompareTo(score[a]));
+            }
             else
                 rng.Shuffle(candidates);
 
@@ -639,6 +755,13 @@ namespace ProceduralDungeon
                         yaw = CornerYaw(c, out Vector2 push);
                         pos += push * 0.25f;
                         break;
+                    case PropPlacement.BackWall:
+                    {
+                        int side = WallSide(c);
+                        pos += (Vector2)((Dir4)side).Delta() * 0.3f;
+                        yaw = YawTowards(pos, middle);
+                        break;
+                    }
                     case PropPlacement.Doorway:
                         for (int d = 0; d < 4; d++)
                         {
@@ -646,6 +769,10 @@ namespace ProceduralDungeon
                             if (nb >= 0 && g.Type[nb] == CellType.Door)
                                 yaw = ((Dir4)d).Yaw();
                         }
+                        break;
+                    case PropPlacement.Corridor:
+                        // Along the corridor (traps swing and shoot along or across it).
+                        yaw = g.IsWalkable(g.Neighbor(c, 0)) || g.IsWalkable(g.Neighbor(c, 2)) ? 0f : 90f;
                         break;
                     default:
                         yaw = rng.Range(0f, 360f);
@@ -664,7 +791,7 @@ namespace ProceduralDungeon
             for (int d = 0; d < 4; d++)
             {
                 int n1 = g.Neighbor(c, d), n2 = g.Neighbor(c, (d + 1) & 3);
-                if (n1 >= 0 && n2 >= 0 && g.Type[n1] == CellType.Solid && g.Type[n2] == CellType.Solid)
+                if (n1 >= 0 && n2 >= 0 && g.IsRock(n1) && g.IsRock(n2))
                 {
                     push = (Vector2)((Dir4)d).Delta() + ((Dir4)((d + 1) & 3)).Delta();
                     push.Normalize();

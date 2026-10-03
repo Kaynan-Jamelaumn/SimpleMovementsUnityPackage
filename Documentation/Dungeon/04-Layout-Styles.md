@@ -2,7 +2,7 @@
 
 **Scripts:** `Stages/Layout/LayoutStage.cs` (`LayoutStage`, `AnchorAreas`, `LayoutUtil`), `RoomScatterLayout.cs`,
 `BspLayout.cs`, `CaveLayout.cs` (`CaveLayout`, `CaveField`), `HybridLayout.cs`, `GridMazeLayout.cs` (+
-`TemplateStamper`), `RoomShapes.cs`.
+`TemplateStamper`), `CitadelLayout.cs`, `CatacombLayout.cs`, `RoomShapes.cs`.
 
 ---
 
@@ -20,6 +20,18 @@ Each floor has one **style**, and each style is an `ILayoutStrategy`:
 | **Caverns** | `CaveLayout` (`CaveField`) | organic caves from a cellular automaton, split into chambers | Cavern, Cavern (Organic cells) |
 | **Hybrid** | `HybridLayout` | a floor divided into zones: caves in cavern zones, rooms in built and ruins zones | mixed |
 | **Grid Maze** | `GridMazeLayout` | rooms on a regular grid of blocks joined as a maze (the original dungeon's idea); supports room templates and legacy prefabs | Room, Built |
+| **Citadel** | `CitadelLayout` | a fortress around a central keep: rings of rooms, gates into the keep, round corner towers | Hall (keep) / Room, Built |
+| **Catacombs** | `CatacombLayout` | a lattice of ossuary chambers joined by long galleries lined with burial niches | Room / Hall, Corridor (galleries), Built |
+| **Tower** | `TowerLayout` | a round floor round a stair core: a ring hall and wedge chambers, or one columned hall | Corridor (ring) / Hall / Room, Built |
+| **Undercity** | `UndercityLayout` | streets, plazas and buildings in a huge cavern (outdoor streets, roofed buildings) | Corridor / Hall (streets, plazas) / Room, Built / Ruins |
+| **Hive** | `HiveLayout` | honeycomb cells, brood chambers, fleshy tunnels | Cavern / Hall, Cavern |
+| **Islands** | `IslandLayout` | islands and a rim ledge in a chasm, joined by bridges and moving platforms | Cavern, Cavern |
+| **Den** | `DenLayout` | one huge cavern and its side caves | Cavern, Cavern |
+| **Astral** | `IslandLayout` (astral) | floating platforms in the void, joined by portals, platforms and bridges | Room / Hall (ledges: Cavern), Built |
+
+The last six are described in [16](16-Towers-Cities-Hives-Chasms.md). A layout may also **preset** connections
+(`FloorLayout.PresetLinks`: bridges, portals, moving platforms, a city's doors) that connectivity takes as they are,
+and **hint** a role for an area (`Area.Hint`, the den's cavern → Boss) that the roles stage tries first.
 
 `LayoutStage.Strategies` is a public dictionary: replace an entry to plug in your own strategy.
 
@@ -85,6 +97,10 @@ flowchart TD
 | Composite | 1 | 5 | overlapping rectangles |
 | Pillared hall | 0.5 | 8 | adds `Pillar` cells (solid pillars inside the room) |
 | Ruined | 0 | 4 | eroded outline (Hybrid ruins zones use it with *Ruins Erosion*) |
+| Octagon | 0.7 | 6 | a rectangle with its corners cut |
+| Ring (cloister) | 0.25 (×2 for halls) | 9 | floor all round a solid core; the core is `Pillar` (never carved) |
+| Apse | 0.4 | 6 | a long room ending in a half circle, random rotation |
+| Diamond | 0.25 | 7 | a square turned 45° |
 
 A room too small for its shape falls back to a rectangle. After shaping, only the **largest 4-connected group** of
 floor cells is kept.
@@ -164,19 +180,52 @@ flowchart TD
 Maze templates can be **legacy RoomBehaviour prefabs** (`RoomTemplate` with *Legacy Room Behaviour* ticked, 7 × 7
 cells, a door in the middle of each side). The old dungeon's rooms therefore still work inside the new generator.
 
-## 8. Configuration summary
+## 8. Citadel
+
+```mermaid
+flowchart TD
+    A["keep side = min side × Keep Size.Lerp(openness)<br/>(clamped 7 .. min side − 12)"] --> B["keep shape: Octagon / Round / Cross / Pillared / Cloister<br/>placed as near the centre as the anchors allow<br/>(spiral search, 4 tries, smaller each time)"]
+    B --> C["ring r: radius = previous + Ring Gap + room/2<br/>ellipse stretched to the footprint<br/>count = circumference / (room + Room Spacing), 4..18"]
+    C --> D["rooms at equal angles (rectangles, or the profile's shapes);<br/>anchors simply take the place of rooms they overlap"]
+    D --> E{"another ring fits?<br/>(Max Rings)"}
+    E -- yes --> C
+    E -- no --> F["round / octagonal towers in the four corners"]
+    F --> G["PresetConnections: neighbours along each ring<br/>(outer rings with Ring Link Chance),<br/>Gates keep ↔ inner ring, each outer room ↔ nearest inner room,<br/>each tower ↔ nearest ring room"]
+```
+
+Complexity makes the ring rooms smaller (more of them); Openness makes the keep bigger. The keep is a Hall, so it
+gets the hall ceiling and is often vaulted. On a Small floor there is usually one ring; on Medium and larger, two or
+three.
+
+## 9. Catacombs
+
+```mermaid
+flowchart TD
+    A["pitch = Pitch.Lerp(1 − complexity) (≥ chamber + 6)<br/>lattice of nodes centred on the footprint"] --> B["a chamber per node (3–5 cells; Hall Chance → 6–8 cell crypt halls, octagon or cross)<br/>skipped where anchors are"]
+    B --> C["maze over the chambers (randomised DFS) + loops with Loop Chance.Lerp(openness)"]
+    C --> D["a GALLERY per maze edge: a straight area (kind Corridor, tag 'Gallery')<br/>Gallery Width.Lerp(openness) wide, one wall away from both chambers"]
+    D --> E["burial NICHES along each gallery (Niche Chance.Lerp(complexity) every Niche Every cells, both sides):<br/>tiny rooms (tag 'Niche') one wall off the gallery"]
+    E --> F["PresetConnections: chamber ↔ gallery ↔ chamber, gallery ↔ niche<br/>(one wall apart → doorways)"]
+```
+
+Galleries are areas of kind **Corridor**: they get mobs, lights and props like any area but never a special-room
+role. Niches are tiny dead ends — perfect for treasure, secrets and loot.
+
+## 10. Configuration summary
 
 | Group | Key settings (defaults) |
 |---|---|
-| Rooms | Coverage 0.2–0.38 · Sizes (Closet 3–4 w0.45, Small 4–6 w1, Medium 6–9 w1.2, Large 9–13 w0.55, Hall 13–18 w0.2) · Shapes (above) · Aspect Variation 0.35 · Spacing 2–4 · Tight Packing Chance 0.15 · Placement Attempts 700 · Spread Candidates 4 · Room/Hall/Corridor ceiling 4 / 6.5 / 3.2 m |
+| Rooms | Coverage 0.2–0.38 · Sizes (Closet 3–4 w0.45, Small 4–6 w1, Medium 6–9 w1.2, Large 9–13 w0.55, Hall 13–18 w0.2) · Shapes (above) · Aspect Variation 0.35 · Spacing 2–4 · Tight Packing Chance 0.15 · Placement Attempts 700 · Spread Candidates 4 · Room/Hall/Corridor ceiling 5 / 7.5 / 3.6 m |
 | BSP | Min Leaf Size 11 · Split Ratio 0.38–0.62 · Room Margin 1–3 · Empty Leaf Chance 0.08 · Early Stop Chance 0.12 · Shaped Room Chance 0.3 |
 | Caves | Solid Fill 0.46–0.555 · Fill Noise Strength 0.2 · Smoothing Iterations 5 · Rock/Open Threshold 5/3 · Min Region Cells 40 · Min Passage Width 2 · Chamber Min Radius 2.2 · Chamber Spacing 8 |
 | Hybrid | Zone Size 22 · Border Noise 6 · Built/Cavern/Ruins weights 1/1/0.5 · Ruins Erosion 0.35 |
 | Maze | Block Size 7 · Gap 2 · Prune Fraction 0–0.35 · Templates |
+| Citadel | Keep Size 0.2–0.3 · keep shape weights (Octagon 1, Round 0.7, Cross 0.5, Pillared 0.8, Cloister 0.5) · Room Size 4–7 · Ring Gap 3–5 · Room Spacing 3 · Max Rings 3 · Gates 2–4 · Ring Link Chance 0.7 · Corner Towers on, Tower Size 6–8 |
+| Catacombs | Pitch 10–14 · Chamber Size 3–5 · Hall Chance 0.15, Hall Size 6–8 · Gallery Width 2–3 · Loop Chance 0.1–0.35 · Niche Chance 0.25–0.6 · Niche Every 3–5 · Niche Size 2–3 · Niche Depth 2–3 |
 
 Full ranges and effects: [12 Configuration Reference](12-Configuration-Reference.md).
 
-## 9. Example
+## 11. Example
 
 A Medium floor (≈ 64 × 64 cells, openness 0.6, style Rooms):
 
@@ -184,12 +233,12 @@ A Medium floor (≈ 64 × 64 cells, openness 0.6, style Rooms):
 - with Medium rooms averaging ~56 cells, that is roughly 15–25 rooms, plus 3–6 anchor rooms (entrance or arrival
   landing, departure landing, drop rooms).
 
-## 10. Performance
+## 12. Performance
 
 All plain C# on the worker, floors in parallel. The cellular automaton costs O(cells × iterations). The distance
 field is linear (Felzenszwalb–Huttenlocher). Room scatter costs O(attempts × room area).
 
-## 11. Debugging
+## 13. Debugging
 
 Use the Dungeon Preview window ([11](11-Editor-Tools-and-Testing.md)) with **Styles** / **Zones** view.
 

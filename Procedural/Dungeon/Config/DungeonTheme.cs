@@ -28,6 +28,10 @@ namespace ProceduralDungeon
         public Material stairs;
         [Tooltip("Material of door frames and other trim. Empty = Trim Color.")]
         public Material trim;
+        [Tooltip("Material of the water on flooded floors. Empty = Liquid Color.")]
+        public Material liquid;
+        [Tooltip("Material of the dark bottom of chasms and the void (islands and astral floors). Empty = Void Color.")]
+        public Material voidMaterial;
         [Tooltip("Meters per texture repeat on generated meshes (world-aligned UVs, so textures line up across chunks).")]
         [Min(0.1f)] public float textureScale = 3f;
 
@@ -48,6 +52,10 @@ namespace ProceduralDungeon
         public Color stairsColor = new Color(0.45f, 0.42f, 0.38f);
         [Tooltip("Colour of trim (door frames) without a material.")]
         public Color trimColor = new Color(0.25f, 0.18f, 0.12f);
+        [Tooltip("Colour of the water on flooded floors without a material.")]
+        public Color liquidColor = new Color(0.1f, 0.24f, 0.28f);
+        [Tooltip("Colour of a chasm's bottom without a material: near black, so the drop looks bottomless.")]
+        public Color voidColor = new Color(0.01f, 0.01f, 0.025f);
 
         [Header("Tile kit (optional; replaces generated geometry in built areas)")]
         [Tooltip("REQUIRED for the tile kit (with Wall Segment). Floor tile one module square, pivot at its centre, top surface at y = 0. It needs its own collider (the NavMesh is baked from colliders).")]
@@ -76,6 +84,24 @@ namespace ProceduralDungeon
         public GameObject door;
         [Tooltip("Optional. The wall piece hiding a secret passage (it opens when the player comes close). Empty = a primitive wall block.")]
         public GameObject secretDoor;
+        [Tooltip("Optional. Gate closing the ways into event rooms (boss, arena, guardian, ambush) while they're fought. Pivot at the bottom centre, spanning along X. Gets a DungeonGate. Empty = iron bars.")]
+        public GameObject gate;
+        [Tooltip("Optional. Locked vault door (opens with the vault's key). Pivot at the bottom centre, spanning along X. Gets a DungeonLockedDoor. Empty = a studded door.")]
+        public GameObject lockedDoor;
+        [Tooltip("Optional. One-way shortcut door (opens from its forward side only). Gets a DungeonShortcutDoor. Empty = a wooden door.")]
+        public GameObject shortcutDoor;
+        [Tooltip("Optional. Vault key pickup. Gets a DungeonKey. Empty = a golden key.")]
+        public GameObject key;
+        [Tooltip("Optional. Puzzle pressure plate (put a Light in it: it shows the order). Gets a DungeonPressurePlate. Empty = a rune plate.")]
+        public GameObject pressurePlate;
+        [Tooltip("Optional. Teleport pad (astral portals; pivot at its base). Gets a DungeonTeleporter. Empty = a glowing rune circle. Gallery paintings always use the built-in frame.")]
+        public GameObject teleporter;
+        [Tooltip("Optional. Moving platform (pivot at the centre of its top, about one cell across, with a collider). Gets a DungeonMovingPlatform. Empty = a stone slab.")]
+        public GameObject movingPlatform;
+        [Tooltip("Optional. Lever / valve on a wall (pivot at its back, facing +z). Gets a DungeonLever. Empty = an iron lever.")]
+        public GameObject lever;
+        [Tooltip("Optional. Monster nest (with a collider). Gets a DungeonNest. Empty = an egg-covered mound.")]
+        public GameObject nest;
 
         [Header("Lights")]
         [Tooltip("Colour of torch and brazier lights.")]

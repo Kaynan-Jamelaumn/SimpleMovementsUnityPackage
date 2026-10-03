@@ -54,6 +54,27 @@ namespace ProceduralDungeon
                 c.EstimatedCost = Vector2.Distance(floor.Areas[pr.x].Center, floor.Areas[pr.y].Center);
             }
 
+            // 1a. Forced: links of a set kind from the layout (bridges, portal pads, moving platforms).
+            foreach (PresetLink pl in floor.PresetLinks)
+            {
+                if (pl.A == pl.B || floor.FindConnection(pl.A, pl.B) != null)
+                    continue;
+                Connection c = floor.AddConnection(pl.A, pl.B, pl.Kind);
+                c.Forced = true;
+                c.InTree = sets.Union(pl.A, pl.B);
+                c.IsLoop = !c.InTree;
+                c.EstimatedCost = Vector2.Distance(floor.Areas[pl.A].Center, floor.Areas[pl.B].Center);
+                c.Width = Mathf.Max(1, pl.Width);
+                if (pl.Kind.IsJump())
+                {
+                    c.Routed = true;
+                    c.DoorA = pl.CellA;
+                    c.DoorB = pl.CellB;
+                    if (pl.Track != null)
+                        c.Track.AddRange(pl.Track);
+                }
+            }
+
             // 1b. Forced: areas already touching (neighbouring cavern chambers).
             var touching = new Dictionary<long, int>();
             for (int i = 0; i < g.Count; i++)
@@ -149,8 +170,9 @@ namespace ProceduralDungeon
                 }
             }
 
-            // 4. Loops that shortcut long walks.
-            float loopChance = cs.loopChance.Lerp(spec.Openness);
+            // 4. Loops that shortcut long walks (an undercity's street grid has its own).
+            bool grid = spec.Style == FloorStyle.Undercity;
+            float loopChance = grid ? 0f : cs.loopChance.Lerp(spec.Openness);
             var order = new List<int>();
             for (int i = 0; i < candidates.Count; i++)
                 if (!used[i])
@@ -180,7 +202,7 @@ namespace ProceduralDungeon
                 if (floor.Degree(a) <= 1 && floor.Areas[a].Role != AreaRole.Entrance && floor.Areas[a].Role != AreaRole.Exit)
                     leaves.Add(a);
             rng.Shuffle(leaves);
-            int excess = leaves.Count - budget;
+            int excess = grid ? 0 : leaves.Count - budget;
             foreach (int leaf in leaves)
             {
                 if (excess <= 0)
@@ -206,11 +228,20 @@ namespace ProceduralDungeon
                 excess--;
             }
 
-            // 6. Kinds and widths.
+            // 6. Kinds and widths. Over a chasm everything walked is a bridge.
+            bool chasm = spec.Style.HasChasm();
+            IntRange bridgeWidth = ctx.Profile.Islands != null ? ctx.Profile.Islands.bridgeWidth : new IntRange(1, 2);
             foreach (Connection c in floor.Connections)
             {
-                if (c.Kind == ConnectionKind.Opening)
+                if (c.Kind == ConnectionKind.Opening || c.Kind.IsJump())
                     continue;
+                if (c.Kind == ConnectionKind.Bridge || chasm)
+                {
+                    if (c.Kind != ConnectionKind.Bridge)
+                        c.Width = spec.Style == FloorStyle.Astral ? 1 : Mathf.Max(1, bridgeWidth.Random(rng));
+                    c.Kind = ConnectionKind.Bridge;
+                    continue;
+                }
                 Area a = floor.Areas[c.A], b = floor.Areas[c.B];
                 bool naturalA = a.Style == ZoneStyle.Cavern, naturalB = b.Style == ZoneStyle.Cavern;
                 if (naturalA && naturalB)

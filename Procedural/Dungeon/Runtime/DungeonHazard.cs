@@ -6,14 +6,37 @@ using UnityEngine.Events;
 namespace ProceduralDungeon
 {
     /// <summary>
-    /// A trap zone (e.g. the primitive spike trap). While a character it affects stands in its trigger it "hits" every
-    /// <see cref="interval"/> seconds: the damage goes through the combat system (defense, death, kill credit) and
-    /// <see cref="onHit"/> / <see cref="AnyHit"/> fire. Characters are recognised by their Combat Entity (kind: players,
-    /// mobs, others), not by tags, so every player of a multiplayer game is hurt. Spikes (child objects) pop up on each hit.
+    /// A trap zone: spikes, fire jets, spore vents, lava. While a character it affects stands in its trigger it "hits"
+    /// every <see cref="interval"/> seconds: the damage goes through the combat system (defense, resistances, death, kill
+    /// credit) and <see cref="onHit"/> / <see cref="AnyHit"/> fire. Characters are recognised by their Combat Entity
+    /// (kind: players, mobs, others), not by tags, so every player of a multiplayer game is hurt.
+    /// <para>Constant traps hurt all the time (spikes pop up on each hit). Cycling traps are only dangerous while active
+    /// (Active Seconds on, Inactive Seconds off, shifted by Phase Offset): their children named "Active" show only then, and
+    /// spikes rise for the active time - watch the rhythm and pass in between.</para>
     /// </summary>
     [RequireComponent(typeof(Collider))]
     public class DungeonHazard : MonoBehaviour
     {
+        public enum Timing
+        {
+            /// <summary>Always dangerous.</summary>
+            Constant,
+            /// <summary>Dangerous for Active Seconds, then safe for Inactive Seconds.</summary>
+            Cycle,
+        }
+
+        [Tooltip("Constant: always dangerous. Cycle: dangerous only while active (fire jets, spike floors, spore vents).")]
+        public Timing timing = Timing.Constant;
+        [Tooltip("Cycle: seconds it is dangerous.")]
+        [Min(0.05f)] public float activeSeconds = 1.2f;
+        [Tooltip("Cycle: seconds it is safe.")]
+        [Min(0.05f)] public float inactiveSeconds = 1.8f;
+        [Tooltip("Cycle: shifts this trap's rhythm (seconds), so neighbouring traps don't fire together.")]
+        public float phaseOffset;
+        [Tooltip("Damage type (Physical is reduced by Defense, Magical by Magic Resistance, True by neither).")]
+        public DamageType damageType = DamageType.Physical;
+        [Tooltip("Element of the damage (fire, poison, ice...): elemental resistances and reactions apply.")]
+        public ElementType element = ElementType.None;
         [Tooltip("Kinds of characters the trap hurts (players, mobs, others).")]
         public EntityKinds affects = EntityKinds.Players;
         [Tooltip("Fallback for objects without a Combat Entity / status controller: they are hurt when they have this tag (empty = never).")]
@@ -35,6 +58,19 @@ namespace ProceduralDungeon
         private readonly Dictionary<GameObject, float> lastHit = new Dictionary<GameObject, float>();
         private float spikeTimer;
         private Vector3[] spikeRest;
+        private readonly List<GameObject> activeParts = new List<GameObject>();
+
+        /// <summary>Is it dangerous right now?</summary>
+        public bool IsActive
+        {
+            get
+            {
+                if (timing == Timing.Constant)
+                    return true;
+                float period = activeSeconds + inactiveSeconds;
+                return Mathf.Repeat(Time.time + phaseOffset, period) < activeSeconds;
+            }
+        }
 
         private void Awake()
         {
@@ -42,10 +78,15 @@ namespace ProceduralDungeon
             spikeRest = new Vector3[transform.childCount];
             for (int i = 0; i < transform.childCount; i++)
                 spikeRest[i] = transform.GetChild(i).localPosition;
+            foreach (Transform t in GetComponentsInChildren<Transform>(true))
+                if (t != transform && t.name == "Active")
+                    activeParts.Add(t.gameObject);
         }
 
         private void OnTriggerStay(Collider other)
         {
+            if (!IsActive)
+                return;
             CombatEntity entity = CombatEntity.Resolve(other);
             GameObject target;
             if (entity != null)
@@ -71,7 +112,8 @@ namespace ProceduralDungeon
                     target = entity,
                     point = other.ClosestPoint(transform.position),
                     direction = Vector3.up,
-                    type = DamageType.Physical,
+                    type = damageType,
+                    element = element,
                 });
             onHit.Invoke(target);
             AnyHit?.Invoke(this, target, damage);
@@ -88,13 +130,20 @@ namespace ProceduralDungeon
 
         private void Update()
         {
+            bool active = IsActive;
+            foreach (GameObject part in activeParts)
+                if (part != null && part.activeSelf != active)
+                    part.SetActive(active);
             if (spikeRise <= 0f || spikeRest == null)
                 return;
             spikeTimer = Mathf.Max(0f, spikeTimer - Time.deltaTime);
-            float lift = spikeTimer > 0f ? spikeRise : 0f;
+            // Constant traps pop their spikes on each hit; cycling ones raise them for the active time.
+            float lift = (timing == Timing.Cycle ? active : spikeTimer > 0f) ? spikeRise : 0f;
             for (int i = 1; i < transform.childCount && i < spikeRest.Length; i++)
             {
                 Transform t = transform.GetChild(i);
+                if (t.name == "Active" || t.GetComponent<Light>() != null)
+                    continue;
                 t.localPosition = Vector3.MoveTowards(t.localPosition, spikeRest[i] + Vector3.up * lift, Time.deltaTime * 4f);
             }
         }

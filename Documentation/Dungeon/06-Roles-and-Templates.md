@@ -61,6 +61,11 @@ flowchart TD
 
 ### Choosing the area (micro)
 
+An area the layout **hinted** for the rule's role (`Area.Hint`, e.g. the den's great cavern for the Boss) is taken
+first when it passes the style and size filters. Rules with **Hidden Room** (the wine cellar) score ×8 on areas
+that have a dead end beside them to hide: that dead end becomes a Secret room behind a lever-operated secret door.
+In the roles graph drops cost 4 (one way) and climbs 6 (both ways); teleporters and moving platforms count as joins.
+
 ```mermaid
 flowchart TD
     A["candidate = free area<br/>(no role, not an anchor room)"] --> B{"Placement = End Of Main Path?"}
@@ -68,7 +73,7 @@ flowchart TD
     B -- no --> D{"passes filters?<br/>progress in range · placement (Leaf / On / Off main path / Hub)<br/>· style · Min Cells"}
     D -- no --> X["skip"]
     D -- yes --> E["sizeScore from the area/average size ratio r:<br/>Large r² · Small 1/r² · Medium 1/(1 + |ln r|) · Any 1"]
-    E --> F["score = weight × sizeScore × (0.6 + 0.8 × rand)<br/>× 1.5 if the rule has templates"]
+    E --> F["score = weight × sizeScore × (0.6 + 0.8 × rand)<br/>× 1.5 if the rule has templates<br/>× 8 for a Hidden Room rule with a dead end beside the area"]
     F --> G["keep the highest score"]
 ```
 
@@ -76,14 +81,20 @@ flowchart TD
 
 | Rule | Required | Per floor | Max total | Floors | Progress | Placement | Size | Min cells | Styles | Chance | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **Boss** | yes | 1 | 1 | last only | — | End Of Main Path | Large | 30 | any | — | the dungeon's climax |
+| **Boss** | yes | 1 | 1 | last only | — | End Of Main Path | Large | 30 | any | — | the dungeon's climax; 10 m vaulted ceiling; locks until the boss dies |
 | **Treasure** | — | 0–2 | — | any | 0.15–1 | Leaf (dead end) | — | — | any | 0.85 | rewards exploration |
 | **Rest** | — | 0–1 | — | any | 0.3–0.85 | On Main Path | Small | — | any | 0.5 | no mobs (role multiplier 0) |
-| **Arena** | — | 0–1 | — | any | 0.2–0.9 | On Main Path | Large | 50 | any | 0.45 | mob budget × 2.2 |
-| **Shrine** | — | 0–1 | — | any | — | Off Main Path | — | — | Built, Ruins | 0.4 | altar prop |
+| **Arena** | — | 0–1 | — | any | 0.2–0.9 | On Main Path | Large | 50 | any | 0.45 | mob budget × 2.2; 8 m ceiling; locks until cleared |
+| **Shrine** | — | 0–1 | — | any | — | Off Main Path | — | — | Built, Ruins | 0.4 | altar (blessing); 7 m vaulted |
 | **Secret** | — | 0–1 | — | any | — | Leaf | Small | — | Built, Ruins | 0.3 | *Secret Entrance*: reached through a hidden door |
 
+Then the **special rooms** (`DungeonProfile.SpecialRoomRules`, also appended to an older profile by the inspector's
+**Add Special Rooms**): Guardian, Vault, Trap Gauntlet, Puzzle, Ambush, Library, Armory, Prison, Crypt, Laboratory,
+Garden and Throne — each optional, 20–40% per floor. Their rules, contents and mechanics are in
+[15 Types, Special Rooms and Mechanics](15-Types-Special-Rooms-Mechanics.md#3-special-rooms).
+
 Anchor areas already carry roles from stage 2: Entrance, Exit, StairsUp, StairsDown, DropSource, DropLanding.
+Catacomb galleries (area kind Corridor) never take a role.
 
 ### Role rule fields
 
@@ -100,6 +111,7 @@ Anchor areas already carry roles from stage 2: Entrance, Exit, StairsUp, StairsD
 | Chance, Weight | chance per floor for optional rules; relative score |
 | Templates | room templates to fit into the chosen area |
 | Secret Entrance | built corridors into it become secret passages (only off the main path) |
+| Ceiling Height, Vaulted | the room's own ceiling (meters, × Height Scale; 0 = the normal room / hall height) and an arched ceiling ([07 §3](07-Carve-Validate-Analysis.md#3-heights--how-floor-and-ceiling-heights-are-calculated)) |
 
 ## 5. Room templates
 

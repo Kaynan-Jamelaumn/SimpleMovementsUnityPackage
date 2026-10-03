@@ -15,6 +15,8 @@ namespace ProceduralDungeon
         public readonly List<Anchor> Anchors = new List<Anchor>();
         /// <summary>Connections decided by the layout itself (maze edges): always kept, as corridors.</summary>
         public readonly List<Vector2Int> PresetConnections = new List<Vector2Int>();
+        /// <summary>Connections of a set kind decided by the layout: bridges, portal pads, moving platforms (always kept).</summary>
+        public readonly List<PresetLink> PresetLinks = new List<PresetLink>();
 
         /// <summary>Where the player arrives on this floor (entrance on floor 0, the stairs' lower landing below).</summary>
         public int ArrivalArea = -1;
@@ -114,8 +116,83 @@ namespace ProceduralDungeon
                 else
                     PresetConnections[i] = new Vector2Int(a, b);
             }
+            for (int i = PresetLinks.Count - 1; i >= 0; i--)
+            {
+                PresetLink p = PresetLinks[i];
+                int a = remap[p.A], b = remap[p.B];
+                if (a < 0 || b < 0)
+                {
+                    PresetLinks.RemoveAt(i);
+                    continue;
+                }
+                p.A = a;
+                p.B = b;
+                PresetLinks[i] = p;
+            }
             if (ArrivalArea >= 0) ArrivalArea = remap[ArrivalArea];
             if (DepartureArea >= 0) DepartureArea = remap[DepartureArea];
+        }
+
+        /// <summary>
+        /// Walking distance (cells) from <paramref name="start"/> to every cell, -1 where unreachable - stepping across
+        /// teleport pads and moving platforms (a jump counts as one step), never through <paramref name="blocked"/>.
+        /// </summary>
+        public int[] Flood(int start, HashSet<int> blocked = null)
+        {
+            TileGrid g = Grid;
+            var dist = new int[g.Count];
+            for (int i = 0; i < dist.Length; i++)
+                dist[i] = -1;
+            if (start < 0 || !g.IsWalkable(start) || (blocked != null && blocked.Contains(start)))
+                return dist;
+            Dictionary<int, List<int>> jumps = Jumps();
+            var queue = new Queue<int>();
+            dist[start] = 0;
+            queue.Enqueue(start);
+            while (queue.Count > 0)
+            {
+                int c = queue.Dequeue();
+                for (int d = 0; d < 4; d++)
+                {
+                    int nb = g.Neighbor(c, d);
+                    if (nb < 0 || dist[nb] >= 0 || !g.IsWalkable(nb) || (blocked != null && blocked.Contains(nb)))
+                        continue;
+                    dist[nb] = dist[c] + 1;
+                    queue.Enqueue(nb);
+                }
+                if (jumps != null && jumps.TryGetValue(c, out List<int> to))
+                {
+                    foreach (int nb in to)
+                    {
+                        if (dist[nb] >= 0 || !g.IsWalkable(nb) || (blocked != null && blocked.Contains(nb)))
+                            continue;
+                        dist[nb] = dist[c] + 1;
+                        queue.Enqueue(nb);
+                    }
+                }
+            }
+            return dist;
+        }
+
+        /// <summary>The cells joined by teleport pads and moving platforms (both ways), or null when there are none.</summary>
+        public Dictionary<int, List<int>> Jumps()
+        {
+            Dictionary<int, List<int>> map = null;
+            void Add(int a, int b)
+            {
+                if (!map.TryGetValue(a, out List<int> list))
+                    map[a] = list = new List<int>();
+                list.Add(b);
+            }
+            foreach (Connection c in Connections)
+            {
+                if (c.Failed || !c.Kind.IsJump() || c.DoorA < 0 || c.DoorB < 0)
+                    continue;
+                map = map ?? new Dictionary<int, List<int>>();
+                Add(c.DoorA, c.DoorB);
+                Add(c.DoorB, c.DoorA);
+            }
+            return map;
         }
 
         /// <summary>Area at a cell, or null.</summary>
@@ -124,6 +201,19 @@ namespace ProceduralDungeon
             int id = cell >= 0 ? Grid.Area[cell] : -1;
             return id >= 0 ? Areas[id] : null;
         }
+    }
+
+    /// <summary>A connection of a set kind decided by a layout (see <see cref="FloorLayout.PresetLinks"/>).</summary>
+    public struct PresetLink
+    {
+        public int A, B;
+        public ConnectionKind Kind;
+        /// <summary>Portals and platforms: the walkable end cells (grid index).</summary>
+        public int CellA, CellB;
+        /// <summary>Platforms: the chasm cells between the ends, in order from A to B.</summary>
+        public List<int> Track;
+        /// <summary>Bridges: walkway width (cells).</summary>
+        public int Width;
     }
 
     /// <summary>

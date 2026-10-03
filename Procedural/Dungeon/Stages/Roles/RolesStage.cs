@@ -149,8 +149,10 @@ namespace ProceduralDungeon
                 }
                 else
                 {
-                    g.Edges[up].Add((down, 1f, -1, link.Id));
-                    g.Edges[down].Add((up, 1f, -1, link.Id));
+                    // Climbing is slow: the main path prefers stairs.
+                    float cost = link.Kind == LinkKind.Climb ? 6f : 1f;
+                    g.Edges[up].Add((down, cost, -1, link.Id));
+                    g.Edges[down].Add((up, cost, -1, link.Id));
                 }
             }
             return g;
@@ -286,6 +288,16 @@ namespace ProceduralDungeon
                 }
             averageCells = counted > 0 ? averageCells / counted : 1f;
 
+            // The layout's suggestion (a den's great cavern for the boss, a plaza for an arena...) comes first.
+            foreach (Area a in floor.Areas)
+            {
+                if (a.Hint != rule.Role || !Free(a) || (relax < 3 && !rule.Styles.Contains(a.Style)) || (relax < 4 && a.Cells.Count < rule.MinCells))
+                    continue;
+                if (rule.Placement == RolePlacement.EndOfMainPath && !a.OnMainPath && relax < 2)
+                    continue;
+                return a;
+            }
+
             // End of the main path: the last free main-path area before the floor's departure.
             if (rule.Placement == RolePlacement.EndOfMainPath && relax < 2)
             {
@@ -332,6 +344,9 @@ namespace ProceduralDungeon
                 float score = Mathf.Max(0.001f, rule.Weight) * sizeScore * (0.6f + 0.8f * rng.Value());
                 if (rule.Templates.Length > 0)
                     score *= 1.5f;
+                // A room with a hidden room needs a dead end beside it to hide (wine cellars).
+                if (rule.HiddenRoom && HideCandidate(floor, a) != null)
+                    score *= 8f;
                 if (best == null || score > bestScore)
                 {
                     best = a;
@@ -341,7 +356,51 @@ namespace ProceduralDungeon
             return best;
         }
 
-        private static bool Free(Area a) => a.Role == AreaRole.None && a.AnchorIndex < 0 && a.Cells.Count > 0;
+        /// <summary>
+        /// A neighbouring dead end off the main path (joined by a corridor or door) becomes a hidden room: its passage gets a
+        /// secret door, which a lever in <paramref name="area"/> opens (placed by the Population stage).
+        /// </summary>
+        private static void HideNeighbour(FloorLayout floor, Area area)
+        {
+            Connection best = HideCandidate(floor, area);
+            if (best == null)
+                return;
+            best.Kind = ConnectionKind.Secret;
+            best.Width = 1;
+            Area hidden = floor.Areas[best.Other(area.Id)];
+            if (hidden.Role == AreaRole.None)
+            {
+                // A secret room: the secret door ends up on this room's side, where the lever is.
+                hidden.Role = AreaRole.Secret;
+                hidden.Tag = "Hidden";
+            }
+        }
+
+        /// <summary>The passage to the smallest neighbouring dead end that could be hidden behind <paramref name="area"/>, or null.</summary>
+        private static Connection HideCandidate(FloorLayout floor, Area area)
+        {
+            Connection best = null;
+            foreach (int id in area.Connections)
+            {
+                Connection c = floor.Connections[id];
+                Area other = floor.Areas[c.Other(area.Id)];
+                if (c.Failed || c.OnMainPath || other.OnMainPath || other.AnchorIndex >= 0 || other.Kind == AreaKind.Corridor)
+                    continue;
+                if (c.Kind != ConnectionKind.Corridor && c.Kind != ConnectionKind.Door)
+                    continue;
+                if (other.Style == ZoneStyle.Cavern || area.Style == ZoneStyle.Cavern)
+                    continue;
+                // A dead end (its only way in is this one) makes a true hidden room.
+                if (floor.Degree(other.Id) > 1)
+                    continue;
+                if (best == null || floor.Areas[best.Other(area.Id)].Cells.Count > other.Cells.Count)
+                    best = c;
+            }
+            return best;
+        }
+
+        /// <summary>An area that may take a role: no role yet, not an anchor, not a gallery (catacomb corridors).</summary>
+        private static bool Free(Area a) => a.Role == AreaRole.None && a.AnchorIndex < 0 && a.Cells.Count > 0 && a.Kind != AreaKind.Corridor;
 
         private static bool PlacementFits(RolePlacement placement, Area a)
         {
@@ -360,6 +419,12 @@ namespace ProceduralDungeon
         {
             area.Role = rule.Role;
             area.Tag = !string.IsNullOrEmpty(rule.Tag) ? rule.Tag : (rule.Role == AreaRole.Custom ? rule.Name : "");
+            if (rule.CeilingHeight > 0f)
+                area.CeilingHeight = rule.CeilingHeight;
+            area.Vaulted |= rule.Vaulted;
+
+            if (rule.HiddenRoom)
+                HideNeighbour(floor, area);
 
             if (rule.SecretEntrance && !area.OnMainPath)
             {

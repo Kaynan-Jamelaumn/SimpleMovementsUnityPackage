@@ -32,9 +32,24 @@ namespace ProceduralDungeon
             BySurface[(int)DungeonSurface.CaveCeiling] = Pick(theme != null ? theme.caveCeiling : null, theme != null ? theme.caveCeilingColor : new Color(0.24f, 0.21f, 0.18f));
             BySurface[(int)DungeonSurface.Trim] = Pick(theme != null ? theme.trim : null, theme != null ? theme.trimColor : new Color(0.25f, 0.18f, 0.12f));
             BySurface[(int)DungeonSurface.Stairs] = Pick(theme != null ? theme.stairs : null, theme != null ? theme.stairsColor : new Color(0.45f, 0.42f, 0.38f));
+            BySurface[(int)DungeonSurface.Liquid] = theme != null && theme.liquid != null ? theme.liquid : Water(theme != null ? theme.liquidColor : new Color(0.1f, 0.24f, 0.28f));
+            BySurface[(int)DungeonSurface.Void] = Pick(theme != null ? theme.voidMaterial : null, theme != null ? theme.voidColor : new Color(0.01f, 0.01f, 0.025f));
         }
 
         private Material Pick(Material fromTheme, Color fallback) => fromTheme != null ? fromTheme : Flat(fallback);
+
+        /// <summary>A glossy water material from the pipeline's default material (opaque, so it works everywhere).</summary>
+        private Material Water(Color color)
+        {
+            Material m = template != null ? new Material(template) : new Material(Shader.Find("Standard"));
+            m.name = "Dungeon Water";
+            m.color = color;
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.92f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.92f);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0.1f);
+            created.Add(m);
+            return m;
+        }
 
         /// <summary>A flat-colour material (cached per colour and glow).</summary>
         public Material Flat(Color color, float emission = 0f)
@@ -53,6 +68,38 @@ namespace ProceduralDungeon
                 m.SetColor("_EmissionColor", color * emission);
             }
             byColor[key] = m;
+            created.Add(m);
+            return m;
+        }
+
+        /// <summary>
+        /// A see-through colour (the void's fog): the pipeline's default material switched to alpha blending - URP / HDRP
+        /// Lit (Surface Type Transparent) and the built-in Standard shader (Fade) are both set up. Unlit look: no gloss.
+        /// </summary>
+        public Material Fog(Color color, float alpha)
+        {
+            Material m = template != null ? new Material(template) : new Material(Shader.Find("Standard"));
+            m.name = "Dungeon Fog";
+            color.a = alpha;
+            m.color = color;
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
+            // URP / HDRP Lit.
+            if (m.HasProperty("_Surface")) m.SetFloat("_Surface", 1f);
+            if (m.HasProperty("_Blend")) m.SetFloat("_Blend", 0f);
+            if (m.HasProperty("_SurfaceType")) m.SetFloat("_SurfaceType", 1f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            // Built-in Standard (Fade).
+            if (m.HasProperty("_Mode")) m.SetFloat("_Mode", 2f);
+            m.EnableKeyword("_ALPHABLEND_ON");
+            m.DisableKeyword("_ALPHATEST_ON");
+            m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            if (m.HasProperty("_SrcBlend")) m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (m.HasProperty("_DstBlend")) m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (m.HasProperty("_ZWrite")) m.SetFloat("_ZWrite", 0f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0f);
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
             created.Add(m);
             return m;
         }

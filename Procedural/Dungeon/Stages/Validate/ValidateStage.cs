@@ -49,7 +49,7 @@ namespace ProceduralDungeon
             int repairs = 0;
             while (true)
             {
-                int[] reach = Flood(g, floor.ArrivalCell);
+                int[] reach = floor.Flood(floor.ArrivalCell);
                 Area unreachable = null;
                 foreach (Area a in floor.Areas)
                 {
@@ -88,13 +88,18 @@ namespace ProceduralDungeon
                 FixDoors(g);
                 LayoutUtil.RebuildAreaCells(floor);
                 HeightPass.Apply(ctx, floor, ctx.Random("Carve", floor.Index));
+                if (floor.Spec.Style.HasChasm())
+                    ChasmDepth.Apply(ctx);
             }
 
             if (floor.DepartureCell >= 0 && !g.IsWalkable(floor.DepartureCell))
                 ctx.Fail($"Floor {floor.Index}: the departure cell isn't walkable.");
         }
 
-        /// <summary>Doors need a wall on each side and a way through; otherwise they become open floor.</summary>
+        /// <summary>
+        /// Doors need a wall on each side and a way through; otherwise they become open floor. Outdoors (undercity streets)
+        /// and over a chasm there are no doors.
+        /// </summary>
         public static void FixDoors(TileGrid g)
         {
             for (int i = 0; i < g.Count; i++)
@@ -103,8 +108,10 @@ namespace ProceduralDungeon
                     continue;
                 bool n = g.IsWalkable(g.Neighbor(i, 0)), e = g.IsWalkable(g.Neighbor(i, 1));
                 bool s = g.IsWalkable(g.Neighbor(i, 2)), w = g.IsWalkable(g.Neighbor(i, 3));
-                bool framedNS = n && s && g.IsSolid(g.Neighbor(i, 1)) && g.IsSolid(g.Neighbor(i, 3));
-                bool framedEW = e && w && g.IsSolid(g.Neighbor(i, 0)) && g.IsSolid(g.Neighbor(i, 2));
+                bool framedNS = n && s && g.IsRock(g.Neighbor(i, 1)) && g.IsRock(g.Neighbor(i, 3));
+                bool framedEW = e && w && g.IsRock(g.Neighbor(i, 0)) && g.IsRock(g.Neighbor(i, 2));
+                if (g.Has(i, CellFlags.Outdoor | CellFlags.Chasm))
+                    framedNS = framedEW = false;
                 if (!framedNS && !framedEW)
                 {
                     g.Type[i] = CellType.Floor;
@@ -113,7 +120,10 @@ namespace ProceduralDungeon
             }
         }
 
-        /// <summary>Walking distance (cells, 4-connected) from a cell; -1 where unreachable.</summary>
+        /// <summary>
+        /// Walking distance (cells, 4-connected) from a cell over the grid alone; -1 where unreachable. Floors with teleport
+        /// pads or moving platforms: use <see cref="FloorLayout.Flood"/>.
+        /// </summary>
         public static int[] Flood(TileGrid g, int start)
         {
             var dist = new int[g.Count];

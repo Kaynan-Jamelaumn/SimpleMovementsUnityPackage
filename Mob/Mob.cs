@@ -139,6 +139,10 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     public float IdleTime { get => idleTime; set => idleTime = value; }
     public int CurrentPatrolPoint { get => currentPatrolPoint; set => currentPatrolPoint = value; }
     public Vector3[] PatrolPoints { get => patrolPoints; set => patrolPoints = value; }
+    /// <summary>Patrol Points are offsets from the Home Position (false: world positions).</summary>
+    public bool PatrolPointsRelativeToHome { get => patrolPointsRelativeToHome; set => patrolPointsRelativeToHome = value; }
+    /// <summary>A transform whose children are the patrol points (overrides Patrol Points when set).</summary>
+    public Transform PatrolRoute { get => patrolRoute; set => patrolRoute = value; }
     public NavMeshAgent NavMeshAgentReference { get => navMeshAgent; set => navMeshAgent = value; }
     public int BiteDamage { get => biteDamage; }
     public float BiteCooldown { get => biteCooldown; }

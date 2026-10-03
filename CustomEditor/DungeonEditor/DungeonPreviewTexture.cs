@@ -11,6 +11,8 @@ namespace ProceduralDungeon.EditorTools
         Distance,
         WallDistance,
         Zones,
+        /// <summary>Floor-to-ceiling height: dark = low, bright = tall (vaults show as gradients).</summary>
+        Ceilings,
     }
 
     /// <summary>Draws a floor of a <see cref="DungeonLayout"/> into a texture (editor preview).</summary>
@@ -92,6 +94,19 @@ namespace ProceduralDungeon.EditorTools
                 case PlacementKind.Hazard: return new Color32(255, 100, 0, 255);
                 case PlacementKind.PointOfInterest: return new Color32(190, 100, 255, 255);
                 case PlacementKind.Interactable: return new Color32(120, 200, 255, 255);
+                case PlacementKind.Key: return new Color32(255, 255, 0, 255);
+                case PlacementKind.LockedDoor: return new Color32(255, 255, 255, 255);
+                case PlacementKind.Gate: return new Color32(0, 255, 255, 255);
+                case PlacementKind.Switch: return new Color32(160, 80, 255, 255);
+                case PlacementKind.Shortcut: return new Color32(0, 255, 90, 255);
+                case PlacementKind.Teleporter: return new Color32(150, 110, 255, 255);
+                case PlacementKind.MovingPlatform: return new Color32(200, 200, 255, 255);
+                case PlacementKind.Tripwire:
+                case PlacementKind.ArrowLauncher: return new Color32(255, 150, 60, 255);
+                case PlacementKind.ShiftingWall: return new Color32(170, 170, 170, 255);
+                case PlacementKind.Lever: return new Color32(255, 120, 255, 255);
+                case PlacementKind.Nest: return new Color32(140, 230, 60, 255);
+                case PlacementKind.AreaEffect: return new Color32(120, 200, 40, 255);
                 default: return new Color32(90, 90, 90, 255);
             }
         }
@@ -113,6 +128,28 @@ namespace ProceduralDungeon.EditorTools
                 case AreaRole.Shrine: return new Color32(200, 200, 255, 255);
                 case AreaRole.Secret: return new Color32(255, 60, 160, 255);
                 case AreaRole.Custom: return new Color32(100, 200, 200, 255);
+                case AreaRole.MiniBoss: return new Color32(170, 60, 90, 255);
+                case AreaRole.Vault: return new Color32(255, 235, 120, 255);
+                case AreaRole.TrapRoom: return new Color32(255, 90, 40, 255);
+                case AreaRole.Puzzle: return new Color32(120, 140, 255, 255);
+                case AreaRole.Ambush: return new Color32(150, 20, 60, 255);
+                case AreaRole.Library: return new Color32(150, 110, 70, 255);
+                case AreaRole.Armory: return new Color32(140, 150, 170, 255);
+                case AreaRole.Prison: return new Color32(90, 90, 100, 255);
+                case AreaRole.Crypt: return new Color32(110, 120, 140, 255);
+                case AreaRole.Laboratory: return new Color32(120, 220, 160, 255);
+                case AreaRole.Garden: return new Color32(70, 170, 60, 255);
+                case AreaRole.Throne: return new Color32(200, 150, 40, 255);
+                case AreaRole.Nest: return new Color32(120, 160, 50, 255);
+                case AreaRole.Gambling: return new Color32(140, 30, 50, 255);
+                case AreaRole.Kitchen: return new Color32(210, 150, 90, 255);
+                case AreaRole.Gallery: return new Color32(190, 160, 200, 255);
+                case AreaRole.Barracks: return new Color32(120, 110, 80, 255);
+                case AreaRole.Colosseum: return new Color32(220, 170, 110, 255);
+                case AreaRole.Greenhouse: return new Color32(110, 200, 110, 255);
+                case AreaRole.WineCellar: return new Color32(110, 40, 60, 255);
+                case AreaRole.MapRoom: return new Color32(140, 190, 230, 255);
+                case AreaRole.GasChamber: return new Color32(150, 190, 40, 255);
                 default: return StyleColor(a.Style);
             }
         }
@@ -133,11 +170,15 @@ namespace ProceduralDungeon.EditorTools
             switch (g.Type[i])
             {
                 case CellType.Solid:
+                    if (g.IsChasm(i))
+                        return new Color32(12, 16, 40, 255);   // the chasm (moving platforms cross it)
                     return g.Has(i, CellFlags.Reserved) ? new Color32(22, 22, 26, 255) : new Color32(42, 40, 44, 255);
                 case CellType.Link:
                     return new Color32(255, 0, 255, 255);
             }
 
+            if (g.IsBridge(i))
+                return new Color32(150, 105, 60, 255);
             Area a = floor.AreaAt(i);
             switch (mode)
             {
@@ -148,6 +189,11 @@ namespace ProceduralDungeon.EditorTools
                     float amp = Mathf.Max(0.01f, layout.FloorSpacing * 0.15f);
                     float t = Mathf.InverseLerp(-amp, amp, g.FloorHeight[i]);
                     return Color32.Lerp(new Color32(30, 60, 160, 255), new Color32(240, 220, 120, 255), t);
+                }
+                case PreviewMode.Ceilings:
+                {
+                    float head = g.CeilingHeight[i] - g.FloorHeight[i];
+                    return Color32.Lerp(new Color32(40, 30, 60, 255), new Color32(255, 245, 210, 255), Mathf.Clamp01((head - 2.5f) / 12f));
                 }
                 case PreviewMode.Distance:
                 {

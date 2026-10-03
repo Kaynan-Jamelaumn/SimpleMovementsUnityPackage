@@ -43,6 +43,11 @@ public class Portal : MonoBehaviour
     [Tooltip("The kind of dungeon this portal leads to. Optional when the Dungeon Manager has a profile; set it to override that profile for this portal (e.g. a cave portal and a crypt portal sharing one manager). One of the two is REQUIRED.")]
     [SerializeField] private DungeonProfile dungeonProfile;
 
+    [Tooltip("OPTIONAL. Several kinds of dungeon (e.g. a Crypt, a Deep Caves and a Fortress profile - Tools > SimpleMovements > " +
+             "Dungeon > Create Dungeon Type): this portal leads to one of them, picked from its dungeon seed, so the same portal " +
+             "always leads to the same kind and different portals to different kinds. Empty = Dungeon Profile.")]
+    [SerializeField] private DungeonProfile[] randomProfiles = new DungeonProfile[0];
+
     [Tooltip("Where the dungeon is built: far away from the world so the two never overlap. Keep it well below the lowest terrain (default y = -10000).")]
     [SerializeField] private Vector3 dungeonOrigin = new Vector3(0f, -10000f, 0f);
 
@@ -140,12 +145,14 @@ public class Portal : MonoBehaviour
             if (DungeonSession.InDungeon || DungeonSession.IsEntering || !DungeonSession.CanEnter)
                 return;
             DungeonManager manager = ResolveManager();
-            if (dungeonProfile == null && (manager == null || manager.profile == null))
+            DungeonRequest request = BuildRequest();
+            DungeonProfile profile = PickProfile(request.seed);
+            if (profile == null && (manager == null || manager.profile == null))
             {
                 Debug.LogError($"Portal '{name}': no dungeon to build - assign a Dungeon Manager prefab (with a profile) or a Dungeon Profile on the Portal component.", this);
                 return;
             }
-            DungeonSession.Enter(Group(player), BuildRequest(), manager, dungeonProfile, dungeonOrigin, ReturnPose(player.transform));
+            DungeonSession.Enter(Group(player), request, manager, profile, dungeonOrigin, ReturnPose(player.transform));
             if (DungeonSession.IsEntering)
                 OnEntered();
             return;
@@ -319,7 +326,7 @@ public class Portal : MonoBehaviour
         if (shouldInstantiateDungeon)
         {
             DungeonManager manager = ResolveManager();
-            if (dungeonProfile == null && (manager == null || manager.profile == null))
+            if (dungeonProfile == null && (manager == null || manager.profile == null) && PickProfile(1) == null)
                 problems.Add("No dungeon: assign the Dungeon Manager prefab (with a profile) and/or a Dungeon Profile.");
             if (dungeonOrigin.y > -1000f)
                 problems.Add("Dungeon Origin is close to the world: keep it far below the terrain (e.g. y = -10000).");
@@ -359,6 +366,27 @@ public class Portal : MonoBehaviour
                 return fromObject;
         }
         return null;
+    }
+
+    /// <summary>The kind of dungeon for a seed: one of Random Profiles (stable per seed), else Dungeon Profile.</summary>
+    public DungeonProfile PickProfile(int seed)
+    {
+        int count = 0;
+        if (randomProfiles != null)
+            foreach (DungeonProfile p in randomProfiles)
+                if (p != null)
+                    count++;
+        if (count == 0)
+            return dungeonProfile;
+        int pick = (int)(PlacementRandom.Hash(seed, PlacementRandom.StableHash("PortalProfile"), 0, 0, 0) % (uint)count);
+        foreach (DungeonProfile p in randomProfiles)
+        {
+            if (p == null)
+                continue;
+            if (pick-- == 0)
+                return p;
+        }
+        return dungeonProfile;
     }
 
     private DungeonRequest BuildRequest()

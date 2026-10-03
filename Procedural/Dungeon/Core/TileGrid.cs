@@ -20,8 +20,15 @@ namespace ProceduralDungeon
         public readonly int[] Connection;
         /// <summary>Floor height relative to the floor's base (world units).</summary>
         public readonly float[] FloorHeight;
-        /// <summary>Ceiling height relative to the floor's base (world units).</summary>
+        /// <summary>Ceiling height relative to the floor's base (world units). Chasm cells: the ceiling above the drop.</summary>
         public readonly float[] CeilingHeight;
+        /// <summary>
+        /// Roofed cells (undercity buildings): the top of the roof, relative to the floor's base. Null until a layout uses
+        /// roofs (see <see cref="EnsureRoofs"/>).
+        /// </summary>
+        public float[] RoofHeight;
+        /// <summary>Roofed cells: the open cavern's ceiling above the roof. Null until a layout uses roofs.</summary>
+        public float[] SkyHeight;
 
         public TileGrid(int width, int height)
         {
@@ -71,6 +78,24 @@ namespace ProceduralDungeon
 
         public bool IsSolid(int index) => index < 0 || Type[index] == CellType.Solid;
 
+        /// <summary>Open air over a drop (no floor): a solid cell with the Chasm flag.</summary>
+        public bool IsChasm(int index) => index >= 0 && Type[index] == CellType.Solid && (Flags[index] & CellFlags.Chasm) != 0;
+
+        /// <summary>Real rock (solid and not a chasm).</summary>
+        public bool IsRock(int index) => index < 0 || (Type[index] == CellType.Solid && (Flags[index] & CellFlags.Chasm) == 0);
+
+        /// <summary>A walkway over a chasm.</summary>
+        public bool IsBridge(int index) => IsWalkable(index) && (Flags[index] & CellFlags.Chasm) != 0;
+
+        /// <summary>Allocates the roof and sky heights (undercity buildings).</summary>
+        public void EnsureRoofs()
+        {
+            if (RoofHeight == null)
+                RoofHeight = new float[Count];
+            if (SkyHeight == null)
+                SkyHeight = new float[Count];
+        }
+
         public bool Has(int index, CellFlags flag) => (Flags[index] & flag) != 0;
 
         public void Set(int index, CellFlags flag) => Flags[index] |= flag;
@@ -97,13 +122,13 @@ namespace ProceduralDungeon
                 Flags[index] &= ~CellFlags.Organic;
         }
 
-        /// <summary>Turns a cell back into rock.</summary>
+        /// <summary>Turns a cell back into rock (a chasm stays a chasm, a building wall keeps its roof).</summary>
         public void SetSolid(int index)
         {
             Type[index] = CellType.Solid;
             Area[index] = -1;
             Connection[index] = -1;
-            Flags[index] &= CellFlags.Reserved;
+            Flags[index] &= CellFlags.Reserved | CellFlags.Chasm | CellFlags.Roofed;
         }
 
         /// <summary>Counts walkable 4-neighbours.</summary>
@@ -143,6 +168,10 @@ namespace ProceduralDungeon
             Array.Copy(Connection, copy.Connection, Connection.Length);
             Array.Copy(FloorHeight, copy.FloorHeight, FloorHeight.Length);
             Array.Copy(CeilingHeight, copy.CeilingHeight, CeilingHeight.Length);
+            if (RoofHeight != null)
+                copy.RoofHeight = (float[])RoofHeight.Clone();
+            if (SkyHeight != null)
+                copy.SkyHeight = (float[])SkyHeight.Clone();
             return copy;
         }
     }

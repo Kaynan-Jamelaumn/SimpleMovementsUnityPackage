@@ -20,13 +20,15 @@ namespace ProceduralDungeon
 
             DungeonLayout layout = ctx.Layout;
             int offset = 0;
-            foreach (FloorLayout floor in layout.Floors)
+            for (int f = 0; f < layout.Floors.Count; f++)
             {
+                FloorLayout floor = layout.Floors[f];
                 floor.GlobalDistanceOffset = offset;
                 int toDeparture = floor.DepartureCell >= 0 && floor.DistanceFromArrival[floor.DepartureCell] >= 0
                     ? floor.DistanceFromArrival[floor.DepartureCell]
                     : 0;
-                offset += toDeparture + ctx.Profile.StairLength;
+                float rise = f + 1 < layout.Floors.Count ? floor.Spec.BaseY - layout.Floors[f + 1].Spec.BaseY : 0f;
+                offset += toDeparture + (rise > 0f ? ctx.Profile.StairLengthFor(rise) : 0);
             }
         }
 
@@ -35,7 +37,8 @@ namespace ProceduralDungeon
             TileGrid g = floor.Grid;
             int n = g.Count;
 
-            floor.DistanceFromArrival = ValidateStage.Flood(g, floor.ArrivalCell);
+            floor.DistanceFromArrival = floor.Flood(floor.ArrivalCell);
+            Dictionary<int, List<int>> jumps = floor.Jumps();
 
             var solid = new bool[n];
             for (int i = 0; i < n; i++)
@@ -61,6 +64,11 @@ namespace ProceduralDungeon
                         if (nb >= 0 && floor.DistanceFromArrival[nb] == d - 1)
                             next = nb;
                     }
+                    // Across a teleport pad or a moving platform.
+                    if (next < 0 && jumps != null && jumps.TryGetValue(cell, out List<int> from))
+                        foreach (int nb in from)
+                            if (next < 0 && floor.DistanceFromArrival[nb] == d - 1)
+                                next = nb;
                     cell = next;
                 }
                 floor.MainPathCells.Reverse();
@@ -75,7 +83,7 @@ namespace ProceduralDungeon
                 bool eW = g.IsWalkable(g.Neighbor(i, 1)) && g.IsWalkable(g.Neighbor(i, 3));
                 bool wallsEW = !g.IsWalkable(g.Neighbor(i, 1)) && !g.IsWalkable(g.Neighbor(i, 3));
                 bool wallsNS = !g.IsWalkable(g.Neighbor(i, 0)) && !g.IsWalkable(g.Neighbor(i, 2));
-                if ((nS && wallsEW) || (eW && wallsNS) || g.Type[i] == CellType.Door)
+                if ((nS && wallsEW) || (eW && wallsNS) || g.Type[i] == CellType.Door || g.IsBridge(i))
                     g.Set(i, CellFlags.Chokepoint);
             }
 

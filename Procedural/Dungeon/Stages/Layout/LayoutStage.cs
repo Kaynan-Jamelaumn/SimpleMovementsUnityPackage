@@ -27,6 +27,14 @@ namespace ProceduralDungeon
             { FloorStyle.Caverns, new CaveLayout() },
             { FloorStyle.Hybrid, new HybridLayout() },
             { FloorStyle.GridMaze, new GridMazeLayout() },
+            { FloorStyle.Citadel, new CitadelLayout() },
+            { FloorStyle.Catacombs, new CatacombLayout() },
+            { FloorStyle.Tower, new TowerLayout() },
+            { FloorStyle.Undercity, new UndercityLayout() },
+            { FloorStyle.Hive, new HiveLayout() },
+            { FloorStyle.Islands, new IslandLayout(false) },
+            { FloorStyle.Den, new DenLayout() },
+            { FloorStyle.Astral, new IslandLayout(true) },
         };
 
         public void Run(DungeonContext ctx)
@@ -63,7 +71,7 @@ namespace ProceduralDungeon
         private static int AnchorArea(FloorLayout floor, int linkId)
         {
             foreach (Anchor a in floor.Anchors)
-                if (a.LinkId == linkId)
+                if (a.LinkId == linkId || a.ExtraLinkId == linkId)
                     return a.AreaId;
             return -1;
         }
@@ -86,6 +94,8 @@ namespace ProceduralDungeon
                 anchor.AreaId = area.Id;
                 if (anchor.LinkId >= 0)
                     area.Links.Add(anchor.LinkId);
+                if (anchor.ExtraLinkId >= 0)
+                    area.Links.Add(anchor.ExtraLinkId);
 
                 bool hasShaft = anchor.Shaft.width > 0 && anchor.Shaft.height > 0;
                 if (hasShaft)
@@ -100,6 +110,8 @@ namespace ProceduralDungeon
                         g.Set(idx, CellFlags.Reserved);
                         if (anchor.Kind == AnchorKind.DropSource)
                             g.Set(idx, CellFlags.Pit);
+                        else if (anchor.Kind == AnchorKind.ClimbTop)
+                            g.Set(idx, CellFlags.Pit | CellFlags.Climb);
                     }
                     // Stair wells keep a ring of rock so nothing opens into their sides.
                     if (anchor.Kind == AnchorKind.StairsDownLanding || anchor.Kind == AnchorKind.StairsUpLanding)
@@ -123,7 +135,7 @@ namespace ProceduralDungeon
                         continue;
                     g.SetFloor(idx, area.Id, false);
                     if (anchor.NoCeiling.width > 0 && anchor.NoCeiling.Contains(c))
-                        g.Set(idx, CellFlags.NoCeiling);
+                        g.Set(idx, anchor.Kind == AnchorKind.ClimbBottom ? CellFlags.NoCeiling | CellFlags.Climb : CellFlags.NoCeiling);
                 }
                 if (g.InBounds(anchor.Cell))
                     g.Set(g.Index(anchor.Cell), CellFlags.Landing);
@@ -140,7 +152,9 @@ namespace ProceduralDungeon
                 case AnchorKind.Exit: return AreaRole.Exit;
                 case AnchorKind.StairsUpLanding: return AreaRole.StairsUp;
                 case AnchorKind.StairsDownLanding: return AreaRole.StairsDown;
-                case AnchorKind.DropSource: return AreaRole.DropSource;
+                case AnchorKind.DropSource:
+                case AnchorKind.ClimbTop:
+                    return AreaRole.DropSource;
                 default: return AreaRole.DropLanding;
             }
         }
@@ -242,6 +256,113 @@ namespace ProceduralDungeon
             return area;
         }
 
+        /// <summary>
+        /// Makes a new area of <paramref name="cells"/> (rock cells a strategy decided to open). Cells that are not carvable
+        /// rock are skipped; a chasm cell stops being a chasm. Returns null when nothing was opened.
+        /// </summary>
+        public static Area StampCells(FloorLayout f, List<int> cells, AreaKind kind, ZoneStyle style, CellFlags extra = CellFlags.None)
+        {
+            TileGrid g = f.Grid;
+            Area area = null;
+            bool organic = style == ZoneStyle.Cavern;
+            foreach (int i in cells)
+            {
+                if (i < 0 || g.Type[i] != CellType.Solid || !g.IsCarvable(i))
+                    continue;
+                area = area ?? f.AddArea(kind, style);
+                g.Clear(i, CellFlags.Chasm);
+                g.SetFloor(i, area.Id, organic);
+                if (extra != CellFlags.None)
+                    g.Set(i, extra);
+                area.Cells.Add(i);
+            }
+            area?.RecomputeBounds(g);
+            return area;
+        }
+
+        /// <summary>
+        /// Keeps the largest 4-connected piece of an area and turns its other pieces back into rock (an area must be one
+        /// walkable piece: validation and population assume so).
+        /// </summary>
+        public static void KeepLargestPiece(FloorLayout f, Area area)
+        {
+            if (area == null || area.Cells.Count == 0)
+                return;
+            TileGrid g = f.Grid;
+            var inside = new HashSet<int>(area.Cells);
+            var seen = new HashSet<int>();
+            List<int> best = null;
+            foreach (int start in area.Cells)
+            {
+                if (seen.Contains(start))
+                    continue;
+                var piece = new List<int>();
+                var stack = new Stack<int>();
+                stack.Push(start);
+                seen.Add(start);
+                while (stack.Count > 0)
+                {
+                    int c = stack.Pop();
+                    piece.Add(c);
+                    for (int d = 0; d < 4; d++)
+                    {
+                        int nb = g.Neighbor(c, d);
+                        if (nb >= 0 && inside.Contains(nb) && seen.Add(nb))
+                            stack.Push(nb);
+                    }
+                }
+                if (best == null || piece.Count > best.Count)
+                    best = piece;
+            }
+            if (best.Count == area.Cells.Count)
+                return;
+            var keep = new HashSet<int>(best);
+            foreach (int c in area.Cells)
+                if (!keep.Contains(c))
+                    g.SetSolid(c);
+            RebuildCells(f, area);
+        }
+
+        /// <summary>Adds a preset connection between two areas (once).</summary>
+        public static void Preset(FloorLayout floor, Area a, Area b)
+        {
+            if (a == null || b == null || a.Id == b.Id)
+                return;
+            foreach (Vector2Int p in floor.PresetConnections)
+                if ((p.x == a.Id && p.y == b.Id) || (p.x == b.Id && p.y == a.Id))
+                    return;
+            floor.PresetConnections.Add(new Vector2Int(a.Id, b.Id));
+        }
+
+        /// <summary>A wobbly disc of cells around <paramref name="center"/> (cell units), inside the grid.</summary>
+        public static List<int> Disc(TileGrid g, Vector2 center, float radius, float wobble, int seed, int salt)
+        {
+            var list = new List<int>();
+            int r = Mathf.CeilToInt(radius * (1f + wobble)) + 1;
+            int cx = Mathf.FloorToInt(center.x), cy = Mathf.FloorToInt(center.y);
+            for (int y = cy - r; y <= cy + r; y++)
+            {
+                for (int x = cx - r; x <= cx + r; x++)
+                {
+                    if (!g.InBounds(x, y))
+                        continue;
+                    Vector2 d = new Vector2(x + 0.5f - center.x, y + 0.5f - center.y);
+                    float angle = Mathf.Atan2(d.y, d.x);
+                    float edge = radius;
+                    if (wobble > 0f)
+                    {
+                        // Smooth wobble around the outline: a few lobes from hashed phases.
+                        float a1 = PlacementRandom.Value(seed, salt, 1, 0, 0) * Mathf.PI * 2f;
+                        float a2 = PlacementRandom.Value(seed, salt, 2, 0, 0) * Mathf.PI * 2f;
+                        edge *= 1f + wobble * 0.5f * (Mathf.Sin(angle * 2f + a1) * 0.6f + Mathf.Sin(angle * 3f + a2) * 0.4f);
+                    }
+                    if (d.magnitude <= edge)
+                        list.Add(x + y * g.Width);
+                }
+            }
+            return list;
+        }
+
         /// <summary>Refreshes one area's cell list from the grid.</summary>
         public static void RebuildCells(FloorLayout f, Area area)
         {
@@ -292,7 +413,7 @@ namespace ProceduralDungeon
         /// <summary>Picks a room shape by the settings' weights for a room of the given size.</summary>
         public static RoomShape PickShape(RoomShapeWeights w, int width, int height, bool hall, DungeonRandom rng)
         {
-            var weights = new float[8];
+            var weights = new float[12];
             weights[(int)RoomShape.Rectangle] = w.rectangle;
             weights[(int)RoomShape.LShape] = w.lShape;
             weights[(int)RoomShape.TShape] = w.tShape;
@@ -301,6 +422,10 @@ namespace ProceduralDungeon
             weights[(int)RoomShape.Composite] = w.composite;
             weights[(int)RoomShape.PillaredHall] = w.pillaredHall * (hall ? 3f : 1f);
             weights[(int)RoomShape.Ruined] = w.ruined;
+            weights[(int)RoomShape.Octagon] = w.octagon;
+            weights[(int)RoomShape.Ring] = w.ring * (hall ? 2f : 1f);
+            weights[(int)RoomShape.Apse] = w.apse;
+            weights[(int)RoomShape.Diamond] = w.diamond;
             int side = Mathf.Min(width, height);
             for (int s = 0; s < weights.Length; s++)
                 if (side < RoomShapes.MinSide((RoomShape)s))

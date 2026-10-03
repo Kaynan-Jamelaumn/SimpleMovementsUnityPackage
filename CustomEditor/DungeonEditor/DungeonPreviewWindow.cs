@@ -140,7 +140,7 @@ namespace ProceduralDungeon.EditorTools
             EditorGUILayout.BeginHorizontal();
             var labels = new string[layout.Floors.Count];
             for (int i = 0; i < labels.Length; i++)
-                labels[i] = $"{i}: {layout.Floors[i].Spec.Style}";
+                labels[i] = $"{i}: {layout.Floors[i].Spec.Style}" + (layout.Floors[i].Spec.Modifier != FloorModifier.None ? $" ({layout.Floors[i].Spec.Modifier})" : "");
             int f = GUILayout.Toolbar(floor, labels);
             if (f != floor)
             {
@@ -233,7 +233,7 @@ namespace ProceduralDungeon.EditorTools
             int loops = f.Connections.Count(c => c.IsLoop && !c.Failed);
             int leaves = f.Areas.Count(a => a.IsLeaf);
             EditorGUILayout.HelpBox(
-                $"{f.Spec.Style}, footprint {f.Spec.Footprint.width}x{f.Spec.Footprint.height} cells\n" +
+                $"{f.Spec.Style}{(f.Spec.Modifier != FloorModifier.None ? ", " + f.Spec.Modifier : "")}, footprint {f.Spec.Footprint.width}x{f.Spec.Footprint.height} cells\n" +
                 $"Openness {f.Spec.Openness:0.00}, complexity {f.Spec.Complexity:0.00}, difficulty {f.Spec.Difficulty:0.00}\n" +
                 $"{f.Areas.Count} areas, {f.Connections.Count} connections ({loops} loops), {leaves} dead ends\n" +
                 $"Main path on this floor: {f.MainPathCells.Count} cells", MessageType.None);
@@ -245,8 +245,10 @@ namespace ProceduralDungeon.EditorTools
             EditorGUILayout.HelpBox(
                 "Green room: entrance - teal: exit - blue: arrival stairs - purple: stairs down - pink: drops\n" +
                 "Red room: boss - gold: treasure - light green: rest - orange: arena - lavender: shrine - magenta: secret\n" +
-                "Magenta cells: shafts - orange dots: doors (red: secret)\n" +
-                "Dots: red mob, dark red boss, gold loot, pale light, green spawn, cyan portals, orange hazard, violet POI",
+                "Newer rooms: olive nest - crimson altars - tan kitchen - mauve gallery - khaki barracks - sand pit fight - green greenhouse - wine cellar - sky map room - lime gas\n" +
+                "Magenta cells: shafts - navy: chasm - brown: bridges - orange dots: doors (red: secret)\n" +
+                "Dots: red mob, dark red boss, gold loot, pale light, green spawn, cyan portals, orange hazard, violet POI,\n" +
+                "purple teleporter, pale platform, orange tripwire/arrows, grey shifting wall, pink lever, lime nest",
                 MessageType.None);
 
             DrawBatch();

@@ -64,7 +64,9 @@ namespace ProceduralDungeon
                 return;
 
             // A spawn point away from the player and out of view.
+            // Respawns never refill event rooms (locked fights, ambushes) or use hidden waves and elites.
             List<Placement> points = d.Placements(PlacementKind.Mob, floor);
+            points.RemoveAll(p => p.Dormant || p.Elite || d.HasRoomEvent(p.Floor, p.Area));
             Camera cam = Camera.main;
             Plane[] frustum = avoidCameraView && cam != null ? GeometryUtility.CalculateFrustumPlanes(cam) : null;
             for (int attempt = 0; attempt < 8 && points.Count > 0; attempt++)

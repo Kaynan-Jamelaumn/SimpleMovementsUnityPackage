@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -12,38 +13,67 @@ public enum MouseFallback
 }
 
 /// <summary>
-/// One gameplay input (block, reload, off-hand attack, quickslot...): an assigned Input Action reference, else an action
-/// found BY NAME in the player's input actions (the generated PlayerInput shared by the player's components), else a key /
-/// mouse button fallback. A fallback that is already bound to an action of the input actions is not used (and a warning
-/// says so), so the same key never triggers two things.
+/// One gameplay input (block, reload, off-hand attack, quickslot, active trait, rotate...). Resolved in three steps:
+/// <list type="number">
+/// <item>an assigned Input Action reference, else an action found BY NAME in the player's input actions (the shared
+/// generated PlayerInput) - rebindable in the Key Bindings menu;</item>
+/// <item>when there is none, the action is CREATED in the gameplay map with the script's default controls, so it is
+/// rebindable and saved like the others (<see cref="InputActionResolver"/>);</item>
+/// <item>when it cannot be created, a standalone action on those default controls - any device: keyboard, mouse,
+/// gamepad, joystick, touch.</item>
+/// </list>
+/// A default control that another action already uses is skipped (a warning says so), so one key never triggers two
+/// things - unless the input may share it (read only while gameplay input is paused, e.g. in the open inventory).
 /// </summary>
 public sealed class CombatInputBinding : IDisposable
 {
     private InputAction action;
     private bool enabledByUs;
     private PlayerInput shared;
-    private Key key = Key.None;
-    private MouseFallback mouse = MouseFallback.None;
+    private InputAction fallback;
+    private bool fallbackUsesMouse;
 
     /// <summary>What the input comes from (for logs and inspectors).</summary>
     public string Source { get; private set; } = "none";
+    /// <summary>An action of the input actions (found or created): rebindable in the settings.</summary>
     public bool HasAction => action != null;
-    public bool HasAny => action != null || key != Key.None || mouse != MouseFallback.None;
-    public bool UsesMouseFallback => action == null && mouse != MouseFallback.None;
+    public bool HasAny => action != null || fallback != null;
+    /// <summary>The action was created at runtime (the input actions did not have it).</summary>
+    public bool Created { get; private set; }
+    /// <summary>The input comes from the script's default controls (created action or standalone) and they include a mouse button.</summary>
+    public bool UsesMouseFallback => (action == null || Created) && fallbackUsesMouse;
+    /// <summary>The action of the input actions (null when a standalone fallback is used).</summary>
     public InputAction Action => action;
+    /// <summary>Whatever is read: the action, else the standalone fallback (key prompts).</summary>
+    public InputAction ReadAction => action ?? fallback;
 
     private CombatInputBinding() { }
 
-    /// <summary>
-    /// Resolves an input for <paramref name="owner"/> (a component of a player). <paramref name="label"/> names it in warnings.
-    /// </summary>
-    /// <param name="fallbackMayShare">The fallback is used even when the input actions already bind that key or button
-    /// (for inputs read only while gameplay input is paused, e.g. in the open inventory).</param>
+    /// <summary>Keyboard key + mouse button defaults (the older form). Prefer the control-path form for gamepads.</summary>
     public static CombatInputBinding Create(Component owner, InputActionReference reference, string[] names, Key fallbackKey,
         MouseFallback fallbackMouse, string label, bool fallbackMayShare = false)
     {
+        var paths = new List<string>();
+        if (fallbackKey != Key.None) paths.Add(InputActionResolver.KeyPath(fallbackKey));
+        if (fallbackMouse != MouseFallback.None) paths.Add("<Mouse>/" + MousePath(fallbackMouse));
+        return Create(owner, reference, names, paths, label, fallbackMayShare);
+    }
+
+    /// <summary>
+    /// Resolves an input for <paramref name="owner"/> (a component of a player). <paramref name="defaultControls"/> are
+    /// control paths of any device ("&lt;Keyboard&gt;/r", "&lt;Gamepad&gt;/buttonWest", "&lt;Mouse&gt;/rightButton",
+    /// "&lt;Joystick&gt;/trigger"): the bindings of a created action, or the standalone fallback.
+    /// <paramref name="label"/> names it in logs.
+    /// </summary>
+    /// <param name="fallbackMayShare">Default controls are used even when another action already binds them.</param>
+    /// <param name="alsoFind">Another way to find an existing action when none has one of the names (e.g. any action on the left mouse button).</param>
+    public static CombatInputBinding Create(Component owner, InputActionReference reference, string[] names, IList<string> defaultControls,
+        string label, bool fallbackMayShare = false, Func<InputActionAsset, InputAction> alsoFind = null)
+    {
         var b = new CombatInputBinding();
         InputActionAsset asset = null;
+
+        // 1. Assigned, or found by name.
         if (reference != null && reference.action != null)
         {
             b.action = reference.action;
@@ -60,25 +90,58 @@ public sealed class CombatInputBinding : IDisposable
             catch (Exception e)
             {
                 b.shared = null;
-                Debug.LogWarning($"[Input] Could not read the player's input actions for {label} ({e.Message}); using the fallback.", owner);
+                Debug.LogWarning($"[Input] Could not read the player's input actions for {label} ({e.Message}); using the default controls.", owner);
             }
-            if (asset != null && names != null)
+            InputAction found = InputActionResolver.Find(asset, names);
+            if (found == null && alsoFind != null && asset != null)
+                found = alsoFind(asset);
+            if (found != null)
             {
-                foreach (string n in names)
+                b.action = found;
+                b.Source = $"'{found.actionMap?.name}/{found.name}'";
+            }
+        }
+
+        // Default controls another action already uses are skipped.
+        var usable = new List<string>();
+        if (b.action == null && defaultControls != null)
+        {
+            foreach (string p in defaultControls)
+            {
+                if (string.IsNullOrWhiteSpace(p)) continue;
+                if (!fallbackMayShare && asset != null && IsBound(asset, p.Trim(), out string by))
                 {
-                    if (string.IsNullOrWhiteSpace(n)) continue;
-                    InputAction a = asset.FindAction(n, false);
-                    if (a == null) continue;
-                    b.action = a;
-                    b.Source = $"'{a.actionMap?.name}/{a.name}'";
-                    break;
+                    Debug.LogWarning($"[Input] {label}: the default control {InputActionResolver.Describe(new[] { p })} is already used by '{by}', so it is not used. " +
+                                     $"Add an action named {(names != null && names.Length > 0 ? names[0] : label)} to the input actions to choose its key.", owner);
+                    continue;
                 }
+                usable.Add(p.Trim());
+            }
+        }
+
+        b.fallbackUsesMouse = usable.Exists(p => p.StartsWith("<Mouse>", StringComparison.OrdinalIgnoreCase));
+
+        // 2. Create the action in the input actions (rebindable, saved, paused with gameplay).
+        if (b.action == null && asset != null && names != null && names.Length > 0 && !string.IsNullOrWhiteSpace(names[0]) && usable.Count > 0)
+        {
+            InputAction created = InputActionResolver.Create(asset, names[0], usable, out string error);
+            if (created != null)
+            {
+                b.action = created;
+                b.Created = true;
+                b.Source = $"'{created.actionMap?.name}/{created.name}' (created: {InputActionResolver.Describe(usable)})";
+                Debug.Log($"[Input] {label}: the input actions had no '{names[0]}' action, so it was created with {InputActionResolver.Describe(usable)}. " +
+                          "It can be changed in Settings ▸ Key Bindings, or add it to the input actions asset.", owner);
+            }
+            else if (error != null)
+            {
+                Debug.LogWarning($"[Input] {label}: could not create the '{names[0]}' action ({error}); using the default controls directly.", owner);
             }
         }
 
         if (b.action != null)
         {
-            if (!b.action.enabled)
+            if (!b.action.enabled && !InputBindingStore.GameplayInputPaused)
             {
                 b.action.Enable();
                 b.enabledByUs = true;
@@ -86,92 +149,23 @@ public sealed class CombatInputBinding : IDisposable
             return b;
         }
 
-        if (fallbackKey != Key.None)
+        // 3. Standalone fallback on the default controls (any device).
+        b.fallback = InputActionResolver.Standalone(label, usable);
+        if (b.fallback != null)
         {
-            if (!fallbackMayShare && asset != null && IsBound(asset, "<Keyboard>/" + KeyPath(fallbackKey), out string by))
-                Debug.LogWarning($"[Input] {label}: the fallback key {fallbackKey} is already used by '{by}' in the input actions, so it is not used. " +
-                                 $"Add an action named {(names != null && names.Length > 0 ? names[0] : label)} to the input actions.", owner);
-            else
-                b.key = fallbackKey;
+            b.Source = $"{InputActionResolver.Describe(usable)} (fallback)";
         }
-        if (fallbackMouse != MouseFallback.None)
-        {
-            if (!fallbackMayShare && asset != null && IsBound(asset, "<Mouse>/" + MousePath(fallbackMouse), out string by))
-                Debug.LogWarning($"[Input] {label}: the fallback {fallbackMouse} is already used by '{by}' in the input actions, so it is not used.", owner);
-            else
-                b.mouse = fallbackMouse;
-        }
-        b.Source = b.key != Key.None && b.mouse != MouseFallback.None ? $"{b.key} / {b.mouse} (fallback)"
-                 : b.key != Key.None ? $"{b.key} (fallback)"
-                 : b.mouse != MouseFallback.None ? $"{b.mouse} (fallback)" : "none";
         return b;
     }
 
-    public bool Pressed
-    {
-        get
-        {
-            if (action != null)
-                return action.WasPressedThisFrame();
-            if (key != Key.None)
-            {
-                Keyboard kb = Keyboard.current;
-                if (kb != null && kb[key] != null && kb[key].wasPressedThisFrame)
-                    return true;
-            }
-            UnityEngine.InputSystem.Controls.ButtonControl m = MouseButton();
-            return m != null && m.wasPressedThisFrame;
-        }
-    }
+    /// <summary>A standalone fallback is quiet while gameplay input is paused (pause menu), like the actions.</summary>
+    private bool FallbackLive => fallback != null && !InputBindingStore.GameplayInputPaused;
 
-    public bool Released
-    {
-        get
-        {
-            if (action != null)
-                return action.WasReleasedThisFrame();
-            if (key != Key.None)
-            {
-                Keyboard kb = Keyboard.current;
-                if (kb != null && kb[key] != null && kb[key].wasReleasedThisFrame)
-                    return true;
-            }
-            UnityEngine.InputSystem.Controls.ButtonControl m = MouseButton();
-            return m != null && m.wasReleasedThisFrame;
-        }
-    }
+    public bool Pressed => action != null ? action.WasPressedThisFrame() : FallbackLive && fallback.WasPressedThisFrame();
 
-    public bool Held
-    {
-        get
-        {
-            if (action != null)
-                return action.IsPressed();
-            if (key != Key.None)
-            {
-                Keyboard kb = Keyboard.current;
-                if (kb != null && kb[key] != null && kb[key].isPressed)
-                    return true;
-            }
-            UnityEngine.InputSystem.Controls.ButtonControl m = MouseButton();
-            return m != null && m.isPressed;
-        }
-    }
+    public bool Released => action != null ? action.WasReleasedThisFrame() : FallbackLive && fallback.WasReleasedThisFrame();
 
-    private UnityEngine.InputSystem.Controls.ButtonControl MouseButton()
-    {
-        if (mouse == MouseFallback.None)
-            return null;
-        Mouse m = Mouse.current;
-        if (m == null)
-            return null;
-        switch (mouse)
-        {
-            case MouseFallback.LeftButton: return m.leftButton;
-            case MouseFallback.RightButton: return m.rightButton;
-            default: return m.middleButton;
-        }
-    }
+    public bool Held => action != null ? action.IsPressed() : FallbackLive && fallback.IsPressed();
 
     public void Dispose()
     {
@@ -179,6 +173,8 @@ public sealed class CombatInputBinding : IDisposable
             action.Disable();
         action = null;
         enabledByUs = false;
+        fallback?.Dispose();
+        fallback = null;
         if (shared != null)
         {
             SharedPlayerInput.Disable(shared);
@@ -191,10 +187,8 @@ public sealed class CombatInputBinding : IDisposable
     /// <summary>The control name of a key in binding paths: Key.R → "r", Key.Digit1 → "1", Key.LeftShift → "leftShift".</summary>
     public static string KeyPath(Key key)
     {
-        string n = key.ToString();
-        if (n.StartsWith("Digit", StringComparison.Ordinal) && n.Length == 6)
-            return n.Substring(5);
-        return n.Length > 0 ? char.ToLowerInvariant(n[0]) + n.Substring(1) : n;
+        string full = InputActionResolver.KeyPath(key);
+        return full != null ? full.Substring("<Keyboard>/".Length) : "";
     }
 
     public static string MousePath(MouseFallback m)

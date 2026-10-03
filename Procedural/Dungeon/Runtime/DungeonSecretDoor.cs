@@ -6,11 +6,13 @@ namespace ProceduralDungeon
 {
     /// <summary>
     /// A wall section that hides a passage. It slides into the floor when the player stays close to it for
-    /// <see cref="holdTime"/> seconds (searching the wall), or when <see cref="Open"/> is called (a lever, a key, a
-    /// spell). Mobs path through once it's open (it carves the NavMesh only while closed).
+    /// <see cref="holdTime"/> seconds (searching the wall, unless it isn't <see cref="searchable"/>), or when
+    /// <see cref="Open"/> is called (a lever, a key, a spell). Mobs path through once it's open (it carves the NavMesh only while closed).
     /// </summary>
     public class DungeonSecretDoor : MonoBehaviour
     {
+        [Tooltip("Opens by searching the wall. Off: only Open() opens it (the wine cellar's hidden lever).")]
+        public bool searchable = true;
         [Tooltip("How close a player must stand to the wall to search it (meters). Any player can find it (multiplayer-safe).")]
         [Min(0f)] public float searchDistance = 1.8f;
         [Tooltip("Seconds the player must stay that close before the wall opens.")]
@@ -43,6 +45,8 @@ namespace ProceduralDungeon
                 transform.localPosition = Vector3.MoveTowards(transform.localPosition, closed + Vector3.down * height, openSpeed * Time.deltaTime);
                 return;
             }
+            if (!searchable)
+                return;
             // Any living player searching the wall (not "the object tagged Player": several players may be inside).
             bool searching = PlayerLocator.AnyWithin(transform.position, searchDistance);
             held = searching ? held + Time.deltaTime : Mathf.Max(0f, held - Time.deltaTime);
@@ -57,6 +61,9 @@ namespace ProceduralDungeon
             IsOpen = true;
             if (obstacle != null)
                 obstacle.enabled = false;
+            DungeonInstance dungeon = GetComponentInParent<DungeonInstance>();
+            if (dungeon != null)
+                dungeon.Stats.Bump(ref dungeon.Stats.secretsFound);
             Opened?.Invoke(this);
         }
     }

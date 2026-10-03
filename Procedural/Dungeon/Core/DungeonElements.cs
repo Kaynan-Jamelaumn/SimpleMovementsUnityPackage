@@ -36,6 +36,15 @@ namespace ProceduralDungeon
         public bool Fixed;
         /// <summary>Connected region at layout time (caves can start as several separate regions).</summary>
         public int Region;
+        /// <summary>Ceiling of the room set by its role (meters, before Height Scale); 0 = the normal height.</summary>
+        public float CeilingHeight;
+        /// <summary>The ceiling rises towards the middle of the room (set by its role, or rolled for halls by the height pass).</summary>
+        public bool Vaulted;
+        /// <summary>
+        /// A role the layout suggests for this area (a den's great cavern for the boss, a plaza for an arena...). The Roles
+        /// stage prefers it for rules of that role; None = no suggestion.
+        /// </summary>
+        public AreaRole Hint;
 
         // Graph information (Connectivity and Roles stages).
         public readonly List<int> Connections = new List<int>();
@@ -120,8 +129,13 @@ namespace ProceduralDungeon
         public bool Failed;
         /// <summary>Cells carved for this connection (not counting the areas' own cells).</summary>
         public readonly List<int> Cells = new List<int>();
-        /// <summary>Door cells at the A and B ends (grid index), -1 when that end has no door.</summary>
+        /// <summary>
+        /// Door cells at the A and B ends (grid index), -1 when that end has no door. Portals and moving platforms: the
+        /// walkable cell at each end (where the pad is / where the platform docks).
+        /// </summary>
         public int DoorA = -1, DoorB = -1;
+        /// <summary>Moving platforms: the chasm cells of the track from the A end to the B end (not carved).</summary>
+        public readonly List<int> Track = new List<int>();
 
         public int Other(int area) => area == A ? B : A;
 
@@ -147,6 +161,12 @@ namespace ProceduralDungeon
         public int UpperArea = -1, LowerArea = -1;
         public bool OnMainPath;
         public bool OneWay => Kind == LinkKind.Drop;
+        /// <summary>Spirals: turns of the stair between the two floors (a multiple of a quarter turn).</summary>
+        public float Turns;
+        /// <summary>Spirals: angle (radians, 0 = east, counter-clockwise) of the doorway on the upper floor; the stair turns clockwise going down.</summary>
+        public float StartAngle;
+        /// <summary>Spirals: the spiral above / below sharing the shaft (-1 = none).</summary>
+        public int Above = -1, Below = -1;
 
         public override string ToString() => $"{Kind} {Id}: floor {UpperFloor} -> {LowerFloor} at {Footprint}";
     }
@@ -164,6 +184,8 @@ namespace ProceduralDungeon
         /// <summary>Key cell: the landing cell for stairs, the pit centre side for drops, the room centre otherwise.</summary>
         public Vector2Int Cell;
         public int LinkId = -1;
+        /// <summary>A second link served by the same landing (a tower floor's doorway is both the way down and the way up).</summary>
+        public int ExtraLinkId = -1;
         /// <summary>Direction pointing away from the shaft into the room (landings) or into the room (entrance/exit).</summary>
         public Dir4 Facing;
         public int AreaId = -1;
@@ -190,6 +212,12 @@ namespace ProceduralDungeon
         public bool IsFirst, IsLast;
         /// <summary>World-space offset of this floor below the dungeon origin (negative, floor 0 = 0).</summary>
         public float BaseY;
+        /// <summary>Distance up to the floor above's base (floor 0: the distance its own ceilings need).</summary>
+        public float SpacingAbove;
+        /// <summary>Highest ceiling on this floor (above its base) that still leaves rock under the floor above.</summary>
+        public float MaxCeiling = 8f;
+        /// <summary>The floor's twist (flooded, molten, overgrown, dark, frozen), None for most floors.</summary>
+        public FloorModifier Modifier;
         /// <summary>Hybrid floors: zone style weights.</summary>
         public float BuiltWeight = 1f, CavernWeight = 1f, RuinsWeight = 0.5f;
     }
@@ -247,6 +275,23 @@ namespace ProceduralDungeon
         public float Scale;
         /// <summary>Tier / level for loot and mobs (0 = lowest).</summary>
         public int Tier;
+        /// <summary>Spawned hidden (inactive) and revealed by its room's event: ambush waves, puzzle and cleared-room rewards.</summary>
+        public bool Dormant;
+        /// <summary>Ambush wave the mob belongs to (1 = the first; 0 = not part of a wave).</summary>
+        public byte Wave;
+        /// <summary>An elite mob (guardian rooms): bigger and a tier higher.</summary>
+        public bool Elite;
+        /// <summary>Pairs things up: the key id of a Key / Locked Door, a pressure plate's place in the order.</summary>
+        public int Link;
+        /// <summary>Mobs: asleep, roaming, a pit fight's champion.</summary>
+        public MobOrder Order;
+    }
+
+    /// <summary>Special values of <see cref="Placement.Link"/>.</summary>
+    public static class PlacementLinks
+    {
+        /// <summary>A hidden reward found by breaking the barrels of its room (wine cellars).</summary>
+        public const int BarrelStash = -3;
     }
 
     public enum PlacementTable : byte

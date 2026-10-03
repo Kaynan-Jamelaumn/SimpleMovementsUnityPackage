@@ -13,6 +13,14 @@ namespace ProceduralDungeon
         Composite,
         PillaredHall,
         Ruined,
+        /// <summary>A rectangle with its corners cut off.</summary>
+        Octagon,
+        /// <summary>A cloister: a ring of floor around a solid core.</summary>
+        Ring,
+        /// <summary>A long room ending in a half circle (a chapel's apse).</summary>
+        Apse,
+        /// <summary>A square turned 45 degrees.</summary>
+        Diamond,
     }
 
     /// <summary>A room's floor plan in its own w x h box (index = x + y * W, y = 0 south).</summary>
@@ -48,7 +56,8 @@ namespace ProceduralDungeon
 
     /// <summary>
     /// Generates room floor plans: rectangles, L / T / cross shapes (randomly rotated), circles and ellipses,
-    /// composites of overlapping rectangles, pillared halls and ruined (eroded) rooms. Every plan is 4-connected.
+    /// composites of overlapping rectangles, pillared halls, ruined (eroded) rooms, octagons, cloisters (a ring around a
+    /// solid core), apses (a room ending in a half circle) and diamonds. Every plan is 4-connected.
     /// </summary>
     public static class RoomShapes
     {
@@ -59,6 +68,10 @@ namespace ProceduralDungeon
                 case RoomShape.Rectangle: return 3;
                 case RoomShape.PillaredHall: return 8;
                 case RoomShape.Ruined: return 4;
+                case RoomShape.Octagon: return 6;
+                case RoomShape.Ring: return 9;
+                case RoomShape.Apse: return 6;
+                case RoomShape.Diamond: return 7;
                 default: return 5;
             }
         }
@@ -80,9 +93,15 @@ namespace ProceduralDungeon
                 case RoomShape.Composite: m = Composite(w, h, rng); break;
                 case RoomShape.PillaredHall: m = PillaredHall(w, h, rng); break;
                 case RoomShape.Ruined: m = Ruined(w, h, rng, erosion); break;
+                case RoomShape.Octagon: m = Octagon(w, h); break;
+                case RoomShape.Ring: m = Ring(w, h, rng); break;
+                case RoomShape.Apse: m = Rotated(w, h, rng, Apse); break;
+                case RoomShape.Diamond: m = Diamond(w, h); break;
                 default: m = Rect(w, h); break;
             }
             KeepLargestComponent(m);
+            if (shape == RoomShape.Ring)
+                RestoreCore(m);
             if (m.FloorCount < 4)
                 m = Rect(w, h);
             m.Shape = shape;
@@ -236,6 +255,95 @@ namespace ProceduralDungeon
             if (m.FloorCount < before / 2)
                 return Rect(w, h);
             return m;
+        }
+
+        private static ShapeMask Octagon(int w, int h)
+        {
+            var m = new ShapeMask(w, h);
+            int cut = Mathf.Max(1, Mathf.RoundToInt(Mathf.Min(w, h) * 0.29f));
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int rx = w - 1 - x, ry = h - 1 - y;
+                    m.Floor[x + y * w] = x + y >= cut && rx + y >= cut && x + ry >= cut && rx + ry >= cut;
+                }
+            return m;
+        }
+
+        private static ShapeMask Diamond(int w, int h)
+        {
+            var m = new ShapeMask(w, h);
+            float cx = (w - 1) * 0.5f, cy = (h - 1) * 0.5f;
+            float rx = w * 0.5f, ry = h * 0.5f;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    m.Floor[x + y * w] = Mathf.Abs(x - cx) / rx + Mathf.Abs(y - cy) / ry <= 1.05f;
+            return m;
+        }
+
+        /// <summary>A half circle on the north end of a rectangle (rotated by the caller).</summary>
+        private static ShapeMask Apse(int w, int h)
+        {
+            var m = new ShapeMask(w, h);
+            float r = w * 0.5f;
+            float cx = (w - 1) * 0.5f;
+            float start = h - r;   // where the round end begins
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    if (y < start)
+                    {
+                        m.Floor[x + y * w] = true;
+                        continue;
+                    }
+                    float dx = (x - cx) / r, dy = (y - start + 0.5f) / r;
+                    m.Floor[x + y * w] = dx * dx + dy * dy <= 1.05f;
+                }
+            }
+            return m;
+        }
+
+        /// <summary>A cloister: floor all round a solid core (the core is pillar - kept solid, never carved).</summary>
+        private static ShapeMask Ring(int w, int h, DungeonRandom rng)
+        {
+            ShapeMask m = rng.Chance(0.5f) ? Octagon(w, h) : Rect(w, h);
+            int coreW = Mathf.Clamp(Mathf.RoundToInt(w * rng.Range(0.3f, 0.42f)), 2, w - 6);
+            int coreH = Mathf.Clamp(Mathf.RoundToInt(h * rng.Range(0.3f, 0.42f)), 2, h - 6);
+            int x0 = (w - coreW) / 2, y0 = (h - coreH) / 2;
+            for (int y = y0; y < y0 + coreH; y++)
+                for (int x = x0; x < x0 + coreW; x++)
+                {
+                    m.Floor[x + y * w] = false;
+                    m.Pillar[x + y * w] = true;
+                }
+            return m;
+        }
+
+        /// <summary>The cloister's core stays solid pillar even where it no longer touches floor.</summary>
+        private static void RestoreCore(ShapeMask m)
+        {
+            int n = m.Floor.Length;
+            var core = new bool[n];
+            for (int i = 0; i < n; i++)
+                core[i] = !m.Floor[i];
+            // Only cells enclosed by floor on both axes are core (the outside of the room stays empty).
+            for (int y = 0; y < m.H; y++)
+            {
+                for (int x = 0; x < m.W; x++)
+                {
+                    int i = x + y * m.W;
+                    if (!core[i])
+                        continue;
+                    bool l = false, r = false, d = false, u = false;
+                    for (int k = x - 1; k >= 0 && !l; k--) l = m.Floor[k + y * m.W];
+                    for (int k = x + 1; k < m.W && !r; k++) r = m.Floor[k + y * m.W];
+                    for (int k = y - 1; k >= 0 && !d; k--) d = m.Floor[x + k * m.W];
+                    for (int k = y + 1; k < m.H && !u; k++) u = m.Floor[x + k * m.W];
+                    if (l && r && d && u)
+                        m.Pillar[i] = true;
+                }
+            }
         }
 
         private static void FillRect(ShapeMask m, int x0, int y0, int w, int h)

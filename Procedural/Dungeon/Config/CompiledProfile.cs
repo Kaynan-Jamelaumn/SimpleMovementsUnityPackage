@@ -58,6 +58,11 @@ namespace ProceduralDungeon
         public float Weight;
         public int[] Templates;
         public bool SecretEntrance;
+        /// <summary>Ceiling of the room (meters, before Height Scale); 0 = the normal height.</summary>
+        public float CeilingHeight;
+        public bool Vaulted;
+        /// <summary>A neighbouring dead end becomes a hidden room behind a secret door with a lever in this room.</summary>
+        public bool HiddenRoom;
     }
 
     public sealed class EncounterInfo
@@ -108,6 +113,7 @@ namespace ProceduralDungeon
         public string AreaTag;
         public ZoneMask Styles;
         public MainPathFilter MainPath;
+        public FloorModifierMask Modifiers;
         public float Chance;
         public IntRange PerArea;
         public float PerHundredCells;
@@ -140,8 +146,15 @@ namespace ProceduralDungeon
     public sealed class CompiledProfile
     {
         public float CellSize;
+        /// <summary>The largest distance between two floors (most floors are closer: see <see cref="SpacingFor"/>).</summary>
         public float FloorSpacing;
+        /// <summary>Stair length (cells) for <see cref="FloorSpacing"/>.</summary>
         public int StairLength;
+        /// <summary>Distance between a floor of each style and the floor above it (index = (int)FloorStyle).</summary>
+        public float[] StyleSpacing;
+        public float MaxStairSlope = 33f;
+        public bool OverrideLastFloorStyle;
+        public FloorStyle LastFloorStyle;
         public Vector2Int FloorCount;
         public SizeClassSettings[] Sizes;
         public float FootprintVariation;
@@ -157,12 +170,23 @@ namespace ProceduralDungeon
         public CaveSettings Caves;
         public HybridSettings Hybrid;
         public MazeSettings Maze;
+        public CitadelSettings Citadel;
+        public CatacombSettings Catacombs;
+        public TowerSettings Tower;
+        public UndercitySettings Undercity;
+        public HiveSettings Hive;
+        public IslandSettings Islands;
+        public DenSettings Den;
+        public AstralSettings Astral;
         public int[] MazeTemplates;
         public ConnectionSettings Connections;
         public LinkSettings Links;
         public PopulationSettings Population;
         public ValidationSettings Validation;
         public BuildSettings Build;
+        public CeilingSettings Ceilings;
+        public RoomEventSettings Mechanics;
+        public FloorModifierSettings FloorModifiers;
 
         public readonly List<RoleRuleInfo> Roles = new List<RoleRuleInfo>();
         public readonly List<TemplateInfo> Templates = new List<TemplateInfo>();
@@ -182,8 +206,25 @@ namespace ProceduralDungeon
         /// <summary>Main thread only.</summary>
         public DungeonTheme Theme;
 
-        /// <summary>Highest ceiling (above a floor's base) that still leaves rock under the floor above.</summary>
-        public float MaxCeiling => Mathf.Max(2.5f, FloorSpacing - Caves.floorHeightAmplitude - 0.8f);
+        /// <summary>Highest ceiling (above a floor's base) that still leaves rock under the floor above, at the largest spacing.</summary>
+        public float MaxCeiling => MaxCeilingFor(FloorSpacing);
+
+        /// <summary>Highest ceiling (above a floor's base) that leaves rock under a floor <paramref name="spacing"/> meters above.</summary>
+        public float MaxCeilingFor(float spacing) => Mathf.Max(2.5f, spacing - Caves.floorHeightAmplitude - (Ceilings != null ? Ceilings.rockBetweenFloors : 0.8f));
+
+        /// <summary>Distance between a floor of <paramref name="style"/> and the floor above it.</summary>
+        public float SpacingFor(FloorStyle style)
+        {
+            int i = (int)style;
+            return StyleSpacing != null && i >= 0 && i < StyleSpacing.Length && StyleSpacing[i] > 0f ? StyleSpacing[i] : FloorSpacing;
+        }
+
+        /// <summary>Length of a stair well (cells) climbing <paramref name="rise"/> meters at the profile's steepest slope.</summary>
+        public int StairLengthFor(float rise)
+        {
+            float run = rise / Mathf.Tan(Mathf.Clamp(MaxStairSlope, 15f, 60f) * Mathf.Deg2Rad);
+            return Mathf.Max(3, Mathf.CeilToInt(run / Mathf.Max(0.1f, CellSize)));
+        }
 
         public SizeClassSettings GetSize(SizeClass size)
         {
@@ -209,8 +250,8 @@ namespace ProceduralDungeon
             var c = new CompiledProfile
             {
                 CellSize = Mathf.Max(0.5f, profile.cellSize),
-                FloorSpacing = Mathf.Max(5f, profile.floorSpacing),
-                StairLength = profile.StairLengthCells(),
+                FloorSpacing = profile.EffectiveFloorSpacing(),
+                StairLength = profile.StairLengthCells(profile.EffectiveFloorSpacing()),
                 FloorCount = new Vector2Int(Mathf.Max(1, profile.floorCount.x), Mathf.Max(Mathf.Max(1, profile.floorCount.x), profile.floorCount.y)),
                 Sizes = DeepCopy.Copy(profile.sizeClasses) ?? new SizeClassSettings[0],
                 FootprintVariation = profile.footprintVariation,
@@ -225,14 +266,32 @@ namespace ProceduralDungeon
                 Caves = DeepCopy.Copy(profile.caves) ?? new CaveSettings(),
                 Hybrid = DeepCopy.Copy(profile.hybrid) ?? new HybridSettings(),
                 Maze = DeepCopy.Copy(profile.maze) ?? new MazeSettings(),
+                Citadel = DeepCopy.Copy(profile.citadel) ?? new CitadelSettings(),
+                Catacombs = DeepCopy.Copy(profile.catacombs) ?? new CatacombSettings(),
+                Tower = DeepCopy.Copy(profile.tower) ?? new TowerSettings(),
+                Undercity = DeepCopy.Copy(profile.undercity) ?? new UndercitySettings(),
+                Hive = DeepCopy.Copy(profile.hive) ?? new HiveSettings(),
+                Islands = DeepCopy.Copy(profile.islands) ?? new IslandSettings(),
+                Den = DeepCopy.Copy(profile.den) ?? new DenSettings(),
+                Astral = DeepCopy.Copy(profile.astral) ?? new AstralSettings(),
+                MaxStairSlope = profile.maxStairSlope,
+                OverrideLastFloorStyle = profile.overrideLastFloorStyle,
+                LastFloorStyle = profile.lastFloorStyle,
                 Connections = DeepCopy.Copy(profile.connections) ?? new ConnectionSettings(),
                 Links = DeepCopy.Copy(profile.links) ?? new LinkSettings(),
                 Population = DeepCopy.Copy(profile.population) ?? new PopulationSettings(),
                 Validation = DeepCopy.Copy(profile.validation) ?? new ValidationSettings(),
                 Build = DeepCopy.Copy(profile.build) ?? new BuildSettings(),
+                Ceilings = DeepCopy.Copy(profile.ceilings) ?? new CeilingSettings(),
+                Mechanics = DeepCopy.Copy(profile.mechanics) ?? new RoomEventSettings(),
+                FloorModifiers = DeepCopy.Copy(profile.floorModifiers) ?? new FloorModifierSettings(),
                 Theme = profile.theme,
                 Source = temporary ? null : profile,
             };
+            var styleValues = (FloorStyle[])Enum.GetValues(typeof(FloorStyle));
+            c.StyleSpacing = new float[styleValues.Length];
+            foreach (FloorStyle style in styleValues)
+                c.StyleSpacing[(int)style] = profile.EffectiveFloorSpacing(style);
             c.HasTileKit = profile.theme != null && profile.theme.HasTileKit;
             if (profile.theme != null)
             {
@@ -343,6 +402,9 @@ namespace ProceduralDungeon
                         Weight = r.weight,
                         Templates = templates.ToArray(),
                         SecretEntrance = r.secretEntrance,
+                        CeilingHeight = Mathf.Max(0f, r.ceilingHeight),
+                        Vaulted = r.vaulted,
+                        HiddenRoom = r.hiddenRoom,
                     });
                 }
             }
@@ -429,6 +491,7 @@ namespace ProceduralDungeon
                         AreaTag = e.areaTag ?? "",
                         Styles = e.styles == ZoneMask.None ? ZoneMask.All : e.styles,
                         MainPath = e.mainPath,
+                        Modifiers = e.modifiers,
                         Chance = e.chance,
                         PerArea = e.perArea,
                         PerHundredCells = e.perHundredCells,
@@ -448,9 +511,22 @@ namespace ProceduralDungeon
             {
                 c.Props.AddRange(DungeonDefaults.Props(profile.theme));
             }
+            // Special rooms and floor modifiers the table has nothing for get the built-in props.
+            if (pop.props != null && pop.fillMissingRoleProps)
+                DungeonDefaults.FillMissing(c.Props, profile.theme);
 
-            if (c.FloorSpacing < Mathf.Max(c.Rooms.hallCeiling, c.Caves.ceilingLimits.max) + c.Caves.floorHeightAmplitude + 0.8f)
-                c.Warnings.Add($"Floor spacing {c.FloorSpacing} is tight for the configured ceilings; ceilings are clamped to {c.MaxCeiling:0.0} m.");
+            foreach (FloorStyle style in styleValues)
+            {
+                if (!profile.CanAppear(style))
+                    continue;
+                float needed = profile.TallestCeiling(style) + c.Caves.floorHeightAmplitude + c.Ceilings.rockBetweenFloors;
+                float spacing = c.SpacingFor(style);
+                if (spacing + 0.01f < needed)
+                {
+                    c.Warnings.Add($"Floor spacing {spacing} is tight for the ceilings of {style} floors; they are lowered to {c.MaxCeilingFor(spacing):0.0} m (turn on Heights > Auto Floor Spacing).");
+                    break;
+                }
+            }
 
             if (temporary)
             {
