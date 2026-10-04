@@ -24,7 +24,11 @@ public enum ItemType
     Leggings,
     Amulet,
     /// <summary>Arrows, bolts, bullets (<see cref="AmmoSO"/>).</summary>
-    Ammo
+    Ammo,
+    /// <summary>Crafting resources: ores, wood, herbs, cloth, gems (<see cref="MaterialSO"/>).</summary>
+    Material,
+    /// <summary>Anything else: keys, junk, valuables, quest items (<see cref="MiscItemSO"/>).</summary>
+    Miscellaneous
 }
 /// <summary>
 /// Base of every item asset: name, icon, stack size, weight, durability, cooldown, how it sits in the hand and how it
@@ -54,6 +58,14 @@ public abstract class ItemSO : ScriptableObject
     [SerializeField] protected float weight;
     [Tooltip("Value of one item (shops, loot). Shown in the item panel.")]
     [SerializeField] protected float price;
+
+    // Trading
+    [Header("Trading")]
+    [Tooltip("Shop category the item is listed under (a top category such as Weapons, or a subcategory such as Weapons ▸ Swords). " +
+             "Empty = chosen automatically by the Item Category Database from the item's kind (weapon type, armor slot, consumable, material...).")]
+    [SerializeField] protected ItemCategory category;
+    [Tooltip("Merchants may buy it from the player. Turn off for quest items, keys and anything that must not be sold.")]
+    [SerializeField] protected bool canBeSold = true;
 
     // Durability
     [Header("Durability")]
@@ -123,6 +135,10 @@ public abstract class ItemSO : ScriptableObject
     public int StackMax => stackMax;
     public float Weight => weight;
     public float Price => price;
+    /// <summary>The shop category set on the item (null = automatic, see <see cref="ItemCategoryDatabase.Resolve"/>).</summary>
+    public ItemCategory Category => category;
+    /// <summary>Can the player sell it to merchants?</summary>
+    public bool CanBeSold => canBeSold;
     public int MaxDurability => maxDurability;
     public int Durability => durability;
     public int DurabilityReductionPerUse => durabilityReductionPerUse;

@@ -224,7 +224,7 @@ Key prompts show only the device in use (keyboard and mouse, or gamepad).
 |---|---|
 | Look, Zoom | `PlayerCameraView.OnLook`, `OnZoom` |
 | Change Camera / First Person / Third Person | `PlayerCameraView.OnChangeCamera`, `OnSwitchToFirstPerson`, `OnSwitchToThirdPerson` |
-| Interact | `Player.OnInteract` |
+| Interact | `Player.OnInteract` — or add a **Player Interactor** instead, which reads an `Interact` action itself (created with E when missing), adds clicks, proximity and prompts, and opens NPCs ([NPC 01](../NPC/01-Interaction.md)) |
 | Light / Heavy / Special / Alternate Attack | `WeaponController.OnLightAttack`… — or list the actions in `WeaponController ▸ Extra Attack Inputs` and wire nothing |
 | Pause | `PauseMenuManager.OnPause` |
 

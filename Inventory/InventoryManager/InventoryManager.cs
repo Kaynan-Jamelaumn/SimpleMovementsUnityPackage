@@ -172,6 +172,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     [NonSerialized] private Vector2Int dragGrab;
     [NonSerialized] private bool dragStyled;
     [NonSerialized] private readonly List<InventoryItem> occupantBuffer = new List<InventoryItem>();
+    // Windows outside the inventory that take the mouse (NPC shops, dialogue)
+    [NonSerialized] private readonly List<IGameplayPanel> openPanels = new List<IGameplayPanel>();
 
     /// <summary>Raised after items were added, removed or moved (UI refresh, quests, crafting).</summary>
     public event Action InventoryChanged;
@@ -239,6 +241,17 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public GameObject ItemPrefab => itemPrefab;
     public bool IsStorageOpened => storageManager?.IsStorageOpened ?? false;
     public bool IsInventoryOpened => uiStateManager?.IsInventoryOpened ?? false;
+    /// <summary>A window registered with <see cref="RegisterPanel"/> (an NPC shop or dialogue) is open.</summary>
+    public bool IsExternalPanelOpen
+    {
+        get
+        {
+            openPanels.RemoveAll(p => p == null || (p is UnityEngine.Object o && o == null));
+            return openPanels.Count > 0;
+        }
+    }
+    /// <summary>The inventory, a storage or a registered window is open: the mouse belongs to the UI.</summary>
+    public bool IsAnyPanelOpen => IsInventoryOpened || IsStorageOpened || IsExternalPanelOpen;
     public SlotManager.LayoutData CurrentLayout => slotManager?.LegacyCurrentLayout;
     public UILayoutManager LayoutManager => uiLayoutManager;
     public ArmorSetManager ArmorSetManager => armorSetManager;
@@ -346,13 +359,34 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         for (int i = 0; i < instances.Count; i++)
         {
             InventoryManager m = instances[i];
-            if (m == null || !(m.IsInventoryOpened || m.IsStorageOpened))
+            if (m == null || !m.IsAnyPanelOpen)
                 continue;
             Transform own = m.player != null ? AbilitiesStateMachine.PlayerRoot(m.player.transform) : m.transform.root;
             if (own == root || (m.player != null && anyOnPlayer.transform.IsChildOf(m.player.transform)))
                 return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// The inventory of the player owning <paramref name="anyOnPlayer"/> (the inventory object may live outside the player,
+    /// e.g. in a UI canvas), or null when that player has none.
+    /// </summary>
+    public static InventoryManager For(Component anyOnPlayer)
+    {
+        if (anyOnPlayer == null)
+            return null;
+        Transform root = AbilitiesStateMachine.PlayerRoot(anyOnPlayer);
+        for (int i = 0; i < instances.Count; i++)
+        {
+            InventoryManager m = instances[i];
+            if (m == null)
+                continue;
+            Transform own = m.player != null ? AbilitiesStateMachine.PlayerRoot(m.player.transform) : m.transform.root;
+            if (own == root || m.transform.IsChildOf(root) || (m.player != null && anyOnPlayer.transform.IsChildOf(m.player.transform)))
+                return m;
+        }
+        return null;
     }
 
     private void Awake()
@@ -400,7 +434,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         CheckForSlotCountChanges();
         UpdateArmorCache();
         if (weaponController != null)
-            weaponController.InputBlocked = IsInventoryOpened || IsStorageOpened;
+            weaponController.InputBlocked = IsAnyPanelOpen;
         UpdateGridInteraction();
     }
 
@@ -989,7 +1023,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             weaponController?.ReleaseAttackInput(AttackType.Normal);
             return;
         }
-        if ((dragHandler?.IsDragging ?? false) || IsInventoryOpened) return; // clicks belong to the inventory while it is open
+        if ((dragHandler?.IsDragging ?? false) || IsInventoryOpened || IsExternalPanelOpen) return; // clicks belong to the open UI
         if (PlayerAbilityController.IsPointerCapturedFor(player)) return; // this click confirms/cancels an ability preview
         UseSelectedItem();
     }
@@ -1031,6 +1065,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void HandleHotbarInput()
     {
+        if (InputBindingStore.GameplayInputPaused)
+            return; // paused, or typing in a text field (digits must not switch the item in hand)
         if (HotbarHandler.CheckForHotbarInput(slotManager?.HotbarSlots, handParent))
             SyncHandWeapon();
     }
@@ -1071,7 +1107,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void CloseInventory()
     {
         CancelDrag();
-        SetCursorState(CursorLockMode.Locked, false);
+        if (!IsExternalPanelOpen)
+            SetCursorState(CursorLockMode.Locked, false); // an NPC window still open keeps the cursor
 
         if (uiStateManager != null)
         {
@@ -1088,6 +1125,42 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         if (hoverPanel != null) hoverPanel.Hide();
         if (splitPopup != null) splitPopup.Close();
         storageManager?.CloseCurrentStorage();
+    }
+
+    /// <summary>
+    /// Registers a window that takes the mouse (an NPC shop or dialogue): while it is open the cursor is free, clicks do
+    /// not attack or use the item in hand, and Escape (the pause menu) closes it first. Pair with <see cref="UnregisterPanel"/>.
+    /// </summary>
+    public void RegisterPanel(IGameplayPanel panel)
+    {
+        if (panel == null || openPanels.Contains(panel))
+            return;
+        openPanels.Add(panel);
+        weaponController?.CancelCharge();
+        SetCursorState(CursorLockMode.None, true);
+    }
+
+    /// <summary>The window closed: when nothing else is open the cursor is locked again for the game.</summary>
+    public void UnregisterPanel(IGameplayPanel panel)
+    {
+        if (panel == null || !openPanels.Remove(panel))
+            return;
+        if (!IsAnyPanelOpen)
+            SetCursorState(CursorLockMode.Locked, false);
+    }
+
+    /// <summary>Closes the most recently opened registered window. False when none is open.</summary>
+    public bool CloseTopPanel()
+    {
+        if (!IsExternalPanelOpen)
+            return false;
+        IGameplayPanel top = openPanels[openPanels.Count - 1];
+        try { top.ClosePanel(); }
+        catch (Exception e) { Debug.LogException(e, this); }
+        // A window still shown closed a popup of its own instead (a confirmation): it stays registered.
+        if (!(top is Component c && c != null && c.gameObject.activeInHierarchy))
+            UnregisterPanel(top); // in case the window did not
+        return true;
     }
 
     private void SetCursorState(CursorLockMode lockMode, bool visible)
@@ -1593,7 +1666,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void CloseStorage(Storage storage)
     {
         storageManager?.CloseStorage(storage);
-        SetCursorState(CursorLockMode.Locked, false);
+        if (!IsExternalPanelOpen)
+            SetCursorState(CursorLockMode.Locked, false);
         uiStateManager?.SetStorageOpened(false);
         NotifyInventoryChanged();
     }

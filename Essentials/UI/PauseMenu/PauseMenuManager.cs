@@ -146,6 +146,11 @@ public class PauseMenuManager : MonoBehaviour
         bool closed = false;
         foreach (InventoryManager inv in FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude))
         {
+            if (inv != null && inv.CloseTopPanel())
+            {
+                closed = true; // an NPC shop / dialogue closes before the inventory
+                continue;
+            }
             if (inv != null && inv.IsInventoryOpened)
             {
                 inv.CloseInventory();

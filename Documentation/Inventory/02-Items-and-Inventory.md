@@ -9,6 +9,11 @@
 | `EquippableSO` | SimpleMovements ▸ Items ▸ Equippable | Classic stats (`effects`), **equip effects** (any `EquipmentEffect`), armor set membership, set visuals |
 | `ArmorSO` | SimpleMovements ▸ Items ▸ Armor | Armor slot, Defense, Magic Resistance, durability modifier, **elemental resistances**, inherent traits, model and sounds |
 | `WeaponSO` | SimpleMovements ▸ Items ▸ Weapon (or *Weapon From Template*) | Category, damage range, crit, knockback, scaling attribute, attacks, alternate attack, combos, weapon traits, passive effects |
+| `MaterialSO` | SimpleMovements ▸ Items ▸ Material | Crafting resource: material kind (ore, wood, herb, gem...), tier |
+| `MiscItemSO` | SimpleMovements ▸ Items ▸ Miscellaneous | Keys, junk, valuables; *Quest Item* cannot be sold |
+
+Every item also has a **Trading** header: an optional shop **Category** and **Can Be Sold** — see
+[NPC 05](../NPC/05-Money-Categories-and-Transactions.md). Merchants price items from their **Price** (value).
 
 Every item has three virtual hooks used by the rest of the system:
 

@@ -84,6 +84,9 @@ public class ItemSOEditor : Editor
         string durability = item.MaxDurability > 0 ? $"durability {item.MaxDurability}" : "unbreakable";
         EditorGUILayout.LabelField($"{ObjectNames.NicifyVariableName(item.ItemType.ToString())} · stack {item.StackMax} · weight {item.Weight:0.##} · value {item.Price:0.##} · {durability}",
             EditorStyles.wordWrappedMiniLabel);
+        ItemCategoryMatch shop = ItemCategoryDatabase.Default.Resolve(item);
+        EditorGUILayout.LabelField($"Shops list it under {shop.Path}{(item.Category == null ? " (automatic)" : "")}{(item.CanBeSold ? "" : " · cannot be sold")}",
+            EditorStyles.wordWrappedMiniLabel);
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Auto-Fill", "Fills what is missing: display name, an icon and a prefab with the item's name, " +
                                                         "armor slot / weapon category / food-or-potion from the name, stack size and durability.")))

@@ -73,6 +73,8 @@ public class PlayerAbilityController : AbilityCaster
     /// </summary>
     public static bool IsPointerCapturedFor(GameObject anyOnPlayer)
     {
+        if (PointerCapture.IsCapturedFor(anyOnPlayer))
+            return true; // claimed by another component (a click on an NPC)
         Transform root = anyOnPlayer != null ? anyOnPlayer.transform.root : null;
         for (int i = 0; i < enabledControllers.Count; i++)
         {
