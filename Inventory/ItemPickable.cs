@@ -19,6 +19,12 @@ public class ItemPickable : Interactable
     [Tooltip("Turn slowly in place while lying in the world (off for arrows stuck in a wall).")]
     public bool spinInWorld = true;
 
+    /// <summary>
+    /// Everything was picked up and the object is on its way out (destroyed or despawned at the end of the frame): it
+    /// cannot be picked up again meanwhile (two players asking in the same frame would both get it).
+    /// </summary>
+    public bool Taken { get; internal set; }
+
     private float rotationSpeed = 50f;
     //private float bounceHeight = 0.1f;
     //private float bounceSpeed = 1.5f;
@@ -27,7 +33,9 @@ public class ItemPickable : Interactable
 
     void Start()
     {
-        InteractionTime = itemScriptableObject.PickUpTime;
+        // A networked world item may get its item a moment later (from the server); it sets the time itself then.
+        if (itemScriptableObject != null)
+            InteractionTime = itemScriptableObject.PickUpTime;
         // Salva a posiзгo original do objeto
         //originalPosition = transform.position;
     }

@@ -49,9 +49,10 @@ namespace ProceduralDungeon
 
         private void FixedUpdate()
         {
-            if (blade == null)
+            // A client's copy of a network dungeon only swings: the server's blade hits (damage and knockback).
+            if (blade == null || DungeonNet.IsReplica(this))
                 return;
-            int n = Physics.OverlapBoxNonAlloc(blade.position, bladeSize * 0.5f, hits, blade.rotation, ~0, QueryTriggerInteraction.Ignore);
+            int n = ScenePhysics.OverlapBoxNonAlloc(blade.position, bladeSize * 0.5f, hits, blade.rotation, ~0, QueryTriggerInteraction.Ignore);
             for (int i = 0; i < n; i++)
             {
                 CombatEntity e = CombatEntity.Resolve(hits[i]);

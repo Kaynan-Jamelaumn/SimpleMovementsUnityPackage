@@ -41,11 +41,11 @@ namespace ProceduralDungeon
                 float cost = player.MaxHealth * bloodCost;
                 if (player.Health == null || player.Health.CurrentValue <= cost + 1f)
                 {
-                    DungeonMessages.Show("The altar thirsts for more blood than you have to give.");
+                    DungeonMessages.Show(this, "The altar thirsts for more blood than you have to give.");
                     return false;
                 }
                 player.ApplyDamage(new DamageInfo { amount = cost, target = player, point = transform.position, direction = Vector3.down, type = DamageType.True });
-                DungeonMessages.Show("The altar drinks your blood... and offers a gift.", true);
+                DungeonMessages.Show(this, "The altar drinks your blood... and offers a gift.", true);
             }
             else
             {
@@ -53,7 +53,7 @@ namespace ProceduralDungeon
                     curses = Defaults();
                 Curse c = curses[UnityEngine.Random.Range(0, curses.Count)];
                 TimedStatModifiers.For(player).Apply(this, "Curse of " + c.name, null, false, ElementType.Dark, curseDuration, 1f, c.stats, null, null);
-                DungeonMessages.Show($"Curse of {c.name}: {c.description} for {curseDuration / 60f:0.#} minutes. The altar offers a gift.", true);
+                DungeonMessages.Show(this, $"Curse of {c.name}: {c.description} for {curseDuration / 60f:0.#} minutes. The altar offers a gift.", true);
             }
             RevealReward();
             AnyPaid?.Invoke(this, player);

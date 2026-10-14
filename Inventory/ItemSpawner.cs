@@ -8,9 +8,16 @@ public class ItemDrop
     [SerializeField] public GameObject item;
     [Tooltip("Chance (0-1) that it drops.")]
     [SerializeField, Range(0f, 1f)] public float spawnChance = 1;
+    [Tooltip("When it may drop: only by day or at night, between some hours, only in some weathers (at the drop's spot) " +
+             "or never in some. Default: any time, any weather.")]
+    public SpawnConditions conditions = new SpawnConditions();
 }
 
-/// <summary>Drops pickable items (loot) at a position: mobs on death, collectables when harvested.</summary>
+/// <summary>
+/// Drops pickable items (loot) at a position: mobs on death, collectables when harvested. Loot is rolled and created
+/// where the rules run (offline, the server); in a network session each drop goes into this object's scene and is
+/// network-spawned (see <see cref="WorldItems"/>), so every player there sees it and the server decides who picks it up.
+/// </summary>
 public class ItemSpawner : MonoBehaviour
 {
     [SerializeField] private List<ItemDrop> itemDrops = new List<ItemDrop>();
@@ -19,16 +26,22 @@ public class ItemSpawner : MonoBehaviour
 
     public void SpawnItem(Vector3 position)
     {
+        if (!GameNet.NetSpawn.ShouldSpawnHere)
+            return; // a client: the server's loot arrives over the network
         foreach (ItemDrop drop in itemDrops)
         {
             if (drop == null || drop.item == null || Random.value > drop.spawnChance)
                 continue;
+            if (drop.conditions != null && !drop.conditions.Allows(position))
+                continue; // not its time of day or its weather
 
-            GameObject newItem = Instantiate(drop.item, position + GetSpawnOffset(), Quaternion.identity);
-            ItemPickable itemPickable = newItem.GetComponent<ItemPickable>();
+            GameObject newItem = WorldItems.InstantiatePickable(drop.item, position + GetSpawnOffset(), Quaternion.identity, out bool carrier);
+            ItemPickable itemPickable = newItem != null ? newItem.GetComponent<ItemPickable>() : null;
             if (itemPickable == null || itemPickable.itemScriptableObject == null)
             {
                 Debug.LogWarning($"[ItemSpawner] '{drop.item.name}' has no ItemPickable with an item assigned; it cannot be picked up.", this);
+                if (newItem != null)
+                    WorldItems.Publish(newItem, gameObject); // still shown to everyone as it was before
                 continue;
             }
 
@@ -41,6 +54,12 @@ public class ItemSpawner : MonoBehaviour
             itemPickable.DurabilityList = new List<int>(quantityToDrop);
             for (int i = 0; i < quantityToDrop; i++)
                 itemPickable.DurabilityList.Add(Random.Range(1, maxDurability + 1)); // never spawns already broken
+
+            // The carrier has no physics to fall with: it shows the item's model and is put on the ground at once.
+            WorldItems.Prepare(newItem);
+            if (carrier)
+                ItemHandler.RestOnGround(newItem, gameObject);
+            WorldItems.Publish(newItem, gameObject);
         }
     }
 

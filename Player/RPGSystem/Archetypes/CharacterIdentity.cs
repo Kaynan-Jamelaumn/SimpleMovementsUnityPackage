@@ -28,7 +28,8 @@ public class CharacterIdentity : MonoBehaviour
     [SerializeField] private bool useClassFromStatus = true;
     [Tooltip("Apply the class's Combat Stats block (Strength, Defense, Critical Chance, Attack Speed...) to Combat Stats.")]
     [SerializeField] private bool applyClassCombatStats = true;
-    [Tooltip("Height in metres. 0 = the race's default height.")]
+    [Tooltip("Height in metres. 0 = the race's default height. Clamped to the race's Height Range, then passed to the " +
+             "Character Body (which overwrites its own Height with it and scales the model and the CharacterController).")]
     [SerializeField, Min(0f)] private float height = 0f;
     [Tooltip("Level for growth per level. 0 = from the Experience Manager (1 without one). Set it on mobs.")]
     [SerializeField, Min(0)] private int level = 0;
@@ -127,6 +128,15 @@ public class CharacterIdentity : MonoBehaviour
         started = true;
         ApplyAll();
     }
+
+#if UNITY_EDITOR
+    // Play mode: a height typed in the inspector is shown at once (the race's range still clamps it).
+    private void OnValidate()
+    {
+        if (Application.isPlaying && started && isActiveAndEnabled)
+            ApplyHeight();
+    }
+#endif
 
     private void Update()
     {

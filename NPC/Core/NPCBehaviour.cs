@@ -7,6 +7,9 @@ using UnityEngine;
 /// becomes an option of the NPC (an NPC with a single option opens it directly).
 /// <para>A new kind of NPC is a new behaviour: override <see cref="Begin"/> (open your window, using the session's
 /// player, inventory and wallet) and call <see cref="NPCInteractionSession.BehaviourFinished"/> when it is done.</para>
+/// <para>Network sessions: the server runs the session; <see cref="Begin"/> runs on the player's own machine (on a client
+/// with a mirrored session, <see cref="NPCInteractionSession.IsMirror"/>), so keep gameplay results (rewards, quest
+/// state) out of it when the session is a mirror and do them in <see cref="FinishedRemote"/> / <see cref="BeginRemote"/>.</para>
 /// </summary>
 [RequireComponent(typeof(NPC))]
 public abstract class NPCBehaviour : MonoBehaviour
@@ -40,6 +43,22 @@ public abstract class NPCBehaviour : MonoBehaviour
 
     /// <summary>The session ends or moves to another option: close whatever <see cref="Begin"/> opened.</summary>
     public virtual void End(NPCInteractionSession session) { }
+
+    /// <summary>
+    /// Network, server: the option opens for a player controlled from another machine
+    /// (<see cref="NPCInteractionSession.IsRemote"/>). Its window opens there - that machine runs <see cref="Begin"/> on
+    /// its copy of the session - so do only the server's part here (default: nothing).
+    /// </summary>
+    public virtual void BeginRemote(NPCInteractionSession session) { }
+
+    /// <summary>Network, server: the option of a remote player's session closes (default: nothing).</summary>
+    public virtual void EndRemote(NPCInteractionSession session) { }
+
+    /// <summary>
+    /// Network, server: the remote player finished the option on their machine (read the lines, closed the window) - run
+    /// its gameplay results here (default: nothing).
+    /// </summary>
+    public virtual void FinishedRemote(NPCInteractionSession session) { }
 
     /// <summary>Configuration problems shown in the NPC inspector.</summary>
     public virtual void Validate(List<string> errors, List<string> warnings) { }

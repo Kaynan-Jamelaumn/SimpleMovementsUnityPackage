@@ -130,6 +130,8 @@ public class QuickSlotBar : MonoBehaviour
     {
         if (inventory == null)
             return;
+        if (!GameNet.NetAuthority.IsLocallyControlled(inventory.Player != null ? inventory.Player : inventory.gameObject))
+            return; // another player's copy: no keys, no UI
         for (int i = 0; i < bindings.Count && i < slotCount; i++)
         {
             if (bindings[i] == null || !bindings[i].Pressed)
@@ -182,6 +184,9 @@ public class QuickSlotBar : MonoBehaviour
     {
         if (index < 0 || index >= slotCount)
             return false;
+        InventoryNetRole role = inventory != null ? inventory.NetRole : InventoryNetRole.Local;
+        if (role == InventoryNetRole.RemoteCopy)
+            return false;
         if (item == null)
         {
             Clear(index);
@@ -195,6 +200,8 @@ public class QuickSlotBar : MonoBehaviour
         int existing = assigned.IndexOf(item);
         if (existing == index)
             return true;
+        if (role == InventoryNetRole.OwnerClient)
+            inventory.SendQuickSlotRequest(index, item); // the server keeps the assignment too; shown here at once
         if (existing >= 0)
             assigned[existing] = assigned[index]; // swap the two quickslots
         assigned[index] = item;
@@ -208,7 +215,27 @@ public class QuickSlotBar : MonoBehaviour
     {
         if (index < 0 || index >= assigned.Count || assigned[index] == null)
             return;
+        InventoryNetRole role = inventory != null ? inventory.NetRole : InventoryNetRole.Local;
+        if (role == InventoryNetRole.RemoteCopy)
+            return;
+        if (role == InventoryNetRole.OwnerClient)
+            inventory.SendQuickSlotRequest(index, null);
         assigned[index] = null;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Shows the server's assignment of quickslot <paramref name="index"/> (a network client applying its snapshot):
+    /// nothing is sent back and no item is checked.
+    /// </summary>
+    public void SetFromServer(int index, ItemSO item)
+    {
+        if (index < 0 || index >= slotCount)
+            return;
+        Resize();
+        if (assigned[index] == item)
+            return;
+        assigned[index] = item;
         Changed?.Invoke();
     }
 

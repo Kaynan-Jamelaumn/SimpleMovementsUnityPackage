@@ -66,9 +66,52 @@ public sealed class TraitContext
     public Transform Body => Movement != null && Movement.PlayerTransform != null ? Movement.PlayerTransform : Root;
 
     public bool IsGrounded => MovementController != null ? MovementController.IsGrounded() : Controller == null || Controller.isGrounded;
-    public bool JumpPressed => Input != null && Input.Player.Jump.triggered;
-    public bool JumpHeld => Input != null && Input.Player.Jump.IsPressed();
-    public Vector2 MoveInput => Input != null ? Input.Player.Movement.ReadValue<Vector2>() : Vector2.zero;
+
+    /// <summary>
+    /// The movement input of the simulation step being run (set by <see cref="TraitManager.TickMovementTraits"/>
+    /// while the movement machine steps the movement traits, null otherwise). Movement traits read their buttons from
+    /// it, so the server and a network replay see exactly the input the owner sent for that step.
+    /// </summary>
+    public MovementInput? SimInput { get; set; }
+
+    /// <summary>
+    /// May this machine read the devices for this player? Only the locally controlled player's traits read the
+    /// keyboard / gamepad (always true offline); other copies - remote players, every player on a server - must not
+    /// react to this machine's keys.
+    /// </summary>
+    public bool ReadsLocalDevices => GameNet.NetAuthority.IsLocallyControlled(Root.gameObject);
+
+    public bool JumpPressed => SimInput.HasValue ? SimInput.Value.JumpPressed : Input != null && ReadsLocalDevices && Input.Player.Jump.triggered;
+    public bool JumpHeld => SimInput.HasValue ? SimInput.Value.JumpHeld : Input != null && ReadsLocalDevices && Input.Player.Jump.IsPressed();
+
+    /// <summary>
+    /// The move stick / keys: the simulated step's input while movement traits run, else the input of the movement's
+    /// last step (the same on the server and the owner), else the local devices.
+    /// </summary>
+    public Vector2 MoveInput
+    {
+        get
+        {
+            if (SimInput.HasValue)
+                return SimInput.Value.Move;
+            if (MovementMachine != null && MovementMachine.HasSimulated)
+                return MovementMachine.LastInput.Move;
+            return Input != null && ReadsLocalDevices ? Input.Player.Movement.ReadValue<Vector2>() : Vector2.zero;
+        }
+    }
+
+    /// <summary>
+    /// Moves the player's CharacterController, unless it is switched off (travel or teleport in progress, where moving
+    /// would only log warnings) or the movement's controls are locked.
+    /// </summary>
+    public void Move(Vector3 delta)
+    {
+        if (Controller == null || !Controller.enabled || !Controller.gameObject.activeInHierarchy)
+            return;
+        if (MovementMachine != null && MovementMachine.Frozen)
+            return;
+        Controller.Move(delta);
+    }
     public bool CanMove => Availability == null || Availability.CanMove();
     public bool CanAct => Availability == null || Availability.CanAct();
 
@@ -140,6 +183,13 @@ public abstract class TraitBehaviour
     /// </summary>
     public virtual bool CountsAsActiveTrait => false;
 
+    /// <summary>
+    /// True for movement extras (double jump, wall climb, glide) that move the player: the movement machine steps them
+    /// inside its simulation step (<see cref="TraitManager.TickMovementTraits"/>) instead of the trait manager's
+    /// Update, so the server, the owner's prediction and its replays run them at the same point with the same input.
+    /// </summary>
+    public virtual bool IsMovementSimulation => false;
+
     public abstract string Describe();
     public virtual void OnAdded(TraitContext ctx) { }
     public virtual void OnRemoved(TraitContext ctx) { }
@@ -192,7 +242,11 @@ public class DoubleJumpTrait : TraitBehaviour
 
     [NonSerialized] private int used;
 
+    /// <summary>Air jumps used since the last landing (part of the movement snapshot).</summary>
+    public int AirJumpsUsed { get => used; set => used = Mathf.Max(0, value); }
+
     public override bool IsActive => true;
+    public override bool IsMovementSimulation => true;
     protected override bool ReadsStrengthLive => true;
     public override string Describe() => extraJumps == 1 ? "Double jump: jump again in the air." : $"Jump {extraJumps} extra times in the air.";
     public override string LiveStatus => $"{Mathf.Max(0, extraJumps - used)}/{extraJumps} air jumps left";
@@ -253,7 +307,14 @@ public class WallClimbTrait : TraitBehaviour
     [NonSerialized] private bool climbing;
     [NonSerialized] private float climbTime;
 
+    /// <summary>Climbing right now (part of the movement snapshot).</summary>
+    public bool Climbing { get => climbing; set => climbing = value; }
+
+    /// <summary>Seconds climbed since the last landing (part of the movement snapshot).</summary>
+    public float ClimbTime { get => climbTime; set => climbTime = float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Max(0f, value); }
+
     public override bool IsActive => true;
+    public override bool IsMovementSimulation => true;
     protected override bool ReadsStrengthLive => true;
     public override string Describe() =>
         $"Climb walls at {climbSpeed:0.#} m/s by {(holdJumpToClimb ? "holding Jump" : "pushing into them")}" + (maxClimbTime > 0f ? $" (up to {maxClimbTime:0.#}s)." : ".");
@@ -276,7 +337,7 @@ public class WallClimbTrait : TraitBehaviour
             climbing = true;
             ctx.Movement.SuspendGravity = true;
             ctx.Movement.VerticalVelocity = 0f;
-            ctx.Controller.Move((Vector3.up * climbSpeed - hit.normal * 0.5f) * dt);
+            ctx.Move((Vector3.up * climbSpeed - hit.normal * 0.5f) * dt);
             climbTime += dt;
             return;
         }
@@ -289,7 +350,7 @@ public class WallClimbTrait : TraitBehaviour
             {
                 // Reached the top: hop over the edge.
                 ctx.Movement.VerticalVelocity = ctx.Movement.JumpForce * mantleBoost;
-                ctx.Controller.Move(ctx.Body.forward * 0.3f);
+                ctx.Move(ctx.Body.forward * 0.3f);
             }
         }
     }
@@ -305,7 +366,7 @@ public class WallClimbTrait : TraitBehaviour
             return false;
         }
         Vector3 origin = body.position + Vector3.up * chestHeight;
-        if (!Physics.Raycast(origin, forward.normalized, out hit, detectDistance, wallLayers, QueryTriggerInteraction.Ignore))
+        if (!ScenePhysics.Raycast(origin, forward.normalized, out hit, detectDistance, wallLayers, QueryTriggerInteraction.Ignore))
             return false;
         if (hit.transform.IsChildOf(ctx.Root))
             return false;
@@ -331,6 +392,7 @@ public class GlideTrait : TraitBehaviour
     [NonSerialized] private bool gliding;
 
     public override bool IsActive => true;
+    public override bool IsMovementSimulation => true;
     protected override bool ReadsStrengthLive => true;
     public override string Describe() => $"Hold Jump in the air to glide (fall at most {maxFallSpeed:0.#} m/s).";
     public override string LiveStatus => gliding ? "gliding" : "ready";
@@ -474,6 +536,11 @@ public class ActiveAbilityTrait : TraitBehaviour
     public override void Tick(TraitContext ctx, float dt)
     {
         if (owner == null || slot < 0)
+            return;
+        // Only the player controlled from this machine reads its key: a remote player's copy (or any player on a
+        // server) must not cast when this machine's key is pressed. The owner's cast request goes to the server
+        // through the ability system.
+        if (!ctx.ReadsLocalDevices)
             return;
         bool pressed = (binding != null && binding.HasAction && binding.Pressed) || (fallbackAction != null && fallbackAction.WasPressedThisFrame());
         if (pressed && ctx.CanAct && !InputBindingStore.GameplayInputPaused)

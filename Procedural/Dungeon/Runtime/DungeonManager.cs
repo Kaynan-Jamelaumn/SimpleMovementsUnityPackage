@@ -96,6 +96,9 @@ namespace ProceduralDungeon
             DungeonPipeline pipeline = DungeonPipeline.CreateDefault(compiled.CustomStages);
             DungeonLayout layout = pipeline.Generate(req, compiled);
             LastReport = layout.Report;
+            // A network server meshes with keyed build seeds, the ones its clients receive (see GenerationJob.NetworkSeeds).
+            if (GameNet.NetAuthority.IsNetworked && GameNet.NetAuthority.IsServer)
+                layout.FloorBuildSeeds = GameNet.DungeonBuildSeed.ForFloors(layout.AttemptSeed, layout.Floors.Count);
             List<FloorMeshData> meshes = DungeonMeshing.BuildAll(layout, compiled);
             builder = new DungeonBuilder(compiled, layout, meshes, pool);
             IEnumerator build = builder.Build(transform, new DungeonBuilder.Settings { Immediate = true, ExitAction = exitPortalAction, PlayableFloors = playableFloors });
@@ -123,6 +126,11 @@ namespace ProceduralDungeon
             public WorkToken Token;
             public DungeonLayout Layout;
             public List<FloorMeshData> Meshes;
+            /// <summary>
+            /// A network server: the floors' visual detail uses keyed build seeds (sent to clients with each floor)
+            /// instead of seeds derived from the dungeon seed, which must never leave the server.
+            /// </summary>
+            public bool NetworkSeeds;
             public Exception Error;
             private int done;
 
@@ -133,6 +141,8 @@ namespace ProceduralDungeon
                 try
                 {
                     Layout = Pipeline.Generate(Request, Profile, Token);
+                    if (NetworkSeeds && Layout != null)
+                        Layout.FloorBuildSeeds = GameNet.DungeonBuildSeed.ForFloors(Layout.AttemptSeed, Layout.Floors.Count);
                     if (Token == null || !Token.IsCancelled)
                         Meshes = DungeonMeshing.BuildAll(Layout, Profile);
                 }
@@ -163,6 +173,7 @@ namespace ProceduralDungeon
                 Profile = compiled,
                 Pipeline = DungeonPipeline.CreateDefault(compiled.CustomStages),
                 Token = token,
+                NetworkSeeds = GameNet.NetAuthority.IsNetworked && GameNet.NetAuthority.IsServer,
             };
             if (useWorkerThread && Application.isPlaying)
                 DungeonWorkers.Pool.Enqueue(job.Run, null, token);

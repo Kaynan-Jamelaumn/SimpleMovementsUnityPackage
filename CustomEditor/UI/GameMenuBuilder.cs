@@ -9,13 +9,13 @@ using UnityEngine.UI;
 /// Builds the in-game menu in the open scene: the pause window (Resume, Settings, Main Menu, Quit) and the settings
 /// window with Audio, Graphics, Controls and Key Bindings pages, wired to <see cref="PauseMenuManager"/>,
 /// <see cref="PauseMenuSettings"/> and <see cref="KeyRebindingMenu"/>. Escape (or the gamepad Start button) opens it
-/// while a player is in the game. Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause &amp; Settings Menu, or the Pause Menu Manager's button.
+/// while a player is in the game. Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause &amp; Settings Menu, or the Pause Menu Manager's button.
 /// </summary>
 public static class GameMenuBuilder
 {
     private const string RootName = "GameMenu";
 
-    [MenuItem("Tools/SimpleMovements/Scene UI/Build Pause & Settings Menu")]
+    [MenuItem(SMMenu.Root + "Scene/Build Pause & Settings Menu", false, SMMenu.Scene + 1)]
     public static void BuildMenu()
     {
         PauseMenuManager existing = Object.FindAnyObjectByType<PauseMenuManager>();

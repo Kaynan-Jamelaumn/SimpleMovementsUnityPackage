@@ -127,6 +127,24 @@ What each transition does:
 **Controls:** `SetControls` toggles the player's `PlayerMovementController` and `CharacterController`. **Teleport**
 disables the CharacterController while moving and calls `Physics.SyncTransforms`.
 
+### Runs: several groups, one scene per dungeon
+
+Every group that steps into a portal gets a **`DungeonRun`** (`DungeonSession.Enter` returns it): its manager, request,
+scene, participants, where each one returns to, its checkpoint, `State` (Entering / Inside / Ended) and an `Ended(run,
+how)` event (`Left`, `Completed`, `Failed`). `DungeonSession.Runs` lists them; `RunOf(player)`, `RunOf(dungeon)` and
+`RunAt(component)` find one. The older static members (`InDungeon`, `Current`, `Participants`, `Checkpoint`,
+`Exit(bool)`) answer for the **local player's run**; `RunStarted`, `RunEntered` and `RunEnded` fire for every run.
+
+| Mode | When | Where the dungeon is | World | Runs at once |
+|---|---|---|---|---|
+| **Classic** (default) | `DungeonScenes.Enabled` off | at the portal's *Dungeon Origin* (y = −10 000) in the current scene | paused while inside | one |
+| **Own scenes** | `DungeonScenes.Enabled` on (the hub world turns it on) | a scene created for the run, in its own **slot**, with its **own physics** (`LocalPhysicsMode.Physics3D`, stepped by `DungeonScenes`); gameplay queries reach it through `ScenePhysics` | not paused | one per group |
+
+In the own-scene mode the group is moved into the dungeon's scene when it is ready and out of it when the run ends,
+then the scene is unloaded. `DungeonSession.ExitHandler` (an `IExitHandler`) can take over where each player goes — the
+hub world sends players whose world cycle ended to the city instead of the vanished world. See
+[Hub World 01 §5](../HubWorld/01-Architecture.md).
+
 ### World pause
 
 `DungeonWorldPause.Pause` sets `WorldSpawnRegistry.Paused` (no new world portals or mobs; world mobs switched off),
@@ -138,7 +156,8 @@ behaviours, and hides its *Hide While Inside* objects. `Resume` restores **exact
 
 When the theme has *Apply Atmosphere*: ambient mode Flat with the theme's ambient light, exponential-squared fog with
 the theme's colour and density, and every enabled directional light (the sun) switched off. The scene's values are
-restored on leaving.
+restored on leaving. Only the local player's run changes the lighting; in the own-scene mode the dungeon's scene is the
+active one while the local player is inside (its lighting goes away with it; only the suns are switched back on).
 
 ## 4. Floor streaming
 

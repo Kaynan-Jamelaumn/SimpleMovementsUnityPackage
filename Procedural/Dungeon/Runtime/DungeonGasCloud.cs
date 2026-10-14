@@ -9,7 +9,7 @@ namespace ProceduralDungeon
     /// every player inside, then clears for a while - a hiss warns before it comes back. Run through in the clear spells,
     /// or pull the room's valve lever (<see cref="Shut"/>) to stop it for good.
     /// </summary>
-    public class DungeonGasCloud : MonoBehaviour
+    public class DungeonGasCloud : MonoBehaviour, IDungeonNetState
     {
         [Tooltip("Seconds the gas fills the room.")]
         [Min(0.5f)] public float onTime = 7f;
@@ -68,12 +68,12 @@ namespace ProceduralDungeon
 
         private void Update()
         {
-            if (IsShut || dungeon == null)
-                return;
+            if (IsShut || dungeon == null || DungeonNet.IsReplica(this))
+                return;   // a client's copy shows the server's gas (see ApplyNetState)
             if (!IsFlooding && !warned && Time.time >= switchAt - 2f && DungeonPlayers.CountInArea(dungeon, floor, area) > 0)
             {
                 warned = true;
-                DungeonMessages.Show("The vents hiss...");
+                DungeonMessages.Show(this, "The vents hiss...");
             }
             if (Time.time >= switchAt)
                 Set(!IsFlooding);
@@ -99,6 +99,19 @@ namespace ProceduralDungeon
             foreach (GameObject c in clouds)
                 if (c != null)
                     c.SetActive(flooding);
+            if (!IsShut)
+                DungeonNet.Publish(this, flooding ? 1 : 0);
+        }
+
+        /// <summary>A client's copy: 0 = vents quiet, 1 = gas flooding, 2 = shut for good (the valve).</summary>
+        public void ApplyNetState(int state, byte[] payload)
+        {
+            if (IsShut)
+                return;
+            if (state >= 2)
+                Shut();
+            else
+                Set(state == 1);
         }
 
         /// <summary>Stops the gas for good (the valve).</summary>
@@ -108,6 +121,7 @@ namespace ProceduralDungeon
                 return;
             Set(false);
             IsShut = true;
+            DungeonNet.Publish(this, 2);
             ShutDown?.Invoke(this);
         }
     }

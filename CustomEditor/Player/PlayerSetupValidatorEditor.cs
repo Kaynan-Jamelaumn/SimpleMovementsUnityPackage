@@ -293,7 +293,7 @@ public class PlayerSetupValidatorEditor : Editor
 /// <summary>Menu: adds the validator to the selected player.</summary>
 public static class PlayerSetupValidatorMenu
 {
-    [MenuItem("Tools/SimpleMovements/Player/Add Player Setup Validator To Selection")]
+    [MenuItem(SMMenu.Root + "Player/Add Setup Validator To Selection", false, SMMenu.Player + 0)]
     private static void AddToSelection()
     {
         GameObject go = Selection.activeGameObject;

@@ -16,6 +16,7 @@ public class PlayerAnimationController : MonoBehaviour
 
     // Component managers
     private MovementAnimationHandler movementHandler;
+    private CharacterStateAnimationHandler stateHandler;
     private AttackAnimationManager attackManager;
     private ActionAnimationHandler actionHandler;
     private AnimationEventHandler eventHandler;
@@ -40,15 +41,30 @@ public class PlayerAnimationController : MonoBehaviour
 
     private void Start() => SetupAnimationEvents();
 
+    /// <summary>
+    /// Raised by the <c>OnFootstep</c> animation event of the walk / run clips (add an event named OnFootstep to them).
+    /// The PlayerMovementAudio plays its footsteps on it instead of on a timer.
+    /// </summary>
+    public event Action Footstep;
+
+    /// <summary>Raised by the <c>OnLanding</c> animation event.</summary>
+    public event Action Landed;
+
+    private void OnEnable() => stateHandler?.Hook(true);
+
+    private void OnDestroy() => stateHandler?.Hook(false);
+
     private void Update()
     {
         ApplyMovementAnimations();
         ApplyStateAnimations();
+        stateHandler?.Tick(Time.deltaTime);
         if (model.DebugAnimations) DebugCurrentAnimations();
     }
 
     private void OnDisable()
     {
+        stateHandler?.Hook(false);
         StopAllCoroutines();
         activeAnimationCoroutines.Clear();
         ResetAttackAnimation();
@@ -65,6 +81,7 @@ public class PlayerAnimationController : MonoBehaviour
     {
         // Initialize handlers
         movementHandler = new MovementAnimationHandler(model, movementModel, movementStateMachine, smoothTime, useAdvancedBlending);
+        stateHandler = new CharacterStateAnimationHandler(model, movementModel, movementStateMachine);
 
         // Initialize MonoBehaviour components
         attackManager = gameObject.AddComponent<AttackAnimationManager>();
@@ -132,8 +149,17 @@ public class PlayerAnimationController : MonoBehaviour
 
     // Animation Event Callbacks - delegate to event handler
     public void OnAttackHit() => eventHandler.OnAttackHit();
-    public void OnFootstep() => eventHandler.OnFootstep();
-    public void OnLanding() => eventHandler.OnLanding();
+    public void OnFootstep()
+    {
+        eventHandler.OnFootstep();
+        Footstep?.Invoke();
+    }
+
+    public void OnLanding()
+    {
+        eventHandler.OnLanding();
+        Landed?.Invoke();
+    }
 
     // Utility Methods - delegate to utility helper
     public bool IsAnimationPlaying(string animationName, int layerIndex = 0)

@@ -45,8 +45,18 @@ namespace ProceduralDungeon
             var tag = GetComponent<DungeonSpawned>();
             int tier = tag != null ? tag.tier : 0;
             for (int i = 0; drops != null && i < drops.Length; i++)
-                if (drops[i] != null)
-                    Instantiate(drops[i], transform.position + transform.forward * 1f + Vector3.up * 0.4f + transform.right * (i - (drops.Length - 1) * 0.5f) * 0.4f, Quaternion.identity);
+            {
+                if (drops[i] == null)
+                    continue;
+                Vector3 at = transform.position + transform.forward * 1f + Vector3.up * 0.4f + transform.right * (i - (drops.Length - 1) * 0.5f) * 0.4f;
+                // Offline a plain Instantiate; on a server a networked world item in the chest's scene (see WorldItems).
+                GameObject drop = WorldItems.InstantiatePickable(drops[i], at, Quaternion.identity, out bool carrier);
+                if (drop == null)
+                    continue;
+                if (carrier)
+                    WorldItems.Prepare(drop);
+                WorldItems.Publish(drop, gameObject);
+            }
             DungeonInstance d = Dungeon;
             if (d != null)
                 d.Stats.Bump(ref d.Stats.chestsOpened);
@@ -57,6 +67,13 @@ namespace ProceduralDungeon
 
         protected override void OnUsedUp()
         {
+        }
+
+        /// <summary>A client's copy: the server opened it (the lid lifts; its loot arrives as networked world items).</summary>
+        protected override void OnNetState(int state, byte[] payload)
+        {
+            if (state > 0)
+                IsOpen = true;
         }
     }
 }

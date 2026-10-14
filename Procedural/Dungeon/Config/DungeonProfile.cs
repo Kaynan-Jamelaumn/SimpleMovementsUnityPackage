@@ -422,5 +422,53 @@ namespace ProceduralDungeon
                 },
             };
         }
+
+        // ------------------------------------------------------------------ network sessions
+
+        private static readonly List<DungeonProfile> loaded = new List<DungeonProfile>();
+        private static bool searchedResources;
+
+        /// <summary>
+        /// A loaded profile by asset name (network clients receive the name of the profile a run was built with), or
+        /// null. Profiles referenced by loaded scenes and assets are known; otherwise the Resources folders are searched
+        /// once. Profile names must therefore be unique in the project.
+        /// </summary>
+        public static DungeonProfile FindLoaded(string profileName)
+        {
+            if (string.IsNullOrEmpty(profileName))
+                return null;
+            DungeonProfile found = Match(profileName);
+            if (found != null || searchedResources)
+                return found;
+            searchedResources = true;
+            foreach (DungeonProfile p in Resources.LoadAll<DungeonProfile>(""))
+                Register(p);
+            foreach (DungeonProfile p in Resources.FindObjectsOfTypeAll<DungeonProfile>())
+                Register(p);
+            return Match(profileName);
+        }
+
+        private static DungeonProfile Match(string profileName)
+        {
+            for (int i = loaded.Count - 1; i >= 0; i--)
+            {
+                DungeonProfile p = loaded[i];
+                if (p == null)
+                    loaded.RemoveAt(i);
+                else if (p.name == profileName)
+                    return p;
+            }
+            return null;
+        }
+
+        private static void Register(DungeonProfile p)
+        {
+            if (p != null && !loaded.Contains(p))
+                loaded.Add(p);
+        }
+
+        private void OnEnable() => Register(this);
+
+        private void OnDisable() => loaded.Remove(this);
     }
 }

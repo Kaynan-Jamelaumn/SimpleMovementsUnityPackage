@@ -25,7 +25,7 @@ public class ArmorSetWizard : EditorWindow
     private bool requireAll;
     private Vector2 scroll;
 
-    [MenuItem("Tools/SimpleMovements/Inventory/Armor Set Wizard")]
+    [MenuItem(SMMenu.Root + "Inventory/Armor Set Wizard", false, SMMenu.Inventory + 20)]
     public static void Open()
     {
         var w = GetWindow<ArmorSetWizard>("Armor Set Wizard");

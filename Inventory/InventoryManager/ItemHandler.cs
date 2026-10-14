@@ -88,7 +88,6 @@ public static class ItemHandler
     /// <summary>Drops the dragged item into the world in front of the camera (its weight leaves the player).</summary>
     public static void DropItem(GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController, Camera cam, GameObject player)
     {
-        var lastSlot = lastItemSlotObject != null ? lastItemSlotObject.GetComponent<InventorySlot>() : null;
         var draggedItem = draggedObject.GetComponent<InventoryItem>();
 
         if (draggedItem == null || draggedItem.itemScriptableObject == null || draggedItem.itemScriptableObject.Prefab == null)
@@ -98,8 +97,32 @@ public static class ItemHandler
             return;
         }
 
-        Vector3 dropPosition = GetDropPosition(cam, player);
-        CreateDroppedItem(draggedItem, dropPosition, player);
+        DropItemAt(draggedObject, lastItemSlotObject, playerStatusController, DropPoint(cam, player), player);
+    }
+
+    /// <summary>
+    /// Drops the dragged item into the world at <paramref name="position"/> (the server dropping an item for a client
+    /// uses the point the client chose, kept near the player). Its weight leaves the player. Where world items are not
+    /// created (a network client), or when the item has no prefab, it goes back to its slot.
+    /// </summary>
+    public static void DropItemAt(GameObject draggedObject, GameObject lastItemSlotObject, PlayerStatusController playerStatusController, Vector3 position, GameObject player)
+    {
+        var lastSlot = lastItemSlotObject != null ? lastItemSlotObject.GetComponent<InventorySlot>() : null;
+        var draggedItem = draggedObject != null ? draggedObject.GetComponent<InventoryItem>() : null;
+
+        if (draggedItem == null || draggedItem.itemScriptableObject == null || draggedItem.itemScriptableObject.Prefab == null || !GameNet.NetSpawn.ShouldSpawnHere)
+        {
+            if (draggedItem != null && GameNet.NetSpawn.ShouldSpawnHere)
+                Debug.LogWarning("[Inventory] This item has no prefab and cannot be dropped; it went back to its slot.", draggedObject);
+            ReturnItemToLastSlot(lastItemSlotObject, draggedObject);
+            return;
+        }
+
+        if (CreateDroppedItem(draggedItem, position, player) == null)
+        {
+            ReturnItemToLastSlot(lastItemSlotObject, draggedObject); // nothing was created: nothing is lost
+            return;
+        }
 
         if (lastSlot != null && lastSlot.heldItem == draggedObject)
             lastSlot.heldItem = null;
@@ -107,7 +130,8 @@ public static class ItemHandler
         ArmorEquipmentHandler.NotifyEquipmentChanged(playerStatusController);
     }
 
-    private static Vector3 GetDropPosition(Camera cam, GameObject player)
+    /// <summary>Where an item dropped from the inventory lands: 3 m along the pointer's ray (in front of the player without a camera).</summary>
+    public static Vector3 DropPoint(Camera cam, GameObject player)
     {
         if (!cam) cam = Camera.main;
         if (cam == null)
@@ -118,10 +142,12 @@ public static class ItemHandler
         return ray.GetPoint(3);
     }
 
-    private static void CreateDroppedItem(InventoryItem draggedItem, Vector3 position, GameObject player)
+    private static GameObject CreateDroppedItem(InventoryItem draggedItem, Vector3 position, GameObject player)
     {
-        SpawnWorldItem(draggedItem.itemScriptableObject, draggedItem.stackCurrent, draggedItem.DurabilityList, position, player);
-        InventoryUtils.UpdatePlayerWeight(player, -draggedItem.itemScriptableObject.Weight * draggedItem.stackCurrent);
+        GameObject go = SpawnWorldItem(draggedItem.itemScriptableObject, draggedItem.stackCurrent, draggedItem.DurabilityList, position, player);
+        if (go != null)
+            InventoryUtils.UpdatePlayerWeight(player, -draggedItem.itemScriptableObject.Weight * draggedItem.stackCurrent);
+        return go;
     }
 
     /// <summary>
@@ -129,12 +155,27 @@ public static class ItemHandler
     /// enabled collider (a box fitted to the model when the prefab has none - the hand prefab of a weapon often has
     /// none), a layer the interaction raycast sees, and resting on the ground below <paramref name="position"/>.
     /// </summary>
+    /// <para>
+    /// Only where world items are created (offline, the server): in a network session the item goes into the scene of
+    /// <paramref name="player"/> (the player, mob or object it came from) and is network-spawned so every player sees it
+    /// (see <see cref="WorldItems"/>). Returns null on a client.
+    /// </para>
     public static GameObject SpawnWorldItem(ItemSO item, int quantity, System.Collections.Generic.IList<int> durabilities, Vector3 position, GameObject player)
+        => SpawnWorldItemAt(item, quantity, durabilities, position, Quaternion.identity, player, true, true);
+
+    /// <summary>
+    /// <see cref="SpawnWorldItem"/> with a rotation: <paramref name="restOnGround"/> = dropped onto the ground below
+    /// <paramref name="position"/> (off for an arrow stuck in a wall), <paramref name="spin"/> = turns slowly in place.
+    /// <paramref name="source"/> is what it came from (its scene; ignored by the ground check).
+    /// </summary>
+    public static GameObject SpawnWorldItemAt(ItemSO item, int quantity, System.Collections.Generic.IList<int> durabilities, Vector3 position,
+        Quaternion rotation, GameObject source, bool restOnGround, bool spin)
     {
-        if (item == null || item.Prefab == null)
+        if (item == null || item.Prefab == null || !GameNet.NetSpawn.ShouldSpawnHere)
             return null;
-        GameObject go = Object.Instantiate(item.Prefab, position, Quaternion.identity);
-        go.name = item.Prefab.name;
+        GameObject go = WorldItems.Instantiate(item, position, rotation);
+        if (go == null)
+            return null;
         if (!go.activeSelf)
             go.SetActive(true);
 
@@ -145,10 +186,21 @@ public static class ItemHandler
         pickable.quantity = Mathf.Max(1, quantity);
         pickable.DurabilityList = durabilities != null ? new System.Collections.Generic.List<int>(durabilities) : new System.Collections.Generic.List<int>();
         pickable.InteractionTime = item.PickUpTime;
+        pickable.spinInWorld = spin && pickable.spinInWorld;
+        WorldItems.Prepare(go); // a network carrier builds the item's model now (the ground check measures it)
 
         MakeInteractable(go);
-        PlaceOnGround(go, player);
+        if (restOnGround)
+            PlaceOnGround(go, source);
+        WorldItems.Publish(go, source);
         return go;
+    }
+
+    /// <summary>Puts <paramref name="go"/> on the ground below it (ignoring itself and <paramref name="ignore"/>).</summary>
+    public static void RestOnGround(GameObject go, GameObject ignore)
+    {
+        if (go != null)
+            PlaceOnGround(go, ignore);
     }
 
     private static void MakeInteractable(GameObject go)
@@ -192,7 +244,7 @@ public static class ItemHandler
     private static void PlaceOnGround(GameObject go, GameObject player)
     {
         Vector3 origin = go.transform.position + Vector3.up * 0.5f;
-        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 30f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        RaycastHit[] hits = ScenePhysics.RaycastAll(origin, Vector3.down, 30f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
         System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
         foreach (RaycastHit hit in hits)
         {

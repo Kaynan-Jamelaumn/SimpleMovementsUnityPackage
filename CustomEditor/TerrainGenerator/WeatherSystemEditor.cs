@@ -93,6 +93,7 @@ public class WeatherSystemEditor : Editor
             EditorStyles.wordWrappedMiniLabel);
         if (weather.Generator == null)
             EditorGUILayout.HelpBox("No Terrain Generator found - the weather needs one for its biomes and climate.", MessageType.Warning);
+        WeatherSetupMenu.DrawCompanions(weather);
 
         showSetup = Section("Setup", showSetup, () => DrawFields(SetupFields, null, null));
         showWeather = Section("Weather", showWeather, () => DrawFields(WeatherFields, WeatherRecommended, "weather"));

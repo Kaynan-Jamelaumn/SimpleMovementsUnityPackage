@@ -18,7 +18,7 @@ transactions are made safe in [05](05-Money-Categories-and-Transactions.md).
 3. On the `NPC`: Display Name, Title, Portrait, greetings ([02](02-NPCs-and-Dialogue.md)).
 4. On the `Merchant`: goods (§2), prices (§4), what it buys (§5). Done.
 
-*Tools ▸ SimpleMovements ▸ NPC ▸ Validate NPCs In Scene* lists every problem (missing collider, layers the interactor
+*Tools ▸ SimpleMovements ▸ Validate ▸ NPCs In Scene* lists every problem (missing collider, layers the interactor
 does not search, empty goods, items without a price or icon, duplicate ids...). The inspectors show the same problems.
 
 ## 2. Goods and stock

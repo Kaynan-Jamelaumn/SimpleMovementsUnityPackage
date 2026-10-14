@@ -15,7 +15,7 @@ namespace ProceduralDungeon
             if (player.HealthRatio >= 0.999f)
                 return false;   // keep it for when it's needed
             player.ApplyHeal(player.MaxHealth * heal);
-            DungeonMessages.Show(message);
+            DungeonMessages.Show(this, message);
             return true;
         }
 

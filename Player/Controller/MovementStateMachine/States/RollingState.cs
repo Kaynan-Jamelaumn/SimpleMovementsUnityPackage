@@ -1,4 +1,3 @@
-﻿using System.Collections;
 using UnityEngine;
 
 public class RollingState : MovementState
@@ -7,9 +6,6 @@ public class RollingState : MovementState
     {
         MovementContext Context = context;
     }
-
-    private float startTime;
-    private Coroutine rollRoutine;
 
     public override void EnterState()
     {
@@ -21,55 +17,46 @@ public class RollingState : MovementState
             Context.StatusController.StaminaManager.ConsumeStamina(Context.StatusController.RollModel.StaminaCost);
         }
 
-        startTime = Time.time;
-        Context.StatusController.RollModel.LastActionTime = Time.time;
+        Context.StatusController.RollModel.LastActionTime = Context.SimTime;
 
-        // Start the roll movement routine
-        rollRoutine = Context.MovementModel.StartCoroutine(RollMovementRoutine());
+        // The roll moves for RollDuration seconds of the movement clock (it used to be a coroutine, which a network
+        // replay cannot re-run). Its first step happens right away, as the coroutine's did.
+        Context.ActionElapsed = 0f;
+        if (Context.ActionElapsed < Context.StatusController.RollModel.RollDuration)
+            RollStep();
     }
 
     public override void ExitState()
     {
         Context.AnimationModel.IsRolling = false;
-
-        if (rollRoutine != null)
-        {
-            Context.MovementModel.StopCoroutine(rollRoutine);
-            rollRoutine = null;
-        }
     }
 
     public override void UpdateState()
     {
-        // Movement is handled by the roll routine
-        // Only apply gravity and basic physics here if needed
-        Vector3 gravityMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Time.deltaTime;
-        Context.MovementModel.Controller.Move(gravityMovement);
+        // Only apply gravity and basic physics here; the forward roll is RollStep
+        Vector3 gravityMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Context.Dt;
+        Context.Move(gravityMovement);
+
+        if (Context.ActionElapsed < Context.StatusController.RollModel.RollDuration)
+            RollStep();
     }
 
-    private IEnumerator RollMovementRoutine()
+    private void RollStep()
     {
-        float elapsed = 0f;
-        while (elapsed < Context.StatusController.RollModel.RollDuration)
-        {
-            Vector3 movement = Context.MovementController.PlayerForwardPosition() *
-                             Context.StatusController.RollModel.RollSpeedModifier *
-                             Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(
-                                 Context.StatusController.SpeedManager.Speed) *
-                             Time.deltaTime;
+        Vector3 movement = Context.MovementController.PlayerForwardPosition() *
+                           Context.StatusController.RollModel.RollSpeedModifier *
+                           Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(
+                               Context.StatusController.SpeedManager.Speed) *
+                           Context.Dt;
 
-            Context.MovementModel.Controller.Move(movement);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        rollRoutine = null;
+        Context.Move(movement);
+        Context.ActionElapsed += Context.Dt;
     }
 
     public override MovementStateMachine.EMovementState GetNextState()
     {
         // Stay in rolling state until roll duration is complete
-        if (Time.time - startTime < Context.StatusController.RollModel.RollDuration && rollRoutine != null)
+        if (Context.ActionElapsed < Context.StatusController.RollModel.RollDuration)
             return StateKey;
 
         // After roll is complete, transition based on input

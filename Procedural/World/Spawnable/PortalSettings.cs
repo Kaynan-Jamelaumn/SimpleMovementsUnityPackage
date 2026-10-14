@@ -6,10 +6,52 @@ public enum PortalUseRule
 {
     /// <summary>The portal stays; the same dungeon can be entered again.</summary>
     StaysOpen,
-    /// <summary>The portal closes as soon as the player goes through.</summary>
+    /// <summary>
+    /// The portal closes once its dungeon can take nobody else: as soon as the player goes through for a private
+    /// dungeon; for a shared or linked one when it is full (Max Players) or, without a limit, when it is over.
+    /// </summary>
     CloseAfterEntering,
     /// <summary>The portal closes when the player finishes its dungeon (leaves through the exit portal); it stays if they just leave.</summary>
     CloseAfterCompleting,
+}
+
+/// <summary>A Portal component's own After Use rule (<see cref="Portal"/>): the spawner's, or one of its own.</summary>
+public enum PortalAfterUse
+{
+    /// <summary>A spawned portal follows its type / the Portal Settings; a hand-placed one stays open.</summary>
+    UseSpawnerRule,
+    /// <summary>The portal stays.</summary>
+    StaysOpen,
+    /// <summary>See <see cref="PortalUseRule.CloseAfterEntering"/>.</summary>
+    CloseAfterEntering,
+    /// <summary>See <see cref="PortalUseRule.CloseAfterCompleting"/>.</summary>
+    CloseAfterCompleting,
+}
+
+/// <summary>Who shares the dungeon behind a portal.</summary>
+public enum PortalSharing
+{
+    /// <summary>Every group that enters gets a dungeon of its own (Max Players caps the group).</summary>
+    SeparateRuns,
+    /// <summary>Everyone who enters while the portal's dungeon is going joins it (up to Max Players).</summary>
+    SharedRun,
+}
+
+/// <summary>A portal type's sharing (<see cref="SpawnablePortal.sharing"/>): the prefab Portal's, or its own.</summary>
+public enum PortalSharingOverride
+{
+    UsePortalSetting,
+    SeparateRuns,
+    SharedRun,
+}
+
+/// <summary>Where the players of linked portals arrive in their shared dungeon.</summary>
+public enum LinkedArrival
+{
+    /// <summary>Everyone at the dungeon's entrance.</summary>
+    SameEntrance,
+    /// <summary>Each linked portal has its own arrival point on the first floor, as far apart as the dungeon allows.</summary>
+    SeparateEntrances,
 }
 
 /// <summary>
@@ -93,7 +135,7 @@ public class PortalSettings : BaseSettings
     [Range(0.1f, 3f)] public float rarityFavorBias = 1f;
 
     [Header("After Use")]
-    [Tooltip("What happens to a portal once the player has used it.\n\nStays Open: it stays; the same dungeon can be entered again.\nClose After Entering: it disappears as soon as the player goes through.\nClose After Completing: it disappears once the player finishes its dungeon.")]
+    [Tooltip("What happens to a portal once the player has used it (a portal type can override it: Prefabs > After Use; a Portal component's own After Use wins over both).\n\nStays Open: it stays; the same dungeon can be entered again.\nClose After Entering: it disappears as soon as the player goes through (a shared or linked portal: once its dungeon is full, or over).\nClose After Completing: it disappears once the player finishes its dungeon.")]
     public PortalUseRule closeAfterUse = PortalUseRule.StaysOpen;
 
     [Tooltip("Seconds before a closed portal comes back (0 = never, for this session - see WorldSpawnRegistry.ClosedPortalSites to save it).")]

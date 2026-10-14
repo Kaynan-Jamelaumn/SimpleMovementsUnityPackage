@@ -57,7 +57,12 @@ public class AbilitySpawner : MonoBehaviour
         entity = null;
     }
 
-    private void OnDied(CombatEntity killer) => SpawnAbility();
+    private void OnDied(CombatEntity killer)
+    {
+        // Network sessions: the server rolls the drops (clients see the network-spawned pickups).
+        if (!GameNet.NetAuthority.IsClientOnly)
+            SpawnAbility();
+    }
 
     /// <summary>Rolls every entry and drops the winners around this object.</summary>
     public void SpawnAbility()
@@ -88,7 +93,7 @@ public class AbilitySpawner : MonoBehaviour
             }
 
             Vector3 pos = transform.position + GetSpawnOffset();
-            AbilityPickup.Spawn(grant, pos, entry.particleEffect, entry.waitingTimeToAbilityBecomeAvailable, entry.abilityLifeSpan);
+            AbilityPickup.Spawn(grant, pos, entry.particleEffect, entry.waitingTimeToAbilityBecomeAvailable, entry.abilityLifeSpan, gameObject);
             dropped++;
         }
     }

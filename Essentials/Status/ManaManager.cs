@@ -16,11 +16,15 @@ public class ManaManager : StatusManager
 
     private void Start()
     {
-        currentValue = maxValue;
+        // A client's copy keeps the mana the server sent (it may have arrived before Start).
+        if (!IsReplica)
+            currentValue = maxValue;
     }
 
     private void Update()
     {
+        if (IsReplica)
+            return; // regeneration runs on the server
         // Start mana regeneration if not already regenerating and mana is below max
         if (!isRegenerating && currentValue < maxValue && !isConsuming &&
             Time.time - manaRegenerationCooldownTimer > manaRegenerationCooldownDuration)
@@ -39,6 +43,7 @@ public class ManaManager : StatusManager
 
     public void ConsumeMana(float amount)
     {
+        if (IsReplica) return; // costs are paid on the server
         if (currentValue <= 0) return;
 
         manaRegenerationCooldownTimer = Time.time;
@@ -49,6 +54,7 @@ public class ManaManager : StatusManager
 
     public void RestoreMana(float amount)
     {
+        if (IsReplica) return;
         currentValue += AddFactor(amount);
         currentValue = Mathf.Min(maxValue, currentValue);
     }

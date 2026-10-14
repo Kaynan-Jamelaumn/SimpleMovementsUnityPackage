@@ -15,11 +15,15 @@ public class HealthManager : StatusManager
 
     private void Start()
     {
-        currentValue = maxValue;
+        // A client's copy keeps the health the server sent (it may have arrived before Start).
+        if (!IsReplica)
+            currentValue = maxValue;
     }
 
     private void Update()
     {
+        if (IsReplica)
+            return; // regeneration runs on the server
         if (!isRegenerating && currentValue < maxValue &&  Time.time - healthRegenCooldownTimer > healthRegenCooldownDuration)
         {
             healthRegenCooldownTimer = Time.time;
@@ -35,6 +39,7 @@ public class HealthManager : StatusManager
     }
     public void ConsumeHP(float amount, bool scapeBounds= false)
     {
+        if (IsReplica) return; // damage is decided by the server
         if (currentValue <= 0) return;
         healthRegenCooldownTimer = Time.time;
         if (scapeBounds) currentValue -= amount;

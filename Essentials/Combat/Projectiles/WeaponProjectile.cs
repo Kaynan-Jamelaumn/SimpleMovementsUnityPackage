@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// A physical projectile (arrow, bolt, bullet, thrown knife, grenade) flying with gravity, sweeping its path each frame
@@ -8,6 +9,10 @@ using UnityEngine;
 /// included, for exact hit locations); who it may hit and what a hit does are decided by its launcher (a weapon's attack,
 /// a script, an AI). It can pierce, lose damage with distance, stick into what it hits, be picked up again (ammo, the
 /// thrown weapon), and explode on impact or when its fuse runs out.
+/// <para>
+/// In a network session real projectiles fly on the server only (their hit queries are lag compensated for the
+/// shooter); clients fly <see cref="LaunchData.cosmetic"/> copies that only show the flight and the impact.
+/// </para>
 /// </summary>
 public class WeaponProjectile : MonoBehaviour
 {
@@ -29,7 +34,18 @@ public class WeaponProjectile : MonoBehaviour
         public Action<CombatEntity, Vector3, Vector3, Collider, float> onHitCharacter;
         /// <summary>Something that is not a character was hit (a target dummy, a switch): (collider, point, direction).</summary>
         public Action<Collider, Vector3, Vector3> onHitObject;
+        /// <summary>
+        /// A client's copy of a shot fired on the server: it flies, stops and sticks like the real one but hits nothing
+        /// (no callbacks, no blast, no noise) and is never picked up.
+        /// </summary>
+        public bool cosmetic;
     }
+
+    /// <summary>
+    /// Network: spawns the item a stuck projectile is recovered as, as a networked world item (installed by the
+    /// network layer on the server). Null offline: the projectile itself becomes the pickup, as before.
+    /// </summary>
+    public static RecoveredItemSpawn RecoveredItemSpawner { get; set; }
 
     private static readonly RaycastHit[] hits = new RaycastHit[16];
     private static readonly Collider[] overlaps = new Collider[32];
@@ -50,13 +66,26 @@ public class WeaponProjectile : MonoBehaviour
 
     public bool IsFlying => flying;
 
+    /// <summary>Seconds a cosmetic projectile stays stuck when its settings keep stuck projectiles for good.</summary>
+    public const float CosmeticStuckSeconds = 20f;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics() => fallbackPrefab = null;
+    private static void ResetStatics()
+    {
+        fallbackPrefab = null;
+        RecoveredItemSpawner = null;
+    }
 
     /// <summary>Launches a projectile. Returns it (null when there is nothing to launch).</summary>
     public static WeaponProjectile Launch(LaunchData d)
     {
-        var go = new GameObject("Projectile");
+        var go = new GameObject(d.cosmetic ? "Projectile (cosmetic)" : "Projectile");
+        // It belongs to the shooter's scene (a dungeon run, the World): physics and visibility are per scene there.
+        // A shooter kept across scene loads (DontDestroyOnLoad) does not drag its projectiles along.
+        Scene shooterScene = d.shooterObject != null ? d.shooterObject.scene : default;
+        if (shooterScene.IsValid() && shooterScene.isLoaded && go.scene != shooterScene &&
+            !(shooterScene.buildIndex == -1 && shooterScene.name == "DontDestroyOnLoad"))
+            SceneManager.MoveGameObjectToScene(go, shooterScene);
         go.transform.position = d.position;
         go.transform.rotation = Quaternion.LookRotation(d.velocity.sqrMagnitude > 1e-6f ? d.velocity : Vector3.forward);
         var p = go.AddComponent<WeaponProjectile>();
@@ -71,6 +100,12 @@ public class WeaponProjectile : MonoBehaviour
         velocity = d.velocity;
         pierceLeft = Mathf.Max(0, ps.pierce);
         flying = true;
+        if (d.cosmetic)
+        {
+            data.onHitCharacter = null;
+            data.onHitObject = null;
+            data.recoverItem = null;
+        }
         if (d.shooter != null)
             alreadyHit.Add(d.shooter); // never hits its own shooter
 
@@ -112,7 +147,9 @@ public class WeaponProjectile : MonoBehaviour
     private void CheckOverlapAtStart()
     {
         CombatSettings settings = CombatSettings.Instance;
-        int n = Physics.OverlapSphereNonAlloc(transform.position, ps.radius, overlaps, settings.characterLayers, QueryTriggerInteraction.Collide);
+        int n;
+        using (Rewind())
+            n = ScenePhysics.OverlapSphereNonAlloc(transform.position, ps.radius, overlaps, settings.characterLayers, QueryTriggerInteraction.Collide);
         for (int i = 0; i < n && flying; i++)
         {
             Collider c = overlaps[i];
@@ -148,7 +185,11 @@ public class WeaponProjectile : MonoBehaviour
         CombatSettings settings = CombatSettings.Instance;
         int mask = settings.characterLayers | settings.obstacleLayers | settings.groundLayers;
         Vector3 castFrom = from - dir * ps.radius;
-        int n = Physics.SphereCastNonAlloc(castFrom, ps.radius, dir, hits, len + ps.radius, mask, QueryTriggerInteraction.Collide);
+        int n;
+        // The shooter aimed at where its screen showed the others: the sweep runs against that (the hits found are
+        // handled once everything is back in the present).
+        using (Rewind())
+            n = ScenePhysics.SphereCastNonAlloc(castFrom, ps.radius, dir, hits, len + ps.radius, mask, QueryTriggerInteraction.Collide);
         SortHits(n);
         for (int i = 0; i < n && flying; i++)
         {
@@ -196,6 +237,12 @@ public class WeaponProjectile : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// The lag compensation scope of a hit query: real projectiles of a remote player's shot rewind the others to where
+    /// that player saw them (no-op offline, on clients, for cosmetic copies and for shooters without latency).
+    /// </summary>
+    private GameNet.LagCompensation.Scope Rewind() => GameNet.LagCompensation.For(data.cosmetic ? null : data.shooter);
+
     private bool IsShooterCollider(Collider c)
     {
         if (data.shooterObject == null)
@@ -238,9 +285,12 @@ public class WeaponProjectile : MonoBehaviour
         if (exploded || ps.explosionRadius <= 0f)
             return;
         exploded = true;
+        if (data.cosmetic)
+            return; // the server's projectile deals the blast
         var shape = new HitShape { type = HitShapeType.Sphere, radius = ps.explosionRadius };
         ResolvedShape r = ResolvedShape.Resolve(shape, point, Quaternion.identity, 1f);
-        CombatQuery.Overlap(r, blastBuffer);
+        using (Rewind())
+            CombatQuery.Overlap(r, blastBuffer);
         for (int i = 0; i < blastBuffer.Count; i++)
         {
             CombatEntity e = blastBuffer[i];
@@ -248,6 +298,8 @@ public class WeaponProjectile : MonoBehaviour
                 continue;
             if (data.canHit != null ? !data.canHit(e) : e == data.shooter)
                 continue;
+            if (data.shooter != null && CombatRules.AreSeparated(data.shooter, e))
+                continue; // another realm scene
             float d = Vector3.Distance(e.Center, point);
             float falloff = Mathf.Lerp(1f, 0.5f, Mathf.Clamp01(d / ps.explosionRadius));
             Vector3 dir = e.Center - point;
@@ -288,6 +340,30 @@ public class WeaponProjectile : MonoBehaviour
         if (into != null)
             transform.SetParent(into.transform, true);
         bool recoverable = character == null && data.recoverItem != null && UnityEngine.Random.value < ps.recoverChance;
+        if (recoverable && GameNet.NetAuthority.IsNetworked && RecoveredItemSpawner != null)
+        {
+            // In a session the recovered item is a networked world item every player can see and pick up.
+            bool spawned = false;
+            try
+            {
+                spawned = RecoveredItemSpawner(data.recoverItem, data.recoverDurability, transform.position, transform.rotation, gameObject);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex, this);
+            }
+            if (spawned)
+            {
+                Destroy(gameObject);
+                return;
+            }
+        }
+        if (data.cosmetic && ps.stuckLifetime <= 0f)
+        {
+            // A client's copy of a shot (its real projectile may become a networked pickup): it does not stay for good.
+            Destroy(gameObject, CosmeticStuckSeconds);
+            return;
+        }
         if (recoverable)
             MakePickable();
         if (ps.stuckLifetime > 0f && !recoverable)

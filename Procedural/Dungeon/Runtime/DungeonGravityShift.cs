@@ -50,7 +50,7 @@ namespace ProceduralDungeon
                 if (!warned && here && Time.time >= nextFlip - warning)
                 {
                     warned = true;
-                    DungeonMessages.Show("The stars shift... gravity is about to turn!", true);
+                    DungeonMessages.Show(this, "The stars shift... gravity is about to turn!", true);
                 }
                 if (Time.time >= nextFlip)
                 {
@@ -88,7 +88,7 @@ namespace ProceduralDungeon
                 foreach (Rigidbody rb in GetComponentsInChildren<Rigidbody>())
                     if (!rb.isKinematic)
                         rb.AddForce(Vector3.up * 6f, ForceMode.VelocityChange);
-                DungeonMessages.Show("Gravity flips!", true);
+                DungeonMessages.Show(this, "Gravity flips!", true);
                 return;
             }
             foreach (var kv in floating)

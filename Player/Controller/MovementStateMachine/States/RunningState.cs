@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class RunningState : MovementState
 {
@@ -11,28 +11,16 @@ public class RunningState : MovementState
         Context.MovementModel.CurrentSpeed = Context.StatusController.SpeedManager.GetSpeedWithMultiplier(
             Context.StatusController.SpeedManager.SpeedWhileRunningMultiplier);
 
-        if (Context.MovementModel.ShouldConsumeStamina)
-        {
-            Context.MovementModel.SprintCoroutine = Context.MovementModel.StartCoroutine(Context.StatusController.StaminaManager.ConsumeStaminaRoutine(Context.MovementModel.AmountOfSprintStaminaCost, 0.8f));
-            Context.StatusController.StaminaManager.IsConsuming = true;
-
-        }
-
+        BeginStaminaDrain(Context.MovementModel.AmountOfSprintStaminaCost);
     }
     public override void ExitState()
     {
-
-        if (Context.MovementModel.SprintCoroutine != null)
-        {
-            Context.MovementModel.StopCoroutine(Context.MovementModel.SprintCoroutine);
-            Context.MovementModel.SprintCoroutine = null; // Reset coroutine reference
-        }
-        Context.StatusController.StaminaManager.IsConsuming = false;
-
+        EndStaminaDrain();
     }
     public override void UpdateState()
     {
         MovePlayer();
+        TickStaminaDrain(Context.MovementModel.AmountOfSprintStaminaCost);
     }
     public override
     MovementStateMachine.EMovementState GetNextState()
@@ -42,9 +30,9 @@ public class RunningState : MovementState
         if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
         if (TriggeredCrouch()) return MovementStateMachine.EMovementState.Crouching;
 
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero && !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
+        if (!HasMoveInput())
             return MovementStateMachine.EMovementState.Idle;
-        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfSprintStaminaCost) == false || Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Sprint.IsPressed())
+        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfSprintStaminaCost) == false || !Context.Input.Sprint)
            return MovementStateMachine.EMovementState.Walking;
 
 

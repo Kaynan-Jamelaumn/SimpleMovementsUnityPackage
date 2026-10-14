@@ -297,11 +297,13 @@ public class BarrierAction : CastAction
             }
             poses.Clear();
 
-            if (action.pushOutOverlapping)
+            // Pushing characters out is gameplay: only the machine that runs the cast for real does it (a client's copy
+            // still builds the segments, which its movement and projectiles collide with).
+            if (action.pushOutOverlapping && !cast.Cosmetic)
                 PushOut();
 
             if (action.contactHit.effects.Count > 0)
-                hazard = HazardRegistry.AddShape(cast.CasterEntity, action.contactHit.filter, footprint, Time.time, Time.time + total, cast.Severity);
+                hazard = cast.Cosmetic ? null : HazardRegistry.AddShape(cast.CasterEntity, action.contactHit.filter, footprint, Time.time, Time.time + total, cast.Severity);
         }
 
         private void PushOut()

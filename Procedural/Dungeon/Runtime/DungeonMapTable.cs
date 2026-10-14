@@ -23,10 +23,19 @@ namespace ProceduralDungeon
             d.RevealMap(tag.floor);
             DungeonMapOverlay overlay = DungeonMapOverlay.For(d);
             overlay.Show(tag.floor, 8f);
-            DungeonMessages.Show($"You study the carved map of this floor. ({overlay.KeyName} shows it again.)", true);
+            DungeonMessages.Show(this, $"You study the carved map of this floor. ({overlay.KeyName} shows it again.)", true);
             return true;
         }
 
         protected override void OnUsedUp() { }
+
+        /// <summary>A client's copy: somebody studied the map, so this floor's map is known to the whole party.</summary>
+        protected override void OnNetState(int state, byte[] payload)
+        {
+            var tag = GetComponent<DungeonSpawned>();
+            DungeonInstance d = Dungeon;
+            if (state > 0 && tag != null && d != null)
+                d.RevealMap(tag.floor);
+        }
     }
 }

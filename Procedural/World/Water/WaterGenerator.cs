@@ -49,11 +49,20 @@ public static class WaterGenerator
         RiverGenerator.Gather(rectMin, rectMax, settings, sampler, rivers);
         GenerationStats.Record(GenerationStats.WaterRivers, stage);
 
+        // Areas kept dry (the hub city and its levelled ring): drop every lake and river that reaches them. The test
+        // uses each feature as a whole, so every chunk drops the same ones and nothing is cut at a chunk border.
+        if (WorldAreas.Count > 0)
+        {
+            lakes.RemoveAll(l => WorldAreas.Touches(WorldAreaRules.NoWater, l.Center, l.BoundRadius));
+            rivers.RemoveAll(RiverTouchesDryArea);
+        }
+
         // Lakes created where a river got trapped aren't on the lake grid - they come with their river.
         for (int i = 0; i < rivers.Count; i++)
         {
             LakeFeature terminal = rivers[i].TerminalLake;
-            if (terminal != null && terminal.Intersects(rectMin, rectMax) && !lakes.Contains(terminal))
+            if (terminal != null && terminal.Intersects(rectMin, rectMax) && !lakes.Contains(terminal)
+                && !(WorldAreas.Count > 0 && WorldAreas.Touches(WorldAreaRules.NoWater, terminal.Center, terminal.BoundRadius)))
                 lakes.Add(terminal);
         }
 
@@ -69,6 +78,24 @@ public static class WaterGenerator
         var context = new ChunkWaterContext(settings, origin, size, lakes, rivers);
         GenerationStats.Record(GenerationStats.WaterSetup, total);
         return context;
+    }
+
+    private static bool RiverTouchesDryArea(RiverPath river)
+    {
+        if (river == null || river.Points == null)
+            return false;
+        Vector2 mid = (river.BoundsMin + river.BoundsMax) * 0.5f;
+        float boundRadius = (river.BoundsMax - river.BoundsMin).magnitude * 0.5f;
+        if (!WorldAreas.Touches(WorldAreaRules.NoWater, mid, boundRadius + 64f))
+            return false;
+        for (int i = 0; i < river.Points.Length; i++)
+        {
+            float valley = river.ValleyHalfWidth != null && i < river.ValleyHalfWidth.Length ? river.ValleyHalfWidth[i] : 0f;
+            float half = river.HalfWidth != null && i < river.HalfWidth.Length ? river.HalfWidth[i] : 0f;
+            if (WorldAreas.Touches(WorldAreaRules.NoWater, river.Points[i], Mathf.Max(valley, half) + 8f))
+                return true;
+        }
+        return false;
     }
 
     public static float SmoothStep01(float v)

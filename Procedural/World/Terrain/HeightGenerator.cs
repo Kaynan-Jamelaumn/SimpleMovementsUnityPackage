@@ -140,6 +140,8 @@ public static class HeightGenerator
         long waterApply = GenerationStats.Start();
         if (water != null)
             water.ApplyPostErosion(paddedHeights);
+        // Levelled areas (a town, the hub city's outer walls): after water and erosion, so they stay flat.
+        WorldAreas.Flatten(paddedHeights, paddedOrigin);
 
         float[,] heightMap = new float[finalSize, finalSize];
         bool trackMinMax = !terrainGenerator.TerrainTextureBasedOnVoronoiPoints;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -15,6 +16,12 @@ public class AbilityDatabase : ScriptableObject
     private Dictionary<string, AbilityDefinition> byId;
     private static AbilityDatabase instance;
     private static bool searched;
+
+    /// <summary>
+    /// Definitions created in code at runtime (legacy conversions, mob basic attacks, presets) by id. Every machine
+    /// creates the same ones with the same ids, so a client finds what the server names (see <see cref="Resolve"/>).
+    /// </summary>
+    private static readonly Dictionary<string, AbilityDefinition> runtimeById = new Dictionary<string, AbilityDefinition>();
 
     /// <summary>The database in Resources/AbilityDatabase (null if there is none).</summary>
     public static AbilityDatabase Instance
@@ -41,6 +48,67 @@ public class AbilityDatabase : ScriptableObject
     {
         instance = null;
         searched = false;
+        runtimeById.Clear();
+        FallbackResolver = null;
+    }
+
+    /// <summary>
+    /// Last resort of <see cref="Resolve"/> for ids nothing else knows: a system that creates definitions in code on
+    /// demand (e.g. trait presets) can install a function that builds the definition for its id, so a client finds an
+    /// ability the server created even when this machine has not created it yet. Null = none.
+    /// </summary>
+    public static Func<string, AbilityDefinition> FallbackResolver;
+
+    /// <summary>
+    /// The ability with this id from anywhere this machine knows: definitions created at runtime (legacy conversions,
+    /// mob basic attacks, presets), the Ability Database (if there is one) and converted legacy abilities. Null when
+    /// unknown. The network layer uses it to turn the ids the server sends back into abilities.
+    /// </summary>
+    public static AbilityDefinition Resolve(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return null;
+        if (runtimeById.TryGetValue(id, out AbilityDefinition runtime))
+        {
+            if (runtime != null)
+                return runtime;
+            runtimeById.Remove(id); // destroyed
+        }
+        AbilityDatabase db = Instance;
+        AbilityDefinition found = db != null ? db.Find(id) : null;
+        if (found == null)
+            found = LegacyAbilityConverter.FindConverted(id);
+        if (found == null && FallbackResolver != null)
+        {
+            try
+            {
+                found = FallbackResolver(id);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                found = null;
+            }
+            if (found != null && found.Id == id)
+                RegisterRuntime(found);
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Makes a definition created at runtime findable by <see cref="Resolve"/> (the first one registered under an id
+    /// wins). Called automatically for definitions marked with <see cref="AbilityDefinition.InitializeRuntime"/>.
+    /// </summary>
+    public static void RegisterRuntime(AbilityDefinition ability)
+    {
+        if (ability == null || !Application.isPlaying)
+            return;
+        string id = ability.Id;
+        if (string.IsNullOrEmpty(id))
+            return;
+        if (runtimeById.TryGetValue(id, out AbilityDefinition existing) && existing != null)
+            return;
+        runtimeById[id] = ability;
     }
 
     private void OnEnable() => byId = null;

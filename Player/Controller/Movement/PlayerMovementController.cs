@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.Assertions;
 /// <summary>
-/// Applies gravity (FixedUpdate) and camera-based rotation (LateUpdate) to the player, and answers "is the player on
-/// the ground?" with a short ray from the feet.
+/// Applies gravity and camera-based rotation to the player, and answers "is the player on the ground?" with a short
+/// ray from the feet. Normally the <see cref="MovementStateMachine"/> calls <see cref="ApplyGravity(float)"/> and
+/// <see cref="ApplyRotation(float, bool)"/> from its simulation step (so a network replay runs them again in the same
+/// order); without a running movement machine they run on their own in FixedUpdate and LateUpdate as before.
 /// </summary>
 public class PlayerMovementController : MonoBehaviour
 {
@@ -32,14 +34,30 @@ public class PlayerMovementController : MonoBehaviour
 
     public float GroundCheckDistance => groundCheckDistance;
 
+    /// <summary>
+    /// Set by the <see cref="MovementStateMachine"/> while it applies gravity and rotation from its simulation step:
+    /// FixedUpdate and LateUpdate then leave them alone (they would apply twice, outside the simulated tick).
+    /// </summary>
+    [System.NonSerialized] public bool DrivenBySimulation;
+
     private void Awake()
     {
         model = this.CheckComponent(model, nameof(model));
         cameraModel = this.CheckComponent(cameraModel, nameof(cameraModel));
         cameraController = this.CheckComponent(cameraController, nameof(cameraController));
     }
-    void FixedUpdate() => ApplyGravity();
-    private void LateUpdate() => ApplyRotation();
+    void FixedUpdate()
+    {
+        if (!DrivenBySimulation)
+            ApplyGravity(Time.deltaTime);
+    }
+
+    private void LateUpdate()
+    {
+        if (!DrivenBySimulation)
+            ApplyRotation();
+    }
+
     public Vector3 PlayerForwardPosition() => model.PlayerTransform.rotation * Vector3.forward;
 
 
@@ -52,31 +70,49 @@ public class PlayerMovementController : MonoBehaviour
 
         Debug.DrawRay(raycastOrigin, Vector3.down * raycastLength, Color.red); // Visualize the ray in the scene
 
-        bool isHit = Physics.Raycast(raycastOrigin, Vector3.down, out RaycastHit hit, raycastLength, groundLayers, QueryTriggerInteraction.Ignore);
+        bool isHit = ScenePhysics.Raycast(raycastOrigin, Vector3.down, out RaycastHit hit, raycastLength, groundLayers, QueryTriggerInteraction.Ignore);
 
         return isHit;
     }
 
 
-    // Apply player rotation
+    /// <summary>Turns the body to the active camera's yaw while moving in rotate-with-camera mode (reads the camera).</summary>
     public void ApplyRotation()
+    {
+        if (cameraModel == null || cameraModel.CameraTransform == null)
+            return;
+        ApplyRotation(cameraModel.CameraTransform.eulerAngles.y, cameraModel.PlayerShouldRotateByCameraAngle || cameraModel.IsFirstPerson);
+    }
+
+    /// <summary>
+    /// Turns the body to <paramref name="cameraYaw"/> (degrees) while the player moves with
+    /// <paramref name="rotateWithCamera"/> on - the camera values come with the movement input, so the server and a
+    /// replay turn the body exactly like the owner's machine did.
+    /// </summary>
+    public void ApplyRotation(float cameraYaw, bool rotateWithCamera)
     {
         if (model.Movement2D.sqrMagnitude == 0) return;
 
-        if (cameraModel.PlayerShouldRotateByCameraAngle || cameraModel.IsFirstPerson)
-            model.PlayerTransform.rotation = Quaternion.Euler(0.0f, cameraModel.CameraTransform.transform.eulerAngles.y, 0.0f);
+        if (rotateWithCamera)
+            model.PlayerTransform.rotation = Quaternion.Euler(0.0f, cameraYaw, 0.0f);
     }
 
-    // Apply gravity to the player
-    private void ApplyGravity()
+    /// <summary>
+    /// One gravity step of <paramref name="dt"/> seconds: on the ground the vertical speed rests at -1 (keeps the
+    /// controller pressed down), in the air gravity accumulates; then the controller moves vertically.
+    /// </summary>
+    public void ApplyGravity(float dt)
     {
         if (model.SuspendGravity)
             return; // a trait (wall climb) is holding the player
         if (IsGrounded() && model.VerticalVelocity < 0.0f)
             model.VerticalVelocity = -1f;
         else
-            model.VerticalVelocity += model.Gravity * model.GravityMultiplier * Time.deltaTime;
-        model.Controller.Move(Vector3.up * model.VerticalVelocity * Time.deltaTime);
+            model.VerticalVelocity += model.Gravity * model.GravityMultiplier * dt;
+        CharacterController cc = model.Controller;
+        // A switched-off controller (travel, teleport in progress) cannot move and would only log a warning.
+        if (cc != null && cc.enabled && cc.gameObject.activeInHierarchy)
+            cc.Move(Vector3.up * model.VerticalVelocity * dt);
     }
 
 

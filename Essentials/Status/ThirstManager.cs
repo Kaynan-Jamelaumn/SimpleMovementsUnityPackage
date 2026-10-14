@@ -27,11 +27,15 @@ public class ThirstManager : StatusManager
 
     private void Start()
     {
-        currentValue = maxValue;
+        // A client's copy keeps the value the server sent (it may have arrived before Start).
+        if (!IsReplica)
+            currentValue = maxValue;
     }
 
     private void Update()
     {
+        if (IsReplica)
+            return; // decay and the dehydration penalty run on the server
         if (currentValue <= 0 && DrinkPenaltyRoutine == null)
         {
             ApplyThirstPenalty();
@@ -45,15 +49,27 @@ public class ThirstManager : StatusManager
         UpdateBar(currentValue, maxValue, uiImage);
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
     }
-    public void ApplyThirstPenalty() => DrinkPenaltyRoutine = StartCoroutine(ThirstPenalty());
+    public void ApplyThirstPenalty()
+    {
+        if (IsReplica) return;
+        DrinkPenaltyRoutine = StartCoroutine(ThirstPenalty());
+    }
 
     public void ConsumeDrink(float amount)
     {
+        if (IsReplica) return;
         if (currentValue <= 0) return;
         currentValue -= RemoveFactor(amount);
     }
 
     protected override void UpdateStatus() => UpdateBar();
+
+    protected override void OnReplicaChanged(bool on)
+    {
+        // The routines were stopped: forget their handles so the penalty can start again when this machine simulates.
+        DrinkConsumptionRoutine = null;
+        DrinkPenaltyRoutine = null;
+    }
     protected override float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
     protected override float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
     public void AddDrinkEffect(string effectName, float drinkAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)

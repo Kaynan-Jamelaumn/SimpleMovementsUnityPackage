@@ -25,6 +25,7 @@ public class SleepManager : StatusManager
     private Coroutine sleepConsumptionRoutine;
     private Coroutine sleepEffectsRoutine;
     private Coroutine forcedNapRoutine;
+    private bool started;
     private List<CoroutineInfo> sleepEffectRoutines = new List<CoroutineInfo>();
 
     // References to other managers
@@ -54,17 +55,54 @@ public class SleepManager : StatusManager
 
     private void Start()
     {
-        currentValue = maxValue;
-        sleepConsumptionRoutine = StartCoroutine(SleepConsumptionRoutine());
-        sleepEffectsRoutine = StartCoroutine(SleepEffectsRoutine());
+        started = true;
+        // A client's copy keeps the server's value and runs no routines (the server simulates sleepiness).
+        if (!IsReplica)
+        {
+            currentValue = maxValue;
+            StartRoutines();
+        }
 
         // Initially hide UI if fully rested
         UpdateUIVisibility();
     }
 
+    private void StartRoutines()
+    {
+        sleepConsumptionRoutine = StartCoroutine(SleepConsumptionRoutine());
+        sleepEffectsRoutine = StartCoroutine(SleepEffectsRoutine());
+    }
+
+    protected override void OnReplicaChanged(bool on)
+    {
+        sleepConsumptionRoutine = null;
+        sleepEffectsRoutine = null;
+        forcedNapRoutine = null;
+        if (!on && started)
+        {
+            if (isSleeping)
+                StartCoroutine(hasCollapsed ? ForcedNapRoutine() : SleepRecoveryRoutine());
+            StartRoutines();
+        }
+    }
+
+    /// <summary>
+    /// Client copies: shows the server's sleeping / collapsed state (the bar and anything reading
+    /// <see cref="IsSleeping"/> follow it). Ignored where the rules run.
+    /// </summary>
+    public void ApplyReplicatedState(bool sleeping, bool collapsed)
+    {
+        if (!IsReplica)
+            return;
+        isSleeping = sleeping;
+        hasCollapsed = collapsed;
+    }
+
     private void Update()
     {
         UpdateSleepBar();
+        if (IsReplica)
+            return; // collapsing is decided by the server
 
         // Check for forced collapse
         if (currentValue >= extremeCollapseThreshold && !hasCollapsed && !isSleeping)
@@ -108,6 +146,7 @@ public class SleepManager : StatusManager
 
     public void StartSleeping()
     {
+        if (IsReplica) return; // ask the server (PlayerStatusController.StartSleeping sends the request)
         if (isSleeping) return;
 
         isSleeping = true;
@@ -121,6 +160,7 @@ public class SleepManager : StatusManager
 
     public void StopSleeping()
     {
+        if (IsReplica) return;
         if (!isSleeping) return;
 
         isSleeping = false;

@@ -9,7 +9,7 @@ namespace ProceduralDungeon
     /// <see cref="holdTime"/> seconds (searching the wall, unless it isn't <see cref="searchable"/>), or when
     /// <see cref="Open"/> is called (a lever, a key, a spell). Mobs path through once it's open (it carves the NavMesh only while closed).
     /// </summary>
-    public class DungeonSecretDoor : MonoBehaviour
+    public class DungeonSecretDoor : MonoBehaviour, IDungeonNetState
     {
         [Tooltip("Opens by searching the wall. Off: only Open() opens it (the wine cellar's hidden lever).")]
         public bool searchable = true;
@@ -45,8 +45,8 @@ namespace ProceduralDungeon
                 transform.localPosition = Vector3.MoveTowards(transform.localPosition, closed + Vector3.down * height, openSpeed * Time.deltaTime);
                 return;
             }
-            if (!searchable)
-                return;
+            if (!searchable || DungeonNet.IsReplica(this))
+                return;   // a client's copy opens when the server's does
             // Any living player searching the wall (not "the object tagged Player": several players may be inside).
             bool searching = PlayerLocator.AnyWithin(transform.position, searchDistance);
             held = searching ? held + Time.deltaTime : Mathf.Max(0f, held - Time.deltaTime);
@@ -56,15 +56,30 @@ namespace ProceduralDungeon
 
         public void Open()
         {
-            if (IsOpen)
+            if (IsOpen || DungeonNet.IsReplica(this))
                 return;
-            IsOpen = true;
-            if (obstacle != null)
-                obstacle.enabled = false;
+            ShowOpen();
+            DungeonNet.Publish(this, 1);
             DungeonInstance dungeon = GetComponentInParent<DungeonInstance>();
             if (dungeon != null)
                 dungeon.Stats.Bump(ref dungeon.Stats.secretsFound);
             Opened?.Invoke(this);
+        }
+
+        private void ShowOpen()
+        {
+            IsOpen = true;
+            if (obstacle == null)
+                obstacle = GetComponent<NavMeshObstacle>();
+            if (obstacle != null)
+                obstacle.enabled = false;
+        }
+
+        /// <summary>A client's copy: the server's wall opened (it sinks here too).</summary>
+        public void ApplyNetState(int state, byte[] payload)
+        {
+            if (state > 0 && !IsOpen)
+                ShowOpen();
         }
     }
 }

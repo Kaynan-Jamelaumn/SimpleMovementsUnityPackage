@@ -30,18 +30,21 @@ public class WeightManager : StatusManager
 
     public void AddWeight(float amount)
     {
+        if (IsReplica) return; // the server's inventory decides the weight
         currentValue += amount;
         UpdateWeightBar();
     }
 
     public void ModifyMaxWeight(float amount)
     {
+        if (LimitsLocked) return;
         maxValue += amount;
         UpdateWeightBar();
     }
 
     public void ConsumeWeight(float amount)
     {
+        if (IsReplica) return;
         if (currentValue > 0)
         {
             currentValue -= amount;
@@ -53,6 +56,9 @@ public class WeightManager : StatusManager
     {
         AddEffect(WeightIncreaseEffectRoutines, effectName, weightAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyWeightIncreaseEffectRoutine);
     }
+
+    /// <summary>Carried weight may exceed the max (overloaded), so a replicated value is only kept above 0.</summary>
+    protected override float ClampReplicated(float value) => Mathf.Max(0f, value);
 
     public float CalculateSpeedBasedOnWeight(float baseSpeed)
     {

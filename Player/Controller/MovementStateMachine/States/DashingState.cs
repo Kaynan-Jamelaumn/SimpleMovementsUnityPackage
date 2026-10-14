@@ -1,4 +1,3 @@
-﻿using System.Collections;
 using UnityEngine;
 
 public class DashingState : MovementState
@@ -8,70 +7,58 @@ public class DashingState : MovementState
         MovementContext Context = context;
     }
 
-    private float startTime;
-    private Coroutine dashRoutine;
-
     public override void EnterState()
     {
         // Use SpeedManager for base speed
         Context.MovementModel.CurrentSpeed = Context.StatusController.SpeedManager.Speed;
 
-        // Start dash routine and consume stamina
+        // Consume stamina
         if (Context.StatusController.DashModel.ShouldConsumeStamina)
         {
             Context.StatusController.StaminaManager.ConsumeStamina(Context.StatusController.DashModel.StaminaCost);
         }
 
         Context.AnimationModel.IsDashing = true;
-        startTime = Time.time;
-        Context.StatusController.DashModel.LastActionTime = Time.time;
+        Context.StatusController.DashModel.LastActionTime = Context.SimTime;
 
-        // Start the dash movement routine
-        dashRoutine = Context.MovementModel.StartCoroutine(DashMovementRoutine());
+        // The dash moves for DashDuration seconds of the movement clock (it used to be a coroutine, which a network
+        // replay cannot re-run). Its first step happens right away, as the coroutine's did.
+        Context.ActionElapsed = 0f;
+        if (Context.ActionElapsed < Context.StatusController.DashModel.DashDuration)
+            DashStep();
     }
 
     public override void ExitState()
     {
         Context.AnimationModel.IsDashing = false;
-
-        if (dashRoutine != null)
-        {
-            Context.MovementModel.StopCoroutine(dashRoutine);
-            dashRoutine = null;
-        }
     }
 
     public override void UpdateState()
     {
-        // Movement is handled by the dash routine
-        // Only apply gravity and basic physics here if needed
-        Vector3 gravityMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Time.deltaTime;
-        Context.MovementModel.Controller.Move(gravityMovement);
+        // Only apply gravity and basic physics here; the forward burst is DashStep
+        Vector3 gravityMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Context.Dt;
+        Context.Move(gravityMovement);
+
+        if (Context.ActionElapsed < Context.StatusController.DashModel.DashDuration)
+            DashStep();
     }
 
-    private IEnumerator DashMovementRoutine()
+    private void DashStep()
     {
-        float elapsed = 0f;
-        while (elapsed < Context.StatusController.DashModel.DashDuration)
-        {
-            Vector3 movement = Context.StatusController.DashModel.DashSpeed *
-                             Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(
-                                 Context.StatusController.SpeedManager.Speed) *
-                             Time.deltaTime *
-                             Context.MovementController.PlayerForwardPosition();
+        Vector3 movement = Context.StatusController.DashModel.DashSpeed *
+                           Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(
+                               Context.StatusController.SpeedManager.Speed) *
+                           Context.Dt *
+                           Context.MovementController.PlayerForwardPosition();
 
-            Context.MovementModel.Controller.Move(movement);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        dashRoutine = null;
+        Context.Move(movement);
+        Context.ActionElapsed += Context.Dt;
     }
 
     public override MovementStateMachine.EMovementState GetNextState()
     {
         // Stay in dashing state until dash duration is complete
-        if (Time.time - startTime < Context.StatusController.DashModel.DashDuration && dashRoutine != null)
+        if (Context.ActionElapsed < Context.StatusController.DashModel.DashDuration)
             return StateKey;
 
         // After dash is complete, transition based on input

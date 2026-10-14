@@ -1,9 +1,13 @@
+using GameNet;
 using UnityEngine;
 
 /// <summary>
 /// Controls the interaction and movement of a door in the game.
+/// <para>Network sessions: the server opens and closes the door; with a NetworkObject and a <c>GameNet.NetInteractable</c>
+/// on it, every client shows the server's state (<see cref="IReplicatedInteractable"/>). A client's copy of a networked
+/// door ignores direct calls - its player's interaction is sent to the server.</para>
 /// </summary>
-public class DoorController : Interactable
+public class DoorController : Interactable, IReplicatedInteractable
 {
     [SerializeField] private float openAngle = 90f; // The angle by which the door should rotate when opened
     [SerializeField] private float closeAngle = 0f; // The angle by which the door should rotate when closed
@@ -29,6 +33,8 @@ public class DoorController : Interactable
     /// </summary>
     public override void Interact()
     {
+        if (!NetAuthority.RunsRules(gameObject))
+            return; // a client's copy of a networked door: the server decides
         if (isOpen)
             CloseDoor();
         else
@@ -50,6 +56,15 @@ public class DoorController : Interactable
     {
         isOpen = false;
     }
+
+    /// <summary>Is the door open (or opening)?</summary>
+    public bool IsOpen => isOpen;
+
+    /// <summary>1 = open, 0 = closed.</summary>
+    public int ReplicatedState => isOpen ? 1 : 0;
+
+    /// <summary>A client shows the server's door (it swings there smoothly).</summary>
+    public void ApplyReplicatedState(int state) => isOpen = state != 0;
 
     /// <summary>
     /// Update is called once per frame.

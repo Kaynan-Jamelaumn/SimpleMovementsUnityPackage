@@ -104,6 +104,9 @@ Temperate, Grassland, Desert, Tundra & Snow, Rainforest, Swamp & Wetland, Mounta
 | Erosion | **none** (erosion uses the static climate rainfall) | — |
 | Physics | tornado pushes rigidbodies (swirl, pull, lift), `Tornado Force` | weather → objects |
 | Dungeons | `DungeonSession` disables the WeatherSystem while inside | — |
+| Players | statuses (Soaked, Chilled, Heatstroke...), body heat, lightning: **Player Weather Effects** ([21](21-Weather-Players-Day-Night.md)) | weather → players |
+| Spawning | mobs, world portals and loot only in / never in some weathers ([21](21-Weather-Players-Day-Night.md) §4) | weather → spawning |
+| Day and night | the **Day Night Cycle** sets Time Of Day and darkens the light through Lighting Effects ([21](21-Weather-Players-Day-Night.md) §3) | clock → weather |
 
 Ground wetness per second: `+ rain × 0.02 + hail × 0.01 − (0.003 + 0.01·heat + 0.003·warm) × (1 − rain)`.
 
@@ -121,7 +124,7 @@ Ground wetness per second: `+ rain × 0.02 + hail × 0.01 − (0.003 + 0.01·hea
 | Transition Seconds | 12 | slower transitions | abrupt |
 | Allow Tornadoes | on | — | — |
 | Start Time | 0 | different starting weather | — |
-| Time Of Day | −1 | set from your day/night system | — |
+| Time Of Day | −1 | set by the Day Night Cycle (21 §3) | — |
 | Effect Radius / Max Particles | 35 / 8000 | denser, wider particles | cheaper |
 | Fog Effects / Max Fog Density | on / 0.03 | thicker fog | — |
 | Lighting Effects, Lightning Bolts, Max Lightning / min | on, on, 8 | more flashes | — |

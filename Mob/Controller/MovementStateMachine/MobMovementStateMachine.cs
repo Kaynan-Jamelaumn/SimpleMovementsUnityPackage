@@ -8,6 +8,15 @@ using UnityEngine.AI;
 /// updates the senses and decisions (at a rate set by the distance to players), the movement and the animation,
 /// then runs the current state.
 /// </summary>
+/// <remarks>
+/// The AI runs only where the mob's rules run (<see cref="GameNet.NetAuthority.RunsRules"/>): single player, a host
+/// or a dedicated server. A client's copy of a networked mob is a replica (<see cref="IsReplica"/>): its senses,
+/// decisions, movement and NavMeshAgent stay off (the components are kept), the network moves it, and the animation
+/// follows the state the server sends (<see cref="ApplyReplicaState"/>, <see cref="PlayReplicatedAnimationEvent"/>,
+/// hits reported through <see cref="CombatEntity.ReplicatedDamage"/>, death through
+/// <see cref="Mob.ApplyReplicatedDeath"/>). A mob without a network identity on a pure client (a scene mob or prefab
+/// that was never networked) cannot be shown by the server, so it is switched off there instead of running its own AI.
+/// </remarks>
 [DefaultExecutionOrder(10)]
 [DisallowMultipleComponent]
 public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMobMovementState>, IAssignmentsValidator
@@ -57,6 +66,11 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
     private MobMovementContext context;
     private MobAbilityController abilities;
     private bool asleep;
+    private bool replicaActive;
+    private bool agentWasEnabled;
+    private MobReplicaState replicaState;
+    private CombatEntity replicaTarget;
+    private bool hasNetworkIdentity;
 
     /// <summary>The AI context (brain, perception, motor...). Null before Awake.</summary>
     public MobMovementContext Context => context;
@@ -67,6 +81,42 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
 
     /// <summary>True when the current state has completed its job and is waiting for the next decision.</summary>
     public bool CurrentStateFinished => CurrentState is MobMovementState s && s.IsFinished;
+
+    /// <summary>
+    /// True on a client's copy of a networked mob: the server runs its AI and this copy only shows it. Always false in
+    /// single player and on the server or host. Read when acting - a machine learns it is a client when it connects. A
+    /// mob with a network identity on a pure client is a replica even before its spawn message is processed, so its AI
+    /// never runs there.
+    /// </summary>
+    public bool IsReplica
+    {
+        get
+        {
+            if (!GameNet.NetAuthority.IsClientOnly)
+                return false;
+            if (!hasNetworkIdentity)
+                hasNetworkIdentity = GameNet.MobNetSpawn.HasNetworkIdentity(gameObject); // a prefab's identity never goes away
+            return hasNetworkIdentity || GameNet.NetAuthority.IsNetworkedObject(gameObject);
+        }
+    }
+
+    /// <summary>The AI state as everyone sees it: the server's for replicas, the local one otherwise.</summary>
+    public EMobMovementState VisibleStateKey => replicaActive ? replicaState.State : CurrentStateKey;
+
+    /// <summary>The last state received from the server (replicas only).</summary>
+    public MobReplicaState ReplicaState => replicaState;
+
+    /// <summary>
+    /// Who the mob is after, as everyone sees it: the server's choice on replicas (<see cref="ApplyReplicaTarget"/>; null
+    /// when that character is not visible here), the brain's target otherwise. For target indicators and nameplates.
+    /// </summary>
+    public CombatEntity VisibleTarget => replicaActive ? replicaTarget : (context != null ? context.Brain.Target : null);
+
+    /// <summary>
+    /// Raised when the mob plays an alert or a dodge by itself (single player, server): the network layer repeats it on
+    /// the clients' copies. Hits are not raised here - clients flinch at the hits the status module reports.
+    /// </summary>
+    public event Action<MobAnimationEvent> AnimationEventPlayed;
 
     private void Awake()
     {
@@ -79,7 +129,19 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         {
             DebugLog = debugLog,
         };
+        context.Animation.Played += OnAnimationPlayed;
+        if (context.Entity != null)
+            context.Entity.ReplicatedDamage += OnReplicatedDamage;
         InitializeStates();
+    }
+
+    private void OnAnimationPlayed(MobAnimationEvent e) => AnimationEventPlayed?.Invoke(e);
+
+    /// <summary>Client copies: flinch at the hits the server reports (like the brain does where the AI runs).</summary>
+    private void OnReplicatedDamage(DamageInfo info)
+    {
+        if (context != null && !info.isPeriodic)
+            context.Animation.PlayReplicated(MobAnimationEvent.Hit);
     }
 
     /// <summary>Fills every empty reference from this object (inspector button and setup tools).</summary>
@@ -121,7 +183,8 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
     protected override void Start()
     {
         ValidateAssignments();
-        context.Perception.Subscribe();
+        if (!SyncReplicaMode())
+            context.Perception.Subscribe();
         context.Brain.RecomputeRanges();
         if (abilities != null)
             abilities.SlotChanged += OnSlotChanged;
@@ -130,7 +193,7 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
 
     private void OnEnable()
     {
-        if (context != null && Application.isPlaying && CurrentState != null)
+        if (context != null && Application.isPlaying && CurrentState != null && !replicaActive)
             context.Perception.Subscribe();
     }
 
@@ -149,6 +212,9 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         context.Perception.Unsubscribe();
         MobCombatCoordinator.Disengage(context);
         context.Motor.Dispose();
+        context.Animation.Played -= OnAnimationPlayed;
+        if (context.Entity != null)
+            context.Entity.ReplicatedDamage -= OnReplicatedDamage;
         if (abilities != null)
             abilities.SlotChanged -= OnSlotChanged;
     }
@@ -191,6 +257,13 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
     {
         if (context == null || CurrentState == null)
             return;
+        if (SyncReplicaMode())
+            return; // a client's copy: the server thinks and moves for it (animation in LateUpdate)
+        if (GameNet.NetAuthority.IsClientOnly)
+        {
+            SwitchOffUnsyncedCopy();
+            return;
+        }
         float now = Time.time;
         float dt = Time.deltaTime;
         MobMovementContext c = context;
@@ -198,7 +271,7 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
 
         if (CurrentStateKey != EMobMovementState.Dead)
         {
-            c.Scheduler.UpdateTier(now, transform.position, c.Brain.InCombat || c.Brain.Mode == MobMode.Flee, c.Profile.alwaysFullRate);
+            c.Scheduler.UpdateTier(now, transform.position, c.Brain.InCombat || c.Brain.Mode == MobMode.Flee, c.Profile.alwaysFullRate, c.Entity);
             if (c.Scheduler.ShouldPerceive(now))
                 c.Perception.Tick(now);
             if (c.Scheduler.Awake)
@@ -225,6 +298,168 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
 
         debugState = CurrentStateKey;
         debugTarget = c.Brain.Target != null ? c.Brain.Target.name : "";
+    }
+
+    protected override void LateUpdate()
+    {
+        if (replicaActive)
+        {
+            // After the network has placed the copy for this frame, so the measured speed matches what is seen.
+            if (context != null)
+                context.Animation.Tick(Time.deltaTime);
+            debugState = replicaState.State;
+            return;
+        }
+        base.LateUpdate();
+    }
+
+    // ------------------------------------------------------------------ network replicas
+    /// <summary>
+    /// Switches between running the AI (single player, server) and showing the server's (client copies), following
+    /// <see cref="IsReplica"/>. Called every frame; the network layer also calls it as soon as a copy is spawned so the
+    /// NavMeshAgent never steers it. Returns true while this copy is a replica.
+    /// </summary>
+    public bool SyncReplicaMode()
+    {
+        if (context == null)
+            return false;
+        bool want = IsReplica;
+        if (want == replicaActive)
+            return want;
+        replicaActive = want;
+        if (want)
+            EnterReplica();
+        else
+            ExitReplica();
+        return want;
+    }
+
+    private void EnterReplica()
+    {
+        context.Perception.Unsubscribe();
+        MobCombatCoordinator.Disengage(context);
+        context.Motor.Stop();
+        NavMeshAgent agent = context.NavMeshAgentReference;
+        if (agent != null)
+        {
+            agentWasEnabled = agent.enabled;
+            agent.enabled = false; // the server's position arrives through the network; the agent would pull it back
+        }
+        context.Animation.SetReplica(true);
+        context.Animation.ApplyReplicated(replicaState);
+        context.Log("is a network copy: the server runs its AI");
+    }
+
+    private void ExitReplica()
+    {
+        // The session ended and this copy outlives it (a scene mob): it thinks for itself again.
+        context.Animation.SetReplica(false);
+        replicaTarget = null;
+        bool alive = CurrentStateKey != EMobMovementState.Dead;
+        NavMeshAgent agent = context.NavMeshAgentReference;
+        if (agent != null && agentWasEnabled && alive)
+        {
+            agent.enabled = true;
+            if (agent.isOnNavMesh)
+                agent.Warp(transform.position);
+        }
+        if (alive && isActiveAndEnabled && CurrentState != null)
+            context.Perception.Subscribe();
+        context.Brain.RequestDecision();
+    }
+
+    /// <summary>
+    /// A mob that is not networked on a pure client: the server does not know it, so it would fight, drop loot and
+    /// wander on this machine only. It is switched off (with a warning once) rather than run there.
+    /// </summary>
+    private void SwitchOffUnsyncedCopy()
+    {
+        Debug.LogWarning($"[{name}] This mob has no network identity (no NetworkObject on the prefab root, or a scene mob " +
+                         "that is not networked), so the server cannot show it on clients. It is switched off on this client. " +
+                         "Use Tools > SimpleMovements > Network to network the mob prefabs.", this);
+        gameObject.SetActive(false);
+    }
+
+    /// <summary>The state clients need to show this mob (server side; see <see cref="MobReplicaState"/>).</summary>
+    public MobReplicaState CaptureReplicaState()
+    {
+        if (context == null)
+            return default;
+        MobReplicaFlags flags = MobReplicaFlags.None;
+        MobBrain brain = context.Brain;
+        CombatEntity e = context.Entity;
+        if (brain.InCombat)
+            flags |= MobReplicaFlags.InCombat;
+        if (brain.Mode == MobMode.Flee)
+            flags |= MobReplicaFlags.Fleeing;
+        if (e != null && e.IsStunned)
+            flags |= MobReplicaFlags.Stunned;
+        if (CurrentStateKey == EMobMovementState.Dead || (mob != null && mob.IsDead) || (e != null && e.IsDead))
+            flags |= MobReplicaFlags.Dead;
+        MobMotor motor = context.Motor;
+        return MobReplicaState.Create(CurrentStateKey, flags, motor.SpeedFor(MobMoveMode.Walk), motor.RunSpeed);
+    }
+
+    /// <summary>
+    /// Shows the state the server sent (client copies): movement animations follow it, and a dead state plays the
+    /// death (animation, colliders off) without any gameplay - no drops, events or absorption.
+    /// </summary>
+    public void ApplyReplicaState(MobReplicaState state)
+    {
+        replicaState = state;
+        if (context == null)
+            return;
+        context.Animation.ApplyReplicated(state);
+        debugState = state.State;
+        if (state.Has(MobReplicaFlags.Dead) && CurrentStateKey != EMobMovementState.Dead && SyncReplicaMode())
+        {
+            // Normally CombatEntity.ReplicatedLifeChanged already did this; this covers prefabs without status replication.
+            if (mob != null)
+                mob.ApplyReplicatedDeath(true);
+            else
+                ShowReplicatedDeath();
+        }
+    }
+
+    /// <summary>Shows who the server's AI is after (client copies; null = nobody or not visible here).</summary>
+    public void ApplyReplicaTarget(CombatEntity target)
+    {
+        replicaTarget = target;
+        if (!replicaActive)
+            return;
+        debugTarget = target != null ? target.name : "";
+        if (mob != null)
+            mob.SyncLegacyTargets(target, null);
+    }
+
+    /// <summary>Plays a one-shot reaction the server's copy played (client copies only).</summary>
+    public void PlayReplicatedAnimationEvent(MobAnimationEvent e)
+    {
+        if (context != null && replicaActive)
+            context.Animation.PlayReplicated(e);
+    }
+
+    /// <summary>
+    /// Client copies: the server says the mob died. Plays the death (Dead state: animation, agent and colliders off) with
+    /// none of its gameplay - the server alone drops loot, grants absorption and removes the body.
+    /// </summary>
+    public void ShowReplicatedDeath()
+    {
+        if (context == null || CurrentStateKey == EMobMovementState.Dead)
+            return;
+        SyncReplicaMode();
+        StartMachine(); // a copy that arrives already dead: enter the first state now, so Start does not re-enter Dead
+        OnDeath();
+    }
+
+    /// <summary>Client copies: the server brought the mob back (pooled or revived mobs) - it stands up again.</summary>
+    public void ShowReplicatedRevive()
+    {
+        if (context == null || CurrentStateKey != EMobMovementState.Dead)
+            return;
+        context.Animation.OnRevive();
+        if (HasState(EMobMovementState.Idle))
+            TransitionToState(EMobMovementState.Idle); // the Dead state turns its colliders back on as it exits
     }
 
     // ------------------------------------------------------------------ external API

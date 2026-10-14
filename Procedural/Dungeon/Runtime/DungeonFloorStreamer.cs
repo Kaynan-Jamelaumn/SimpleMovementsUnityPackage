@@ -30,14 +30,15 @@ namespace ProceduralDungeon
         {
             if (dungeon == null || dungeon.Layout == null)
                 return;
-            // The floors that have a player on them: the dungeon's participants (or the Local player / Target).
-            Transform main = target != null ? target : LocalTraveller();
+            // The floors that have a player on them: this dungeon's participants (or the Local player / Target).
+            DungeonRun run = DungeonSession.RunOf(dungeon);
+            Transform main = target != null ? target : LocalTraveller(run);
             int floor = main != null ? dungeon.FloorAt(main.position) : dungeon.CurrentFloor;
             dungeon.SetCurrentFloor(floor);
             int lowest = floor, highest = floor;
-            if (target == null)
+            if (target == null && run != null)
             {
-                IReadOnlyList<GameObject> group = DungeonSession.Participants;
+                IReadOnlyList<GameObject> group = run.Participants;
                 for (int i = 0; i < group.Count; i++)
                 {
                     if (group[i] == null) continue;
@@ -46,26 +47,29 @@ namespace ProceduralDungeon
                     highest = Mathf.Max(highest, f);
                 }
             }
-            // Floors must stay active until they're fully built (their NavMesh is baked from active colliders).
-            int key = floor * 1000 + lowest * 31 + highest;
-            if (dungeon.IsFullyBuilt && key != applied)
+            // Floors must stay active until they're fully built (their NavMesh is baked from active colliders). A client's
+            // copy bakes nothing; its floors arrive one by one, so a new floor also re-applies the range.
+            int key = floor * 1000 + lowest * 31 + highest + (dungeon.IsReplica ? dungeon.FloorCount * 1000000 : 0);
+            if ((dungeon.IsFullyBuilt || dungeon.IsReplica) && key != applied)
             {
                 applied = key;
                 ApplyRange(lowest, highest);
             }
         }
 
-        /// <summary>This machine's player when it is in the dungeon, else the first participant.</summary>
-        private static Transform LocalTraveller()
+        /// <summary>This machine's player when it is in this dungeon, else the first participant.</summary>
+        private static Transform LocalTraveller(DungeonRun run)
         {
             CombatEntity local = PlayerLocator.Local;
-            if (local != null && DungeonSession.IsParticipant(local.gameObject))
+            if (run == null)
+                return local != null ? local.transform : null;
+            if (local != null && run.IsParticipant(local.gameObject))
                 return local.transform;
-            IReadOnlyList<GameObject> group = DungeonSession.Participants;
+            IReadOnlyList<GameObject> group = run.Participants;
             for (int i = 0; i < group.Count; i++)
                 if (group[i] != null)
                     return group[i].transform;
-            return local != null ? local.transform : null;
+            return null;
         }
 
         /// <summary>Activates the floors around <paramref name="floor"/> (all of them when streaming is off).</summary>
@@ -75,16 +79,26 @@ namespace ProceduralDungeon
             ApplyRange(floor, floor);
         }
 
+        /// <summary>
+        /// Are floors switched off here? Not on a network server: the mobs and item pickups it hands to the network live
+        /// at the root of the run's scene (Fish-Net spawns root objects only), outside their floor's hierarchy, so a
+        /// switched-off floor would leave them without ground and NavMesh. Clients' copies (presentation only) and single
+        /// player stream as set.
+        /// </summary>
+        private bool StreamsFloors =>
+            streaming && (dungeon.IsReplica || !GameNet.NetAuthority.IsNetworked || !GameNet.NetAuthority.IsServer);
+
         /// <summary>Activates the floors around every floor from <paramref name="lowest"/> to <paramref name="highest"/> (players spread over floors).</summary>
         private void ApplyRange(int lowest, int highest)
         {
+            bool streams = StreamsFloors;
             int around = Mathf.Max(1, floorsAround);
             for (int f = 0; f < dungeon.FloorCount; f++)
             {
                 Transform root = dungeon.FloorRoot(f);
                 if (root == null)
                     continue;
-                bool active = !streaming || (f >= lowest - around && f <= highest + around);
+                bool active = !streams || (f >= lowest - around && f <= highest + around);
                 if (root.gameObject.activeSelf != active)
                     root.gameObject.SetActive(active);
             }

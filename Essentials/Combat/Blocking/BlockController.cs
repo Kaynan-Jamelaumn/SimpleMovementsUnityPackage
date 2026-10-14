@@ -14,6 +14,11 @@ using UnityEngine.InputSystem;
 /// </para>
 /// It plugs into the combat system (a <see cref="CombatEntity"/> damage interceptor, after body parts are resolved), so
 /// weapons, projectiles and abilities of everyone respect it.
+/// <para>
+/// Network sessions: the block runs on the server (<see cref="RunsRules"/>). A client's own player sends whether it
+/// wants the block up (<see cref="NetBridge"/>); client copies show the replicated state and the feedback of blocked
+/// and parried hits. Offline nothing changes.
+/// </para>
 /// </summary>
 [DisallowMultipleComponent]
 public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementModifier
@@ -72,6 +77,8 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
     public event Action<DamageInfo> Parried;
     /// <summary>The guard broke (the attacker, if known).</summary>
     public event Action<CombatEntity> GuardBroken;
+    /// <summary>A shield bash happened where the rules run (the network layer shows it on clients).</summary>
+    public event Action Bashed;
 
     private BlockState state = BlockState.Idle;
     private float stateSince;
@@ -92,6 +99,11 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
     private bool moveApplied;
     private float speedDelta;
     private bool isPlayer;
+    // Network (unused offline)
+    private bool remoteWant;
+    private bool hasRemoteIntent;
+    private bool intentSent;
+    private bool lastSentWant;
 
     public BlockState State => state;
     /// <summary>The block is up (raising or raised).</summary>
@@ -109,6 +121,39 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
 
     /// <summary>The block controller of a character, or null.</summary>
     public static BlockController For(Component anyPart) => anyPart != null ? anyPart.GetComponentInParent<BlockController>() : null;
+
+    /// <summary>
+    /// Network: sends whether the player wants its block up to the server. Installed by the network layer on the owning
+    /// client's copy only; null offline, on the server and on copies of other characters.
+    /// </summary>
+    public IWeaponNetBridge NetBridge { get; set; }
+
+    /// <summary>
+    /// Do the block's rules (raising, stamina, blocked hits, guard breaks, AI) run on this machine? True offline, on the
+    /// server and on the host; false on a client's copy, which only shows the state the server replicates
+    /// (<see cref="ApplyReplicatedState"/>).
+    /// </summary>
+    public bool RunsRules => GameNet.NetAuthority.RunsRules(gameObject);
+
+    /// <summary>Is this character controlled by this machine's devices? Offline: true.</summary>
+    private bool LocallyControlled => GameNet.NetAuthority.IsLocallyControlled(gameObject);
+
+    /// <summary>Server: does a remote owner currently want the block up (see <see cref="SetRemoteIntent"/>)?</summary>
+    public bool RemoteIntent => hasRemoteIntent && remoteWant;
+
+    /// <summary>Server: a remote owner wants its block up (true) or down (false); replaces this machine's input for it.</summary>
+    public void SetRemoteIntent(bool wantsToBlock)
+    {
+        remoteWant = wantsToBlock;
+        hasRemoteIntent = true;
+    }
+
+    /// <summary>Server: forgets the remote owner's intent (it left): the block comes down.</summary>
+    public void ClearRemoteIntent()
+    {
+        remoteWant = false;
+        hasRemoteIntent = false;
+    }
 
     /// <summary>Does the character currently guard against hits from <paramref name="attacker"/> (AI: flank or wait)?</summary>
     public bool IsBlockingAgainst(CombatEntity attacker)
@@ -150,12 +195,25 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         }
         CombatEvents.MeleeSwingStarted += OnMeleeSwing;
         CombatEvents.CastStarted += OnCastStarted;
+        if (entity != null)
+            entity.DamageFeedback += OnDamageFeedback;
     }
 
     private void Start()
     {
-        if (isPlayer && CombatInputBinding.IsPlayer(this))
-            input = CombatInputBinding.Create(this, blockInput, blockActionNames, Key.None, rightMouseFallback ? MouseFallback.RightButton : MouseFallback.None, "Block");
+        if (LocallyControlled)
+            EnsureInput();
+    }
+
+    /// <summary>
+    /// Creates the block input of the player of this machine. Copies of other players in a network session never get
+    /// one: it would read this machine's keyboard and mouse.
+    /// </summary>
+    private void EnsureInput()
+    {
+        if (input != null || !isPlayer || !CombatInputBinding.IsPlayer(this))
+            return;
+        input = CombatInputBinding.Create(this, blockInput, blockActionNames, Key.None, rightMouseFallback ? MouseFallback.RightButton : MouseFallback.None, "Block");
     }
 
     private void OnDisable()
@@ -167,7 +225,10 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         }
         CombatEvents.MeleeSwingStarted -= OnMeleeSwing;
         CombatEvents.CastStarted -= OnCastStarted;
+        if (entity != null)
+            entity.DamageFeedback -= OnDamageFeedback;
         Lower(false);
+        intentSent = false;
     }
 
     private void OnDestroy()
@@ -230,6 +291,22 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
     // ------------------------------------------------------------------ per frame
     private void Update()
     {
+        if (!RunsRules)
+        {
+            // A client's copy: the server runs the block. The owner only tells it what its player wants (on change).
+            if (isPlayer && NetBridge != null && LocallyControlled)
+            {
+                bool wants = WantsToBlock();
+                if (!intentSent || wants != lastSentWant)
+                {
+                    intentSent = true;
+                    lastSentWant = wants;
+                    NetBridge.SendBlockIntent(this, wants);
+                }
+            }
+            return;
+        }
+
         bool want = WantsToBlock();
         float now = Time.time;
         switch (state)
@@ -273,6 +350,9 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
             return false;
         if (isPlayer)
         {
+            if (!LocallyControlled)
+                return hasRemoteIntent && remoteWant; // the server's copy of a remote player: what its owner sends
+            EnsureInput();
             if (input == null)
                 return false;
             if (weapons != null && weapons.InputBlocked)
@@ -369,7 +449,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
     // ------------------------------------------------------------------ AI
     private void OnMeleeSwing(CombatEntity attacker)
     {
-        if (isPlayer || entity == null || attacker == null || attacker == entity || entity.IsDead || aiBlockChance <= 0f)
+        if (isPlayer || !RunsRules || entity == null || attacker == null || attacker == entity || entity.IsDead || aiBlockChance <= 0f)
             return;
         if (!CanBlock || CombatRelations.Get(entity, attacker) != CombatRelation.Enemy)
             return;
@@ -406,7 +486,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
     private void OnCastStarted(AbilityCastInstance cast)
     {
         // Mobs drop their guard to attack.
-        if (!isPlayer && cast != null && cast.CasterEntity == entity)
+        if (!isPlayer && cast != null && cast.CasterEntity == entity && RunsRules)
         {
             aiUntil = 0f;
             Lower(true);
@@ -460,7 +540,8 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
                 stopped *= cost > 0f ? have / cost : 1f;
                 breakGuard = true;
             }
-            stamina.ConsumeStamina(Mathf.Min(cost, have));
+            if (GameNet.NetAuthority.RunsRules(gameObject))
+                stamina.ConsumeStamina(Mathf.Min(cost, have));
         }
 
         info.amount = Mathf.Max(0f, before - stopped);
@@ -468,11 +549,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         info.blockedAmount = stopped;
         WearItem(d);
 
-        Vector3 at = info.point != Vector3.zero ? info.point : entity.Center + entity.Forward * entity.Radius;
-        if (d.blockVfx != null)
-            AbilityPool.PlayVfx(d.blockVfx, at, Quaternion.LookRotation(travel.sqrMagnitude > 1e-6f ? -travel : entity.Forward), 0f);
-        PlaySound(d.blockSound, at);
-        SetAnimatorTrigger(blockHitTrigger);
+        PlayBlockFeedback(d, info.point, travel);
         HitBlocked?.Invoke(info);
         CombatEvents.RaiseBlocked(info);
         if (debugLog)
@@ -496,11 +573,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
             if (attackerWeapons != null)
                 attackerWeapons.InterruptAttack();
         }
-        Vector3 at = info.point != Vector3.zero ? info.point : entity.Center + entity.Forward * entity.Radius;
-        if (d.parryVfx != null)
-            AbilityPool.PlayVfx(d.parryVfx, at, Quaternion.LookRotation(entity.Forward), 0f);
-        PlaySound(d.parrySound != null ? d.parrySound : d.blockSound, at);
-        SetAnimatorTrigger(parryTrigger);
+        PlayParryFeedback(d, info.point);
         Parried?.Invoke(info);
         CombatEvents.RaiseBlocked(info);
         if (debugLog)
@@ -518,12 +591,104 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         aiUntil = 0f;
         if (d.guardBreakStun > 0f && entity != null)
             entity.ApplyControl(ControlType.Stun, d.guardBreakStun, attacker);
-        PlaySound(d.guardBreakSound, entity != null ? entity.Center : transform.position);
-        SetAnimatorTrigger(guardBreakTrigger);
+        PlayGuardBreakFeedback(d);
         BlockChanged?.Invoke(false);
         GuardBroken?.Invoke(attacker);
         if (debugLog)
             Debug.Log($"[Block] {name}: guard broken.", this);
+    }
+
+    private void PlayBlockFeedback(ShieldDefense d, Vector3 point, Vector3 travel)
+    {
+        Vector3 at = point != Vector3.zero ? point : entity.Center + entity.Forward * entity.Radius;
+        if (d.blockVfx != null)
+            AbilityPool.PlayVfx(d.blockVfx, at, Quaternion.LookRotation(travel.sqrMagnitude > 1e-6f ? -travel : entity.Forward), 0f);
+        PlaySound(d.blockSound, at);
+        SetAnimatorTrigger(blockHitTrigger);
+    }
+
+    private void PlayParryFeedback(ShieldDefense d, Vector3 point)
+    {
+        Vector3 at = point != Vector3.zero ? point : entity.Center + entity.Forward * entity.Radius;
+        if (d.parryVfx != null)
+            AbilityPool.PlayVfx(d.parryVfx, at, Quaternion.LookRotation(entity.Forward), 0f);
+        PlaySound(d.parrySound != null ? d.parrySound : d.blockSound, at);
+        SetAnimatorTrigger(parryTrigger);
+    }
+
+    private void PlayGuardBreakFeedback(ShieldDefense d)
+    {
+        if (d != null)
+            PlaySound(d.guardBreakSound, entity != null ? entity.Center : transform.position);
+        SetAnimatorTrigger(guardBreakTrigger);
+    }
+
+    // ------------------------------------------------------------------ network presentation (client copies)
+    /// <summary>
+    /// Network: shows the block state the server decided on a client's copy (the animator's block pose, the
+    /// <see cref="BlockChanged"/> event for the held item's visuals, the guard break). Does nothing where the rules run.
+    /// Movement is not slowed here: the server's speed is replicated.
+    /// </summary>
+    public void ApplyReplicatedState(BlockState next)
+    {
+        if (RunsRules || next == state)
+            return;
+        bool wasUp = IsBlocking;
+        bool up = next == BlockState.Raising || next == BlockState.Blocking;
+        state = next;
+        stateSince = Time.time;
+        if (up)
+        {
+            if (!wasUp)
+            {
+                ResolveSource(out activeDefense, out activeItem, out activeInventoryItem);
+                if (weapons != null)
+                    weapons.DrawWeapons();
+                SetAnimatorBool(true);
+                BlockChanged?.Invoke(true);
+            }
+            return;
+        }
+        toggled = false; // the server lowered it (or broke it): a toggled block needs a new press, as offline
+        if (wasUp)
+        {
+            SetAnimatorBool(false);
+            BlockChanged?.Invoke(false);
+        }
+        if (next == BlockState.GuardBroken)
+            PlayGuardBreakFeedback(activeDefense);
+    }
+
+    /// <summary>Network: shows a shield bash the server made (sound, animation). Does nothing where the rules run.</summary>
+    public void PresentBash()
+    {
+        if (RunsRules)
+            return;
+        ShieldDefense d = activeDefense;
+        if (d == null)
+            ResolveSource(out d, out _, out _);
+        if (d != null && entity != null)
+            PlaySound(d.bashSound, entity.Center + entity.Forward);
+        SetAnimatorTrigger(bashTrigger);
+    }
+
+    /// <summary>A client's copy: a hit the server reports as blocked or parried shows the block's feedback here.</summary>
+    private void OnDamageFeedback(DamageInfo info)
+    {
+        if (entity == null || (!info.blocked && !info.parried) || RunsRules)
+            return; // where the rules run, the interception itself played the feedback
+        ShieldDefense d = activeDefense;
+        if (d == null && !ResolveSource(out d, out _, out _))
+            return;
+        if (info.parried)
+        {
+            PlayParryFeedback(d, info.point);
+            return;
+        }
+        Vector3 travel = info.direction;
+        if (info.source != null && (travel.sqrMagnitude < 1e-6f || info.delivery != DamageDelivery.Projectile))
+            travel = entity.Position - info.source.Position;
+        PlayBlockFeedback(d, info.point, travel);
     }
 
     private void WearItem(ShieldDefense d)
@@ -555,17 +720,20 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         {
             if (stamina.CurrentValue < d.bashStamina)
                 return false;
-            stamina.ConsumeStamina(d.bashStamina);
+            if (GameNet.NetAuthority.RunsRules(gameObject))
+                stamina.ConsumeStamina(d.bashStamina);
         }
         nextBashTime = Time.time + d.bashCooldown;
         var shape = HitShape.ConeShape(d.bashRange, d.bashAngle);
         ResolvedShape r = ResolvedShape.Resolve(shape, entity.BasePosition, Quaternion.LookRotation(entity.Forward, Vector3.up), 1f);
         var targets = new System.Collections.Generic.List<CombatEntity>(4);
-        CombatQuery.Overlap(r, targets);
+        // A remote player's bash finds the others where its screen showed them (only the query is rewound).
+        using (GameNet.LagCompensation.For(entity))
+            CombatQuery.Overlap(r, targets);
         CombatEvents.RaiseMeleeSwing(entity);
         foreach (CombatEntity t in targets)
         {
-            if (t == null || t == entity || !t.IsAlive)
+            if (t == null || t == entity || !t.IsAlive || CombatRules.AreSeparated(entity, t))
                 continue;
             CombatRelation rel = CombatRelations.Get(entity, t);
             if (!CombatTargeting.CanHit(TargetFilter.Enemies | TargetFilter.Neutral, null, rel, t, true))
@@ -590,6 +758,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         }
         PlaySound(d.bashSound, entity.Center + entity.Forward);
         SetAnimatorTrigger(bashTrigger);
+        Bashed?.Invoke();
         return true;
     }
 
@@ -600,7 +769,8 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
             return true;
         if (stamina.CurrentValue < amount)
             return false;
-        stamina.ConsumeStamina(amount);
+        if (GameNet.NetAuthority.RunsRules(gameObject))
+            stamina.ConsumeStamina(amount); // on a network client the server spends it (the owner is corrected by reconcile)
         return true;
     }
 

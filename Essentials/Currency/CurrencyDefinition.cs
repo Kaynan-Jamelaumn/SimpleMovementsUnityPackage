@@ -58,6 +58,26 @@ public class CurrencyDefinition : ScriptableObject
         }
     }
 
+    /// <summary>How the network names the currency (its asset name; keep currency asset names unique).</summary>
+    public string NetworkKey => name;
+
+    /// <summary>
+    /// The currency named <paramref name="key"/> (<see cref="NetworkKey"/>): the default currency, else any loaded
+    /// currency asset with that name (those used by wallets and merchants are loaded with them). Null when unknown.
+    /// </summary>
+    public static CurrencyDefinition FindByKey(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            return null;
+        CurrencyDefinition d = Default;
+        if (d != null && d.name == key)
+            return d;
+        foreach (CurrencyDefinition c in Resources.FindObjectsOfTypeAll<CurrencyDefinition>())
+            if (c != null && c.name == key)
+                return c;
+        return null;
+    }
+
     public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
     public string Symbol => string.IsNullOrWhiteSpace(symbol) ? DisplayName : symbol;
     public Sprite Icon => icon != null ? icon : backingItem != null ? backingItem.Icon : null;

@@ -10,7 +10,7 @@ using UnityEngine.UI;
 /// Character page of the settings menu: the player's name, class, race, level and height, resources, combat stats,
 /// traits, abilities (active and passive) and current buffs / debuffs. Hovering a row shows what it changes, green when
 /// it helps and red when it hurts (for a stat: every source that adds to it). Rebuilt each time the page opens.
-/// Built by Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause &amp; Settings Menu.
+/// Built by Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause &amp; Settings Menu.
 /// </summary>
 public class CharacterSheetMenu : MonoBehaviour
 {
@@ -52,6 +52,21 @@ public class CharacterSheetMenu : MonoBehaviour
     }
 
     /// <summary>Rebuilds every section from the player's current state.</summary>
+    /// <summary>The status of this machine's player (several players exist in network sessions).</summary>
+    private static PlayerStatusController LocalPlayerStatus()
+    {
+        CombatEntity local = PlayerLocator.Local;
+        if (local != null)
+        {
+            PlayerStatusController s = local.GetComponentInParent<PlayerStatusController>();
+            if (s == null)
+                s = local.GetComponentInChildren<PlayerStatusController>();
+            if (s != null)
+                return s;
+        }
+        return FindAnyObjectByType<PlayerStatusController>();
+    }
+
     public void Rebuild()
     {
         foreach (GameObject go in built)
@@ -59,7 +74,7 @@ public class CharacterSheetMenu : MonoBehaviour
         built.Clear();
         if (content == null)
             return;
-        PlayerStatusController p = player != null ? player : FindAnyObjectByType<PlayerStatusController>();
+        PlayerStatusController p = player != null ? player : LocalPlayerStatus();
         if (p == null)
         {
             Text("No player in the game.", 18f, InventoryUIFactory.MutedColor);

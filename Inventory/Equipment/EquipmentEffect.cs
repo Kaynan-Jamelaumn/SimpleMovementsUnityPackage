@@ -20,6 +20,14 @@ public abstract class EquipmentEffect
     /// <summary>Name shown in the dropdown and in the inspector.</summary>
     public virtual string MenuName => AbilityTypeNames.Nice(GetType());
 
+    /// <summary>
+    /// Where the effect runs in a network session (offline every effect runs, as always). Stats, traits and behaviours
+    /// are part of the character's simulation (movement prediction, cooldown display) and run on every copy of the
+    /// character, the server's values winning through replication; reactions that decide gameplay (procs on hits,
+    /// pulses) run only where the rules run (the server); visuals run everywhere.
+    /// </summary>
+    public virtual EquipmentEffectScope Scope => EquipmentEffectScope.Simulation;
+
     /// <summary>One line for tooltips ("+12 Defense, +10% Fire Resistance").</summary>
     public abstract string Describe(float strength = 1f);
 
@@ -45,7 +53,7 @@ public abstract class EquipmentEffect
         for (int i = 0; i < effects.Count; i++)
         {
             EquipmentEffect e = effects[i];
-            if (e == null)
+            if (e == null || !RunsHere(e, ctx))
                 continue;
             EquipmentEffectHandle h = null;
             try { h = e.Apply(ctx, strength); }
@@ -57,6 +65,18 @@ public abstract class EquipmentEffect
             into.Add(h);
         }
         ctx.CurrentSource = previous;
+    }
+
+    /// <summary>
+    /// Does <paramref name="effect"/> run for <paramref name="ctx"/>'s character on this machine? Rules effects only where
+    /// the character's rules run (offline, the server); everything else everywhere.
+    /// </summary>
+    public static bool RunsHere(EquipmentEffect effect, EquipmentContext ctx)
+    {
+        if (effect == null || effect.Scope != EquipmentEffectScope.Rules)
+            return true;
+        GameObject owner = ctx != null ? ctx.Owner : null;
+        return owner == null || GameNet.NetAuthority.RunsRules(owner);
     }
 
     /// <summary>Reverts handles in reverse order (the last applied is removed first) and clears the list.</summary>
@@ -542,4 +562,15 @@ public sealed class MechanicRegistry
         catch (Exception e) { Debug.LogException(e, ctx.Host); }
         Toggled?.Invoke(mechanic, on);
     }
+}
+
+/// <summary>Where an <see cref="EquipmentEffect"/> runs in a network session (see <see cref="EquipmentEffect.Scope"/>).</summary>
+public enum EquipmentEffectScope
+{
+    /// <summary>Part of the character's simulation (stats, traits, behaviours): on every copy of the character.</summary>
+    Simulation = 0,
+    /// <summary>Decides gameplay (procs on hits, pulses): only where the character's rules run (offline, the server).</summary>
+    Rules = 1,
+    /// <summary>Only shows something (attached visuals): on every copy.</summary>
+    Cosmetic = 2,
 }

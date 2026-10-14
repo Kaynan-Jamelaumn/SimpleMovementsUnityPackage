@@ -27,7 +27,43 @@ public class ForcedMovement : MonoBehaviour
     private static readonly RaycastHit[] hitBuffer = new RaycastHit[8];
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics() => byEntity.Clear();
+    private static void ResetStatics()
+    {
+        byEntity.Clear();
+        Started = null;
+        Teleported = null;
+    }
+
+    /// <summary>
+    /// A forced movement started (mover, world offset, seconds, arc height, linear motion): dashes and leaps of
+    /// abilities, knockbacks and pulls. The network layer of a predicted character (the player's movement) listens on
+    /// the server to replay the same motion in the owner's prediction instead of fighting it.
+    /// </summary>
+    public static event Action<ForcedMovement, Vector3, float, float, bool> Started;
+
+    /// <summary>
+    /// A character was teleported by an ability (character, destination). Raised on the machine that runs the ability
+    /// (the server in a network session), for the same reason as <see cref="Started"/>.
+    /// </summary>
+    public static event Action<CombatEntity, Vector3> Teleported;
+
+    /// <summary>The character this component moves.</summary>
+    public CombatEntity Entity => entity != null ? entity : (entity = GetComponent<CombatEntity>());
+
+    /// <summary>Raises <see cref="Teleported"/> (called by whatever teleports a character).</summary>
+    public static void RaiseTeleported(CombatEntity who, Vector3 destination)
+    {
+        if (who == null || Teleported == null)
+            return;
+        try
+        {
+            Teleported(who, destination);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+        }
+    }
 
     /// <summary>True while moving.</summary>
     public bool IsActive => active;
@@ -109,6 +145,18 @@ public class ForcedMovement : MonoBehaviour
                 agentPositionDetached = true;
             }
         }
+
+        if (Started != null)
+        {
+            try
+            {
+                Started(this, displacement, duration, arcHeight, linear);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, this);
+            }
+        }
     }
 
     /// <summary>Stops the current movement where it is.</summary>
@@ -184,7 +232,7 @@ public class ForcedMovement : MonoBehaviour
         Vector3 dir = delta / distance;
         float r = entity != null ? Mathf.Max(0.05f, entity.Radius * 0.8f) : 0.3f;
         Vector3 origin = from + Vector3.up * (entity != null ? Mathf.Max(r, entity.Height * 0.5f) : 1f);
-        int n = Physics.SphereCastNonAlloc(origin, r, dir, hitBuffer, distance, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.SphereCastNonAlloc(origin, r, dir, hitBuffer, distance, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
         float allowed = distance;
         for (int i = 0; i < n; i++)
         {

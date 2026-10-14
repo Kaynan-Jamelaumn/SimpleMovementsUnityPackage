@@ -45,6 +45,8 @@ public static class CombatQuery
                 continue;
             if (relativeTo != null && !CombatRelations.Passes(filter, relativeTo, e))
                 continue;
+            if (relativeTo != null && CombatRules.AreSeparated(relativeTo, e))
+                continue; // another realm at overlapping coordinates
             float reach = radius + e.Radius;
             Vector3 d = e.Position - center;
             d.y *= 0.5f; // vertical distance counts half (slopes, stairs)
@@ -66,6 +68,8 @@ public static class CombatQuery
                 continue;
             if (relativeTo != null && !CombatRelations.Passes(filter, relativeTo, e))
                 continue;
+            if (relativeTo != null && CombatRules.AreSeparated(relativeTo, e))
+                continue; // another realm at overlapping coordinates
             float d = (e.Position - center).sqrMagnitude;
             if (d < bestSqr)
             {
@@ -96,6 +100,8 @@ public static class CombatQuery
                 continue;
             if (relativeTo != null && !CombatRelations.Passes(filter, relativeTo, e))
                 continue;
+            if (relativeTo != null && CombatRules.AreSeparated(relativeTo, e))
+                continue; // another realm at overlapping coordinates
             Vector3 to = e.AimPosition - origin;
             float dist = to.magnitude;
             if (dist > maxRange + e.Radius || dist < 0.01f)
@@ -148,7 +154,7 @@ public static class CombatQuery
         float dist = d.magnitude;
         if (dist < 0.05f)
             return true;
-        int n = Physics.RaycastNonAlloc(from, d / dist, rayHits, dist, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(from, d / dist, rayHits, dist, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < n; i++)
         {
             Collider col = rayHits[i].collider;
@@ -167,7 +173,7 @@ public static class CombatQuery
         hit = default;
         if (distance <= 0f || direction.sqrMagnitude < 1e-8f)
             return false;
-        int n = Physics.RaycastNonAlloc(from, direction.normalized, rayHits, distance, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(from, direction.normalized, rayHits, distance, CombatSettings.Instance.obstacleLayers, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
         for (int i = 0; i < n; i++)
@@ -189,7 +195,7 @@ public static class CombatQuery
     {
         y = p.y;
         Vector3 from = p + Vector3.up * searchUp;
-        int n = Physics.RaycastNonAlloc(from, Vector3.down, rayHits, searchUp + searchDown, CombatSettings.Instance.groundLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(from, Vector3.down, rayHits, searchUp + searchDown, CombatSettings.Instance.groundLayers, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         bool found = false;
         for (int i = 0; i < n; i++)

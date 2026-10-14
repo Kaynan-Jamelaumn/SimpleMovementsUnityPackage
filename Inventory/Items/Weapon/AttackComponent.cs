@@ -557,11 +557,11 @@ public class WeaponBlade
         switch (shape)
         {
             case VolumeShape.Sphere:
-                return Physics.OverlapSphereNonAlloc(pose.a, radius * scale, buffer, ~0, QueryTriggerInteraction.Collide);
+                return ScenePhysics.OverlapSphereNonAlloc(pose.a, radius * scale, buffer, ~0, QueryTriggerInteraction.Collide);
             case VolumeShape.Box:
-                return Physics.OverlapBoxNonAlloc(pose.a, HalfExtents(scale), buffer, pose.rotation, ~0, QueryTriggerInteraction.Collide);
+                return ScenePhysics.OverlapBoxNonAlloc(pose.a, HalfExtents(scale), buffer, pose.rotation, ~0, QueryTriggerInteraction.Collide);
             default:
-                return Physics.OverlapCapsuleNonAlloc(pose.a, pose.b, radius * scale, buffer, ~0, QueryTriggerInteraction.Collide);
+                return ScenePhysics.OverlapCapsuleNonAlloc(pose.a, pose.b, radius * scale, buffer, ~0, QueryTriggerInteraction.Collide);
         }
     }
 

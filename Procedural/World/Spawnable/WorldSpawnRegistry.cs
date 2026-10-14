@@ -223,10 +223,21 @@ public static class WorldSpawnRegistry
     /// <summary>Horizontal distance (x, z) from <paramref name="position"/> to the nearest player; infinity when there is none.</summary>
     public static float DistanceToNearestPlayer(Vector3 position, string playerTag, Transform fallback)
     {
+        return DistanceToNearestPlayer(position, playerTag, fallback, default);
+    }
+
+    /// <summary>
+    /// Same as <see cref="DistanceToNearestPlayer(Vector3, string, Transform)"/>, counting during a network session only
+    /// the players in <paramref name="scene"/> (the realms overlap in space: a player in the City is not near a World
+    /// portal). Offline, or with an invalid scene, every player counts, as before.
+    /// </summary>
+    public static float DistanceToNearestPlayer(Vector3 position, string playerTag, Transform fallback, UnityEngine.SceneManagement.Scene scene)
+    {
+        bool sameSceneOnly = scene.IsValid() && GameNet.NetAuthority.IsNetworked;
         float best = float.PositiveInfinity;
         foreach (Transform p in GetPlayers(playerTag, fallback))
         {
-            if (p == null)
+            if (p == null || (sameSceneOnly && p.gameObject.scene != scene))
                 continue;
             float dx = p.position.x - position.x, dz = p.position.z - position.z;
             best = Mathf.Min(best, dx * dx + dz * dz);

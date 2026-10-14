@@ -77,6 +77,10 @@ public class AttackExecutor
         public bool moveApplied;
         public float previousCastMove = 1f;
         public float speedDelta;
+        // Network: a client's copy showing an attack the server runs (timeline and effects only, no rules)
+        public bool presentation;
+        // Seed of the behaviour rolls (the server sends it, so clients play the same chance-based effects)
+        public int seed;
 
         /// <summary>A copy carried by a projectile: the attack's numbers and effects, its own hit records.</summary>
         public Running CloneForProjectile(float fraction)
@@ -101,6 +105,19 @@ public class AttackExecutor
     }
 
     private static readonly List<WeaponBlade> volumeBuffer = new List<WeaponBlade>(4);
+
+    /// <summary>A hit found by a (lag-compensated) query, applied once the world is back in the present.</summary>
+    private struct PendingHit
+    {
+        public CombatEntity entity;
+        public Collider collider;
+        public Vector3 point;
+        public float strength;
+    }
+
+    // Hits collected inside a rewind scope (per executor: applying a hit may run other attacks' code)
+    private readonly List<PendingHit> pendingHits = new List<PendingHit>(16);
+    private readonly List<PendingHit> pendingObjects = new List<PendingHit>(8);
 
     private readonly WeaponController controller;
     private Phase phase = Phase.Idle;
@@ -168,6 +185,8 @@ public class AttackExecutor
     /// </summary>
     public bool BeginInput(GameObject player, AttackType attackType, bool fromBuffer = false, bool alreadyReleased = false)
     {
+        if (run != null && run.presentation)
+            Cancel(); // a network session ended while showing the server's attack: this machine decides again
         bool offPress = attackType == AttackType.OffHand;
         WeaponHand mainHand = controller.MainHand;
         WeaponHand offHand = controller.OffHand;
@@ -262,6 +281,7 @@ public class AttackExecutor
             combo = hand.Combo,
             variations = hand.Variations,
             offHandWeaponRun = offWeaponRun,
+            seed = WeaponNetMath.NewSeed(),
         };
 
         // Ranged: does this attack fire, and can it (ammo, magazine, reload, fire interval)?
@@ -367,7 +387,7 @@ public class AttackExecutor
     public void ReleaseInput(AttackType attackType)
     {
         inputBufferSystem.BufferRelease(attackType);
-        if (phase != Phase.Charging || run == null || run.input != attackType)
+        if (phase != Phase.Charging || run == null || run.presentation || run.input != attackType)
             return;
         ReleaseCharge();
     }
@@ -377,11 +397,14 @@ public class AttackExecutor
     {
         if (phase != Phase.Charging || run == null)
             return;
+        bool shown = !run.presentation;
         StopChargeVisuals(run);
         RestoreMovement(run);
         animationHandler.StopChargeAnimation();
         phase = Phase.Idle;
         run = null;
+        if (shown)
+            controller.PresentationSink?.AttackStopped(controller, false);
     }
 
     private void BeginCharge(Running r)
@@ -397,8 +420,25 @@ public class AttackExecutor
         if (r.ranged is DrawMechanic draw)
             controller.PlaySound(draw.drawSound);
         RunBehaviours(r, AttackMoment.ChargeStart);
+        controller.PresentationSink?.ChargeShown(controller, Shown(r, 0f, false));
         controller.LogDebug($"Charging {r.component.DisplayName}");
     }
+
+    /// <summary>What clients are told about <paramref name="r"/> (network presentation).</summary>
+    private static WeaponAttackShown Shown(Running r, float chargeRatio, bool quick) => new WeaponAttackShown
+    {
+        hand = r.hand != null ? r.hand.Side : WeaponHandSide.Main,
+        input = r.input,
+        weapon = r.weapon,
+        attack = r.component,
+        action = r.action,
+        sequence = r.choice.sequence,
+        branch = r.choice.branch,
+        chargeRatio = chargeRatio,
+        speed = r.speed,
+        quick = quick,
+        seed = r.seed,
+    };
 
     private void ReleaseCharge()
     {
@@ -413,6 +453,7 @@ public class AttackExecutor
         {
             phase = Phase.Idle;
             run = null;
+            controller.PresentationSink?.AttackStopped(controller, false);
             controller.LogDebug("Charge released too early: cancelled.");
             return;
         }
@@ -528,8 +569,10 @@ public class AttackExecutor
         controller.LogDebug($"Attack {c.DisplayName} ({r.input}{(r.hand.IsMain ? "" : ", off hand")}) speed x{r.speed:0.##}, damage x{damage:0.##}{(charged ? $", charge {chargeRatio:P0}" : "")}");
         RunBehaviours(r, AttackMoment.Start);
         controller.RaiseAttackStarted(r.input, c);
+        if (run == r)
+            controller.PresentationSink?.AttackShown(controller, Shown(r, chargeRatio, false));
 
-        if (r.startup <= 0f)
+        if (r.startup <= 0f && run == r)
             EnterActive(r);
     }
 
@@ -606,6 +649,7 @@ public class AttackExecutor
             combo = controller.MainHand.Combo,
             variations = controller.MainHand.Variations,
             ranged = m,
+            seed = WeaponNetMath.NewSeed(),
         };
         if (!CanFire(r, m))
             return false;
@@ -626,7 +670,10 @@ public class AttackExecutor
         SetupOnHit(r, damage);
         controller.DrawWeapons();
         if (phase == Phase.Idle)
+        {
             animationHandler.TriggerAttackAnimation(action, AttackType.Normal, Mathf.Max(0.1f, action.GetTotalDuration()), 1f, weapon);
+            controller.PresentationSink?.AttackShown(controller, Shown(r, 0f, true));
+        }
         FireRanged(r);
         if (r.pendingThrow)
         {
@@ -679,6 +726,14 @@ public class AttackExecutor
         if (run == null || phase == Phase.Idle)
             return;
         Running r = run;
+        if (r.presentation)
+        {
+            if (controller.RunsRules)
+                Cancel(); // the session ended mid-presentation: drop it (nothing of it is real)
+            else
+                TickPresentation(r, dt);
+            return;
+        }
         if (r.weapon == null || r.hand.Weapon != r.weapon)
         {
             Cancel(); // the weapon left the hand
@@ -821,9 +876,7 @@ public class AttackExecutor
             r.onHitModifiers.damageMultiplier = r.numbers.damageMultiplier;
 
         ProjectileSettings ps = m.projectile ?? new ProjectileSettings();
-        GameObject prefab = r.ammo != null && r.ammo.ProjectilePrefab != null ? r.ammo.ProjectilePrefab : ps.prefab;
-        if (prefab == null && m.ConsumesWeaponItem)
-            prefab = r.weapon.Visuals.ModelFor(r.weapon);
+        GameObject prefab = ProjectilePrefab(r.weapon, m, ps, r.ammo);
         float velocity = Mathf.Max(0.1f, shot.velocity) * (r.ammo != null ? r.ammo.VelocityMultiplier : 1f);
         ItemSO recoverItem = m.ConsumesWeaponItem ? r.weapon : r.ammo != null && r.ammo.Recoverable ? r.ammo : null;
         IList<int> recoverDurability = null;
@@ -831,9 +884,12 @@ public class AttackExecutor
             recoverDurability = new List<int> { Mathf.RoundToInt(r.item.durability) };
         CombatEntity shooter = controller.Entity;
         int count = Mathf.Max(1, shot.projectiles);
+        IWeaponPresentationSink sink = controller.PresentationSink;
+        List<Vector3> shownVelocities = sink != null ? new List<Vector3>(count) : null;
         for (int i = 0; i < count; i++)
         {
             Vector3 dir = Spread(baseDir, shot.spread);
+            shownVelocities?.Add(dir * velocity);
             Running shotRun = r.CloneForProjectile(1f);
             WeaponProjectile.Launch(new WeaponProjectile.LaunchData
             {
@@ -856,7 +912,26 @@ public class AttackExecutor
         if (shooter != null)
             CombatEvents.EmitNoise(from, 18f, shooter, 0.7f);
         controller.RaiseRangedFired(h.Side, count);
+        sink?.ShotShown(controller, new WeaponShotShown
+        {
+            hand = h.Side,
+            weapon = r.weapon,
+            attack = r.component,
+            ammo = r.ammo,
+            from = from,
+            direction = baseDir,
+            velocities = shownVelocities,
+        });
         controller.LogDebug($"Fired {count} projectile(s) at {velocity:0} m/s, damage x{r.numbers.damageMultiplier:0.##}, spread {shot.spread:0.#}°");
+    }
+
+    /// <summary>The model a shot flies as: the ammo's projectile, else the mechanic's, else the thrown weapon itself.</summary>
+    private static GameObject ProjectilePrefab(WeaponSO weapon, RangedMechanic m, ProjectileSettings ps, AmmoSO ammo)
+    {
+        GameObject prefab = ammo != null && ammo.ProjectilePrefab != null ? ammo.ProjectilePrefab : ps != null ? ps.prefab : null;
+        if (prefab == null && m != null && m.ConsumesWeaponItem && weapon != null)
+            prefab = weapon.Visuals.ModelFor(weapon);
+        return prefab;
     }
 
     private static Vector3 Spread(Vector3 dir, float halfAngle)
@@ -880,6 +955,8 @@ public class AttackExecutor
             return false;
         if (attacker == null)
             return r.ctx.AttackerObject == null || !target.transform.IsChildOf(r.ctx.AttackerObject.transform);
+        if (CombatRules.AreSeparated(attacker, target))
+            return false; // another realm scene (City / World overlap, separate dungeon runs)
         return CombatTargeting.CanHit(r.component.hitFilter, r.component.targetRules, CombatRelations.Get(attacker, target), target, r.harmful);
     }
 
@@ -912,12 +989,18 @@ public class AttackExecutor
                     Vector3 origin = r.ctx.Origin;
                     Quaternion rot = Quaternion.LookRotation(r.ctx.Forward, Vector3.up);
                     ResolvedShape shape = ResolvedShape.Resolve(c.hitShape, origin, rot, r.ctx.AreaMultiplier);
-                    CombatQuery.Overlap(shape, entityBuffer);
-                    if (c.maxTargets > 0 && entityBuffer.Count > 1)
-                        CombatQuery.SortByDistance(entityBuffer, origin);
-                    for (int i = 0; i < entityBuffer.Count && run == r; i++)
-                        TryHit(r, entityBuffer[i], StrikePoint(r, entityBuffer[i]), null);
+                    pendingHits.Clear();
+                    // A remote player's swing sees the others where its screen showed them; only the query is rewound.
+                    using (GameNet.LagCompensation.For(controller.Entity))
+                    {
+                        CombatQuery.Overlap(shape, entityBuffer);
+                        if (c.maxTargets > 0 && entityBuffer.Count > 1)
+                            CombatQuery.SortByDistance(entityBuffer, origin);
+                        for (int i = 0; i < entityBuffer.Count; i++)
+                            pendingHits.Add(new PendingHit { entity = entityBuffer[i], point = StrikePoint(r, entityBuffer[i]) });
+                    }
                     entityBuffer.Clear();
+                    ApplyPendingHits(r);
                     if (run == r)
                         HitObjectsInShape(r, shape, c.hitShape.Reach(r.ctx.AreaMultiplier));
                     break;
@@ -929,19 +1012,39 @@ public class AttackExecutor
                 {
                     if (weapon.attackCast == null) return;
                     Transform from = r.socket != null ? r.socket : controller.transform;
-                    Collider[] hits = weapon.attackCast.DetectObjects(from);
-                    for (int i = 0; i < hits.Length && run == r; i++)
+                    pendingHits.Clear();
+                    using (GameNet.LagCompensation.For(controller.Entity))
                     {
-                        Collider col = hits[i];
-                        if (col == null || IsOwnCollider(col)) continue;
-                        CombatEntity e = CombatEntity.Resolve(col);
-                        Vector3 point = col.bounds.center;
-                        if (e != null) TryHit(r, e, point, col);
-                        else TryHitObject(r, col, point);
+                        Collider[] hits = weapon.attackCast.DetectObjects(from);
+                        for (int i = 0; i < hits.Length; i++)
+                        {
+                            Collider col = hits[i];
+                            if (col == null || IsOwnCollider(col)) continue;
+                            pendingHits.Add(new PendingHit { entity = CombatEntity.Resolve(col), collider = col, point = col.bounds.center });
+                        }
                     }
+                    for (int i = 0; i < pendingHits.Count && run == r; i++)
+                    {
+                        PendingHit h = pendingHits[i];
+                        if (h.collider == null) continue; // destroyed by an earlier hit
+                        if (h.entity != null) TryHit(r, h.entity, h.point, h.collider);
+                        else TryHitObject(r, h.collider, h.point);
+                    }
+                    pendingHits.Clear();
                     break;
                 }
         }
+    }
+
+    /// <summary>Applies the character hits a query collected (in order), while the attack is still the one running.</summary>
+    private void ApplyPendingHits(Running r)
+    {
+        for (int i = 0; i < pendingHits.Count && run == r; i++)
+        {
+            PendingHit h = pendingHits[i];
+            TryHit(r, h.entity, h.point, h.collider);
+        }
+        pendingHits.Clear();
     }
 
     /// <summary>
@@ -1003,9 +1106,28 @@ public class AttackExecutor
     /// </summary>
     private void DetectBlade(Running r, WeaponSO weapon)
     {
+        pendingHits.Clear();
+        pendingObjects.Clear();
+        // The sweep runs against where a remote attacker saw the others; the hits found are applied afterwards.
+        using (GameNet.LagCompensation.For(controller.Entity))
+            SweepBlade(r);
+        ApplyPendingHits(r);
+        for (int i = 0; i < pendingObjects.Count && run == r; i++)
+        {
+            PendingHit h = pendingObjects[i];
+            if (h.collider != null)
+                TryHitObject(r, h.collider, h.point);
+        }
+        pendingObjects.Clear();
+    }
+
+    /// <summary>The Weapon Blade query: collects what each volume touches between last frame's pose and this frame's.</summary>
+    private void SweepBlade(Running r)
+    {
         float scale = r.ctx.AreaMultiplier;
         IReadOnlyList<CombatEntity> all = CombatEntity.All;
-        for (int v = 0; v < r.volumes.Count && run == r; v++)
+        CombatEntity attacker = controller.Entity;
+        for (int v = 0; v < r.volumes.Count; v++)
         {
             VolumeRun vr = r.volumes[v];
             if (!VolumeNow(r, vr, out VolumePose now))
@@ -1016,36 +1138,44 @@ public class AttackExecutor
             float travel = Mathf.Max((now.a - before.a).magnitude, (now.b - before.b).magnitude);
             int steps = Mathf.Clamp(Mathf.CeilToInt(travel / Mathf.Max(0.05f, size * 0.75f)), 1, 16);
 
-            for (int s = vr.hasPrev ? 1 : 0; s <= steps && run == r; s++)
+            for (int s = vr.hasPrev ? 1 : 0; s <= steps; s++)
             {
                 VolumePose p = VolumePose.Lerp(before, now, s / (float)steps);
                 Vector3 mid = (p.a + p.b) * 0.5f;
                 float half = (p.b - p.a).magnitude * 0.5f + size;
 
-                for (int i = 0; i < all.Count && run == r; i++)
+                for (int i = 0; i < all.Count; i++)
                 {
                     CombatEntity e = all[i];
-                    if (e == null || !e.IsAlive) continue;
+                    if (e == null || !e.IsAlive || e == attacker || HasPending(pendingHits, e)) continue;
                     float reach = half + e.Radius + e.Height;
                     if ((e.Center - mid).sqrMagnitude > reach * reach) continue;
                     Vector3 bottom = e.BasePosition + Vector3.up * e.Radius;
                     Vector3 top = e.BasePosition + Vector3.up * Mathf.Max(e.Radius, e.Height - e.Radius);
                     if (vol.Touches(p, scale, bottom, top, e.Radius, out Vector3 point))
-                        TryHit(r, e, point, null);
+                        pendingHits.Add(new PendingHit { entity = e, point = point });
                 }
 
                 // Props and tools (trees, rocks) the volume passes through
                 int n = vol.Overlap(p, scale, colliderBuffer);
-                for (int i = 0; i < n && run == r; i++)
+                for (int i = 0; i < n; i++)
                 {
                     Collider col = colliderBuffer[i];
                     if (col == null || IsOwnCollider(col) || CombatEntity.Resolve(col) != null) continue;
-                    TryHitObject(r, col, col.ClosestPoint(mid));
+                    pendingObjects.Add(new PendingHit { collider = col, point = col.ClosestPoint(mid) });
                 }
             }
             vr.prev = now;
             vr.hasPrev = true;
         }
+    }
+
+    private static bool HasPending(List<PendingHit> list, CombatEntity e)
+    {
+        for (int i = 0; i < list.Count; i++)
+            if (list[i].entity == e)
+                return true;
+        return false;
     }
 
     // ------------------------------------------------------------------ impact (ground slam)
@@ -1067,7 +1197,7 @@ public class AttackExecutor
     {
         ImpactSettings imp = r.component.impact;
         int mask = imp != null ? GroundMask(imp) : CombatSettings.Instance.groundLayers.value;
-        int n = Physics.RaycastNonAlloc(p + Vector3.up * 0.5f, Vector3.down, rayBuffer, 4f, mask, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(p + Vector3.up * 0.5f, Vector3.down, rayBuffer, 4f, mask, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         Vector3 point = new Vector3(p.x, r.ctx.Origin.y, p.z);
         for (int i = 0; i < n; i++)
@@ -1111,7 +1241,7 @@ public class AttackExecutor
         Vector3 move = to - from;
         float dist = move.magnitude;
         int n = dist > 1e-4f
-            ? Physics.SphereCastNonAlloc(from, imp.contactTolerance, move / dist, rayBuffer, dist, mask, QueryTriggerInteraction.Ignore)
+            ? ScenePhysics.SphereCastNonAlloc(from, imp.contactTolerance, move / dist, rayBuffer, dist, mask, QueryTriggerInteraction.Ignore)
             : 0;
         float best = float.MaxValue;
         bool found = false;
@@ -1125,7 +1255,7 @@ public class AttackExecutor
         if (found)
             return true;
         // Already touching (resting on or inside the ground)
-        n = Physics.RaycastNonAlloc(to + Vector3.up * 0.25f, Vector3.down, rayBuffer, 0.25f + imp.contactTolerance, mask, QueryTriggerInteraction.Ignore);
+        n = ScenePhysics.RaycastNonAlloc(to + Vector3.up * 0.25f, Vector3.down, rayBuffer, 0.25f + imp.contactTolerance, mask, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < n; i++)
         {
             RaycastHit h = rayBuffer[i];
@@ -1157,9 +1287,33 @@ public class AttackExecutor
         if (imp.sound != null)
             AbilityPool.PlaySound(imp.sound, point, 1f);
 
-        CombatQuery.Overlap(shape, entityBuffer);
-        if (imp.maxTargets > 0 && entityBuffer.Count > 1)
-            CombatQuery.SortByDistance(entityBuffer, point);
+        controller.PresentationSink?.ImpactShown(controller, new WeaponImpactShown
+        {
+            weapon = r.weapon,
+            attack = r.component,
+            point = point,
+            normal = normal,
+            forward = r.ctx.Forward,
+            scale = scale,
+            seed = r.seed,
+        });
+
+        // A remote attacker's slam finds the others where its screen showed them; only the query is rewound.
+        pendingHits.Clear();
+        using (GameNet.LagCompensation.For(attacker))
+        {
+            CombatQuery.Overlap(shape, entityBuffer);
+            if (imp.maxTargets > 0 && entityBuffer.Count > 1)
+                CombatQuery.SortByDistance(entityBuffer, point);
+            for (int i = 0; i < entityBuffer.Count; i++)
+            {
+                CombatEntity e = entityBuffer[i];
+                if (e == null) continue;
+                float d = new Vector2(e.Position.x - point.x, e.Position.z - point.z).magnitude;
+                pendingHits.Add(new PendingHit { entity = e, point = e.Center, strength = Mathf.Lerp(1f, imp.edgeMultiplier, Mathf.Clamp01(d / reach)) });
+            }
+        }
+        entityBuffer.Clear();
         var hitSettings = imp.effects != null && imp.effects.Count > 0
             ? new HitSettings { filter = TargetFilter.All, blockedByObstacles = false, effects = imp.effects, rules = imp.rules }
             : null;
@@ -1167,10 +1321,11 @@ public class AttackExecutor
         int count = 0;
         DamageDelivery previous = r.delivery;
         r.delivery = DamageDelivery.Area;
-        for (int i = 0; i < entityBuffer.Count && run == r; i++)
+        for (int i = 0; i < pendingHits.Count && run == r; i++)
         {
-            CombatEntity e = entityBuffer[i];
+            CombatEntity e = pendingHits[i].entity;
             if (e == null || !e.IsAlive) continue;
+            if (attacker != null && CombatRules.AreSeparated(attacker, e)) continue;
             CombatRelation rel = attacker != null ? CombatRelations.Get(attacker, e) : CombatRelation.Neutral;
             if (attacker == null && r.ctx.AttackerObject != null && e.transform.IsChildOf(r.ctx.AttackerObject.transform)) continue;
             if (!CombatTargeting.CanHit(imp.filter, imp.rules, rel, e, true)) continue;
@@ -1178,9 +1333,8 @@ public class AttackExecutor
             if (!r.impactHits.Add(e)) continue;
             if (imp.maxTargets > 0 && ++count > imp.maxTargets) break;
 
-            float d = new Vector2(e.Position.x - point.x, e.Position.z - point.z).magnitude;
-            float strength = Mathf.Lerp(1f, imp.edgeMultiplier, Mathf.Clamp01(d / reach));
-            if (imp.damageMultiplier > 0f && (attacker == null || CombatTargeting.CanHarm(rel, imp.rules)))
+            float strength = pendingHits[i].strength;
+            if (imp.damageMultiplier > 0f && (attacker == null || (CombatTargeting.CanHarm(rel, imp.rules) && CombatRules.MayHarm(attacker, e))))
                 DealWeaponDamage(r, e, imp.damageMultiplier * strength, e.Center, false, null);
             if (hitSettings != null && e.IsAlive)
             {
@@ -1195,8 +1349,8 @@ public class AttackExecutor
             r.ctx.LastHitTarget = e;
             r.ctx.LastHitPoint = e.Center;
         }
+        pendingHits.Clear();
         r.delivery = previous;
-        entityBuffer.Clear();
         if (run == r)
             HitObjectsInShape(r, shape, reach);
         controller.LogDebug($"Impact of {r.component.DisplayName} at {point} ({r.impactHits.Count} hit)");
@@ -1207,7 +1361,7 @@ public class AttackExecutor
     /// <summary>Tools and props (trees, rocks, crates) inside the attack's shape.</summary>
     private void HitObjectsInShape(Running r, in ResolvedShape shape, float reach)
     {
-        int n = Physics.OverlapSphereNonAlloc(shape.origin + Vector3.up, Mathf.Max(0.5f, reach), colliderBuffer, ~0, QueryTriggerInteraction.Collide);
+        int n = ScenePhysics.OverlapSphereNonAlloc(shape.origin + Vector3.up, Mathf.Max(0.5f, reach), colliderBuffer, ~0, QueryTriggerInteraction.Collide);
         for (int i = 0; i < n; i++)
         {
             Collider col = colliderBuffer[i];
@@ -1240,7 +1394,10 @@ public class AttackExecutor
                 damage = (weapon.MinDamage + weapon.MaxDamage) * 0.5f * r.numbers.damageMultiplier,
             };
             if (hittable.OnWeaponHit(info))
+            {
                 effectsManager.PlayHitEffects(r.component, point);
+                ShowHit(r, null, point, r.ctx.Forward, true, false);
+            }
             return;
         }
 
@@ -1251,6 +1408,7 @@ public class AttackExecutor
             WeaponHitResolver.ApplyClassicEffects(r.classicEffects, r.weapon, controller.Entity, r.ctx.AttackerObject,
                 null, status.gameObject, r.numbers.damageMultiplier, r.numbers.damageType, r.numbers.element, point, r.ctx.Forward);
             effectsManager.PlayHitEffects(r.component, point);
+            ShowHit(r, null, point, r.ctx.Forward, true, false);
         }
     }
 
@@ -1261,6 +1419,8 @@ public class AttackExecutor
             return;
         if (attacker != null)
         {
+            if (CombatRules.AreSeparated(attacker, target))
+                return; // another realm scene (City / World overlap, separate dungeon runs)
             // Relation → filter (+ friendly fire for harmful attacks) → target rules (kinds, factions)
             if (!CombatTargeting.CanHit(r.component.hitFilter, r.component.targetRules, CombatRelations.Get(attacker, target), target, r.harmful))
                 return;
@@ -1290,7 +1450,8 @@ public class AttackExecutor
         WeaponSO weapon = r.weapon;
         CombatEntity attacker = controller.Entity;
         // A party member / ally the filter selected (a support attack) only gets the helpful parts, unless friendly fire.
-        bool canHarm = attacker == null || CombatTargeting.CanHarm(CombatRelations.Get(attacker, target), r.component.targetRules);
+        bool canHarm = attacker == null || (CombatTargeting.CanHarm(CombatRelations.Get(attacker, target), r.component.targetRules) &&
+                                            CombatRules.MayHarm(attacker, target));
 
         float dealt = 0f;
         bool blockedFully = false;
@@ -1303,6 +1464,7 @@ public class AttackExecutor
             comboSystemOf(r).RegisterHit(target.gameObject, 0f, false);
             r.ctx.LastHitTarget = target;
             r.ctx.LastHitPoint = point;
+            ShowHit(r, target, point, dir, false, true);
             return;
         }
 
@@ -1351,6 +1513,7 @@ public class AttackExecutor
             AbilityPool.PlayVfx(r.component.hitVfx, point, Quaternion.LookRotation(dir.sqrMagnitude > 1e-6f ? -dir : Vector3.back), 0f);
         if (r.component.hitSound != null)
             AbilityPool.PlaySound(r.component.hitSound, point, 1f);
+        ShowHit(r, target, point, dir, false, false);
 
         comboSystemOf(r).RegisterHit(target.gameObject, dealt, r.numbers.element != ElementType.None);
         r.ctx.LastHitTarget = target;
@@ -1361,6 +1524,27 @@ public class AttackExecutor
     }
 
     private ComboSystem comboSystemOf(Running r) => r.combo ?? comboSystem;
+
+    /// <summary>Tells the network layer about a hit (it repeats the hit's feedback on clients). Nothing listens offline.</summary>
+    private void ShowHit(Running r, CombatEntity target, Vector3 point, Vector3 dir, bool objectOnly, bool stopped)
+    {
+        IWeaponPresentationSink sink = controller.PresentationSink;
+        if (sink == null || r.presentation)
+            return;
+        sink.HitShown(controller, new WeaponHitShown
+        {
+            weapon = r.weapon,
+            attack = r.component,
+            point = point,
+            direction = dir,
+            element = objectOnly ? ElementType.None : r.numbers.element,
+            target = target,
+            objectOnly = objectOnly,
+            stopped = stopped,
+            seed = r.seed,
+            hitIndex = r.ctx != null ? r.ctx.HitCount : 0,
+        });
+    }
 
     /// <summary>Deals a fraction of this attack's weapon damage to a character. Returns the damage dealt.</summary>
     private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, bool direct, Collider col) =>
@@ -1421,7 +1605,8 @@ public class AttackExecutor
             r.previousCastMove = e.CastMoveMultiplier;
             e.CastMoveMultiplier = Mathf.Min(r.previousCastMove, multiplier);
         }
-        SpeedManager sm = controller.SpeedManager;
+        // A client's copy only restricts the movement it predicts; its speed comes from the server.
+        SpeedManager sm = r.presentation ? null : controller.SpeedManager;
         if (sm != null)
         {
             float before = sm.Speed;
@@ -1467,9 +1652,19 @@ public class AttackExecutor
         for (int i = 0; i < list.Count; i++)
         {
             AttackBehaviour b = list[i];
-            if (b == null || b.when != moment || !b.ShouldRun(r.ctx))
+            if (b == null || b.when != moment)
                 continue;
-            try { b.Execute(r.ctx); }
+            if (r.presentation && !b.HasPresentation)
+                continue; // a client's copy shows effects only; the server runs the rest
+            // Seeded roll: the server and the clients showing its attack agree on chance-based behaviours.
+            float roll = WeaponNetMath.Roll(r.seed, i, (int)moment, moment == AttackMoment.EachHit && r.ctx != null ? r.ctx.HitCount : 0);
+            if (!b.ShouldRun(r.ctx, roll))
+                continue;
+            try
+            {
+                if (r.presentation) b.Present(r.ctx);
+                else b.Execute(r.ctx);
+            }
             catch (Exception e) { Debug.LogException(e, controller); }
         }
     }
@@ -1499,6 +1694,8 @@ public class AttackExecutor
             controller.SpendThrownItem(r.item); // the thrown unit leaves the stack (the inventory updates the hand)
         }
         controller.RaiseAttackEnded(r.input, r.component, interrupted);
+        if (interrupted && !r.presentation)
+            controller.PresentationSink?.AttackStopped(controller, true);
     }
 
     /// <summary>Interrupts whatever is running (unequip, stun, disable).</summary>
@@ -1524,6 +1721,325 @@ public class AttackExecutor
 
     /// <summary>Kept for the old API (attacks no longer use coroutines).</summary>
     public void CleanupAllCoroutines() => Cancel();
+
+    // ------------------------------------------------------------------ network presentation (client copies)
+    // A client's copy of a networked player shows the attacks the server runs: the same animation, trail, charge
+    // effects, combo effects and cosmetic behaviours on the same timeline, driven by what the server reported. Nothing
+    // here deals damage, spends costs or ammo, moves the character or queries for hits.
+
+    /// <summary>A presentation run of <paramref name="attack"/> (null when the attack cannot be shown).</summary>
+    private Running MakePresentationRun(WeaponHand hand, WeaponSO weapon, AttackComponent attack, AttackAction action, AttackType input, int seed)
+    {
+        if (weapon == null || attack == null)
+            return null;
+        if (hand == null)
+            hand = controller.MainHand;
+        if (action == null)
+            action = attack as AttackAction;
+        var r = new Running
+        {
+            presentation = true,
+            component = attack,
+            action = action,
+            variation = attack as AttackVariation,
+            input = input,
+            handInput = input,
+            player = controller.PlayerObject,
+            traits = controller.Traits,
+            stats = controller.Stats,
+            hand = hand,
+            weapon = weapon,
+            item = hand.Weapon == weapon ? hand.Item : null,
+            socket = controller.SocketFor(hand.Side),
+            combo = hand.Combo,
+            variations = hand.Variations,
+            seed = seed,
+        };
+        RangedMechanic ranged = weapon.Ranged;
+        if (ranged != null && action != null && ranged.Fires(action.actionType))
+            r.ranged = ranged;
+        r.charge = (r.ranged != null ? r.ranged.OverrideCharge(attack.charge) : null) ?? attack.charge;
+        r.ctx = BuildContext(r);
+        return r;
+    }
+
+    /// <summary>Network: shows a charge (a bow draw) the server began.</summary>
+    internal void PresentCharge(WeaponHand hand, in WeaponAttackShown shown)
+    {
+        Running r = MakePresentationRun(hand, shown.weapon, shown.attack, shown.action, shown.input, shown.seed);
+        if (r == null || r.charge == null)
+            return;
+        if (run != null)
+            Cancel(); // whatever was shown before is over on the server
+        run = r;
+        phase = Phase.Charging;
+        r.chargeHeld = 0f;
+        r.ctx.ChargeRatio = 0f;
+        controller.DrawWeapons();
+        ApplyMovement(r, r.charge.moveSpeedWhileCharging, false);
+        animationHandler.PlayChargeAnimation(r.charge.chargeAnimation);
+        if (r.charge.chargingVfx != null && r.socket != null)
+            r.chargeVfx = UnityEngine.Object.Instantiate(r.charge.chargingVfx, r.socket, false);
+        if (r.ranged is DrawMechanic draw)
+            controller.PlaySound(draw.drawSound);
+        RunBehaviours(r, AttackMoment.ChargeStart);
+    }
+
+    /// <summary>Network: shows an attack the server started (or a quick throw: its animation only).</summary>
+    internal void PresentAttack(WeaponHand hand, in WeaponAttackShown shown)
+    {
+        AttackComponent c = shown.attack;
+        WeaponSO weapon = shown.weapon;
+        if (c == null || weapon == null)
+            return;
+        if (shown.quick)
+        {
+            // A quick throw runs no timeline (as where the rules run): the throw animation and the drawn hand.
+            controller.DrawWeapons();
+            if (phase == Phase.Idle)
+                animationHandler.TriggerAttackAnimation(c, AttackType.Normal, Mathf.Max(0.1f, c.GetTotalDuration()), 1f, weapon);
+            return;
+        }
+        Running r = MakePresentationRun(hand, weapon, c, shown.action, shown.input, shown.seed);
+        if (r == null)
+            return;
+
+        // The charge shown so far ends here (released); an attack still recovering is cancelled by the new one.
+        if (run != null && phase == Phase.Charging)
+        {
+            StopChargeVisuals(run);
+            RestoreMovement(run);
+            animationHandler.StopChargeAnimation();
+            phase = Phase.Idle;
+            run = null;
+        }
+        else if (run != null)
+        {
+            End(phase != Phase.Recovery);
+        }
+
+        run = r;
+        r.choice = new ComboSystem.ComboChoice { sequence = shown.sequence, branch = shown.branch, damageMultiplier = 1f };
+        float ratio = Mathf.Clamp01(shown.chargeRatio);
+        bool charged = r.charge != null && r.charge.enabled;
+        r.chargeRatio = ratio;
+        r.ctx.ChargeRatio = ratio;
+        r.ctx.AreaMultiplier = charged ? r.charge.AreaMultiplier(ratio) : 1f;
+        r.speed = Mathf.Max(0.05f, shown.speed);
+        r.startup = c.StartupFrames / r.speed;
+        r.active = c.ActiveFrames / r.speed;
+        r.recovery = c.RecoveryFrames / r.speed;
+        r.phaseTime = 0f;
+
+        controller.DrawWeapons();
+        if (shown.branch != null)
+            effectsManager.PlayBranchEffects(r.player, shown.branch);
+        else if (shown.sequence != null)
+            effectsManager.PlayComboFinisherEffects(r.player, shown.sequence);
+
+        phase = Phase.Startup;
+        animationHandler.TriggerAttackAnimation(c, r.input, r.startup + r.active + r.recovery, r.speed, weapon);
+        effectsManager.StartTrail(c, r.socket);
+        ApplyMovement(r, c.LockMovement ? 0f : c.MovementSpeedMultiplier, true);
+        RunBehaviours(r, AttackMoment.Start);
+        controller.RaiseAttackStarted(r.input, c);
+        if (run == r && r.startup <= 0f)
+            EnterActivePresentation(r);
+    }
+
+    /// <summary>Network: the server cut the attack or charge short (or dropped the charge).</summary>
+    internal void PresentStop(bool interrupted)
+    {
+        if (run == null || !run.presentation)
+            return;
+        if (phase == Phase.Charging)
+            CancelCharge();
+        else
+            End(interrupted);
+    }
+
+    private void TickPresentation(Running r, float dt)
+    {
+        switch (phase)
+        {
+            case Phase.Charging:
+            {
+                ChargeSettings charge = r.charge;
+                float rate = 1f;
+                if (r.stats != null && r.weapon != null)
+                {
+                    rate = r.stats.ChargeSpeedMultiplier(r.weapon.Category);
+                    if (r.ranged != null)
+                        rate *= r.stats.DrawSpeedMultiplier;
+                }
+                r.chargeHeld += dt * rate;
+                if (charge != null && !r.fullChargeFired && r.chargeHeld >= charge.maxChargeTime)
+                {
+                    // Full charge feedback; the server decides when the attack goes off (release, auto release).
+                    r.fullChargeFired = true;
+                    if (charge.fullChargeVfx != null)
+                        AbilityPool.PlayVfx(charge.fullChargeVfx, r.socket != null ? r.socket.position : r.ctx.Origin + Vector3.up, Quaternion.identity, 0f, 1f, r.socket);
+                    controller.PlaySound(charge.fullChargeSound);
+                    r.ctx.ChargeRatio = 1f;
+                    RunBehaviours(r, AttackMoment.FullCharge);
+                }
+                break;
+            }
+            case Phase.Startup:
+                r.phaseTime += dt;
+                if (r.phaseTime >= r.startup)
+                    EnterActivePresentation(r);
+                break;
+            case Phase.Active:
+                r.phaseTime += dt;
+                if (r.phaseTime >= r.active)
+                {
+                    RunBehaviours(r, AttackMoment.ActiveEnd);
+                    if (run != r) break;
+                    phase = Phase.Recovery;
+                    r.phaseTime = 0f;
+                }
+                break;
+            case Phase.Recovery:
+                r.phaseTime += dt;
+                if (r.phaseTime >= r.recovery)
+                    End(false);
+                break;
+        }
+    }
+
+    private void EnterActivePresentation(Running r)
+    {
+        phase = Phase.Active;
+        r.phaseTime = 0f;
+        RunBehaviours(r, AttackMoment.ActiveStart);
+        if (run == r && phase == Phase.Active && r.active <= 0f)
+        {
+            RunBehaviours(r, AttackMoment.ActiveEnd);
+            if (run != r) return;
+            phase = Phase.Recovery;
+            r.phaseTime = 0f;
+        }
+    }
+
+    /// <summary>
+    /// Network: shows a shot the server fired: cosmetic projectiles along the server's velocities (they stop on what
+    /// the attack could hit, deal nothing and are never picked up), the muzzle flash and the fire sound.
+    /// </summary>
+    internal void PresentShot(in WeaponShotShown shot)
+    {
+        WeaponSO weapon = shot.weapon;
+        RangedMechanic m = weapon != null ? weapon.Ranged : null;
+        if (m == null || shot.velocities == null || shot.velocities.Count == 0)
+            return;
+        ProjectileSettings ps = m.projectile ?? new ProjectileSettings();
+        GameObject prefab = ProjectilePrefab(weapon, m, ps, shot.ammo);
+        CombatEntity shooter = controller.Entity;
+        AttackComponent attack = shot.attack;
+        int count = Mathf.Min(shot.velocities.Count, 64);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 v = shot.velocities[i];
+            if (v.sqrMagnitude < 1e-6f)
+                continue;
+            WeaponProjectile.Launch(new WeaponProjectile.LaunchData
+            {
+                prefab = prefab,
+                position = shot.from,
+                velocity = v,
+                settings = ps,
+                shooter = shooter,
+                shooterObject = controller.PlayerObject,
+                cosmetic = true,
+                canHit = e => CosmeticCanHit(attack, shooter, e),
+            });
+        }
+        Vector3 dir = shot.direction.sqrMagnitude > 1e-6f ? shot.direction.normalized : controller.PlayerObject.transform.forward;
+        if (m.muzzleVfx != null)
+            AbilityPool.PlayVfx(m.muzzleVfx, shot.from, Quaternion.LookRotation(dir), 0f);
+        controller.PlaySound(m.fireSound);
+        controller.RaiseRangedFired(shot.hand, count);
+    }
+
+    /// <summary>Does a cosmetic projectile stop on <paramref name="target"/> (the targets the real one could hit)?</summary>
+    private static bool CosmeticCanHit(AttackComponent attack, CombatEntity shooter, CombatEntity target)
+    {
+        if (target == null || target == shooter || !target.IsAlive)
+            return false;
+        if (shooter == null)
+            return true;
+        if (CombatRules.AreSeparated(shooter, target))
+            return false;
+        return attack == null || CombatTargeting.CanHit(attack.hitFilter, attack.targetRules, CombatRelations.Get(shooter, target), target, true);
+    }
+
+    /// <summary>Network: shows a hit of the server's attack (particles, hit effect and sound, Each Hit effects).</summary>
+    internal void PresentHit(in WeaponHitShown hit)
+    {
+        AttackComponent c = hit.attack;
+        if (c == null)
+            return;
+        if (!hit.stopped)
+        {
+            if (hit.objectOnly)
+            {
+                effectsManager.PlayHitEffects(c, hit.point);
+                return;
+            }
+            if (hit.element != ElementType.None)
+            {
+                ElementalSystem es = ElementalSystem.Instance;
+                if (es != null)
+                    effectsManager.PlayElementParticles(es.GetElementParticles(hit.element), hit.point);
+            }
+            effectsManager.PlayHitEffects(c, hit.point);
+            Vector3 dir = hit.direction;
+            if (c.hitVfx != null)
+                AbilityPool.PlayVfx(c.hitVfx, hit.point, Quaternion.LookRotation(dir.sqrMagnitude > 1e-6f ? -dir : Vector3.back), 0f);
+            if (c.hitSound != null)
+                AbilityPool.PlaySound(c.hitSound, hit.point, 1f);
+        }
+        else if (hit.objectOnly)
+        {
+            return;
+        }
+
+        // The attack's Each Hit effects (on the attack being shown, or on their own for a late projectile hit)
+        Running r = run != null && run.presentation && run.component == c ? run : MakePresentationRun(controller.MainHand, hit.weapon, c, null, AttackType.Normal, hit.seed);
+        if (r == null)
+            return;
+        r.ctx.HitCount = Mathf.Max(r.ctx.HitCount, hit.hitIndex);
+        r.ctx.LastHitTarget = hit.target;
+        r.ctx.LastHitPoint = hit.point;
+        if (!hit.stopped)
+            RunBehaviours(r, AttackMoment.EachHit);
+    }
+
+    /// <summary>Network: shows an attack's Impact the server made (the ground effect and sound, Impact effects).</summary>
+    internal void PresentImpact(in WeaponImpactShown impact)
+    {
+        AttackComponent c = impact.attack;
+        ImpactSettings imp = c != null ? c.impact : null;
+        if (imp == null)
+            return;
+        Vector3 normal = impact.normal.sqrMagnitude > 1e-6f ? impact.normal.normalized : Vector3.up;
+        Vector3 forward = impact.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 1e-6f)
+            forward = Vector3.forward;
+        float scale = Mathf.Clamp(impact.scale, 0.01f, 100f);
+        if (imp.vfx != null)
+            AbilityPool.PlayVfx(imp.vfx, impact.point, Quaternion.FromToRotation(Vector3.up, normal) * Quaternion.LookRotation(forward), 0f, scale);
+        if (imp.sound != null)
+            AbilityPool.PlaySound(imp.sound, impact.point, 1f);
+        Running r = run != null && run.presentation && run.component == c ? run : null;
+        if (r == null)
+            return;
+        r.impactDone = true;
+        r.ctx.ImpactPoint = impact.point;
+        r.ctx.ImpactNormal = normal;
+        RunBehaviours(r, AttackMoment.Impact);
+    }
 
 #if UNITY_EDITOR
     private readonly List<Vector3> gizmoOutline = new List<Vector3>(48);

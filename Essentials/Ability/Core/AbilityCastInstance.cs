@@ -110,7 +110,23 @@ public sealed class AbilityCastInstance
     public float ReleaseTime { get; internal set; }
     public bool Released { get; internal set; }
     public bool Interrupted { get; internal set; }
+    /// <summary>
+    /// Only shown (see <see cref="CombatRules.IsVisualOnly"/>, e.g. in the city): validated and put on cooldown, its
+    /// animation, sounds and effects play, but no resource is paid and no action runs.
+    /// </summary>
+    public bool VisualOnly { get; internal set; }
     public CastInterruptReason InterruptReason { get; internal set; }
+    /// <summary>
+    /// A copy of a cast decided on another machine (network sessions: what a client shows of the server's casts). It
+    /// replays the animation, effects, telegraphs and the actions' visuals with the server's numbers, but nothing it
+    /// does changes gameplay: hits only play their feedback, no cost is paid, no noise or AI hazard is made.
+    /// </summary>
+    public bool Cosmetic { get; internal set; }
+    /// <summary>
+    /// Seed of the cast's cosmetic randomness (projectile spreads and rains): the server picks it and sends it with the
+    /// cast, so the projectiles every client shows fly where the server's fly.
+    /// </summary>
+    public int Seed { get; internal set; }
     /// <summary>Damage the caster took since the cast started (interrupt threshold).</summary>
     public float DamageTaken { get; internal set; }
     /// <summary>Resources paid, refunded if interrupted before release.</summary>
@@ -119,12 +135,24 @@ public sealed class AbilityCastInstance
     internal readonly List<AbilityTelegraph> telegraphs = new List<AbilityTelegraph>(2);
     internal readonly List<HazardArea> hazards = new List<HazardArea>(2);
     internal GameObject castVfx;
+    /// <summary>Cosmetic casts: the latest aim received from the server while it winds up (see AbilityCaster.SetMirrorAim).</summary>
+    internal bool hasNetAim;
+    internal Vector3 netAimPoint, netAimDirection;
 
     private Vector3 lastCasterPosition;
     private Vector3 lastCastPoint;
     private Quaternion lastCasterRotation = Quaternion.identity;
 
     public AbilityCastInstance(AbilityCaster caster, CombatEntity casterEntity, AbilitySlot slot, AbilityDefinition definition, AbilityModifierSet modifiers)
+        : this(caster, casterEntity, slot, definition, modifiers, slot != null ? slot.Stats : AbilityStats.From(modifiers))
+    {
+    }
+
+    /// <summary>
+    /// A cast with explicit numbers (<paramref name="stats"/>) instead of the slot's: network copies of casts use the
+    /// server's resolved stats, so cast time, area, counts and ranges match what the server runs.
+    /// </summary>
+    public AbilityCastInstance(AbilityCaster caster, CombatEntity casterEntity, AbilitySlot slot, AbilityDefinition definition, AbilityModifierSet modifiers, in AbilityStats stats)
     {
         Id = nextId++;
         Caster = caster;
@@ -132,7 +160,7 @@ public sealed class AbilityCastInstance
         Slot = slot;
         Definition = definition;
         Modifiers = modifiers;
-        Stats = slot != null ? slot.Stats : AbilityStats.From(modifiers);
+        Stats = stats;
         CasterTeam = casterEntity != null ? casterEntity.Team : "";
         CasterKind = casterEntity != null ? casterEntity.Kind : CombatEntity.EntityKind.Other;
         CasterParty = casterEntity != null ? casterEntity.PartyId : 0;
@@ -277,17 +305,34 @@ public sealed class AbilityCastInstance
     {
         if (hit == null || target == null || !target.IsAlive)
             return false;
+        // Different realms (the City and the World overlap in space; every dungeon run has its own scene).
+        if (CasterEntity != null && CombatRules.AreSeparated(CasterEntity, target))
+            return false;
         CombatRelation relation = RelationTo(target);
         if (!CombatTargeting.CanHit(hit.filter, hit.rules, relation, target, hit.IsHarmful))
             return false;
-        if (hit.blockedByObstacles && !CombatQuery.HasLineOfSight(origin + Vector3.up * 0.6f, target.Center))
-            return false;
+        if (hit.blockedByObstacles)
+        {
+            // A player's hit is judged against where its client saw the target (lag compensation; only the query).
+            bool visible;
+            using (GameNet.LagCompensation.For(CasterEntity))
+                visible = CombatQuery.HasLineOfSight(origin + Vector3.up * 0.6f, target.Center);
+            if (!visible)
+                return false;
+        }
 
         direction.y = 0f;
         if (direction.sqrMagnitude < 1e-6f)
             direction = CombatQuery.FlatDirection(origin, target.Position, AimDirection);
         else
             direction.Normalize();
+
+        if (Cosmetic)
+        {
+            // A copy of the server's cast: the hit is only shown; the server applies the effects.
+            PlayHitFeedback(hit, target, direction);
+            return true;
+        }
 
         var ctx = new EffectContext
         {
@@ -322,6 +367,9 @@ public sealed class AbilityCastInstance
             // Harm rule: damage, control, knockback and debuffs land on party members / allies only with friendly fire.
             if (effect.IsHarmful && effect.recipient == EffectRecipient.HitTarget && !CombatTargeting.CanHarm(relation, hit.rules))
                 continue;
+            // Combat rules (city, safe zones): nothing harmful between players whose PvP is forbidden, debuffs included.
+            if (effect.IsHarmful && effect.recipient == EffectRecipient.HitTarget && !CombatRules.MayHarm(CasterEntity, target))
+                continue;
             if (effect.recipient == EffectRecipient.Caster)
             {
                 if (CasterEntity == null || !CasterEntity.IsAlive)
@@ -337,11 +385,16 @@ public sealed class AbilityCastInstance
                 break;
         }
 
+        PlayHitFeedback(hit, target, direction);
+        return true;
+    }
+
+    private void PlayHitFeedback(HitSettings hit, CombatEntity target, Vector3 direction)
+    {
         if (hit.hitVfx != null)
             AbilityPool.PlayVfx(hit.hitVfx, target.Center, Quaternion.LookRotation(direction.sqrMagnitude > 1e-6f ? -direction : Vector3.back), 0f);
         if (hit.hitSound != null)
             AbilityPool.PlaySound(hit.hitSound, target.Center, Definition != null ? Definition.presentation.volume : 1f);
-        return true;
     }
 
     /// <summary>
@@ -352,7 +405,9 @@ public sealed class AbilityCastInstance
     {
         if (hit == null)
             return 0;
-        CombatQuery.Overlap(shape, areaBuffer);
+        // A player's area is checked against where its client saw everyone (lag compensation; only the query).
+        using (GameNet.LagCompensation.For(CasterEntity))
+            CombatQuery.Overlap(shape, areaBuffer);
         if (areaBuffer.Count == 0)
             return 0;
         Vector3 origin = shape.origin;
@@ -389,6 +444,8 @@ public sealed class AbilityCastInstance
     /// <summary>Makes a noise AI can hear, scaled by the ability's noise radius.</summary>
     public void EmitNoise(Vector3 position, float intensity = 0.8f)
     {
+        if (Cosmetic)
+            return; // AI hearing belongs to the machine that runs the cast for real
         if (Definition != null && Definition.presentation.noiseRadius > 0f)
             CombatEvents.EmitNoise(position, Definition.presentation.noiseRadius, CasterEntity, intensity);
     }
@@ -396,6 +453,8 @@ public sealed class AbilityCastInstance
     /// <summary>Registers a danger area for AI dodging; removed automatically when the cast ends or is cancelled.</summary>
     public HazardArea AddHazard(in ResolvedShape shape, float activeFrom, float activeUntil, float severity, TargetFilter filter)
     {
+        if (Cosmetic)
+            return null; // AI dodging runs where the AI runs (the server)
         HazardArea h = HazardRegistry.AddShape(CasterEntity, filter, shape, activeFrom, activeUntil, severity);
         hazards.Add(h);
         return h;

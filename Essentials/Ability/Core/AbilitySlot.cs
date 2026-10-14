@@ -150,6 +150,46 @@ public class AbilitySlot
 
     public float LastUseTime => lastUseTime;
 
+    /// <summary>Time.time until which the slot is locked (its cooldown or another ability's shared cooldown; 0 = none).</summary>
+    public float LockedUntil => lockedUntil;
+
+    /// <summary>Time.time when the next missing charge comes back (0 = no recharge running).</summary>
+    public float RechargeEnd => rechargeEnd;
+
+    /// <summary>
+    /// Network: the timers of this slot as seconds left (comparable across machines, unlike Time.time values). Used by
+    /// the server to tell the owning client its cooldowns and charges.
+    /// </summary>
+    public void GetNetState(out AbilityPhase netPhase, out float phaseRemaining, out float phaseLength, out int netCharges, out float rechargeRemaining, out float lockedRemaining)
+    {
+        float now = Time.time;
+        netPhase = phase;
+        phaseRemaining = Mathf.Max(0f, phaseEnd - now);
+        phaseLength = Mathf.Max(0f, phaseEnd - phaseStart);
+        netCharges = Charges;
+        rechargeRemaining = AbilityNetMath.Remaining(rechargeEnd, now);
+        lockedRemaining = AbilityNetMath.Remaining(lockedUntil, now);
+    }
+
+    /// <summary>
+    /// Network: applies the server's timers to this copy (the owning client's slot), so its cooldown UI, charges and
+    /// input gating match the server. Seconds left are turned into local times, minus <paramref name="age"/> (how long
+    /// the message travelled). The phase is only taken when it is Ready or InCooldown and no cast runs here: casting
+    /// phases follow the copies of the server's casts.
+    /// </summary>
+    public void ApplyNetState(AbilityPhase netPhase, float phaseRemaining, float phaseLength, int netCharges, float rechargeRemaining, float lockedRemaining, float age = 0f)
+    {
+        float now = Time.time;
+        charges = Mathf.Max(0, netCharges);
+        rechargeEnd = AbilityNetMath.ToLocalTime(rechargeRemaining, now, age);
+        lockedUntil = AbilityNetMath.ToLocalTime(lockedRemaining, now, age);
+        if (cast != null || (netPhase != AbilityPhase.Ready && netPhase != AbilityPhase.InCooldown))
+            return;
+        float left = Mathf.Max(0f, phaseRemaining - Mathf.Max(0f, age));
+        SetPhase(netPhase, left);
+        phaseStart = now - Mathf.Max(0f, phaseLength - left);
+    }
+
     /// <summary>Replaces the ability and modifiers (resets cooldown and charges).</summary>
     public void Set(AbilityDefinition newAbility, AbilityModifierSet newModifiers)
     {

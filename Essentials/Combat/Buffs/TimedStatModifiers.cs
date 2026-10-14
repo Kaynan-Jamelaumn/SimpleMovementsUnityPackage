@@ -38,6 +38,18 @@ public class TimedStatModifiers : MonoBehaviour
         public float Remaining => Mathf.Max(0f, until - Time.time);
     }
 
+    /// <summary>What a client is told about one buff or debuff of a networked character (display only).</summary>
+    public struct View
+    {
+        public string name;
+        public bool debuff;
+        public ElementType element;
+        /// <summary>Full length in seconds.</summary>
+        public float duration;
+        /// <summary>Seconds left, on the machine that shows it.</summary>
+        public float remaining;
+    }
+
     private readonly List<Active> active = new List<Active>();
     private CombatEntity entity;
     private CombatStats stats;
@@ -47,6 +59,12 @@ public class TimedStatModifiers : MonoBehaviour
     public event Action Changed;
 
     public IReadOnlyList<Active> All => active;
+
+    /// <summary>
+    /// True on a client's copy of a networked character: the list only shows the server's buffs and debuffs
+    /// (<see cref="SetReplicatedView"/>); <see cref="Apply"/> does nothing here, so no stat is changed twice.
+    /// </summary>
+    public bool IsReplica => entity != null && entity.IsReplica;
 
     /// <summary>The timed modifiers of a character (added when missing).</summary>
     public static TimedStatModifiers For(CombatEntity e)
@@ -108,7 +126,7 @@ public class TimedStatModifiers : MonoBehaviour
         IList<CombatStatModifier> combatStats, IList<ElementalResistance> resistances, IList<TraitModifier> characterStats,
         EffectStacking stacking = EffectStacking.Refresh, int maxStacks = 1, GameObject attachedVfx = null)
     {
-        if (duration <= 0f)
+        if (duration <= 0f || IsReplica)
             return null;
         CacheSystems();
         int copies = 0;
@@ -162,6 +180,42 @@ public class TimedStatModifiers : MonoBehaviour
         active.Add(a);
         Changed?.Invoke();
         return a;
+    }
+
+    /// <summary>
+    /// Client copies of a networked character: replaces the list with the server's buffs and debuffs. The entries are
+    /// display only (icons, character sheet): no stat modifier, trait modifier or effect is applied for them, and they
+    /// leave the list when their time runs out or the server sends a new list. Raises <see cref="Changed"/>.
+    /// </summary>
+    public void SetReplicatedView(IReadOnlyList<View> list)
+    {
+        for (int i = 0; i < active.Count; i++)
+            Revert(active[i]);
+        active.Clear();
+        float now = Time.time;
+        if (list != null)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                View v = list[i];
+                float remaining = float.IsNaN(v.remaining) || float.IsInfinity(v.remaining) ? 0f : v.remaining;
+                if (remaining <= 0f)
+                    continue;
+                float duration = float.IsNaN(v.duration) || float.IsInfinity(v.duration) ? remaining : Mathf.Max(v.duration, remaining);
+                active.Add(new Active
+                {
+                    name = string.IsNullOrEmpty(v.name) ? (v.debuff ? "Debuff" : "Buff") : v.name,
+                    key = null,
+                    source = null,
+                    debuff = v.debuff,
+                    element = v.element,
+                    duration = duration,
+                    until = now + remaining,
+                    strength = 1f,
+                });
+            }
+        }
+        Changed?.Invoke();
     }
 
     /// <summary>Removes the debuffs (cleanse). Returns how many.</summary>

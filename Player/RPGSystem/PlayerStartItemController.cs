@@ -25,13 +25,21 @@ public class PlayerStartItemController : MonoBehaviour
 
 
 
+    /// <summary>
+    /// Gives the starting items of <paramref name="className"/>. Only where the rules run (offline, the server): a network
+    /// client receives the items with its inventory snapshot, so calling it there does nothing.
+    /// </summary>
     public void SetPlayerClassItems(string className)
     {
-       // ClassItem chosenClass = classItemsList.Find(x => x.className.ToLower() == className.ToLower());
-         foreach (ClassItem classItem in classItemsList)
-            if (classItem.className.ToLower() == className.ToLower()) inventoryManager.InstantiateClassItems(classItem.ItemList);
+        if (string.IsNullOrEmpty(className) || inventoryManager == null || classItemsList == null)
+            return;
+        if (!GameNet.NetAuthority.RunsRules(gameObject) || !inventoryManager.IsAuthoritative)
+            return;
+        foreach (ClassItem classItem in classItemsList)
+            if (classItem != null && string.Equals(classItem.className, className, StringComparison.OrdinalIgnoreCase))
+                inventoryManager.InstantiateClassItems(classItem.ItemList);
 
-         Debug.Log(className);
+        Debug.Log(className);
     }
 
 }

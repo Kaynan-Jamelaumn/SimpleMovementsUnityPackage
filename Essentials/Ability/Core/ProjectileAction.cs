@@ -129,6 +129,9 @@ public class ProjectileAction : CastAction, ITravellingAction
         if (launchSound != null)
             AbilityPool.PlaySound(launchSound, origin, cast.Definition.presentation.volume);
 
+        // Seeded by the cast (the server sends its seed with the cast), so every machine's projectiles of a Random or
+        // Rain pattern fly the same way.
+        var rng = new CastRandom(AbilityNetMath.VolleySeed(cast.Seed, volleyIndex));
         for (int i = 0; i < n; i++)
         {
             Vector3 start = origin;
@@ -140,7 +143,7 @@ public class ProjectileAction : CastAction, ITravellingAction
             {
                 case ProjectilePattern.Rain:
                 {
-                    Vector2 r = UnityEngine.Random.insideUnitCircle * rainRadius * s.area;
+                    Vector2 r = rng.InsideUnitCircle() * rainRadius * s.area;
                     Vector3 land = CombatQuery.SnapToGround(aimPoint + new Vector3(r.x, 0f, r.y));
                     start = land + Vector3.up * rainHeight + flatDir * (-rainHeight * 0.15f);
                     dir = (land - start).normalized;
@@ -165,8 +168,8 @@ public class ProjectileAction : CastAction, ITravellingAction
                 }
                 case ProjectilePattern.Random:
                 {
-                    float a = UnityEngine.Random.Range(-spreadAngle * 0.5f, spreadAngle * 0.5f);
-                    dir = Pitched(Quaternion.AngleAxis(a, Vector3.up) * flatDir, pitchSin + UnityEngine.Random.Range(-0.05f, 0.05f));
+                    float a = rng.Range(-spreadAngle * 0.5f, spreadAngle * 0.5f);
+                    dir = Pitched(Quaternion.AngleAxis(a, Vector3.up) * flatDir, pitchSin + rng.Range(-0.05f, 0.05f));
                     velocity = dir * spd;
                     break;
                 }
@@ -463,7 +466,8 @@ public sealed class ProjectileInstance : IAbilityRuntimeObject
         if (cast.CasterEntity != null)
             p.alreadyHit.Add(cast.CasterEntity); // never hits its own caster
 
-        GameObject prefab = ResolvePrefab(action.prefab);
+        // Nobody looks at a headless server: its projectiles fly without a visual.
+        GameObject prefab = AbilityPool.PresentationEnabled ? ResolvePrefab(action.prefab) : null;
         Quaternion rot = Quaternion.LookRotation(velocity.sqrMagnitude > 1e-6f ? velocity : Vector3.forward);
         p.visual = prefab != null ? AbilityPool.Spawn(prefab, start, rot) : null;
         if (p.visual != null)
@@ -474,7 +478,7 @@ public sealed class ProjectileInstance : IAbilityRuntimeObject
             TrailRenderer tr = p.visual.GetComponentInChildren<TrailRenderer>();
             if (tr != null) tr.Clear();
         }
-        p.hazard = HazardRegistry.AddCapsule(cast.CasterEntity, action.hit.filter, start, start, p.radius + 0.4f, Time.time, Time.time + 0.5f, cast.Severity);
+        p.hazard = cast.Cosmetic ? null : HazardRegistry.AddCapsule(cast.CasterEntity, action.hit.filter, start, start, p.radius + 0.4f, Time.time, Time.time + 0.5f, cast.Severity);
         AbilityRuntime.Add(p);
     }
 
@@ -486,8 +490,11 @@ public sealed class ProjectileInstance : IAbilityRuntimeObject
         if (firstTick)
         {
             firstTick = false;
-            // Point-blank: something already overlapping the spawn point.
-            int n0 = Physics.OverlapSphereNonAlloc(position, radius, overlaps, settings.characterLayers, QueryTriggerInteraction.Collide);
+            // Point-blank: something already overlapping the spawn point. A player's projectile tests where its client
+            // saw the others (lag compensation; only the query).
+            int n0;
+            using (GameNet.LagCompensation.For(cast.CasterEntity))
+                n0 = ScenePhysics.OverlapSphereNonAlloc(position, radius, overlaps, settings.characterLayers, QueryTriggerInteraction.Collide);
             for (int i = 0; i < n0; i++)
             {
                 CombatEntity e = CombatEntity.Resolve(overlaps[i]);
@@ -521,7 +528,9 @@ public sealed class ProjectileInstance : IAbilityRuntimeObject
         // Cast from slightly behind so things touching the current position are not missed.
         Vector3 castFrom = position - dir * radius;
         int mask = settings.characterLayers | settings.obstacleLayers;
-        int n = Physics.SphereCastNonAlloc(castFrom, radius, dir, hits, stepLen + radius, mask, QueryTriggerInteraction.Collide);
+        int n;
+        using (GameNet.LagCompensation.For(cast.CasterEntity))
+            n = ScenePhysics.SphereCastNonAlloc(castFrom, radius, dir, hits, stepLen + radius, mask, QueryTriggerInteraction.Collide);
         SortHits(n);
         for (int i = 0; i < n; i++)
         {

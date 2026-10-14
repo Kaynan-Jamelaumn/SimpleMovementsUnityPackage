@@ -38,7 +38,7 @@ public static class InventoryAutoSetup
         set => EditorPrefs.SetBool(PrefKey, value);
     }
 
-    [MenuItem(MenuPath, priority = 1)]
+    [MenuItem(MenuPath, false, SMMenu.Inventory + 1)]
     private static void ToggleEnabled()
     {
         Enabled = !Enabled;

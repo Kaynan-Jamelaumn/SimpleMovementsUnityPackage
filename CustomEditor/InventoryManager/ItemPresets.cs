@@ -556,7 +556,7 @@ public static class ItemPresets
     }
 
     /// <summary>Asks, then gives the 1×1 item assets of the project their suggested grid size.</summary>
-    [MenuItem("Tools/SimpleMovements/Inventory/Grid Inventory/Suggest Sizes For 1x1 Items")]
+    [MenuItem(SMMenu.Root + "Inventory/Grid Inventory/Suggest Sizes For 1x1 Items", false, SMMenu.Inventory + 40)]
     public static void SuggestGridSizesWithDialog()
     {
         var changes = new List<string>();

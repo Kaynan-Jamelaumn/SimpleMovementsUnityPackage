@@ -18,6 +18,9 @@ weapons, mobs and abilities need no code.
 | **Combat & Abilities** | Shared damage, defense and resistances, status effects, abilities for the player and mobs, teams, factions, parties and friendly fire | [Teams, factions & targeting](Documentation/Inventory/09-Teams-Factions-and-Targeting.md) |
 | **Procedural Terrain** | Endless streamed world: noise, landforms, mountains, volcanoes, biomes, climate, rivers and lakes, erosion, weather, object placement, world portals, mob spawning | [Terrain guide](Documentation/Terrain/README.md) |
 | **Procedural Dungeons** | Multi-floor dungeons entered through world portals: layouts, corridors, room roles, population (mobs, loot, props), meshing, NavMesh, runtime | [Dungeon guide](Documentation/Dungeon/README.md) |
+| **Hub World** | A permanent hub city, an open world regenerated with a new seed every dimensional cycle (warnings, the jump, loot loss, Dimensional Disorientation, modifiers), one scene with its own physics per dungeon, safe and dangerous zones (PvP, dungeon difficulty, mob strength), visual-only abilities in the city, duels — the authoritative, network-ready layer of the multiplayer plan | [Hub World guide](Documentation/HubWorld/README.md) |
+| **Multiplayer (Fish-Net)** | Server-authoritative networking run entirely on one machine: host, headless dedicated server and clients on 127.0.0.1, client-side movement prediction with server reconciliation, authoritative combat with lag compensation, synchronized mobs, inventory, merchants and player trading, world cycles and stacked dungeon scenes with interest management; single player unchanged | [Networking guide](Documentation/Networking/README.md) |
+| **Validation & Auto-Assign** | Project Validator window (missing scripts, broken and required references, network prefab checks, project assets) with one-click fixes, automatic filling of empty references from each object's hierarchy, `[AutoAssign]` and `[RequiredReference]` attributes, Edit Mode tests | [Validation guide](Documentation/Validation/README.md) |
 
 Start at the **[documentation index](Documentation/README.md)**.
 
@@ -50,6 +53,7 @@ Start at the **[documentation index](Documentation/README.md)**.
 | `Inventory/` | Inventory manager and its handlers, slots, items (consumables, armor, weapons), equipment, armor sets, weapon runtime |
 | `Essentials/` | Shared systems: status managers, ability and combat core, factions, AI hazards, UI, portals |
 | `Procedural/` | Terrain world generation and dungeons |
+| `HubWorld/` | The city, the dimensional cycle, realms and travel, zones, duels (rules in `Core/`, settings in `Config/`, scene side in `Runtime/`) |
 | `AudioSystem/` | Audio helpers |
 | `CustomEditor/` | Inspectors, setup wizards, preview windows and validation tools (editor only) |
 | `Documentation/` | All guides (Markdown, with Mermaid diagrams that render on GitHub) |

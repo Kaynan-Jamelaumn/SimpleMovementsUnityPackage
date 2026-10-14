@@ -195,7 +195,7 @@ public class SFXManager
         Vector3 direction = soundPosition - listenerPosition;
         float distance = direction.magnitude;
 
-        if (Physics.Raycast(listenerPosition, direction.normalized, out RaycastHit hit, distance, occlusionLayers))
+        if (ScenePhysics.Raycast(listenerPosition, direction.normalized, out RaycastHit hit, distance, occlusionLayers))
         {
             // Apply occlusion damping
             source.volume *= (1f - occlusionDamping);

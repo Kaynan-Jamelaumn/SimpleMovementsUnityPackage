@@ -53,25 +53,25 @@ namespace ProceduralDungeon.EditorTools
             return added;
         }
 
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Default Setup...")]
+        [MenuItem(SMMenu.Root + "Dungeon/Create Default Setup...", false, SMMenu.Dungeon + 1)]
         public static void CreateDefaultSetup() => CreateSetup(DungeonType.Classic);
 
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Crypt...")] private static void CreateCrypt() => CreateSetup(DungeonType.Crypt);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Deep Caves...")] private static void CreateCaves() => CreateSetup(DungeonType.DeepCaves);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Fortress...")] private static void CreateFortress() => CreateSetup(DungeonType.Fortress);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Labyrinth...")] private static void CreateLabyrinth() => CreateSetup(DungeonType.Labyrinth);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Sunken Temple...")] private static void CreateTemple() => CreateSetup(DungeonType.SunkenTemple);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Volcanic Forge...")] private static void CreateForge() => CreateSetup(DungeonType.VolcanicForge);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Cathedral...")] private static void CreateCathedral() => CreateSetup(DungeonType.Cathedral);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Prison...")] private static void CreatePrison() => CreateSetup(DungeonType.Prison);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Frozen Depths...")] private static void CreateFrozen() => CreateSetup(DungeonType.FrozenDepths);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Overgrown Ruins...")] private static void CreateOvergrown() => CreateSetup(DungeonType.OvergrownRuins);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Tower...")] private static void CreateTower() => CreateSetup(DungeonType.Tower);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Undercity...")] private static void CreateUndercity() => CreateSetup(DungeonType.Undercity);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Fungal Hive...")] private static void CreateHive() => CreateSetup(DungeonType.FungalHive);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Chasm Islands...")] private static void CreateIslands() => CreateSetup(DungeonType.ChasmIslands);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Dragon's Den...")] private static void CreateDen() => CreateSetup(DungeonType.DragonsDen);
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create Dungeon Type/Astral Void...")] private static void CreateAstral() => CreateSetup(DungeonType.AstralVoid);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Crypt...", false, SMMenu.Dungeon + 20)] private static void CreateCrypt() => CreateSetup(DungeonType.Crypt);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Deep Caves...", false, SMMenu.Dungeon + 20)] private static void CreateCaves() => CreateSetup(DungeonType.DeepCaves);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Fortress...", false, SMMenu.Dungeon + 20)] private static void CreateFortress() => CreateSetup(DungeonType.Fortress);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Labyrinth...", false, SMMenu.Dungeon + 20)] private static void CreateLabyrinth() => CreateSetup(DungeonType.Labyrinth);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Sunken Temple...", false, SMMenu.Dungeon + 20)] private static void CreateTemple() => CreateSetup(DungeonType.SunkenTemple);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Volcanic Forge...", false, SMMenu.Dungeon + 20)] private static void CreateForge() => CreateSetup(DungeonType.VolcanicForge);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Cathedral...", false, SMMenu.Dungeon + 20)] private static void CreateCathedral() => CreateSetup(DungeonType.Cathedral);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Prison...", false, SMMenu.Dungeon + 20)] private static void CreatePrison() => CreateSetup(DungeonType.Prison);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Frozen Depths...", false, SMMenu.Dungeon + 20)] private static void CreateFrozen() => CreateSetup(DungeonType.FrozenDepths);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Overgrown Ruins...", false, SMMenu.Dungeon + 20)] private static void CreateOvergrown() => CreateSetup(DungeonType.OvergrownRuins);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Tower...", false, SMMenu.Dungeon + 20)] private static void CreateTower() => CreateSetup(DungeonType.Tower);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Undercity...", false, SMMenu.Dungeon + 20)] private static void CreateUndercity() => CreateSetup(DungeonType.Undercity);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Fungal Hive...", false, SMMenu.Dungeon + 20)] private static void CreateHive() => CreateSetup(DungeonType.FungalHive);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Chasm Islands...", false, SMMenu.Dungeon + 20)] private static void CreateIslands() => CreateSetup(DungeonType.ChasmIslands);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Dragon's Den...", false, SMMenu.Dungeon + 20)] private static void CreateDen() => CreateSetup(DungeonType.DragonsDen);
+        [MenuItem(SMMenu.Root + "Dungeon/Create Dungeon Type/Astral Void...", false, SMMenu.Dungeon + 20)] private static void CreateAstral() => CreateSetup(DungeonType.AstralVoid);
 
         /// <summary>A complete setup (profile, theme, tables, templates, manager and world portal) for a kind of dungeon.</summary>
         public static void CreateSetup(DungeonType dungeonType)
@@ -164,7 +164,7 @@ namespace ProceduralDungeon.EditorTools
             PortalSetupMenu.OfferToAddToTerrain(portalPrefab);
         }
 
-        [MenuItem("Tools/SimpleMovements/Dungeon/Add Dungeon Manager To Scene")]
+        [MenuItem(SMMenu.Root + "Dungeon/Add Dungeon Manager To Scene", false, SMMenu.Dungeon + 0)]
         public static void AddManager()
         {
             var go = new GameObject("Dungeon Manager");
@@ -176,7 +176,7 @@ namespace ProceduralDungeon.EditorTools
             Selection.activeGameObject = go;
         }
 
-        [MenuItem("Tools/SimpleMovements/Dungeon/Open Preview")]
+        [MenuItem(SMMenu.Root + "Dungeon/Open Preview", false, SMMenu.Dungeon + 40)]
         public static void OpenPreview() => DungeonPreviewWindow.Open();
 
         private static string Unique(string folder, string name) => AssetDatabase.GenerateUniqueAssetPath($"{folder}/{name}.asset");

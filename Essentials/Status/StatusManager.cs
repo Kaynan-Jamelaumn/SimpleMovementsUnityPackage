@@ -28,20 +28,158 @@ public abstract class StatusManager : MonoBehaviour
     protected List<CoroutineInfo> effectRoutines = new List<CoroutineInfo>();
 
     public float CurrentValue => currentValue;
-    public float MaxValue { get => maxValue; set => maxValue = value; }
+    public float MaxValue
+    {
+        get => maxValue;
+        set
+        {
+            if (LimitsLocked)
+                return; // the server decides the limits of this copy
+            maxValue = value;
+        }
+    }
     public bool IsConsuming { get => isConsuming; set => isConsuming = value; }
     public float StatusIncrementValue => statusIncrementValue;
 
-    public void AddCurrentValue(float amount) => currentValue = Mathf.Min(currentValue + ApplyFactor(amount, incrementFactor), maxValue);
+    /// <summary>Amount restored per regeneration tick, before factors.</summary>
+    public float IncrementValue => incrementValue;
+
+    /// <summary>Percent bonus applied to gains (healing received, restores).</summary>
+    public float IncrementFactor => incrementFactor;
+
+    /// <summary>Percent bonus applied to losses (damage taken, costs).</summary>
+    public float DecrementFactor => decrementFactor;
+
+    public void AddCurrentValue(float amount)
+    {
+        if (IsReplica)
+            return; // the server's value arrives through replication
+        currentValue = Mathf.Min(currentValue + ApplyFactor(amount, incrementFactor), maxValue);
+    }
+
+    /// <summary>
+    /// Sets the value directly (clamped to 0..max), bypassing factors. For the network layer: a client applies the
+    /// value the server decided; client-side prediction restores a saved value.
+    /// </summary>
+    public void SetCurrentValue(float value) => currentValue = Mathf.Clamp(value, 0f, maxValue);
     public virtual bool HasEnougCurrentValue(float amount) => currentValue - amount >= 0;
-    public void ModifyMaxValue(float amount) => maxValue += amount;
-    public void ModifyIncrementValue(float amount) => incrementValue += amount;
-    public void ModifyIncrementFactor(float amount) => incrementFactor += amount;
-    public void ModifyDecrementFactor(float amount) => decrementFactor += amount;
+
+    public void ModifyMaxValue(float amount)
+    {
+        if (LimitsLocked)
+            return;
+        maxValue += amount;
+    }
+
+    public void ModifyIncrementValue(float amount)
+    {
+        if (LimitsLocked)
+            return;
+        incrementValue += amount;
+    }
+
+    public void ModifyIncrementFactor(float amount)
+    {
+        if (LimitsLocked)
+            return;
+        incrementFactor += amount;
+    }
+
+    public void ModifyDecrementFactor(float amount)
+    {
+        if (LimitsLocked)
+            return;
+        decrementFactor += amount;
+    }
+
     public float ApplyFactor(float amount, float factor) => amount * (1.0f + factor / 100.0f);
     protected abstract float AddFactor(float amount);
     protected abstract float RemoveFactor(float amount);
     protected abstract void UpdateStatus();
+
+    // ------------------------------------------------------------------ network replica
+
+    /// <summary>
+    /// True on a client's copy of a networked character: the server simulates this status and sends its values, so
+    /// this copy runs no regeneration, decay or timed effects, and gameplay writes to it (consume, restore, max value,
+    /// factors, effects) are ignored. Only <see cref="ApplyReplicated"/> and <see cref="SetCurrentValue"/> change it.
+    /// Always false offline and on the server or host.
+    /// </summary>
+    public bool IsReplica { get; private set; }
+
+    /// <summary>
+    /// True when only the limits (max value, regeneration amount and factors) come from the server while the current
+    /// value is still simulated on this machine - the owning client predicts its stamina and the movement reconcile
+    /// corrects it. Writes to the limits and new timed effects are ignored; consuming and restoring still work.
+    /// </summary>
+    public bool HasReplicatedLimits { get; private set; }
+
+    /// <summary>The max value, factors and timed effects are decided by the server (replica or replicated limits).</summary>
+    protected bool LimitsLocked => IsReplica || HasReplicatedLimits;
+
+    /// <summary>
+    /// Switches replica mode (network layer). On: every running routine and timed effect stops, so nothing changes the
+    /// value until the server's next one arrives. Off: the simulation runs on this machine again.
+    /// </summary>
+    public void SetReplica(bool on)
+    {
+        if (IsReplica == on)
+            return;
+        IsReplica = on;
+        if (on)
+        {
+            StopAllCoroutines();
+            isRegenerating = false;
+            isConsuming = false;
+        }
+        OnReplicaChanged(on);
+    }
+
+    /// <summary>
+    /// Takes the limits from the server while the current value stays simulated here (see
+    /// <see cref="HasReplicatedLimits"/>). Network layer only.
+    /// </summary>
+    public void SetReplicatedLimits(bool on) => HasReplicatedLimits = on;
+
+    /// <summary>
+    /// Applies the value the server decided: the max first, then the current value, so the clamp never cuts a value
+    /// that only fits under the new max. Non-finite values are ignored.
+    /// </summary>
+    public void ApplyReplicated(float current, float max)
+    {
+        if (!IsFinite(current) || !IsFinite(max))
+            return;
+        maxValue = Mathf.Max(0f, max);
+        currentValue = ClampReplicated(current);
+    }
+
+    /// <summary>
+    /// Applies the server's limits (max value, regeneration amount, gain and loss factors) and keeps the current value
+    /// within the new max. Used with <see cref="HasReplicatedLimits"/>; non-finite values are ignored.
+    /// </summary>
+    public void ApplyReplicatedLimits(float max, float increment, float gainFactor, float lossFactor)
+    {
+        if (!IsFinite(max) || !IsFinite(increment) || !IsFinite(gainFactor) || !IsFinite(lossFactor))
+            return;
+        maxValue = Mathf.Max(0f, max);
+        incrementValue = increment;
+        incrementFactor = gainFactor;
+        decrementFactor = lossFactor;
+        if (currentValue > maxValue)
+            currentValue = maxValue;
+    }
+
+    /// <summary>How a replicated current value is kept in range (0..max by default).</summary>
+    protected virtual float ClampReplicated(float value) => Mathf.Clamp(value, 0f, maxValue);
+
+    /// <summary>
+    /// Called after replica mode changed. Subclasses forget routine handles that were stopped when it turned on, and
+    /// restart their endless routines when it turns off again after Start.
+    /// </summary>
+    protected virtual void OnReplicaChanged(bool on) { }
+
+    private static bool IsFinite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
+
     protected void AddEffect(
         List<CoroutineInfo> effectList,
         string effectName,
@@ -53,6 +191,9 @@ public abstract class StatusManager : MonoBehaviour
         Func<string, float, float, float, bool, bool, IEnumerator> effectRoutineFunc = null
     )
     {
+        // Timed effects of a networked copy run on the server only; their result arrives through replication.
+        if (LimitsLocked)
+            return;
         if (effectRoutineFunc == null)
         {
             Debug.LogError("Effect routine function cannot be null.");

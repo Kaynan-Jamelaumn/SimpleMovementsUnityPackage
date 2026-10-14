@@ -29,14 +29,29 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
     /// <summary>Key of the state before the last transition (the initial state until the first transition).</summary>
     public EState PreviousStateKey { get; private set; }
 
-    /// <summary>Time.time at which the current state was entered.</summary>
+    /// <summary><see cref="CurrentTime"/> at which the current state was entered.</summary>
     public float StateEnteredTime { get; private set; }
 
     /// <summary>Seconds spent in the current state.</summary>
-    public float TimeInState => Time.time - StateEnteredTime;
+    public float TimeInState => CurrentTime - StateEnteredTime;
 
     /// <summary>Raised after every transition: (previous state, new state).</summary>
     public event Action<EState, EState> StateChanged;
+
+    /// <summary>True once the initial state has been entered (Start, or the first manual step).</summary>
+    protected bool HasStarted { get; private set; }
+
+    /// <summary>
+    /// The clock the machine measures state times with. Time.time by default; a machine that is stepped by a
+    /// simulation (player movement, which network replays run again) uses its own simulated clock instead.
+    /// </summary>
+    protected virtual float CurrentTime => Time.time;
+
+    /// <summary>
+    /// True while transitions must not raise <see cref="StateChanged"/> - a network replay re-simulating steps that
+    /// already happened, whose transitions were announced the first time.
+    /// </summary>
+    protected virtual bool SuppressStateEvents => false;
 
     /// <summary>
     /// Start is called before the first frame update.
@@ -44,14 +59,26 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
     /// </summary>
     protected virtual void Start()
     {
+        StartMachine();
+    }
+
+    /// <summary>
+    /// Enters the initial state once. Start does it; a machine stepped before its Start ran (a network tick on the
+    /// frame the object appeared) does it from its first step.
+    /// </summary>
+    protected void StartMachine()
+    {
+        if (HasStarted)
+            return;
         if (CurrentState == null)
         {
             Debug.LogError($"{GetType().Name} on '{name}' has no initial state. Assign CurrentState in Awake.", this);
             enabled = false;
             return;
         }
+        HasStarted = true;
         PreviousStateKey = CurrentState.StateKey;
-        StateEnteredTime = Time.time;
+        StateEnteredTime = CurrentTime;
         CurrentState.EnterState();
     }
 
@@ -60,6 +87,16 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
     /// Manages the state transitions and updates the current state.
     /// </summary>
     protected virtual void Update()
+    {
+        StepMachine();
+    }
+
+    /// <summary>
+    /// One step of the machine: asks the current state for the next one, then either updates the current state or
+    /// transitions (Exit, then Enter; the new state's UpdateState runs from the next step). Update calls it every
+    /// frame; a machine driven by a simulation calls it from its own step instead.
+    /// </summary>
+    protected void StepMachine()
     {
         if (CurrentState == null)
             return;
@@ -100,10 +137,31 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
         CurrentState?.ExitState();
         CurrentState = next;
         PreviousStateKey = previous;
-        StateEnteredTime = Time.time;
+        StateEnteredTime = CurrentTime;
         CurrentState.EnterState();
         IsTransitioningState = false;
-        StateChanged?.Invoke(previous, stateKey);
+        if (!SuppressStateEvents)
+            StateChanged?.Invoke(previous, stateKey);
+    }
+
+    /// <summary>
+    /// Puts the machine back into a saved situation WITHOUT running ExitState/EnterState or raising
+    /// <see cref="StateChanged"/>: the current state, the one before it and when it was entered (in
+    /// <see cref="CurrentTime"/>). Used to restore a snapshot (network reconciliation); the caller restores whatever
+    /// the states keep elsewhere.
+    /// </summary>
+    public void RestoreState(EState current, EState previous, float enteredTime)
+    {
+        if (!States.TryGetValue(current, out BaseState<EState> state))
+        {
+            Debug.LogError($"{GetType().Name} on '{name}': cannot restore state {current}, it is not registered.", this);
+            return;
+        }
+        CurrentState = state;
+        PreviousStateKey = previous;
+        StateEnteredTime = enteredTime;
+        IsTransitioningState = false;
+        HasStarted = true;
     }
 
     /// <summary>True if a state with this key is registered.</summary>

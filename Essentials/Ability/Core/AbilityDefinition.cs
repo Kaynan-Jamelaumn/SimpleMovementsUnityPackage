@@ -128,6 +128,10 @@ public class AbilityPresentation
 
     [Tooltip("How far the sound of this ability carries for AI hearing (metres). 0 = silent.")]
     [Min(0f)] public float noiseRadius = 15f;
+
+    [Tooltip("OPTIONAL. Effect played at the aim point when the ability is only shown - where combat is off, such as the " +
+             "city (the cast and release effects play as usual; nothing is hit). Empty = only those.")]
+    public GameObject visualOnlyEffect;
 }
 
 /// <summary>
@@ -210,13 +214,37 @@ public class AbilityDefinition : ScriptableObject
     [NonSerialized] private bool runtimeCreated;
 
     // ------------------------------------------------------------------ identity
-    /// <summary>Stable unique id.</summary>
+    /// <summary>
+    /// Stable unique id. Assets use their asset GUID. A definition created in code while playing without an id (an
+    /// unsaved preset) gets one from its name, so every machine of a network session derives the same id for it.
+    /// </summary>
     public string Id
     {
         get
         {
             if (string.IsNullOrEmpty(abilityId))
-                abilityId = runtimeCreated ? "runtime:" + name + ":" + Guid.NewGuid().ToString("N").Substring(0, 8) : Guid.NewGuid().ToString("N");
+            {
+                string assetGuid = "";
+#if UNITY_EDITOR
+                // A saved asset always uses its asset GUID, even when first asked while playing.
+                string assetPath = UnityEditor.AssetDatabase.GetAssetPath(this);
+                if (!string.IsNullOrEmpty(assetPath))
+                    assetGuid = UnityEditor.AssetDatabase.AssetPathToGUID(assetPath);
+#endif
+                if (!string.IsNullOrEmpty(assetGuid))
+                {
+                    abilityId = assetGuid;
+                }
+                else if (Application.isPlaying)
+                {
+                    abilityId = (runtimeCreated ? "runtime:" : "unsaved:") + name;
+                    AbilityDatabase.RegisterRuntime(this);
+                }
+                else
+                {
+                    abilityId = runtimeCreated ? "runtime:" + name + ":" + Guid.NewGuid().ToString("N").Substring(0, 8) : Guid.NewGuid().ToString("N");
+                }
+            }
             return abilityId;
         }
     }
@@ -240,6 +268,8 @@ public class AbilityDefinition : ScriptableObject
         name = niceName;
         legacySource = legacy;
         hideFlags = HideFlags.DontSave;
+        // Findable by id on every machine (network sessions send ids, never definitions).
+        AbilityDatabase.RegisterRuntime(this);
     }
 
     /// <summary>Sets the display name (editor tools and presets).</summary>

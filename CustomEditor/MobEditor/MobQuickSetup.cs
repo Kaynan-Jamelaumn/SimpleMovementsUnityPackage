@@ -11,7 +11,7 @@ using UnityEditor;
 public class MobQuickSetup : MonoBehaviour
 {
 #if UNITY_EDITOR
-    [MenuItem("Tools/SimpleMovements/Mobs/Create New Mob")]
+    [MenuItem(SMMenu.Root + "Mobs/Create New Mob", false, SMMenu.Mobs + 0)]
     private static void CreateNewMob()
     {
         GameObject mobObject = new GameObject("NewMob");
@@ -32,7 +32,7 @@ public class MobQuickSetup : MonoBehaviour
     [MenuItem("GameObject/SimpleMovements/Quick Setup Mob", true)]
     private static bool ValidateQuickSetupMob() => Selection.activeGameObject != null;
 
-    [MenuItem("Tools/SimpleMovements/Mobs/Add Missing Components")]
+    [MenuItem(SMMenu.Root + "Mobs/Add Missing Components", false, SMMenu.Mobs + 1)]
     private static void AddMissingComponents()
     {
         GameObject selected = Selection.activeGameObject;
@@ -44,7 +44,7 @@ public class MobQuickSetup : MonoBehaviour
         MobSetupUtility.SetupMob(selected, false);
     }
 
-    [MenuItem("Tools/SimpleMovements/Mobs/Help")]
+    [MenuItem(SMMenu.Root + "Mobs/Help", false, SMMenu.Mobs + 40)]
     private static void ShowHelp()
     {
         EditorUtility.DisplayDialog("Mob Setup Help", @"MOB QUICK SETUP

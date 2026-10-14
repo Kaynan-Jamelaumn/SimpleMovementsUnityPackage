@@ -14,7 +14,7 @@ using UnityEngine.InputSystem;
 /// Missing references are found automatically on the player; the Inventory Manager inspector shows what is missing.
 /// </para>
 /// </summary>
-public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler, IAmmoSource
+public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler, IAmmoSource
 {
     [Header("Dynamic Slot Configuration")]
     [SerializeField, Tooltip("Number of hotbar slots to create dynamically")]
@@ -174,9 +174,17 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     [NonSerialized] private readonly List<InventoryItem> occupantBuffer = new List<InventoryItem>();
     // Windows outside the inventory that take the mouse (NPC shops, dialogue)
     [NonSerialized] private readonly List<IGameplayPanel> openPanels = new List<IGameplayPanel>();
+    // This inventory's hotbar selection (each player has its own)
+    [NonSerialized] private readonly HotbarHandler.State hotbar = new HotbarHandler.State();
 
     /// <summary>Raised after items were added, removed or moved (UI refresh, quests, crafting).</summary>
     public event Action InventoryChanged;
+
+    /// <summary>Raised when another hotbar slot was selected (the item in hand changed).</summary>
+    public event Action HotbarSelectionChanged;
+
+    /// <summary>Raised for every feedback message shown (the network layer shows a server's messages on the owner's screen).</summary>
+    public event Action<string, InventoryFeedback.Kind> MessageShown;
 
     // ------------------------------------------------------------------ properties
     /// <summary>
@@ -273,7 +281,10 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
 
     /// <summary>The item in the selected hotbar slot, or null.</summary>
-    public InventoryItem SelectedHotbarItem => HotbarHandler.GetCurrentHeldItem(HotbarSlots);
+    public InventoryItem SelectedHotbarItem => HotbarHandler.GetCurrentHeldItem(hotbar, HotbarSlots);
+
+    /// <summary>The selected hotbar slot (the item in hand).</summary>
+    public int SelectedHotbarIndex => hotbar.Selected;
 
     /// <summary>The player's combat entity (null without a player).</summary>
     public CombatEntity PlayerEntity => player != null ? CombatEntity.Resolve(player) : null;
@@ -322,7 +333,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         get => numberOfHotBarSlots;
         set
         {
-            if (value != numberOfHotBarSlots)
+            if (value != numberOfHotBarSlots && IsAuthoritative)
             {
                 numberOfHotBarSlots = value;
                 slotManager?.UpdateHotbarSlots(value);
@@ -335,7 +346,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         get => numberOfInventorySlots;
         set
         {
-            if (value != numberOfInventorySlots)
+            if (value != numberOfInventorySlots && IsAuthoritative)
             {
                 numberOfInventorySlots = value;
                 if (!gridActive)
@@ -424,14 +435,21 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     private void Update()
     {
-        HandleKeyboardFallback();
-        HandleMouseFallback();
-        HandleHotbarInput();
-        UpdateHoverPanel();
+        // Only the player controlled from this machine reads its keys and mouse (a server holds every player's inventory).
+        if (ReadsLocalInput)
+        {
+            HandleKeyboardFallback();
+            HandleMouseFallback();
+            HandleHotbarInput();
+            UpdateHoverPanel();
+        }
         uiStateManager?.UpdateUI();
         dragHandler?.UpdateDraggedObjectPosition();
         uiLayoutManager?.Update();
-        CheckForSlotCountChanges();
+        if (IsAuthoritative)
+            CheckForSlotCountChanges(); // a client's layout follows the server's snapshot
+        else
+            ApplyPendingSnapshot();
         UpdateArmorCache();
         if (weaponController != null)
             weaponController.InputBlocked = IsAnyPanelOpen;
@@ -441,6 +459,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     private void OnDestroy()
     {
         instances.Remove(this);
+        ReleaseStorageOnDestroy();
         InputDeviceTracker.Changed -= RefreshGridHint;
         UnbindInput();
         UnsubscribeFromEvents();
@@ -560,9 +579,17 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         return null;
     }
 
-    private void OnInventoryAction(InputAction.CallbackContext context) => RequestToggleInventory();
+    private void OnInventoryAction(InputAction.CallbackContext context)
+    {
+        if (ReadsLocalInput)
+            RequestToggleInventory();
+    }
 
-    private void OnUseItemAction(InputAction.CallbackContext context) => OnUseItem(context);
+    private void OnUseItemAction(InputAction.CallbackContext context)
+    {
+        if (ReadsLocalInput)
+            OnUseItem(context);
+    }
 
     /// <summary>Left mouse button → use / attack, when the input actions have no use action.</summary>
     private void HandleMouseFallback()
@@ -729,8 +756,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Shows a short message above the hotbar (when Show Feedback Messages is on).</summary>
     public void ShowMessage(string message, InventoryFeedback.Kind kind = InventoryFeedback.Kind.Warning)
     {
-        if (!showFeedbackMessages || string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(message))
             return;
+        MessageShown?.Invoke(message, kind);
+        if (!showFeedbackMessages || !ReadsLocalInput)
+            return; // nobody looks at another player's copy
         if (feedback == null)
         {
             Transform container = inventoryParent != null && inventoryParent.transform.parent != null ? inventoryParent.transform.parent : transform;
@@ -840,8 +870,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         GameObject[] hotbar = slotManager?.HotbarSlots;
         if (hotbar != null)
         {
-            if (forceModel) HotbarHandler.ForceRefresh(hotbar, handParent);
-            else HotbarHandler.RefreshIfItemChanged(hotbar, handParent);
+            if (forceModel) HotbarHandler.ForceRefresh(this.hotbar, hotbar, handParent);
+            else HotbarHandler.RefreshIfItemChanged(this.hotbar, hotbar, handParent);
         }
         SyncHandWeapon();
     }
@@ -895,8 +925,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>The weapon in hand broke: the next one of its stack takes over, or it is destroyed when its item says so.</summary>
     private void OnHeldItemBroke(InventoryItem item)
     {
-        if (item == null || item.itemScriptableObject == null)
-            return;
+        if (item == null || item.itemScriptableObject == null || !IsAuthoritative)
+            return; // a client's copy: the server breaks the item and the snapshot shows it
         if (item.stackCurrent > 1)
         {
             item.RemoveFromStack(1);
@@ -989,13 +1019,13 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // ------------------------------------------------------------------ input
     public void OnInventory(InputAction.CallbackContext value)
     {
-        if (value.started) RequestToggleInventory();
+        if (value.started && ReadsLocalInput) RequestToggleInventory();
     }
 
     public void OnArmorSetUI(InputAction.CallbackContext value)
     {
         // Once per frame: the own action and an inspector-wired PlayerInput event may both report the key.
-        if (!value.started || armorSetUIManager == null || lastArmorSetToggleFrame == Time.frameCount)
+        if (!value.started || armorSetUIManager == null || lastArmorSetToggleFrame == Time.frameCount || !ReadsLocalInput)
             return;
         lastArmorSetToggleFrame = Time.frameCount;
         armorSetUIManager.ToggleUI();
@@ -1007,6 +1037,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// </summary>
     public void OnUseItem(InputAction.CallbackContext value)
     {
+        if (!ReadsLocalInput)
+            return; // another player's copy (a host's click must not reach it)
         // The own action subscription and an inspector-wired event may both report the same press: handle it once.
         if (lastUseFrame == Time.frameCount && lastUsePhase == value.phase)
             return;
@@ -1035,6 +1067,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         var heldItem = selectedSlot != null && selectedSlot.heldItem != null ? selectedSlot.heldItem.GetComponent<InventoryItem>() : null;
         if (heldItem == null || heldItem.itemScriptableObject == null)
             return false;
+        InventoryNetRole role = NetRole;
+        if (role == InventoryNetRole.RemoteCopy)
+            return false;
 
         if (heldItem.itemScriptableObject is WeaponSO weapon)
         {
@@ -1055,6 +1090,19 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             return started;
         }
 
+        if (role == InventoryNetRole.OwnerClient)
+        {
+            // The server uses it on its copy (effects, uses left, cooldown); the snapshot brings the result back.
+            if (heldItem.IsOnCooldown())
+                return false;
+            return SendRequest(new GameNet.InventoryRequest
+            {
+                kind = (byte)GameNet.InventoryRequestKind.UseSelected,
+                amount = hotbar.Selected,
+                from = SlotRefOf(selectedSlot),
+                itemId = ItemDatabase.Id(heldItem.itemScriptableObject),
+            });
+        }
         if (!ItemUsageHandler.HandleCooldown(heldItem, this)) return false;
         bool used = ItemUsageHandler.UseHeldItem(player, playerStatusController, weaponController, heldItem);
         ItemUsageHandler.HandleItemDurabilityAndStack(player, handParent, selectedSlot, heldItem);
@@ -1067,8 +1115,34 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (InputBindingStore.GameplayInputPaused)
             return; // paused, or typing in a text field (digits must not switch the item in hand)
-        if (HotbarHandler.CheckForHotbarInput(slotManager?.HotbarSlots, handParent))
-            SyncHandWeapon();
+        if (HotbarHandler.CheckForHotbarInput(hotbar, slotManager?.HotbarSlots, handParent))
+            OnHotbarSelectionChanged();
+    }
+
+    /// <summary>
+    /// Selects a hotbar slot from code (the item in hand). On a client the server is told; offline and on the server it
+    /// happens here. False when the index is out of range.
+    /// </summary>
+    public bool SelectHotbarSlot(int index)
+    {
+        GameObject[] slots = slotManager?.HotbarSlots;
+        if (index < 0 || (slots != null && slots.Length > 0 && index >= slots.Length) || NetRole == InventoryNetRole.RemoteCopy)
+            return false;
+        if (index == hotbar.Selected)
+            return true;
+        HotbarHandler.SelectSlot(hotbar, index, slots, handParent);
+        if (hotbar.Selected != index)
+            return false;
+        OnHotbarSelectionChanged();
+        return true;
+    }
+
+    private void OnHotbarSelectionChanged()
+    {
+        SyncHandWeapon();
+        if (NetRole == InventoryNetRole.OwnerClient)
+            SendRequest(new GameNet.InventoryRequest { kind = (byte)GameNet.InventoryRequestKind.SelectHotbar, amount = hotbar.Selected });
+        HotbarSelectionChanged?.Invoke();
     }
 
     // ------------------------------------------------------------------ panels
@@ -1107,6 +1181,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void CloseInventory()
     {
         CancelDrag();
+        if (NetRole == InventoryNetRole.OwnerClient && IsStorageOpened)
+            CloseStorage(null); // the server closes (and saves) the storage it opened
         if (!IsExternalPanelOpen)
             SetCursorState(CursorLockMode.Locked, false); // an NPC window still open keeps the cursor
 
@@ -1124,7 +1200,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         HideItemInfo();
         if (hoverPanel != null) hoverPanel.Hide();
         if (splitPopup != null) splitPopup.Close();
-        storageManager?.CloseCurrentStorage();
+        CloseCurrentStorageQuietly();
     }
 
     /// <summary>
@@ -1172,14 +1248,16 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     private InventorySlot GetSelectedHotbarSlot()
     {
         var hotbarSlots = slotManager?.HotbarSlots;
-        if (hotbarSlots == null || hotbarSlots.Length == 0 || HotbarHandler.SelectedHotbarSlot >= hotbarSlots.Length)
+        if (hotbarSlots == null || hotbarSlots.Length == 0 || hotbar.Selected >= hotbarSlots.Length)
             return null;
-        return hotbarSlots[HotbarHandler.SelectedHotbarSlot].Live()?.GetComponent<InventorySlot>();
+        return hotbarSlots[hotbar.Selected].Live()?.GetComponent<InventorySlot>();
     }
 
     // ------------------------------------------------------------------ pointer (drag and drop)
     public void OnPointerClick(PointerEventData eventData)
     {
+        if (!ReadsLocalInput)
+            return;
         if (splitPopup != null && splitPopup.IsOpen)
             return; // clicks inside the popup are its own; outside ones close it
         if (dragHandler != null && dragHandler.IsDragging)
@@ -1203,7 +1281,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     public void OnPointerDown(PointerEventData eventData)
     {
-        if (eventData.button != PointerEventData.InputButton.Left || dragHandler == null || dragHandler.IsDragging) return;
+        if (!ReadsLocalInput || eventData.button != PointerEventData.InputButton.Left || dragHandler == null || dragHandler.IsDragging) return;
         if (splitPopup != null && splitPopup.IsOpen) return;
         var slot = FindSlotUnderPointer(eventData);
         if (slot != null && slot.heldItem != null)
@@ -1224,6 +1302,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         // Dropped on the grid (even between cells): the grid decides.
         if (gridActive && dragHandler.DraggedObject != null && gridView != null && gridView.CellAtScreen(eventData.position, out int gx, out int gy))
         {
+            if (NetRole == InventoryNetRole.OwnerClient)
+                SendGridDrop(gx, gy); // the server repeats it; the same drop runs here at once (the snapshot confirms)
             HandleGridDrop(gx, gy);
             dragHandler.CleanupDragging();
             EndGridDrag();
@@ -1345,15 +1425,48 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
         // Dropped on a quickslot: the quickslot remembers the item; the item itself goes back (nothing is duplicated).
         QuickSlotCell quick = quickSlotBar != null ? quickSlotBar.CellUnder(eventData) : null;
-        if (quick != null)
+        InventorySlot slot = quick == null ? FindSlotUnderPointer(eventData) : null;
+        bool toWorld = quick == null && slot == null && IsDropZone(clickedObject);
+        if (NetRole == InventoryNetRole.OwnerClient && quick == null)
         {
-            quickSlotBar.Assign(quick.Index, draggedItem.itemScriptableObject);
+            // The server repeats the drop on its copy. Moves between slots are shown at once (the snapshot confirms or
+            // corrects them); an item dropped into the world goes back to its slot until the server has dropped it.
+            Vector3 point = toWorld ? ItemHandler.DropPoint(cam, player) : Vector3.zero;
+            if (slot == null || slot.gameObject != dragHandler.LastItemSlotObject)
+                SendSlotDrop(draggedItem, slot, toWorld, point);
+            if (toWorld)
+            {
+                ReturnDragged(dragged, dragHandler.LastItemSlotObject);
+                RefreshHand(true);
+                return;
+            }
+        }
+        DropDragged(quick != null ? quick.Index : -1, slot, toWorld, null);
+    }
+
+    /// <summary>
+    /// Drops the item being dragged: onto quickslot <paramref name="quickIndex"/> (when 0 or more), into
+    /// <paramref name="slot"/>, into the world (<paramref name="toWorld"/>, at <paramref name="worldPoint"/> or under the
+    /// pointer), or back where it came from. The pointer and a client's request (on the server) end up here.
+    /// </summary>
+    private void DropDragged(int quickIndex, InventorySlot slot, bool toWorld, Vector3? worldPoint)
+    {
+        GameObject dragged = dragHandler.DraggedObject;
+        var draggedItem = dragged != null ? dragged.GetComponent<InventoryItem>() : null;
+        if (draggedItem == null || draggedItem.itemScriptableObject == null)
+        {
+            CancelDrag();
+            return;
+        }
+        if (quickIndex >= 0)
+        {
+            if (quickSlotBar != null)
+                quickSlotBar.Assign(quickIndex, draggedItem.itemScriptableObject);
             ReturnDragged(dragged, dragHandler.LastItemSlotObject);
             RefreshHand(true);
             return;
         }
 
-        InventorySlot slot = FindSlotUnderPointer(eventData);
         if (slot != null && slot.gameObject == dragHandler.LastItemSlotObject)
         {
             ReturnDragged(dragged, dragHandler.LastItemSlotObject);
@@ -1365,9 +1478,12 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             else if (!SwapIntoGridOrigin(slot, draggedItem))
                 ItemHandler.SwitchOrFillStack(slot, dragged, dragHandler.LastItemSlotObject, playerStatusController);
         }
-        else if (slot == null && IsDropZone(clickedObject))
+        else if (slot == null && toWorld)
         {
-            ItemHandler.DropItem(dragged, dragHandler.LastItemSlotObject, playerStatusController, cam, player);
+            if (worldPoint.HasValue)
+                ItemHandler.DropItemAt(dragged, dragHandler.LastItemSlotObject, playerStatusController, worldPoint.Value, player);
+            else
+                ItemHandler.DropItem(dragged, dragHandler.LastItemSlotObject, playerStatusController, cam, player);
         }
         else
         {
@@ -1483,7 +1599,27 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (stack == null || amount < 1 || amount >= stack.stackCurrent)
             return false;
-        bool done = SplitItemHandler.SplitItemIntoNewStack(this, stack, StorageSlots, player, amount);
+        InventoryNetRole role = NetRole;
+        if (role == InventoryNetRole.RemoteCopy)
+            return false;
+        if (role == InventoryNetRole.OwnerClient)
+        {
+            InventorySlot from = FindSlotHolding(stack.gameObject);
+            if (from == null)
+                return false;
+            SendRequest(new GameNet.InventoryRequest
+            {
+                kind = (byte)GameNet.InventoryRequestKind.Split,
+                from = SlotRefOf(from),
+                itemId = ItemDatabase.Id(stack.itemScriptableObject),
+                amount = amount,
+            });
+            // Shown at once; the server's snapshot confirms (or corrects) where the new stack went.
+        }
+        bool done;
+        predicting = role == InventoryNetRole.OwnerClient;
+        try { done = SplitItemHandler.SplitItemIntoNewStack(this, stack, StorageSlots, player, amount); }
+        finally { predicting = false; }
         if (done)
             NotifyInventoryChanged();
         return done;
@@ -1498,14 +1634,47 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Picks up a world item (with an ItemPickable). Returns true if at least part of it was taken.</summary>
     public bool ItemPicked(GameObject pickedItem)
     {
+        switch (NetRole)
+        {
+            case InventoryNetRole.OwnerClient:
+                // The server picks it up (range, still there, room) and the snapshot brings it in.
+                RequestPickup(pickedItem);
+                return false;
+            case InventoryNetRole.RemoteCopy:
+                return false;
+        }
         return ItemPickUpHandler.AddItemToInventory(this, pickedItem, StorageSlots, itemPrefab, player);
     }
 
+    /// <summary>
+    /// The interact key started being held on <paramref name="pickedItem"/> (an item that takes time to pick up). On a
+    /// client the server is told, so it can check the pickup took that long; elsewhere nothing happens.
+    /// </summary>
+    public void BeginPickupHold(GameObject pickedItem)
+    {
+        if (NetRole == InventoryNetRole.OwnerClient && pickedItem != null)
+            SendWorldRequest(new GameNet.InventoryRequest { kind = (byte)GameNet.InventoryRequestKind.PickupHold }, pickedItem);
+    }
+
+    /// <summary>
+    /// Gives the starting items of a class (pickable prefabs: their item, quantity and durabilities). Only where the
+    /// rules run (offline, the server): a client receives them with the server's snapshot.
+    /// </summary>
     public void InstantiateClassItems(List<GameObject> classItems)
     {
+        if (classItems == null || !IsAuthoritative)
+            return;
         foreach (var item in classItems)
-            if (item != null)
+        {
+            if (item == null)
+                continue;
+            // The prefab itself is never picked up (that destroyed the prefab's own object when it was a scene object).
+            ItemPickable pickable = item.GetComponent<ItemPickable>();
+            if (pickable != null && pickable.itemScriptableObject != null && !item.scene.IsValid())
+                AddItem(pickable.itemScriptableObject, Mathf.Max(1, pickable.quantity), pickable.DurabilityList);
+            else
                 ItemPicked(item);
+        }
     }
 
     /// <summary>
@@ -1517,6 +1686,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (item == null || quantity <= 0)
             return Mathf.Max(0, quantity);
+        if (!IsAuthoritative)
+            return WarnClientMutation(nameof(AddItem), quantity); // the server adds it; the snapshot shows it
         if (itemPrefab == null)
         {
             Debug.LogError("[Inventory] Cannot add items: Item Prefab is not assigned.", this);
@@ -1613,6 +1784,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// </summary>
     public InventoryItem CreateItemInSlot(InventorySlot slot, ItemSO item, int quantity, IList<int> durabilities = null, bool addWeight = true)
     {
+        if (!IsAuthoritative && !predicting)
+        {
+            WarnClientMutation(nameof(CreateItemInSlot), 0);
+            return null;
+        }
         if (slot == null || item == null || itemPrefab == null || slot.heldItem != null || !SlotTypeHelper.CanPlace(item, slot.SlotType))
             return null;
         bool rotated = false;
@@ -1638,6 +1814,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Old API: creates the inventory item of a picked world item in an empty slot.</summary>
     public void InstantiateNewItem(GameObject emptySlot, GameObject pickedItem)
     {
+        if (!IsAuthoritative)
+        {
+            ItemPicked(pickedItem); // a client asks the server
+            return;
+        }
         var pickable = pickedItem != null ? pickedItem.GetComponent<ItemPickable>() : null;
         var slot = emptySlot != null ? emptySlot.GetComponent<InventorySlot>() : null;
         if (pickable == null || pickable.itemScriptableObject == null || slot == null || itemPrefab == null)
@@ -1656,17 +1837,64 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
 
     // ------------------------------------------------------------------ storage
-    public void OpenStorage(Storage storage)
+    /// <summary>
+    /// Opens a storage (chest) next to the inventory. One player at a time uses a storage: while another player has it
+    /// open it is refused (two windows on the same contents would duplicate items). On a client the server opens it.
+    /// </summary>
+    public void OpenStorage(Storage storage) => TryOpenStorage(storage, out _);
+
+    /// <summary><see cref="OpenStorage"/> that says why it was refused (false; on a client: the request was sent).</summary>
+    public bool TryOpenStorage(Storage storage, out string reason)
     {
-        SetCursorState(CursorLockMode.None, true);
+        reason = "";
+        if (storage == null)
+            return false;
+        switch (NetRole)
+        {
+            case InventoryNetRole.OwnerClient:
+                SendWorldRequest(new GameNet.InventoryRequest { kind = (byte)GameNet.InventoryRequestKind.OpenStorage, flag = true }, storage.gameObject);
+                return false;
+            case InventoryNetRole.RemoteCopy:
+                return false;
+        }
+        if (storage.IsUsedByOther(this))
+        {
+            reason = "Someone else is using this.";
+            ShowMessage(reason);
+            return false;
+        }
+        if (IsStorageOpened && storageManager != null && storageManager.Current != null && storageManager.Current != storage)
+            CloseStorage(storageManager.Current);
+        storage.Claim(this);
+        if (ReadsLocalInput)
+            SetCursorState(CursorLockMode.None, true);
         uiStateManager?.SetStorageOpened(true);
         storageManager?.OpenStorage(storage);
+        NotifyInventoryChanged();
+        return true;
     }
 
+    /// <summary>The storage open in the storage window (null: none, or a client showing the server's).</summary>
+    public Storage OpenedStorage => storageManager != null ? storageManager.Current : null;
+
+    /// <summary>Closes the open storage (its contents are saved into it). On a client the server closes it.</summary>
     public void CloseStorage(Storage storage)
     {
+        InventoryNetRole role = NetRole;
+        if (role == InventoryNetRole.RemoteCopy)
+            return;
+        if (role == InventoryNetRole.OwnerClient)
+        {
+            if (IsStorageOpened)
+                SendRequest(new GameNet.InventoryRequest { kind = (byte)GameNet.InventoryRequestKind.CloseStorage });
+            CloseStorageView();
+            return;
+        }
+        Storage open = storageManager != null ? storageManager.Current : null;
         storageManager?.CloseStorage(storage);
-        if (!IsExternalPanelOpen)
+        if (open != null) open.Release(this);
+        if (storage != null && storage != open) storage.Release(this);
+        if (!IsExternalPanelOpen && ReadsLocalInput)
             SetCursorState(CursorLockMode.Locked, false);
         uiStateManager?.SetStorageOpened(false);
         NotifyInventoryChanged();
@@ -1691,6 +1919,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Removes items (inventory and hotbar); the player's carried weight follows. Returns how many were removed.</summary>
     public int RemoveItems(ItemSO itemSO, int amountToRemove)
     {
+        if (!IsAuthoritative)
+            return WarnClientMutation(nameof(RemoveItems), 0);
         int removed = InventoryUtils.RemoveItems(StorageSlots, itemSO, amountToRemove);
         if (removed > 0)
         {
@@ -1722,6 +1952,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     // Armor management methods
     public bool QuickEquipArmor(ArmorSO armor)
     {
+        if (!IsAuthoritative)
+            return armor != null && SendArmorCommand(GameNet.InventoryRequestKind.QuickEquipArmor, armor);
         bool ok = ArmorEquipmentHandler.QuickEquipArmor(this, armor, playerStatusController);
         if (ok) NotifyInventoryChanged();
         return ok;
@@ -1729,6 +1961,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
 
     public void UnequipAllArmor()
     {
+        if (!IsAuthoritative)
+        {
+            SendArmorCommand(GameNet.InventoryRequestKind.UnequipAllArmor, null);
+            return;
+        }
         ArmorEquipmentHandler.UnequipAllArmor(this, playerStatusController);
         NotifyInventoryChanged();
     }
@@ -1736,6 +1973,11 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     public void OptimizeArmorSets()
     {
         if (!enableArmorOptimization) return;
+        if (!IsAuthoritative)
+        {
+            SendArmorCommand(GameNet.InventoryRequestKind.OptimizeArmor, null);
+            return;
+        }
         ArmorEquipmentHandler.OptimizeArmorSets(this, playerStatusController);
         NotifyInventoryChanged();
     }
@@ -1859,6 +2101,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (enable == gridActive && enable == useGridInventory)
             return true;
+        if (!IsAuthoritative)
+            return false; // the server's layout arrives with its snapshot
         if (slotManager == null || slotManager.InventorySlots == null)
         {
             useGridInventory = enable;
@@ -1870,6 +2114,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Changes the grid's columns and rows at runtime (items are re-packed; refused when they would not fit).</summary>
     public bool ResizeGrid(int columns, int rows)
     {
+        if (!IsAuthoritative)
+            return false;
         if (!gridActive)
         {
             gridSettings.columns = columns;
@@ -1882,7 +2128,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     private bool Repack(bool toGrid, int columns, int rows)
     {
         CancelDrag();
-        storageManager?.CloseCurrentStorage();
+        CloseCurrentStorageQuietly();
 
         // The items of the bag (the hotbar is not part of the grid).
         var items = new List<InventoryItem>();
@@ -1996,6 +2242,12 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
                     hs.SetHeldItem(it.gameObject);
                     return;
                 }
+        if (!IsAuthoritative)
+        {
+            // A client's copy never drops anything: the item is only shown, and the server's snapshot puts it right.
+            Destroy(it.gameObject);
+            return;
+        }
         if (it.itemScriptableObject != null && it.itemScriptableObject.Prefab != null && player != null)
         {
             Vector3 at = player.transform.position + player.transform.forward * 1.2f + Vector3.up * 0.5f;
@@ -2026,7 +2278,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     }
 
     // ---- dragging in the grid
-    private void BeginGridDrag(InventorySlot slot, InventoryItem item, Vector2 pointer)
+    private void BeginGridDrag(InventorySlot slot, InventoryItem item, Vector2? pointer)
     {
         dragItem = item;
         dragFromGrid = false;
@@ -2042,9 +2294,9 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
         dragOriginRotated = item.gridRotated;
         dragRotated = item.gridRotated;
         dragGrab = Vector2Int.zero;
-        if (gridView.CellAtScreen(pointer, out int cx, out int cy))
+        if (pointer.HasValue && gridView != null && gridView.CellAtScreen(pointer.Value, out int cx, out int cy))
             dragGrab = new Vector2Int(Mathf.Clamp(cx - dragOrigin.X, 0, dragOrigin.W - 1), Mathf.Clamp(cy - dragOrigin.Y, 0, dragOrigin.H - 1));
-        gridView.ShowOrigin(dragOrigin);
+        gridView?.ShowOrigin(dragOrigin);
         dragStyled = true;
     }
 
@@ -2079,7 +2331,7 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>Per frame: placement preview while dragging, rotation input, the hovered item.</summary>
     private void UpdateGridInteraction()
     {
-        if (!gridActive || gridView == null || grid == null)
+        if (!gridActive || gridView == null || grid == null || !ReadsLocalInput)
             return;
         bool rotatePressed = rotateInput != null && rotateInput.Pressed && IsInventoryOpened;
         Mouse m = Mouse.current;
@@ -2153,8 +2405,16 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             if (!so.CanRotateInGrid) ShowMessage($"{so.Name} cannot be rotated.", InventoryFeedback.Kind.Info);
             return;
         }
+        InventorySlot anchor = NetRole == InventoryNetRole.OwnerClient ? grid.AnchorOf(item) : null;
         if (grid.TryRotateInPlace(item, out GridRect wanted))
         {
+            if (anchor != null)
+                SendRequest(new GameNet.InventoryRequest
+                {
+                    kind = (byte)GameNet.InventoryRequestKind.Rotate,
+                    from = SlotRefOf(anchor),
+                    itemId = ItemDatabase.Id(so),
+                });
             gridView.LayoutItems();
             NotifyInventoryChanged();
         }
@@ -2245,12 +2505,20 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     /// <summary>The dragged item was released over the grid, the pointer on cell (cx, cy).</summary>
     private void HandleGridDrop(int cx, int cy)
     {
+        InventoryItem item = PrepareGridDrop();
+        if (item != null)
+            HandleGridDropAt(item, DragTarget(cx, cy));
+    }
+
+    /// <summary>The item being dragged, ready to be dropped on the grid (null: nothing valid is dragged, the drag was cancelled).</summary>
+    private InventoryItem PrepareGridDrop()
+    {
         GameObject dragged = dragHandler.DraggedObject;
         InventoryItem item = dragged != null ? dragged.GetComponent<InventoryItem>() : null;
         if (item == null || item.itemScriptableObject == null)
         {
             CancelDrag();
-            return;
+            return null;
         }
         if (dragItem != item)
         {
@@ -2259,7 +2527,13 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             dragRotated = item.gridRotated;
             dragFromGrid = false;
         }
-        GridRect target = DragTarget(cx, cy);
+        return item;
+    }
+
+    /// <summary>The dragged <paramref name="item"/> lands with its top-left corner at the target's cell (the pointer or a client's request).</summary>
+    private void HandleGridDropAt(InventoryItem item, GridRect target)
+    {
+        GameObject dragged = item.gameObject;
         GameObject last = dragHandler.LastItemSlotObject;
         InventorySlot lastSlot = last != null ? last.GetComponent<InventorySlot>() : null;
         switch (EvaluateDrop(target, out InventoryItem other))
@@ -2398,6 +2672,20 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
             reason = $"{item.Name} cannot be used like this.";
             return false;
         }
+        switch (NetRole)
+        {
+            case InventoryNetRole.OwnerClient:
+                // Used by the server (effects, uses left, cooldown); throwables above go through the weapon layer.
+                return SendRequest(new GameNet.InventoryRequest
+                {
+                    kind = (byte)GameNet.InventoryRequestKind.UseItem,
+                    itemId = ItemDatabase.Id(item),
+                    flag = includeHotbar,
+                });
+            case InventoryNetRole.RemoteCopy:
+                reason = "";
+                return false;
+        }
         if (!ItemUsageHandler.UseHeldItem(player, playerStatusController, weaponController, stack))
         {
             reason = $"{item.Name} cannot be used now.";
@@ -2459,6 +2747,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (ammo == null || amount <= 0)
             return 0;
+        if (!IsAuthoritative)
+            return WarnClientMutation(nameof(ConsumeAmmo), 0);
         int removed = InventoryUtils.RemoveItems(StorageSlots, ammo, amount);
         if (removed > 0)
         {
@@ -2473,6 +2763,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (item == null || item.itemScriptableObject == null || amount <= 0)
             return 0;
+        if (!IsAuthoritative)
+            return WarnClientMutation(nameof(ConsumeItem), 0);
         int n = Mathf.Min(amount, item.stackCurrent);
         for (int i = 0; i < n; i++)
         {
@@ -2538,6 +2830,8 @@ public class InventoryManager : MonoBehaviour, IPointerDownHandler, IPointerUpHa
     {
         if (item == null || item.itemScriptableObject == null)
             return false;
+        if (!IsAuthoritative && !predicting)
+            return WarnClientMutation(nameof(PlaceInBag), 0) != 0;
         InventorySlot from = FindSlotHolding(item.gameObject);
         if (gridActive && grid != null)
         {

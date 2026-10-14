@@ -46,7 +46,7 @@ namespace ProceduralDungeon
             DungeonInstance d = Dungeon;
             if (d != null)
                 d.Stats.Bump(ref d.Stats.shrinesUsed);
-            DungeonMessages.Show($"Blessing of {b.name}: {b.description} for {duration / 60f:0.#} minutes.", true);
+            DungeonMessages.Show(this, $"Blessing of {b.name}: {b.description} for {duration / 60f:0.#} minutes.", true);
             AnyBlessing?.Invoke(this, b);
             return true;
         }

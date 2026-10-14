@@ -235,8 +235,8 @@ public static class MobCombatCoordinator
         for (int i = 0; i < all.Count; i++)
         {
             CombatEntity e = all[i];
-            if (e == null || e == except || e.Caster == null)
-                continue;
+            if (e == null || e == except || e.Caster == null || CombatRules.AreSeparated(except, e))
+                continue; // casters in another realm do not crowd this one's spells
             AbilityCastInstance c = e.Caster.CurrentCast;
             if (c != null && c.Definition == ability)
                 n++;

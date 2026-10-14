@@ -65,7 +65,7 @@ public class AttackPreviewWindow : EditorWindow
         SceneView.RepaintAll();
     }
 
-    [MenuItem("Tools/SimpleMovements/Inventory/Attack Preview")]
+    [MenuItem(SMMenu.Root + "Inventory/Attack Preview", false, SMMenu.Inventory + 21)]
     private static void OpenFromMenu() => Open(Selection.activeObject as WeaponSO, AttackType.Normal, 0);
 
     private void OnEnable()

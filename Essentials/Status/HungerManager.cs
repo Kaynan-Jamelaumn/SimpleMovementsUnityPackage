@@ -26,12 +26,16 @@ public class HungerManager : StatusManager
     }
     private void Start()
     {
-        currentValue = maxValue;
+        // A client's copy keeps the value the server sent (it may have arrived before Start).
+        if (!IsReplica)
+            currentValue = maxValue;
         ValidateAssignments();
     }
 
     private void Update()
     {
+        if (IsReplica)
+            return; // decay and the starvation penalty run on the server
         if (currentValue <= 0 && FoodPenaltyRoutine == null)
         {
             ApplyHungerPenalty();
@@ -51,15 +55,24 @@ public class HungerManager : StatusManager
 
     public void ApplyHungerPenalty()
     {
+        if (IsReplica) return;
         FoodPenaltyRoutine = StartCoroutine(HungerPenalty());
     }
     public void ConsumeFood(float amount)
     {
+        if (IsReplica) return;
         if (currentValue <= 0) return;
         currentValue -= RemoveFactor(amount);
     }
 
     protected override void UpdateStatus() => UpdateBar();
+
+    protected override void OnReplicaChanged(bool on)
+    {
+        // The routines were stopped: forget their handles so the penalty can start again when this machine simulates.
+        FoodConsumptionRoutine = null;
+        FoodPenaltyRoutine = null;
+    }
     protected override float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
     protected override float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
     public void AddFoodEffect(string effectName, float foodAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)

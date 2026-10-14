@@ -9,6 +9,12 @@ using UnityEngine.AI;
 /// home and patrol route, its behaviour profile and the old per-mob settings (still used to build a profile when
 /// none is assigned).
 /// </summary>
+/// <remarks>
+/// In a network session the server (or host) runs every mob; a client's copy only shows the server's mob: its AI is
+/// off (<see cref="MobMovementStateMachine.IsReplica"/>) and its death is shown through
+/// <see cref="ApplyReplicatedDeath"/> without drops, events or absorption. Mobs are created only where
+/// <see cref="GameNet.NetSpawn.ShouldSpawnHere"/> and handed to the network with <see cref="GameNet.MobNetSpawn"/>.
+/// </remarks>
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(MobStatusController))]
 [DefaultExecutionOrder(-20)]
@@ -119,7 +125,9 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     private MobMovementStateMachine ai;
     private CombatEntity entity;
     private bool dead;
+    private bool replicatedDead;
     private int patrolDirection = 1;
+    private string displayName;
 
     // ------------------------------------------------------------------ properties (old API kept)
     public float WanderDistance { get => wanderDistance; set => wanderDistance = value; }
@@ -198,7 +206,35 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
 
     public MobStatusController StatusController => statusController;
     public Animator Animator => animator;
-    public bool IsDead => dead || (entity != null && entity.IsDead);
+    public bool IsDead => dead || replicatedDead || (entity != null && entity.IsDead);
+
+    /// <summary>
+    /// The name shown for this mob (nameplates, logs). Spawners may set it (a dungeon's "Elite Wolf"); empty = the
+    /// object's name without "(Clone)". On a network client it is the server's.
+    /// </summary>
+    public string DisplayName
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(displayName))
+                return displayName;
+            string n = name;
+            return n.EndsWith("(Clone)", StringComparison.Ordinal) ? n.Substring(0, n.Length - 7).TrimEnd() : n;
+        }
+        set => displayName = value;
+    }
+
+    /// <summary>True when <see cref="DisplayName"/> was set explicitly (not derived from the object's name).</summary>
+    public bool HasCustomDisplayName => !string.IsNullOrEmpty(displayName);
+
+    /// <summary>
+    /// How much stronger than normal the game made this mob (zone strength; 1 = normal). Information for UI - the rules
+    /// that apply it run on the server. On a network client it is the server's value.
+    /// </summary>
+    public float Strength { get; set; } = 1f;
+
+    /// <summary>An elite (or champion) mob (information for UI; set by spawners, replicated to clients).</summary>
+    public bool IsElite { get; set; }
 
     /// <summary>Summoned mobs with this flag never drop absorbable abilities.</summary>
     public bool SummonedPreventAbsorption { get; private set; }
@@ -241,6 +277,7 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
         HomePosition = transform.position;
         entity = CombatEntity.GetOrAdd(gameObject);
         entity.Hostility = this;
+        entity.ReplicatedLifeChanged += ApplyReplicatedDeath;
     }
 
     protected virtual void Start()
@@ -303,7 +340,7 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
         if (statusController != null)
             statusController.Kill();
         else
-            Destroy(gameObject);
+            GameNet.NetSpawn.Destroy(gameObject); // offline: Destroy; a networked mob is despawned by the server only
     }
 
     /// <summary>Called once by the status controller when the mob dies.</summary>
@@ -321,7 +358,34 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
 
     protected virtual void OnDestroy()
     {
+        if (entity != null)
+            entity.ReplicatedLifeChanged -= ApplyReplicatedDeath;
         OnMobDestroyed?.Invoke();
+    }
+
+    /// <summary>
+    /// Client copies of a networked mob: shows the server's death (<paramref name="isDead"/> true) or revival. Plays the
+    /// death animation and turns the body's colliders off like a real death, but raises nothing - <see cref="Died"/>,
+    /// drops, absorption and removal happen on the server only. Ignored where the mob's rules run (single player, server).
+    /// </summary>
+    public void ApplyReplicatedDeath(bool isDead)
+    {
+        if (!GameNet.NetAuthority.IsClientOnly && (entity == null || !entity.IsReplica))
+            return; // where the rules run, the real death (OnDeath) does all of this
+        if (isDead == replicatedDead)
+            return;
+        replicatedDead = isDead;
+        MobMovementStateMachine machine = AI;
+        if (isDead)
+        {
+            StopAllCoroutines();
+            if (machine != null)
+                machine.ShowReplicatedDeath();
+        }
+        else if (machine != null)
+        {
+            machine.ShowReplicatedRevive();
+        }
     }
 
     // ------------------------------------------------------------------ relations & summons

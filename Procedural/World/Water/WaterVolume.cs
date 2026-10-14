@@ -1,68 +1,28 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Attached to each generated water body's trigger volume (see
-/// <see cref="EndlessTerrain.TerrainChunk"/>). Drives <c>OxygenManager.SetUnderwater</c> automatically
-/// for anything with one that enters/exits the water, so swimming/drowning already works with zero
-/// extra wiring - <c>OxygenManager</c> already had <c>SetUnderwater</c>, nothing was calling it before
-/// this. Not gated by tag/layer: it reacts to whatever has an <c>OxygenManager</c> in its hierarchy
-/// (<c>GetComponentInParent</c>), so it works for the player, mobs, or anything else using the same
-/// status system.
-///
-/// This is a coarse, per-chunk trigger volume (a box spanning this chunk's water cells' bounds - see
-/// how it's sized in <see cref="EndlessTerrain.TerrainChunk"/>), not an exact match to the water body's
-/// true shape. Good enough for oxygen/swim purposes; swap in your own detection if you need
-/// pixel-perfect submersion. Toggle <see cref="TerrainGenerator.EnableSwimDetection"/> to skip creating
-/// this entirely - water still renders/generates identically either way.
+/// Attached to each terrain chunk's water trigger (see <see cref="EndlessTerrain.TerrainChunk"/>). Anything with an
+/// <c>OxygenManager</c> inside it is handed to <see cref="Submersion"/>, which decides every frame whether its HEAD is
+/// under the actual water surface at its position (<see cref="WaterQuery"/>) and only then calls
+/// <c>OxygenManager.SetUnderwater(true)</c>.
 /// </summary>
+/// <remarks>
+/// The trigger is a coarse box: it covers the chunk's whole footprint, from the deepest water bed to the highest water
+/// surface of the chunk. It used to switch "underwater" on by itself, so standing on dry land next to a lake (inside
+/// that height band anywhere in the chunk) drained oxygen. Now it is only the "near water" filter. Toggle
+/// <see cref="TerrainGenerator.EnableSwimDetection"/> to skip creating it (no drowning in the terrain's water then;
+/// swimming does not need it).
+/// </remarks>
 public class WaterVolume : MonoBehaviour
 {
-    // Per-collider-hierarchy tracking (not just a bool) so a character with several colliders overlapping
-    // the same trigger doesn't get a spurious SetUnderwater(false) when only one of them exits, and so a
-    // repeat OnTriggerEnter for the same target doesn't uselessly restart OxygenManager's coroutines.
-    private readonly HashSet<OxygenManager> submerged = new HashSet<OxygenManager>();
+    private void OnTriggerEnter(Collider other) => Submersion.Enter(this, other);
 
-    private void OnTriggerEnter(Collider other)
-    {
-        OxygenManager oxygenManager = other.GetComponentInParent<OxygenManager>();
-        if (oxygenManager == null)
-            return;
-
-        if (submerged.Add(oxygenManager))
-        {
-            oxygenManager.SetUnderwater(true);
-        }
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        OxygenManager oxygenManager = other.GetComponentInParent<OxygenManager>();
-        if (oxygenManager == null)
-            return;
-
-        if (submerged.Remove(oxygenManager))
-        {
-            oxygenManager.SetUnderwater(false);
-        }
-    }
+    private void OnTriggerExit(Collider other) => Submersion.Exit(this, other);
 
     /// <summary>
-    /// Chunks stream out by deactivating their GameObject (see <c>TerrainChunk.SetVisible</c>), which
-    /// does NOT fire OnTriggerExit for anything still inside - without this, swimming out of view range
-    /// while submerged would leave OxygenManager permanently stuck thinking it's underwater. Note: if the
-    /// same connected body of water also overlaps a DIFFERENT (still-active) chunk's water volume at the
-    /// same spot, this briefly clears isUnderwater too eagerly until that other volume's own state
-    /// catches up on the next trigger event - an acceptable rare edge case given chunks only go invisible
-    /// well outside normal swimming range.
+    /// Chunks stream out by deactivating their GameObject, which does NOT fire OnTriggerExit for anything still
+    /// inside: forget everyone this trigger was holding (another chunk's trigger keeps holding them if they are in
+    /// its box too).
     /// </summary>
-    private void OnDisable()
-    {
-        foreach (OxygenManager oxygenManager in submerged)
-        {
-            if (oxygenManager != null)
-                oxygenManager.SetUnderwater(false);
-        }
-        submerged.Clear();
-    }
+    private void OnDisable() => Submersion.ForgetSource(this);
 }

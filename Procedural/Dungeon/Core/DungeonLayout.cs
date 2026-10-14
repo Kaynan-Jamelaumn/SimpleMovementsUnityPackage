@@ -249,6 +249,25 @@ namespace ProceduralDungeon
 
         public readonly GenerationReport Report = new GenerationReport();
 
+        /// <summary>
+        /// Network sessions: the seed of each floor's visual detail (see GameNet.DungeonBuildSeed), sent to clients instead
+        /// of the dungeon seed. Null = single player: derived from <see cref="AttemptSeed"/> as always.
+        /// </summary>
+        public int[] FloorBuildSeeds;
+
+        /// <summary>
+        /// A client's layout (built from the floors the server sent): the server's index of each entry of
+        /// <see cref="Placements"/>. Null = the placements are complete and their index is their id.
+        /// </summary>
+        public List<int> PlacementIds;
+
+        /// <summary>The seed of floor <paramref name="floor"/>'s visual detail (cave wall jitter).</summary>
+        public int FloorBuildSeed(int floor) =>
+            FloorBuildSeeds != null && floor >= 0 && floor < FloorBuildSeeds.Length ? FloorBuildSeeds[floor] : AttemptSeed * 31 + floor;
+
+        /// <summary>The id of placement <paramref name="index"/>: its index in the server's (complete) placement list.</summary>
+        public int PlacementId(int index) => PlacementIds != null && index >= 0 && index < PlacementIds.Count ? PlacementIds[index] : index;
+
         public Area GetArea(AreaRef r) => r.IsValid ? Floors[r.Floor].Areas[r.Area] : null;
 
         public Area EntranceArea => GetArea(Entrance);

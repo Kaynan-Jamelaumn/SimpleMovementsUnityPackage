@@ -21,6 +21,7 @@ public static class SharedPlayerInput
 
     private static readonly Dictionary<Transform, Entry> byRoot = new Dictionary<Transform, Entry>(ReferenceComparer<Transform>.Instance);
     private static readonly Dictionary<PlayerInput, Entry> byInput = new Dictionary<PlayerInput, Entry>(ReferenceComparer<PlayerInput>.Instance);
+    private static readonly HashSet<Transform> blocked = new HashSet<Transform>(ReferenceComparer<Transform>.Instance);
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -28,6 +29,37 @@ public static class SharedPlayerInput
         // Play Mode without a domain reload keeps statics: start clean.
         byRoot.Clear();
         byInput.Clear();
+        blocked.Clear();
+    }
+
+    /// <summary>
+    /// Blocks (or unblocks) the input of a player: while blocked its Player map stays off whatever its holders ask, so
+    /// copies of players controlled elsewhere (networked players seen on this machine, every player on a dedicated
+    /// server) never react to this machine's keyboard. Set by the network layer.
+    /// </summary>
+    public static void SetBlocked(Component anyPartOfPlayer, bool block)
+    {
+        if (anyPartOfPlayer == null)
+            return;
+        Transform root = AbilitiesStateMachine.PlayerRoot(anyPartOfPlayer);
+        if (root == null)
+            return;
+        bool changed = block ? blocked.Add(root) : blocked.Remove(root);
+        if (!changed || !byRoot.TryGetValue(root, out Entry e) || e.input == null)
+            return;
+        if (block)
+            e.input.Player.Disable();
+        else if (e.enables > 0)
+            e.input.Player.Enable();
+    }
+
+    /// <summary>Is the input of this player blocked (see <see cref="SetBlocked"/>)?</summary>
+    public static bool IsBlocked(Component anyPartOfPlayer)
+    {
+        if (anyPartOfPlayer == null || blocked.Count == 0)
+            return false;
+        Transform root = AbilitiesStateMachine.PlayerRoot(anyPartOfPlayer);
+        return root != null && blocked.Contains(root);
     }
 
     /// <summary>
@@ -57,6 +89,7 @@ public static class SharedPlayerInput
             return;
         byInput.Remove(input);
         byRoot.Remove(e.root);
+        blocked.Remove(e.root);
         if (e.enables > 0)
             input.Player.Disable();
         input.Dispose();
@@ -72,7 +105,7 @@ public static class SharedPlayerInput
             input.Player.Enable();
             return;
         }
-        if (e.enables++ == 0)
+        if (e.enables++ == 0 && !blocked.Contains(e.root))
             input.Player.Enable();
     }
 

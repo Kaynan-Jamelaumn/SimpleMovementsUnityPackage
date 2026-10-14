@@ -105,6 +105,9 @@ namespace ProceduralDungeon
                 return;
             lastHit[target] = Time.time;
             spikeTimer = 0.35f;
+            // A client's copy of a network dungeon only shows the spikes: the server's hazard hurts and raises the events.
+            if (DungeonNet.IsReplica(this))
+                return;
             if (applyDamage && entity != null && damage > 0f)
                 entity.ApplyDamage(new DamageInfo
                 {

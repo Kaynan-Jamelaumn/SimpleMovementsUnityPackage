@@ -249,7 +249,7 @@ public static class TraitToolsMenu
         menu.ShowAsContext();
     }
 
-    [MenuItem("Tools/SimpleMovements/Validate/Validate All Traits")]
+    [MenuItem(SMMenu.Root + "Validate/Traits", false, SMMenu.Validate + 22)]
     private static void ValidateAll()
     {
         int n = 0, errorCount = 0, warningCount = 0;
@@ -269,7 +269,7 @@ public static class TraitToolsMenu
         Debug.Log($"Validated {n} traits: {errorCount} errors, {warningCount} warnings.");
     }
 
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Trait Database (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Trait Database (Resources)", false, SMMenu.ProjectSetup + 2)]
     private static void CreateDatabase()
     {
         TraitDatabase existing = Resources.Load<TraitDatabase>("TraitDatabase");

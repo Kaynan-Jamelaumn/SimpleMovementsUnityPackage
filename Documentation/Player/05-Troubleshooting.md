@@ -21,7 +21,7 @@
 | Armor Sets window never opens | Not built, no Sets button, no `ArmorSetUI` action | Armor Set UI Manager ▸ **Build / Repair UI**; or add an `ArmorSetUI` action |
 | Absorbed abilities never drop | No Absorption Settings (or *Enabled* off), the mob's *Can Be Absorbed* off, chance too low, or no free ability slot | Create Absorption Settings; check `MobAbilityController ▸ Absorption`; *Full Slots Policy* |
 | Class Strength / Defense do nothing | No `CharacterIdentity` on the player | Add it ([06](06-Races-Classes-Stats-and-Threat.md)) |
-| Escape does nothing | No pause menu in the scene, or no player in the game yet | *Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause & Settings Menu*; the menu only opens while a player exists |
+| Escape does nothing | No pause menu in the scene, or no player in the game yet | *Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause & Settings Menu*; the menu only opens while a player exists |
 | Clicking Create Character does nothing | No Player Prefab, no class picked, no name, or a race is required | Check the Character Creation UI inspector; the Console says what is missing |
 | Changed keys do not apply | The action was renamed in the input actions, or old saved bindings | Key Bindings ▸ **Reset All Keys** |
 | `IndexOutOfRangeException` in `Selectable.OnDisable` | Scripts recompiled during Play mode, or *Reload Domain* off | Stop Play mode before copying scripts; *Project Settings ▸ Editor ▸ Enter Play Mode Settings ▸ Reload Domain* on |

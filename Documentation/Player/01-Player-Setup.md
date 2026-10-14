@@ -234,7 +234,7 @@ Key prompts show only the device in use (keyboard and mouse, or gamepad).
 
 ### Character creation screen
 
-*Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Character Creation Screen* builds a complete screen in the open scene, wired to
+*Tools ▸ SimpleMovements ▸ Scene ▸ Build Character Creation Screen* builds a complete screen in the open scene, wired to
 `CharacterCreationUI`:
 
 | Part | What the player does |
@@ -254,7 +254,7 @@ player is created). On the `CharacterCreationUI`: **Rebuild Screen** (keeps the 
 
 ### Pause and settings menu
 
-*Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause & Settings Menu* (or **Build Menu UI** on a `PauseMenuManager`) builds the in-game menu:
+*Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause & Settings Menu* (or **Build Menu UI** on a `PauseMenuManager`) builds the in-game menu:
 
 * **Escape** (or the gamepad **Start** button) opens it **only while a player is in the game** — not on the creation
   screen. It pauses time, frees the cursor and turns the player's input off, so clicks on the menu never attack.

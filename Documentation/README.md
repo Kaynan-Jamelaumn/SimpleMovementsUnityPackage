@@ -5,12 +5,15 @@ step-by-step, the others explain how the system works and what every setting doe
 
 | Part | Folder | Start with |
 |---|---|---|
-| **Player** — the player prefab and its scripts: movement and input, stamina and status bars, classes, traits, experience, camera, animation, ability keys | [`Player/`](Player/README.md) | [Player 01 — Setup](Player/01-Player-Setup.md) |
+| **Player** — the player prefab and its scripts: movement and input, stamina and status bars, classes, traits, experience, camera, animation, ability keys, targeting other players, parties, guilds, inspecting | [`Player/`](Player/README.md) | [Player 01 — Setup](Player/01-Player-Setup.md) |
 | **Mobs** — creatures and enemies: setup, AI profiles, perception, temperament, combat, abilities, animation, death, spawning | [`Mobs/`](Mobs/README.md) | [Mobs 01 — Setup](Mobs/01-Mob-Setup.md) |
 | **Inventory, items, armor and weapons** — inventory UI (slots or grid), items, equipment, armor sets, weapons and attacks, dual wielding, shields and blocking, ranged weapons and ammo, body-part damage, equipment visuals, quickslots, teams / factions / friendly fire | [`Inventory/`](Inventory/README.md) | [Inventory 08 — Setup Guide](Inventory/08-Setup-Guide.md) |
 | **NPCs, interaction & merchants** — the player's interaction (key, click, proximity, prompt), NPCs, options and dialogue, merchants (buy / sell, stock, prices, categories and tabs, money), the shop window (slots or grid like the inventory, custom skins, generated fallback) | [`NPC/`](NPC/README.md) | [NPC 03 — Merchant Setup](NPC/03-Merchant-Setup.md) |
-| **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
+| **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather (and its effects on players), day and night, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
 | **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
+| **Hub World** — the permanent hub city, the open world regenerated every dimensional cycle (warnings, the jump, loot loss, Dimensional Disorientation, modifiers), dungeons in scenes of their own with their own physics, safe and dangerous zones (PvP, difficulty), visual-only abilities in the city, duels | [`HubWorld/`](HubWorld/README.md) | [Hub World 05 — Setup](HubWorld/05-Setup-and-Configuration.md) |
+| **Networking** — Fish-Net multiplayer run locally (host, headless dedicated server, clients on 127.0.0.1): movement prediction, authoritative combat with lag compensation, mobs, inventory, trading, world cycles, stacked dungeon scenes, interest management | [`Networking/`](Networking/README.md) | [Networking 01 — Architecture and local setup](Networking/01-Architecture-and-Local-Setup.md) |
+| **Validation & auto-assign** — the Project Validator window (missing scripts, broken and required references, network prefabs, project assets, one-click fixes), automatic filling of empty references, `[AutoAssign]` / `[RequiredReference]`, the Edit Mode tests | [`Validation/`](Validation/README.md) | [Validation — overview](Validation/README.md) |
 
 ## How the parts fit together
 
@@ -48,6 +51,8 @@ flowchart LR
 * The **player** and **mobs** are both `CombatEntity`s: weapons, abilities and AI all damage, heal and target them
   through the same combat core (teams, factions, parties, friendly fire).
 * The **terrain** and **dungeons** spawn mobs; dungeons are entered through world portals.
+* The **hub world** ties them together: the city, the world reloaded with a new seed every cycle, a scene per dungeon,
+  zones and the combat rules of the city (see [`HubWorld/`](HubWorld/README.md)).
 
 ---
 
@@ -91,15 +96,18 @@ Everything is under one **SimpleMovements** entry in each menu.
 | *… ▸ Abilities* | Ability Definition, Ability From Preset…, Ability Database, Absorption Settings |
 | *… ▸ Combat* | Combat Settings, Faction, Body Part Profile, Elemental Reactions |
 | *… ▸ Mobs* / *World* / *Dungeon* | Mob Profile (+ presets) / Biome / dungeon profiles, themes, tables, room templates |
+| *… ▸ Hub World* | Hub World Settings, Dimensional Modifier |
 | *… ▸ Legacy* | Old ability assets (AbilityEffectSO, PlayerAbilitySO) and the old Player Class template, kept for existing assets — use the entries above for new ones |
 | *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database / Item Category Database / Default Currency (Resources) |
 | *… ▸ Player* | Add Player Setup Validator To Selection, Auto-Setup All Players In Scene |
+| *… ▸ Social* | Create Player Targeting And Party System, Add Player Social (selected player prefab) |
 | *… ▸ Scene UI* | Build Character Creation Screen, Build Pause & Settings Menu |
 | *… ▸ Inventory* | UI Builder, Auto-Build UI When Missing, Armor Set Wizard, Attack Preview, Grid Inventory |
 | *… ▸ Mobs* | Create New Mob, Add Missing Components, Spawnable Mob Helper, Help |
 | *… ▸ NPC* | Create Merchant NPC / Talking NPC (or make the selection one), Add Player Interactor To Players, Validate NPCs In Scene, Help |
 | *… ▸ Validate* | Validate All Abilities / Players / Traits |
 | *… ▸ Dungeon* / *Legacy* | Dungeon tools / Convert Selected Legacy Abilities |
+| *… ▸ Hub World* | Create Settings Asset, Build City Scene, Make Open Scene The World Scene, Add City / Return Gate, Validate Setup, Help |
 | *GameObject ▸ SimpleMovements* | Quick Setup Mob (right-click a model), NPC ▸ Merchant NPC / Talking NPC |
 
 ## Reading order

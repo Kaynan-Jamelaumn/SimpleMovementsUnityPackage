@@ -28,12 +28,14 @@ Example → Performance → Debugging**, with flowcharts (Mermaid) that mirror t
 | 18 | [Configuration Reference](18-Configuration-Reference.md) | every setting with ranges, effects, performance and status |
 | 19 | [Debugging Guide](19-Debugging.md) | symptoms → causes → fixes |
 | 20 | [Glossary, Status and Future](20-Glossary-and-Future.md) | glossary, implementation status, potential improvements |
+| 21 | [Weather and Players, Day and Night, Spawn Rules](21-Weather-Players-Day-Night.md) | weather statuses on players, body heat, shelter, the day/night clock, mobs/portals/loot by time and weather |
 
 ## Find the answer to…
 
 | Question | Read |
 |---|---|
 | How does the world generate? | 01 §4, 02 §4 |
+| Does the weather affect players? Can mobs/portals spawn only at night or in storms? | 21 |
 | How does a height value get calculated? | 03 §3, 04 §3 |
 | How does a heightmap become a mesh? | 11 §2 |
 | How are mountains and other landforms generated? | 04 §5–7 |

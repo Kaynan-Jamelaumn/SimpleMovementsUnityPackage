@@ -241,6 +241,7 @@ public class PlayerActionModelEditor : Editor
     private readonly AbilityEditorUI.Throttle lookup = new AbilityEditorUI.Throttle(1.0);
     private SpeedManager speed;
     private StaminaManager stamina;
+    private MovementStateMachine machine;
 
     public override void OnInspectorGUI()
     {
@@ -249,6 +250,7 @@ public class PlayerActionModelEditor : Editor
         {
             speed = m.transform.root.GetComponentInChildren<SpeedManager>(true);
             stamina = m.transform.root.GetComponentInChildren<StaminaManager>(true);
+            machine = m.transform.root.GetComponentInChildren<MovementStateMachine>(true);
         }
         float baseSpeed = speed != null ? speed.BaseSpeed : 5f;
 
@@ -276,7 +278,10 @@ public class PlayerActionModelEditor : Editor
             EditorGUILayout.HelpBox("No cooldown: it can be spammed every frame the input is pressed.", MessageType.Warning);
         if (Application.isPlaying)
         {
-            float left = m.CooldownDuration - (Time.time - m.LastActionTime);
+            // Cooldowns run on the movement's own clock (its simulated time), not Time.time.
+            float left = machine != null
+                ? (m is PlayerDashModel ? machine.DashCooldownLeft : machine.RollCooldownLeft)
+                : m.CooldownDuration - (Time.time - m.LastActionTime);
             EditorGUILayout.LabelField("Cooldown", left > 0f ? $"{left:0.0}s" : "ready");
             AbilityEditorUI.KeepRepainting(this);
         }

@@ -272,7 +272,8 @@ public sealed class ChunkWaterContext
             }
         }
 
-        if (cell.Type == WaterBodyType.None && settings.OceansEnabled && side < 0f && height < settings.SeaLevel)
+        if (cell.Type == WaterBodyType.None && settings.OceansEnabled && side < 0f && height < settings.SeaLevel
+            && !(WorldAreas.Count > 0 && WorldAreas.Within(WorldAreaRules.NoWater, worldX, worldY)))
         {
             cell.Type = WaterBodyType.Ocean;
             cell.Surface = settings.SeaLevel;

@@ -383,7 +383,14 @@ public class DirectEffectAction : CastAction
             if (t != null && t.IsAlive)
             {
                 float range = cast.Definition.Range(cast.Stats) + rangeTolerance + t.Radius;
-                if (cast.Definition.targeting.mode == AbilityTargetingMode.Self || CombatQuery.FlatDistance(cast.CasterPosition, t.Position) <= range)
+                bool inRange = cast.Definition.targeting.mode == AbilityTargetingMode.Self;
+                if (!inRange)
+                {
+                    // A player's target is measured where its client saw it (lag compensation; only the query).
+                    using (GameNet.LagCompensation.For(cast.CasterEntity))
+                        inRange = CombatQuery.FlatDistance(cast.CasterPosition, t.Position) <= range;
+                }
+                if (inRange)
                 {
                     cast.ApplyHit(hit, t, cast.CasterPosition, cast.AimDirection);
                     if (vfx != null)

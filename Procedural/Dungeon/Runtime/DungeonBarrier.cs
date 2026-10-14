@@ -8,8 +8,10 @@ namespace ProceduralDungeon
     /// Something that blocks a doorway and sinks into the floor to open it: room gates, vault doors, shortcut doors. While
     /// closed its collider blocks and its NavMeshObstacle carves the NavMesh (mobs path round it); open, neither does. It
     /// never rises while someone stands in it. The NavMesh is baked without it (NavMeshModifier: ignore from build).
+    /// <para>Network sessions: the server's barriers decide; every <see cref="SetClosed"/> is published and a client's copy
+    /// follows it (<see cref="ApplyNetState"/>) - its subclasses make no decision there.</para>
     /// </summary>
-    public abstract class DungeonBarrier : MonoBehaviour
+    public abstract class DungeonBarrier : MonoBehaviour, IDungeonNetState
     {
         [Tooltip("How far it sinks to open (meters). 0 = its collider's height.")]
         [Min(0f)] public float travel;
@@ -84,7 +86,28 @@ namespace ProceduralDungeon
         {
             Initialize(closed);
             IsClosed = closed;
+            DungeonNet.Publish(this, closed ? 1 : 0);
         }
+
+        /// <summary>
+        /// A client's copy follows the server's barrier (a state that arrives before it started is applied at once, so
+        /// players who come later see doors that opened long ago as open).
+        /// </summary>
+        public void ApplyNetState(int state, byte[] payload)
+        {
+            bool closed = state != 0;
+            Initialize(closed);
+            IsClosed = closed;
+            OnNetState(closed);
+        }
+
+        /// <summary>A client's copy received the server's state (subclasses update their own flags).</summary>
+        protected virtual void OnNetState(bool closed)
+        {
+        }
+
+        /// <summary>Is this barrier part of a client's copy (no decisions here: the server's state is followed)?</summary>
+        protected bool IsReplica => DungeonNet.IsReplica(this);
 
         protected virtual void Update()
         {

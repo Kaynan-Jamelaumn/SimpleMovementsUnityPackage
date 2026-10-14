@@ -322,8 +322,10 @@ public class PauseMenuManager : MonoBehaviour
         // Stop any ongoing UI transitions to prevent conflicts
         StopActiveTransitions();
 
-        // Freeze game time (affects most game systems but not UI)
-        Time.timeScale = 0f;
+        // Freeze game time (affects most game systems but not UI). Never in a network session: the game keeps running
+        // for everyone else (a host would freeze the server for every client); only this player's input pauses.
+        if (!GameNet.NetAuthority.IsNetworked)
+            Time.timeScale = 0f;
 
         // Show and unlock cursor for menu navigation
         SetCursorState(true);

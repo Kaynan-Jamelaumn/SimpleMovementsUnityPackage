@@ -197,8 +197,11 @@ public partial class EndlessTerrain : MonoBehaviour
             erosionDeltaMap = terrainData.erosionDeltaMap;
             waterData = terrainData.waterData;
 
+            // A headless server draws nothing: no material and textures (the mesh, collider and NavMesh are kept).
+            bool presentation = !GameNet.NetAuthority.IsHeadless;
+
             // Material: the biome textures every chunk shares, plus this chunk's splat maps and wetness map.
-            if (terrainData.splatPixels != null)
+            if (presentation && terrainData.splatPixels != null)
             {
                 terrainMaterial = TextureGenerator.CreateChunkMaterial(terrainData.splatPixels, terrainGenerator.ChunkSize, terrainGenerator, shouldUseHDRPShaders);
                 if (terrainMaterial != null)
@@ -237,7 +240,7 @@ public partial class EndlessTerrain : MonoBehaviour
             }
 
             stage = GenerationStats.Start();
-            UpdateWaterMesh(terrainData);
+            UpdateWaterMesh(terrainData, presentation);
             if (terrainData.waterMeshData != null)
                 GenerationStats.Record(GenerationStats.ApplyWater, stage);
             if (IsVisible())
@@ -328,6 +331,22 @@ public partial class EndlessTerrain : MonoBehaviour
             return objectIndices != null && objectIndices.TryGetValue(placedObject, out index);
         }
 
+        /// <summary>
+        /// Takes one of this chunk's objects out of it by placement index - also while its objects are still being created -
+        /// and returns it for the caller to destroy (null when it does not exist or was already taken).
+        /// </summary>
+        public GameObject TakeObject(int index)
+        {
+            GameObject[] created = objects ?? objectBatch?.Created;
+            if (created == null || index < 0 || index >= created.Length)
+                return null;
+            GameObject instance = created[index];
+            created[index] = null;
+            if (instance != null && objectIndices != null)
+                objectIndices.Remove(instance);
+            return instance;
+        }
+
         /// <summary>Forgets an object that is being destroyed (see <see cref="EndlessTerrain.RemovePlacedObject"/>).</summary>
         public void ForgetObject(int index)
         {
@@ -338,19 +357,30 @@ public partial class EndlessTerrain : MonoBehaviour
             objects[index] = null;
         }
 
-        /// <summary>Distance from the viewer to the nearest point of the chunk (thread-safe: plain arithmetic, used as the chunk's work priority).</summary>
+        /// <summary>
+        /// Distance from the nearest viewer to the nearest point of the chunk (thread-safe: plain arithmetic, used as the
+        /// chunk's work priority). With several viewers (see <see cref="EndlessTerrain.SetViewers"/>) a chunk near any
+        /// of them is shown, kept and given its NavMesh.
+        /// </summary>
         public float DistanceToViewer()
         {
-            Vector2 viewer = viewerPosition;
-            float dx = Mathf.Max(0f, Mathf.Max(boundsMin.x - viewer.x, viewer.x - boundsMax.x));
-            float dy = Mathf.Max(0f, Mathf.Max(boundsMin.y - viewer.y, viewer.y - boundsMax.y));
-            return Mathf.Sqrt(dx * dx + dy * dy);
+            return owner.DistanceToNearestViewer(boundsMin, boundsMax);
         }
 
-        /// <summary>Distance from the viewer to the nearest point of the chunk's mesh, which decides its level of detail.</summary>
+        /// <summary>Distance from a world (x, z) point to the nearest point of the chunk.</summary>
+        public float DistanceTo(Vector2 point)
+        {
+            return GameNet.WorldChunkMath.DistanceToRect(point, boundsMin, boundsMax);
+        }
+
+        /// <summary>
+        /// Distance from the primary viewer (the one this machine looks through) to the nearest point of the chunk's mesh,
+        /// which decides its level of detail - chunks streamed only for other viewers (a server's other players) keep
+        /// coarse meshes; their collider and NavMesh always use the full-detail mesh.
+        /// </summary>
         float LodDistance()
         {
-            return DistanceToViewer();
+            return owner.DistanceToPrimaryViewer(boundsMin, boundsMax);
         }
 
         /// <summary>
@@ -359,7 +389,8 @@ public partial class EndlessTerrain : MonoBehaviour
         /// </summary>
         void UpdateLod(float distance)
         {
-            if (baseMesh == null || terrainGenerator == null)
+            // A headless server keeps the full-detail mesh (the collider's and NavMesh's) and builds no coarser ones.
+            if (baseMesh == null || terrainGenerator == null || GameNet.NetAuthority.IsHeadless)
                 return;
 
             int lod = Mathf.Clamp(terrainGenerator.LodForDistance(distance), 0, lodMeshes.Length - 1);
@@ -439,8 +470,9 @@ public partial class EndlessTerrain : MonoBehaviour
         /// Builds (or updates) this chunk's water GameObject from the water map computed alongside its
         /// heightmap - see <see cref="HeightGenerator"/>/<see cref="WaterGenerator"/>. One mesh, one
         /// submesh (and material) per water type. A no-op if water is disabled or this chunk is dry.
+        /// Without <paramref name="presentation"/> (a headless server) only the swim trigger is made - no mesh, no renderer.
         /// </summary>
-        void UpdateWaterMesh(DataStructure.TerrainData terrainData)
+        void UpdateWaterMesh(DataStructure.TerrainData terrainData, bool presentation = true)
         {
             if (!terrainGenerator.EnableWater || terrainData.waterData == null)
                 return;
@@ -450,7 +482,8 @@ public partial class EndlessTerrain : MonoBehaviour
             if (waterMeshData == null)
                 return;
 
-            waterMesh = waterMeshData.BuildMesh();
+            if (presentation)
+                waterMesh = waterMeshData.BuildMesh();
 
             if (waterObject == null)
             {
@@ -459,9 +492,12 @@ public partial class EndlessTerrain : MonoBehaviour
                 waterObject.transform.localPosition = Vector3.zero;
                 waterObject.transform.localRotation = Quaternion.identity;
 
-                waterMeshFilter = waterObject.AddComponent<MeshFilter>();
-                waterMeshRenderer = waterObject.AddComponent<MeshRenderer>();
-                waterMeshRenderer.sharedMaterials = GetWaterMaterials(terrainGenerator);
+                if (presentation)
+                {
+                    waterMeshFilter = waterObject.AddComponent<MeshFilter>();
+                    waterMeshRenderer = waterObject.AddComponent<MeshRenderer>();
+                    waterMeshRenderer.sharedMaterials = GetWaterMaterials(terrainGenerator);
+                }
 
                 if (terrainGenerator.EnableSwimDetection)
                 {
@@ -484,7 +520,8 @@ public partial class EndlessTerrain : MonoBehaviour
                 }
             }
 
-            waterMeshFilter.sharedMesh = waterMesh;
+            if (waterMeshFilter != null)
+                waterMeshFilter.sharedMesh = waterMesh;
 
             if (waterCollider != null)
             {
@@ -760,7 +797,11 @@ public partial class EndlessTerrain : MonoBehaviour
                 colliderBake.Complete();
                 colliderBaking = false;
                 if (baseMesh != null)
+                {
                     MeshColliderBaker.Assign(meshCollider, baseMesh);   // already cooked: no cooking on the main thread
+                    if (loaded != null)
+                        loaded.ColliderReady = true;
+                }
                 GenerationStats.Record(GenerationStats.ColliderReady, colliderScheduledAt);
             }
 

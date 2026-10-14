@@ -51,7 +51,7 @@ manager and the **player class**. Other systems reach the player's stats through
 
 Inspector tools: **Complete Setup Wizard**, **Auto-Assign All Components**, **Create Missing Components**, the
 *Setup … Only* buttons, **Validate Setup**, **Validate Status Values**, **Apply Reasonable Defaults**,
-**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Validate All Players* and *Tools ▸ SimpleMovements ▸ Player ▸ Auto-Setup All Players In Scene* run them
+**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Players* and *Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Auto-Setup All Players In Scene* run them
 on every player in the open scenes.
 
 ---
@@ -111,7 +111,7 @@ traits.RemoveTrait(myTrait);                      // refunds exactly what was pa
 ```
 
 The **Trait Database** (`Resources/TraitDatabase`) lists every trait of the game for the character creation screen
-and lookups. *Tools ▸ SimpleMovements ▸ Validate ▸ Validate All Traits* checks them all.
+and lookups. *Tools ▸ SimpleMovements ▸ Validate ▸ Traits* checks them all.
 
 ### Weapon traits vs player traits
 

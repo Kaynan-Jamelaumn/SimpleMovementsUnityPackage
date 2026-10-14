@@ -50,14 +50,26 @@ public static class InputActionResolver
                 if (m != null && !string.Equals(m.name, "UI", StringComparison.OrdinalIgnoreCase)) { map = m; break; }
         if (map == null) { error = "the input actions have no gameplay map"; return null; }
 
-        // Maps can only be changed while disabled: the actions that were on are turned on again afterwards (only those).
+        // Actions can only be added while their asset is disabled, and adding one throws away the asset's shared state:
+        // until the asset resolves its bindings again, asking ANY of its actions whether it is enabled (FindAction does)
+        // fails with "Action map must have state at this point". So: remember what was on, switch the whole asset off,
+        // add the action, then switch the whole asset on and off once (that rebuilds the state, even when nothing was
+        // on), and switch back on exactly the actions that were on.
         var wasEnabled = new List<InputAction>();
-        foreach (InputAction a in map.actions)
-            if (a != null && a.enabled) wasEnabled.Add(a);
+        foreach (InputActionMap m in asset.actionMaps)
+        {
+            if (m == null) continue;
+            foreach (InputAction a in m.actions)
+            {
+                try { if (a != null && a.enabled) wasEnabled.Add(a); }
+                catch (Exception) { } // the state was already lost elsewhere: rebuilt below
+            }
+        }
         InputAction created = null;
         try
         {
-            if (wasEnabled.Count > 0) map.Disable();
+            try { asset.Disable(); }
+            catch (Exception) { }
             created = map.AddAction(name, InputActionType.Button);
             if (paths != null)
                 foreach (string p in paths)
@@ -71,13 +83,34 @@ public static class InputActionResolver
         }
         finally
         {
-            foreach (InputAction a in wasEnabled) a.Enable();
-            if (created != null && wasEnabled.Count > 0 && wasEnabled.Count == map.actions.Count - 1)
-                created.Enable(); // the whole map was on: so is the new action
+            Restore(asset, wasEnabled);
         }
         if (created != null && remember)
             InputBindingStore.RememberCreatedAction(map.name, name, paths);
         return created;
+    }
+
+    /// <summary>
+    /// Rebuilds the asset's shared state (enabling the whole asset resolves every binding; disabling keeps the state),
+    /// then switches on exactly the actions that were on before.
+    /// </summary>
+    private static void Restore(InputActionAsset asset, List<InputAction> wasEnabled)
+    {
+        try
+        {
+            asset.Enable();
+            asset.Disable();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[Input] Could not rebuild the input actions after adding one: {e.Message}");
+        }
+        foreach (InputAction a in wasEnabled)
+        {
+            if (a == null) continue;
+            try { a.Enable(); }
+            catch (Exception e) { Debug.LogWarning($"[Input] Could not switch '{a.name}' back on: {e.Message}"); }
+        }
     }
 
     /// <summary>

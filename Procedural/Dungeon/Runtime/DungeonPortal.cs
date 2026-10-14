@@ -43,7 +43,8 @@ namespace ProceduralDungeon
 
         private void OnTriggerEnter(Collider other)
         {
-            if (Time.time < armedAt)
+            // Travel is the server's decision, for its copies of the players (never a client's predicted copy).
+            if (Time.time < armedAt || !GameNet.NetAuthority.IsServer || DungeonNet.IsReplica(this))
                 return;
             GameObject player = FindPlayer(other);
             if (player != null)

@@ -18,14 +18,18 @@ public class RotateToGroundNormal : MonoBehaviour
     [SerializeField] private Transform modelTransform;
 
     /// <summary>
-    /// Called once per frame.
+    /// Called once per frame. On a network client's copy of a mob, a component on the mob's root does nothing: the root's
+    /// rotation comes from the server (which already aligned it), and turning it here would fight the network transform.
+    /// A component on a child model keeps aligning it locally (presentation only).
     /// </summary>
     private void Update()
     {
+        if (transform.parent == null && GameNet.NetAuthority.IsClientOnly && !GameNet.NetAuthority.RunsRules(gameObject))
+            return;
         /// <summary>
         /// Casts a ray downward from the GameObject's position to detect the ground.
         /// </summary>
-        if (Physics.Raycast(transform.position, Vector3.down, out RaycastHit hit))
+        if (ScenePhysics.Raycast(transform.position, Vector3.down, out RaycastHit hit))
         {
             /// <summary>
             /// Calculates the target rotation to align the GameObject's up vector with the ground's normal vector.

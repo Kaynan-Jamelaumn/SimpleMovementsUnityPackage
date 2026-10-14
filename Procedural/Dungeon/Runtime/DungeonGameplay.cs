@@ -16,6 +16,30 @@ namespace ProceduralDungeon
         /// <summary>Also log messages to the Console (handy without a UI).</summary>
         public static bool LogToConsole;
 
+        /// <summary>
+        /// Shows a message about <paramref name="context"/> (a dungeon object) to the players of its dungeon. Offline it is
+        /// the same as <see cref="Show(string, bool)"/>; on a network server it goes to the clients of that run, and is
+        /// shown here only when this machine's player is in it.
+        /// </summary>
+        public static void Show(Component context, string text, bool important = false)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return;
+            DungeonInstance dungeon = GameNet.NetAuthority.IsNetworked ? DungeonNet.DungeonOf(context) : null;
+            if (dungeon == null || dungeon.IsReplica)
+            {
+                Show(text, important);
+                return;
+            }
+            DungeonNet.Message(dungeon, text, important);
+            CombatEntity local = PlayerLocator.Local;
+            if (local != null && local.gameObject.scene == dungeon.gameObject.scene)
+                Show(text, important);
+            else if (LogToConsole)
+                Debug.Log("[Dungeon] " + text);
+        }
+
+        /// <summary>Shows a message to this machine's player.</summary>
         public static void Show(string text, bool important = false)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -132,6 +156,18 @@ namespace ProceduralDungeon
                 }
             }
             return best;
+        }
+
+        /// <summary>Is <paramref name="player"/> alive and within <paramref name="radius"/> (meters, horizontal; 3 m vertical) of <paramref name="position"/>?</summary>
+        public static bool IsWithin(CombatEntity player, Vector3 position, float radius)
+        {
+            if (player == null || !player.IsAlive)
+                return false;
+            Vector3 d = player.transform.position - position;
+            if (Mathf.Abs(d.y) > 3f)
+                return false;
+            d.y = 0f;
+            return d.sqrMagnitude <= radius * radius;
         }
 
         /// <summary>Living players standing in an area of a floor.</summary>

@@ -512,7 +512,7 @@ public class PlayerStatusControllerEditor : Editor
 // Menu items for quick access
 public class PlayerStatusEditorMenu
 {
-    [MenuItem("Tools/SimpleMovements/Validate/Validate All Players")]
+    [MenuItem(SMMenu.Root + "Validate/Players", false, SMMenu.Validate + 20)]
     static void ValidateAllControllers()
     {
         var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
@@ -524,7 +524,7 @@ public class PlayerStatusEditorMenu
         }
     }
 
-    [MenuItem("Tools/SimpleMovements/Player/Auto-Setup All Players In Scene")]
+    [MenuItem(SMMenu.Root + "Auto-Assign/Auto-Setup All Players In Scene", false, SMMenu.AutoAssign + 60)]
     static void AutoSetupAllControllers()
     {
         var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);

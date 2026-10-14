@@ -60,7 +60,7 @@ namespace ProceduralDungeon
                 Dart d = darts[i];
                 float step = speed * Time.deltaTime;
                 bool done = d.travelled + step > range;
-                if (Physics.Raycast(d.position, transform.forward, out RaycastHit hit, step, ~0, QueryTriggerInteraction.Ignore))
+                if (ScenePhysics.Raycast(d.position, transform.forward, out RaycastHit hit, step, ~0, QueryTriggerInteraction.Ignore))
                 {
                     CombatEntity e = CombatEntity.Resolve(hit.collider);
                     if (e != null && e.IsAlive)

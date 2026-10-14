@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GameNet;
 using UnityEngine;
 
 /// <summary>An amount of one currency held by a wallet.</summary>
@@ -24,7 +25,11 @@ public class CurrencyBalance
 /// <see cref="BalanceChanged"/> (the shop window and any HUD follow it). A currency with a Backing Item is that item in the
 /// player's inventory instead of a number here.
 /// <para>Added to the player automatically the first time something needs it (<see cref="For"/>); add it yourself to
-/// set starting balances. For a server-authoritative game, keep these calls on the server and replicate the balances.</para>
+/// set starting balances.</para>
+/// <para>Network sessions: the server's wallet is the truth. A client's copy of a networked player's wallet refuses
+/// <see cref="TrySpend"/>, <see cref="TryAdd"/> and <see cref="SetBalance"/> (merchants and trades ask the server) and
+/// shows the balances the server sends (<c>GameNet.NetWallet</c>, through <see cref="ApplyReplicatedBalance"/>).
+/// Coin-item currencies follow the replicated inventory.</para>
 /// </summary>
 [DisallowMultipleComponent]
 public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
@@ -47,6 +52,7 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
 
     private readonly Dictionary<CurrencyDefinition, int> itemBalances = new Dictionary<CurrencyDefinition, int>();
     private InventoryManager subscribedInventory;
+    private bool warnedClientChange;
 
     public CurrencyDefinition DefaultCurrency => defaultCurrency != null ? defaultCurrency : CurrencyDefinition.Default;
     public IReadOnlyList<CurrencyBalance> Balances => balances;
@@ -147,8 +153,28 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     }
 
     // ------------------------------------------------------------------ changes
+    /// <summary>
+    /// A client's copy of a networked player's wallet: it shows the server's balances and never changes them itself.
+    /// </summary>
+    public bool IsReplica => NetAuthority.IsClientOnly && NetAuthority.IsNetworkedObject(gameObject);
+
+    /// <summary>Refuses a change on a replica (once with a warning: the change belongs on the server).</summary>
+    private bool RefuseOnReplica(string what)
+    {
+        if (!IsReplica)
+            return false;
+        if (!warnedClientChange)
+        {
+            warnedClientChange = true;
+            Debug.LogWarning($"[Currency] {what} was ignored on a network client: the server changes balances (merchants and trades ask it).", this);
+        }
+        return true;
+    }
+
     public bool TrySpend(CurrencyDefinition currency, int amount)
     {
+        if (RefuseOnReplica(nameof(TrySpend)))
+            return false;
         if (amount < 0)
             return false;
         if (amount == 0)
@@ -177,6 +203,8 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
 
     public bool TryAdd(CurrencyDefinition currency, int amount)
     {
+        if (RefuseOnReplica(nameof(TryAdd)))
+            return false;
         if (amount < 0)
             return false;
         if (amount == 0)
@@ -205,12 +233,29 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     /// <summary>Sets a balance (loading a save, debug tools). Coin-item currencies cannot be set this way.</summary>
     public void SetBalance(CurrencyDefinition currency, int amount)
     {
+        if (RefuseOnReplica(nameof(SetBalance)))
+            return;
         currency = Resolve(currency);
         if (currency.IsItemBacked)
         {
             Debug.LogWarning($"[Currency] {currency.DisplayName} is an item in the inventory: add or remove the item instead of setting the balance.", this);
             return;
         }
+        CurrencyBalance e = Entry(currency);
+        int old = e.amount;
+        e.amount = Mathf.Clamp(amount, 0, currency.MaxAmount);
+        if (old != e.amount)
+            Raise(currency, old, e.amount);
+    }
+
+    /// <summary>
+    /// Network, client: shows the server's balance of <paramref name="currency"/> (a number currency; coin items follow
+    /// the replicated inventory). Raises <see cref="BalanceChanged"/> like any change.
+    /// </summary>
+    public void ApplyReplicatedBalance(CurrencyDefinition currency, int amount)
+    {
+        if (currency == null || currency.IsItemBacked)
+            return;
         CurrencyBalance e = Entry(currency);
         int old = e.amount;
         e.amount = Mathf.Clamp(amount, 0, currency.MaxAmount);

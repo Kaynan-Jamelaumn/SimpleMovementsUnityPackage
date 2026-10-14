@@ -1,7 +1,11 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// A container (chest, crate) whose items are shown in the storage window next to the inventory. One player uses it
+/// at a time (<see cref="User"/>): two windows on the same contents would let both players take the same items. In a
+/// network session the contents live on the server; a client sees them in the window the server opens for it.
+/// </summary>
 public class Storage : MonoBehaviour
 {
     public new string name;
@@ -13,6 +17,9 @@ public class Storage : MonoBehaviour
 
     private bool itemsSpawned;
 
+    /// <summary>The inventory that has this storage open right now, or null.</summary>
+    public InventoryManager User { get; private set; }
+
     void Start()
     {
         int itemsToAdd = size - items.Count;
@@ -21,13 +28,17 @@ public class Storage : MonoBehaviour
             items.Add(new StorageItem(0, null));
         }
 
-        if (spawnItems && !itemsSpawned)
+        // Random contents are rolled where the rules run (offline, the server): a client never uses its own copy.
+        if (spawnItems && !itemsSpawned && GameNet.NetSpawn.ShouldSpawnHere && itemsToSpawn != null && itemsToSpawn.itemsToSpawn.Count > 0)
         {
-            int count = Random.Range(itemsToSpawn.minCount, itemsToSpawn.maxCount + 1);
+            itemsSpawned = true;
+            int count = Mathf.Min(Random.Range(itemsToSpawn.minCount, itemsToSpawn.maxCount + 1), items.Count);
 
             for (int i = 0; i < count; i++)
             {
                 ItemSO itemToSpawn = itemsToSpawn.itemsToSpawn[Random.Range(0, itemsToSpawn.itemsToSpawn.Count)];
+                if (itemToSpawn == null)
+                    continue;
 
                 items[i].itemScriptableObject = itemToSpawn;
 
@@ -43,6 +54,29 @@ public class Storage : MonoBehaviour
             }
         }
     }
+
+    /// <summary>Is the storage open in another inventory than <paramref name="inventory"/>?</summary>
+    public bool IsUsedByOther(InventoryManager inventory)
+    {
+        if (User == null)
+            return false;
+        if (User == inventory)
+            return false;
+        if (!User.IsStorageOpened || User.OpenedStorage != this)
+        {
+            User = null; // that inventory closed it (or is gone) without telling
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>The storage is opened by <paramref name="inventory"/>.</summary>
+    public void Claim(InventoryManager inventory) => User = inventory;
+
+    /// <summary><paramref name="inventory"/> closed the storage.</summary>
+    public void Release(InventoryManager inventory)
+    {
+        if (User == inventory)
+            User = null;
+    }
 }
-
-

@@ -36,26 +36,45 @@ public sealed class MobAIScheduler
         nextDecision = Time.time + phase * 0.2f;
     }
 
-    public void UpdateTier(float now, Vector3 position, bool inCombat, bool alwaysFull)
+    /// <summary>Re-evaluates the tier from the nearest player (every player counts; see the overload with a mob).</summary>
+    public void UpdateTier(float now, Vector3 position, bool inCombat, bool alwaysFull) =>
+        UpdateTier(now, position, inCombat, alwaysFull, null);
+
+    /// <summary>
+    /// Re-evaluates the tier from the nearest living player that <paramref name="self"/> is not separated from
+    /// (<see cref="MobRealms.NearestPlayer"/>): on a server every connected player counts, but a player in another realm
+    /// (the City over a World mob, another dungeon run) never keeps a mob awake. Offline scenes without any player keep
+    /// thinking at full rate as before; a server nobody is connected to lets its mobs sleep.
+    /// </summary>
+    public void UpdateTier(float now, Vector3 position, bool inCombat, bool alwaysFull, CombatEntity self)
     {
         if (now < nextTierCheck)
             return;
         nextTierCheck = now + (Current == Tier.Sleep ? 1.5f : 0.75f) + phase * 0.25f;
-        if (alwaysFull || inCombat || CombatEntity.Players.Count == 0)
+        if (alwaysFull || inCombat)
         {
             Current = Tier.Near;
             return;
         }
-        CombatEntity.NearestPlayer(position, out float distance);
-        CombatSettings s = CombatSettings.Instance;
+        if (CombatEntity.Players.Count == 0)
+        {
+            Current = GameNet.NetAuthority.IsNetworked ? Tier.Sleep : Tier.Near;
+            return;
+        }
+        MobRealms.NearestPlayer(self, position, out float distance);
+        Current = TierFor(distance, CombatSettings.Instance);
+    }
+
+    /// <summary>The tier for a distance to the nearest player (<see cref="float.MaxValue"/> = nobody: asleep).</summary>
+    public static Tier TierFor(float distance, CombatSettings s)
+    {
         if (distance <= s.aiNearDistance)
-            Current = Tier.Near;
-        else if (distance <= s.aiFarDistance)
-            Current = Tier.Mid;
-        else if (distance <= s.aiSleepDistance)
-            Current = Tier.Far;
-        else
-            Current = Tier.Sleep;
+            return Tier.Near;
+        if (distance <= s.aiFarDistance)
+            return Tier.Mid;
+        if (distance <= s.aiSleepDistance)
+            return Tier.Far;
+        return Tier.Sleep;
     }
 
     public void WakeUp()

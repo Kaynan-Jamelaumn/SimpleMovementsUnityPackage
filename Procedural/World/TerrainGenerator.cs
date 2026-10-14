@@ -832,10 +832,28 @@ public partial class TerrainGenerator : MonoBehaviour
     }
 
     /// <summary>
+    /// When set, every Terrain Generator that wakes up uses this world seed instead of its Voronoi Seed. A game that
+    /// regenerates its world with a new seed (e.g. every world cycle) sets it and then loads the world scene.
+    /// </summary>
+    public static int? SeedOverride { get; set; }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetSeedOverride() => SeedOverride = null;
+
+    // Decided once, when the generator wakes up (a world must not change its layout rule halfway): see
+    // OrderIndependentBiomeLayout. A world scene loads after the session has started on servers and clients alike.
+    private bool networkRequiresOrderIndependence;
+
+    /// <summary>
     /// Resets the caches of world features that outlive a Play session (see below) before anything is generated.
     /// </summary>
     private void Awake()
     {
+        if (SeedOverride.HasValue)
+            VoronoiSeed = SeedOverride.Value;
+        networkRequiresOrderIndependence = GameNet.NetAuthority.IsNetworked;
+        if (networkRequiresOrderIndependence && !orderIndependentBiomeLayout)
+            Debug.Log($"TerrainGenerator '{name}': Order-Independent Layout is off, but a network session needs every machine to generate the same world - using it for this world.", this);
         // Reset the (static, process-lifetime) Voronoi point cache before generating anything.
         // Without this, a chunk coordinate visited in a previous Play session (or before a
         // seed/scale/biome-list change) keeps serving its OLD cached points forever - the cache

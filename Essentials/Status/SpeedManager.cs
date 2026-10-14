@@ -24,39 +24,78 @@ public class SpeedManager : MonoBehaviour
 
     // Properties
     public float Speed => currentSpeed;
-    public float BaseSpeed { get => baseSpeed; set => baseSpeed = value; }
-    public float SpeedWhileRunningMultiplier { get => speedWhileRunningMultiplier; set => speedWhileRunningMultiplier = value; }
-    public float SpeedWhileCrouchingMultiplier { get => speedWhileCrouchingMultiplier; set => speedWhileCrouchingMultiplier = value; }
-    public float IncrementFactor { get => incrementFactor; set => incrementFactor = value; }
-    public float DecrementFactor { get => decrementFactor; set => decrementFactor = value; }
+    public float BaseSpeed { get => baseSpeed; set { if (!IsReplica) baseSpeed = value; } }
+    public float SpeedWhileRunningMultiplier { get => speedWhileRunningMultiplier; set { if (!IsReplica) speedWhileRunningMultiplier = value; } }
+    public float SpeedWhileCrouchingMultiplier { get => speedWhileCrouchingMultiplier; set { if (!IsReplica) speedWhileCrouchingMultiplier = value; } }
+    public float IncrementFactor { get => incrementFactor; set { if (!IsReplica) incrementFactor = value; } }
+    public float DecrementFactor { get => decrementFactor; set { if (!IsReplica) decrementFactor = value; } }
     public float StatusIncrementValue => statusIncrementValue;
     public List<CoroutineInfo> SpeedEffectRoutines { get => speedEffectRoutines; set => speedEffectRoutines = value; }
 
+    /// <summary>
+    /// True on a client's copy of a networked character: the server's speed (which already includes slows, roots,
+    /// traits, equipment and level-ups) is sent here, so every local write - speed changes, timed effects, base speed and
+    /// multipliers - is ignored and no effect routine runs. Always false offline and on the server or host.
+    /// </summary>
+    public bool IsReplica { get; private set; }
+
+    /// <summary>Switches replica mode (network layer). On: running effects stop without reverting (the server's values follow).</summary>
+    public void SetReplica(bool on)
+    {
+        if (IsReplica == on)
+            return;
+        IsReplica = on;
+        if (!on)
+            return;
+        StopAllCoroutines();
+        reverts.Clear();
+        pendingRevert = null;
+        speedEffectRoutines.Clear();
+    }
+
+    /// <summary>Applies the server's speed values (replicas only; non-finite values are ignored).</summary>
+    public void ApplyReplicated(float current, float baseValue, float runMultiplier, float crouchMultiplier)
+    {
+        if (!IsReplica || !IsFinite(current) || !IsFinite(baseValue) || !IsFinite(runMultiplier) || !IsFinite(crouchMultiplier))
+            return;
+        currentSpeed = Mathf.Max(0f, current);
+        baseSpeed = Mathf.Max(0f, baseValue);
+        speedWhileRunningMultiplier = runMultiplier;
+        speedWhileCrouchingMultiplier = crouchMultiplier;
+    }
+
+    private static bool IsFinite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
+
     private void Start()
     {
-        // Initialize current speed to base speed
-        currentSpeed = baseSpeed;
+        // Initialize current speed to base speed (a client's copy keeps the speed the server sent)
+        if (!IsReplica)
+            currentSpeed = baseSpeed;
     }
 
     // Core speed methods
     public void ModifySpeed(float amount)
     {
+        if (IsReplica) return;
         currentSpeed = Mathf.Max(0, currentSpeed + amount);
     }
 
     public void ModifyBaseSpeed(float amount)
     {
+        if (IsReplica) return;
         baseSpeed = Mathf.Max(0, baseSpeed + amount);
         currentSpeed = Mathf.Max(0, currentSpeed + amount); // Also adjust current speed
     }
 
     public void SetSpeed(float newSpeed)
     {
+        if (IsReplica) return;
         currentSpeed = Mathf.Max(0, newSpeed);
     }
 
     public void ResetToBaseSpeed()
     {
+        if (IsReplica) return;
         currentSpeed = baseSpeed;
     }
 
@@ -66,8 +105,17 @@ public class SpeedManager : MonoBehaviour
     }
 
     // Factor application methods
-    public void ModifyIncrementFactor(float amount) => incrementFactor += amount;
-    public void ModifyDecrementFactor(float amount) => decrementFactor += amount;
+    public void ModifyIncrementFactor(float amount)
+    {
+        if (IsReplica) return;
+        incrementFactor += amount;
+    }
+
+    public void ModifyDecrementFactor(float amount)
+    {
+        if (IsReplica) return;
+        decrementFactor += amount;
+    }
     public float ApplyFactor(float amount, float factor) => amount * (1.0f + factor / 100.0f);
     protected float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
     protected float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
@@ -103,6 +151,9 @@ public class SpeedManager : MonoBehaviour
         Func<string, float, float, float, bool, bool, IEnumerator> effectRoutineFunc = null
     )
     {
+        // Slows and hastes of a networked copy run on the server; the resulting speed arrives through replication.
+        if (IsReplica)
+            return;
         if (effectRoutineFunc == null)
         {
             Debug.LogError("Effect routine function cannot be null.");

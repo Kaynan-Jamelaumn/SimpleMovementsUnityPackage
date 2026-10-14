@@ -30,6 +30,13 @@ namespace ProceduralDungeon
         /// <summary>All floors built (Ready may fire earlier, as soon as the start floors are playable).</summary>
         public bool IsFullyBuilt { get; private set; }
 
+        /// <summary>
+        /// A network client's presentation-only copy, built from the floors the server sent (no mobs, no item pickups,
+        /// no gameplay decisions; see <see cref="DungeonNet"/>). Its <see cref="Layout"/> holds only those floors and
+        /// no seed. False offline and on the server.
+        /// </summary>
+        public bool IsReplica { get; private set; }
+
         public event Action<int> FloorEntered;
         public event Action<DungeonInstance> FullyBuilt;
 
@@ -40,6 +47,19 @@ namespace ProceduralDungeon
         private readonly HashSet<long> eventAreas = new HashSet<long>();
         private readonly Dictionary<long, DungeonSecretDoor> secretDoors = new Dictionary<long, DungeonSecretDoor>();
         private readonly HashSet<int> mappedFloors = new HashSet<int>();
+        private readonly Dictionary<int, DungeonElement> elements = new Dictionary<int, DungeonElement>();
+        // Server in a session: mobs and item pickups of floors not sent to the run's clients yet (see DungeonNet.SpawnContent).
+        private readonly Dictionary<int, List<HeldContent>> held = new Dictionary<int, List<HeldContent>>();
+        private static readonly List<HeldContent> NoHeldContent = new List<HeldContent>();
+
+        /// <summary>A mob or item pickup kept back from the network until its floor is revealed (see <see cref="DungeonNet.SpawnContent"/>).</summary>
+        public struct HeldContent
+        {
+            /// <summary>The object (null once destroyed).</summary>
+            public GameObject Object;
+            /// <summary>A mob (else an item pickup).</summary>
+            public bool Mob;
+        }
 
         /// <summary>Makes a stand-in mob for an encounter without a prefab (set by the builder).</summary>
         internal Func<EncounterInfo, int, GameObject> PlaceholderMob;
@@ -54,6 +74,13 @@ namespace ProceduralDungeon
         public event Action<int, int> RoomCompleted;
 
         private static long AreaKey(int floor, int area) => ((long)floor << 32) | (uint)area;
+
+        /// <summary>Sets up a client's copy (see <see cref="IsReplica"/>); its floors are added to the layout as they arrive.</summary>
+        internal void InitializeReplica(DungeonLayout layout, CompiledProfile profile, Transform[] floors)
+        {
+            IsReplica = true;
+            Initialize(layout, profile, floors);
+        }
 
         internal void Initialize(DungeonLayout layout, CompiledProfile profile, Transform[] floors)
         {
@@ -174,6 +201,8 @@ namespace ProceduralDungeon
             if (!WorldToCell(world, out int floor, out Vector2Int cell))
                 return -1;
             FloorLayout f = Layout.Floors[floor];
+            if (f.DistanceFromArrival == null)
+                return -1;   // a client's copy has no analysis fields
             int d = f.DistanceFromArrival[f.Grid.Index(cell)];
             return d < 0 ? -1 : f.GlobalDistanceOffset + d;
         }
@@ -230,6 +259,27 @@ namespace ProceduralDungeon
 
         internal void RegisterSecretDoor(int floor, int cell, DungeonSecretDoor door) => secretDoors[AreaKey(floor, cell)] = door;
 
+        /// <summary>The interactive object with network id <paramref name="id"/> (see <see cref="DungeonNetIds"/>), or null.</summary>
+        public DungeonElement Element(int id) =>
+            elements.TryGetValue(id, out DungeonElement e) && e != null && e.Dungeon == this && e.Id == id ? e : null;
+
+        /// <summary>Every interactive object with a network id (see <see cref="DungeonNetIds"/>).</summary>
+        public IEnumerable<DungeonElement> Elements
+        {
+            get
+            {
+                foreach (DungeonElement e in elements.Values)
+                    if (e != null && e.Dungeon == this)
+                        yield return e;
+            }
+        }
+
+        internal void RegisterElement(DungeonElement e)
+        {
+            if (e != null && e.Id >= 0)
+                elements[e.Id] = e;
+        }
+
         /// <summary>Has a floor's map been revealed (by its map table)?</summary>
         public bool IsMapped(int floor) => mappedFloors.Contains(floor);
 
@@ -247,8 +297,11 @@ namespace ProceduralDungeon
         /// </summary>
         public GameObject SpawnMob(EncounterInfo e, int floor, int area, int tier, Vector3 world, float yaw)
         {
-            if (e == null)
+            // Mobs exist on the server only (clients get the networked mob); a client's copy never spawns any.
+            if (e == null || IsReplica || !GameNet.NetSpawn.ShouldSpawnHere)
                 return null;
+            if (!e.HasPrefab && GameNet.NetAuthority.IsNetworked)
+                return null;   // stand-ins have no network identity: nobody but the server would see them
             Transform floorRoot = FloorRoot(floor);
             Transform parent = floorRoot != null ? floorRoot.Find("Mobs") : null;
             if (parent == null)
@@ -284,7 +337,46 @@ namespace ProceduralDungeon
             tag.entryName = e.Name;
             tag.placementIndex = -1;
             Register(tag);
+            // On a server the mob leaves the dungeon's hierarchy for the run's scene and is network-spawned once its floor
+            // was sent to the run's clients (offline: nothing changes).
+            DungeonNet.SpawnContent(this, go, floor, true);
             return go;
+        }
+
+        /// <summary>Keeps <paramref name="go"/> back from the network until floor <paramref name="floor"/> is revealed (see <see cref="DungeonNet.SpawnContent"/>).</summary>
+        internal void HoldBack(GameObject go, int floor, bool mob)
+        {
+            if (go == null)
+                return;
+            if (!held.TryGetValue(floor, out List<HeldContent> list))
+                held[floor] = list = new List<HeldContent>();
+            list.Add(new HeldContent { Object = go, Mob = mob });
+        }
+
+        /// <summary>The objects kept back for floor <paramref name="floor"/>, which are no longer kept (see <see cref="DungeonNet.FloorRevealed"/>).</summary>
+        internal List<HeldContent> TakeHeld(int floor)
+        {
+            if (!held.TryGetValue(floor, out List<HeldContent> list))
+                return NoHeldContent;
+            held.Remove(floor);
+            return list;
+        }
+
+        /// <summary>How many objects are kept back from the network for floor <paramref name="floor"/> (server, sessions).</summary>
+        public int HeldCount(int floor) => held.TryGetValue(floor, out List<HeldContent> list) ? list.Count : 0;
+
+        /// <summary>
+        /// Removes the objects of this dungeon that live outside its hierarchy (network-spawned mobs and item pickups on a
+        /// server): the dungeon's teardown would not reach them. Offline everything is under the dungeon: nothing to do.
+        /// </summary>
+        internal void DespawnDetached()
+        {
+            if (!GameNet.NetAuthority.IsNetworked || IsReplica)
+                return;
+            foreach (List<DungeonSpawned> list in spawned.Values)
+                foreach (DungeonSpawned s in list)
+                    if (s != null && !s.transform.IsChildOf(transform))
+                        GameNet.NetSpawn.Destroy(s.gameObject);
         }
 
         /// <summary>Every vertical link (stairs and drops) with its world-space landing positions.</summary>
@@ -352,6 +444,8 @@ namespace ProceduralDungeon
             Gizmos.color = Color.cyan;
             foreach (VerticalLink link in Layout.Links)
             {
+                if (link == null || link.UpperFloor >= FloorCount || link.LowerFloor >= FloorCount)
+                    continue;   // a client's copy only knows the links of the floors it was sent
                 Vector3 a = CellToWorld(link.UpperFloor, link.UpperLanding);
                 Vector3 b = CellToWorld(link.LowerFloor, link.LowerLanding);
                 Gizmos.DrawLine(a + Vector3.up, b + Vector3.up);

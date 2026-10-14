@@ -10,8 +10,12 @@ public class JumpingState : MovementState
     public override void EnterState()
     {
         Context.ConsumeJumpPress();
-        // Use SpeedManager for movement speed during jump
-        bool isRunning = Context.AnimationModel.GetAnimationBool("IsRunning");
+        // A running jump is a jump started from the Running state. This used to read the Animator's "IsRunning"
+        // parameter, but gameplay must not depend on animation: a server may run without an Animator, and the
+        // parameter's value depended on which script updated first.
+        bool isRunning = Context.Machine != null
+            ? Context.Machine.PreviousStateKey == MovementStateMachine.EMovementState.Running
+            : Context.AnimationModel != null && Context.AnimationModel.GetAnimationBool("IsRunning");
 
         // Set horizontal speed based on current state
         if (isRunning)
@@ -44,9 +48,11 @@ public class JumpingState : MovementState
 
     public override void UpdateState()
     {
-        // Apply gravity (not while a trait such as Wall Climb holds the player)
-        if (!Context.MovementModel.SuspendGravity)
-            Context.MovementModel.VerticalVelocity += Context.MovementModel.Gravity * Context.MovementModel.GravityMultiplier * Time.deltaTime;
+        // Apply gravity (not while a trait such as Wall Climb holds the player, nor while the controls are locked).
+        // The PlayerMovementController applies gravity once more in the same step: keeping both preserves the jump
+        // height and air time the game was tuned with.
+        if (!Context.MovementModel.SuspendGravity && !Context.Frozen)
+            Context.MovementModel.VerticalVelocity += Context.MovementModel.Gravity * Context.MovementModel.GravityMultiplier * Context.Dt;
 
         // Move player with both horizontal and vertical movement
         Vector3 currentDirection = Context.MovementModel.Direction;
@@ -54,10 +60,10 @@ public class JumpingState : MovementState
 
         float speedAfterWeight = Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(Context.MovementModel.CurrentSpeed);
 
-        Vector3 horizontalMovement = speedAfterWeight * currentDirection * Time.deltaTime;
-        Vector3 verticalMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Time.deltaTime;
+        Vector3 horizontalMovement = speedAfterWeight * currentDirection * Context.Dt;
+        Vector3 verticalMovement = new Vector3(0, Context.MovementModel.VerticalVelocity, 0) * Context.Dt;
 
-        Context.MovementModel.Controller.Move(horizontalMovement + verticalMovement);
+        Context.Move(horizontalMovement + verticalMovement);
     }
 
     public override MovementStateMachine.EMovementState GetNextState()

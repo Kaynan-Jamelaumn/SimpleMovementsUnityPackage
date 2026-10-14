@@ -66,9 +66,9 @@ public static class TraitPresets
         P("Active", "Wall Climber", "Climb walls by holding Jump while facing them.", () => New("Wall Climber", "Scales walls with ease.", 3, TraitType.Movement, ActiveColor, new WallClimbTrait())),
         P("Active", "Glider", "Fall slowly while holding Jump.", () => New("Glider", "Drifts down gently from any height.", 2, TraitType.Movement, ActiveColor, new GlideTrait())),
         P("Active", "Guardian Barrier", "An ability on a key: a stone ring around you + short invulnerability. Assign its input.", () => New("Guardian Barrier", "Call up a protective ring of stone.", 4, TraitType.Magic, ActiveColor,
-            new ActiveAbilityTrait { ability = AbilityPresets.GuardianBarrier() })),
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(AbilityPresets.GuardianBarrier(), "preset:guardian_barrier") })),
         P("Active", "Blink", "An ability on a key: teleport a short distance. Assign its input.", () => New("Blink", "Step through space.", 4, TraitType.Magic, ActiveColor,
-            new ActiveAbilityTrait { ability = AbilityPresets.Blink() })),
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(AbilityPresets.Blink(), "preset:blink") })),
 
         // Triggered & situational
         P("Triggered", "Second Wind", "Below 25% health: heal 30% and 1s invulnerability (90s cooldown).", () => New("Second Wind", "Refuses to go down.", 3, TraitType.Survival, Triggered, new SecondWindTrait())),

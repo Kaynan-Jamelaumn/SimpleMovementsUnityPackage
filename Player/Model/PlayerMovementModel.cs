@@ -18,7 +18,8 @@ public class PlayerMovementModel : MonoBehaviour
         Crouching,
         Jumping,
         Dashing,
-        Rolling
+        Rolling,
+        Swimming
     }
     [Tooltip("Current movement state (read only, set by the movement states).")]
     [SerializeField] private PlayerState playerState = PlayerState.Idle;
@@ -41,6 +42,10 @@ public class PlayerMovementModel : MonoBehaviour
     [SerializeField] private float jumpForce;
     [Tooltip("Stamina spent per jump (only when Should Consume Stamina is on).")]
     [SerializeField] private float amountOfJumpStaminaCost;
+
+    [Header("Swimming")]
+    [Tooltip("How the player swims in deep water (surface, underwater, sinking) and what it costs.")]
+    [SerializeField] private SwimSettings swimming = new SwimSettings();
 
     [Header("References")]
     [Tooltip("The object whose position is the player's feet (ground check origin). Usually the player root.")]
@@ -75,6 +80,14 @@ public class PlayerMovementModel : MonoBehaviour
     public Transform PlayerTransform { get => playerTransform; set => playerTransform = value; }
     public CharacterController Controller { get => controller; set => controller = value; }
     public bool ShouldConsumeStamina { get => shouldConsumeStamina; set => shouldConsumeStamina = value; }
+    public SwimSettings Swimming => swimming ??= new SwimSettings();
+
+    /// <summary>Runtime: the player is swimming (set by the movement).</summary>
+    public bool IsSwimming { get; set; }
+    /// <summary>Runtime: the player's head is under the water surface (set by the movement).</summary>
+    public bool HeadUnderwater { get; set; }
+    /// <summary>Runtime: the water surface height where the player is (NaN out of water).</summary>
+    public float WaterSurface { get; set; } = float.NaN;
 
     /// <summary>Approximate height of a standing jump (metres) with the current settings.</summary>
     public float EstimatedJumpHeight

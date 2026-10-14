@@ -51,6 +51,11 @@ public static class LoadedTerrain
         public Transform Root;
         /// <summary>True once its NavMesh is built.</summary>
         public bool HasNavMesh;
+        /// <summary>
+        /// True once its collider exists (it is cooked on a job thread and assigned a frame or more after the data
+        /// arrives): before that, the data is here but nothing can stand on the ground.
+        /// </summary>
+        public bool ColliderReady;
 
         public bool Contains(float x, float z) => x >= OriginX && z >= OriginZ && x < OriginX + Span && z < OriginZ + Span;
 
@@ -98,6 +103,17 @@ public static class LoadedTerrain
             return false;
         var coord = new Vector2Int(Mathf.FloorToInt(x / ChunkSpan), Mathf.FloorToInt(z / ChunkSpan));
         return Chunks.TryGetValue(coord, out chunk);
+    }
+
+    /// <summary>
+    /// True when the terrain at (x, z) can be stood on right now: its chunk is loaded, its collider is cooked and
+    /// assigned, and the chunk is shown (a hidden chunk's collider is inactive). False where nothing is loaded.
+    /// </summary>
+    public static bool IsGroundReady(float x, float z)
+    {
+        if (!TryGetChunk(x, z, out Chunk chunk) || !chunk.ColliderReady)
+            return false;
+        return chunk.Root == null || chunk.Root.gameObject.activeInHierarchy;
     }
 
     /// <summary>

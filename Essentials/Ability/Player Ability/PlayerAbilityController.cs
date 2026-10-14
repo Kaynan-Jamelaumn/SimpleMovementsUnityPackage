@@ -59,6 +59,23 @@ public class PlayerAbilityController : AbilityCaster
     /// <summary>A click-to-confirm preview ended (slot index, confirmed).</summary>
     public event Action<int, bool> TargetingEnded;
 
+    /// <summary>
+    /// Does this copy read this machine's mouse, keyboard, cancel input and camera? True offline. In a network session
+    /// only the player's own machine does (the network layer turns it off on every other copy, including the
+    /// server's copies of remote players), so a copy never reacts to the local devices or follows the local crosshair.
+    /// </summary>
+    public bool LocalInputEnabled { get; set; } = true;
+
+    /// <summary>Supplies the current aim of a cast from somewhere other than this machine's camera.</summary>
+    public delegate bool AimProvider(AbilityCastInstance cast, out CastRequest request);
+
+    /// <summary>
+    /// Network (server): where a remote player's abilities that track the crosshair until release (Track Until Release)
+    /// get their aim from - the aim its client streams. Null = this machine's camera (offline and the host's player).
+    /// Returning false keeps the current aim.
+    /// </summary>
+    public AimProvider RemoteAim { get; set; }
+
     public Camera AimCamera => aimCamera != null ? aimCamera : Camera.main;
 
     /// <summary>
@@ -148,6 +165,17 @@ public class PlayerAbilityController : AbilityCaster
     public int AcquireExtraSlot(AbilityDefinition ability, AbilityModifierSet modifiers = null)
     {
         Initialize();
+        if (IsReplica && ability != null)
+        {
+            // A network copy: the server decides the slots (their content arrives replicated). Use the slot the server
+            // already put this ability in, so the trait's key casts the same index there.
+            for (int i = 0; i < slots.Count; i++)
+            {
+                AbilitySlot s = slots[i];
+                if (s != null && !machineBySlot.ContainsKey(i) && s.ability != null && s.ability.Id == ability.Id)
+                    return i;
+            }
+        }
         for (int i = 0; i < slots.Count; i++)
         {
             if (slots[i] != null && slots[i].IsEmpty && !machineBySlot.ContainsKey(i))
@@ -162,6 +190,8 @@ public class PlayerAbilityController : AbilityCaster
     /// <summary>Empties an extra slot from <see cref="AcquireExtraSlot"/> so it can be reused (key slots are left alone).</summary>
     public void ReleaseExtraSlot(int index)
     {
+        if (IsReplica)
+            return; // the server clears it; the change arrives replicated
         if (index >= 0 && index < slots.Count && !machineBySlot.ContainsKey(index))
             ClearSlot(index);
     }
@@ -177,6 +207,8 @@ public class PlayerAbilityController : AbilityCaster
     /// </summary>
     public bool TryCastFromInput(int slotIndex)
     {
+        if (!LocalInputEnabled)
+            return false; // a copy of a player controlled from another machine
         AbilitySlot s = GetSlot(slotIndex);
         if (s == null || s.ability == null)
             return false;
@@ -196,8 +228,14 @@ public class PlayerAbilityController : AbilityCaster
             BeginTargeting(slotIndex);
             return true;
         }
-        return TryCast(slotIndex, BuildAimRequest(s.ability, s.Stats));
+        return SubmitCast(slotIndex, BuildAimRequest(s.ability, s.Stats));
     }
+
+    /// <summary>
+    /// Casts slot <paramref name="slot"/> with a request built from player input: offline and on the host it starts
+    /// here; on a client it is sent to the server (see <see cref="AbilityCaster.IsReplica"/>), which decides.
+    /// </summary>
+    public bool SubmitCast(int slot, CastRequest request) => TryCast(slot, request);
 
     /// <summary>Builds a cast request from the crosshair: the point it is on, the character under it or auto-aim.</summary>
     public CastRequest BuildAimRequest(AbilityDefinition def, in AbilityStats stats)
@@ -213,7 +251,7 @@ public class PlayerAbilityController : AbilityCaster
         Ray ray = AimRay(cam);
         Vector3 point = ray.origin + ray.direction * maxAimDistance;
         CombatEntity hitEntity = null;
-        int n = Physics.RaycastNonAlloc(ray, aimHits, maxAimDistance, aimLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(ray, aimHits, maxAimDistance, aimLayers, QueryTriggerInteraction.Ignore);
         float best = float.MaxValue;
         for (int i = 0; i < n; i++)
         {
@@ -223,6 +261,8 @@ public class PlayerAbilityController : AbilityCaster
             CombatEntity e = CombatEntity.Resolve(h.collider);
             if (e != null && e == Entity)
                 continue;
+            if (e != null && CombatRules.AreSeparated(Entity, e))
+                continue; // a character of another realm at the same coordinates: aim through it
             best = h.distance;
             point = h.point;
             hitEntity = e;
@@ -272,12 +312,38 @@ public class PlayerAbilityController : AbilityCaster
     protected override void UpdateAim(AbilityCastInstance c, float dt)
     {
         AbilityTargeting t = c.Definition.targeting;
-        if (t.aimLock != AbilityAimLock.TrackUntilRelease || AimCamera == null)
+        if (t.aimLock != AbilityAimLock.TrackUntilRelease)
         {
             base.UpdateAim(c, dt);
             return;
         }
-        CastRequest r = BuildAimRequest(c.Definition, c.Stats);
+        CastRequest r;
+        if (RemoteAim != null)
+        {
+            // A remote player's cast on the server: follow the aim its client sends, never this machine's camera.
+            if (!RemoteAim(c, out r))
+                return;
+            if (r.target != null && CombatRules.AreSeparated(Entity, r.target))
+                r.target = null;
+            if (!r.hasPoint)
+            {
+                if (!r.hasDirection)
+                    return;
+                r.point = Entity.Position + r.direction * Mathf.Max(1f, c.Definition.Range(c.Stats));
+            }
+            r.direction = r.hasDirection
+                ? CombatQuery.FlatDirection(Vector3.zero, r.direction, c.AimDirection)
+                : CombatQuery.FlatDirection(Entity.Position, r.point, c.AimDirection);
+        }
+        else
+        {
+            if (!LocalInputEnabled || AimCamera == null)
+            {
+                base.UpdateAim(c, dt);
+                return;
+            }
+            r = BuildAimRequest(c.Definition, c.Stats);
+        }
         if (r.target != null && t.mode == AbilityTargetingMode.Unit)
             c.Target = r.target;
         Vector3 from = Entity.Position;
@@ -287,11 +353,27 @@ public class PlayerAbilityController : AbilityCaster
         c.HasAimTargetPoint = true;
     }
 
+    /// <summary>
+    /// A copy of the server's cast follows the crosshair only on the player's own machine (its telegraph moves with the
+    /// aim the player sees); other machines wait for the server's aim updates.
+    /// </summary>
+    /// <summary>The player's own machine turns its character for the copies of its casts (its movement is predicted here).</summary>
+    protected override bool CosmeticCastsTurnCaster => LocalInputEnabled;
+
+    protected override bool MirrorTracksAim(AbilityCastInstance cast)
+    {
+        if (cast.Definition.targeting.aimLock != AbilityAimLock.TrackUntilRelease)
+            return true;
+        return LocalInputEnabled && AimCamera != null;
+    }
+
     protected override void OnCastStarted(AbilityCastInstance cast)
     {
         // Another ability started while a preview was open: the player chose that one, close the preview.
         if (targetingSlot >= 0 && (cast.Slot == null || cast.Slot.Index != targetingSlot))
             CancelTargeting();
+        if (cast.Cosmetic && !CosmeticCastsTurnCaster)
+            return; // copies leave the rotation to the network (the server turns its copy)
         if (!snapTurnToAim || cast.Definition.targeting.mode == AbilityTargetingMode.Self && !cast.Definition.targeting.faceAim)
             return;
         Vector3 d = cast.AimDirection;
@@ -318,7 +400,7 @@ public class PlayerAbilityController : AbilityCaster
         int slot = targetingSlot;
         AbilitySlot s = GetSlot(slot);
         EndTargeting(false);
-        bool ok = s != null && s.ability != null && TryCast(slot, BuildAimRequest(s.ability, s.Stats));
+        bool ok = s != null && s.ability != null && SubmitCast(slot, BuildAimRequest(s.ability, s.Stats));
         TargetingEnded?.Invoke(slot, ok);
         return ok;
     }
@@ -345,6 +427,13 @@ public class PlayerAbilityController : AbilityCaster
     protected override void Update()
     {
         base.Update();
+        if (!LocalInputEnabled)
+        {
+            // A copy of a player controlled elsewhere: no previews, no cancel key.
+            if (targetingSlot >= 0)
+                CancelTargeting();
+            return;
+        }
         if (targetingSlot >= 0)
             UpdateTargeting();
         if (cancelCastInput != null && cancelCastInput.action != null && cancelCastInput.action.triggered)

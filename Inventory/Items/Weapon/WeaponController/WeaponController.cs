@@ -15,6 +15,12 @@ using UnityEngine.InputSystem;
 /// <see cref="WeaponSO"/>. Parts: <see cref="WeaponManager"/> (equip), <see cref="AttackExecutor"/> (attack timeline,
 /// hits, projectiles), a <see cref="ComboSystem"/> and <see cref="VariationSystem"/> per hand, <see cref="InputBufferSystem"/>.
 /// </para>
+/// <para>
+/// Network sessions: the attack rules run only where <see cref="RunsRules"/> is true (offline, the server, the host).
+/// A client's own player sends its inputs and aim to the server through <see cref="NetBridge"/>; every client copy
+/// shows the attacks the server reports (the Present methods). Only the player of this machine reads its devices and
+/// camera. Offline nothing is installed and everything works as before.
+/// </para>
 /// </summary>
 [DisallowMultipleComponent]
 public class WeaponController : MonoBehaviour
@@ -100,7 +106,14 @@ public class WeaponController : MonoBehaviour
 
     // Input (named actions and fallbacks)
     private CombatInputBinding offHandBinding, offHandMouse, reloadBinding;
+    private bool bindingsCreated;
     private static readonly RaycastHit[] aimHits = new RaycastHit[16];
+
+    // Network (unused offline)
+    private readonly HashSet<AttackType> forwardedHeld = new HashSet<AttackType>();
+    private readonly List<AttackType> releaseBuffer = new List<AttackType>(4);
+    private bool hasRemoteAim;
+    private Ray remoteAim;
 
     // Events
     /// <summary>An attack started (input, attack).</summary>
@@ -162,6 +175,42 @@ public class WeaponController : MonoBehaviour
     public IAmmoSource AmmoSource { get; set; }
     /// <summary>True while a UI (the inventory) has the input: attack, block and reload inputs are ignored.</summary>
     public bool InputBlocked { get; set; }
+
+    /// <summary>
+    /// Network: sends this player's attack, reload and throw intentions to the server. Installed by the network layer on
+    /// the owning client's copy only; null offline, on the server and on copies of other players.
+    /// </summary>
+    public IWeaponNetBridge NetBridge { get; set; }
+    /// <summary>
+    /// Network: receives what this controller's attacks show (charges, swings, shots, hits, impacts, reloads) where the
+    /// rules run, so the network layer can repeat it on clients. Null offline.
+    /// </summary>
+    public IWeaponPresentationSink PresentationSink { get; set; }
+    /// <summary>
+    /// Do this controller's attack rules run on this machine? True offline, on the server and on the host. False on a
+    /// client's copy of a networked player: inputs are sent to the server and attacks are only shown (see the Present
+    /// methods), never resolved here.
+    /// </summary>
+    public bool RunsRules => GameNet.NetAuthority.RunsRules(PlayerObject);
+    /// <summary>Is this the player whose devices and camera are on this machine? Offline: true.</summary>
+    public bool IsLocallyControlled => GameNet.NetAuthority.IsLocallyControlled(PlayerObject);
+    /// <summary>Are attack inputs of this client's player still held (sent to the server, not yet released)?</summary>
+    public bool HasForwardedHeldInputs => forwardedHeld.Count > 0;
+    /// <summary>Server: is the aim of a remote owner being followed (see <see cref="SetRemoteAim"/>)?</summary>
+    public bool HasRemoteAim => hasRemoteAim;
+
+    /// <summary>
+    /// Server: ranged attacks of this player aim along this ray (its owner's camera ray, streamed by the network layer)
+    /// instead of a camera of this machine.
+    /// </summary>
+    public void SetRemoteAim(Vector3 origin, Vector3 direction)
+    {
+        remoteAim = new Ray(origin, direction);
+        hasRemoteAim = true;
+    }
+
+    /// <summary>Server: stops following a remote aim.</summary>
+    public void ClearRemoteAim() => hasRemoteAim = false;
 
     public GameObject PlayerObject => status != null ? status.gameObject : gameObject;
     public Transform HandTransform => handGameObject != null ? handGameObject.transform : null;
@@ -265,6 +314,19 @@ public class WeaponController : MonoBehaviour
         variationSystem.Initialize();
         offHand.Variations.Initialize();
         bodyParts = BodyPartController.For(PlayerObject.transform);
+        if (IsLocallyControlled)
+            EnsureInputBindings();
+    }
+
+    /// <summary>
+    /// Creates the device bindings (off-hand attack, reload) of the player of this machine. Copies of other players in a
+    /// network session never get them: they would read this machine's keyboard and mouse.
+    /// </summary>
+    private void EnsureInputBindings()
+    {
+        if (bindingsCreated)
+            return;
+        bindingsCreated = true;
         if (CombatInputBinding.IsPlayer(this))
         {
             offHandBinding = CombatInputBinding.Create(this, offHandAttackInput, offHandActionNames, Key.None, MouseFallback.None, "Off-hand attack");
@@ -291,27 +353,48 @@ public class WeaponController : MonoBehaviour
 
     private void Update()
     {
-        if (!InputBlocked)
+        // Only the player of this machine reads devices (in a session the copies of other players must not react to
+        // this keyboard; the server's copy of a remote player gets its inputs from the network layer).
+        if (IsLocallyControlled)
         {
-            PollInput(lightAttackInput, AttackType.Light);
-            PollInput(heavyAttackInput, AttackType.Heavy);
-            PollInput(specialAttackInput, AttackType.Special);
-            PollInput(alternateAttackInput, AttackType.Alternate);
-            PollOffHandInput();
-            if (reloadBinding != null && reloadBinding.Pressed)
-                Reload();
-        }
-        else
-        {
-            // Releases still count (a held draw is let go while a window opens).
-            ReleaseIfReleased(lightAttackInput, AttackType.Light);
-            ReleaseIfReleased(heavyAttackInput, AttackType.Heavy);
-            ReleaseIfReleased(specialAttackInput, AttackType.Special);
-            ReleaseIfReleased(alternateAttackInput, AttackType.Alternate);
+            EnsureInputBindings();
+            if (!InputBlocked)
+            {
+                PollInput(lightAttackInput, AttackType.Light);
+                PollInput(heavyAttackInput, AttackType.Heavy);
+                PollInput(specialAttackInput, AttackType.Special);
+                PollInput(alternateAttackInput, AttackType.Alternate);
+                PollOffHandInput();
+                if (reloadBinding != null && reloadBinding.Pressed)
+                    Reload();
+            }
+            else
+            {
+                // Releases still count (a held draw is let go while a window opens).
+                ReleaseIfReleased(lightAttackInput, AttackType.Light);
+                ReleaseIfReleased(heavyAttackInput, AttackType.Heavy);
+                ReleaseIfReleased(specialAttackInput, AttackType.Special);
+                ReleaseIfReleased(alternateAttackInput, AttackType.Alternate);
+            }
         }
 
         float dt = Time.deltaTime;
         attackExecutor.Tick(dt);
+        if (!RunsRules)
+        {
+            // A client's copy: reloads, automatic fire, buffers and combos are the server's; only the crosshair
+            // bloom of the shots it showed settles here.
+            DecayBloom(mainHand, dt);
+            DecayBloom(offHand, dt);
+            return;
+        }
+
+        UpdateRules(dt);
+    }
+
+    /// <summary>The per-frame rules: reloads, buffered inputs, automatic fire, chain and combo timers, interruptions.</summary>
+    private void UpdateRules(float dt)
+    {
         UpdateRanged(mainHand, dt);
         UpdateRanged(offHand, dt);
         inputBufferSystem.ProcessInputBuffer();
@@ -362,9 +445,19 @@ public class WeaponController : MonoBehaviour
 
     private void OnDisable()
     {
+        // A client's own player: inputs still held on the server are let go there too.
+        if (forwardedHeld.Count > 0 && NetBridge != null && !RunsRules)
+        {
+            releaseBuffer.Clear();
+            releaseBuffer.AddRange(forwardedHeld);
+            foreach (AttackType t in releaseBuffer)
+                NetBridge.SendAttackInput(this, WeaponInputKind.Release, t);
+            releaseBuffer.Clear();
+        }
         attackExecutor?.Cancel();
         heldInputs.Clear();
         pressMapping.Clear();
+        forwardedHeld.Clear();
         CancelReload(mainHand);
         CancelReload(offHand);
         animController?.ForceEndAttackAnimation();
@@ -544,12 +637,23 @@ public class WeaponController : MonoBehaviour
     /// <summary>An attack as a tap (charged attacks start uncharged). Kept for older callers.</summary>
     public void PerformAttack(GameObject player, AttackType attackType)
     {
+        if (!RunsRules)
+        {
+            NetBridge?.SendAttackInput(this, WeaponInputKind.Tap, attackType);
+            return;
+        }
         attackExecutor.BeginInput(player != null ? player : PlayerObject, attackType, false, true);
     }
 
     /// <summary>The attack input of <paramref name="attackType"/> was pressed (hold it to charge a chargeable attack).</summary>
+    /// <remarks>
+    /// On a client's copy of a networked player the press is sent to the server, which runs this same method on its copy
+    /// (damage, costs and ammo are decided there); the attack is shown here when the server reports it.
+    /// </remarks>
     public bool BeginAttackInput(AttackType attackType)
     {
+        if (!RunsRules)
+            return ForwardPress(attackType);
         AttackType mapped = attackType == AttackType.Alternate && alternateInputUsesOffHand && IsDualWielding ? AttackType.OffHand : attackType;
         pressMapping[attackType] = mapped;
         heldInputs.Add(mapped);
@@ -574,17 +678,105 @@ public class WeaponController : MonoBehaviour
     /// <summary>The attack input of <paramref name="attackType"/> was released.</summary>
     public void ReleaseAttackInput(AttackType attackType)
     {
+        if (!RunsRules)
+        {
+            if (forwardedHeld.Remove(attackType))
+                NetBridge?.SendAttackInput(this, WeaponInputKind.Release, attackType);
+            return;
+        }
         AttackType mapped = pressMapping.TryGetValue(attackType, out AttackType m) ? m : attackType;
         pressMapping.Remove(attackType);
         heldInputs.Remove(mapped);
         attackExecutor.ReleaseInput(mapped);
     }
 
+    /// <summary>
+    /// A client's copy of its own player: sends the press to the server after the checks that belong to this machine
+    /// (UI focus, an ability preview owning the click, nothing in hand). Returns true when it was sent.
+    /// </summary>
+    private bool ForwardPress(AttackType attackType)
+    {
+        IWeaponNetBridge bridge = NetBridge;
+        if (bridge == null)
+            return false; // a copy of another player: it never attacks from this machine
+        forwardedHeld.Add(attackType);
+        if (InputBlocked)
+            return false;
+        AttackType mapped = attackType == AttackType.Alternate && alternateInputUsesOffHand && IsDualWielding ? AttackType.OffHand : attackType;
+        if (mapped == AttackType.OffHand ? offHand.Weapon == null && EquippedWeapon == null : EquippedWeapon == null)
+            return false;
+        if (PlayerAbilityController.IsPointerCapturedFor(PlayerObject))
+            return false; // the click belongs to an ability's target preview
+        bridge.SendAttackInput(this, WeaponInputKind.Press, attackType);
+        return true;
+    }
+
+    /// <summary>
+    /// Server: a remote owner pressed an attack input. Same as <see cref="BeginAttackInput"/>, plus the item cooldown the
+    /// inventory applies to its own player's primary attack (the Use input): a weapon on cooldown does not attack, and a
+    /// started attack starts the cooldown.
+    /// </summary>
+    public bool ServerBeginAttackInput(AttackType attackType)
+    {
+        if (!RunsRules)
+            return false;
+        bool primary = attackType == AttackType.Normal;
+        InventoryItem item = HeldItem;
+        WeaponSO weapon = EquippedWeapon;
+        if (primary && item != null && item.IsOnCooldown())
+            return false;
+        bool started = BeginAttackInput(attackType);
+        if (started && primary && item != null && weapon != null && weapon.Cooldown > 0f)
+            item.SetCooldown(CombatStats.ItemCooldown(this, weapon.Cooldown));
+        return started;
+    }
+
+    /// <summary>
+    /// Server: a remote owner tapped an attack input (pressed and released at once, see <see cref="PerformAttack"/>),
+    /// with the same item cooldown as <see cref="ServerBeginAttackInput"/>.
+    /// </summary>
+    public bool ServerTapAttack(AttackType attackType)
+    {
+        if (!RunsRules)
+            return false;
+        bool primary = attackType == AttackType.Normal;
+        InventoryItem item = HeldItem;
+        WeaponSO weapon = EquippedWeapon;
+        if (primary && item != null && item.IsOnCooldown())
+            return false;
+        bool started = attackExecutor.BeginInput(PlayerObject, attackType, false, true);
+        if (started && primary && item != null && weapon != null && weapon.Cooldown > 0f)
+            item.SetCooldown(CombatStats.ItemCooldown(this, weapon.Cooldown));
+        return started;
+    }
+
+    /// <summary>
+    /// Server: drops every attack input of a remote owner that left or lost the character: held inputs and buffered
+    /// presses are forgotten and a charge in progress is cancelled (it does not go off as a release would).
+    /// </summary>
+    public void DropRemoteInputs()
+    {
+        heldInputs.Clear();
+        pressMapping.Clear();
+        inputBufferSystem?.Reset();
+        attackExecutor?.CancelCharge();
+    }
+
     /// <summary>Is the input still held (buffered attacks of a released input are not charged)?</summary>
     public bool IsInputHeld(AttackType attackType) => heldInputs.Contains(attackType);
 
     /// <summary>Stops a charge without attacking.</summary>
-    public void CancelCharge() => attackExecutor.CancelCharge();
+    public void CancelCharge()
+    {
+        if (!RunsRules)
+        {
+            // The charge runs on the server; ask it to drop it (the presentation stops when the server reports it).
+            if (NetBridge != null && (attackExecutor.IsCharging || forwardedHeld.Count > 0))
+                NetBridge.SendAttackInput(this, WeaponInputKind.CancelCharge, AttackType.Normal);
+            return;
+        }
+        attackExecutor.CancelCharge();
+    }
 
     /// <summary>Interrupts the current attack (hit reactions, stuns, scripted events).</summary>
     public void InterruptAttack() => attackExecutor.Cancel();
@@ -613,6 +805,8 @@ public class WeaponController : MonoBehaviour
     /// </summary>
     public bool QuickThrow(WeaponSO weapon, InventoryItem item)
     {
+        if (!RunsRules)
+            return weapon != null && NetBridge != null && NetBridge.SendQuickThrow(this, weapon);
         BlockController b = Block;
         if (b != null && b.IsBlocking)
             b.Lower(true);
@@ -643,7 +837,51 @@ public class WeaponController : MonoBehaviour
     {
         if (InputBlocked)
             return false;
+        if (!RunsRules)
+        {
+            // The server reloads (ammo is spent there); the reload shows here when it reports it.
+            if (NetBridge == null || (!(mainHand.Ranged is MagazineMechanic) && !(offHand.Ranged is MagazineMechanic)))
+                return false;
+            NetBridge.SendAttackInput(this, WeaponInputKind.Reload, AttackType.Normal);
+            return true;
+        }
         return TryStartReload(mainHand) || TryStartReload(offHand);
+    }
+
+    /// <summary>
+    /// Server: throws one <paramref name="weapon"/> for a client's quick-throw request, from the stack its inventory
+    /// (an <see cref="IThrowableSource"/>) names, else from a hand holding that weapon. Returns false when nothing can be
+    /// thrown. The stack's item cooldown is checked and started here, as the inventory does for the local player.
+    /// </summary>
+    public bool ServerQuickThrow(WeaponSO weapon)
+    {
+        if (weapon == null || !(weapon.Ranged is ThrowMechanic) || !RunsRules)
+            return false;
+        InventoryItem stack = null;
+        IAmmoSource source = AmmoSource;
+        if (source is UnityEngine.Object o && o == null)
+            source = null;
+        if (source is IThrowableSource throwables)
+            stack = throwables.FindThrowable(weapon);
+        else if (source is InventoryManager inventory)
+        {
+            // As the quickslots do: the first stack of that weapon not on cooldown (bag, then hotbar).
+            List<InventoryItem> stacks = inventory.FindStacks(weapon, true);
+            for (int i = 0; i < stacks.Count && stack == null; i++)
+                if (stacks[i] != null && !stacks[i].IsOnCooldown())
+                    stack = stacks[i];
+        }
+        if (stack == null && HeldItem != null && EquippedWeapon == weapon)
+            stack = HeldItem;
+        if (stack == null && OffHandItem != null && OffHandWeapon == weapon)
+            stack = OffHandItem;
+        if (stack == null || stack.itemScriptableObject != weapon || stack.IsOnCooldown())
+            return false;
+        if (!QuickThrow(weapon, stack))
+            return false;
+        if (weapon.Cooldown > 0f)
+            stack.SetCooldown(CombatStats.ItemCooldown(this, weapon.Cooldown));
+        return true;
     }
 
     internal int CountAmmo(AmmoRequirement req, AmmoSO preferred, out AmmoSO best)
@@ -695,16 +933,23 @@ public class WeaponController : MonoBehaviour
             return false;
         }
         h.loadedAmmo = ammo;
+        BeginReloadPresentation(h, mag);
+        ApplyReloadMovement(h, mag.moveSpeedWhileReloading);
+        ReloadStateChanged?.Invoke(h.Side, true);
+        PresentationSink?.ReloadShown(this, h.Side, true);
+        LogDebug($"Reloading {h.Weapon.Name} ({h.Side})");
+        return true;
+    }
+
+    /// <summary>The visible part of a reload start (timer for the UI, animation, sound).</summary>
+    private void BeginReloadPresentation(WeaponHand h, MagazineMechanic mag)
+    {
         h.reloading = true;
         h.reloadDuration = Mathf.Max(0.01f, mag.reloadTime / (Stats != null ? Stats.ReloadSpeedMultiplier : 1f));
         h.reloadEndTime = Time.time + h.reloadDuration;
         if (mag.reloadAnimation != null)
             animController?.PlayAnimation(mag.reloadAnimation);
         PlaySound(mag.reloadSound);
-        ApplyReloadMovement(h, mag.moveSpeedWhileReloading);
-        ReloadStateChanged?.Invoke(h.Side, true);
-        LogDebug($"Reloading {h.Weapon.Name} ({h.Side})");
-        return true;
     }
 
     private void UpdateRanged(WeaponHand h, float dt)
@@ -770,6 +1015,7 @@ public class WeaponController : MonoBehaviour
         h.reloading = false;
         RestoreReloadMovement(h);
         ReloadStateChanged?.Invoke(h.Side, false);
+        PresentationSink?.ReloadShown(this, h.Side, false);
     }
 
     private void ApplyReloadMovement(WeaponHand h, float multiplier)
@@ -821,17 +1067,15 @@ public class WeaponController : MonoBehaviour
     /// </summary>
     public Vector3 AimPoint(Vector3 from, float maxDistance, bool useCrosshair)
     {
-        Camera cam = aimCamera != null ? aimCamera : Camera.main;
         CombatEntity me = Entity;
-        if (useCrosshair && cam != null)
+        if (useCrosshair && TryGetAimRay(out Ray ray))
         {
-            bool cursorFree = Cursor.visible && Cursor.lockState == CursorLockMode.None;
-            Ray ray = cursorFree && Mouse.current != null
-                ? cam.ScreenPointToRay(Mouse.current.position.ReadValue())
-                : cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
             int mask = aimLayers.value != 0 ? aimLayers.value : (CombatSettings.Instance.characterLayers | CombatSettings.Instance.obstacleLayers);
             float camDist = Vector3.Distance(ray.origin, from);
-            int n = Physics.RaycastNonAlloc(ray, aimHits, maxDistance + camDist, mask, QueryTriggerInteraction.Ignore);
+            int n;
+            // A remote shooter aimed at where its screen showed the others (no-op offline and for the host's player).
+            using (GameNet.LagCompensation.For(me))
+                n = ScenePhysics.RaycastNonAlloc(ray, aimHits, maxDistance + camDist, mask, QueryTriggerInteraction.Ignore);
             float best = float.MaxValue;
             Vector3 point = ray.GetPoint(maxDistance + camDist);
             Transform root = PlayerObject.transform;
@@ -842,6 +1086,8 @@ public class WeaponController : MonoBehaviour
                     continue;
                 if (h.distance < camDist * 0.5f)
                     continue; // between the camera and the character
+                if (me != null && CombatRules.AreSeparated(me, CombatEntity.Resolve(h.collider)))
+                    continue; // a character of another realm scene (City / World overlap): not there for this shooter
                 best = h.distance;
                 point = h.point;
             }
@@ -849,6 +1095,31 @@ public class WeaponController : MonoBehaviour
         }
         Vector3 f = me != null ? me.Forward : PlayerObject.transform.forward;
         return from + f * maxDistance;
+    }
+
+    /// <summary>
+    /// The ray ranged weapons aim along: on the server, the aim its remote owner streams; otherwise the crosshair of this
+    /// machine's camera (or the mouse while the cursor is free). False when there is neither (a dedicated server before
+    /// the owner's aim arrived, a copy of another player): attacks then aim straight ahead.
+    /// </summary>
+    public bool TryGetAimRay(out Ray ray)
+    {
+        if (hasRemoteAim)
+        {
+            ray = remoteAim;
+            return true;
+        }
+        ray = default;
+        if (!IsLocallyControlled)
+            return false; // this machine's camera belongs to another player
+        Camera cam = aimCamera != null ? aimCamera : Camera.main;
+        if (cam == null)
+            return false;
+        bool cursorFree = Cursor.visible && Cursor.lockState == CursorLockMode.None;
+        ray = cursorFree && Mouse.current != null
+            ? cam.ScreenPointToRay(Mouse.current.position.ReadValue())
+            : cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        return true;
     }
 
     // ------------------------------------------------------------------ helpers for the attack parts
@@ -869,7 +1140,8 @@ public class WeaponController : MonoBehaviour
 
     internal void ConsumeStamina(float amount)
     {
-        if (useStamina && amount > 0f && status != null && status.StaminaManager != null)
+        // Only where the rules run: on a network client the server spends it and the movement reconcile brings it back.
+        if (useStamina && amount > 0f && status != null && status.StaminaManager != null && GameNet.NetAuthority.RunsRules(gameObject))
             status.StaminaManager.ConsumeStamina(amount);
     }
 
@@ -998,9 +1270,124 @@ public class WeaponController : MonoBehaviour
     internal void RaiseAttackStarted(AttackType input, AttackComponent attack) => AttackStarted?.Invoke(input, attack);
     internal void RaiseAttackHit(CombatEntity target, float damage) => AttackHit?.Invoke(target, damage);
     internal void RaiseAttackEnded(AttackType input, AttackComponent attack, bool interrupted) => AttackEnded?.Invoke(input, attack, interrupted);
-    internal void RaiseAttackFailed(AttackType input, string reason) => AttackFailed?.Invoke(input, reason);
+    internal void RaiseAttackFailed(AttackType input, string reason)
+    {
+        AttackFailed?.Invoke(input, reason);
+        PresentationSink?.AttackFailedShown(this, input, reason);
+    }
     internal void RaiseWeaponChanged() => WeaponChanged?.Invoke();
     internal void RaiseRangedFired(WeaponHandSide side, int count) => RangedFired?.Invoke(side, count);
+
+    // ------------------------------------------------------------------ network presentation (client copies)
+    // A client's copy of a networked player shows what the server's copy does: the network layer calls these with what
+    // the server reported. They play animations, trails, sounds and effects only - no damage, costs or ammo - and do
+    // nothing where the rules run.
+
+    /// <summary>Network: shows a charge (bow draw) the server began.</summary>
+    public void PresentCharge(in WeaponAttackShown attack)
+    {
+        if (RunsRules)
+            return;
+        attackExecutor.PresentCharge(GetHand(attack.hand), attack);
+    }
+
+    /// <summary>Network: shows an attack the server started (or a quick throw).</summary>
+    public void PresentAttack(in WeaponAttackShown attack)
+    {
+        if (RunsRules)
+            return;
+        attackExecutor.PresentAttack(GetHand(attack.hand), attack);
+    }
+
+    /// <summary>Network: the server cut the attack or charge short.</summary>
+    public void PresentAttackStopped(bool interrupted)
+    {
+        if (RunsRules)
+            return;
+        attackExecutor.PresentStop(interrupted);
+    }
+
+    /// <summary>Network: shows a shot the server fired (projectiles that hit nothing, muzzle flash, sound).</summary>
+    public void PresentShot(in WeaponShotShown shot)
+    {
+        if (RunsRules)
+            return;
+        WeaponHand h = GetHand(shot.hand);
+        if (h.Ranged is MagazineMechanic mag && h.Weapon == shot.weapon)
+            h.bloom = Mathf.Min(mag.maxBloom, h.bloom + mag.bloomPerShot); // the crosshair spreads as on the server
+        attackExecutor.PresentShot(shot);
+    }
+
+    private static void DecayBloom(WeaponHand h, float dt)
+    {
+        if (h.bloom > 0f && h.Ranged is MagazineMechanic mag)
+            h.bloom = Mathf.Max(0f, h.bloom - mag.bloomRecovery * dt);
+    }
+
+    /// <summary>Network: shows a hit the server's attack made (particles, hit effect, sound).</summary>
+    public void PresentHit(in WeaponHitShown hit)
+    {
+        if (RunsRules)
+            return;
+        attackExecutor.PresentHit(hit);
+    }
+
+    /// <summary>Network: shows an attack's Impact the server made.</summary>
+    public void PresentImpact(in WeaponImpactShown impact)
+    {
+        if (RunsRules)
+            return;
+        attackExecutor.PresentImpact(impact);
+    }
+
+    /// <summary>Network: a hand started or stopped reloading on the server (animation, sound, the reload UI).</summary>
+    public void PresentReload(WeaponHandSide side, bool started)
+    {
+        if (RunsRules)
+            return;
+        WeaponHand h = GetHand(side);
+        if (h.reloading == started)
+            return;
+        if (started)
+        {
+            if (h.Ranged is MagazineMechanic mag)
+                BeginReloadPresentation(h, mag);
+            else
+                h.reloading = true;
+        }
+        else
+        {
+            h.reloading = false;
+        }
+        ReloadStateChanged?.Invoke(side, started);
+    }
+
+    /// <summary>Network (the owner): an attack of this player could not start on the server (UI messages, the empty click).</summary>
+    public void PresentAttackFailed(AttackType input, string reason)
+    {
+        if (RunsRules)
+            return;
+        AttackFailed?.Invoke(input, reason);
+        if (string.IsNullOrEmpty(reason) || reason == "reloading" || reason == "stamina" || reason == "broken" || reason == "injured")
+            return;
+        // Out of ammo or a shot cost missing: the weapon clicks.
+        RangedMechanic m = GetHand(input == AttackType.OffHand && offHand.Weapon != null ? WeaponHandSide.Off : WeaponHandSide.Main).Ranged;
+        if (m != null)
+            PlaySound(m.emptySound);
+    }
+
+    /// <summary>Network (the owner): the rounds the server has loaded in a hand's magazine weapon (ammo counters).</summary>
+    public void ApplyReplicatedRounds(WeaponHandSide side, int loaded)
+    {
+        if (RunsRules)
+            return;
+        WeaponHand h = GetHand(side);
+        if (h.Ranged is MagazineMechanic)
+            h.Loaded = loaded;
+    }
+
+    /// <summary>Network: rounds loaded in a hand's weapon as stored (-1 = not loaded yet), for replication.</summary>
+    public int RawLoadedRounds(WeaponHandSide side) => GetHand(side).Loaded;
 
     // ------------------------------------------------------------------ public API (kept)
     public bool CanAttack() => EquippedWeapon != null && (attackExecutor?.CanStartNext ?? false);

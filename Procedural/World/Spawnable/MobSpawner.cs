@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// The mobs of one terrain chunk (added to every chunk by <see cref="EndlessTerrain"/>, started once the chunk's
@@ -20,6 +21,16 @@ using UnityEngine.AI;
 /// all counted from what actually exists, so nothing can be duplicated or over-counted.</item>
 /// </list>
 /// While the player is in a dungeon (<see cref="WorldSpawnRegistry.Paused"/>) the chunk's mobs are switched off.
+///
+/// Only players in this chunk's realm count (<see cref="MobRealms"/>): a player in the City standing over the World's
+/// coordinates neither activates the chunk nor keeps mobs from spawning.
+///
+/// In a network session the server (or host) runs every chunk spawner for all connected players: mobs are spawned only
+/// where <see cref="GameNet.NetSpawn.ShouldSpawnHere"/>, handed to the network with <see cref="GameNet.MobNetSpawn"/>
+/// (moved into the chunk's scene as root objects, since Fish-Net spawns only roots) and removed with
+/// <see cref="GameNet.NetSpawn.Destroy"/>. Clients spawn nothing - the server's mobs reach them through the network.
+/// The camera-view rule becomes "out of every player's sight" (their facing), and one player entering a dungeon does
+/// not freeze the shared World for the others.
 /// </summary>
 public class MobSpawner : ChunkSpawnerBase
 {
@@ -40,6 +51,12 @@ public class MobSpawner : ChunkSpawnerBase
     private int kills;
     private SpawnRejection lastRejection;
     private Camera viewCamera;
+    private bool avoidPlayerViews;
+    private float nextConditionCheck;
+    private readonly List<Transform> realmPlayers = new List<Transform>();
+
+    /// <summary>Half the horizontal angle in front of a networked player counted as "in view" (no camera on a server).</summary>
+    private const float PlayerViewHalfAngle = 60f;
 
     private sealed class LiveMob
     {
@@ -161,14 +178,26 @@ public class MobSpawner : ChunkSpawnerBase
             return;
         RemoveDestroyed();
 
-        // In a dungeon: the chunk's mobs are switched off (they keep their state) and nothing spawns.
-        bool paused = IsPaused;
+        if (!GameNet.NetSpawn.ShouldSpawnHere)
+        {
+            // A network client: the server spawns the World's mobs and they arrive through the network.
+            if (live.Count > 0)
+                DespawnAll();
+            active = false;
+            return;
+        }
+
+        // In a dungeon: the chunk's mobs are switched off (they keep their state) and nothing spawns. In a network
+        // session the World is shared, so only a disabled terrain pauses it.
+        bool paused = GameNet.NetAuthority.IsNetworked ? Terrain == null || !Terrain.isActiveAndEnabled : IsPaused;
         if (container.gameObject.activeSelf == paused)
             container.gameObject.SetActive(!paused);
         if (paused || population <= 0)
             return;
 
         float distance = DistanceToPlayers();
+        if (active)
+            RemoveOutOfConditions();
         if (!active)
         {
             if (distance > settings.activationDistance)
@@ -203,17 +232,49 @@ public class MobSpawner : ChunkSpawnerBase
     private float DistanceToPlayers()
     {
         float best = float.PositiveInfinity;
-        foreach (Transform p in WorldSpawnRegistry.GetPlayers(settings.playerTag, Viewer))
-            if (p != null)
-                best = Mathf.Min(best, DistanceTo(p.position));
+        foreach (Transform p in RealmPlayers())
+            best = Mathf.Min(best, DistanceTo(p.position));
         return best;
+    }
+
+    /// <summary>
+    /// The players this chunk serves (refreshed into <see cref="realmPlayers"/>): every registered player - all connected
+    /// players on a server - and tagged object that stands in this chunk's realm (see <see cref="MobRealms"/>).
+    /// </summary>
+    private List<Transform> RealmPlayers()
+    {
+        realmPlayers.Clear();
+        Scene realm = gameObject.scene;
+        foreach (Transform p in WorldSpawnRegistry.GetPlayers(settings.playerTag, Viewer))
+            if (p != null && MobRealms.IsInRealm(realm, p.gameObject))
+                realmPlayers.Add(p);
+        return realmPlayers;
+    }
+
+    /// <summary>Horizontal distance to the nearest player in <see cref="realmPlayers"/> (infinity when there is none).</summary>
+    private float DistanceToNearestRealmPlayer(Vector3 position)
+    {
+        float best = float.PositiveInfinity;
+        foreach (Transform p in realmPlayers)
+        {
+            if (p == null)
+                continue;
+            float dx = p.position.x - position.x, dz = p.position.z - position.z;
+            best = Mathf.Min(best, dx * dx + dz * dz);
+        }
+        return float.IsPositiveInfinity(best) ? best : Mathf.Sqrt(best);
     }
 
     /// <summary>Tries to spawn one mob or pack (at most <paramref name="capacity"/> mobs). Returns the seconds to wait before the next try.</summary>
     private float TrySpawn(int capacity)
     {
-        viewCamera = settings.avoidCameraView ? Camera.main : null;
-        bool? isDay = DayNightManager.instance != null ? DayNightManager.instance.isDayTime : (bool?)null;
+        // Offline the camera shows what the player sees; in a session (a dedicated server has no camera, a host's shows
+        // only its own player) every player's facing is used instead.
+        bool networked = GameNet.NetAuthority.IsNetworked;
+        viewCamera = settings.avoidCameraView && !networked ? Camera.main : null;
+        avoidPlayerViews = settings.avoidCameraView && networked;
+        RealmPlayers();
+        bool? isDay = WorldTime.IsDayOrNull; // the Day Night Cycle (or the Weather System's hour, or the old Day Night Manager)
 
         for (int attempt = 0; attempt < settings.maxSpawnAttempts; attempt++)
         {
@@ -225,7 +286,7 @@ public class MobSpawner : ChunkSpawnerBase
                 lastRejection = SpawnRejection.Biome;
                 continue;
             }
-            SpawnableMob type = PickType(biome, isDay);
+            SpawnableMob type = PickType(biome, isDay, new Vector3(x, 0f, z));
             if (type == null)
             {
                 lastRejection = SpawnRejection.Biome;
@@ -272,12 +333,12 @@ public class MobSpawner : ChunkSpawnerBase
     }
 
     /// <summary>A weighted pick among the types that may live in <paramref name="biome"/> and still fit their limit.</summary>
-    private SpawnableMob PickType(Biome biome, bool? isDay)
+    private SpawnableMob PickType(Biome biome, bool? isDay, Vector3 at)
     {
         float total = 0f;
         foreach (SpawnableMob type in settings.prefabs)
             if (type != null && CanSpawnType(type))
-                total += type.WeightAt(biome, settings, isDay);
+                total += WorldSpawnHooks.ApplyMobWeight(type, at, type.WeightAt(biome, settings, isDay));
         if (total <= 0f)
             return null;
         float pick = (float)random.NextDouble() * total;
@@ -286,7 +347,7 @@ public class MobSpawner : ChunkSpawnerBase
         {
             if (type == null || !CanSpawnType(type))
                 continue;
-            float w = type.WeightAt(biome, settings, isDay);
+            float w = WorldSpawnHooks.ApplyMobWeight(type, at, type.WeightAt(biome, settings, isDay));
             if (w <= 0f)
                 continue;
             last = type;
@@ -347,16 +408,18 @@ public class MobSpawner : ChunkSpawnerBase
             lastRejection = rejection;
             return false;
         }
-        if (settings.IsInSafeZone(spot) || InRuntimeSafeZone(spot))
+        if (settings.IsInSafeZone(spot) || InRuntimeSafeZone(spot) || WorldAreas.Has(WorldAreaRules.NoMobs, spot.x, spot.z))
             return false;
         if (settings.enablePlayerProximityInfluence)
         {
-            float d = WorldSpawnRegistry.DistanceToNearestPlayer(spot, settings.playerTag, Viewer);
+            float d = DistanceToNearestRealmPlayer(spot);
             float min = Mathf.Max(settings.minDistanceFromPlayer, type.minDistanceFromPlayer);
             if (d < min || (settings.maxDistanceFromPlayer > 0f && d > settings.maxDistanceFromPlayer && !float.IsPositiveInfinity(d)))
                 return false;
         }
         if (viewCamera != null && IsInView(spot))
+            return false;
+        if (avoidPlayerViews && IsInAnyPlayersView(spot))
             return false;
         if (spacing > 0f && AnyMobWithin(spot, spacing))
             return false;
@@ -385,6 +448,30 @@ public class MobSpawner : ChunkSpawnerBase
         return v.z < settings.hiddenSpawnDistance;
     }
 
+    /// <summary>
+    /// Networked stand-in for the camera check: is <paramref name="p"/> within Hidden Spawn Distance in front of any
+    /// player of this realm (within <see cref="PlayerViewHalfAngle"/> of where they face)?
+    /// </summary>
+    private bool IsInAnyPlayersView(Vector3 p)
+    {
+        float range = settings.hiddenSpawnDistance;
+        foreach (Transform t in realmPlayers)
+        {
+            if (t == null)
+                continue;
+            Vector3 d = p - t.position;
+            d.y = 0f;
+            float sqr = d.sqrMagnitude;
+            if (sqr > range * range)
+                continue;
+            Vector3 forward = t.forward;
+            forward.y = 0f;
+            if (sqr < 1e-4f || forward.sqrMagnitude < 1e-4f || Vector3.Angle(forward, d) <= PlayerViewHalfAngle)
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>True when a mob of this or a neighbouring chunk is within <paramref name="radius"/> of <paramref name="p"/>.</summary>
     private bool AnyMobWithin(Vector3 p, float radius)
     {
@@ -410,6 +497,9 @@ public class MobSpawner : ChunkSpawnerBase
     {
         Quaternion rotation = Quaternion.Euler(0f, (float)random.NextDouble() * 360f, 0f);
         GameObject go = Instantiate(type.mobPrefab, position, rotation, container);
+        WorldSpawnHooks.RaiseMobSpawned(go, type, position);
+        // After the hooks (zone strength...), so the first state clients receive is complete. Offline: no change.
+        GameNet.MobNetSpawn.Spawn(go, gameObject.scene);
         var entry = new LiveMob { Go = go, Type = type, Mob = go.GetComponent<Mob>() };
         if (entry.Mob != null)
         {
@@ -442,6 +532,35 @@ public class MobSpawner : ChunkSpawnerBase
                 OnMobGone(live[i]);
     }
 
+    /// <summary>
+    /// Mobs whose type's time or weather rule has ended (Despawn When Unmet: a night mob after sunrise, a storm mob
+    /// once the storm is over) go away without counting as killed, once no player of this realm is within Hidden Spawn
+    /// Distance of them (nobody sees them vanish; a mob fighting a player stays until the fight moves on).
+    /// </summary>
+    private void RemoveOutOfConditions()
+    {
+        if (Time.time < nextConditionCheck)
+            return;
+        nextConditionCheck = Time.time + 2f;
+        float near = Mathf.Max(10f, settings.hiddenSpawnDistance);
+        for (int i = live.Count - 1; i >= 0; i--)
+        {
+            LiveMob m = live[i];
+            SpawnConditions c = m.Type != null ? m.Type.conditions : null;
+            if (m.Go == null || c == null || !c.despawnWhenUnmet || !c.IsUsed)
+                continue;
+            Vector3 p = m.Go.transform.position;
+            if (c.Allows(p) || DistanceToNearestRealmPlayer(p) < near)
+                continue;
+            if (m.Mob != null && m.Handler != null)
+                m.Mob.OnMobDestroyed -= m.Handler;
+            live.RemoveAt(i);
+            WorldSpawnRegistry.MobCount = Mathf.Max(0, WorldSpawnRegistry.MobCount - 1);
+            GameNet.NetSpawn.Destroy(m.Go);
+            Log($"{(m.Type.mobPrefab != null ? m.Type.mobPrefab.name : "mob")} left ({c.Describe()} no longer true)");
+        }
+    }
+
     /// <summary>Removes every mob of the chunk without counting them as killed (they come back when the chunk activates again).</summary>
     private void DespawnAll()
     {
@@ -450,7 +569,7 @@ public class MobSpawner : ChunkSpawnerBase
             if (m.Mob != null && m.Handler != null)
                 m.Mob.OnMobDestroyed -= m.Handler;
             if (m.Go != null)
-                Destroy(m.Go);
+                GameNet.NetSpawn.Destroy(m.Go); // offline Destroy; on a server the mob is despawned for every client
         }
         WorldSpawnRegistry.MobCount = Mathf.Max(0, WorldSpawnRegistry.MobCount - live.Count);
         live.Clear();

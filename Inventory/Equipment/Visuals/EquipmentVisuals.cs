@@ -174,7 +174,7 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
                 entity = CombatEntity.Resolve(gameObject);
             if (entity != null)
             {
-                entity.Damaged += OnDamaged;
+                entity.DamageFeedback += OnDamaged; // raised on every copy (Damaged is not raised on network replicas)
                 subEntity = true;
             }
         }
@@ -196,7 +196,7 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
         if (subEquipment && equipment != null)
             equipment.Changed -= RebuildArmor;
         if (subEntity && entity != null)
-            entity.Damaged -= OnDamaged;
+            entity.DamageFeedback -= OnDamaged;
         subWeapons = subBlock = subEquipment = subEntity = false;
     }
 
@@ -218,7 +218,8 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
             if (Time.frameCount % 15 == 0)
                 Subscribe();
         }
-        if (toggleInput != null && toggleInput.Pressed && (weapons == null || !weapons.InputBlocked))
+        // Only the player controlled from this machine reads the key (a server holds every player).
+        if (toggleInput != null && toggleInput.Pressed && (weapons == null || !weapons.InputBlocked) && GameNet.NetAuthority.IsLocallyControlled(gameObject))
             SetDrawn(!drawn);
         if (drawn && autoSheatheDelay > 0f && Time.time - lastCombatTime > autoSheatheDelay && !InCombatAction())
             SetDrawn(false);

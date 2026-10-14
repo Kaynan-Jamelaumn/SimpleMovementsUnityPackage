@@ -88,7 +88,7 @@ namespace ProceduralDungeon
             if (p.PlayerMovement != null)
                 p.PlayerMovement.VerticalVelocity = 0f;
             if (style == Style.Painting)
-                DungeonMessages.Show("You step through the painting...");
+                DungeonMessages.Show(this, "You step through the painting...");
             return true;
         }
     }

@@ -30,6 +30,11 @@ namespace ProceduralDungeon
             public int PlayableFloors = 2;
             public Action<float, string> Progress;
             public Action<DungeonInstance> Playable;
+            /// <summary>
+            /// A network client's presentation-only copy (see <see cref="BeginReplica"/>): geometry, lights, decoration and
+            /// the visible part of interactive objects; no mobs, no item pickups, no NavMesh, no gameplay decisions.
+            /// </summary>
+            public bool Replica;
         }
 
         private readonly CompiledProfile profile;
@@ -65,6 +70,12 @@ namespace ProceduralDungeon
 
         private BuildSettings B => profile.Build;
 
+        /// <summary>Building a client's presentation-only copy.</summary>
+        private bool Replica => settings != null && settings.Replica;
+
+        /// <summary>Bake NavMeshes (never on a client's copy: mobs only run on the server).</summary>
+        private bool BakeNavMesh => B.bakeNavMesh && !Replica;
+
         private bool Tick()
         {
             if (settings.Immediate)
@@ -97,13 +108,7 @@ namespace ProceduralDungeon
             surfaces = new NavMeshSurface[floors];
             bakes = new AsyncOperation[floors];
             for (int f = 0; f < floors; f++)
-            {
-                var go = new GameObject($"Floor {f} ({layout.Floors[f].Spec.Style})");
-                go.transform.SetParent(root.transform, false);
-                go.transform.localPosition = new Vector3(0f, layout.Floors[f].Spec.BaseY, 0f);
-                go.layer = B.geometryLayer;
-                floorRoots[f] = go.transform;
-            }
+                floorRoots[f] = CreateFloorRoot(f);
             Instance = root.AddComponent<DungeonInstance>();
             Instance.Initialize(layout, profile, floorRoots);
             if (profile.Population.placeholderMobs)
@@ -117,7 +122,7 @@ namespace ProceduralDungeon
                 IEnumerator floorBuild = BuildFloor(f);
                 while (floorBuild.MoveNext())
                     yield return floorBuild.Current;
-                if (B.bakeNavMesh)
+                if (BakeNavMesh)
                     StartBake(f);
                 Report($"Floor {f} built");
 
@@ -142,6 +147,70 @@ namespace ProceduralDungeon
             }
             Report("Done");
             Instance.MarkFullyBuilt();
+        }
+
+        // ------------------------------------------------------------------ client copies (network sessions)
+
+        /// <summary>
+        /// Starts a network client's presentation-only copy (see <see cref="Settings.Replica"/>): the dungeon root and its
+        /// <see cref="DungeonInstance"/> (with <see cref="DungeonInstance.IsReplica"/>), but no floor yet. The layout holds
+        /// the floors received so far; <see cref="BuildReplicaFloor"/> builds each one as it arrives, in order.
+        /// </summary>
+        public DungeonInstance BeginReplica(Transform parent, int floorCount, string label, Settings s)
+        {
+            settings = s ?? new Settings();
+            settings.Replica = true;
+            watch.Restart();
+            floorCount = Mathf.Max(1, floorCount);
+            stepsTotal = floorCount;
+            root = new GameObject(string.IsNullOrEmpty(label) ? "Dungeon" : label);
+            root.transform.SetParent(parent, false);
+            floorRoots = new Transform[floorCount];
+            surfaces = new NavMeshSurface[floorCount];
+            bakes = new AsyncOperation[floorCount];
+            Instance = root.AddComponent<DungeonInstance>();
+            Instance.InitializeReplica(layout, profile, floorRoots);
+            AddStreamer();
+            return Instance;
+        }
+
+        /// <summary>Hands the builder the mesh data of floor <paramref name="f"/> (client copies: meshed when the floor arrives).</summary>
+        public void SetFloorMeshes(int f, FloorMeshData data)
+        {
+            while (meshes.Count <= f)
+                meshes.Add(null);
+            meshes[f] = data;
+        }
+
+        /// <summary>Is floor <paramref name="f"/> of a client's copy built?</summary>
+        public bool IsFloorBuilt(int f) => floorRoots != null && f >= 0 && f < floorRoots.Length && floorRoots[f] != null && Instance != null && Instance.IsFloorPopulated(f);
+
+        /// <summary>
+        /// Builds floor <paramref name="f"/> of a client's copy (its layout and meshes must be there): geometry, links,
+        /// rooms, doors and the placements clients see; the server-only components are switched off.
+        /// </summary>
+        public IEnumerator BuildReplicaFloor(int f)
+        {
+            if (!Replica || root == null || f < 0 || f >= floorRoots.Length || f >= layout.Floors.Count || f >= meshes.Count || meshes[f] == null)
+                yield break;
+            if (floorRoots[f] == null)
+                floorRoots[f] = CreateFloorRoot(f);
+            watch.Restart();
+            IEnumerator floorBuild = BuildFloor(f);
+            while (floorBuild.MoveNext())
+                yield return floorBuild.Current;
+            DungeonNet.PrepareReplica(floorRoots[f].gameObject);
+            Instance.MarkFloorPopulated(f);
+            Report($"Floor {f} built");
+        }
+
+        private Transform CreateFloorRoot(int f)
+        {
+            var go = new GameObject($"Floor {f} ({layout.Floors[f].Spec.Style})");
+            go.transform.SetParent(root.transform, false);
+            go.transform.localPosition = new Vector3(0f, layout.Floors[f].Spec.BaseY, 0f);
+            go.layer = B.geometryLayer;
+            return go.transform;
         }
 
         /// <summary>Waits for the NavMesh of floors first..last and places their mobs.</summary>
@@ -202,7 +271,7 @@ namespace ProceduralDungeon
                 VerticalLink vl = layout.Links[link.LinkId];
                 string name = link.NavLink ? $"{vl.Kind} {vl.Id} (from floor {vl.UpperFloor})" : $"{vl.Kind} {vl.Id} (top)";
                 GameObject go = CreateMeshObject(name, Child(fr, "Links"), link.Visual, link.Collider);
-                if (B.bakeNavMesh && link.NavLink)
+                if (BakeNavMesh && link.NavLink)
                 {
                     var nl = go.AddComponent<NavMeshLink>();
                     nl.agentTypeID = B.navMeshAgentTypeId;
@@ -213,7 +282,10 @@ namespace ProceduralDungeon
                     nl.UpdateLink();
                 }
                 if (vl.Kind == LinkKind.Climb)
+                {
                     AddClimb(go, link);
+                    DungeonNetIds.Assign(Instance, go, DungeonNetIds.ForLink(vl.Id), f);
+                }
                 if (Tick())
                     yield return null;
             }
@@ -466,6 +538,7 @@ namespace ProceduralDungeon
                         secret = door.AddComponent<DungeonSecretDoor>();
                     secret.searchable = !leverDoors.Contains(i);
                     Instance.RegisterSecretDoor(floor.Index, i, secret);
+                    DungeonNetIds.Assign(Instance, door, DungeonNetIds.ForSecretDoor(floor.Index, i), floor.Index);
                     // (Explicit null checks: in the editor GetComponent returns a "fake null" that ?? doesn't see.)
                     var modifier = door.GetComponent<NavMeshModifier>();
                     if (modifier == null)
@@ -600,6 +673,8 @@ namespace ProceduralDungeon
             GameObject go = null;
             string entryName = p.Kind.ToString();
             DungeonTheme theme = profile.Theme;
+            if (Replica && !BuiltOnClients(p))
+                return null;
 
             switch (p.Kind)
             {
@@ -738,6 +813,8 @@ namespace ProceduralDungeon
                     LootInfo e = profile.Loot[p.Entry];
                     entryName = e.Name;
                     prefab = e.Prefab;
+                    if (DungeonNet.ServerSession && IsItemPickup(prefab))
+                        return SpawnNetworkPickup(p, index, parent, local, rot, prefab, entryName);
                     go = prefab != null ? pool.Get(prefab, parent, local, rot) : Primitive(e.Placeholder, e.Name, Color.white, 0f, e.Tier, parent, local, rot);
                     break;
                 }
@@ -764,6 +841,54 @@ namespace ProceduralDungeon
             Tag(go, p, index, entryName, prefab);
             if (p.Dormant)
                 go.SetActive(false);   // revealed by its room's event
+            return go;
+        }
+
+        /// <summary>
+        /// Does a client build this placement? Not mobs (network-spawned by the server), item pickups (networked world
+        /// items) or room event controllers (the server runs the fights and replicates gates and reveals).
+        /// </summary>
+        public static bool BuiltOnClients(Placement p, CompiledProfile profile)
+        {
+            switch (p.Kind)
+            {
+                case PlacementKind.Mob:
+                case PlacementKind.Boss:
+                case PlacementKind.RoomController:
+                    return false;
+                case PlacementKind.Loot:
+                    return profile == null || p.Entry < 0 || p.Entry >= profile.Loot.Count || !IsItemPickup(profile.Loot[p.Entry].Prefab);
+                default:
+                    return true;
+            }
+        }
+
+        private bool BuiltOnClients(Placement p) => BuiltOnClients(p, profile);
+
+        /// <summary>A loot prefab that is an item lying on the ground (rather than a container): networked as a world item.</summary>
+        public static bool IsItemPickup(GameObject prefab) =>
+            prefab != null && prefab.GetComponentInChildren<ItemPickable>(true) != null;
+
+        /// <summary>
+        /// Server: an item pickup placed by the layout becomes a networked world item at the scene root of the dungeon's
+        /// scene (Fish-Net spawns root objects only). A dormant one is kept back until its room's event reveals it.
+        /// </summary>
+        private GameObject SpawnNetworkPickup(Placement p, int index, Transform parent, Vector3 local, Quaternion rot, GameObject prefab, string entryName)
+        {
+            Vector3 world = parent.TransformPoint(local);
+            Quaternion worldRot = parent.rotation * rot;
+            GameObject go = WorldItems.InstantiatePickable(prefab, world, worldRot, out bool carrier);
+            if (go == null)
+                return null;
+            if (carrier)
+                WorldItems.Prepare(go);
+            if (go.transform.parent == null && root.scene.IsValid() && go.scene != root.scene)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, root.scene);
+            Tag(go, p, index, entryName, null);
+            if (p.Dormant)
+                go.SetActive(false);   // published when its room's event reveals it
+            else
+                DungeonNet.SpawnContent(Instance, go, p.Floor, false);   // once its floor is sent to the run's clients
             return go;
         }
 
@@ -900,7 +1025,7 @@ namespace ProceduralDungeon
             tag.area = p.Area;
             tag.tier = p.Tier;
             tag.group = p.Group;
-            tag.placementIndex = index;
+            tag.placementIndex = layout.PlacementId(index);
             tag.entryName = entryName;
             tag.dormant = p.Dormant;
             tag.wave = p.Wave;
@@ -909,6 +1034,9 @@ namespace ProceduralDungeon
             tag.order = p.Order;
             tag.SourcePrefab = prefab;
             Instance.Register(tag);
+            // Interactive objects get a network id (mobs and pickups are network objects of their own).
+            if (p.Kind != PlacementKind.Mob && p.Kind != PlacementKind.Boss && go.transform.IsChildOf(root.transform))
+                DungeonNetIds.Assign(Instance, go, DungeonNetIds.ForPlacement(tag.placementIndex), p.Floor);
         }
 
         private IEnumerator SpawnMobs(int f)
@@ -932,6 +1060,12 @@ namespace ProceduralDungeon
         /// <summary>Creates one mob for a placement (also used by the respawn director).</summary>
         internal GameObject SpawnMob(EncounterInfo e, Placement p, int index, Transform parent, float cs)
         {
+            // Mobs exist on the server (or offline) only; clients get the networked mob. Stand-ins have no network
+            // identity, so in a session nobody but the server would see them: they are left out.
+            if (Replica || !GameNet.NetSpawn.ShouldSpawnHere)
+                return null;
+            if (!(e.HasPrefab && e.Prefab != null) && GameNet.NetAuthority.IsNetworked)
+                return null;
             Vector3 world = parent.parent.TransformPoint(new Vector3(p.Cell.x * cs, p.Height, p.Cell.y * cs));
             if (B.bakeNavMesh && NavMesh.SamplePosition(world, out NavMeshHit hit, 2.5f, NavMesh.AllAreas))
                 world = hit.position;
@@ -966,7 +1100,9 @@ namespace ProceduralDungeon
                     break;
             }
             if (p.Dormant)
-                go.SetActive(false);   // an ambush wave: revealed by its room's event
+                go.SetActive(false);   // an ambush wave: revealed (and, on a server, network-spawned) by its room's event
+            else
+                DungeonNet.SpawnContent(Instance, go, p.Floor, true);   // on a server: once its floor is sent to the run's clients
             return go;
         }
 
@@ -1008,9 +1144,23 @@ namespace ProceduralDungeon
         {
             // A cancelled build may still be cooking meshes that are destroyed below.
             colliderBakes.Cancel();
+            // Network-spawned mobs and item pickups live outside the dungeon's hierarchy (server only).
+            if (Instance != null)
+                Instance.DespawnDetached();
             foreach (GameObject go in pooledInstances)
-                if (go != null)
-                    pool.Release(go);
+            {
+                if (go == null)
+                    continue;
+                // A pooled object keeps no network identity: it may come back as something else.
+                DungeonElement element = go.GetComponent<DungeonElement>();
+                if (element != null)
+                {
+                    element.Id = -1;
+                    element.Dungeon = null;
+                    element.ResetStates();
+                }
+                pool.Release(go);
+            }
             pooledInstances.Clear();
             if (root != null)
                 DungeonMaterials.Destroy(root);

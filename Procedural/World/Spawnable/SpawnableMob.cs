@@ -40,6 +40,11 @@ public class SpawnableMob
     [Tooltip("Steepest ground this mob spawns on (degrees); the lower of this and Mob Settings' Max Slope applies.")]
     [Range(0f, 90f)] public float maxSpawnSlope = 45f;
 
+    [Header("Zones")]
+    [Tooltip("In which zones of the world this mob may spawn (the Hub World's rings around the city: Safe Zone, " +
+             "Frontier, Dangerous Zone...). Off = any zone.")]
+    public ZoneFilter zones = new ZoneFilter();
+
     [Header("Spawn Weighting and Rarity")]
     [Tooltip("Relative chance of this type: 2 = twice as likely as a type with 1.")]
     [Min(0f)] public float spawnWeight = 1f;
@@ -79,6 +84,12 @@ public class SpawnableMob
 
     [Tooltip("Active at night (with Mob Settings > Enable Time Based Spawning): rarer by day.")]
     public bool isNocturnal = false;
+
+    [Header("Time and Weather")]
+    [Tooltip("When this mob may spawn: only by day or at night, between some hours, only in some weathers (a frost wolf " +
+             "in snow and blizzards) or never in some. The weather is the weather where the mob would spawn. Default: any " +
+             "time, any weather. (Is Diurnal / Is Nocturnal above only make the mob rarer at the other time; this is a hard rule.)")]
+    public SpawnConditions conditions = new SpawnConditions();
 
     [Header("Spawn Restrictions")]
     [Tooltip("This mob never spawns closer than this to the player (world units); the larger of this and Mob Settings' Min Distance From Player applies.")]
@@ -121,6 +132,8 @@ public class SpawnableMob
         maxInstances = Mathf.Max(0, maxInstances);
         spawnWeight = Mathf.Max(0f, spawnWeight);
         maxSpawnTime = Mathf.Max(minSpawnTime, maxSpawnTime);
+        zones?.Validate();
+        conditions?.Validate();
         if (limitHeight && minPreferredHeight > maxPreferredHeight)
         {
             float t = minPreferredHeight;

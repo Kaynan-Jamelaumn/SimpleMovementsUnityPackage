@@ -17,9 +17,10 @@ public abstract class BaseStatusController : MonoBehaviour
 
 
     /// <summary>
-    /// Handles the death of the entity by destroying the game object.
+    /// Handles the death of the entity by destroying the game object (network-despawned when it is a networked object
+    /// on a server; a client never destroys a networked object itself).
     /// </summary>
-    protected virtual void HandleDeath() => Destroy(gameObject);
+    protected virtual void HandleDeath() => GameNet.NetSpawn.Destroy(gameObject);
 
 
 

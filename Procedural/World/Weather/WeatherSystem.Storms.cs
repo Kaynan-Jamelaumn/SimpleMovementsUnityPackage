@@ -70,6 +70,30 @@ public partial class WeatherSystem
         LightningStruck?.Invoke(ground, distance);
     }
 
+    /// <summary>
+    /// A lightning strike at <paramref name="ground"/> chosen by the game (the Player Weather Effects' lightning hits a
+    /// player): flash, bolt and thunder on this machine when it shows weather effects, and <see cref="LightningStruck"/>.
+    /// </summary>
+    public void StrikeLightningAt(Vector3 ground)
+    {
+        Transform follow = Viewer;
+        float distance = follow != null ? Vector3.Distance(follow.position, ground) : 0f;
+        if (captured)
+        {
+            flashStrength = Mathf.Clamp01(1.4f / (1f + distance / 250f));
+            flashTime = Time.time;
+            if (lightningBolts && !SuppressEffects)
+                ShowBolt(ground);
+            if (thunderAudio != null && thunderClips != null && thunderClips.Length > 0)
+            {
+                AudioClip clip = thunderClips[Random.Range(0, thunderClips.Length)];
+                if (clip != null)
+                    StartCoroutine(Thunder(clip, Mathf.Clamp(distance / 343f, 0.05f, 4f), volume * Mathf.Clamp01(1.2f / (1f + distance / 350f))));
+            }
+        }
+        LightningStruck?.Invoke(ground, distance);
+    }
+
     /// <summary>The current lightning flash (0-1): a bright flicker fading within half a second.</summary>
     private float LightningFlash(float dt)
     {
@@ -276,6 +300,10 @@ public partial class WeatherSystem
         {
             Rigidbody body = TornadoHits[i].attachedRigidbody;
             if (body == null || body.isKinematic)
+                continue;
+            // The tornado is a local effect around this machine's viewer: in a network session it never pushes an object
+            // whose physics another machine (the server) decides.
+            if (!GameNet.NetAuthority.RunsRules(body.gameObject))
                 continue;
             Vector3 offset = body.worldCenterOfMass - center;
             Vector3 flat = new Vector3(offset.x, 0f, offset.z);

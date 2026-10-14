@@ -64,7 +64,7 @@ namespace ProceduralDungeon
                 Solve();
                 return;
             }
-            DungeonMessages.Show("The floor plates glow in turn... remember the order.");
+            DungeonMessages.Show(this, "The floor plates glow in turn... remember the order.");
             StartCoroutine(ShowOrder());
         }
 
@@ -100,7 +100,7 @@ namespace ProceduralDungeon
                 return;   // stepping back onto a plate already done
             if (wrongDamage > 0f && who != null)
                 who.ApplyDamage(new DamageInfo { amount = wrongDamage, target = who, point = plate.transform.position, direction = Vector3.up, type = DamageType.True, element = ElementType.Lightning });
-            DungeonMessages.Show("Wrong plate! The order shows again.");
+            DungeonMessages.Show(this, "Wrong plate! The order shows again.");
             StartCoroutine(ShowOrder());
         }
 
@@ -118,7 +118,7 @@ namespace ProceduralDungeon
                 dungeon.RaiseRoomCompleted(floor, area);
             }
             if (plates.Count >= 2)
-                DungeonMessages.Show("The puzzle is solved - something appears!", true);
+                DungeonMessages.Show(this, "The puzzle is solved - something appears!", true);
             Solved?.Invoke(this);
             AnySolved?.Invoke(this);
         }

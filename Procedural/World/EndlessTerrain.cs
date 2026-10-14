@@ -10,6 +10,13 @@ using static DataStructure;
 /// was (same heights, water, textures and objects), and a small cache of recently unloaded chunks' data lets
 /// it come back without being generated again.
 /// </summary>
+/// <remarks>
+/// Several viewers: <see cref="SetViewers"/> streams chunks around a set of transforms at once - on a network server
+/// every player out in the world needs ground, colliders and NavMesh under them. A chunk exists while it is within
+/// reach of any viewer and is generated, shown and given its NavMesh by its distance to the nearest one; its level of
+/// detail follows the first (primary) viewer, the one this machine looks through. With a single viewer (the
+/// <see cref="viewer"/> field, single player) everything behaves exactly as with one viewer before.
+/// </remarks>
 /// <example>
 /// Attach the `EndlessTerrain` script to an empty GameObject.
 /// Assign a `TerrainGenerator` script to the scene and link it to the EndlessTerrain.
@@ -18,14 +25,51 @@ using static DataStructure;
 public partial class EndlessTerrain : MonoBehaviour
 {
     [Header("Viewer")]
-    [Tooltip("REQUIRED. The object whose position decides which chunks exist - usually the player (or the camera following it). Nothing is generated while this is empty. Also the fallback 'player' for the portal and mob spawners when nothing is tagged Player.")]
+    [Tooltip("REQUIRED. The object whose position decides which chunks exist - usually the player (or the camera following it). Nothing is generated while this is empty. Also the fallback 'player' for the portal and mob spawners when nothing is tagged Player. In a network session the hub world sets it (and the other viewers, see SetViewers) every frame.")]
     public Transform viewer;
 
-    /// <summary>The viewer's position in world space (x, z), ignoring height - read by the chunks for distances.</summary>
+    /// <summary>The (primary) viewer's position in world space (x, z), ignoring height - read by the chunks for distances.</summary>
     public static Vector2 viewerPosition;
+
+    /// <summary>
+    /// Raised on the machine that decides (offline, or the server) when a placed object is removed for good
+    /// (<see cref="RemovePlacedObject"/>, <see cref="RemovePlacedObjectById"/>): the terrain and the object's id. The
+    /// network relay sends it to the clients.
+    /// </summary>
+    public static event System.Action<EndlessTerrain, PlacedObjectId> PlacedObjectRemoved;
+
+    /// <summary>Raised when the whole set of removed objects is replaced (<see cref="SetRemovedObjects"/>, e.g. a save loaded).</summary>
+    public static event System.Action<EndlessTerrain> RemovedObjectsReplaced;
+
+    static readonly List<EndlessTerrain> activeTerrains = new List<EndlessTerrain>();
+
+    /// <summary>The enabled endless terrains (normally one: the World's).</summary>
+    public static IReadOnlyList<EndlessTerrain> Active => activeTerrains;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics()
+    {
+        activeTerrains.Clear();
+        PlacedObjectRemoved = null;
+        RemovedObjectsReplaced = null;
+        viewerPosition = Vector2.zero;
+    }
 
     // Found in the scene at Start (there must be exactly one TerrainGenerator).
     static TerrainGenerator mapGenerator;
+    // This terrain's generator (the same one, kept per instance for its world seed).
+    TerrainGenerator generator;
+
+    // Viewers given with SetViewers (no nulls, no duplicates; the first is also `viewer`). They are used while `viewer`
+    // is still the one they set: code that assigns `viewer` directly takes back the single-viewer behaviour.
+    readonly List<Transform> setViewers = new List<Transform>();
+    Transform setViewersPrimary;
+    // The viewers streamed around this frame, the primary first.
+    readonly List<Transform> currentViewers = new List<Transform>();
+    // Their positions (x, z). Read by worker threads for job priorities: the array is only ever replaced by a larger
+    // one and readers clamp the count to its length, so a racing read sees a slightly stale position at worst.
+    Vector2[] viewerPoints = new Vector2[4];
+    volatile int viewerPointCount;
 
     // Read from the TerrainGenerator at Start.
     float scaleFactor = 1.0f;
@@ -97,6 +141,46 @@ public partial class EndlessTerrain : MonoBehaviour
     /// <summary>Chunks currently loaded (generated or being generated), visible or hidden.</summary>
     public int LoadedChunkCount => terrainChunkDictionary.Count;
 
+    /// <summary>True once the terrain has found its TerrainGenerator (from Start on).</summary>
+    public bool IsReady => generator != null;
+
+    /// <summary>The world seed this terrain generates from (the TerrainGenerator's Voronoi Seed); 0 before <see cref="IsReady"/>.</summary>
+    public int WorldSeed => generator != null ? generator.VoronoiSeed : 0;
+
+    /// <summary>The transforms chunks were streamed around in the last update, the primary viewer first.</summary>
+    public IReadOnlyList<Transform> Viewers => currentViewers;
+
+    /// <summary>
+    /// Streams chunks around every transform in <paramref name="transforms"/> (nulls and duplicates are skipped). The
+    /// first becomes <see cref="viewer"/> - the primary viewer, whose distance decides the meshes' level of detail and
+    /// whom weather, spawners and tools follow; chunks are created, kept, shown and given NavMesh by their distance to
+    /// the nearest viewer. Call it whenever the set changes (calling it every frame with a reused list is fine: nothing
+    /// is allocated). An empty list clears the viewers (nothing is streamed, as with an empty <see cref="viewer"/>).
+    /// Assigning <see cref="viewer"/> directly afterwards returns to the single viewer.
+    /// </summary>
+    public void SetViewers(IReadOnlyList<Transform> transforms)
+    {
+        setViewers.Clear();
+        if (transforms != null)
+        {
+            for (int i = 0; i < transforms.Count; i++)
+            {
+                Transform t = transforms[i];
+                if (t != null && !setViewers.Contains(t))
+                    setViewers.Add(t);
+            }
+        }
+        viewer = setViewers.Count > 0 ? setViewers[0] : null;
+        setViewersPrimary = viewer;
+    }
+
+    /// <summary>Goes back to the single <see cref="viewer"/> (which is kept), forgetting the other viewers given with <see cref="SetViewers"/>.</summary>
+    public void ClearExtraViewers()
+    {
+        setViewers.Clear();
+        setViewersPrimary = null;
+    }
+
     /// <summary>The portal settings every chunk's PortalSpawner uses.</summary>
     public PortalSettings Portals => portalSettings;
 
@@ -130,6 +214,7 @@ public partial class EndlessTerrain : MonoBehaviour
             return;
         }
 
+        generator = mapGenerator;
         chunkSize = mapGenerator.ChunkSize - 1;
 
         // Get scaleFactor and ensure it's not 0
@@ -146,12 +231,98 @@ public partial class EndlessTerrain : MonoBehaviour
             Debug.Log($"EndlessTerrain initialized - ChunkSize: {chunkSize}, ScaleFactor: {scaleFactor}, MaxViewDistance: {maxViewDst}");
     }
 
+    void OnEnable()
+    {
+        if (!activeTerrains.Contains(this))
+            activeTerrains.Add(this);
+    }
+
+    void OnDisable()
+    {
+        activeTerrains.Remove(this);
+    }
+
     void Update()
     {
-        if (mapGenerator == null || viewer == null) return;
+        if (mapGenerator == null || !CollectViewers()) return;
 
-        viewerPosition = new Vector2(viewer.position.x, viewer.position.z);
         UpdateVisibleChunks();
+    }
+
+    /// <summary>
+    /// Gathers this frame's viewers (<see cref="viewer"/> first, then the other ones given with <see cref="SetViewers"/>)
+    /// and their positions. False when there is none - nothing is updated then, as with an empty viewer before.
+    /// </summary>
+    bool CollectViewers()
+    {
+        currentViewers.Clear();
+        if (viewer != null)
+            currentViewers.Add(viewer);
+        if (setViewers.Count > 0)
+        {
+            if (viewer != setViewersPrimary)
+            {
+                // Something assigned `viewer` directly: back to the single viewer.
+                setViewers.Clear();
+                setViewersPrimary = null;
+            }
+            else
+            {
+                for (int i = 0; i < setViewers.Count; i++)
+                {
+                    Transform t = setViewers[i];
+                    if (t != null && t != viewer && !currentViewers.Contains(t))
+                        currentViewers.Add(t);
+                }
+            }
+        }
+
+        int count = currentViewers.Count;
+        if (count == 0)
+        {
+            viewerPointCount = 0;
+            return false;
+        }
+        if (viewerPoints.Length < count)
+        {
+            // Filled before it is published, so worker threads never see an empty slot.
+            var larger = new Vector2[Mathf.NextPowerOfTwo(count)];
+            System.Array.Copy(viewerPoints, larger, viewerPoints.Length);
+            for (int i = 0; i < count; i++)
+                larger[i] = Flat(currentViewers[i].position);
+            viewerPoints = larger;
+        }
+        else
+        {
+            for (int i = 0; i < count; i++)
+                viewerPoints[i] = Flat(currentViewers[i].position);
+        }
+        viewerPointCount = count;
+        viewerPosition = viewerPoints[0];
+        return true;
+    }
+
+    static Vector2 Flat(Vector3 position) => new Vector2(position.x, position.z);
+
+    /// <summary>
+    /// Distance from the nearest viewer to the area min..max (thread-safe: used as job priorities). Before the first
+    /// update it measures from <see cref="viewerPosition"/>, as before.
+    /// </summary>
+    internal float DistanceToNearestViewer(Vector2 min, Vector2 max)
+    {
+        Vector2[] points = viewerPoints;
+        int count = viewerPointCount;
+        if (count <= 0)
+            return GameNet.WorldChunkMath.DistanceToRect(viewerPosition, min, max);
+        return GameNet.WorldChunkMath.NearestDistanceToRect(points, count, min, max);
+    }
+
+    /// <summary>Distance from the primary viewer (the one this machine looks through) to the area min..max.</summary>
+    internal float DistanceToPrimaryViewer(Vector2 min, Vector2 max)
+    {
+        Vector2[] points = viewerPoints;
+        Vector2 primary = viewerPointCount > 0 && points.Length > 0 ? points[0] : viewerPosition;
+        return GameNet.WorldChunkMath.DistanceToRect(primary, min, max);
     }
 
     /// <summary>World units between chunk origins.</summary>
@@ -164,29 +335,34 @@ public partial class EndlessTerrain : MonoBehaviour
     float UnloadDistance => Mathf.Max(unloadDistance > 0f ? unloadDistance : maxViewDst + ChunkWorldSize, CreateDistance + 1f);
 
     /// <summary>
-    /// Creates the chunks that came within reach (nearest first, so they are generated in that order too), updates
-    /// every loaded chunk (visibility, level of detail, collider, NavMesh), and destroys the ones far away.
+    /// Creates the chunks that came within reach of a viewer (the primary viewer's first, each viewer's nearest first,
+    /// so they are generated in that order too), updates every loaded chunk (visibility, level of detail, collider,
+    /// NavMesh), and destroys the ones far from every viewer.
     /// </summary>
     void UpdateVisibleChunks()
     {
         float size = ChunkWorldSize;
-        // The chunk under the viewer: chunk (x, y) covers [x, x + 1) x [y, y + 1) chunk sizes.
-        int currentChunkCoordX = Mathf.FloorToInt(viewerPosition.x / size);
-        int currentChunkCoordY = Mathf.FloorToInt(viewerPosition.y / size);
-
         int range = Mathf.CeilToInt(CreateDistance / size);
         if (shouldHaveMaxChunkPerSide)
             range = Mathf.Min(range, Mathf.Max(0, maxChunksPerSide));
         UpdateOffsets(range);
 
+        Vector2[] points = viewerPoints;
+        int viewerCount = Mathf.Min(viewerPointCount, points.Length);
         float createDistance = CreateDistance;
-        foreach (Vector2Int offset in offsets)
+        for (int v = 0; v < viewerCount; v++)
         {
-            Vector2 coord = new Vector2(currentChunkCoordX + offset.x, currentChunkCoordY + offset.y);
-            if (terrainChunkDictionary.ContainsKey(coord))
-                continue;
-            if (DistanceToChunk(coord) <= createDistance)
-                CreateNewChunk(coord);
+            // The chunk under the viewer: chunk (x, y) covers [x, x + 1) x [y, y + 1) chunk sizes.
+            Vector2 point = points[v];
+            Vector2Int center = GameNet.WorldChunkMath.ChunkCoordOf(point, size);
+            foreach (Vector2Int offset in offsets)
+            {
+                Vector2 coord = new Vector2(center.x + offset.x, center.y + offset.y);
+                if (terrainChunkDictionary.ContainsKey(coord))
+                    continue;
+                if (DistanceToChunk(coord, point) <= createDistance)
+                    CreateNewChunk(coord);
+            }
         }
 
         float unloadDist = UnloadDistance;
@@ -195,9 +371,7 @@ public partial class EndlessTerrain : MonoBehaviour
         terrainChunksVisibleLastUpdate.Clear();
         foreach (TerrainChunk chunk in chunkScratch)
         {
-            Vector2 coord = chunk.Coord;
-            bool inRange = Mathf.Abs(coord.x - currentChunkCoordX) <= range && Mathf.Abs(coord.y - currentChunkCoordY) <= range;
-            if (!inRange || chunk.DistanceToViewer() > unloadDist)
+            if (!IsWithinReachOfAViewer(chunk, points, viewerCount, size, range, unloadDist))
             {
                 UnloadChunk(chunk);
                 continue;
@@ -207,6 +381,19 @@ public partial class EndlessTerrain : MonoBehaviour
             if (chunk.IsVisible())
                 terrainChunksVisibleLastUpdate.Add(chunk);
         }
+    }
+
+    /// <summary>A chunk stays loaded while some viewer has it within its square of chunks and within the unload distance.</summary>
+    static bool IsWithinReachOfAViewer(TerrainChunk chunk, Vector2[] points, int viewerCount, float size, int range, float unloadDist)
+    {
+        Vector2 coord = chunk.Coord;
+        for (int v = 0; v < viewerCount; v++)
+        {
+            Vector2Int center = GameNet.WorldChunkMath.ChunkCoordOf(points[v], size);
+            if (GameNet.WorldChunkMath.WithinChunkRange(coord, center, range) && chunk.DistanceTo(points[v]) <= unloadDist)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Chunk offsets around the viewer's chunk, nearest first (rebuilt only when the range changes).</summary>
@@ -222,14 +409,12 @@ public partial class EndlessTerrain : MonoBehaviour
         offsets.Sort((a, b) => (a.x * a.x + a.y * a.y).CompareTo(b.x * b.x + b.y * b.y));
     }
 
-    /// <summary>Distance from the viewer to the nearest point of a chunk.</summary>
-    float DistanceToChunk(Vector2 coord)
+    /// <summary>Distance from a viewer at <paramref name="point"/> to the nearest point of a chunk.</summary>
+    float DistanceToChunk(Vector2 coord, Vector2 point)
     {
         float size = ChunkWorldSize;
         Vector2 min = coord * size;
-        float dx = Mathf.Max(0f, Mathf.Max(min.x - viewerPosition.x, viewerPosition.x - (min.x + size)));
-        float dy = Mathf.Max(0f, Mathf.Max(min.y - viewerPosition.y, viewerPosition.y - (min.y + size)));
-        return Mathf.Sqrt(dx * dx + dy * dy);
+        return GameNet.WorldChunkMath.DistanceToRect(point, min, min + Vector2.one * size);
     }
 
     TerrainChunk CreateNewChunk(Vector2 coord)
@@ -318,21 +503,74 @@ public partial class EndlessTerrain : MonoBehaviour
     /// generated again. Save <see cref="RemovedObjects"/> with your game and give it back with
     /// <see cref="SetRemovedObjects"/> to keep them gone across sessions. False if it isn't a placed object.
     /// </summary>
+    /// <remarks>
+    /// The machine that decides does it: offline this one, in a network session the server - every client generates the
+    /// same objects with the same ids (<see cref="PlacedObjectId"/>) and the network relay removes the object there
+    /// too (<see cref="PlacedObjectRemoved"/>). On a network client this refuses (false): the server's removals arrive
+    /// by themselves.
+    /// </remarks>
     public bool RemovePlacedObject(GameObject placedObject)
     {
-        if (placedObject == null)
+        if (placedObject == null || GameNet.NetAuthority.IsClientOnly)
             return false;
         foreach (TerrainChunk chunk in terrainChunkDictionary.Values)
         {
             if (chunk.TryGetObjectIndex(placedObject, out int index))
             {
-                removedObjects.Add(new PlacedObjectId((int)chunk.Coord.x, (int)chunk.Coord.y, index));
+                var id = new PlacedObjectId((int)chunk.Coord.x, (int)chunk.Coord.y, index);
+                removedObjects.Add(id);
                 chunk.ForgetObject(index);
                 Destroy(placedObject);
+                PlacedObjectRemoved?.Invoke(this, id);
                 return true;
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Removes a placed object by its id, whether its chunk is loaded or not (if loaded, the object is destroyed; either
+    /// way it is not created again). Same rules as <see cref="RemovePlacedObject"/>: false on a network client, or when
+    /// it was already removed.
+    /// </summary>
+    public bool RemovePlacedObjectById(PlacedObjectId id)
+    {
+        if (GameNet.NetAuthority.IsClientOnly || id.Index < 0 || !removedObjects.Add(id))
+            return false;
+        DestroyLoadedPlacedObject(id);
+        PlacedObjectRemoved?.Invoke(this, id);
+        return true;
+    }
+
+    /// <summary>
+    /// Makes this terrain's removed objects exactly <paramref name="ids"/> - the server's set, applied on a network client
+    /// by the relay. Newly removed objects that are loaded are destroyed; objects no longer in the set come back the next
+    /// time their chunk is generated (as with <see cref="SetRemovedObjects"/>).
+    /// </summary>
+    public void SyncRemovedObjects(IReadOnlyList<PlacedObjectId> ids)
+    {
+        syncScratch.Clear();
+        if (ids != null)
+            for (int i = 0; i < ids.Count; i++)
+                syncScratch.Add(ids[i]);
+        removedObjects.RemoveWhere(id => !syncScratch.Contains(id));
+        foreach (PlacedObjectId id in syncScratch)
+            if (removedObjects.Add(id))
+                DestroyLoadedPlacedObject(id);
+        syncScratch.Clear();
+    }
+
+    readonly HashSet<PlacedObjectId> syncScratch = new HashSet<PlacedObjectId>();
+
+    /// <summary>Destroys the object of a loaded chunk with this id (also while the chunk's objects are still being created).</summary>
+    void DestroyLoadedPlacedObject(PlacedObjectId id)
+    {
+        if (terrainChunkDictionary.TryGetValue(new Vector2(id.ChunkX, id.ChunkY), out TerrainChunk chunk))
+        {
+            GameObject placed = chunk.TakeObject(id.Index);
+            if (placed != null)
+                Destroy(placed);
+        }
     }
 
     /// <summary>The identity of a placed object (false if it isn't one), e.g. to store per-object state.</summary>
@@ -355,13 +593,14 @@ public partial class EndlessTerrain : MonoBehaviour
     /// <summary>Placed objects removed with <see cref="RemovePlacedObject"/> (for saving).</summary>
     public IReadOnlyCollection<PlacedObjectId> RemovedObjects => removedObjects;
 
-    /// <summary>Restores removed objects (from a save). Affects chunks generated from now on.</summary>
+    /// <summary>Restores removed objects (from a save). Affects chunks generated from now on. In a network session only the server's call counts (clients get the server's set).</summary>
     public void SetRemovedObjects(IEnumerable<PlacedObjectId> ids)
     {
         removedObjects.Clear();
         if (ids != null)
             foreach (PlacedObjectId id in ids)
                 removedObjects.Add(id);
+        RemovedObjectsReplaced?.Invoke(this);
     }
 
     internal bool IsRemoved(Vector2 coord, int index)

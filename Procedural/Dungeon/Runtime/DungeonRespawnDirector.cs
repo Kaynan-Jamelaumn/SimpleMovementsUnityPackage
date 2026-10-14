@@ -87,6 +87,8 @@ namespace ProceduralDungeon
 
         private void Respawn(DungeonInstance d, Placement p)
         {
+            if (d.IsReplica || !GameNet.NetSpawn.ShouldSpawnHere)
+                return;   // mobs are the server's
             if (p.Entry < 0 || p.Entry >= d.Profile.Encounters.Count)
                 return;
             EncounterInfo e = d.Profile.Encounters[p.Entry];
@@ -108,6 +110,8 @@ namespace ProceduralDungeon
             tag.entryName = e.Name;
             tag.placementIndex = -1;
             d.Register(tag);
+            // On a server the mob moves into the run's scene and is network-spawned (offline: nothing changes).
+            DungeonNet.SpawnContent(d, go, p.Floor, true);
         }
     }
 }

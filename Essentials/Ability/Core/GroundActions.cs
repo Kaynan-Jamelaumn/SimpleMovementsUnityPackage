@@ -316,7 +316,7 @@ public class GroundSurgeAction : CastAction, ITravellingAction
             float ahead = Mathf.Min(action.speed * 0.6f, maxDistance - h.travelled);
             Vector3 end = h.position + h.direction * Mathf.Max(0.1f, ahead);
             if (h.hazard == null || !h.hazard.alive)
-                h.hazard = HazardRegistry.AddCapsule(cast.CasterEntity, action.hit.filter, h.position, end, radius, Time.time, Time.time + 0.7f, cast.Severity);
+                h.hazard = cast.Cosmetic ? null : HazardRegistry.AddCapsule(cast.CasterEntity, action.hit.filter, h.position, end, radius, Time.time, Time.time + 0.7f, cast.Severity);
             else
             {
                 h.hazard.capsuleStart = h.position;
@@ -360,7 +360,7 @@ public class GroundSurgeAction : CastAction, ITravellingAction
             var band = new HitShape { type = HitShapeType.Ring, radius = outer, innerRadius = Mathf.Max(0f, ringRadius - radius), height = action.height, baseOffset = -1f };
             ResolvedShape hz = ResolvedShape.Resolve(band, origin, Quaternion.identity, 1f);
             if (ringHazard == null || !ringHazard.alive)
-                ringHazard = HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, hz, Time.time, Time.time + 0.6f, cast.Severity);
+                ringHazard = cast.Cosmetic ? null : HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, hz, Time.time, Time.time + 0.6f, cast.Severity);
             else
             {
                 ringHazard.shape = hz;
@@ -497,7 +497,7 @@ public class ZoneAction : CastAction
             totalTime = action.Duration(cast.Stats);
             hitSet = action.oncePerTarget ? new HashSet<CombatEntity>() : null;
             ResolvedShape r = Current(0f);
-            if (action.zoneVfx != null)
+            if (action.zoneVfx != null && AbilityPool.PresentationEnabled)
             {
                 Transform follow = action.followCaster && cast.CasterEntity != null ? cast.CasterEntity.transform : null;
                 vfx = AbilityPool.Spawn(action.zoneVfx, r.origin, r.rotation, follow);
@@ -515,11 +515,11 @@ public class ZoneAction : CastAction
                     : CombatSettings.Instance.allyTelegraphColor;
                 if (cast.Definition.presentation.telegraphColor.a > 0.01f)
                     c = cast.Definition.presentation.telegraphColor;
-                outline = AbilityTelegraph.Show(r, c);
+                outline = AbilityPool.PresentationEnabled ? AbilityTelegraph.Show(r, c) : null;
                 outline?.SetProgress(1f);
             }
             if (action.markAsHazard && action.hit.effects.Count > 0 && action.hit.EstimateDamage(cast.Stats) + action.hit.EstimateControl(cast.Stats) > 0f)
-                hazard = HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, r, Time.time, Time.time + totalTime, Mathf.Min(1f, cast.Severity + 0.2f));
+                hazard = cast.Cosmetic ? null : HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, r, Time.time, Time.time + totalTime, Mathf.Min(1f, cast.Severity + 0.2f));
         }
 
         private ResolvedShape Current(float t)
@@ -743,7 +743,7 @@ public class BeamAction : CastAction
             float flatLen = new Vector2(aim3.x, aim3.z).magnitude * len;
             ResolvedShape r = ResolvedShape.Resolve(action.LineShape(cast.Stats, Mathf.Max(0.3f, flatLen)), cast.CasterPosition, Quaternion.LookRotation(direction), 1f);
             if (hazard == null || !hazard.alive)
-                hazard = HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, r, Time.time, Time.time + (total - age) + 0.1f, cast.Severity);
+                hazard = cast.Cosmetic ? null : HazardRegistry.AddShape(cast.CasterEntity, action.hit.filter, r, Time.time, Time.time + (total - age) + 0.1f, cast.Severity);
             else
                 hazard.shape = r;
 

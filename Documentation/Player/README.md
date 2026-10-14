@@ -12,6 +12,9 @@ the player carries are in the [Inventory guide](../Inventory/README.md).
 | [04 — Camera, Animation & Abilities](04-Camera-Animation-Abilities.md) | Cinemachine cameras, the Animator parameters, interaction, ability keys |
 | [05 — Troubleshooting](05-Troubleshooting.md) | Symptoms → causes → fixes |
 | [06 — Races, Classes, Advanced Stats, Buffs & Threat](06-Races-Classes-Stats-and-Threat.md) | Races / classes / backgrounds on one archetype model, character identity and height, every combat stat with formulas and caps, the damage pipeline, timed buffs and debuffs, threat and multiplayer aggro |
+| [07 — Swimming, Water & Streamed Ground](07-Swimming-Water-and-Streamed-Ground.md) | Subnautica-style swimming (swim where you look, stay at your depth, float at the surface) and its settings, swimmable water, the oxygen fix, and how long dashes wait for terrain chunks to load |
+| [08 — Character Size, Animator, Audio, Interaction](08-Character-Size-Animator-Audio.md) | Character Identity vs Character Body (height, Scale Limits, CharacterController), completing the Animator controller, movement sounds and realm music, Player Interactor / Net Interactor |
+| [09 — Targeting, Party, Guild, Inspect](09-Targeting-Party-Guild-Inspect.md) | Clicking another player (highlight ring, target frame, menu), parties (invite, accept, leader, no damage between members, buffs still work, duels override), guilds and alliances, fame, inspecting equipment and stats, the NetSocial relay |
 
 ## The player at a glance
 
@@ -52,7 +55,7 @@ flowchart TB
 6. Optional: `CharacterIdentity` + `CharacterBody` (race, class stats, height), `BodyPartController` with
    **Add Hitboxes (Humanoid)** ([01 §5](01-Player-Setup.md#5-body-parts-on-the-player)).
 7. Add a **Player Input** component for the camera and interaction events ([01 §7](01-Player-Setup.md#7-input)).
-8. Add a **Player Setup Validator** and fix anything red. In the scene: *Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause & Settings Menu*,
-   and where characters are created *Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Character Creation Screen*
+8. Add a **Player Setup Validator** and fix anything red. In the scene: *Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause & Settings Menu*,
+   and where characters are created *Tools ▸ SimpleMovements ▸ Scene ▸ Build Character Creation Screen*
    ([01 §8](01-Player-Setup.md#8-the-scene-character-creation-and-the-pause-menu)).
 9. Press Play.

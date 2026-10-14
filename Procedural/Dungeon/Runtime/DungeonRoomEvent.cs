@@ -104,7 +104,7 @@ namespace ProceduralDungeon
             Lock(true);
             Started?.Invoke(this);
             if (messages)
-                DungeonMessages.Show(mode == RoomEventMode.Ambush ? "Ambush! The doors slam shut!"
+                DungeonMessages.Show(this, mode == RoomEventMode.Ambush ? "Ambush! The doors slam shut!"
                     : mode == RoomEventMode.PitFight ? "The crowd roars! The gates slam shut - fight!" : "The doors slam shut!", true);
         }
 
@@ -131,9 +131,9 @@ namespace ProceduralDungeon
                 if (revealed > 0)
                 {
                     if (messages && champion)
-                        DungeonMessages.Show("The champion enters the arena!", true);
+                        DungeonMessages.Show(this, "The champion enters the arena!", true);
                     else if (messages && Wave > 1)
-                        DungeonMessages.Show($"Wave {Wave}!", true);
+                        DungeonMessages.Show(this, $"Wave {Wave}!", true);
                     return true;
                 }
             }
@@ -161,7 +161,7 @@ namespace ProceduralDungeon
             {
                 dungeon.Stats.Bump(ref dungeon.Stats.roomsCleared);
                 if (messages)
-                    DungeonMessages.Show(mode == RoomEventMode.PitFight ? "Victory! The crowd cheers and the gates open." : "The room is clear. The doors open.");
+                    DungeonMessages.Show(this, mode == RoomEventMode.PitFight ? "Victory! The crowd cheers and the gates open." : "The room is clear. The doors open.");
             }
             dungeon.RaiseRoomCompleted(floor, area);
             Completed?.Invoke(this);

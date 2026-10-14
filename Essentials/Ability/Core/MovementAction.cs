@@ -66,6 +66,20 @@ public class MovementAction : CastAction
         if (startVfx != null)
             AbilityPool.PlayVfx(startVfx, self.BasePosition, Quaternion.LookRotation(cast.AimDirection));
 
+        if (cast.Cosmetic || GameNet.NetAuthority.IsClientOnly)
+        {
+            // A copy of the server's cast: the server moves the character (its position reaches this machine through
+            // the network); here only the arrival effects play, when the server's motion should end.
+            float travel = mode == MovementActionMode.Blink || (flat < 0.1f && Mathf.Abs(offset.y) < 0.1f)
+                ? 0f
+                : (mode == MovementActionMode.Leap ? leapDuration : flat / Mathf.Max(1f, speed));
+            if (travel <= 0f)
+                OnArrived(cast);
+            else
+                AbilityRuntime.Schedule(travel, () => OnArrived(cast), cast);
+            return;
+        }
+
         if (mode == MovementActionMode.Blink)
         {
             Teleport(self, dest);
@@ -169,6 +183,7 @@ public class MovementAction : CastAction
 
     private static void Teleport(CombatEntity self, Vector3 dest)
     {
+        ForcedMovement.RaiseTeleported(self, dest);
         NavMeshAgent agent = self.Agent;
         if (agent != null && agent.enabled)
         {

@@ -116,11 +116,17 @@ public sealed class MobBrain : ICombatHostility
     }
 
     // ------------------------------------------------------------------ relations
-    /// <summary>How this mob regards <paramref name="other"/> (flat distance used for skittish reactions).</summary>
+    /// <summary>
+    /// How this mob regards <paramref name="other"/> (flat distance used for skittish reactions). Characters in another
+    /// realm (<see cref="CombatRules.AreSeparated"/>: City and World overlap in space, every dungeon run has its own
+    /// scene) are always neutral, so they are never perceived as enemies, threats or allies.
+    /// </summary>
     public MobRelationKind Classify(CombatEntity other, float distance)
     {
         CombatEntity self = ctx.Entity;
         if (other == null || other == self || !other.IsAlive || self == null)
+            return MobRelationKind.Neutral;
+        if (CombatRules.AreSeparated(self, other))
             return MobRelationKind.Neutral;
         if (other.Team == self.Team || CombatParties.SameParty(self, other))
             return MobRelationKind.Ally;
@@ -214,7 +220,7 @@ public sealed class MobBrain : ICombatHostility
     /// <summary>Ability filters ask this: can this mob's abilities hurt <paramref name="other"/>?</summary>
     public bool IsHostileTo(CombatEntity other)
     {
-        if (other == null)
+        if (other == null || CombatRules.AreSeparated(ctx.Entity, other))
             return false;
         if (other == Target)
             return true;
@@ -582,7 +588,7 @@ public sealed class MobBrain : ICombatHostility
         MobProfile p = ctx.Profile;
 
         CombatEntity taunter = self.TauntedBy;
-        if (taunter != null)
+        if (taunter != null && !CombatRules.AreSeparated(self, taunter))
         {
             ctx.Perception.ForceAware(taunter, taunter.Position);
             SetTarget(taunter);
@@ -707,7 +713,7 @@ public sealed class MobBrain : ICombatHostility
     /// <summary>Forces a target (summons, scripts). The mob becomes fully aware of it.</summary>
     public void ForceTarget(CombatEntity t)
     {
-        if (t == null || !t.IsAlive)
+        if (t == null || !t.IsAlive || CombatRules.AreSeparated(ctx.Entity, t))
             return;
         ctx.Perception.ForceAware(t, t.Position);
         helpTarget = t;
@@ -931,6 +937,8 @@ public sealed class MobBrain : ICombatHostility
             return;
         if (target == ctx.Entity || target.Team == ctx.Entity.Team)
             return;
+        if (CombatRules.AreSeparated(ctx.Entity, caller) || CombatRules.AreSeparated(ctx.Entity, target))
+            return; // a call from (or against someone in) another realm
         helpTarget = target;
         helpUntil = Time.time + 20f;
         ctx.Perception.ForceAware(target, target.Position);

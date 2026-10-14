@@ -47,11 +47,21 @@ public sealed class LegacyInteractableTarget : IInteractable
         for (Transform t = col != null ? col.transform : null; t != null; t = t.parent)
         {
             foreach (MonoBehaviour mb in t.GetComponents<MonoBehaviour>())
-                if (mb != null && (mb is Storage || Is(mb.GetType(), InteractableTypeName)))
+                if (IsOwnerComponent(mb))
                     return mb;
         }
         return null;
     }
+
+    /// <summary>Is <paramref name="component"/> an older interaction component (an Interactable or derived, or a Storage)?</summary>
+    public static bool IsOwnerComponent(Component component) =>
+        component is MonoBehaviour mb && mb != null && (mb is Storage || Is(mb.GetType(), InteractableTypeName));
+
+    /// <summary>An item on the ground (picked up through the inventory, which asks the server itself in a network session).</summary>
+    public bool IsPickup => pickable;
+
+    /// <summary>A storage (opened through the inventory, which asks the server itself in a network session).</summary>
+    public bool IsStorage => storage != null;
 
     /// <summary>Is <paramref name="type"/> (or one of its base classes) named <paramref name="name"/>?</summary>
     private static bool Is(Type type, string name)

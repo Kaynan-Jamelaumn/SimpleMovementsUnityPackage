@@ -10,14 +10,14 @@ public static class AbilityToolsMenu
     private const string ResourcesFolder = "Assets/Resources";
 
     // ------------------------------------------------------------------ legacy conversion
-    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Player")]
+    [MenuItem(SMMenu.Root + "Legacy/Convert Selected Legacy Abilities/For Player", false, SMMenu.Legacy + 0)]
     private static void ConvertForPlayer() => ConvertSelected(false);
 
-    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Mobs")]
+    [MenuItem(SMMenu.Root + "Legacy/Convert Selected Legacy Abilities/For Mobs", false, SMMenu.Legacy + 1)]
     private static void ConvertForMobs() => ConvertSelected(true);
 
-    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Player", true)]
-    [MenuItem("Tools/SimpleMovements/Legacy/Convert Selected Legacy Abilities/For Mobs", true)]
+    [MenuItem(SMMenu.Root + "Legacy/Convert Selected Legacy Abilities/For Player", true)]
+    [MenuItem(SMMenu.Root + "Legacy/Convert Selected Legacy Abilities/For Mobs", true)]
     private static bool CanConvert()
     {
         foreach (Object o in Selection.objects)
@@ -48,13 +48,13 @@ public static class AbilityToolsMenu
     public static AbilityDefinition ConvertToAsset(AbilityEffectSO legacy, bool forMob) => AbilityToolsMenuBridge.Convert(legacy, forMob);
 
     // ------------------------------------------------------------------ settings assets
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Combat Settings (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Combat Settings (Resources)", false, SMMenu.ProjectSetup + 0)]
     private static void CreateCombatSettings() => CreateInResources<CombatSettings>("CombatSettings");
 
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Absorption Settings (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Absorption Settings (Resources)", false, SMMenu.ProjectSetup + 3)]
     private static void CreateAbsorptionSettings() => CreateInResources<AbsorptionSettings>("AbsorptionSettings");
 
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Ability Database (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Ability Database (Resources)", false, SMMenu.ProjectSetup + 1)]
     private static void CreateDatabase()
     {
         AbilityDatabase db = CreateInResources<AbilityDatabase>("AbilityDatabase");
@@ -91,7 +91,7 @@ public static class AbilityToolsMenu
     }
 
     // ------------------------------------------------------------------ validation
-    [MenuItem("Tools/SimpleMovements/Validate/Validate All Abilities")]
+    [MenuItem(SMMenu.Root + "Validate/Abilities", false, SMMenu.Validate + 21)]
     private static void ValidateAll()
     {
         int count = 0, errorCount = 0, warningCount = 0;

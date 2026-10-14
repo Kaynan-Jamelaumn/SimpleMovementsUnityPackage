@@ -32,12 +32,19 @@ namespace ProceduralDungeon
 
         public void Hit()
         {
-            if (Broken || ++taken < hits)
-                return;
+            if (Broken || DungeonNet.IsReplica(this) || ++taken < hits)
+                return;   // a client's copy breaks when the server says so
             Break();
         }
 
         private void Break()
+        {
+            ShowBroken();
+            DungeonNet.Publish(this, 1);
+            RevealStash();
+        }
+
+        private void ShowBroken()
         {
             Broken = true;
             Shatter();
@@ -45,7 +52,16 @@ namespace ProceduralDungeon
                 c.enabled = false;
             foreach (Renderer r in GetComponentsInChildren<Renderer>())
                 r.enabled = false;
-            RevealStash();
+        }
+
+        /// <summary>The published state: 1 once broken.</summary>
+        protected override int NetState => Broken ? 1 : 0;
+
+        /// <summary>A client's copy: the server broke it (it shatters here too; the stash is the server's business).</summary>
+        public override void ApplyNetState(int state, byte[] payload)
+        {
+            if (state > 0 && !Broken)
+                ShowBroken();
         }
 
         /// <summary>A few loose pieces in the object's colours that tumble and vanish.</summary>
@@ -89,7 +105,7 @@ namespace ProceduralDungeon
                 return;
             stash.transform.position = transform.position;
             stash.Reveal();
-            DungeonMessages.Show("Something was hidden in the barrel!", true);
+            DungeonMessages.Show(this, "Something was hidden in the barrel!", true);
         }
     }
 }

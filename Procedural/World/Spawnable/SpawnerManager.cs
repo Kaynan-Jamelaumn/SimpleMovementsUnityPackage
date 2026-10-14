@@ -103,11 +103,17 @@ public class SpawnerManager : MonoBehaviour
 
         sorted.Clear();
         sorted.AddRange(WorldSpawnRegistry.All);
-        Transform player = null;
-        foreach (Transform p in WorldSpawnRegistry.GetPlayers(playerTag, null))
+        // This machine's player when there is one (a host or client sees chunks around itself), else the first player
+        // (a dedicated server).
+        CombatEntity local = PlayerLocator.Local;
+        Transform player = local != null ? local.transform : null;
+        if (player == null)
         {
-            player = p;
-            break;
+            foreach (Transform p in WorldSpawnRegistry.GetPlayers(playerTag, null))
+            {
+                player = p;
+                break;
+            }
         }
         if (player != null)
         {

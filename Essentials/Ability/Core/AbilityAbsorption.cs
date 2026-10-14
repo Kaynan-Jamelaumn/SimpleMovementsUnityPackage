@@ -95,6 +95,8 @@ public class AbilityGrant
             database = AbilityDatabase.Instance;
         AbilityDefinition def = database != null ? database.Find(data.abilityId) : null;
         if (def == null)
+            def = AbilityDatabase.Resolve(data.abilityId); // created at runtime (presets, converted legacy abilities)
+        if (def == null)
         {
             Debug.LogWarning($"Absorbed ability '{data.abilityId}' is not in the Ability Database; it cannot be restored.");
             return null;
@@ -103,6 +105,8 @@ public class AbilityGrant
         if (!string.IsNullOrEmpty(data.modifiersJson))
             JsonUtility.FromJsonOverwrite(data.modifiersJson, mods);
         AbilityDefinition src = database != null && !string.IsNullOrEmpty(data.sourceAbilityId) ? database.Find(data.sourceAbilityId) : null;
+        if (src == null && !string.IsNullOrEmpty(data.sourceAbilityId))
+            src = AbilityDatabase.Resolve(data.sourceAbilityId);
         return new AbilityGrant(def, mods, data.displayName, data.tier, src);
     }
 }
@@ -171,6 +175,9 @@ public static class AbilityAbsorption
 
     private static void OnKilled(CombatEntity victim, CombatEntity killer)
     {
+        // Network sessions: drops are rolled once, by the server (a client hearing about a death rolls nothing).
+        if (GameNet.NetAuthority.IsClientOnly)
+            return;
         AbsorptionSettings settings = AbsorptionSettings.Instance;
         if (!settings.enabled || victim == null)
             return;
@@ -220,7 +227,7 @@ public static class AbilityAbsorption
                 continue;
             granted++;
             GrantRolled?.Invoke(victim, player, grant);
-            Deliver(grant, victim.Center, player);
+            Deliver(grant, victim.Center, player, victim.gameObject);
         }
         candidates.Clear();
     }
@@ -271,7 +278,7 @@ public static class AbilityAbsorption
             if (grant == null)
                 continue;
             GrantRolled?.Invoke(victim, player, grant);
-            Deliver(grant, victim.Center, player);
+            Deliver(grant, victim.Center, player, victim.gameObject);
         }
         shares.Clear();
     }
@@ -346,16 +353,21 @@ public static class AbilityAbsorption
         return list[list.Count - 1];
     }
 
-    /// <summary>Delivers a grant as configured: a pickup at <paramref name="position"/> or instantly to <paramref name="player"/>.</summary>
-    public static void Deliver(AbilityGrant grant, Vector3 position, CombatEntity player)
+    /// <summary>
+    /// Delivers a grant as configured: a pickup at <paramref name="position"/> (in the scene of
+    /// <paramref name="sceneOf"/> when given) or instantly to <paramref name="player"/>. Server only in a network session.
+    /// </summary>
+    public static void Deliver(AbilityGrant grant, Vector3 position, CombatEntity player, GameObject sceneOf = null)
     {
+        if (GameNet.NetAuthority.IsClientOnly)
+            return;
         AbsorptionSettings settings = AbsorptionSettings.Instance;
         if (settings.delivery == AbsorbDelivery.Instant && player != null)
         {
             TryGrant(grant, player);
             return;
         }
-        AbilityPickup.Spawn(grant, position, settings);
+        AbilityPickup.Spawn(grant, position, settings, sceneOf);
     }
 
     /// <summary>Gives a grant to a character. Returns true if it was accepted.</summary>

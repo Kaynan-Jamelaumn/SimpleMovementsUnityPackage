@@ -26,6 +26,21 @@ public sealed class NPCInteractionSession
     /// <summary>Why the session ended ("closed", "walked away"...); empty while open.</summary>
     public string EndReason { get; internal set; } = "";
 
+    /// <summary>
+    /// Network, server: the player is controlled from another machine. The session runs here (range, "Busy", events,
+    /// purchases); its windows open on that player's machine through <see cref="NPC.NetRelay"/>.
+    /// </summary>
+    public bool IsRemote { get; internal set; }
+
+    /// <summary>
+    /// Network, client: this machine shows a session the server runs. The windows work as usual, but the player's choices
+    /// go to the server, which opens options and ends the session; gameplay events (UnityEvents) run on the server only.
+    /// </summary>
+    public bool IsMirror { get; internal set; }
+
+    /// <summary>A mirrored session was ended by the server (nothing to tell it back).</summary>
+    internal bool EndedByServer { get; set; }
+
     /// <summary>Raised once when the session ends.</summary>
     public event Action<NPCInteractionSession> Ended;
 

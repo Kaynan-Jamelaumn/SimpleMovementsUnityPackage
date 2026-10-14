@@ -125,6 +125,41 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     /// <summary>An ability was received (absorbed) into a slot.</summary>
     public event Action<AbilityGrant, int> AbilityReceived;
 
+    // ------------------------------------------------------------------ network
+    /// <summary>
+    /// Seconds a copy of the server's cast waits past its planned release for the server's release before it ends on
+    /// its own (the caster went out of view, the message never came).
+    /// </summary>
+    public const float MirrorReleaseTimeout = 1f;
+
+    /// <summary>
+    /// Network: this copy only shows what another machine (the server) decides - a client's copy of any character.
+    /// It never starts casts itself: <see cref="TryCast(int, CastRequest, out CastFailReason)"/> sends the intention
+    /// through <see cref="NetBridge"/> (the owning client) or refuses, and casts arrive as copies
+    /// (<see cref="BeginMirrorCast"/>). False offline and on the server. Set by the network layer.
+    /// </summary>
+    public bool IsReplica { get; private set; }
+
+    /// <summary>Network: sends cast / cancel intentions to the server (installed on the owning client only).</summary>
+    public IAbilityNetBridge NetBridge { get; set; }
+
+    /// <summary>
+    /// A caster-less cast ran (<see cref="ExecuteInstant"/>: items, weapon attacks, traps) on the machine that decides
+    /// gameplay. The network layer listens to show it on the clients.
+    /// </summary>
+    public static event Action<AbilityCastInstance> InstantCastExecuted;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetNetworkStatics() => InstantCastExecuted = null;
+
+    /// <summary>Network: marks this caster as a copy (see <see cref="IsReplica"/>). Set by the network layer.</summary>
+    public void SetReplica(bool replica)
+    {
+        IsReplica = replica;
+        if (!replica)
+            NetBridge = null;
+    }
+
     private ManaManager mana;
     private StaminaManager stamina;
     private bool initialized;
@@ -226,6 +261,19 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         return -1;
     }
 
+    /// <summary>The first slot holding the ability with this id (-1 if none).</summary>
+    public int IndexOfId(string abilityId)
+    {
+        if (string.IsNullOrEmpty(abilityId))
+            return -1;
+        for (int i = 0; i < slots.Count; i++)
+        {
+            if (slots[i] != null && slots[i].ability != null && slots[i].ability.Id == abilityId)
+                return i;
+        }
+        return -1;
+    }
+
     /// <summary>Adds a new slot and returns its index.</summary>
     public int AddSlot(AbilityDefinition ability, AbilityModifierSet modifiers = null)
     {
@@ -287,6 +335,19 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     public bool CancelCasting()
     {
         bool any = false;
+        if (IsReplica)
+        {
+            // The server runs the casts: ask it to cancel (the copies end when its interrupt arrives).
+            for (int i = 0; i < slots.Count; i++)
+            {
+                AbilitySlot s = slots[i];
+                if (s != null && s.cast != null && s.Phase == AbilityPhase.Casting)
+                    any = true;
+            }
+            if (any)
+                NetBridge?.RequestCancel(this);
+            return any;
+        }
         for (int i = 0; i < slots.Count; i++)
         {
             AbilitySlot s = slots[i];
@@ -361,18 +422,32 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     public bool TryCast(int index, CastRequest request, out CastFailReason reason)
     {
         Initialize();
+        if (IsReplica && NetBridge == null)
+        {
+            // A copy of a character controlled elsewhere: only the server casts for it.
+            reason = CastFailReason.Disabled;
+            return false;
+        }
         reason = CanCast(index, request);
         if (reason != CastFailReason.None)
         {
             RaiseCastFailed(index, reason);
             return false;
         }
+        if (IsReplica)
+        {
+            // The owning client: the checks above give instant feedback; the server decides and starts the cast.
+            return NetBridge.RequestCast(this, index, request, out reason);
+        }
         StartCast(slots[index], request);
         return true;
     }
 
-    /// <summary>Reports a failed cast attempt (<see cref="CastFailed"/>), e.g. for a "Not enough mana" message.</summary>
-    protected void RaiseCastFailed(int index, CastFailReason reason)
+    /// <summary>
+    /// Reports a failed cast attempt (<see cref="CastFailed"/>), e.g. for a "Not enough mana" message. Public so the
+    /// network layer can report the server's refusals on the owning client.
+    /// </summary>
+    public void RaiseCastFailed(int index, CastFailReason reason)
     {
         if (debugLog)
             Debug.Log($"[{name}] cannot cast slot {index}: {reason}", this);
@@ -387,9 +462,14 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             return ready;
 
         AbilitySlot s = slots[index];
+        // Visual-only (the city): owning the ability and having it ready is all that matters - nothing is hit.
+        if (CombatRules.IsVisualOnly(Entity))
+            return CheckExtra(s, request);
         AbilityDefinition def = s.ability;
         AbilityStats stats = s.Stats;
         CombatEntity target = request.target != null ? request.target : DefaultTarget;
+        if (target != null && CombatRules.AreSeparated(Entity, target))
+            target = null; // in another realm: cannot be targeted from here
         AbilityTargeting t = def.targeting;
         if (t.mode == AbilityTargetingMode.Unit)
         {
@@ -398,16 +478,24 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         }
 
         bool checkRange = target != null && request.target != null && (t.mode == AbilityTargetingMode.Unit || (t.mode == AbilityTargetingMode.Point && !request.hasPoint));
-        if (checkRange)
+        bool checkSight = t.requireLineOfSight && target != null && t.mode != AbilityTargetingMode.Self;
+        if (checkRange || checkSight)
         {
-            float d = CombatQuery.FlatDistance(Entity.Position, target.Position);
-            if (d - target.Radius > def.Range(stats) + 0.25f)
-                return CastFailReason.OutOfRange;
-            if (t.minRange > 0f && d < def.MinRange(stats))
-                return CastFailReason.TooClose;
+            // A player's target is judged where its client saw it (lag compensation; only these queries).
+            using (GameNet.LagCompensation.For(Entity))
+            {
+                if (checkRange)
+                {
+                    float d = CombatQuery.FlatDistance(Entity.Position, target.Position);
+                    if (d - target.Radius > def.Range(stats) + 0.25f)
+                        return CastFailReason.OutOfRange;
+                    if (t.minRange > 0f && d < def.MinRange(stats))
+                        return CastFailReason.TooClose;
+                }
+                if (checkSight && !CombatQuery.HasLineOfSight(CastPointPosition, target.AimPosition))
+                    return CastFailReason.NoLineOfSight;
+            }
         }
-        if (t.requireLineOfSight && target != null && t.mode != AbilityTargetingMode.Self && !CombatQuery.HasLineOfSight(CastPointPosition, target.AimPosition))
-            return CastFailReason.NoLineOfSight;
 
         return CheckExtra(s, request);
     }
@@ -440,7 +528,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             return CastFailReason.OnCooldown;
         if (BusyExcept(s))
             return CastFailReason.Busy;
-        if (!HasResources(s.ability, s.Stats))
+        if (!HasResources(s.ability, s.Stats) && !CombatRules.IsVisualOnly(Entity))
             return CastFailReason.NotEnoughResource;
         return CastFailReason.None;
     }
@@ -457,9 +545,14 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         AbilityDefinition def = s.ability;
         var cast = new AbilityCastInstance(this, Entity, s, def, s.modifiers);
         cast.Target = request.target != null ? request.target : DefaultTarget;
+        if (cast.Target != null && CombatRules.AreSeparated(Entity, cast.Target))
+            cast.Target = null;
+        cast.VisualOnly = CombatRules.IsVisualOnly(Entity);
+        cast.Seed = AbilityNetMath.NextSeed();
         InitializeAim(cast, request);
 
-        PayCost(cast);
+        if (!cast.VisualOnly)
+            PayCost(cast);
         s.charges = s.Charges - 1;
         s.lastUseTime = now;
         s.aiReadyTime = now + def.ai.extraAICooldown;
@@ -481,13 +574,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         cast.ReleaseTime = now + castTime;
         cast.Phase = AbilityPhase.Casting;
 
-        AbilityPresentation pres = def.presentation;
-        AnimatorParameterCache.SetTrigger(animator, pres.castTrigger);
-        AnimatorParameterCache.SetBool(animator, pres.castingBool, true);
-        if (pres.castVfx != null)
-            cast.castVfx = AbilityPool.Spawn(pres.castVfx, CastPointPosition, transform.rotation, castPoint != null ? castPoint : transform);
-        if (pres.castSound != null)
-            AbilityPool.PlaySound(pres.castSound, transform.position, pres.volume);
+        PlayCastStartPresentation(cast);
 
         if (debugLog)
             Debug.Log($"[{name}] cast {def.DisplayName} (cast {castTime:0.##}s) at {(cast.Target != null ? cast.Target.name : cast.AimPoint.ToString())}", this);
@@ -502,6 +589,18 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
 
         if (castTime <= 0f)
             Release(s);
+    }
+
+    /// <summary>The start of a cast as others see and hear it: animator trigger and bool, cast effect and sound.</summary>
+    private void PlayCastStartPresentation(AbilityCastInstance cast)
+    {
+        AbilityPresentation pres = cast.Definition.presentation;
+        AnimatorParameterCache.SetTrigger(animator, pres.castTrigger);
+        AnimatorParameterCache.SetBool(animator, pres.castingBool, true);
+        if (pres.castVfx != null && AbilityPool.PresentationEnabled)
+            cast.castVfx = AbilityPool.Spawn(pres.castVfx, CastPointPosition, transform.rotation, castPoint != null ? castPoint : transform);
+        if (pres.castSound != null)
+            AbilityPool.PlaySound(pres.castSound, transform.position, pres.volume);
     }
 
     /// <summary>Hook for derived casters when a cast starts.</summary>
@@ -743,7 +842,9 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
                     move = 0f;
                 else if (def.movementWhileCasting == CasterMovementRule.Slowed)
                     move = Mathf.Min(move, def.castMoveSpeedMultiplier);
-                if (def.targeting.faceAim && def.targeting.aimLock != AbilityAimLock.FollowCaster)
+                // Copies of the server's casts leave the rotation to the network (the server turns its copy), except
+                // where this machine steers the character itself (see CosmeticCastsTurnCaster).
+                if (def.targeting.faceAim && def.targeting.aimLock != AbilityAimLock.FollowCaster && (!s.cast.Cosmetic || CosmeticCastsTurnCaster))
                     FaceDirection(s.cast.AimDirection, dt);
                 if (newest == null || s.cast.StartTime > newest.StartTime)
                     newest = s.cast;
@@ -764,10 +865,15 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             s.SetPhase(AbilityPhase.Ready, 0f);
             return;
         }
+        if (c.Cosmetic)
+        {
+            UpdateMirrorCasting(s, c, dt, now);
+            return;
+        }
         AbilityDefinition def = s.ability;
         AbilityTargeting t = def.targeting;
 
-        if (t.mode == AbilityTargetingMode.Unit && (c.Target == null || !c.Target.IsAlive))
+        if (!c.VisualOnly && t.mode == AbilityTargetingMode.Unit && (c.Target == null || !c.Target.IsAlive))
         {
             InterruptSlot(s, CastInterruptReason.TargetLost);
             return;
@@ -785,6 +891,34 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         if (now >= s.phaseEnd)
             Release(s);
     }
+
+    /// <summary>
+    /// The wind-up of a copy of the server's cast: it never cancels or releases itself (the server's events do that)
+    /// and only predicts the aim between the server's aim updates, so the telegraph moves like the server's.
+    /// </summary>
+    private void UpdateMirrorCasting(AbilitySlot s, AbilityCastInstance c, float dt, float now)
+    {
+        if (c.hasNetAim)
+            TurnAimToward(c, c.netAimPoint, c.netAimDirection, dt);
+        else if (MirrorTracksAim(c))
+            UpdateAim(c, dt);
+        UpdateTelegraphs(c, s.PhaseProgress);
+        if (now >= s.phaseEnd + MirrorReleaseTimeout)
+            InterruptSlot(s, CastInterruptReason.Disabled); // the server's release never came (the caster left view)
+    }
+
+    /// <summary>
+    /// Can a copy of the server's cast follow its aim locally between the server's updates (target tracking, aim
+    /// attached to the caster)? Players override it: a crosshair can only be followed on its owner's machine.
+    /// </summary>
+    protected virtual bool MirrorTracksAim(AbilityCastInstance cast) => true;
+
+    /// <summary>
+    /// Do copies of the server's casts turn this character toward their aim? False by default (the server turns its
+    /// copy and the rotation arrives through the network). Players override it for their own machine, whose movement
+    /// predicts the character's rotation locally.
+    /// </summary>
+    protected virtual bool CosmeticCastsTurnCaster => false;
 
     private void Release(AbilitySlot s)
     {
@@ -809,7 +943,18 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         s.SetPhase(AbilityPhase.Launching, def.LaunchDuration(c.Stats));
         OnCastReleased(c);
         CastReleased?.Invoke(c);
-        CombatEvents.RaiseCastReleased(c);
+        if (!c.Cosmetic)
+            CombatEvents.RaiseCastReleased(c); // AI reacts to the real cast only
+
+        // Only shown: the presentation (and the network layer's copies) show it to nearby players; no action runs.
+        if (c.VisualOnly)
+        {
+            if (pres.visualOnlyEffect != null)
+                AbilityPool.PlayVfx(pres.visualOnlyEffect, c.AimPoint, c.AimRotation);
+            if (!c.Cosmetic)
+                CombatRules.RaiseVisualCast(c);
+            return;
+        }
 
         List<CastAction> actions = def.actions;
         for (int i = 0; i < actions.Count; i++)
@@ -858,7 +1003,8 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             AnimatorParameterCache.SetBool(animator, c.Definition.presentation.castingBool, false);
             OnCastFinished(c);
         }
-        s.StartRecharge(now);
+        if (c == null || !c.Cosmetic)
+            s.StartRecharge(now); // copies: the server's slot state brings charges and cooldowns
         if (s.Charges > 0 && now >= s.lockedUntil)
             s.SetPhase(AbilityPhase.Ready, 0f);
         else
@@ -933,7 +1079,11 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
 
         s.cast = null;
         c.Phase = AbilityPhase.InCooldown;
-        if (beforeRelease && def != null)
+        if (c.Cosmetic)
+        {
+            // A copy: costs, charges and cooldowns belong to the server (its slot state arrives separately).
+        }
+        else if (beforeRelease && def != null)
         {
             if (def.refundCostOnInterrupt)
                 Refund(c);
@@ -953,7 +1103,8 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         if (debugLog)
             Debug.Log($"[{name}] {c} interrupted: {reason}", this);
         CastInterrupted?.Invoke(c, reason);
-        CombatEvents.RaiseCastInterrupted(c, reason);
+        if (!c.Cosmetic)
+            CombatEvents.RaiseCastInterrupted(c, reason);
         if (CurrentCast == c)
             CurrentCast = null;
     }
@@ -967,7 +1118,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         {
             AbilitySlot s = slots[i];
             AbilityCastInstance c = s != null ? s.cast : null;
-            if (c == null || s.Phase != AbilityPhase.Casting)
+            if (c == null || c.Cosmetic || s.Phase != AbilityPhase.Casting)
                 continue;
             c.DamageTaken += info.amount;
             AbilityDefinition def = s.ability;
@@ -992,7 +1143,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     private void CreateTelegraphs(AbilityCastInstance c, float castTime)
     {
         AbilityDefinition def = c.Definition;
-        bool show = castTime > 0.05f && showTelegraphs && def.presentation.showTelegraph && TelegraphVisible();
+        bool show = castTime > 0.05f && showTelegraphs && def.presentation.showTelegraph && AbilityPool.PresentationEnabled && TelegraphVisible();
         Color color = TelegraphColor(def);
         float severity = c.Severity;
 
@@ -1118,7 +1269,11 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     }
 
     // ------------------------------------------------------------------ receiving abilities (absorption)
-    public virtual bool CanReceive(AbilityGrant grant) => grant != null && grant.ability != null && isActiveAndEnabled && Entity != null && Entity.IsAlive;
+    /// <summary>
+    /// Can <paramref name="grant"/> be put into a slot now? Never on a network copy (<see cref="IsReplica"/>): the server
+    /// grants abilities and the slot contents reach the copies replicated.
+    /// </summary>
+    public virtual bool CanReceive(AbilityGrant grant) => grant != null && grant.ability != null && !IsReplica && isActiveAndEnabled && Entity != null && Entity.IsAlive;
 
     public virtual bool Receive(AbilityGrant grant, out int slotIndex)
     {
@@ -1220,21 +1375,75 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         AbilityReceived?.Invoke(grant, index);
     }
 
+    /// <summary>
+    /// Network (owning client): raises <see cref="AbilityReceived"/> for a grant the server put into slot
+    /// <paramref name="index"/> (the slot's content itself arrives through <see cref="ApplyReplicatedSlot"/>).
+    /// </summary>
+    public void NotifyAbilityReceived(AbilityGrant grant, int index)
+    {
+        if (grant != null)
+            AbilityReceived?.Invoke(grant, index);
+    }
+
     // ------------------------------------------------------------------ standalone execution
     /// <summary>
     /// Runs an ability's actions immediately without a caster component: traps, explosive barrels, on-death
     /// effects, items. <paramref name="source"/> (may be null) is used for teams and damage attribution.
     /// </summary>
+    /// <remarks>
+    /// In a network session only the server runs it (a client gets null and shows the server's copy instead, see
+    /// <see cref="InstantCastExecuted"/> and <see cref="ExecuteMirrorInstant"/>).
+    /// </remarks>
     public static AbilityCastInstance ExecuteInstant(AbilityDefinition ability, CombatEntity source, Vector3 position, Vector3 direction, CombatEntity target = null, AbilityModifierSet modifiers = null)
     {
         if (ability == null)
             return null;
+        if (GameNet.NetAuthority.IsClientOnly)
+            return null; // the server runs it; its copy arrives through the network layer
         var c = new AbilityCastInstance(null, source, null, ability, modifiers)
         {
             Target = target,
             AimPoint = target != null ? target.BasePosition : position,
             AimDirection = CombatQuery.FlatDirection(Vector3.zero, direction, Vector3.forward),
         };
+        c.Seed = AbilityNetMath.NextSeed();
+        RunInstantActions(c, ability);
+        if (InstantCastExecuted != null)
+        {
+            try
+            {
+                InstantCastExecuted(c);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+        }
+        return c;
+    }
+
+    /// <summary>
+    /// Network (clients): shows a caster-less cast the server ran (<see cref="ExecuteInstant"/>) - its projectiles,
+    /// areas and effects play with the server's numbers (<paramref name="stats"/>) and seed, but nothing is hit for real.
+    /// </summary>
+    public static AbilityCastInstance ExecuteMirrorInstant(AbilityDefinition ability, CombatEntity source, Vector3 position, Vector3 direction, CombatEntity target, in AbilityStats stats, int seed)
+    {
+        if (ability == null)
+            return null;
+        var c = new AbilityCastInstance(null, source, null, ability, null, stats)
+        {
+            Target = target,
+            AimPoint = target != null ? target.BasePosition : position,
+            AimDirection = CombatQuery.FlatDirection(Vector3.zero, direction, Vector3.forward),
+        };
+        c.Cosmetic = true;
+        c.Seed = seed;
+        RunInstantActions(c, ability);
+        return c;
+    }
+
+    private static void RunInstantActions(AbilityCastInstance c, AbilityDefinition ability)
+    {
         c.Released = true;
         c.ReleaseTime = Time.time;
         c.Phase = AbilityPhase.Launching;
@@ -1249,7 +1458,173 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             else
                 AbilityRuntime.Schedule(a.delay, () => ExecuteAction(c, a, ability), c);
         }
-        return c;
+    }
+
+    // ------------------------------------------------------------------ network copies (clients)
+    /// <summary>
+    /// Network (clients): starts the copy of a cast the server started on this character. It plays the cast's
+    /// animation, effect, sound and telegraphs and moves the slot to Casting, but pays nothing, uses no charge and
+    /// starts no cooldown (the server's slot state brings those), raises no AI events and never releases or cancels
+    /// itself: <see cref="ReleaseMirrorCast"/> / <see cref="InterruptMirrorCast"/> follow the server. The numbers
+    /// (<paramref name="stats"/>), aim and <paramref name="seed"/> are the server's; <paramref name="elapsed"/> is how
+    /// long ago the server started it. Returns the copy (null when it cannot be shown).
+    /// </summary>
+    public AbilityCastInstance BeginMirrorCast(int slotIndex, AbilityDefinition ability, in AbilityStats stats, CombatEntity target,
+        Vector3 aimPoint, Vector3 aimDirection, Vector3 aimTargetPoint, bool hasAimTargetPoint, float castTime, float elapsed, bool visualOnly, int seed)
+    {
+        Initialize();
+        if (ability == null || slotIndex < 0 || slotIndex > 255)
+            return null;
+        while (slots.Count <= slotIndex)
+        {
+            slots.Add(new AbilitySlot());
+            PrepareSlot(slots.Count - 1);
+        }
+        AbilitySlot s = slots[slotIndex];
+        if (s.cast != null)
+        {
+            // The previous copy is still running here (its end did not arrive yet, or local timers lag a little).
+            if (s.Phase == AbilityPhase.Casting)
+                InterruptSlot(s, CastInterruptReason.Replaced);
+            else
+                FinishCast(s);
+        }
+        if (s.ability != ability)
+        {
+            // The server changed what this slot holds at runtime (mob slots are built locally from the prefab).
+            s.Set(ability, s.modifiers);
+            ability.Prewarm();
+            SlotChanged?.Invoke(slotIndex);
+        }
+
+        castTime = Mathf.Max(0f, castTime);
+        elapsed = Mathf.Clamp(elapsed, 0f, castTime);
+        float now = Time.time;
+        var cast = new AbilityCastInstance(this, Entity, s, ability, s.modifiers, stats)
+        {
+            Target = target,
+            AimPoint = aimPoint,
+            AimTargetPoint = aimTargetPoint,
+            HasAimTargetPoint = hasAimTargetPoint,
+        };
+        cast.AimDirection = CombatQuery.FlatDirection(Vector3.zero, aimDirection, cast.AimDirection);
+        cast.Cosmetic = true;
+        cast.VisualOnly = visualOnly;
+        cast.Seed = seed;
+        cast.StartTime = now - elapsed;
+        cast.ReleaseTime = cast.StartTime + castTime;
+        cast.Phase = AbilityPhase.Casting;
+        s.cast = cast;
+        s.lastUseTime = cast.StartTime;
+        LastCastStartTime = cast.StartTime;
+        CurrentCast = cast;
+
+        PlayCastStartPresentation(cast);
+        s.SetPhase(AbilityPhase.Casting, castTime - elapsed);
+        s.phaseStart = cast.StartTime;
+        CreateTelegraphs(cast, castTime - elapsed);
+        OnCastStarted(cast);
+        CastStarted?.Invoke(cast);
+        return cast;
+    }
+
+    /// <summary>
+    /// Network (clients): releases a copy started with <see cref="BeginMirrorCast"/> with the server's final aim. The
+    /// release presentation plays and the actions run their visuals (cosmetic hits); visual-only casts only show
+    /// their effect.
+    /// </summary>
+    public void ReleaseMirrorCast(AbilityCastInstance cast, CombatEntity target, Vector3 aimPoint, Vector3 aimDirection, Vector3 aimTargetPoint, bool hasAimTargetPoint)
+    {
+        if (cast == null || !cast.Cosmetic || cast.Released || cast.Interrupted || cast.Caster != this)
+            return;
+        AbilitySlot s = cast.Slot;
+        if (s == null || s.cast != cast)
+            return;
+        if (target != null)
+            cast.Target = target;
+        cast.AimPoint = aimPoint;
+        cast.AimDirection = CombatQuery.FlatDirection(Vector3.zero, aimDirection, cast.AimDirection);
+        cast.AimTargetPoint = aimTargetPoint;
+        cast.HasAimTargetPoint = hasAimTargetPoint;
+        cast.hasNetAim = false;
+        Release(s);
+    }
+
+    /// <summary>
+    /// Network (clients): ends a copy because the server interrupted the cast: the wind-up stops, effects still
+    /// running (a beam, the next volley) stop, and nothing is refunded here (the server's slot state follows).
+    /// </summary>
+    public void InterruptMirrorCast(AbilityCastInstance cast, CastInterruptReason reason)
+    {
+        if (cast == null || !cast.Cosmetic || cast.Interrupted || cast.Caster != this)
+            return;
+        AbilitySlot s = cast.Slot;
+        if (s != null && s.cast == cast)
+        {
+            InterruptSlot(s, reason);
+            return;
+        }
+        // Its phases already ended here: only stop what its actions still run.
+        cast.Interrupted = true;
+        cast.InterruptReason = reason;
+        AbilityRuntime.CancelAll(cast);
+        cast.ClearTelegraphsAndHazards(true);
+        ReleaseCastVfx(cast);
+    }
+
+    /// <summary>Network (clients): the server's current aim of a copy still winding up (its telegraph follows it).</summary>
+    public void SetMirrorAim(AbilityCastInstance cast, Vector3 aimPoint, Vector3 aimDirection)
+    {
+        if (cast == null || !cast.Cosmetic || cast.Released || cast.Interrupted)
+            return;
+        cast.hasNetAim = true;
+        cast.netAimPoint = aimPoint;
+        cast.netAimDirection = CombatQuery.FlatDirection(Vector3.zero, aimDirection, cast.AimDirection);
+    }
+
+    /// <summary>
+    /// Network (clients): puts the server's content into slot <paramref name="index"/> (created if missing): ability,
+    /// modifiers, label, origin, enabled and the absorbed grant. A different ability resets the slot like
+    /// <see cref="SetSlot"/>; the same ability only takes the new modifiers and keeps its timers. Raises
+    /// <see cref="SlotChanged"/> when anything changed. Returns true if anything changed.
+    /// </summary>
+    public bool ApplyReplicatedSlot(int index, AbilityDefinition ability, AbilityModifierSet modifiers, string label, AbilitySlotSource source, bool enabled, AbilityGrant grant)
+    {
+        Initialize();
+        if (index < 0 || index > 255)
+            return false;
+        while (slots.Count <= index)
+        {
+            slots.Add(new AbilitySlot());
+            PrepareSlot(slots.Count - 1);
+        }
+        AbilitySlot s = slots[index];
+        bool changed = false;
+        if (s.ability != ability)
+        {
+            if (s.cast != null)
+                InterruptSlot(s, CastInterruptReason.Replaced);
+            s.Set(ability, modifiers);
+            if (ability != null && Application.isPlaying)
+                ability.Prewarm();
+            changed = true;
+        }
+        else if (modifiers != null && !ReferenceEquals(s.modifiers, modifiers))
+        {
+            s.modifiers = modifiers;
+            s.InvalidateStats();
+            changed = true;
+        }
+        label = label ?? "";
+        if (s.label != label || s.Source != source || s.enabled != enabled || !ReferenceEquals(s.Grant, grant))
+            changed = true;
+        s.label = label;
+        s.Source = source;
+        s.enabled = enabled;
+        s.Grant = grant;
+        if (changed)
+            SlotChanged?.Invoke(index);
+        return changed;
     }
 
 #if UNITY_EDITOR

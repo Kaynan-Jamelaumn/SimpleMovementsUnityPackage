@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
-using static Readme;
 
 /// <summary>Crowd-control and displacement kinds a character can be immune to (bosses, constructs...).</summary>
 [Flags]
@@ -107,6 +106,34 @@ public class CombatEntity : MonoBehaviour
     public event Action<ControlType, float, CombatEntity> ControlApplied;
     /// <summary>Raised when a hit was stopped completely before reaching health (fully blocked or parried).</summary>
     public event Action<DamageInfo> DamageStopped;
+
+    /// <summary>
+    /// Raised for every hit this character takes, on every machine that shows it: where the rules run, right after
+    /// <see cref="Damaged"/> (same info), and for hits stopped by a block or parry (amount 0, flags set); on a client, when
+    /// the server reports the hit. Presentation only (damage numbers, hit flashes, hit reactions): one subscription works
+    /// offline, on a host and on clients. Never change gameplay state from it.
+    /// </summary>
+    public event Action<DamageInfo> DamageFeedback;
+    /// <summary>
+    /// Raised for healing this character actually received (amount above its old health), on every machine that shows
+    /// it: where the rules run, from <see cref="ApplyHeal"/>; on a client, when the server reports it. Presentation only.
+    /// </summary>
+    public event Action<float> HealFeedback;
+    /// <summary>
+    /// Client copies only (<see cref="IsReplica"/>): the server reported a hit on this character. Presentation only - the
+    /// gameplay events (<see cref="Damaged"/>, <see cref="CombatEvents.Damaged"/>) are never raised on a replica.
+    /// </summary>
+    public event Action<DamageInfo> ReplicatedDamage;
+    /// <summary>Client copies only: the server reported healing on this character (amount). Presentation only.</summary>
+    public event Action<float> ReplicatedHeal;
+    /// <summary>
+    /// Client copies only: the server says this character died (true) or came back to life (false): death animations,
+    /// health bars, respawn effects. <see cref="Died"/>, <see cref="CombatEvents.Killed"/> and <see cref="Revived"/> are
+    /// never raised on a replica, so nothing runs death side effects (loot, absorption, kill rewards) twice.
+    /// </summary>
+    public event Action<bool> ReplicatedLifeChanged;
+    /// <summary>Client copies only: the server's crowd-control timers changed (stun, silence, root, slow, taunt, invulnerability).</summary>
+    public event Action ReplicatedControlChanged;
 
     /// <summary>How many hits were stopped completely (blocks, parries) so far: attackers compare it to know a hit was stopped.</summary>
     public int StoppedHitCount { get; private set; }
@@ -488,7 +515,17 @@ public class CombatEntity : MonoBehaviour
     public int PartyId => partyId != 0 ? partyId : Summoner != null ? Summoner.PartyId : 0;
 
     /// <summary>Joins party <paramref name="id"/> (0 = leaves the party).</summary>
-    public void SetParty(int id) => partyId = Mathf.Max(0, id);
+    public void SetParty(int id)
+    {
+        id = Mathf.Max(0, id);
+        if (id == partyId)
+            return;
+        partyId = id;
+        PartyChanged?.Invoke();
+    }
+
+    /// <summary>The character joined, changed or left a party (<see cref="SetParty"/>).</summary>
+    public event Action PartyChanged;
 
     // ------------------------------------------------------------------ health
     public bool IsDead
@@ -511,10 +548,20 @@ public class CombatEntity : MonoBehaviour
 
     public bool IsInvulnerable => Time.time < invulnerableUntil;
 
-    public void SetInvulnerable(float duration) => invulnerableUntil = Mathf.Max(invulnerableUntil, Time.time + duration);
+    public void SetInvulnerable(float duration)
+    {
+        if (IsReplica)
+            return;
+        invulnerableUntil = Mathf.Max(invulnerableUntil, Time.time + duration);
+    }
 
     /// <summary>Ends any invulnerability immediately.</summary>
-    public void ClearInvulnerable() => invulnerableUntil = 0f;
+    public void ClearInvulnerable()
+    {
+        if (IsReplica)
+            return;
+        invulnerableUntil = 0f;
+    }
 
     /// <summary>The character this one damaged most recently (summons use their summoner's to assist it).</summary>
     public CombatEntity LastTarget => lastTarget != null && lastTarget.IsAlive && Time.time - lastTargetTime < 12f ? lastTarget : null;
@@ -568,7 +615,12 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public float ApplyDamage(DamageInfo info)
     {
+        if (IsReplica)
+            return 0f; // the server decides damage; its result arrives through replication
         if (IsDead || IsInvulnerable || info.amount <= 0f)
+            return 0f;
+        // The city, safe zones...: no PvP damage, whatever friendly fire or the attack's filter say.
+        if (info.source != null && !CombatRules.MayHarm(info.source, this))
             return 0f;
 
         info.target = this;
@@ -582,6 +634,13 @@ public class CombatEntity : MonoBehaviour
             StoppedHitCount++;
             RecordAttacker(info.source, 0f);
             DamageStopped?.Invoke(info);
+            if (DamageFeedback != null)
+            {
+                DamageInfo stopped = info;
+                stopped.target = this;
+                stopped.amount = 0f;
+                DamageFeedback(stopped);
+            }
             return 0f;
         }
         if (damageTakenModifiers.Count > 0)
@@ -617,6 +676,7 @@ public class CombatEntity : MonoBehaviour
         RecordAttacker(info.source, removed, info.threatMultiplier ?? 1f);
         Damaged?.Invoke(info);
         CombatEvents.RaiseDamaged(info);
+        DamageFeedback?.Invoke(info);
 
         if (Health != null && Health.CurrentValue <= 0f)
             HandleDeath(info.source);
@@ -729,13 +789,15 @@ public class CombatEntity : MonoBehaviour
     /// <summary>Heals (increased by the health manager's heal factor).</summary>
     public void ApplyHeal(float amount, CombatEntity source = null)
     {
-        if (IsDead || amount <= 0f || Health == null)
+        if (IsReplica || IsDead || amount <= 0f || Health == null)
             return;
         float before = Health.CurrentValue;
         Health.AddCurrentValue(amount);
         lastKnownHealth = Health.CurrentValue;
         Healed?.Invoke(amount);
         float healed = Mathf.Max(0f, Health.CurrentValue - before);
+        if (healed > 0f)
+            HealFeedback?.Invoke(healed);
         if (source != null && healed > 0f)
             SpreadHealingThreat(source, healed);
     }
@@ -770,7 +832,7 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public void RegisterPeriodicSource(CombatEntity source, float duration)
     {
-        if (source == null)
+        if (source == null || IsReplica)
             return;
         periodicSource = source;
         periodicSourceUntil = Mathf.Max(periodicSourceUntil, Time.time + duration + 0.5f);
@@ -790,7 +852,7 @@ public class CombatEntity : MonoBehaviour
     /// <summary>Marks this character dead (normally automatic when health reaches 0).</summary>
     public void HandleDeath(CombatEntity killer)
     {
-        if (deathRaised)
+        if (deathRaised || IsReplica)
             return;
         deathRaised = true;
         if (killer == null)
@@ -802,9 +864,11 @@ public class CombatEntity : MonoBehaviour
             Availability.Kill();
     }
 
-    /// <summary>Clears the dead flag (player revive, pooled mob respawn).</summary>
+    /// <summary>Clears the dead flag (player revive, pooled mob respawn). Ignored on a replica (the server revives).</summary>
     public void Revive()
     {
+        if (IsReplica)
+            return;
         deathRaised = false;
         healthSeen = false;
         threats.Clear();
@@ -812,6 +876,152 @@ public class CombatEntity : MonoBehaviour
         if (Kind == EntityKind.Player && Availability != null)
             Availability.Revive();
         Revived?.Invoke();
+    }
+
+    /// <summary>
+    /// Revives with <paramref name="healthFraction"/> (0-1) of the max health. <see cref="Revive()"/> alone keeps the
+    /// health the character died with, so a respawn uses this one. Ignored on a replica (the server revives).
+    /// </summary>
+    public void Revive(float healthFraction)
+    {
+        if (IsReplica)
+            return;
+        if (Health != null)
+        {
+            float fraction = float.IsNaN(healthFraction) ? 1f : Mathf.Clamp01(healthFraction);
+            Health.SetCurrentValue(Health.MaxValue * fraction);
+            lastKnownHealth = Health.CurrentValue;
+        }
+        Revive();
+    }
+
+    // ------------------------------------------------------------------ network replica
+    /// <summary>
+    /// True on a client's copy of a networked character. The server decides its health, death, crowd control,
+    /// invulnerability and threat and sends them; this copy only shows them. Damage, healing, death, revive, crowd
+    /// control, threat, invulnerability and knockbacks requested on it are ignored, and its per-frame rules (health
+    /// tracking, slows and roots on the speed, AI noise) do not run. Always false offline and on the server or host.
+    /// </summary>
+    public bool IsReplica { get; private set; }
+
+    /// <summary>Switches replica mode (network layer, when a client learns this copy belongs to the server).</summary>
+    public void SetReplica(bool on)
+    {
+        if (IsReplica == on)
+            return;
+        IsReplica = on;
+        if (!on)
+            return;
+        // What this machine worked out before it knew it was a client no longer means anything.
+        threats.Clear();
+        lastAttacker = null;
+        periodicSource = null;
+        healthSeen = false;
+        // The speed manager now shows the server's speed, which already includes slows and roots.
+        playerSpeedDelta = 0f;
+    }
+
+    /// <summary>The raw crowd-control timers of a character (Time.time based, of the machine they were read on).</summary>
+    public struct ControlTimers
+    {
+        public float stunUntil, silenceUntil, rootUntil, slowUntil, tauntUntil, invulnerableUntil;
+        /// <summary>Movement removed by the slow (0-0.95).</summary>
+        public float slowFraction;
+        /// <summary>Who taunted this character (null = nobody).</summary>
+        public CombatEntity tauntSource;
+
+        /// <summary>Same timers, fraction and taunt source?</summary>
+        public bool SameAs(in ControlTimers other) =>
+            stunUntil == other.stunUntil && silenceUntil == other.silenceUntil && rootUntil == other.rootUntil &&
+            slowUntil == other.slowUntil && tauntUntil == other.tauntUntil && invulnerableUntil == other.invulnerableUntil &&
+            slowFraction == other.slowFraction && tauntSource == other.tauntSource;
+    }
+
+    /// <summary>The current crowd-control timers (what the server sends to clients).</summary>
+    public ControlTimers GetControlTimers() => new ControlTimers
+    {
+        stunUntil = stunUntil,
+        silenceUntil = silenceUntil,
+        rootUntil = rootUntil,
+        slowUntil = slowUntil,
+        tauntUntil = tauntUntil,
+        invulnerableUntil = invulnerableUntil,
+        slowFraction = slowFraction,
+        tauntSource = tauntSource,
+    };
+
+    /// <summary>
+    /// Replicas only: shows the server's crowd control. <paramref name="timers"/> must already be converted to this
+    /// machine's Time.time. Stun and silence are mirrored into the player's availability state, so the movement,
+    /// ability and weapon gates block exactly as on the server.
+    /// </summary>
+    public void SetReplicatedControl(in ControlTimers timers)
+    {
+        if (!IsReplica)
+            return;
+        stunUntil = timers.stunUntil;
+        silenceUntil = timers.silenceUntil;
+        rootUntil = timers.rootUntil;
+        slowUntil = timers.slowUntil;
+        tauntUntil = timers.tauntUntil;
+        invulnerableUntil = timers.invulnerableUntil;
+        slowFraction = Mathf.Clamp(float.IsNaN(timers.slowFraction) ? 0f : timers.slowFraction, 0f, 0.95f);
+        tauntSource = timers.tauntSource;
+        MirrorControlToAvailability();
+        ReplicatedControlChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Replicas only: follows the server's dead flag. The availability state goes to Death (or back) so input-driven
+    /// actions stop, and <see cref="ReplicatedLifeChanged"/> is raised - but none of the death or revive gameplay events.
+    /// </summary>
+    public void SetReplicatedDeath(bool dead)
+    {
+        if (!IsReplica || deathRaised == dead)
+            return;
+        deathRaised = dead;
+        healthSeen = false;
+        if (Kind == EntityKind.Player && Availability != null)
+        {
+            if (!dead)
+            {
+                Availability.Revive();
+                MirrorControlToAvailability();
+            }
+            else if (CombatSettings.Instance.killPlayersAtZeroHealth)
+            {
+                Availability.Kill();
+            }
+        }
+        ReplicatedLifeChanged?.Invoke(dead);
+    }
+
+    /// <summary>Replicas only: presents a hit the server reported (<see cref="ReplicatedDamage"/>, <see cref="DamageFeedback"/>).</summary>
+    public void PresentReplicatedDamage(DamageInfo info)
+    {
+        if (!IsReplica)
+            return;
+        info.target = this;
+        ReplicatedDamage?.Invoke(info);
+        DamageFeedback?.Invoke(info);
+    }
+
+    /// <summary>Replicas only: presents healing the server reported (<see cref="ReplicatedHeal"/>, <see cref="HealFeedback"/>).</summary>
+    public void PresentReplicatedHeal(float amount)
+    {
+        if (!IsReplica || !(amount > 0f) || float.IsInfinity(amount))
+            return;
+        ReplicatedHeal?.Invoke(amount);
+        HealFeedback?.Invoke(amount);
+    }
+
+    private void MirrorControlToAvailability()
+    {
+        if (Kind != EntityKind.Player || Availability == null)
+            return;
+        float now = Time.time;
+        Availability.SetStatusEffectRemaining(EStatusEffect.Stunned, stunUntil - now);
+        Availability.SetStatusEffectRemaining(EStatusEffect.Silenced, silenceUntil - now);
     }
 
     // ------------------------------------------------------------------ threat (used by mob AI)
@@ -838,7 +1048,7 @@ public class CombatEntity : MonoBehaviour
 
     private void AddThreatRaw(CombatEntity source, float amount, ThreatKind kind)
     {
-        if (source == null || source == this)
+        if (source == null || source == this || IsReplica)
             return;
         float now = Time.time;
         bool firstEver = true;
@@ -870,7 +1080,7 @@ public class CombatEntity : MonoBehaviour
     /// <summary>A taunt: <paramref name="taunter"/> goes above everyone else's threat (and stays there after the taunt).</summary>
     public void TauntThreat(CombatEntity taunter)
     {
-        if (taunter == null || taunter == this)
+        if (taunter == null || taunter == this || IsReplica)
             return;
         float top = 0f;
         float now = Time.time;
@@ -945,7 +1155,7 @@ public class CombatEntity : MonoBehaviour
     /// <summary>Lowers the threat of <paramref name="source"/> (fade, vanish, threat-drop abilities). Never below 0.</summary>
     public void ReduceThreat(CombatEntity source, float amount)
     {
-        if (source == null || amount <= 0f)
+        if (source == null || amount <= 0f || IsReplica)
             return;
         float now = Time.time;
         for (int i = 0; i < threats.Count; i++)
@@ -1023,12 +1233,16 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public bool ApplyControl(ControlType type, float duration, CombatEntity source, float magnitude = 0f)
     {
+        if (IsReplica)
+            return false; // the server applies crowd control; the timers arrive through replication
         duration *= controlDurationMultiplier; // traits (Control Duration Taken)
         if (Stats != null)
             duration *= Stats.ControlTakenMultiplier; // Crowd Control Resistance
         if (source != null && source != this && source.Stats != null)
             duration *= source.Stats.ControlDealtMultiplier; // the attacker's Crowd Control Duration
         if (IsDead || duration <= 0f)
+            return false;
+        if (source != null && !CombatRules.MayHarm(source, this))
             return false;
         float until = Time.time + duration;
 
@@ -1087,6 +1301,8 @@ public class CombatEntity : MonoBehaviour
     /// <summary>Removes crowd control (cleanse).</summary>
     public void ClearControl()
     {
+        if (IsReplica)
+            return;
         stunUntil = silenceUntil = rootUntil = slowUntil = tauntUntil = 0f;
         slowFraction = 0f;
         tauntSource = null;
@@ -1103,9 +1319,11 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public bool ApplyDisplacement(Vector3 displacement, float duration, float arcHeight, bool isPull, CombatEntity source)
     {
-        if (IsDead)
-            return false;
+        if (IsDead || IsReplica)
+            return false; // knockbacks of a networked character are applied on the server
         if ((immunities & (isPull ? ControlImmunity.Pull : ControlImmunity.Knockback)) != 0)
+            return false;
+        if (source != null && !CombatRules.MayHarm(source, this))
             return false;
         for (int i = 0; i < displacementModifiers.Count; i++)
         {
@@ -1141,6 +1359,10 @@ public class CombatEntity : MonoBehaviour
         if (dt > 1e-5f)
             velocity = Vector3.Lerp(velocity, (pos - lastPosition) / dt, 0.5f);
         lastPosition = pos;
+
+        // A client's copy shows the server's health, speed and noise: none of the rules below run here.
+        if (IsReplica)
+            return;
 
         TrackHealthChanges();
 
@@ -1207,6 +1429,7 @@ public class CombatEntity : MonoBehaviour
             RecordAttacker(info.source, info.amount);
             Damaged?.Invoke(info);
             CombatEvents.RaiseDamaged(info);
+            DamageFeedback?.Invoke(info);
         }
 
         lastKnownHealth = hp;
@@ -1297,8 +1520,11 @@ public static class CombatRelations
 {
     /// <summary>
     /// How <paramref name="to"/> relates to <paramref name="from"/>, checked in this order:
-    /// self → same party → factions (when both have one: ally / enemy; neutral falls through) → same team → players
-    /// (PvP rule) → the AI's hostility → summoner → default. Characters without parties or factions behave as before.
+    /// self → duel opponents (<see cref="CombatRules"/>) → same party → same guild / alliance
+    /// (<see cref="CombatSocial"/>, with Combat Settings ▸ Guild / Alliance Members Are Allies) → zone PvP rules between players
+    /// (<see cref="CombatRules"/>: allowed = enemies, forbidden = allies) → factions (when both have one: ally / enemy;
+    /// neutral falls through) → same team → players (PvP rule) → the AI's hostility → summoner → default. Characters
+    /// without parties, factions or combat rule providers behave as before.
     /// </summary>
     public static CombatRelation Get(CombatEntity from, CombatEntity to)
     {
@@ -1306,8 +1532,19 @@ public static class CombatRelations
             return CombatRelation.Neutral;
         if (from == to)
             return CombatRelation.Self;
+        // Zone, city and duel rules between two players (summons count as their player): decided before teams.
+        PvpVerdict pvp = CombatRules.Between(from, to);
+        if (pvp == PvpVerdict.Opponents)
+            return CombatRelation.Enemy;
         if (CombatParties.SameParty(from, to))
             return CombatRelation.Party;
+        // Same guild or alliance (players and their summons): allies even where PvP is open.
+        if (CombatSocial.AreAffiliated(from, to))
+            return CombatRelation.Ally;
+        if (pvp == PvpVerdict.Allowed)
+            return CombatRelation.Enemy;
+        if (pvp == PvpVerdict.Forbidden)
+            return CombatRelation.Ally;
 
         CombatFaction fa = from.Faction, fb = to.Faction;
         if (fa != null && fb != null)

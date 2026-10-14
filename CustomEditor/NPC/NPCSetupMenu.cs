@@ -19,10 +19,10 @@ public static class NPCSetupMenu
     [MenuItem("GameObject/SimpleMovements/NPC/Talking NPC", false, 21)]
     private static void CreateTalkerFromHierarchy(MenuCommand command) => CreateNPC(command.context as GameObject, false);
 
-    [MenuItem("Tools/SimpleMovements/NPC/Create Merchant NPC (or make the selection one)", false, 0)]
+    [MenuItem(SMMenu.Root + "NPC/Create Merchant NPC (or make the selection one)", false, SMMenu.NPC + 0)]
     private static void CreateMerchantFromTools() => CreateNPC(SceneSelection(), true);
 
-    [MenuItem("Tools/SimpleMovements/NPC/Create Talking NPC (or make the selection one)", false, 1)]
+    [MenuItem(SMMenu.Root + "NPC/Create Talking NPC (or make the selection one)", false, SMMenu.NPC + 1)]
     private static void CreateTalkerFromTools() => CreateNPC(SceneSelection(), false);
 
     private static GameObject SceneSelection()
@@ -93,7 +93,7 @@ public static class NPCSetupMenu
     }
 
     // ------------------------------------------------------------------ players
-    [MenuItem("Tools/SimpleMovements/NPC/Add Player Interactor To Players", false, 20)]
+    [MenuItem(SMMenu.Root + "Auto-Assign/Add Player Interactor To Players", false, SMMenu.AutoAssign + 61)]
     private static void AddInteractorMenu()
     {
         int n = AddInteractorToPlayers();
@@ -137,7 +137,7 @@ public static class NPCSetupMenu
     }
 
     // ------------------------------------------------------------------ validation
-    [MenuItem("Tools/SimpleMovements/NPC/Validate NPCs In Scene", false, 21)]
+    [MenuItem(SMMenu.Root + "Validate/NPCs In Scene", false, SMMenu.Validate + 23)]
     private static void ValidateScene()
     {
         NPC[] npcs = Object.FindObjectsByType<NPC>(FindObjectsInactive.Exclude);
@@ -158,7 +158,7 @@ public static class NPCSetupMenu
             interactor |= p.GetComponentInChildren<PlayerInteractor>(true) != null;
         if (npcs.Length > 0 && !interactor)
         {
-            Debug.LogWarning("[NPC] No player in the scene has a Player Interactor: only Player.OnInteract can open NPCs (Tools ▸ SimpleMovements ▸ NPC ▸ Add Player Interactor To Players).");
+            Debug.LogWarning("[NPC] No player in the scene has a Player Interactor: only Player.OnInteract can open NPCs (Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Add Player Interactor To Players).");
             problems++;
         }
         EditorUtility.DisplayDialog("NPC", npcs.Length == 0 ? "There is no NPC in the scene." :
@@ -184,7 +184,7 @@ public static class NPCSetupMenu
     }
 
     // ------------------------------------------------------------------ project assets
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Item Category Database (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Item Category Database (Resources)", false, SMMenu.ProjectSetup + 4)]
     public static ItemCategoryDatabase CreateCategoryDatabase()
     {
         string path = $"{ResourcesFolder}/{ItemCategoryDatabase.ResourcesName}.asset";
@@ -216,7 +216,7 @@ public static class NPCSetupMenu
         AssetDatabase.SaveAssets();
     }
 
-    [MenuItem("Tools/SimpleMovements/Project Setup/Create Default Currency (Resources)")]
+    [MenuItem(SMMenu.Root + "Project Setup/Create Default Currency (Resources)", false, SMMenu.ProjectSetup + 5)]
     public static CurrencyDefinition CreateDefaultCurrency()
     {
         string path = $"{ResourcesFolder}/{CurrencyDefinition.ResourcesName}.asset";
@@ -259,7 +259,7 @@ public static class NPCSetupMenu
     /// <summary>Every item asset of the project.</summary>
     public static List<ItemSO> AllItems() => ItemsIn("Assets");
 
-    [MenuItem("Tools/SimpleMovements/NPC/Help", false, 40)]
+    [MenuItem(SMMenu.Root + "NPC/Help", false, SMMenu.NPC + 40)]
     private static void Help()
     {
         EditorUtility.DisplayDialog("NPC & Merchants",

@@ -231,6 +231,7 @@ public static class AbilityPool
     private static readonly Dictionary<GameObject, GameObject> prefabOf = new Dictionary<GameObject, GameObject>(ReferenceComparer<GameObject>.Instance);
     private static Transform container;
     private static readonly List<ParticleSystem> particleBuffer = new List<ParticleSystem>(8);
+    private static bool presentationEnabled = true;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -238,6 +239,18 @@ public static class AbilityPool
         pools.Clear();
         prefabOf.Clear();
         container = null;
+        presentationEnabled = true;
+    }
+
+    /// <summary>
+    /// Are effects, sounds and telegraphs shown on this machine? Always false on a headless dedicated server (nobody
+    /// looks at its screen, so it saves the CPU and the objects); code can also switch it off. Only presentation is
+    /// skipped: <see cref="Spawn"/> keeps working because some pooled objects are gameplay (barrier segments).
+    /// </summary>
+    public static bool PresentationEnabled
+    {
+        get => presentationEnabled && !GameNet.NetAuthority.IsHeadless;
+        set => presentationEnabled = value;
     }
 
     private static Transform Container
@@ -365,11 +378,12 @@ public static class AbilityPool
 
     /// <summary>
     /// Plays a VFX prefab: pooled, optionally attached to <paramref name="follow"/>, scaled, and released after
-    /// <paramref name="lifetime"/> seconds (0 = the particles' own length, or 3 s).
+    /// <paramref name="lifetime"/> seconds (0 = the particles' own length, or 3 s). Returns null (and shows nothing)
+    /// when <see cref="PresentationEnabled"/> is off.
     /// </summary>
     public static GameObject PlayVfx(GameObject prefab, Vector3 position, Quaternion rotation, float lifetime = 0f, float scale = 1f, Transform follow = null)
     {
-        if (prefab == null)
+        if (prefab == null || !PresentationEnabled)
             return null;
         GameObject go = Spawn(prefab, position, rotation, follow);
         if (go == null)
@@ -396,10 +410,10 @@ public static class AbilityPool
         return go;
     }
 
-    /// <summary>Plays a one-shot sound at a position (no pooling needed).</summary>
+    /// <summary>Plays a one-shot sound at a position (no pooling needed; nothing when <see cref="PresentationEnabled"/> is off).</summary>
     public static void PlaySound(AudioClip clip, Vector3 position, float volume = 1f)
     {
-        if (clip != null)
+        if (clip != null && PresentationEnabled)
             AudioSource.PlayClipAtPoint(clip, position, volume);
     }
 }

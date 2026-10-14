@@ -59,6 +59,7 @@ namespace ProceduralDungeon
             var agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (agent != null && agent.isActiveAndEnabled && UnityEngine.AI.NavMesh.SamplePosition(transform.position, out UnityEngine.AI.NavMeshHit hit, 2.5f, agent.areaMask))
                 agent.Warp(hit.position);
+            DungeonNet.OnRevealed(this);
             Revealed?.Invoke(this);
         }
 

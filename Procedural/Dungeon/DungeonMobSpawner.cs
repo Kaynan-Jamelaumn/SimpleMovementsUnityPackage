@@ -86,6 +86,7 @@ public class DungeonMobSpawner : MonoBehaviour
     /// </summary>
     private void Spawn()
     {
+        if (!GameNet.NetSpawn.ShouldSpawnHere) return; // mobs are the server's; clients get the networked ones
         if (hasMaxMobs && currentMobs >= maxMobs) return;
         SpawnableMob chosenMob = ChooseMob();
         if (chosenMob != null)
@@ -109,7 +110,9 @@ public class DungeonMobSpawner : MonoBehaviour
 
             if (spawnPosition.HasValue)
             {
-                Instantiate(chosenMob.mobPrefab, spawnPosition.Value, Quaternion.identity);
+                GameObject mob = Instantiate(chosenMob.mobPrefab, spawnPosition.Value, Quaternion.identity);
+                // On a server the mob joins this spawner's scene and is network-spawned (offline: nothing changes).
+                GameNet.MobNetSpawn.Spawn(mob, gameObject.scene);
                 chosenMob.currentMobs++; // Increment the chosen mob counter
                 currentMobs++;
             }

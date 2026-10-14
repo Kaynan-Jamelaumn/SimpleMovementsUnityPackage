@@ -20,6 +20,21 @@ public class Player : MonoBehaviour
     private Coroutine interactionCoroutine;
     private RaycastHit hitInfo;
     private const float MAX_INTERACTION_DISTANCE = 3.2f;
+    private static bool warnedNoNetInteract;
+
+    /// <summary>
+    /// Network: hands an <see cref="Interactable"/> that is not an item or a storage (a door, a lever, a shrine) to the
+    /// interaction relay, which asks the server to use it (installed on the owning client by the network layer). Returns
+    /// true when the request was sent. Items and storages go through the inventory, which asks the server itself.
+    /// </summary>
+    public static System.Func<Player, Interactable, bool> NetInteractHandler { get; set; }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        NetInteractHandler = null;
+        warnedNoNetInteract = false;
+    }
 
     // Properties with validation
     public AudioSource PlayerAudioSource
@@ -67,7 +82,7 @@ public class Player : MonoBehaviour
         {
             Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-            if (Physics.Raycast(ray, out hitInfo, MAX_INTERACTION_DISTANCE))
+            if (ScenePhysics.Raycast(ray, out hitInfo, MAX_INTERACTION_DISTANCE))
             {
                 ProcessRaycastHit();
             }
@@ -192,6 +207,9 @@ public class Player : MonoBehaviour
     {
         if (pickableItem.InteractionTime > 0)
         {
+            // On a network client the server checks the key was held that long before it gives the item.
+            if (inventoryManager != null)
+                inventoryManager.BeginPickupHold(pickableItem.gameObject);
             interactionCoroutine = StartCoroutine(InteractWithObject(pickableItem));
         }
         else
@@ -212,8 +230,28 @@ public class Player : MonoBehaviour
         }
         else
         {
-            interactable.Interact();
+            RunInteraction(interactable);
         }
+    }
+
+    /// <summary>
+    /// Uses an interactable: here offline and on the server; on a network client the relay asks the server (the
+    /// object's result must be the same for every player), and nothing happens locally when there is no relay.
+    /// </summary>
+    private void RunInteraction(Interactable interactable)
+    {
+        if (interactable == null)
+            return;
+        if (GameNet.NetAuthority.IsClientOnly && GameNet.NetAuthority.IsNetworkedObject(gameObject))
+        {
+            if ((NetInteractHandler == null || !NetInteractHandler(this, interactable)) && !warnedNoNetInteract)
+            {
+                warnedNoNetInteract = true;
+                Debug.LogWarning($"[Player] '{interactable.name}' was not used: on a network client the server uses objects, and no interaction relay is installed.", interactable);
+            }
+            return;
+        }
+        interactable.Interact();
     }
 
     private void HandleStorage(Storage storage)
@@ -288,7 +326,7 @@ public class Player : MonoBehaviour
         }
         else
         {
-            interactable.Interact();
+            RunInteraction(interactable);
         }
 
         if (interactionUI != null)

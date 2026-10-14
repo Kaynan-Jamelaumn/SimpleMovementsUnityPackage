@@ -41,6 +41,12 @@ public class MobStatusController : BaseStatusController
     public SpeedManager SpeedManager => speedManager;
     public bool IsDead => dead;
 
+    /// <summary>
+    /// True on a client's copy of a networked mob: the server decides its health and death; this copy only shows them
+    /// (no effects, no death handling, no loot, never destroyed here).
+    /// </summary>
+    public bool IsReplica => entity != null && entity.IsReplica;
+
     /// <summary>Raised once when the mob dies (killer may be null).</summary>
     public event Action<CombatEntity> Died;
 
@@ -65,7 +71,20 @@ public class MobStatusController : BaseStatusController
         itemSpawner = GetComponent<ItemSpawner>();
         mob = GetComponent<Mob>();
         entity = CombatEntity.GetOrAdd(gameObject);
+        entity.ReplicatedLifeChanged += OnReplicatedLifeChanged;
     }
+
+    private void OnDestroy()
+    {
+        if (entity != null)
+            entity.ReplicatedLifeChanged -= OnReplicatedLifeChanged;
+    }
+
+    /// <summary>
+    /// Client copies: follows the server's death (and a pooled mob's revival) without any of the death side effects -
+    /// the death presentation listens to <see cref="CombatEntity.ReplicatedLifeChanged"/> itself.
+    /// </summary>
+    private void OnReplicatedLifeChanged(bool isDead) => dead = isDead;
 
     private void Start()
     {
@@ -76,18 +95,25 @@ public class MobStatusController : BaseStatusController
 
     private void Update()
     {
+        if (IsReplica)
+            return; // the server decides when the mob dies
         if (!dead && healthManager != null && healthManager.CurrentValue <= 0)
             HandleDeath();
     }
 
-    /// <summary>Kills the mob now.</summary>
-    public void Kill(CombatEntity killer = null) => Die(killer);
+    /// <summary>Kills the mob now (ignored on a client's copy of a networked mob).</summary>
+    public void Kill(CombatEntity killer = null)
+    {
+        if (IsReplica)
+            return;
+        Die(killer);
+    }
 
     protected override void HandleDeath() => Die(null);
 
     private void Die(CombatEntity killer)
     {
-        if (dead)
+        if (dead || IsReplica)
             return;
         dead = true;
         if (killer == null && entity != null)
@@ -109,7 +135,8 @@ public class MobStatusController : BaseStatusController
             mob.OnDeath(killer);
 
         float delay = destroyDelayOverride >= 0f ? destroyDelayOverride : (mob != null ? mob.Profile.destroyDelay : 0f);
-        Destroy(gameObject, Mathf.Max(0f, delay));
+        // Offline this is Destroy(gameObject, delay); on a server a networked mob is despawned for every client.
+        GameNet.NetSpawn.Destroy(gameObject, Mathf.Max(0f, delay));
     }
 
     private void InitializeEffectHandlers()
@@ -140,7 +167,7 @@ public class MobStatusController : BaseStatusController
     /// <summary>Applies an attack effect (types a mob does not have, like hunger, are ignored).</summary>
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
-        if (effect == null || dead)
+        if (effect == null || dead || IsReplica)
             return;
         if (EffectHandlers.TryGetValue(effect.effectType, out Action<AttackEffect, float, float, float> handler))
         {

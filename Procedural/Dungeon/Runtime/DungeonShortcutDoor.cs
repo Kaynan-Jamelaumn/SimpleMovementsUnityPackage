@@ -17,10 +17,16 @@ namespace ProceduralDungeon
 
         private void Start() => Initialize(true);
 
+        protected override void OnNetState(bool closed)
+        {
+            if (!closed)
+                IsOpen = true;
+        }
+
         protected override void Update()
         {
             base.Update();
-            if (IsOpen)
+            if (IsOpen || IsReplica)
                 return;
             CombatEntity player = DungeonPlayers.NearestAlive(transform.position, reach);
             if (player == null)
@@ -34,12 +40,12 @@ namespace ProceduralDungeon
                 DungeonInstance d = Dungeon;
                 if (d != null)
                     d.Stats.Bump(ref d.Stats.shortcutsOpened);
-                DungeonMessages.Show("A shortcut opens.");
+                DungeonMessages.Show(this, "A shortcut opens.");
             }
             else if (Time.time >= nextHint)
             {
                 nextHint = Time.time + 8f;
-                DungeonMessages.Show("It doesn't open from this side.");
+                DungeonMessages.Show(this, "It doesn't open from this side.");
             }
         }
     }

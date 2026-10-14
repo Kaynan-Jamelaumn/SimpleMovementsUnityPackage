@@ -13,6 +13,7 @@ public class SanityManager : StatusManager
 
     private Coroutine sanityRegenerationRoutine;
     private Coroutine sanityEffectsRoutine;
+    private bool started;
     private List<CoroutineInfo> sanityEffectRoutines = new List<CoroutineInfo>();
 
     // References to other managers
@@ -38,8 +39,16 @@ public class SanityManager : StatusManager
 
     private void Start()
     {
+        started = true;
+        // A client's copy keeps the server's value and runs no routines (the server simulates sanity).
+        if (IsReplica)
+            return;
         currentValue = maxValue;
+        StartRoutines();
+    }
 
+    private void StartRoutines()
+    {
         if (shouldRegenerateSanity)
         {
             sanityRegenerationRoutine = StartCoroutine(SanityRegenerationRoutine());
@@ -48,8 +57,18 @@ public class SanityManager : StatusManager
         sanityEffectsRoutine = StartCoroutine(SanityEffectsRoutine());
     }
 
+    protected override void OnReplicaChanged(bool on)
+    {
+        sanityRegenerationRoutine = null;
+        sanityEffectsRoutine = null;
+        if (!on && started)
+            StartRoutines();
+    }
+
     private void Update()
     {
+        if (IsReplica)
+            return; // the speed / stamina penalties are applied on the server
         UpdateSanityEffects();
     }
 
@@ -75,6 +94,7 @@ public class SanityManager : StatusManager
 
     public void ConsumeSanity(float amount)
     {
+        if (IsReplica) return;
         if (currentValue <= 0) return;
         currentValue -= RemoveFactor(amount);
         currentValue = Mathf.Max(0, currentValue);
@@ -82,6 +102,7 @@ public class SanityManager : StatusManager
 
     public void RestoreSanity(float amount)
     {
+        if (IsReplica) return;
         currentValue += AddFactor(amount);
         currentValue = Mathf.Min(maxValue, currentValue);
     }

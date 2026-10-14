@@ -152,6 +152,26 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
         }
     }
 
+    /// <summary>
+    /// Sets exactly how long <paramref name="effect"/> still lasts: adds it, shortens or lengthens it, or removes it when
+    /// <paramref name="remaining"/> is 0 or less. Used to show the server's stun / silence on a client's copy.
+    /// </summary>
+    public void SetStatusEffectRemaining(EStatusEffect effect, float remaining)
+    {
+        if (float.IsNaN(remaining) || remaining <= 0f)
+        {
+            RemoveStatusEffect(effect);
+            return;
+        }
+        if (activeStatusEffects.TryGetValue(effect, out StatusEffectData data))
+        {
+            data.remainingDuration = remaining;
+            data.originalDuration = Mathf.Max(data.originalDuration, remaining);
+            return;
+        }
+        ApplyStatusEffect(effect, remaining);
+    }
+
     public bool HasStatusEffect(EStatusEffect effect)
     {
         return (currentStatusFlags & effect) != 0;

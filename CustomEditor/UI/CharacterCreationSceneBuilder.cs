@@ -11,14 +11,14 @@ using UnityEngine.UI;
 /// Builds a complete character creation screen in the open scene, wired to <see cref="CharacterCreationUI"/>: name,
 /// race (with description and height slider), class (with summary), traits (available / chosen lists, details, points)
 /// and the Create Character button that spawns the player prefab at a spawn point with everything chosen. It finds
-/// the player prefab, the classes, the races and the traits in the project. Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Character Creation Screen,
+/// the player prefab, the classes, the races and the traits in the project. Tools ▸ SimpleMovements ▸ Scene ▸ Build Character Creation Screen,
 /// or the button on the Character Creation UI.
 /// </summary>
 public static class CharacterCreationSceneBuilder
 {
     private const string RootName = "CharacterCreation";
 
-    [MenuItem("Tools/SimpleMovements/Scene UI/Build Character Creation Screen")]
+    [MenuItem(SMMenu.Root + "Scene/Build Character Creation Screen", false, SMMenu.Scene + 0)]
     public static void BuildMenu()
     {
         CharacterCreationUI existing = Object.FindAnyObjectByType<CharacterCreationUI>();

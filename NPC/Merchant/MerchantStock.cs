@@ -109,6 +109,33 @@ public sealed class MerchantStockSlot
 
     /// <summary>How many can be bought now (int.MaxValue when unlimited).</summary>
     public int Available => Unlimited ? int.MaxValue : Quantity;
+
+    /// <summary>
+    /// Network, client: the price per item the server quoted to this player (-1 = none; the price is then calculated
+    /// here). The server always charges its own price; this only keeps the window showing the same number.
+    /// </summary>
+    public int ServerUnitPrice { get; internal set; } = -1;
+}
+
+/// <summary>
+/// One shop line as the server sends it to a client (network message; only ids and numbers): the line's id (used by
+/// purchase requests), the item's <see cref="ItemDatabase"/> id, where it came from and the server's price for that player.
+/// </summary>
+[Serializable]
+public struct MerchantSlotState
+{
+    /// <summary><see cref="MerchantStockSlot.Id"/> on the server.</summary>
+    public int id;
+    public int order;
+    /// <summary>The item's <see cref="ItemDatabase"/> id.</summary>
+    public string itemId;
+    /// <summary>Index of the configured entry in <see cref="Merchant.AllEntries"/> (-1 = an item bought from a player).</summary>
+    public int entryIndex;
+    public int quantity;
+    public bool unlimited;
+    public bool buyback;
+    /// <summary>The server's price per item for the player it is sent to.</summary>
+    public int unitPrice;
 }
 
 /// <summary>A merchant's goods at runtime: the slots, restocking and items bought from players.</summary>
@@ -220,6 +247,65 @@ public sealed class MerchantInventory
         }
         if (changed)
             Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Network, server: the lines as <see cref="MerchantSlotState"/>s, with the item ids from <paramref name="idOf"/>, the
+    /// configured entries' indices in <paramref name="entries"/> and the prices from <paramref name="priceOf"/>.
+    /// Lines whose item has no id are left out (they cannot be named to a client).
+    /// </summary>
+    public void CaptureState(List<MerchantSlotState> into, IList<MerchantStockEntry> entries, Func<ItemSO, string> idOf, Func<MerchantStockSlot, int> priceOf)
+    {
+        into.Clear();
+        foreach (MerchantStockSlot s in slots)
+        {
+            string id = s.Item != null && idOf != null ? idOf(s.Item) : null;
+            if (string.IsNullOrEmpty(id))
+                continue;
+            into.Add(new MerchantSlotState
+            {
+                id = s.Id,
+                order = s.Order,
+                itemId = id,
+                entryIndex = s.Source != null && entries != null ? entries.IndexOf(s.Source) : -1,
+                quantity = s.Quantity,
+                unlimited = s.Unlimited,
+                buyback = s.IsBuyback,
+                unitPrice = priceOf != null ? priceOf(s) : -1,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Network, client: replaces the lines with the server's (<paramref name="states"/>), so the ids, quantities and
+    /// prices are the server's. A line that is still there keeps its object (a window's selection stays on it). Items are
+    /// found with <paramref name="itemOf"/>; a line's configured entry is taken from <paramref name="entries"/> when it
+    /// names the same item. Returns how many lines were applied.
+    /// </summary>
+    public int ApplyServerState(IList<MerchantSlotState> states, IList<MerchantStockEntry> entries, Func<string, ItemSO> itemOf)
+    {
+        var previous = new List<MerchantStockSlot>(slots);
+        slots.Clear();
+        if (states != null && itemOf != null)
+            foreach (MerchantSlotState st in states)
+            {
+                ItemSO item = string.IsNullOrEmpty(st.itemId) ? null : itemOf(st.itemId);
+                if (item == null || Find(st.id) != null)
+                    continue;
+                MerchantStockEntry source = entries != null && st.entryIndex >= 0 && st.entryIndex < entries.Count && entries[st.entryIndex] != null
+                                            && entries[st.entryIndex].item == item ? entries[st.entryIndex] : null;
+                MerchantStockSlot slot = previous.Find(p => p.Id == st.id);
+                if (slot != null && slot.Item == item && slot.Source == source && slot.Unlimited == st.unlimited && slot.IsBuyback == st.buyback)
+                    slot.Quantity = Mathf.Max(0, st.quantity);
+                else
+                    slot = new MerchantStockSlot(st.id, st.order, item, source, st.quantity, st.unlimited, st.buyback);
+                slot.ServerUnitPrice = st.unitPrice;
+                slots.Add(slot);
+                nextId = Mathf.Max(nextId, st.id + 1);
+                nextOrder = Mathf.Max(nextOrder, st.order + 1);
+            }
+        Changed?.Invoke();
+        return slots.Count;
     }
 
     /// <summary>Sets a slot's quantity (loading a save, server updates).</summary>

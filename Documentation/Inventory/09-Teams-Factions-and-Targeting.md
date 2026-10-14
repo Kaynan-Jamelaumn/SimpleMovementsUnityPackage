@@ -24,6 +24,13 @@ characters.
 
 `CombatRelations.Get(from, to)` decides, in this order:
 
+> **Combat rule providers come first between players.** When something registered with `CombatRules` (the hub world's
+> zones and city, duels, your own rules) has an opinion about two players — summons count as their player — it decides
+> before the chart below: *Opponents* (a duel) = Enemy even for party members; then the party check; then *Allowed*
+> (an open-PvP zone) = Enemy, *Forbidden* (the city, a safe zone) = Ally **and** nothing harmful between them ever lands
+> (damage, control, knockbacks, debuffs — friendly fire included). With no provider, nothing changes. See
+> [Hub World 04 §3](../HubWorld/04-City-Abilities-and-Duels.md).
+
 ```mermaid
 flowchart TD
     A{"same character?"} -- yes --> SELF[Self]
@@ -55,7 +62,7 @@ flowchart TD
 | **Team** | `CombatEntity ▸ Team Override`; empty = `Player` for players, the mob Type (or Team Override) for mobs. Same team = Ally |
 | **Party** | `CombatEntity.SetParty(id)` / `CombatParties.Form(a, b, c)`; summons inherit their summoner's |
 | **Faction** | A `CombatFaction` asset on the `CombatEntity` or the `Mob`; summons inherit |
-| **PvP** | *Combat Settings ▸ Players Can Hurt Each Other* |
+| **PvP** | *Combat Settings ▸ Players Can Hurt Each Other*; overridden by `CombatRules` providers (zones, the city, duels) |
 | **AI** | The mob brain: preys, threats, taunts, aggression ([Mobs 02 §4](../Mobs/02-AI-Profiles-and-Behaviour.md)) |
 
 Characters **without** factions or parties behave exactly as before.

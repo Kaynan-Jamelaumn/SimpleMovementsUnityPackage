@@ -40,10 +40,17 @@ public class NPCDialogue : NPCBehaviour
         NPCDialogueWindow window = NPCDialogueWindow.For(session, Npc.DialogueWindowPrefab);
         window.ShowLines(session, shown, () =>
         {
-            if (session.Player != null)
+            // A client's copy of a server session: the server raises the event when it hears the lines were read.
+            if (!session.IsMirror && session.Player != null)
                 onFinished?.Invoke(session.Player);
             session.BehaviourFinished(this);
         });
+    }
+
+    public override void FinishedRemote(NPCInteractionSession session)
+    {
+        if (session != null && session.Player != null)
+            onFinished?.Invoke(session.Player);
     }
 
     public override void End(NPCInteractionSession session) => NPCDialogueWindow.HideFor(session);

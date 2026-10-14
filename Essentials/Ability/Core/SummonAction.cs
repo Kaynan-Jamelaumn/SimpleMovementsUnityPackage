@@ -53,20 +53,34 @@ public class SummonAction : CastAction
         int n = s.SummonCount(count);
         float life = lifetime > 0f ? lifetime * s.duration : 0f;
         CombatEntity summoner = cast.CasterEntity;
-        float start = UnityEngine.Random.Range(0f, 360f);
+        // Placement is seeded by the cast, so a client showing the server's cast plays the spawn effects where the
+        // server put the creatures.
+        var rng = new CastRandom(AbilityNetMath.VolleySeed(cast.Seed, PlacementSeedSalt));
+        float start = rng.Range(0f, 360f);
+        // Clients never create creatures: the server's summons reach them as network objects. A copy of the server's
+        // cast (or anything a client runs locally in a session) only shows the effects.
+        bool showOnly = cast.Cosmetic || GameNet.NetAuthority.IsClientOnly;
 
         for (int i = 0; i < n; i++)
         {
-            float ang = start + 360f / n * i + UnityEngine.Random.Range(-15f, 15f);
-            float r = radius * UnityEngine.Random.Range(0.6f, 1f);
+            float ang = start + 360f / n * i + rng.Range(-15f, 15f);
+            float r = radius * rng.Range(0.6f, 1f);
             Vector3 p = frame.position + Quaternion.AngleAxis(ang, Vector3.up) * (frame.Forward * r);
             if (!CombatQuery.SampleNavMesh(p, 3f, out Vector3 onMesh))
                 onMesh = CombatQuery.SnapToGround(p);
             Quaternion rot = Quaternion.LookRotation(frame.Forward, Vector3.up);
 
-            GameObject go = UnityEngine.Object.Instantiate(prefab, onMesh, rot);
             if (spawnVfx != null)
                 AbilityPool.PlayVfx(spawnVfx, onMesh, rot);
+            if (showOnly)
+                continue;
+
+            GameObject go = UnityEngine.Object.Instantiate(prefab, onMesh, rot);
+            // Into the summoner's scene (not the active one): a server keeps every realm and dungeon run in its own
+            // scene, and visibility and physics are per scene.
+            UnityEngine.SceneManagement.Scene scene = SpawnScene(cast);
+            if (scene.IsValid() && scene.isLoaded && go.scene != scene)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, scene);
 
             CombatEntity e = CombatEntity.Resolve(go);
             if (e == null)
@@ -77,6 +91,8 @@ public class SummonAction : CastAction
             ISummonable summonable = go.GetComponentInChildren<ISummonable>();
             summonable?.OnSummoned(joinCasterTeam ? summoner : null, attackCasterTarget ? cast.Target : null, life, preventAbsorption);
 
+            // Set up first, then shown to the players (their copies start with the summoner already known).
+            GameNet.NetSpawn.Spawn(go);
             SummonRegistry.Register(summoner, this, go, maxAlive, dieWithCaster);
             if (life > 0f)
                 AbilityRuntime.Schedule(life, () => SummonRegistry.Despawn(go, spawnVfx), go);
@@ -84,6 +100,17 @@ public class SummonAction : CastAction
         if (spawnSound != null)
             AbilityPool.PlaySound(spawnSound, frame.position, cast.Definition.presentation.volume);
         cast.EmitNoise(frame.position, 0.6f);
+    }
+
+    /// <summary>Salt of the placement seed (keeps it apart from the projectile volleys of the same cast).</summary>
+    private const int PlacementSeedSalt = 7001;
+
+    /// <summary>The scene summons of <paramref name="cast"/> belong to: the summoner's (or its caster component's).</summary>
+    private static UnityEngine.SceneManagement.Scene SpawnScene(AbilityCastInstance cast)
+    {
+        if (cast.CasterEntity != null)
+            return cast.CasterEntity.gameObject.scene;
+        return cast.Caster != null ? cast.Caster.gameObject.scene : default;
     }
 
     public override float Reach(AbilityDefinition def, in AbilityStats s) => anchor == ActionAnchor.Caster ? radius : def.Range(s) + radius;
@@ -198,7 +225,8 @@ public class SummonAction : CastAction
                 return;
             if (vfx != null)
                 AbilityPool.PlayVfx(vfx, summon.transform.position, summon.transform.rotation);
-            UnityEngine.Object.Destroy(summon);
+            // Network despawn on a server (every client removes its copy); a plain Destroy offline.
+            GameNet.NetSpawn.Destroy(summon);
         }
     }
 }

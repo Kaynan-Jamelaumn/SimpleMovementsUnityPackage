@@ -12,6 +12,12 @@ using UnityEngine;
 /// dimmer and tinted sunlight under clouds, lightning, a wind zone for trees, snow settling and ground getting wet on
 /// the terrain, and optional sounds. Game code can read the weather (<see cref="Current"/>, <see cref="SampleWeather"/>,
 /// <see cref="WeatherChanged"/>), force it (<see cref="ForceWeather"/>) and save its time (<see cref="WeatherTime"/>).
+///
+/// Network sessions: the weather is a function of place, world seed and weather time, so the server's clock, forced
+/// weather and time of day (<see cref="CaptureSyncState"/>) are all the clients need to show the same weather; the world
+/// relay (NetWorldChunks) sends them and applies them on each client (<see cref="ApplySyncState"/>). Effects (particles,
+/// fog, light, sounds, lightning, tornadoes) are local presentation around each machine's viewer; a dedicated server
+/// skips them, and so does a host while its viewer is another player (see <see cref="ShowsEffects"/>).
 /// </summary>
 [AddComponentMenu("SimpleMovements/Weather System")]
 [DisallowMultipleComponent]
@@ -120,6 +126,8 @@ public partial class WeatherSystem : MonoBehaviour
     private float pendingTime;
     private bool forced;
     private WeatherState forcedState;
+    private WeatherType forcedType;
+    private float forcedStrength;
     private float forcedUntil;
     private float groundWetness, snowCover;
     private double weatherTime;
@@ -165,6 +173,30 @@ public partial class WeatherSystem : MonoBehaviour
     {
         get => timeOfDay;
         set => timeOfDay = value;
+    }
+
+    /// <summary>
+    /// Daylight from a day/night cycle (0 = night, 1 = full day; <see cref="DayNightCycle"/> sets it). With Lighting
+    /// Effects on, the sun and ambient light are scaled by it on top of the weather's dimming.
+    /// </summary>
+    public float Daylight { get; set; } = 1f;
+
+    /// <summary>Ambient light at full night, as a fraction of the day's (set by the <see cref="DayNightCycle"/>).</summary>
+    public float NightAmbient { get; set; } = 0.18f;
+
+    /// <summary>Sun colour tint of the time of day (orange at sunrise and sunset; set by the <see cref="DayNightCycle"/>).</summary>
+    public Color TwilightTint { get; set; } = Color.white;
+
+    /// <summary>Is this weather system driving the sun and ambient light on this machine right now?</summary>
+    public bool LightingEffectsActive => isActiveAndEnabled && lightingEffects && captured;
+
+    /// <summary>
+    /// The weather at a world position for game rules (player effects, spawn conditions): <see cref="SampleWeather(Vector3)"/>,
+    /// or the forced weather while <see cref="ForceWeather"/> is on (it applies everywhere).
+    /// </summary>
+    public WeatherState WeatherAt(Vector3 worldPosition)
+    {
+        return forced ? forcedState : SampleWeather(worldPosition);
     }
 
     /// <summary>
@@ -257,7 +289,34 @@ public partial class WeatherSystem : MonoBehaviour
         current = WeatherState.Blend(current, target, dt / Mathf.Max(0.1f, transitionSeconds));
         TrackType(dt);
         Accumulate(dt);
-        UpdateEffects(viewerPosition, dt);
+        // Effects are this machine's view of the weather (the state, its clock and the events above always run - the
+        // clients' weather follows them). Where nobody looks through the viewer they are removed and the scene's fog
+        // and light given back, as when the component is disabled.
+        if (ShowsEffects(follow))
+        {
+            CaptureSceneSettings();   // no-op while captured
+            UpdateEffects(viewerPosition, dt);
+        }
+        else if (captured || effectsRoot != null)
+        {
+            RestoreSceneSettings();
+            DestroyEffects();
+        }
+    }
+
+    /// <summary>
+    /// Does this machine show weather effects around <paramref name="follow"/>? Always offline. In a network session only
+    /// a machine with a local player does (never a dedicated server, headless or not), and only while the viewer is its
+    /// own player or a local object such as a camera - a host whose player is in the City shows no World weather around
+    /// another player out there.
+    /// </summary>
+    private static bool ShowsEffects(Transform follow)
+    {
+        if (!GameNet.NetAuthority.IsNetworked)
+            return true;
+        if (!GameNet.NetAuthority.HasLocalPlayer)
+            return false;
+        return follow == null || GameNet.NetAuthority.IsLocallyControlled(follow.gameObject);
     }
 
     /// <summary>
@@ -312,6 +371,8 @@ public partial class WeatherSystem : MonoBehaviour
     {
         Vector2 wind = current.WindDirection.sqrMagnitude > 1e-6f ? current.WindDirection : model.Wind;
         forcedState = WeatherState.Preset(type, strength, wind, hasState ? current.Temperature : 15f);
+        forcedType = type;
+        forcedStrength = strength;
         forced = true;
         forcedUntil = seconds > 0f ? Time.time + seconds : 0f;
         target = forcedState;
@@ -323,6 +384,57 @@ public partial class WeatherSystem : MonoBehaviour
     {
         forced = false;
         forcedUntil = 0f;
+        sampleTimer = 0f;
+    }
+
+    // ------------------------------------------------------------------ network
+
+    /// <summary>
+    /// What a client needs to show the same weather as this machine (the server): the weather clock (at network time
+    /// <paramref name="networkTime"/>), the forced weather and the time of day.
+    /// </summary>
+    public GameNet.WeatherSyncState CaptureSyncState(double networkTime)
+    {
+        TerrainGenerator generator = Generator;
+        return new GameNet.WeatherSyncState
+        {
+            valid = true,
+            weatherTime = weatherTime,
+            capturedAt = networkTime,
+            worldSeed = generator != null ? generator.VoronoiSeed : 0,
+            timeOfDay = timeOfDay,
+            forced = forced,
+            forcedType = forcedType,
+            forcedStrength = forcedStrength,
+            forcedSecondsLeft = forced && forcedUntil > 0f ? Mathf.Max(0.01f, forcedUntil - Time.time) : 0f,
+        };
+    }
+
+    /// <summary>
+    /// Takes the server's weather (a client; called by the network relay): the weather clock, run forward from when it was
+    /// captured to network time <paramref name="networkTime"/>, the time of day, and the forced weather - forced, changed or
+    /// cleared to match. The weather at the corrected time is looked up right away and blended in as usual. Invalid states
+    /// are ignored.
+    /// </summary>
+    public void ApplySyncState(GameNet.WeatherSyncState state, double networkTime)
+    {
+        if (!state.valid)
+            return;
+        weatherTime = GameNet.WorldChunkMath.ExtrapolateWeatherTime(state.weatherTime, state.capturedAt, networkTime, weatherTimeScale);
+        timeOfDay = float.IsNaN(state.timeOfDay) ? -1f : Mathf.Clamp(state.timeOfDay, -1f, 24f);
+        if (state.forced)
+        {
+            float strength = float.IsNaN(state.forcedStrength) ? 1f : Mathf.Clamp01(state.forcedStrength);
+            float seconds = float.IsNaN(state.forcedSecondsLeft) ? 0f : Mathf.Max(0f, state.forcedSecondsLeft);
+            if (!forced || forcedType != state.forcedType || !Mathf.Approximately(forcedStrength, strength))
+                ForceWeather(state.forcedType, strength, seconds);
+            else
+                forcedUntil = seconds > 0f ? Time.time + seconds : 0f;
+        }
+        else if (forced)
+        {
+            ClearForcedWeather();
+        }
         sampleTimer = 0f;
     }
 

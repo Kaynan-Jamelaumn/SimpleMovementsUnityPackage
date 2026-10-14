@@ -35,9 +35,13 @@ namespace ProceduralDungeon
         private void Update()
         {
             Bounds b = box.bounds;
+            // A client's copy only moves this machine's own player (the others are the server's to move).
+            bool replica = DungeonNet.IsReplica(this);
             foreach (CombatEntity p in CombatEntity.Players)
             {
                 if (p == null || !p.IsAlive || p.Controller == null || p.PlayerMovement == null)
+                    continue;
+                if (replica && !GameNet.NetAuthority.IsLocallyControlled(p.gameObject))
                     continue;
                 Vector3 pos = p.transform.position + Vector3.up * 0.5f;
                 bool inside = b.Contains(pos);

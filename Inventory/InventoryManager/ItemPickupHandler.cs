@@ -23,6 +23,8 @@ public static class ItemPickUpHandler
                 Debug.LogError("[Inventory] The picked object has no ItemPickable with an item assigned.", pickedItem);
                 return false;
             }
+            if (pickable.Taken)
+                return false; // already picked up whole this frame (it is being removed)
 
             int quantity = Mathf.Max(1, pickable.quantity);
             var durabilities = pickable.DurabilityList != null ? new List<int>(pickable.DurabilityList) : new List<int>();
@@ -30,7 +32,8 @@ public static class ItemPickUpHandler
 
             if (remaining <= 0)
             {
-                InventoryUtils.SafeDestroy(pickedItem);
+                pickable.Taken = true;
+                WorldItems.Remove(pickedItem, player); // network-despawned for everyone in a session
                 return true;
             }
 
@@ -40,6 +43,8 @@ public static class ItemPickUpHandler
             // The inventory took durabilities from the end of the list: the first ones stay with the rest.
             if (pickable.DurabilityList != null && pickable.DurabilityList.Count > remaining)
                 pickable.DurabilityList.RemoveRange(remaining, pickable.DurabilityList.Count - remaining);
+            if (taken > 0)
+                WorldItems.QuantityChanged(pickable, player);
             if (taken == 0)
                 Debug.Log("[Inventory] No room for this item.");
             return taken > 0;

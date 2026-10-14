@@ -31,13 +31,15 @@ namespace ProceduralDungeon
                 transform.Rotate(0f, 90f * Time.deltaTime, 0f, Space.World);
                 transform.localPosition = rest + Vector3.up * (0.12f + Mathf.Sin(Time.time * 2.2f) * 0.08f);
             }
-            if (DungeonPlayers.NearestAlive(transform.position, pickupDistance) == null)
+            // A client's copy is only shown: the server's key is picked up and the copy hidden when it is told.
+            if (DungeonNet.IsReplica(this) || DungeonPlayers.NearestAlive(transform.position, pickupDistance) == null)
                 return;
             DungeonInstance dungeon = tag != null ? tag.Dungeon : null;
             DungeonKeyRing.Add(dungeon, tag != null ? tag.link : 0);
             if (dungeon != null)
                 dungeon.Stats.Bump(ref dungeon.Stats.keysFound);
-            DungeonMessages.Show($"Found the {keyName}! A locked vault on this floor will open now.", true);
+            DungeonMessages.Show(this, $"Found the {keyName}! A locked vault on this floor will open now.", true);
+            DungeonNet.Publish(this, DungeonNet.Presence.Removed, null, DungeonNet.Channel.Presence);
             Destroy(gameObject);
         }
     }

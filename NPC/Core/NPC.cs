@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GameNet;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -12,9 +13,13 @@ using UnityEngine.Events;
 /// <para>Found by the player's <see cref="PlayerInteractor"/> (needs a collider on the NPC or a child). Scripts and
 /// UnityEvents can open it with <see cref="Interact()"/> (used by the nearest player); a second request in the same
 /// frame is ignored, so two inputs never open and close it at once.</para>
+/// <para>Network sessions: the server runs every session (range, "Busy", cooldown, events, purchases). A client's
+/// interaction reaches it through the player's interaction relay; the windows open on the player's own machine as a
+/// mirrored session (<see cref="NPCInteractionSession.IsMirror"/>) whose choices are sent back through
+/// <see cref="NetRelay"/>. With a NetworkObject and NetInteractable on the NPC, clients also see how many players use it.</para>
 /// </summary>
 [DisallowMultipleComponent]
-public class NPC : MonoBehaviour, IInteractable
+public class NPC : MonoBehaviour, IInteractable, IReplicatedInteractable
 {
     [Header("Identity")]
     [Tooltip("Name shown in prompts, dialogue and shops.")]
@@ -96,6 +101,9 @@ public class NPC : MonoBehaviour, IInteractable
     private readonly HashSet<PlayerInteractor> focusedBy = new HashSet<PlayerInteractor>();
     private bool behavioursDirty = true;
     private int lastRequestFrame = -1;
+    private GameObject lastRequestPlayer;
+    private GameObject cooldownPlayer;
+    private int replicatedSessions;
     private float readyAt;
     private Quaternion restRotation;
     private bool hasRestRotation;
@@ -103,6 +111,12 @@ public class NPC : MonoBehaviour, IInteractable
     private bool entityResolved;
 
     public static IReadOnlyList<NPC> All => all;
+
+    /// <summary>
+    /// Network: opens the windows of remote players' sessions on their machines and sends a client's choices to the server
+    /// (installed by the network layer; null offline - everything then happens on this machine as before).
+    /// </summary>
+    public static INPCSessionRelay NetRelay { get; set; }
     public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? gameObject.name : displayName;
     public string Title => title;
     public Sprite Portrait => portrait;
@@ -165,7 +179,10 @@ public class NPC : MonoBehaviour, IInteractable
                 return false;
             }
         }
-        if (maxPlayersAtOnce > 0 && sessions.Count >= maxPlayersAtOnce && SessionFor(player) == null)
+        int inUse = sessions.Count;
+        if (!NetAuthority.IsServer)
+            inUse = Mathf.Max(inUse, replicatedSessions); // a client counts the server's sessions
+        if (maxPlayersAtOnce > 0 && inUse >= maxPlayersAtOnce && SessionFor(player) == null)
         {
             reason = "Busy";
             return false;
@@ -181,7 +198,7 @@ public class NPC : MonoBehaviour, IInteractable
     /// <summary>The player's interactor asks to interact: opens a session, or closes the open one.</summary>
     public void Interact(PlayerInteractor interactor)
     {
-        if (interactor == null || !ClaimRequestFrame())
+        if (interactor == null || !ClaimRequestFrame(interactor.PlayerObject))
             return;
         RequestFor(interactor.PlayerObject, interactor);
     }
@@ -189,7 +206,7 @@ public class NPC : MonoBehaviour, IInteractable
     /// <summary>Opens (or closes) the NPC for the nearest player - for scripts, UnityEvents and older interaction code.</summary>
     public void Interact()
     {
-        if (!ClaimRequestFrame())
+        if (!ClaimRequestFrame(null))
             return;
         GameObject player = NearestPlayer();
         if (player == null)
@@ -197,6 +214,16 @@ public class NPC : MonoBehaviour, IInteractable
         PlayerInteractor interactor = PlayerInteractor.For(player.transform);
         if (interactor != null && !interactor.IsInRange(this) && SessionFor(player) == null)
             return;
+        // A network client: the server runs sessions - ask it through the player's relay.
+        if (NetAuthority.IsClientOnly && interactor != null && interactor.Relay != null)
+        {
+            NPCInteractionSession mirror = SessionFor(player);
+            if (mirror != null)
+                mirror.End("closed");
+            else
+                interactor.Relay.TryRelay(interactor, this);
+            return;
+        }
         RequestFor(player, interactor);
     }
 
@@ -241,7 +268,7 @@ public class NPC : MonoBehaviour, IInteractable
         if (!HasAnythingToOffer())
             return null;
 
-        var session = new NPCInteractionSession(this, player, interactor);
+        var session = new NPCInteractionSession(this, player, interactor) { IsRemote = IsControlledElsewhere(player) };
         sessions.Add(session);
         if (!hasRestRotation)
         {
@@ -249,7 +276,8 @@ public class NPC : MonoBehaviour, IInteractable
             hasRestRotation = true;
         }
         interactor?.BeginInteraction(this, () => session.End("closed"));
-        PlayIntro();
+        if (!session.IsRemote)
+            PlayIntro(); // a remote player's machine plays it when its copy of the session opens
         onConversationStarted?.Invoke(player);
         SessionStarted?.Invoke(session);
         AnySessionStarted?.Invoke(session);
@@ -279,8 +307,29 @@ public class NPC : MonoBehaviour, IInteractable
             if (b.IsAvailable(session, out string reason) || !string.IsNullOrEmpty(reason))
                 options.Add(b);
         }
+        if (session.IsRemote)
+        {
+            NetRelay?.ShowMenu(session, PickGreeting());
+            return;
+        }
+        ShowMenuWindow(session, PickGreeting(), options);
+    }
+
+    private void ShowMenuWindow(NPCInteractionSession session, string greeting, List<NPCBehaviour> options)
+    {
         NPCDialogueWindow window = NPCDialogueWindow.For(session, dialogueWindowPrefab);
-        window.ShowMenu(session, PickGreeting(), options, b => OpenBehaviour(session, b, true));
+        window.ShowMenu(session, greeting, options, b => PickOption(session, b));
+    }
+
+    /// <summary>The player picked an option of the menu (a mirrored session asks the server).</summary>
+    private void PickOption(NPCInteractionSession session, NPCBehaviour behaviour)
+    {
+        if (session == null || !session.IsOpen || behaviour == null)
+            return;
+        if (session.IsMirror)
+            NetRelay?.PickOption(session, behaviour);
+        else
+            OpenBehaviour(session, behaviour, true);
     }
 
     /// <summary>Opens <paramref name="behaviour"/> in the session (closing the menu or another option).</summary>
@@ -293,10 +342,32 @@ public class NPC : MonoBehaviour, IInteractable
             session.Inventory?.ShowMessage(string.IsNullOrEmpty(reason) ? $"{behaviour.OptionLabel} is not available." : reason, InventoryFeedback.Kind.Info);
             return;
         }
+        if (session.IsMirror)
+        {
+            NetRelay?.PickOption(session, behaviour); // the server opens it
+            return;
+        }
         CloseActiveBehaviour(session);
-        NPCDialogueWindow.HideFor(session); // the menu makes room for the option's window
         session.ActiveBehaviour = behaviour;
         session.OpenedFromMenu = fromMenu;
+        if (session.IsRemote)
+        {
+            try { behaviour.BeginRemote(session); }
+            catch (Exception e)
+            {
+                Debug.LogException(e, behaviour);
+                EndSession(session, "error");
+                return;
+            }
+            NetRelay?.OpenBehaviour(session, behaviour);
+            return;
+        }
+        NPCDialogueWindow.HideFor(session); // the menu makes room for the option's window
+        BeginBehaviour(session, behaviour);
+    }
+
+    private void BeginBehaviour(NPCInteractionSession session, NPCBehaviour behaviour)
+    {
         try { behaviour.Begin(session); }
         catch (Exception e)
         {
@@ -307,6 +378,20 @@ public class NPC : MonoBehaviour, IInteractable
 
     internal void OnBehaviourFinished(NPCInteractionSession session, NPCBehaviour behaviour)
     {
+        if (session.IsMirror)
+        {
+            // The server decides what comes next (the menu or the end); this window closes meanwhile.
+            CloseActiveBehaviour(session);
+            NetRelay?.BehaviourFinished(session, behaviour);
+            return;
+        }
+        if (session.IsRemote)
+        {
+            try { behaviour.FinishedRemote(session); }
+            catch (Exception e) { Debug.LogException(e, behaviour); }
+            if (!session.IsOpen)
+                return;
+        }
         CloseActiveBehaviour(session);
         GetOptions(session, optionBuffer);
         if (returnToMenuAfterOption && session.OpenedFromMenu && optionBuffer.Count > 0)
@@ -322,15 +407,28 @@ public class NPC : MonoBehaviour, IInteractable
         session.IsOpen = false;
         session.EndReason = reason ?? "";
         CloseActiveBehaviour(session);
-        NPCDialogueWindow.HideFor(session);
+        if (!session.IsRemote)
+            NPCDialogueWindow.HideFor(session);
         sessions.Remove(session);
         session.Interactor?.EndInteraction(this);
         readyAt = Time.time + interactionCooldown;
+        cooldownPlayer = session.Player;
         lastRequestFrame = Time.frameCount; // a press in the same frame does not reopen it
-        if (reason == "closed" || reason == "walked away")
-            SayFarewell(session);
+        lastRequestPlayer = session.Player;
+        if (session.IsMirror)
+        {
+            if (!session.EndedByServer)
+                NetRelay?.Close(session); // the server ends its session (and says farewell)
+        }
+        else
+        {
+            if (session.IsRemote)
+                NetRelay?.SessionEnded(session, session.EndReason);
+            if (reason == "closed" || reason == "walked away")
+                SayFarewell(session);
+        }
         session.RaiseEnded();
-        if (session.Player != null)
+        if (!session.IsMirror && session.Player != null)
             onConversationEnded?.Invoke(session.Player);
         SessionEnded?.Invoke(session);
         AnySessionEnded?.Invoke(session);
@@ -350,9 +448,122 @@ public class NPC : MonoBehaviour, IInteractable
         session.ActiveBehaviour = null;
         if (b == null)
             return;
-        try { b.End(session); }
+        try
+        {
+            if (session.IsRemote) b.EndRemote(session);
+            else b.End(session);
+        }
         catch (Exception e) { Debug.LogException(e, b); }
     }
+
+    // ------------------------------------------------------------------ network
+    /// <summary>Is <paramref name="player"/> controlled from another machine (a client's player seen by the server)?</summary>
+    private static bool IsControlledElsewhere(GameObject player) =>
+        NetAuthority.IsNetworked && NetAuthority.IsServer && player != null && !NetAuthority.IsLocallyControlled(player);
+
+    /// <summary>Position of <paramref name="behaviour"/> in <see cref="Behaviours"/> (-1 = not one of this NPC's) - how the network names it.</summary>
+    public int BehaviourIndex(NPCBehaviour behaviour)
+    {
+        IReadOnlyList<NPCBehaviour> b = Behaviours;
+        for (int i = 0; i < b.Count; i++)
+            if (ReferenceEquals(b[i], behaviour))
+                return i;
+        return -1;
+    }
+
+    /// <summary>The behaviour at <paramref name="index"/> of <see cref="Behaviours"/>, or null.</summary>
+    public NPCBehaviour BehaviourAt(int index)
+    {
+        IReadOnlyList<NPCBehaviour> b = Behaviours;
+        return index >= 0 && index < b.Count ? b[index] : null;
+    }
+
+    /// <summary>Is <paramref name="position"/> close enough to keep a session open (plus <paramref name="tolerance"/> metres)?</summary>
+    public bool IsWithinSessionRange(Vector3 position, float tolerance = 0f)
+    {
+        Vector3 d = position - InteractionPoint.position;
+        d.y = 0f;
+        float r = interactionRange + leaveDistanceMargin + Mathf.Max(0f, tolerance);
+        return d.sqrMagnitude <= r * r;
+    }
+
+    /// <summary>
+    /// Network, client: the server opened or changed the session of this machine's <paramref name="player"/>. Shows the
+    /// NPC's menu (<paramref name="behaviour"/> null, with the server's <paramref name="greeting"/>) or opens
+    /// <paramref name="behaviour"/>, creating the mirrored session the first time. Returns the session.
+    /// </summary>
+    public NPCInteractionSession ShowServerSession(GameObject player, PlayerInteractor interactor, NPCBehaviour behaviour, string greeting, bool fromMenu)
+    {
+        if (player == null || !isActiveAndEnabled)
+            return null;
+        player = AbilitiesStateMachine.PlayerRoot(player.transform).gameObject;
+        NPCInteractionSession session = SessionFor(player);
+        if (session != null && !session.IsMirror)
+            return session; // a session of this machine's own (should not happen on a client)
+        if (session == null)
+        {
+            if (interactor == null)
+                interactor = PlayerInteractor.For(player.transform);
+            session = new NPCInteractionSession(this, player, interactor) { IsMirror = true };
+            sessions.Add(session);
+            if (!hasRestRotation)
+            {
+                restRotation = transform.rotation;
+                hasRestRotation = true;
+            }
+            NPCInteractionSession opened = session;
+            interactor?.BeginInteraction(this, () => opened.End("closed"));
+            PlayIntro();
+            SessionStarted?.Invoke(session);
+            AnySessionStarted?.Invoke(session);
+        }
+        CloseActiveBehaviour(session);
+        if (behaviour == null)
+        {
+            var options = new List<NPCBehaviour>();
+            IReadOnlyList<NPCBehaviour> own = Behaviours;
+            for (int i = 0; i < own.Count; i++)
+            {
+                NPCBehaviour b = own[i];
+                if (b != null && b.isActiveAndEnabled && (b.IsAvailable(session, out string reason) || !string.IsNullOrEmpty(reason)))
+                    options.Add(b);
+            }
+            ShowMenuWindow(session, greeting, options);
+            return session;
+        }
+        NPCDialogueWindow.HideFor(session);
+        session.ActiveBehaviour = behaviour;
+        session.OpenedFromMenu = fromMenu;
+        BeginBehaviour(session, behaviour);
+        return session;
+    }
+
+    /// <summary>Network, client: the server ended the session of this machine's <paramref name="player"/>.</summary>
+    public void EndServerSession(GameObject player, string reason)
+    {
+        if (player == null)
+            return;
+        NPCInteractionSession session = SessionFor(AbilitiesStateMachine.PlayerRoot(player.transform).gameObject);
+        if (session == null || !session.IsMirror)
+            return;
+        session.EndedByServer = true;
+        EndSession(session, string.IsNullOrEmpty(reason) ? "closed" : reason);
+    }
+
+    /// <summary>How many players the server's NPC is talking to (replicated to clients for "Busy").</summary>
+    public int ReplicatedState
+    {
+        get
+        {
+            int n = 0;
+            for (int i = 0; i < sessions.Count; i++)
+                if (!sessions[i].IsMirror)
+                    n++;
+            return n;
+        }
+    }
+
+    public void ApplyReplicatedState(int state) => replicatedSessions = Mathf.Max(0, state);
 
     // ------------------------------------------------------------------ behaviours
     /// <summary>Finds the behaviours again (after adding or removing one at runtime).</summary>
@@ -394,11 +605,16 @@ public class NPC : MonoBehaviour, IInteractable
     }
 
     // ------------------------------------------------------------------ internals
-    private bool ClaimRequestFrame()
+    /// <summary>
+    /// One request per frame and player (a server hears several players in one frame; <paramref name="player"/> null =
+    /// a script's request, which any request of the frame blocks).
+    /// </summary>
+    private bool ClaimRequestFrame(GameObject player)
     {
-        if (lastRequestFrame == Time.frameCount)
+        if (lastRequestFrame == Time.frameCount && (player == null || lastRequestPlayer == null || lastRequestPlayer == player))
             return false;
         lastRequestFrame = Time.frameCount;
+        lastRequestPlayer = player;
         return true;
     }
 
@@ -413,7 +629,8 @@ public class NPC : MonoBehaviour, IInteractable
             open.End("closed"); // interacting again closes it
             return;
         }
-        if (Time.time < readyAt)
+        // The cooldown stops the press that closed a session from reopening it - for that player only (a server hears many).
+        if (Time.time < readyAt && (cooldownPlayer == null || cooldownPlayer == player))
             return;
         if (interactor != null && !CanInteract(interactor, out string reason))
         {
@@ -637,5 +854,6 @@ public class NPC : MonoBehaviour, IInteractable
         all.Clear();
         AnySessionStarted = null;
         AnySessionEnded = null;
+        NetRelay = null;
     }
 }

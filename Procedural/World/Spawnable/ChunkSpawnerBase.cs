@@ -10,6 +10,11 @@ using UnityEngine;
 /// Spawners work in ticks driven by Update, so they pause by themselves while their chunk is hidden (inactive) and
 /// carry on when it shows again. Nothing is spawned while <see cref="WorldSpawnRegistry.Paused"/> (the player is in
 /// a dungeon) or while the EndlessTerrain is disabled.
+///
+/// Network sessions: gameplay objects are spawned only where <see cref="GameNet.NetSpawn.ShouldSpawnHere"/> (the
+/// server); they leave the chunk's hierarchy to be network-spawned into the chunk's scene (see
+/// <see cref="GameNet.WorldTerrainNet.SpawnWorldObject"/>), so each spawner removes them itself in <see cref="End"/>.
+/// Clients spawn nothing - the server's objects arrive through the network.
 /// </summary>
 public abstract class ChunkSpawnerBase : MonoBehaviour
 {
@@ -89,8 +94,11 @@ public abstract class ChunkSpawnerBase : MonoBehaviour
         End();
     }
 
-    /// <summary>True while spawning is paused: the player is in a dungeon, or the EndlessTerrain is disabled.</summary>
-    protected bool IsPaused => WorldSpawnRegistry.Paused || Terrain == null || !Terrain.isActiveAndEnabled;
+    /// <summary>
+    /// True while spawning is paused: the player is in a dungeon (single player only - in a network session the World is
+    /// shared, so one player's dungeon does not stop it for the others), or the EndlessTerrain is disabled.
+    /// </summary>
+    protected bool IsPaused => (WorldSpawnRegistry.Paused && !GameNet.NetAuthority.IsNetworked) || Terrain == null || !Terrain.isActiveAndEnabled;
 
     /// <summary>The EndlessTerrain's viewer (used when nothing has the player tag).</summary>
     protected Transform Viewer => Terrain != null ? Terrain.viewer : null;

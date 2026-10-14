@@ -202,7 +202,7 @@ public class AudioArea : MonoBehaviour
         Vector3 direction = transform.position - playerPosition;
         float distance = direction.magnitude;
 
-        return !Physics.Raycast(playerPosition, direction.normalized, distance, obstacleLayers);
+        return !ScenePhysics.Raycast(playerPosition, direction.normalized, distance, obstacleLayers);
     }
 
     // Gizmo drawing for area visualization

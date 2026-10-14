@@ -768,6 +768,9 @@ public static class EquipmentProcs
 [Serializable, AbilityMenu("Triggered/On Hit: Affect Target", "When the wearer hits someone: a chance to apply effects to it (burn, poison, slow, stun, bonus damage...) or cast an ability at it.", 0)]
 public class OnHitEffect : EquipmentEffect
 {
+    /// <summary>Procs decide gameplay: only where the rules run.</summary>
+    public override EquipmentEffectScope Scope => EquipmentEffectScope.Rules;
+
     [Tooltip("Which hits can trigger it.")]
     public ProcTrigger trigger = ProcTrigger.WeaponHits;
     [Tooltip("Chance (0-1) per hit.")]
@@ -866,6 +869,9 @@ public class OnHitEffect : EquipmentEffect
 [Serializable, AbilityMenu("Triggered/When Hit: Affect Attacker", "When an enemy hurts the wearer: a chance to apply effects to it (spikes, frost, a knockback...) or cast an ability. Effects whose Recipient is Caster go to the wearer (a shield when hit).", 1)]
 public class WhenHitEffect : EquipmentEffect
 {
+    /// <summary>Procs decide gameplay: only where the rules run.</summary>
+    public override EquipmentEffectScope Scope => EquipmentEffectScope.Rules;
+
     [Tooltip("Chance (0-1) per hit taken.")]
     [Range(0f, 1f)] public float chance = 0.25f;
     [Tooltip("Seconds before it can trigger again (0 = every hit can).")]
@@ -973,6 +979,9 @@ public class WhenHitEffect : EquipmentEffect
 [Serializable, AbilityMenu("Triggered/Pulse Around Wearer", "Every few seconds, affects characters around the wearer: a burning aura for enemies, a healing pulse for allies...", 2)]
 public class PulseEffect : EquipmentEffect
 {
+    /// <summary>Pulses hit characters: only where the rules run.</summary>
+    public override EquipmentEffectScope Scope => EquipmentEffectScope.Rules;
+
     [Tooltip("Seconds between pulses.")]
     [Min(0.1f)] public float interval = 2f;
     [Tooltip("Radius around the wearer (metres).")]
@@ -1265,6 +1274,9 @@ public class SpecialMechanicEffect : EquipmentEffect
 [Serializable, AbilityMenu("Visual/Attached Effect", "Shows a prefab (glow, aura, particles) on the wearer while active.", 0)]
 public class AttachedVisualEffect : EquipmentEffect
 {
+    /// <summary>Only a visual: shown on every copy of the character.</summary>
+    public override EquipmentEffectScope Scope => EquipmentEffectScope.Cosmetic;
+
     [Tooltip("Spawned on the wearer while active and removed afterwards.")]
     public GameObject prefab;
     [Tooltip("Name of a child transform (a bone such as 'Hand_R' or 'Spine') to attach to. Empty = the character's body.")]

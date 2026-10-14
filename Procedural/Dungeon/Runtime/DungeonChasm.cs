@@ -84,7 +84,7 @@ namespace ProceduralDungeon
             {
                 p.ApplyDamage(new DamageInfo { amount = p.MaxHealth * 10f + 1000f, target = p, point = p.transform.position, direction = Vector3.down, type = DamageType.True });
                 safe.Remove(p);
-                DungeonMessages.Show("The black fog swallows you.", true);
+                DungeonMessages.Show(this, "The black fog swallows you.", true);
                 return;
             }
             Vector3 to;
@@ -103,7 +103,7 @@ namespace ProceduralDungeon
                 p.PlayerMovement.VerticalVelocity = 0f;
             if (fallDamage > 0f)
                 p.ApplyDamage(new DamageInfo { amount = p.MaxHealth * fallDamage, target = p, point = to, direction = Vector3.down, type = DamageType.True });
-            DungeonMessages.Show(message, true);
+            DungeonMessages.Show(this, message, true);
         }
 
         /// <summary>The walkable cell of the floor below nearest under a position (searching outwards in rings).</summary>

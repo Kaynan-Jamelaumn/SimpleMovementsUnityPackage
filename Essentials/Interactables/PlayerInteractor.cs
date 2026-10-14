@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GameNet;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -40,9 +41,13 @@ public enum InteractionPromptPlacement
 /// a target aimed at but out of reach shows why ("Too far").</item>
 /// <item>While an interaction is open (a shop, a dialogue) targeting pauses and the Interact input closes it.</item>
 /// </list>
-/// Put it on the player (added by Tools ▸ SimpleMovements ▸ NPC ▸ Add Player Interactor To Players). The older
+/// Put it on the player (added by Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Add Player Interactor To Players). The older
 /// <c>Player.OnInteract</c> keeps working for doors, items and chests; turn on Handle Legacy Interactables to use this
 /// component for them too (and then unwire Player.OnInteract so a key is not handled twice).
+/// <para>Network sessions: only the copy of the player controlled from this machine targets and reads input. On a
+/// client that copy hands each interaction to its <see cref="Relay"/> (the server checks range, hold time and
+/// <see cref="IInteractable.CanInteract"/> with its own positions and interacts on its copy, see
+/// <see cref="InteractFromRequest"/>); the prompt and highlight stay local.</para>
 /// </summary>
 [DisallowMultipleComponent]
 public class PlayerInteractor : MonoBehaviour
@@ -135,6 +140,7 @@ public class PlayerInteractor : MonoBehaviour
     private int lastEndedFrame = -1;
     private InteractionPromptUI prompt;
     private bool promptCreated;
+    private IInteractionRelay relay;
 
     /// <summary>Raised when the target in focus changes (null = none).</summary>
     public event Action<IInteractable> FocusChanged;
@@ -155,6 +161,23 @@ public class PlayerInteractor : MonoBehaviour
     public InventoryManager Inventory => inventory != null ? inventory : (inventory = InventoryManager.For(this));
     public string InputSource => interactInput != null ? interactInput.Source : "not bound yet";
     public string ClickSource => clickInput != null ? clickInput.Source : clickToInteract ? "not bound yet" : "off";
+    /// <summary>Reach of the older interaction objects (doors, items, storage) handled through <see cref="LegacyInteractableTarget"/>.</summary>
+    public float LegacyRange => legacyRange;
+
+    /// <summary>
+    /// Network: sends this player's interactions to the server. Set on a client's own player by the network layer; null
+    /// offline and on the server (interactions then run here exactly as before).
+    /// </summary>
+    public IInteractionRelay Relay
+    {
+        get => relay;
+        set
+        {
+            if (relay != null && holding != null && !ReferenceEquals(relay, value))
+                CancelHold();
+            relay = value;
+        }
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => all.Clear();
@@ -184,7 +207,11 @@ public class PlayerInteractor : MonoBehaviour
             all.Add(this);
     }
 
-    private void Start() => BindInput();
+    private void Start()
+    {
+        if (NetAuthority.IsLocallyControlled(PlayerObject))
+            BindInput();
+    }
 
     private void OnDisable()
     {
@@ -219,6 +246,20 @@ public class PlayerInteractor : MonoBehaviour
 
     private void Update()
     {
+        // Another machine's player (seen here, or kept by the server): its own machine targets and reads the keys. This
+        // copy only holds the sessions the server opened for it.
+        if (!NetAuthority.IsLocallyControlled(PlayerObject))
+        {
+            if (focused != null || holding != null)
+            {
+                CancelHold(false);
+                SetFocus(null, false, "");
+            }
+            HidePrompt();
+            PointerCapture.Release(this);
+            return;
+        }
+
         if (!inputBound)
             BindInput();
 
@@ -343,7 +384,7 @@ public class PlayerInteractor : MonoBehaviour
     /// <summary>The first target along the ray (solid objects in front of it block it).</summary>
     private IInteractable RayTarget(Ray ray)
     {
-        int n = Physics.RaycastNonAlloc(ray, rayHits, rayDistance, interactableLayers, triggerColliders);
+        int n = ScenePhysics.RaycastNonAlloc(ray, rayHits, rayDistance, interactableLayers, triggerColliders);
         if (n <= 0)
             return null;
         Array.Sort(rayHits, 0, n, HitDistanceComparer.Instance);
@@ -364,7 +405,7 @@ public class PlayerInteractor : MonoBehaviour
     private IInteractable BestNearby()
     {
         Vector3 origin = PlayerRoot.position;
-        int n = Physics.OverlapSphereNonAlloc(origin, proximityRadius, overlap, interactableLayers, triggerColliders);
+        int n = ScenePhysics.OverlapSphereNonAlloc(origin, proximityRadius, overlap, interactableLayers, triggerColliders);
         Vector3 forward = Forward();
         IInteractable best = null;
         float bestScore = float.NegativeInfinity;
@@ -424,7 +465,10 @@ public class PlayerInteractor : MonoBehaviour
     }
 
     /// <summary>Within the target's Interaction Range on the ground plane (and not far above or below).</summary>
-    public bool IsInRange(IInteractable t)
+    public bool IsInRange(IInteractable t) => IsInRange(t, 0f);
+
+    /// <summary>Within the target's Interaction Range plus <paramref name="tolerance"/> metres (network latency).</summary>
+    public bool IsInRange(IInteractable t, float tolerance)
     {
         Transform p = t?.InteractionPoint;
         if (p == null)
@@ -432,8 +476,61 @@ public class PlayerInteractor : MonoBehaviour
         Vector3 d = p.position - PlayerRoot.position;
         float vertical = Mathf.Abs(d.y);
         d.y = 0f;
-        float range = Mathf.Max(0.1f, t.InteractionRange);
+        float range = Mathf.Max(0.1f, t.InteractionRange) + Mathf.Max(0f, tolerance);
         return d.sqrMagnitude <= range * range && vertical <= range + VerticalTolerance;
+    }
+
+    /// <summary>
+    /// Network, server: a client asked this (its) player to interact with <paramref name="target"/>. Checked again with
+    /// this machine's positions - alive, range (plus <paramref name="rangeTolerance"/> for latency), line of sight,
+    /// <see cref="IInteractable.CanInteract"/> - then the target's <see cref="IInteractable.Interact"/> runs here.
+    /// <paramref name="reason"/> says why not. The hold time is checked by the caller.
+    /// </summary>
+    public bool InteractFromRequest(IInteractable target, float rangeTolerance, out string reason)
+    {
+        reason = "";
+        if (target == null || (target is UnityEngine.Object o && o == null))
+            return false;
+        if (entity != null && !entity.IsAlive)
+            return false;
+        if (!IsInRange(target, rangeTolerance))
+        {
+            reason = "Too far";
+            return false;
+        }
+        if (!target.CanInteract(this, out reason))
+        {
+            if (string.IsNullOrEmpty(reason)) reason = "Unavailable";
+            return false;
+        }
+        if (requireLineOfSight && !HasLineOfSight(target))
+        {
+            reason = "Not in sight";
+            return false;
+        }
+        reason = "";
+        try { target.Interact(this); }
+        catch (Exception e)
+        {
+            Debug.LogException(e, target as UnityEngine.Object);
+            return false;
+        }
+        Interacted?.Invoke(target);
+        return true;
+    }
+
+    /// <summary>
+    /// The target <paramref name="component"/> stands for: the component itself when it is an <see cref="IInteractable"/>,
+    /// the <see cref="LegacyInteractableTarget"/> of an older Interactable or Storage, else null. Used by the network
+    /// layer to find, on this machine, what another machine interacted with.
+    /// </summary>
+    public IInteractable TargetFor(Component component)
+    {
+        if (component == null)
+            return null;
+        if (component is IInteractable t)
+            return t;
+        return LegacyInteractableTarget.IsOwnerComponent(component) ? LegacyTarget(component) : null;
     }
 
     private bool HasLineOfSight(IInteractable t)
@@ -448,7 +545,7 @@ public class PlayerInteractor : MonoBehaviour
         float dist = dir.magnitude;
         if (dist < 0.05f)
             return true;
-        int n = Physics.RaycastNonAlloc(eye, dir / dist, rayHits, dist, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        int n = ScenePhysics.RaycastNonAlloc(eye, dir / dist, rayHits, dist, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < n; i++)
         {
             Collider col = rayHits[i].collider;
@@ -482,6 +579,12 @@ public class PlayerInteractor : MonoBehaviour
         Component legacy = LegacyInteractableTarget.FindOwner(col);
         if (legacy == null || (legacy is Behaviour lb && !lb.isActiveAndEnabled))
             return null;
+        return LegacyTarget(legacy);
+    }
+
+    /// <summary>The (cached) wrapper of an older interaction component.</summary>
+    private LegacyInteractableTarget LegacyTarget(Component legacy)
+    {
         if (!legacyTargets.TryGetValue(legacy, out LegacyInteractableTarget target))
         {
             if (legacyTargets.Count > 256)
@@ -568,7 +671,7 @@ public class PlayerInteractor : MonoBehaviour
             if (holdTime >= holding.HoldDuration)
             {
                 IInteractable t = holding;
-                CancelHold();
+                CancelHold(false); // completed, not cancelled: the server is told by the interaction itself
                 DoInteract(t);
             }
             return;
@@ -589,15 +692,33 @@ public class PlayerInteractor : MonoBehaviour
             holding = t;
             holdFromClick = fromClick;
             holdTime = 0f;
+            NotifyHold(t, true);
+            // An item that takes time to pick up: on a network client the inventory tells the server the hold started.
+            if (t is LegacyInteractableTarget legacy && legacy.IsPickup && legacy.Owner != null)
+                Inventory?.BeginPickupHold(legacy.Owner.gameObject);
             return;
         }
         DoInteract(t);
     }
 
-    private void CancelHold()
+    private void CancelHold() => CancelHold(true);
+
+    /// <summary>Stops holding; <paramref name="notify"/> tells the relay (the server) the hold was let go.</summary>
+    private void CancelHold(bool notify)
     {
+        IInteractable was = holding;
         holding = null;
         holdTime = 0f;
+        if (notify && was != null)
+            NotifyHold(was, false);
+    }
+
+    private void NotifyHold(IInteractable target, bool started)
+    {
+        if (relay == null || target == null)
+            return;
+        try { relay.HoldChanged(this, target, started); }
+        catch (Exception e) { Debug.LogException(e, this); }
     }
 
     /// <summary>Interacts with <paramref name="target"/> now (range and availability are checked again). True if it happened.</summary>
@@ -608,6 +729,22 @@ public class PlayerInteractor : MonoBehaviour
             if (!string.IsNullOrEmpty(reason))
                 Inventory?.ShowMessage($"{target?.InteractionName}: {reason}", InventoryFeedback.Kind.Info);
             return false;
+        }
+        // A client's own player in a network session: the server checks it again and interacts on its copy.
+        if (relay != null)
+        {
+            bool sent;
+            try { sent = relay.TryRelay(this, target); }
+            catch (Exception e)
+            {
+                Debug.LogException(e, this);
+                sent = false;
+            }
+            if (sent)
+            {
+                Interacted?.Invoke(target);
+                return true;
+            }
         }
         try { target.Interact(this); }
         catch (Exception e)

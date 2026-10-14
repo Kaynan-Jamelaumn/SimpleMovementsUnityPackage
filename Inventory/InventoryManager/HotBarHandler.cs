@@ -1,6 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// The hotbar's selected slot and the model of the item in hand. The selection lives in a <see cref="State"/> owned by
+/// each inventory (it used to be static, shared by every inventory: on a server holding several players, one player's
+/// number key changed everyone's item in hand).
+/// </summary>
 public static class HotbarHandler
 {
     // Constants
@@ -8,36 +13,26 @@ public static class HotbarHandler
     private const float NORMAL_SLOT_SCALE = 1f;
     private const int MAX_HOTBAR_SLOTS = 9;
 
-    // State (static: one player's hotbar)
-    private static int selectedHotbarSlot = 0;
-    private static int lastSelectedSlot = -1;
-    private static GameObject lastHeldItem;
-
-    // Cached components for performance
-    private static GameObject currentHandItem;
-
-    // Properties
-    public static int SelectedHotbarSlot => selectedHotbarSlot;
-
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics()
+    /// <summary>One hotbar's selection and what its hand shows.</summary>
+    public sealed class State
     {
-        selectedHotbarSlot = 0;
-        lastSelectedSlot = -1;
-        lastHeldItem = null;
-        currentHandItem = null;
+        /// <summary>The selected hotbar slot.</summary>
+        public int Selected { get; internal set; }
+        internal int lastSelected = -1;
+        internal GameObject lastHeldItem;
+        internal GameObject currentHandItem;
     }
 
     /// <summary>Number keys 1-9 select a hotbar slot. Returns true when the selection changed.</summary>
-    public static bool CheckForHotbarInput(GameObject[] hotbarSlots, Transform handParent)
+    public static bool CheckForHotbarInput(State state, GameObject[] hotbarSlots, Transform handParent)
     {
-        if (hotbarSlots == null || hotbarSlots.Length == 0) return false;
+        if (state == null || hotbarSlots == null || hotbarSlots.Length == 0) return false;
 
         int newSelectedSlot = GetPressedSlotIndex(hotbarSlots.Length);
-        if (newSelectedSlot == -1 || newSelectedSlot == selectedHotbarSlot) return false;
+        if (newSelectedSlot == -1 || newSelectedSlot == state.Selected) return false;
 
-        selectedHotbarSlot = newSelectedSlot;
-        HotbarItemChanged(hotbarSlots, handParent);
+        state.Selected = newSelectedSlot;
+        HotbarItemChanged(state, hotbarSlots, handParent);
         return true;
     }
 
@@ -63,54 +58,54 @@ public static class HotbarHandler
     private static int Valid(int index, int count) => index < count ? index : -1;
 
     // Optimized hotbar update - only update when selection changes
-    public static void HotbarItemChanged(GameObject[] hotbarSlots, Transform handParent)
+    public static void HotbarItemChanged(State state, GameObject[] hotbarSlots, Transform handParent)
     {
-        if (hotbarSlots == null || handParent == null) return;
+        if (state == null || hotbarSlots == null || handParent == null) return;
 
         // Only update if selection actually changed
-        if (lastSelectedSlot == selectedHotbarSlot) return;
+        if (state.lastSelected == state.Selected) return;
 
-        UpdateSlotVisuals(hotbarSlots);
-        UpdateHandItem(hotbarSlots, handParent);
+        UpdateSlotVisuals(state, hotbarSlots);
+        UpdateHandItem(state, hotbarSlots, handParent);
 
-        lastSelectedSlot = selectedHotbarSlot;
-        lastHeldItem = CurrentSlotItem(hotbarSlots);
+        state.lastSelected = state.Selected;
+        state.lastHeldItem = CurrentSlotItem(state, hotbarSlots);
     }
 
     /// <summary>Rebuilds the hand model when the item in the selected slot changed (dragged in or out, used up).</summary>
-    public static void RefreshIfItemChanged(GameObject[] hotbarSlots, Transform handParent)
+    public static void RefreshIfItemChanged(State state, GameObject[] hotbarSlots, Transform handParent)
     {
-        if (hotbarSlots == null || handParent == null) return;
-        if (lastSelectedSlot != selectedHotbarSlot || lastHeldItem != CurrentSlotItem(hotbarSlots))
-            ForceRefresh(hotbarSlots, handParent);
+        if (state == null || hotbarSlots == null || handParent == null) return;
+        if (state.lastSelected != state.Selected || state.lastHeldItem != CurrentSlotItem(state, hotbarSlots))
+            ForceRefresh(state, hotbarSlots, handParent);
     }
 
-    private static GameObject CurrentSlotItem(GameObject[] hotbarSlots)
+    private static GameObject CurrentSlotItem(State state, GameObject[] hotbarSlots)
     {
-        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length || hotbarSlots[selectedHotbarSlot] == null) return null;
-        var slot = hotbarSlots[selectedHotbarSlot].GetComponent<InventorySlot>();
+        if (hotbarSlots == null || state.Selected >= hotbarSlots.Length || hotbarSlots[state.Selected] == null) return null;
+        var slot = hotbarSlots[state.Selected].GetComponent<InventorySlot>();
         return slot != null ? slot.heldItem : null;
     }
 
     // Update visual states of hotbar slots
-    private static void UpdateSlotVisuals(GameObject[] hotbarSlots)
+    private static void UpdateSlotVisuals(State state, GameObject[] hotbarSlots)
     {
         for (int i = 0; i < hotbarSlots.Length; i++)
         {
             if (hotbarSlots[i] == null) continue;
 
-            float scale = (i == selectedHotbarSlot) ? SELECTED_SLOT_SCALE : NORMAL_SLOT_SCALE;
+            float scale = (i == state.Selected) ? SELECTED_SLOT_SCALE : NORMAL_SLOT_SCALE;
             hotbarSlots[i].transform.localScale = Vector3.one * scale;
         }
     }
 
     // Handle hand item instantiation and cleanup
-    private static void UpdateHandItem(GameObject[] hotbarSlots, Transform handParent)
+    private static void UpdateHandItem(State state, GameObject[] hotbarSlots, Transform handParent)
     {
         // Clean up current hand item
-        ClearHandItems(handParent);
+        ClearHandItems(state, handParent);
 
-        InventoryItem heldItem = CurrentSlotInventoryItem(hotbarSlots);
+        InventoryItem heldItem = CurrentSlotInventoryItem(state, hotbarSlots);
 
         // Equipment Visuals show (and sheathe) the item in hand themselves: one model, moved between hand and sheath.
         EquipmentVisuals visuals = EquipmentVisuals.For(handParent);
@@ -123,14 +118,14 @@ public static class HotbarHandler
 
         if (heldItem.Live()?.itemScriptableObject.Live()?.Prefab != null)
         {
-            InstantiateHandItem(heldItem, handParent);
+            InstantiateHandItem(state, heldItem, handParent);
         }
     }
 
-    private static InventoryItem CurrentSlotInventoryItem(GameObject[] hotbarSlots)
+    private static InventoryItem CurrentSlotInventoryItem(State state, GameObject[] hotbarSlots)
     {
-        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length) return null;
-        var slotObject = hotbarSlots[selectedHotbarSlot];
+        if (hotbarSlots == null || state.Selected >= hotbarSlots.Length) return null;
+        var slotObject = hotbarSlots[state.Selected];
         if (slotObject == null) return null;
         var selectedSlot = slotObject.GetComponent<InventorySlot>();
         if (selectedSlot == null || selectedSlot.heldItem == null) return null;
@@ -141,9 +136,9 @@ public static class HotbarHandler
     /// Removes the models the hotbar put in the hand. Only those: the hand bone's own children (fingers, sockets) used to
     /// be destroyed with them when the hand parent was the hand bone itself.
     /// </summary>
-    public static void ClearHand(Transform handParent) => ClearHandItems(handParent);
+    public static void ClearHand(Transform handParent) => ClearHandItems(null, handParent);
 
-    private static void ClearHandItems(Transform handParent)
+    private static void ClearHandItems(State state, Transform handParent)
     {
         if (handParent == null) return;
 
@@ -153,13 +148,15 @@ public static class HotbarHandler
             if (child != null && child.GetComponent<HeldItemModel>() != null)
                 Object.Destroy(child.gameObject);
         }
-        if (currentHandItem != null && currentHandItem.transform.parent == handParent)
-            Object.Destroy(currentHandItem);
-        currentHandItem = null;
+        if (state == null)
+            return;
+        if (state.currentHandItem != null && state.currentHandItem.transform.parent == handParent)
+            Object.Destroy(state.currentHandItem);
+        state.currentHandItem = null;
     }
 
     // Create and configure hand item
-    private static void InstantiateHandItem(InventoryItem inventoryItem, Transform handParent)
+    private static void InstantiateHandItem(State state, InventoryItem inventoryItem, Transform handParent)
     {
         try
         {
@@ -169,7 +166,7 @@ public static class HotbarHandler
             newItem.AddComponent<HeldItemModel>();
 
             ConfigureHandItem(newItem, itemSO);
-            currentHandItem = newItem;
+            state.currentHandItem = newItem;
         }
         catch (System.Exception e)
         {
@@ -214,12 +211,12 @@ public static class HotbarHandler
     }
 
     // Get currently held item in hotbar
-    public static InventoryItem GetCurrentHeldItem(GameObject[] hotbarSlots)
+    public static InventoryItem GetCurrentHeldItem(State state, GameObject[] hotbarSlots)
     {
-        if (hotbarSlots == null || selectedHotbarSlot >= hotbarSlots.Length)
+        if (state == null || hotbarSlots == null || state.Selected >= hotbarSlots.Length)
             return null;
 
-        var slot = hotbarSlots[selectedHotbarSlot].Live()?.GetComponent<InventorySlot>();
+        var slot = hotbarSlots[state.Selected].Live()?.GetComponent<InventorySlot>();
         return slot.Live()?.heldItem.Live()?.GetComponent<InventoryItem>();
     }
 
@@ -243,42 +240,48 @@ public static class HotbarHandler
     }
 
     // Select specific slot programmatically
-    public static void SelectSlot(int slotIndex, GameObject[] hotbarSlots, Transform handParent)
+    /// <summary>Selects a slot from code (also where no hotbar UI exists yet: the selection is kept).</summary>
+    public static void SelectSlot(State state, int slotIndex, GameObject[] hotbarSlots, Transform handParent)
     {
-        int count = hotbarSlots != null ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
+        if (state == null) return;
+        int count = hotbarSlots != null && hotbarSlots.Length > 0 ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
         if (slotIndex < 0 || slotIndex >= count) return;
 
-        selectedHotbarSlot = slotIndex;
-        HotbarItemChanged(hotbarSlots, handParent);
+        state.Selected = slotIndex;
+        HotbarItemChanged(state, hotbarSlots, handParent);
     }
 
     // Get next/previous slot with wrapping
-    public static void SelectNextSlot(GameObject[] hotbarSlots, Transform handParent)
+    public static void SelectNextSlot(State state, GameObject[] hotbarSlots, Transform handParent)
     {
+        if (state == null) return;
         int count = hotbarSlots != null && hotbarSlots.Length > 0 ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
-        int nextSlot = (selectedHotbarSlot + 1) % count;
-        SelectSlot(nextSlot, hotbarSlots, handParent);
+        int nextSlot = (state.Selected + 1) % count;
+        SelectSlot(state, nextSlot, hotbarSlots, handParent);
     }
 
-    public static void SelectPreviousSlot(GameObject[] hotbarSlots, Transform handParent)
+    public static void SelectPreviousSlot(State state, GameObject[] hotbarSlots, Transform handParent)
     {
+        if (state == null) return;
         int count = hotbarSlots != null && hotbarSlots.Length > 0 ? Mathf.Min(hotbarSlots.Length, MAX_HOTBAR_SLOTS) : MAX_HOTBAR_SLOTS;
-        int prevSlot = (selectedHotbarSlot - 1 + count) % count;
-        SelectSlot(prevSlot, hotbarSlots, handParent);
+        int prevSlot = (state.Selected - 1 + count) % count;
+        SelectSlot(state, prevSlot, hotbarSlots, handParent);
     }
 
     // Force refresh the hotbar display
-    public static void ForceRefresh(GameObject[] hotbarSlots, Transform handParent)
+    public static void ForceRefresh(State state, GameObject[] hotbarSlots, Transform handParent)
     {
-        lastSelectedSlot = -1; // Force update
-        HotbarItemChanged(hotbarSlots, handParent);
+        if (state == null) return;
+        state.lastSelected = -1; // Force update
+        HotbarItemChanged(state, hotbarSlots, handParent);
     }
 
     // Cleanup method for when hotbar is disabled
-    public static void Cleanup(Transform handParent)
+    public static void Cleanup(State state, Transform handParent)
     {
-        ClearHandItems(handParent);
-        currentHandItem = null;
-        lastSelectedSlot = -1;
+        ClearHandItems(state, handParent);
+        if (state == null) return;
+        state.currentHandItem = null;
+        state.lastSelected = -1;
     }
 }

@@ -47,7 +47,7 @@ namespace ProceduralDungeon
                 if (door != null && !door.IsOpen)
                 {
                     door.Open();
-                    DungeonMessages.Show("Somewhere nearby, stone grinds against stone...", true);
+                    DungeonMessages.Show(this, "Somewhere nearby, stone grinds against stone...", true);
                 }
             }
             else
@@ -58,12 +58,19 @@ namespace ProceduralDungeon
                     if (gas != null)
                         gas.Shut();
                 }
-                DungeonMessages.Show("The valve groans shut. The gas stops.", true);
+                DungeonMessages.Show(this, "The valve groans shut. The gas stops.", true);
             }
             AnyPulled?.Invoke(this);
             return true;
         }
 
         protected override void OnUsedUp() { }
+
+        /// <summary>A client's copy: the server pulled it (the handle tilts).</summary>
+        protected override void OnNetState(int state, byte[] payload)
+        {
+            if (state > 0 && pulled < 0f)
+                pulled = Time.time;
+        }
     }
 }

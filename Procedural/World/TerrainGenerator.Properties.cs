@@ -80,7 +80,12 @@ public partial class TerrainGenerator : MonoBehaviour
         ? Mathf.Tan(biomeBoundaryMaxSlopeDegrees * Mathf.Deg2Rad)
         : 0f;
 
-    public bool OrderIndependentBiomeLayout => orderIndependentBiomeLayout;
+    /// <summary>
+    /// Whether the biome layout depends only on seed and settings (see the Order-Independent Layout setting). Always true
+    /// for a generator that woke up during a network session: the server streams chunks around several players and each
+    /// client only around its own, in different orders, and they must all get the same world.
+    /// </summary>
+    public bool OrderIndependentBiomeLayout => orderIndependentBiomeLayout || networkRequiresOrderIndependence;
 
     // Terrain Shape (Landforms) Properties
     public TerrainShapeMode TerrainShapeMode => terrainShapeMode;
@@ -110,11 +115,12 @@ public partial class TerrainGenerator : MonoBehaviour
             bool landforms = terrainShapeMode != TerrainShapeMode.ClassicOnly;
             bool belts = landforms && mountainBeltStrength > 0f;
             TerrainClimate climate = useNaturalClimatePlacement ? TerrainClimate : null;
-            if (!orderIndependentBiomeLayout && !landforms && climate == null)
+            bool orderIndependent = OrderIndependentBiomeLayout;
+            if (!orderIndependent && !landforms && climate == null)
                 return null;
             return new VoronoiBiomeGenerator.LayoutOptions
             {
-                OrderIndependent = orderIndependentBiomeLayout,
+                OrderIndependent = orderIndependent,
                 ShapeMode = terrainShapeMode,
                 BeltStrength = belts ? mountainBeltStrength : 0f,
                 BeltScale = MountainBeltScale,

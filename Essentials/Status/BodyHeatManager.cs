@@ -29,6 +29,7 @@ public class BodyHeatManager : StatusManager
 
     private Coroutine temperatureEffectsRoutine;
     private Coroutine environmentalTemperatureRoutine;
+    private bool started;
     private List<CoroutineInfo> bodyHeatEffectRoutines = new List<CoroutineInfo>();
 
     // References to other managers
@@ -39,7 +40,16 @@ public class BodyHeatManager : StatusManager
     [SerializeField] private HealthManager healthManager;
 
     public TemperatureLevel CurrentTemperatureLevel => GetTemperatureLevel();
-    public float EnvironmentalTemperature { get => environmentalTemperature; set => environmentalTemperature = value; }
+    public float EnvironmentalTemperature
+    {
+        get => environmentalTemperature;
+        set
+        {
+            if (IsReplica)
+                return; // the server's temperature arrives through replication
+            environmentalTemperature = value;
+        }
+    }
     public List<CoroutineInfo> BodyHeatEffectRoutines { get => bodyHeatEffectRoutines; set => bodyHeatEffectRoutines = value; }
 
     public enum TemperatureLevel
@@ -62,12 +72,38 @@ public class BodyHeatManager : StatusManager
 
     private void Start()
     {
-        currentValue = normalTemperature;
-        temperatureEffectsRoutine = StartCoroutine(TemperatureEffectsRoutine());
-        environmentalTemperatureRoutine = StartCoroutine(EnvironmentalTemperatureRoutine());
+        started = true;
+        // A client's copy keeps the server's value and runs no routines (the server simulates body heat).
+        if (!IsReplica)
+        {
+            currentValue = normalTemperature;
+            StartRoutines();
+        }
 
         // Initially hide UI if temperature is normal
         UpdateUIVisibility();
+    }
+
+    private void StartRoutines()
+    {
+        temperatureEffectsRoutine = StartCoroutine(TemperatureEffectsRoutine());
+        environmentalTemperatureRoutine = StartCoroutine(EnvironmentalTemperatureRoutine());
+    }
+
+    protected override void OnReplicaChanged(bool on)
+    {
+        temperatureEffectsRoutine = null;
+        environmentalTemperatureRoutine = null;
+        if (!on && started)
+            StartRoutines();
+    }
+
+    /// <summary>Client copies: the environmental temperature the server uses (tooltips, UI). Ignored where the rules run.</summary>
+    public void ApplyReplicatedEnvironment(float temperature)
+    {
+        if (!IsReplica || float.IsNaN(temperature) || float.IsInfinity(temperature))
+            return;
+        environmentalTemperature = temperature;
     }
 
     private void Update()
@@ -112,12 +148,14 @@ public class BodyHeatManager : StatusManager
 
     public void ModifyBodyHeat(float amount)
     {
+        if (IsReplica) return;
         currentValue += amount;
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
     }
 
     public void SetEnvironmentalTemperature(float temperature)
     {
+        if (IsReplica) return;
         environmentalTemperature = Mathf.Clamp(temperature, 0, maxValue);
     }
 

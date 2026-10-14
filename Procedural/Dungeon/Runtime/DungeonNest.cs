@@ -89,8 +89,8 @@ namespace ProceduralDungeon
 
         public bool OnWeaponHit(in WeaponHitInfo hit)
         {
-            if (Destroyed)
-                return false;
+            if (Destroyed || DungeonNet.IsReplica(this))
+                return false;   // a client's copy: the server's nest takes the hits
             Damage(Mathf.Max(1f, hit.damage));
             return true;
         }
@@ -105,24 +105,49 @@ namespace ProceduralDungeon
 
         public void Damage(float amount)
         {
-            if (Destroyed)
+            if (Destroyed || DungeonNet.IsReplica(this))
                 return;
             Health -= amount;
             transform.localScale = Vector3.one * Mathf.Lerp(0.7f, 1f, Mathf.Clamp01(Health / health));
             if (Health <= 0f)
                 Break();
+            else
+                DungeonNet.Publish(this, Mathf.Clamp(Mathf.RoundToInt(Health / Mathf.Max(0.01f, health) * 100f), 1, 100));
         }
 
-        private void Break()
+        /// <summary>The published state: -1 destroyed, else the share of health left in percent.</summary>
+        protected override int NetState => Destroyed ? -1 : Mathf.Clamp(Mathf.RoundToInt(Health / Mathf.Max(0.01f, health) * 100f), 1, 100);
+
+        /// <summary>A client's copy: shrinks with the server's damage and disappears when the server destroyed it.</summary>
+        public override void ApplyNetState(int state, byte[] payload)
         {
-            Destroyed = true;
-            uses = 1;
+            if (Destroyed)
+                return;
+            if (state < 0)
+            {
+                Destroyed = true;
+                Hide();
+                return;
+            }
+            transform.localScale = Vector3.one * Mathf.Lerp(0.7f, 1f, Mathf.Clamp01(state / 100f));
+        }
+
+        private void Hide()
+        {
             foreach (Collider c in GetComponentsInChildren<Collider>())
                 c.enabled = false;
             foreach (Renderer r in GetComponentsInChildren<Renderer>())
                 r.enabled = false;
             foreach (Light l in GetComponentsInChildren<Light>())
                 l.enabled = false;
+        }
+
+        private void Break()
+        {
+            Destroyed = true;
+            uses = 1;
+            Hide();
+            DungeonNet.Publish(this, -1);
             AnyDestroyed?.Invoke(this);
             DungeonInstance d = Dungeon;
             bool last = true;
@@ -133,7 +158,7 @@ namespace ProceduralDungeon
                     if (other != null && !other.Destroyed)
                         last = false;
                 }
-            DungeonMessages.Show(last ? "The last nest is destroyed!" : "The nest is destroyed.", last);
+            DungeonMessages.Show(this, last ? "The last nest is destroyed!" : "The nest is destroyed.", last);
         }
     }
 }

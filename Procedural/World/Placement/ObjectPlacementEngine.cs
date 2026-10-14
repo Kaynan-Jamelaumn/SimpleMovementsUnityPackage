@@ -396,6 +396,12 @@ public static partial class ObjectPlacementEngine
     private static bool WorldTest(ChunkState state, PlacementType type, ref Candidate c, bool needEligibility, out bool eligible)
     {
         eligible = false;
+        // Kept clear (a town, the hub city's walls). World-consistent: it only depends on the position.
+        if (WorldAreas.Count > 0 && WorldAreas.Has(WorldAreaRules.NoObjects, c.X, c.Z))
+        {
+            state.Reject(Stage.Ground);
+            return false;
+        }
         float cellArea = type.CandidateCell * type.CandidateCell;
         float p = type.ChancePerSquareUnit * cellArea * NoiseFactor(type, c.X, c.Z) * ClusterFactor(type, c.X, c.Z, out c.InCluster, out c.ClusterX, out c.ClusterZ);
         float roll = Rand(type, c, StreamChance);

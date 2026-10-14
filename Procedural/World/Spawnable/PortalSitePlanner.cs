@@ -9,7 +9,8 @@ using UnityEngine;
 /// The world is cut into square regions of <see cref="PortalSettings.regionSize"/>. Each region has
 /// <see cref="PortalSettings.maxNumberOfPortals"/> slots; a slot is used with <see cref="PortalSettings.spawnChance"/>,
 /// its point is hashed inside the region at least half of <see cref="PortalSettings.minDistanceBetweenPortals"/> from
-/// the region's edges (so portals of neighbouring regions keep that distance too), and its type is a weighted pick.
+/// the region's edges (so portals of neighbouring regions keep that distance too), and its type is a weighted pick
+/// among the types allowed in the point's zone (<see cref="SpawnablePortal.zones"/>).
 /// These are planned points; the chunk that contains a point turns it into a portal on the best nearby spot
 /// (see <see cref="PortalSpawner"/>) - or leaves it empty when there is none.
 /// </summary>
@@ -60,7 +61,7 @@ public static class PortalSitePlanner
             if (!spaced)
                 continue;
 
-            int type = PickType(settings, PlacementRandom.Value(worldSeed, Salt, rx, rz, stream + 3), perType);
+            int type = PickType(settings, PlacementRandom.Value(worldSeed, Salt, rx, rz, stream + 3), perType, new Vector3(x, 0f, z));
             if (type < 0)
                 continue;
             perType[type]++;
@@ -99,19 +100,22 @@ public static class PortalSitePlanner
         }
     }
 
-    /// <summary>A weighted pick among the types that still fit their per-region limit (-1 when none).</summary>
-    private static int PickType(PortalSettings settings, float random01, int[] perType)
+    /// <summary>
+    /// A weighted pick among the types that still fit their per-region limit and may stand in the zone of
+    /// <paramref name="at"/> (-1 when none).
+    /// </summary>
+    private static int PickType(PortalSettings settings, float random01, int[] perType, Vector3 at)
     {
         List<SpawnablePortal> types = settings.prefabs;
         float total = 0f;
         for (int t = 0; t < types.Count; t++)
-            total += Available(settings, types[t], perType[t]);
+            total += Available(settings, types[t], perType[t], at);
         if (total <= 0f)
             return -1;
         float pick = random01 * total;
         for (int t = 0; t < types.Count; t++)
         {
-            float w = Available(settings, types[t], perType[t]);
+            float w = Available(settings, types[t], perType[t], at);
             if (w <= 0f)
                 continue;
             if (pick < w)
@@ -119,14 +123,16 @@ public static class PortalSitePlanner
             pick -= w;
         }
         for (int t = types.Count - 1; t >= 0; t--)
-            if (Available(settings, types[t], perType[t]) > 0f)
+            if (Available(settings, types[t], perType[t], at) > 0f)
                 return t;
         return -1;
     }
 
-    private static float Available(PortalSettings settings, SpawnablePortal type, int placed)
+    private static float Available(PortalSettings settings, SpawnablePortal type, int placed, Vector3 at)
     {
         if (type == null || (type.maxInstances > 0 && placed >= type.maxInstances))
+            return 0f;
+        if (!WorldSpawnHooks.PortalAllowedAt(type, at))
             return 0f;
         return type.Weight(settings.useWeightedSelection, settings.rarityFavorBias);
     }

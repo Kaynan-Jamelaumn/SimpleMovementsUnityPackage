@@ -12,7 +12,7 @@ namespace ProceduralDungeon.EditorTools
     /// </summary>
     public static class PortalSetupMenu
     {
-        [MenuItem("Tools/SimpleMovements/Dungeon/Create World Portal Prefab...")]
+        [MenuItem(SMMenu.Root + "Dungeon/Create World Portal Prefab...", false, SMMenu.Dungeon + 21)]
         public static void CreatePortalPrefabMenu()
         {
             string folder = DungeonSetupMenu.PickAssetFolder("Folder for the world portal prefab");
@@ -146,7 +146,7 @@ namespace ProceduralDungeon.EditorTools
 
         // ------------------------------------------------------------------ validation
 
-        [MenuItem("Tools/SimpleMovements/Dungeon/Validate Portal Setup")]
+        [MenuItem(SMMenu.Root + "Validate/Dungeon Portals", false, SMMenu.Validate + 24)]
         public static void ValidateSetup()
         {
             var errors = new List<string>();

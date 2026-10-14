@@ -45,6 +45,18 @@ public class ExperienceManager : MonoBehaviour
     public int StatUpgradePoints { get => statUpgradePoints; set => statUpgradePoints = value; }
     public PlayerClass PlayerClass { get => playerClass; set => playerClass = value; }
 
+    /// <summary>Experience needed to reach the next level (the XP bar's maximum).</summary>
+    public int ExperienceToNextLevel => experienceToNextLevel;
+
+    /// <summary>
+    /// Network layer (owning client): sends a stat upgrade request to the server, which spends the point and applies it.
+    /// Used by <see cref="UpgradeStat"/> where the rules do not run; returns true when the request was sent.
+    /// </summary>
+    public Func<string, bool> UpgradeRequest { get; set; }
+
+    // True once a client's copy received the server's progression (Start must not recompute it).
+    private bool replicated;
+
     // Available stats for upgrading
     public List<string> AvailableStats { get; private set; } = new List<string>
     {
@@ -54,12 +66,16 @@ public class ExperienceManager : MonoBehaviour
 
     private void Start()
     {
-        experienceToNextLevel = CalculateExperienceForLevel(currentLevel + 1);
+        if (!replicated)
+            experienceToNextLevel = CalculateExperienceForLevel(currentLevel + 1);
     }
 
     // Add experience and handle leveling
     public void AddExperience(int xp)
     {
+        // Experience of a networked player is granted on the server; a client's copy receives the result.
+        if (!GameNet.NetAuthority.RunsRules(gameObject))
+            return;
         currentExperience += xp;
 
         while (currentExperience >= experienceToNextLevel)
@@ -112,11 +128,16 @@ public class ExperienceManager : MonoBehaviour
     // Player manually upgrades a stat
     public bool UpgradeStat(string statType)
     {
+        // Spending points is a server decision: a client asks for it (the result arrives through replication).
+        if (!GameNet.NetAuthority.RunsRules(gameObject))
+            return UpgradeRequest != null && !string.IsNullOrEmpty(statType) && UpgradeRequest(statType);
         if (statUpgradePoints <= 0)
         {
             Debug.Log("Not enough stat upgrade points!");
             return false;
         }
+        if (string.IsNullOrEmpty(statType))
+            return false;
 
         if (!AvailableStats.Contains(statType.ToLower()))
         {
@@ -145,6 +166,30 @@ public class ExperienceManager : MonoBehaviour
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Client copies of a networked player: applies the progression the server decided (level, experience, points).
+    /// Raises <see cref="OnLevelUp"/> once when the level went up, so level-based growth and effects follow. Negative
+    /// values are ignored.
+    /// </summary>
+    public void ApplyReplicated(int level, int experience, int toNextLevel, int skill, int attribute, int statUpgrade)
+    {
+        if (level < 1 || experience < 0 || toNextLevel < 0 || skill < 0 || attribute < 0 || statUpgrade < 0)
+            return;
+        int previousLevel = currentLevel;
+        int previousStatPoints = statUpgradePoints;
+        replicated = true;
+        currentLevel = level;
+        currentExperience = experience;
+        experienceToNextLevel = toNextLevel;
+        skillPoints = skill;
+        attributePoints = attribute;
+        statUpgradePoints = statUpgrade;
+        if (level > previousLevel)
+            OnLevelUp?.Invoke(level);
+        if (statUpgrade > previousStatPoints)
+            OnStatUpgradePointsGained?.Invoke(statUpgrade - previousStatPoints);
     }
 
     // Get the amount a stat will be upgraded by

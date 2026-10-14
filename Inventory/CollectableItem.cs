@@ -2,7 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// A harvestable object (tree, rock, bush): hit it with a weapon of the required tool type to damage it; when its
-/// health runs out it drops its items and disappears.
+/// health runs out it drops its items and disappears. Its health is decided where the rules run (offline, the server);
+/// in a network session give it a NetworkObject so its removal reaches every player.
 /// </summary>
 public class CollectableItem : ItemSpawner, IWeaponHittable
 {
@@ -23,15 +24,15 @@ public class CollectableItem : ItemSpawner, IWeaponHittable
 
     public void TakeDamage(float damage)
     {
-        if (health <= 0f)
-            return;
+        if (health <= 0f || !GameNet.NetAuthority.IsServer)
+            return; // a client: the server's copy is harvested (its loot and removal reach everyone)
         health -= damage;
         InteractionEffects.ApplyEffects(gameObject, useAnimation, useAudioClip, useParticles);
 
         if (health <= 0)
         {
             SpawnItem(transform.position);
-            Destroy(gameObject);
+            GameNet.NetSpawn.Destroy(gameObject); // despawned for everyone when it is networked
         }
     }
 

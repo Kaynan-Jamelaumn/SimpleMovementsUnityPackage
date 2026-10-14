@@ -63,14 +63,14 @@ public class CastBase
         switch (castType)
         {
             case CastType.Sphere:
-                return Physics.OverlapSphere(transform.position + customOrigin, castSize, targetLayerMask);
+                return ScenePhysics.OverlapSphere(transform.position + customOrigin, castSize, targetLayerMask);
             case CastType.Box:
-                return Physics.OverlapBox(transform.position + customOrigin, boxSize / 2, transform.rotation, targetLayerMask);
+                return ScenePhysics.OverlapBox(transform.position + customOrigin, boxSize / 2, transform.rotation, targetLayerMask);
             case CastType.Capsule:
-                return Physics.OverlapCapsule(transform.position + customOrigin, transform.position + customOrigin + transform.forward * castSize, castSize / 2, targetLayerMask);
+                return ScenePhysics.OverlapCapsule(transform.position + customOrigin, transform.position + customOrigin + transform.forward * castSize, castSize / 2, targetLayerMask);
             case CastType.Ray:
                 RaycastHit hit;
-                if (Physics.Raycast(transform.position + customOrigin, transform.forward, out hit, castSize, targetLayerMask))
+                if (ScenePhysics.Raycast(transform.position + customOrigin, transform.forward, out hit, castSize, targetLayerMask))
                 {
                     return new Collider[] { hit.collider };
                 }

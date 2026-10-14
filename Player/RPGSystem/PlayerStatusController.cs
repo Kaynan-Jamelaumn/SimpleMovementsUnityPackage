@@ -51,9 +51,24 @@ public class PlayerStatusController : BaseStatusController
         }
     }
 
+    // The combat entity registered for this object (PlayerLocator.Register in Awake).
+    private CombatEntity entity;
+
     // Events
     public event Action<PlayerClass> OnPlayerClassChanged;
     public event Action OnStatsInitialized;
+
+    /// <summary>
+    /// True on a client's copy of a networked player: the server simulates its status and sends the values, so attack
+    /// effects, class trait grants and similar gameplay writes are not applied here.
+    /// </summary>
+    public bool IsReplica => entity != null && entity.IsReplica;
+
+    /// <summary>
+    /// Network layer (owning client): sends a request to start (true) or stop (false) sleeping to the server, which
+    /// decides. Used by <see cref="StartSleeping"/> / <see cref="StopSleeping"/> on a replica; null offline.
+    /// </summary>
+    public Action<bool> SleepRequest { get; set; }
 
     // Properties
     public PlayerClass CurrentPlayerClass => currentPlayerClass;
@@ -79,7 +94,7 @@ public class PlayerStatusController : BaseStatusController
     private void Awake()
     {
         // Register as a player right away (PlayerLocator, portals, spawners, AI), not on the first hit.
-        PlayerLocator.Register(gameObject);
+        entity = PlayerLocator.Register(gameObject);
 
         // Cache components
         CacheComponents();
@@ -207,8 +222,9 @@ public class PlayerStatusController : BaseStatusController
         bodyHeatManager.MaxValue = playerClass.bodyHeat;
         oxygenManager.MaxValue = playerClass.oxygen;
 
-        // Apply starting traits if enabled
-        if (autoApplyStartingTraits && traitManager != null)
+        // Apply starting traits if enabled. A client's copy mirrors the server's trait list and points instead: granting
+        // them here as well would count them twice.
+        if (autoApplyStartingTraits && traitManager != null && !IsReplica && !traitManager.IsMirror)
         {
             foreach (var trait in playerClass.GetStartingTraits())
             {
@@ -283,6 +299,9 @@ public class PlayerStatusController : BaseStatusController
     // Apply attack effects
     public override void ApplyEffect(AttackEffect effect, float amount, float timeBuffEffect, float tickCooldown)
     {
+        // Effects of a networked player are applied on the server; a client's copy receives the result.
+        if (effect == null || IsReplica)
+            return;
         if (EffectHandlers.TryGetValue(effect.effectType, out var handler))
         {
             handler.Invoke(effect, amount, timeBuffEffect, tickCooldown);
@@ -380,8 +399,26 @@ public class PlayerStatusController : BaseStatusController
     }
 
     // Environmental and state management methods
-    public void StartSleeping() => sleepManager?.StartSleeping();
-    public void StopSleeping() => sleepManager?.StopSleeping();
+    /// <summary>Starts sleeping (on a client's copy of a networked player this asks the server).</summary>
+    public void StartSleeping() => SetSleeping(true);
+
+    /// <summary>Wakes up (on a client's copy of a networked player this asks the server).</summary>
+    public void StopSleeping() => SetSleeping(false);
+
+    private void SetSleeping(bool sleep)
+    {
+        if (sleepManager == null)
+            return;
+        if (IsReplica)
+        {
+            SleepRequest?.Invoke(sleep);
+            return;
+        }
+        if (sleep)
+            sleepManager.StartSleeping();
+        else
+            sleepManager.StopSleeping();
+    }
     public void SetEnvironmentalTemperature(float temperature) => bodyHeatManager?.SetEnvironmentalTemperature(temperature);
     public void SetUnderwater(bool underwater) => oxygenManager?.SetUnderwater(underwater);
     public void SetHighAltitude(bool highAltitude) => oxygenManager?.SetHighAltitude(highAltitude);

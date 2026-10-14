@@ -23,7 +23,7 @@ namespace ProceduralDungeon
         protected override void Update()
         {
             base.Update();
-            if (IsUnlocked)
+            if (IsUnlocked || IsReplica)
                 return;
             CombatEntity player = DungeonPlayers.NearestAlive(transform.position, reach);
             if (player == null)
@@ -31,13 +31,19 @@ namespace ProceduralDungeon
             if (DungeonKeyRing.Has(Dungeon, Link))
             {
                 Unlock();
-                DungeonMessages.Show($"The {keyName} opens the vault.");
+                DungeonMessages.Show(this, $"The {keyName} opens the vault.");
             }
             else if (Time.time >= nextHint)
             {
                 nextHint = Time.time + 6f;
-                DungeonMessages.Show($"Locked. The {keyName} must be somewhere on this floor.");
+                DungeonMessages.Show(this, $"Locked. The {keyName} must be somewhere on this floor.");
             }
+        }
+
+        protected override void OnNetState(bool closed)
+        {
+            if (!closed)
+                IsUnlocked = true;
         }
 
         public void Unlock()

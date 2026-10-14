@@ -896,7 +896,23 @@ public static class InventoryUIBuilder
     private static T GetOrAdd<T>(GameObject go) where T : Component
     {
         T c = go.GetComponent<T>();
-        return c != null ? c : AddComp<T>(go);
+        if (c != null)
+            return c;
+        // Unity allows one layout group per object: another kind (a Vertical where a Grid is needed) makes AddComponent
+        // fail and return null. The builder needs its own layout here, so it replaces the other one.
+        if (typeof(LayoutGroup).IsAssignableFrom(typeof(T)))
+        {
+            LayoutGroup other = go.GetComponent<LayoutGroup>();
+            if (other != null)
+            {
+                Debug.LogWarning($"[Inventory] '{go.name}' had a {other.GetType().Name}; replaced by the {typeof(T).Name} the inventory UI needs.", go);
+                Undo.DestroyObjectImmediate(other);
+            }
+        }
+        c = AddComp<T>(go);
+        if (c == null)
+            throw new System.InvalidOperationException($"Could not add {typeof(T).Name} to '{go.name}' (another component prevents it).");
+        return c;
     }
 
     private static void Panel(Transform t, Color color, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 position, Vector2 size, bool withImage = true)

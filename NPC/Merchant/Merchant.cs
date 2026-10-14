@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GameNet;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -20,6 +21,9 @@ public enum MerchantLayoutMode
 /// <para>Every purchase and sale is a <see cref="MerchantTransactionRequest"/> handled by <see cref="Processor"/>
 /// (on this machine by default; replace it for a server-authoritative game), so the window never changes the inventory,
 /// the wallet or the stock itself.</para>
+/// <para>Network sessions: the server owns the stock (shared by every player), restocks it and runs every transaction;
+/// a client's window shows the stock and prices the server sends (<see cref="ApplyServerStock"/>) and its requests go
+/// to the server through the processor the network layer installs.</para>
 /// </summary>
 [AddComponentMenu("SimpleMovements/NPC/Merchant")]
 public class Merchant : NPCBehaviour
@@ -131,10 +135,18 @@ public class Merchant : NPCBehaviour
 
     public ItemCategoryDatabase Categories => categoryDatabase != null ? categoryDatabase : ItemCategoryDatabase.Default;
 
-    /// <summary>Handles this merchant's requests (the global one when none is set).</summary>
+    /// <summary>
+    /// Handles this merchant's requests (the global one when none is set). On a network client the processor the network
+    /// layer installed as <see cref="GlobalProcessor"/> always wins: only the server can perform a transaction.
+    /// </summary>
     public IMerchantTransactionProcessor Processor
     {
-        get => processor ?? GlobalProcessor ?? LocalMerchantTransactionProcessor.Instance;
+        get
+        {
+            if (NetAuthority.IsClientOnly && GlobalProcessor != null && !(GlobalProcessor is LocalMerchantTransactionProcessor))
+                return GlobalProcessor;
+            return processor ?? GlobalProcessor ?? LocalMerchantTransactionProcessor.Instance;
+        }
         set => processor = value;
     }
 
@@ -176,13 +188,35 @@ public class Merchant : NPCBehaviour
 
     public override void End(NPCInteractionSession session) => MerchantWindow.CloseFor(this, session);
 
+    /// <summary>Network, server: a remote player opens the shop (the stock is sent to them by the network layer).</summary>
+    public override void BeginRemote(NPCInteractionSession session) => CheckRestock();
+
     private void Update() => CheckRestock();
 
     private void CheckRestock()
     {
-        if (inventory == null || restockEveryMinutes <= 0f || Time.time < nextRestockAt)
+        // Only the machine that decides restocks: a client shows the server's stock.
+        if (!NetAuthority.IsServer || inventory == null || restockEveryMinutes <= 0f || Time.time < nextRestockAt)
             return;
         Restock();
+    }
+
+    /// <summary>
+    /// Network, client: shows the server's stock (<paramref name="states"/>) and restock timer. Purchases name the
+    /// server's line ids, and the window shows the server's prices.
+    /// </summary>
+    public void ApplyServerStock(IList<MerchantSlotState> states, float secondsUntilRestock)
+    {
+        MerchantInventory inv = Inventory;
+        if (secondsUntilRestock >= 0f)
+            nextRestockAt = Time.time + secondsUntilRestock;
+        inv.ApplyServerState(states, AllEntries(), ItemDatabase.Item);
+    }
+
+    /// <summary>Network, server: the stock as sent to <paramref name="player"/> (with the prices for that player).</summary>
+    public void CaptureStock(List<MerchantSlotState> into, GameObject player)
+    {
+        Inventory.CaptureState(into, AllEntries(), ItemDatabase.Id, slot => GetBuyPrice(slot, player));
     }
 
     /// <summary>Restocks now (limited goods come back; sold items may be cleared).</summary>
@@ -225,6 +259,9 @@ public class Merchant : NPCBehaviour
     {
         if (slot == null || slot.Item == null)
             return 0;
+        // A client shows the price the server quoted (the server charges its own price either way).
+        if (slot.ServerUnitPrice >= 0 && !NetAuthority.IsServer)
+            return slot.ServerUnitPrice;
         return Pricing.BuyPrice(new MerchantPriceContext(this, slot.Item, true, slot, null, player, CategoryOf(slot.Item, slot.Source)));
     }
 

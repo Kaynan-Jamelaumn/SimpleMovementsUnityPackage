@@ -58,6 +58,7 @@ public class PlayerAnimationModel : MonoBehaviour
         "IsWalking", "IsRunning", "IsCrouching", "IsDashing",
         "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
         "MovementX", "MovementZ", "MovementSpeed", "AirTime",
+        "IsSwimming", "IsUnderwater", "SwimVertical", "SwimPitch", "SwimSpeed",
         
         // Combat parameters
         "AttackCombo", "AttackTrigger", "LightAttackTrigger",
@@ -68,7 +69,7 @@ public class PlayerAnimationModel : MonoBehaviour
         "HitTrigger", "DeathTrigger",
         
         // State parameters
-        "IsInputLocked", "IsBlocking", "IsStunned"
+        "IsInputLocked", "IsBlocking", "IsStunned", "IsGrounded", "IsDead"
     };
 
         int cachedCount = 0;

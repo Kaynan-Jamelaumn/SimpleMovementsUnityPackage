@@ -88,11 +88,29 @@ public abstract class AttackBehaviour
     public string MenuName => AbilityTypeNames.Nice(GetType());
 
     /// <summary>Should it run now (chance and charge checked)?</summary>
-    public bool ShouldRun(AttackContext ctx) =>
-        ctx.ChargeRatio + 1e-4f >= minCharge && (chance >= 1f || UnityEngine.Random.value <= chance);
+    public bool ShouldRun(AttackContext ctx) => ShouldRun(ctx, UnityEngine.Random.value);
+
+    /// <summary>
+    /// Should it run now, with <paramref name="roll"/> (0-1) as the chance roll? The weapon controller rolls from the
+    /// attack's seed, so in a network session the server and the clients showing its attack agree.
+    /// </summary>
+    public bool ShouldRun(AttackContext ctx, float roll) =>
+        ctx.ChargeRatio + 1e-4f >= minCharge && (chance >= 1f || roll <= chance);
 
     public abstract void Execute(AttackContext ctx);
     public abstract string Describe();
+
+    /// <summary>
+    /// Does it have a visible part that clients showing another machine's attack should play (see <see cref="Present"/>)?
+    /// Behaviours that change the game (damage, movement, buffs, casts) run only where the attack's rules run.
+    /// </summary>
+    public virtual bool HasPresentation => false;
+
+    /// <summary>
+    /// Plays only the visible part of the behaviour (effects, sounds) on a client showing an attack the server runs. It
+    /// must not change anything in the game.
+    /// </summary>
+    public virtual void Present(AttackContext ctx) { }
 
     public virtual void Validate(string owner, List<string> errors, List<string> warnings)
     {
@@ -251,21 +269,24 @@ public class AreaBurstBehaviour : AttackBehaviour
 
     public override string Describe() => $"Area burst {When(when)}: {weaponDamageFraction * 100f:0}% damage in {shape.Describe(1f)}";
 
+    public override bool HasPresentation => vfx != null || sound != null;
+
     public override void Execute(AttackContext ctx)
     {
-        CombatEntity anchor = center == Center.HitTarget ? ctx.LastHitTarget : null;
-        if (center == Center.HitTarget && anchor == null)
+        if (!Where(ctx, out Vector3 pos, out Quaternion rot))
             return;
-        Vector3 pos = anchor != null ? anchor.BasePosition : ctx.Origin;
-        Quaternion rot = Quaternion.LookRotation(ctx.Forward, Vector3.up);
         ResolvedShape resolved = ResolvedShape.Resolve(shape, pos, rot, ctx.AreaMultiplier);
-        CombatQuery.Overlap(resolved, buffer);
+        // A remote attacker's burst finds the others where its screen showed them (only the query is rewound).
+        using (GameNet.LagCompensation.For(ctx.Attacker))
+            CombatQuery.Overlap(resolved, buffer);
         var hit = effects != null && effects.Count > 0 ? new HitSettings { filter = filter, blockedByObstacles = false, effects = effects } : null;
         for (int i = 0; i < buffer.Count; i++)
         {
             CombatEntity e = buffer[i];
             if (e == null || e == ctx.Attacker || !e.IsAlive)
                 continue;
+            if (ctx.Attacker != null && CombatRules.AreSeparated(ctx.Attacker, e))
+                continue; // another realm scene
             if (skipDirectTarget && e == ctx.LastHitTarget && center == Center.HitTarget)
                 continue;
             if (ctx.Attacker != null && !CombatRelations.Passes(filter, CombatRelations.Get(ctx.Attacker, e)))
@@ -276,6 +297,26 @@ public class AreaBurstBehaviour : AttackBehaviour
                 EquipmentProcs.Apply(ctx.Attacker, e, hit, null, ctx.DamageMultiplier, null, null);
         }
         buffer.Clear();
+        PlayFeedback(ctx, pos, rot);
+    }
+
+    public override void Present(AttackContext ctx)
+    {
+        if (Where(ctx, out Vector3 pos, out Quaternion rot))
+            PlayFeedback(ctx, pos, rot);
+    }
+
+    /// <summary>Where the area is (false: centred on a hit target and nothing was hit).</summary>
+    private bool Where(AttackContext ctx, out Vector3 pos, out Quaternion rot)
+    {
+        CombatEntity anchor = center == Center.HitTarget ? ctx.LastHitTarget : null;
+        pos = anchor != null ? anchor.BasePosition : ctx.Origin;
+        rot = Quaternion.LookRotation(ctx.Forward, Vector3.up);
+        return center != Center.HitTarget || anchor != null;
+    }
+
+    private void PlayFeedback(AttackContext ctx, Vector3 pos, Quaternion rot)
+    {
         if (vfx != null)
             AbilityPool.PlayVfx(vfx, pos, rot, 0f, ctx.AreaMultiplier);
         if (sound != null)
@@ -308,6 +349,10 @@ public class SpawnEffectBehaviour : AttackBehaviour
     public bool follow = false;
 
     public override string Describe() => "";
+
+    public override bool HasPresentation => true;
+
+    public override void Present(AttackContext ctx) => Execute(ctx);
 
     public override void Execute(AttackContext ctx)
     {

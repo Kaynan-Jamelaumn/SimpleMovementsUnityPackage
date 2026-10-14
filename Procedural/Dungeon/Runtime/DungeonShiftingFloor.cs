@@ -52,7 +52,7 @@ namespace ProceduralDungeon
                 foreach (CombatEntity p in CombatEntity.Players)
                     if (p != null && p.IsAlive && dungeon.FloorAt(p.transform.position) == floor)
                     {
-                        DungeonMessages.Show("Stone grinds in the distance: the walls are shifting.");
+                        DungeonMessages.Show(this, "Stone grinds in the distance: the walls are shifting.");
                         break;
                     }
         }

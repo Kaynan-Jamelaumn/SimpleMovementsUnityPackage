@@ -10,7 +10,7 @@ using UnityEngine.UI;
 /// own rows), for the keyboard and mouse or the gamepad. Click a key, press the new one (Escape cancels); Reset puts a
 /// row back, Reset All every key. Changes are saved and applied to every player at once (<see cref="InputBindingStore"/>).
 /// Rows are made from <see cref="rowTemplate"/>: a child "Action" text, a "Binding" button (with a text) and a
-/// "Reset" button. Built by Tools ▸ SimpleMovements ▸ Scene UI ▸ Build Pause &amp; Settings Menu.
+/// "Reset" button. Built by Tools ▸ SimpleMovements ▸ Scene ▸ Build Pause &amp; Settings Menu.
 /// </summary>
 public class KeyRebindingMenu : MonoBehaviour
 {

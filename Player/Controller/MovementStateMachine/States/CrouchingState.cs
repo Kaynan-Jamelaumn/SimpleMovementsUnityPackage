@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class CrouchingState : MovementState
 {
@@ -12,29 +12,18 @@ public class CrouchingState : MovementState
         Context.MovementModel.CurrentSpeed = Context.StatusController.SpeedManager.GetSpeedWithMultiplier(
             Context.StatusController.SpeedManager.SpeedWhileCrouchingMultiplier);
 
-        if (Context.MovementModel.ShouldConsumeStamina)
-        {
-            Context.MovementModel.CrouchCoroutine = Context.MovementModel.StartCoroutine(
-                Context.StatusController.StaminaManager.ConsumeStaminaRoutine(
-                    Context.MovementModel.AmountOfCrouchStaminaCost, 0.8f));
-            Context.StatusController.StaminaManager.IsConsuming = true;
-        }
+        BeginStaminaDrain(Context.MovementModel.AmountOfCrouchStaminaCost);
     }
 
     public override void ExitState()
     {
-        if (Context.MovementModel.CrouchCoroutine != null)
-        {
-
-            Context.MovementModel.StopCoroutine(Context.MovementModel.CrouchCoroutine);
-            Context.MovementModel.CrouchCoroutine = null; 
-        }
-        Context.StatusController.StaminaManager.IsConsuming = false;
+        EndStaminaDrain();
     }
 
     public override void UpdateState()
     {
         MovePlayer();
+        TickStaminaDrain(Context.MovementModel.AmountOfCrouchStaminaCost);
     }
 
     public override MovementStateMachine.EMovementState GetNextState()
@@ -44,12 +33,11 @@ public class CrouchingState : MovementState
         if (TriggeredRoll()) return MovementStateMachine.EMovementState.Rolling;
         if (TriggeredSprint()) return MovementStateMachine.EMovementState.Running;
 
-        if (Context.PlayerInput.Player.Movement.ReadValue<Vector2>() == Vector2.zero &&
-            !Context.AnimationModel.IsDashing && !Context.AnimationModel.IsRolling)
+        if (!HasMoveInput())
             return MovementStateMachine.EMovementState.Idle;
 
         if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfCrouchStaminaCost) == false ||
-            Context.PlayerInput.Player.Movement.ReadValue<Vector2>() != Vector2.zero && !Context.PlayerInput.Player.Crouch.IsPressed())
+            !Context.Input.Crouch)
             return MovementStateMachine.EMovementState.Walking;
 
         return StateKey;

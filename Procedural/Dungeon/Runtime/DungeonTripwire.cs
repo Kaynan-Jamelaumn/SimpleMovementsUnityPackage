@@ -59,7 +59,7 @@ namespace ProceduralDungeon
                 }
             }
             if (fired > 0)
-                DungeonMessages.Show("*click*");
+                DungeonMessages.Show(this, "*click*");
         }
     }
 }

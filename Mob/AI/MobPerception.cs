@@ -415,6 +415,8 @@ public sealed class MobPerception
     {
         if (ctx.Entity == null || ctx.Entity.IsDead || n.source == ctx.Entity)
             return;
+        if (n.source != null && CombatRules.AreSeparated(ctx.Entity, n.source))
+            return; // made in another realm (City and World overlap in space)
         float hearing = ctx.Profile.hearingMultiplier;
         if (hearing <= 0f || !ctx.Scheduler.Awake)
             return;
@@ -453,6 +455,8 @@ public sealed class MobPerception
     {
         if (caller == null || target == null || caller == ctx.Entity || ctx.Entity == null || ctx.Entity.IsDead)
             return;
+        if (CombatRules.AreSeparated(ctx.Entity, caller))
+            return;
         float radius = ctx.Profile.respondToHelpRadius;
         if (radius <= 0f || caller.Team != ctx.Entity.Team)
             return;
@@ -465,6 +469,8 @@ public sealed class MobPerception
     {
         if (attacker == null || attacker == ctx.Entity || ctx.Entity == null || ctx.Entity.IsDead)
             return;
+        if (CombatRules.AreSeparated(ctx.Entity, attacker))
+            return;
         if ((attacker.Position - ctx.Entity.Position).sqrMagnitude > 25f)
             return;
         ctx.Brain.OnMeleeSwing(attacker);
@@ -473,6 +479,8 @@ public sealed class MobPerception
     private void OnCastStarted(AbilityCastInstance cast)
     {
         if (cast == null || cast.CasterEntity == ctx.Entity || ctx.Entity == null || ctx.Entity.IsDead)
+            return;
+        if (cast.CasterEntity != null && CombatRules.AreSeparated(ctx.Entity, cast.CasterEntity))
             return;
         if ((cast.CasterPosition - ctx.Entity.Position).sqrMagnitude > 40f * 40f)
             return;

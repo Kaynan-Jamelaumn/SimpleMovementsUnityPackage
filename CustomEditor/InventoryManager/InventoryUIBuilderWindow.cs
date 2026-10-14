@@ -12,7 +12,7 @@ public class InventoryUIBuilderWindow : EditorWindow
     private Vector2 scroll;
     private bool showEquipment = true;
 
-    [MenuItem("Tools/SimpleMovements/Inventory/UI Builder", priority = 0)]
+    [MenuItem(SMMenu.Root + "Inventory/UI Builder", false, SMMenu.Inventory + 0)]
     public static void OpenFromMenu() => Open(Selection.activeGameObject != null ? Selection.activeGameObject.GetComponentInParent<InventoryManager>() : null);
 
     public static void Open(InventoryManager target)

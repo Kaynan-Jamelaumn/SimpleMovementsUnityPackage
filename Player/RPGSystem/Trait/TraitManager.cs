@@ -121,6 +121,7 @@ public class TraitManager : MonoBehaviour
     private readonly Dictionary<TraitStat, float> aggregate = new Dictionary<TraitStat, float>();
     private readonly Dictionary<TraitStat, float> aggregateSum = new Dictionary<TraitStat, float>();
     private readonly List<TraitRuntime> tickBuffer = new List<TraitRuntime>();
+    private readonly List<TraitRuntime> movementTickBuffer = new List<TraitRuntime>();
     private readonly List<ActiveTraitInfo> expiredBuffer = new List<ActiveTraitInfo>();
 
     private PlayerStatusController playerController;
@@ -144,6 +145,19 @@ public class TraitManager : MonoBehaviour
     public int MaxTraits => maxTraits;
     public TraitDatabase Database => traitDatabase;
     public IReadOnlyList<Trait> StartingTraits => startingTraits;
+
+    /// <summary>
+    /// True on a client's copy of a networked player: the server's trait list drives this one (the network layer adds
+    /// and removes traits as the server does), so the starting traits are not granted here and temporary traits are
+    /// not removed when their time runs out locally. The behaviours themselves (double jump, glide...) still run.
+    /// </summary>
+    public bool IsMirror { get; set; }
+
+    /// <summary>
+    /// Set by the player's <see cref="MovementStateMachine"/> while it steps the movement traits (double jump, wall
+    /// climb, glide) from its simulation step through <see cref="TickMovementTraits"/>; Update then skips them.
+    /// </summary>
+    public bool MovementTraitsDriven { get; set; }
 
     /// <summary>The player's components as seen by trait behaviours.</summary>
     public TraitContext Context
@@ -238,8 +252,89 @@ public class TraitManager : MonoBehaviour
             for (int b = 0; b < list.Count; b++)
             {
                 TraitBehaviour beh = list[b];
+                if (MovementTraitsDriven && beh.IsMovementSimulation)
+                    continue; // stepped by the movement simulation (TickMovementTraits)
                 try { beh.Tick(Context, dt); }
                 catch (Exception e) { Debug.LogException(e, this); }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ movement simulation
+
+    /// <summary>
+    /// Steps the movement traits (double jump, wall climb, glide) with the movement step's <paramref name="input"/>
+    /// and length. Called by <see cref="MovementStateMachine.Simulate"/> after the movement states and before gravity,
+    /// on every machine that simulates the player (offline, server, owner prediction and its replays, spectators).
+    /// </summary>
+    public void TickMovementTraits(in MovementInput input, float dt)
+    {
+        TraitContext ctx = Context;
+        ctx.SimInput = input;
+        try
+        {
+            movementTickBuffer.Clear();
+            movementTickBuffer.AddRange(runtimes.Values);
+            for (int i = 0; i < movementTickBuffer.Count; i++)
+            {
+                List<TraitBehaviour> list = movementTickBuffer[i].behaviours;
+                for (int b = 0; b < list.Count; b++)
+                {
+                    TraitBehaviour beh = list[b];
+                    if (!beh.IsMovementSimulation)
+                        continue;
+                    try { beh.Tick(ctx, dt); }
+                    catch (Exception e) { Debug.LogException(e, this); }
+                }
+            }
+        }
+        finally
+        {
+            ctx.SimInput = null;
+            movementTickBuffer.Clear();
+        }
+    }
+
+    /// <summary>Writes the movement traits' runtime state (air jumps used, climbing, climb time) into a snapshot.</summary>
+    public void CaptureMovementTraits(ref MovementSnapshot snapshot)
+    {
+        snapshot.AirJumpsUsed = 0;
+        snapshot.Climbing = false;
+        snapshot.ClimbTime = 0f;
+        bool jumpFound = false, climbFound = false;
+        foreach (TraitRuntime rt in runtimes.Values)
+        {
+            foreach (TraitBehaviour b in rt.behaviours)
+            {
+                if (!jumpFound && b is DoubleJumpTrait jump)
+                {
+                    snapshot.AirJumpsUsed = (byte)Mathf.Clamp(jump.AirJumpsUsed, 0, byte.MaxValue);
+                    jumpFound = true;
+                }
+                else if (!climbFound && b is WallClimbTrait climb)
+                {
+                    snapshot.Climbing = climb.Climbing;
+                    snapshot.ClimbTime = climb.ClimbTime;
+                    climbFound = true;
+                }
+            }
+        }
+    }
+
+    /// <summary>Puts back the movement traits' runtime state saved by <see cref="CaptureMovementTraits"/>.</summary>
+    public void RestoreMovementTraits(in MovementSnapshot snapshot)
+    {
+        foreach (TraitRuntime rt in runtimes.Values)
+        {
+            foreach (TraitBehaviour b in rt.behaviours)
+            {
+                if (b is DoubleJumpTrait jump)
+                    jump.AirJumpsUsed = snapshot.AirJumpsUsed;
+                else if (b is WallClimbTrait climb)
+                {
+                    climb.Climbing = snapshot.Climbing;
+                    climb.ClimbTime = snapshot.ClimbTime;
+                }
             }
         }
     }
@@ -1057,7 +1152,7 @@ public class TraitManager : MonoBehaviour
             if (!traitInfo.isTemporary || traitInfo.remainingDuration <= 0f)
                 continue;
             traitInfo.remainingDuration -= dt;
-            if (traitInfo.remainingDuration <= 0f)
+            if (traitInfo.remainingDuration <= 0f && !IsMirror) // a mirror removes it when the server does
                 expiredBuffer.Add(traitInfo);
         }
         for (int i = 0; i < expiredBuffer.Count; i++)
@@ -1074,8 +1169,8 @@ public class TraitManager : MonoBehaviour
 
     private void ApplyStartingTraits()
     {
-        if (startingApplied)
-            return;
+        if (startingApplied || IsMirror)
+            return; // a mirror gets the server's traits (starting ones included) from the network layer
         startingApplied = true;
         foreach (Trait trait in startingTraits)
             if (trait != null)

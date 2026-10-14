@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -5,6 +6,12 @@ using UnityEngine;
 /// <see cref="AbilitySpawner"/>). It arms after a short delay, floats, is pulled toward nearby players, blinks before
 /// vanishing and gives its <see cref="AbilityGrant"/> to the first player that accepts it. No physics setup needed.
 /// </summary>
+/// <remarks>
+/// Network sessions: only the server spawns pickups and decides who collects them. When the pickup prefab has a
+/// NetworkObject (and is registered as a spawnable prefab) every client sees a copy that only floats, spins and blinks
+/// until the server removes it; without one the pickup exists on the server only (collectable, but invisible to clients
+/// of a dedicated server). The generated default orb cannot be networked.
+/// </remarks>
 [DisallowMultipleComponent]
 public class AbilityPickup : MonoBehaviour
 {
@@ -30,9 +37,15 @@ public class AbilityPickup : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => generatedPrefab = null;
 
-    /// <summary>Spawns a pickup for <paramref name="grant"/> at <paramref name="position"/>.</summary>
-    public static AbilityPickup Spawn(AbilityGrant grant, Vector3 position, AbsorptionSettings settings = null)
+    /// <summary>
+    /// Spawns a pickup for <paramref name="grant"/> at <paramref name="position"/>. <paramref name="sceneOf"/> (e.g. the
+    /// killed character) gives the scene it belongs to; null = the active scene. Nothing on a network client (the
+    /// server spawns pickups).
+    /// </summary>
+    public static AbilityPickup Spawn(AbilityGrant grant, Vector3 position, AbsorptionSettings settings = null, GameObject sceneOf = null)
     {
+        if (GameNet.NetAuthority.IsClientOnly)
+            return null;
         if (grant == null || grant.ability == null)
             return null;
         if (settings == null)
@@ -53,18 +66,22 @@ public class AbilityPickup : MonoBehaviour
         p.radius = settings.pickupRadius;
         p.magnetRadius = settings.magnetRadius;
         go.name = $"Ability Pickup ({grant.Name})";
+        Publish(p, sceneOf);
         return p;
     }
 
-    /// <summary>Spawns a pickup with a custom visual and timings (used by <see cref="AbilitySpawner"/>).</summary>
-    public static AbilityPickup Spawn(AbilityGrant grant, Vector3 position, GameObject visualPrefab, float armDelay, float lifetime)
+    /// <summary>
+    /// Spawns a pickup with a custom visual and timings (used by <see cref="AbilitySpawner"/>). See
+    /// <see cref="Spawn(AbilityGrant, Vector3, AbsorptionSettings, GameObject)"/> for <paramref name="sceneOf"/>.
+    /// </summary>
+    public static AbilityPickup Spawn(AbilityGrant grant, Vector3 position, GameObject visualPrefab, float armDelay, float lifetime, GameObject sceneOf = null)
     {
-        if (grant == null || grant.ability == null)
+        if (grant == null || grant.ability == null || GameNet.NetAuthority.IsClientOnly)
             return null;
         AbsorptionSettings settings = AbsorptionSettings.Instance;
         GameObject go = visualPrefab != null ? Instantiate(visualPrefab, position, Quaternion.identity) : null;
         if (go == null)
-            return Spawn(grant, position, settings);
+            return Spawn(grant, position, settings, sceneOf);
         go.SetActive(true);
         AbilityPickup p = go.GetComponent<AbilityPickup>();
         if (p == null)
@@ -75,7 +92,27 @@ public class AbilityPickup : MonoBehaviour
         p.radius = settings.pickupRadius;
         p.magnetRadius = settings.magnetRadius;
         go.name = $"Ability Pickup ({grant.Name})";
+        Publish(p, sceneOf);
         return p;
+    }
+
+    /// <summary>
+    /// Puts a configured pickup into the scene of <paramref name="sceneOf"/> (a server keeps every realm and dungeon
+    /// run in its own scene) and shows it to the players (network spawn; nothing offline or without a NetworkObject).
+    /// </summary>
+    private static void Publish(AbilityPickup p, GameObject sceneOf)
+    {
+        GameObject go = p.gameObject;
+        if (sceneOf != null)
+        {
+            UnityEngine.SceneManagement.Scene scene = sceneOf.scene;
+            if (scene.IsValid() && scene.isLoaded && go.scene != scene)
+            {
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, scene);
+                p.Anchor(); // the ground below is found in the scene it now belongs to
+            }
+        }
+        GameNet.NetSpawn.Spawn(go);
     }
 
     private static GameObject CreateDefaultVisual(Vector3 position)
@@ -110,7 +147,10 @@ public class AbilityPickup : MonoBehaviour
         renderers = GetComponentsInChildren<Renderer>();
     }
 
-    private void OnEnable()
+    private void OnEnable() => Anchor();
+
+    /// <summary>Starts the pickup's life where it is: floats one metre above the ground below it.</summary>
+    private void Anchor()
     {
         spawnTime = Time.time;
         basePosition = CombatQuery.SnapToGround(transform.position, 2f, 6f) + Vector3.up * 1f;
@@ -120,9 +160,12 @@ public class AbilityPickup : MonoBehaviour
     private void Update()
     {
         float age = Time.time - spawnTime;
+        // Network sessions: the server decides when it vanishes and who takes it; a client's copy only animates.
+        bool decides = GameNet.NetAuthority.RunsRules(gameObject);
         if (lifetime > 0f && age > lifetime)
         {
-            Destroy(gameObject);
+            if (decides)
+                Remove();
             return;
         }
 
@@ -138,13 +181,13 @@ public class AbilityPickup : MonoBehaviour
                 if (renderers[i] != null) renderers[i].enabled = visible;
         }
 
-        if (age < armDelay)
+        if (age < armDelay || !decides)
         {
             transform.position = pos;
             return;
         }
 
-        CombatEntity player = CombatEntity.NearestPlayer(transform.position, out float dist);
+        CombatEntity player = NearestPlayer(out float dist);
         if (player == null)
         {
             transform.position = pos;
@@ -167,20 +210,54 @@ public class AbilityPickup : MonoBehaviour
     {
         if (grant == null)
         {
-            Destroy(gameObject);
+            Remove();
             return;
         }
         if (AbilityAbsorption.TryGrant(grant, player))
         {
             if (collectVfx != null)
                 AbilityPool.PlayVfx(collectVfx, transform.position, Quaternion.identity);
-            Destroy(gameObject);
+            Remove();
         }
         else if (Time.time >= nextRefusedMessage)
         {
             nextRefusedMessage = Time.time + 3f;
             Debug.Log($"[Absorption] {player.name} cannot take '{grant.Name}' (slots full or a better copy is equipped).", this);
         }
+    }
+
+    /// <summary>Removes the pickup (a network despawn on a server, so every client's copy goes too).</summary>
+    private void Remove()
+    {
+        GameNet.NetSpawn.Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// The nearest living player who can take this pickup. In a network session only players in the pickup's own scene
+    /// count: a server holds the City, the World and every dungeon run at overlapping coordinates.
+    /// </summary>
+    private CombatEntity NearestPlayer(out float distance)
+    {
+        if (!GameNet.NetAuthority.IsNetworked)
+            return CombatEntity.NearestPlayer(transform.position, out distance);
+        CombatEntity best = null;
+        float bestSqr = float.MaxValue;
+        Vector3 at = transform.position;
+        IReadOnlyList<CombatEntity> players = CombatEntity.Players;
+        for (int i = 0; i < players.Count; i++)
+        {
+            CombatEntity p = players[i];
+            if (p == null || p.IsDead || p.gameObject.scene != gameObject.scene)
+                continue;
+            float d = (p.Position - at).sqrMagnitude;
+            if (d < bestSqr)
+            {
+                bestSqr = d;
+                best = p;
+            }
+        }
+        distance = best != null ? Mathf.Sqrt(bestSqr) : float.MaxValue;
+        return best;
     }
 
     private void OnDrawGizmosSelected()

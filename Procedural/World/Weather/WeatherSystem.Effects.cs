@@ -67,6 +67,10 @@ public partial class WeatherSystem
             baseSunIntensity = capturedSun.intensity;
             baseSunColor = capturedSun.color;
         }
+        // A Day Night Cycle that already darkened this scene for the night hands over the scene's real (daytime) light.
+        if (DayNightCycle.Instance != null)
+            DayNightCycle.Instance.HandOverLight(capturedSun, ref baseSunIntensity, ref baseSunColor, ref baseAmbientIntensity,
+                ref baseAmbientLight, ref baseAmbientSky, ref baseAmbientEquator, ref baseAmbientGround);
         captured = true;
     }
 
@@ -247,11 +251,13 @@ public partial class WeatherSystem
             Color tint = Color.Lerp(Color.white, new Color(0.82f, 0.86f, 0.95f), current.Clouds);
             tint = Color.Lerp(tint, new Color(1f, 0.78f, 0.55f), current.Dust * 0.8f);
             tint = Color.Lerp(tint, new Color(1f, 0.92f, 0.8f), current.Heat * 0.6f);
-            light.color = baseSunColor * tint;
-            light.intensity = baseSunIntensity * (1f - 0.7f * dim) * (1f + 0.15f * current.Heat) + baseSunIntensity * 2.5f * flash;
+            float daylight = Mathf.Clamp01(Daylight);
+            light.color = baseSunColor * tint * TwilightTint;
+            light.intensity = baseSunIntensity * daylight * (1f - 0.7f * dim) * (1f + 0.15f * current.Heat) + baseSunIntensity * 2.5f * flash;
         }
 
-        float ambient = (1f - 0.4f * dim) + 1.5f * flash;
+        // Night (Daylight from the Day Night Cycle) darkens the ambience down to Night Ambient.
+        float ambient = Mathf.Lerp(Mathf.Clamp01(NightAmbient), 1f, Mathf.Clamp01(Daylight)) * (1f - 0.4f * dim) + 1.5f * flash;
         if (baseAmbientMode == AmbientMode.Skybox)
         {
             RenderSettings.ambientIntensity = baseAmbientIntensity * ambient;

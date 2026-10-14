@@ -31,6 +31,14 @@ public class CombatSettings : ScriptableObject
              "effects never land on them. On: harmful hits also hit allies caught in them.")]
     public bool allyFriendlyFire = false;
 
+    [Tooltip("Players of the same GUILD are allies everywhere (even in PvP zones): harmful effects never land on each other " +
+             "unless Ally Friendly Fire is on, and heals and buffs reach them. A duel still lets them fight. Off = the zone " +
+             "and PvP rules decide, as for strangers.")]
+    public bool guildMembersAreAllies = true;
+
+    [Tooltip("Players whose guilds are in the same ALLIANCE are allies everywhere, like guild members (see above).")]
+    public bool allianceMembersAreAllies = true;
+
     [Tooltip("When a character loses health without a known attacker (e.g. a weapon hit that does not report its source), the nearest player within this distance is treated as the attacker (for aggro and absorption). 0 = never guess.")]
     [Min(0f)] public float unattributedDamageRadius = 8f;
 
