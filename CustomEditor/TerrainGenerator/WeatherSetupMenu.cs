@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -38,7 +39,7 @@ public static class WeatherSetupMenu
         AddPlayerEffects(weather);
     }
 
-    private static void AddPlayerEffects(WeatherSystem weather)
+    internal static void AddPlayerEffects(WeatherSystem weather)
     {
         PlayerWeatherEffects effects = weather.GetComponent<PlayerWeatherEffects>();
         if (effects == null)
@@ -99,6 +100,22 @@ public static class WeatherSetupMenu
             "an effect, events. Make new ones with Create ▸ SimpleMovements ▸ Weather ▸ Weather Condition." + assigned, "OK");
     }
 
+    [MenuItem(SMMenu.Root + "Weather/Help", false, SMMenu.Weather + 40)]
+    private static void Help()
+    {
+        if (EditorUtility.DisplayDialog("Weather and day / night",
+                "THREE PIECES:\n" +
+                "• Weather System - in the World scene, with the terrain: rain, snow, fog, wind, storms, tornadoes drifting over the land by biome and climate.\n" +
+                "• Player Weather Effects - on the Weather System object: the weather's conditions on exposed players (Soaked, Chilled, Frostbite, Heatstroke...). " +
+                "Create Default Weather Condition Assets writes them as assets you can edit.\n" +
+                "• Day Night Cycle - in the City (or Bootstrap) scene, which stays loaded: the clock, the sun, darker nights, and the Day / Night spawn rules.\n\n" +
+                "Each inspector explains its options and checks where it is. Scene and Prefab Setup ▸ World Scene checks the weather of the World scene; " +
+                "▸ Hub City Scene the Day Night Cycle.\n\n" +
+                "MULTIPLAYER: the server's weather and day clock are sent to every client (Net World Chunks relay).",
+                "Open Guide", "Close"))
+            SimpleMovements.Setup.DocLinks.Open("Terrain/README.md");
+    }
+
     /// <summary>Weather System inspector: is there a Day Night Cycle and Player Weather Effects (with Add buttons)?</summary>
     public static void DrawCompanions(WeatherSystem weather)
     {
@@ -124,3 +141,4 @@ public static class WeatherSetupMenu
         }
     }
 }
+#endif

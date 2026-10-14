@@ -31,8 +31,8 @@ namespace GameNet.EditorTools
     {
         private const string Menu = "Tools/SimpleMovements/Network/";
         private const string NetworkFolder = "Assets/Networking";
-        private const string BootstrapPath = "Assets/Scenes/Bootstrap.unity";
-        private const string DungeonInstancePath = "Assets/Scenes/DungeonInstance.unity";
+        internal const string BootstrapPath = "Assets/Scenes/Bootstrap.unity";
+        internal const string DungeonInstancePath = "Assets/Scenes/DungeonInstance.unity";
         private const string BuildsFolder = "Builds";
         internal const string EditorModeKey = "GameNet.EditorPlayMode";
 
@@ -74,8 +74,32 @@ namespace GameNet.EditorTools
                 return;
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            GameObject go = BuildNetworkManager();
+            NetPlayerSpawner spawner = go.GetComponent<NetPlayerSpawner>();
+            GameObject playerPrefab = spawner != null && spawner.playerPrefab != null ? spawner.playerPrefab.gameObject : null;
+            BuildNetworkWorld();
+
+            Directory.CreateDirectory(Path.GetDirectoryName(BootstrapPath) ?? "Assets/Scenes");
+            EditorSceneManager.SaveScene(scene, BootstrapPath);
+            AssignSceneIds(scene); // the objects were added while the scene had no name: Fish-Net could not id them
+            CreateWorldItemPrefab();
+            EnsureBuildScene(BootstrapPath, 0);
+            EditorUtility.DisplayDialog("Network - Bootstrap scene",
+                $"Saved {BootstrapPath} as the first scene of the build.\n\n" +
+                (playerPrefab == null ? "No network player prefab found yet: select your player prefab and use 'Make Selected Prefab Networked ▸ Player', then assign it on the Net Player Spawner.\n\n" : "") +
+                "Press Play in this scene for the start menu, or use Tools ▸ SimpleMovements ▸ Network ▸ Play In Editor As.", "OK");
+        }
+
+        /// <summary>
+        /// Creates the "NetworkManager" object of the Bootstrap scene in the active scene: Fish-Net's managers (Tugboat on
+        /// 127.0.0.1:7770, the server not started by Fish-Net on headless, the realm interest rule) and the package's session
+        /// components (NetSession, NetBootstrap, NetRealmScenes, NetPlayerSpawner with the networked player prefab,
+        /// NetLagCompensation, HeadlessServer).
+        /// </summary>
+        internal static GameObject BuildNetworkManager()
+        {
             var go = new GameObject("NetworkManager");
-            NetworkManager nm = go.AddComponent<NetworkManager>();
+            go.AddComponent<NetworkManager>();
             Tugboat tugboat = go.AddComponent<Tugboat>();
             tugboat.SetPort(NetLaunchOptions.DefaultPort);
             tugboat.SetClientAddress(NetLaunchOptions.DefaultAddress);
@@ -97,26 +121,67 @@ namespace GameNet.EditorTools
             go.AddComponent<HeadlessServer>();
 
             // The interest rule: same scene, distance-limited in the open world, owners see their own objects.
-            RealmObserverCondition condition = LoadOrCreateAsset<RealmObserverCondition>(NetworkFolder + "/RealmObserverCondition.asset");
-            var so = new SerializedObject(observers);
-            SerializedProperty list = so.FindProperty("_defaultConditions");
-            if (list != null)
-            {
-                list.ClearArray();
-                list.InsertArrayElementAtIndex(0);
-                list.GetArrayElementAtIndex(0).objectReferenceValue = condition;
-                so.ApplyModifiedPropertiesWithoutUndo();
-            }
+            AssignRealmCondition(observers);
 
-            // The player prefab: the one named in the hub world settings when it is a network prefab.
+            // The player prefab: the networked one in the project.
             GameObject playerPrefab = FindPlayerPrefab();
             if (playerPrefab != null)
                 spawner.playerPrefab = playerPrefab.GetComponent<NetworkObject>();
+            return go;
+        }
 
-            // Global relays (world state, duels, trading, messages) live on one scene object everybody observes.
+        /// <summary>The project's RealmObserverCondition asset (created when missing).</summary>
+        internal static RealmObserverCondition RealmCondition() =>
+            LoadOrCreateAsset<RealmObserverCondition>(NetworkFolder + "/RealmObserverCondition.asset");
+
+        /// <summary>Makes the realm interest rule the only default condition of <paramref name="observers"/>.</summary>
+        internal static void AssignRealmCondition(ObserverManager observers)
+        {
+            if (observers == null)
+                return;
+            RealmObserverCondition condition = RealmCondition();
+            var so = new SerializedObject(observers);
+            SerializedProperty list = so.FindProperty("_defaultConditions");
+            if (list == null)
+                return;
+            list.ClearArray();
+            list.InsertArrayElementAtIndex(0);
+            list.GetArrayElementAtIndex(0).objectReferenceValue = condition;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>Does <paramref name="observers"/> use a RealmObserverCondition as a default condition?</summary>
+        internal static bool HasRealmCondition(ObserverManager observers)
+        {
+            if (observers == null)
+                return false;
+            SerializedProperty list = new SerializedObject(observers).FindProperty("_defaultConditions");
+            if (list == null)
+                return true; // Fish-Net changed the field: cannot tell, do not complain
+            for (int i = 0; i < list.arraySize; i++)
+                if (list.GetArrayElementAtIndex(i).objectReferenceValue is RealmObserverCondition)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Creates the "Network World" object in the active scene: a scene NetworkObject every client observes (its
+        /// observer ignores the manager's conditions) carrying the global relays.
+        /// </summary>
+        internal static GameObject BuildNetworkWorld()
+        {
             var world = new GameObject("Network World");
             world.AddComponent<NetworkObject>();
-            NetworkObserver observer = world.AddComponent<NetworkObserver>();
+            ConfigureWorldObserver(world.AddComponent<NetworkObserver>());
+            AddByName(world, GlobalRelayComponents, null);
+            return world;
+        }
+
+        /// <summary>The Network World is seen by every client: its observer ignores the manager's (realm) conditions.</summary>
+        internal static void ConfigureWorldObserver(NetworkObserver observer)
+        {
+            if (observer == null)
+                return;
             var oso = new SerializedObject(observer);
             SerializedProperty overrideType = oso.FindProperty("_overrideType");
             if (overrideType != null)
@@ -124,19 +189,16 @@ namespace GameNet.EditorTools
                 overrideType.intValue = (int)NetworkObserver.ConditionOverrideType.IgnoreManager;
                 oso.ApplyModifiedPropertiesWithoutUndo();
             }
-            AddByName(world, GlobalRelayComponents, null);
-
-            Directory.CreateDirectory(Path.GetDirectoryName(BootstrapPath) ?? "Assets/Scenes");
-            EditorSceneManager.SaveScene(scene, BootstrapPath);
-            AssignSceneIds(scene); // the objects were added while the scene had no name: Fish-Net could not id them
-            CreateWorldItemPrefab();
-            EnsureBuildScene(BootstrapPath, 0);
-            EditorUtility.DisplayDialog("Network - Bootstrap scene",
-                $"Saved {BootstrapPath} as the first scene of the build.\n\n" +
-                (playerPrefab == null ? "No network player prefab found yet: select your player prefab and use 'Make Selected Prefab Networked ▸ Player', then assign it on the Net Player Spawner.\n\n" : "") +
-                "Press Play in this scene for the start menu, or use Tools ▸ SimpleMovements ▸ Network ▸ Play In Editor As.", "OK");
         }
 
+        /// <summary>Is the Network World's observer set to ignore the manager's conditions (seen by everyone)?</summary>
+        internal static bool WorldObserverIgnoresManager(NetworkObserver observer)
+        {
+            if (observer == null)
+                return false;
+            SerializedProperty overrideType = new SerializedObject(observer).FindProperty("_overrideType");
+            return overrideType == null || overrideType.intValue == (int)NetworkObserver.ConditionOverrideType.IgnoreManager;
+        }
         /// <summary>
         /// Gives the scene NetworkObjects of <paramref name="scene"/> their scene ids (what Fish-Net's Reserialize Scenes
         /// does) and saves the scene. Fish-Net only creates an id while the object's scene has a name, so objects added to
@@ -193,6 +255,7 @@ namespace GameNet.EditorTools
         internal static readonly string[] GlobalRelayComponents =
         {
             "GameNet.NetHubWorld", "GameNet.NetDuels", "GameNet.NetTrading", "GameNet.NetWorldChunks", "GameNet.NetSocial",
+            "GameNet.NetPortals",
         };
 
         /// <summary>
@@ -256,7 +319,9 @@ namespace GameNet.EditorTools
 #endif
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DungeonInstancePath);
+#if FISHNET
             AssignSceneIds(scene);
+#endif
             EnsureBuildScene(DungeonInstancePath, -1);
             HubWorld.HubWorldSettings settings = HubWorld.HubWorldSettings.Instance;
             if (settings != null && settings.dungeonScenes != null && string.IsNullOrEmpty(settings.dungeonScenes.networkSceneName))
@@ -527,6 +592,7 @@ namespace GameNet.EditorTools
 
         private const string TickSmootherType = "FishNet.Component.Transforming.Beta.NetworkTickSmoother";
 
+#if FISHNET
         // The object that holds what is seen: the smallest child containing every mesh renderer of the player (cameras
         // and their children aside), when it is neither the root nor the simulated body or one of its parents; else the
         // first such Animator child.
@@ -594,6 +660,8 @@ namespace GameNet.EditorTools
                       "(no NetworkTickSmoother needed - removed if there was one). An empty leftover object with an Animator can be deleted");
             return true;
         }
+
+#endif
 
         private static Transform CommonAncestor(Transform a, Transform b)
         {
@@ -693,16 +761,14 @@ namespace GameNet.EditorTools
 
         internal static Type FindType(string fullName)
         {
-            foreach (System.Reflection.Assembly a in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                Type t = a.GetType(fullName, false);
-                if (t != null)
+            // Every name looked up here is a component (Fish-Net's, the network modules'): Unity's type cache knows them all.
+            foreach (Type t in TypeCache.GetTypesDerivedFrom<Component>())
+                if (t.FullName == fullName)
                     return t;
-            }
-            return null;
+            return Type.GetType(fullName, false);
         }
 
-        private static GameObject FindPlayerPrefab()
+        internal static GameObject FindPlayerPrefab()
         {
 #if FISHNET
             foreach (string guid in AssetDatabase.FindAssets("t:Prefab"))
@@ -995,7 +1061,7 @@ namespace GameNet.EditorTools
         }
 
         /// <summary>Adds a scene to the build (at <paramref name="index"/>, or at the end with -1) if it is not there.</summary>
-        private static void EnsureBuildScene(string path, int index)
+        internal static void EnsureBuildScene(string path, int index)
         {
             var list = EditorBuildSettings.scenes.ToList();
             list.RemoveAll(s => s.path == path);

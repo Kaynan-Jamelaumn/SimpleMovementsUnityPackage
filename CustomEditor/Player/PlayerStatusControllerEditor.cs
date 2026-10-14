@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -524,7 +525,7 @@ public class PlayerStatusEditorMenu
         }
     }
 
-    [MenuItem(SMMenu.Root + "Auto-Assign/Auto-Setup All Players In Scene", false, SMMenu.AutoAssign + 60)]
+    [MenuItem(SMMenu.Root + "Player/Auto-Setup All Players In Scene", false, SMMenu.Player + 1)]
     static void AutoSetupAllControllers()
     {
         var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
@@ -566,4 +567,5 @@ public class PlayerStatusEditorMenu
         Selection.activeObject = template;
     }
 }
+#endif
 #endif

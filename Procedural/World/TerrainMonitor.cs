@@ -75,8 +75,8 @@ public class TerrainMonitor : MonoBehaviour
         public float averageFPS;
         public float minFPS;
         public float maxFPS;
-        public Dictionary<string, int> objectsByType = new Dictionary<string, int>();
-        public Dictionary<string, int> misalignedByType = new Dictionary<string, int>();
+        [System.NonSerialized] public Dictionary<string, int> objectsByType = new Dictionary<string, int>();
+        [System.NonSerialized] public Dictionary<string, int> misalignedByType = new Dictionary<string, int>();
         public float alignmentPercentage;
         public int biomesActive;
         public Vector3 playerPosition;

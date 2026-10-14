@@ -101,7 +101,6 @@ namespace SimpleMovements.Validation
         [MenuItem(SMMenu.Root + "Validate/Scene Setup (open scenes)", false, SMMenu.Validate + 29)]
         private static void ValidateScenesMenu() => Report("Scene setup", CheckOpenScenes);
 
-        [MenuItem(SMMenu.Root + "Auto-Assign/Add Missing Input Actions", false, SMMenu.AutoAssign + 62)]
         [MenuItem(SMMenu.Root + "Input/Add Missing Input Actions", false, SMMenu.Input + 1)]
         private static void AddMissingInputMenu()
         {
@@ -121,7 +120,7 @@ namespace SimpleMovements.Validation
             EditorUtility.DisplayDialog("Input Actions", $"Added {n} action(s). Change their keys in the Input Actions editor (double-click the asset) or in the game's Key Bindings.", "OK");
         }
 
-        [MenuItem(SMMenu.Root + "Auto-Assign/Fix Scene Setup (open scenes)", false, SMMenu.AutoAssign + 63)]
+        [MenuItem(SMMenu.Root + "Validate/Fix Scene Setup (open scenes)", false, SMMenu.Validate + 30)]
         private static void FixScenesMenu()
         {
             var issues = new List<ValidationIssue>();

@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
@@ -222,3 +223,4 @@ public partial class TerrainGeneratorEditor
         EditorUtility.DisplayDialog("Performance settings for this computer", report.ToString(), "OK");
     }
 }
+#endif

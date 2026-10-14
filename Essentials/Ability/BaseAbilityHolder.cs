@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+[Serializable]
 public abstract class BaseAbilityHolder
 {
     public enum AbilityState

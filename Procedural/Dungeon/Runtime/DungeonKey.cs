@@ -15,7 +15,7 @@ namespace ProceduralDungeon
         [Tooltip("Spin and bob so it catches the eye.")]
         public bool animate = true;
 
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
         private Vector3 rest;
 
         private void Start()

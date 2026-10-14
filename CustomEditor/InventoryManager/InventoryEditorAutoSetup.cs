@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Linq;
@@ -354,4 +355,5 @@ public class InventoryEditorAutoSetup
             Debug.LogWarning("No item prefabs found. Create one with InventoryItem component.");
     }
 }
+#endif
 #endif

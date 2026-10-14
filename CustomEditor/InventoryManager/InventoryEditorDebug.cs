@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Linq;
@@ -92,7 +93,7 @@ public class InventoryEditorDebug
     private void GenerateHierarchyReport()
     {
         Debug.Log("🏗️ Hierarchy Report - checking inventory-related objects in scene...");
-        var inventoryObjects = Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
+        var inventoryObjects = Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Exclude)
             .Where(mb => mb.GetType().Namespace?.Contains("Inventory") == true ||
                         mb.GetType().Name.Contains("Inventory") ||
                         mb.GetType().Name.Contains("Slot") ||
@@ -125,7 +126,7 @@ public class InventoryEditorDebug
 
     private void FindMissingScripts()
     {
-        var missingScripts = Object.FindObjectsByType<Transform>(FindObjectsSortMode.None)
+        var missingScripts = Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude)
             .Where(t => t.GetComponents<Component>().Any(c => c == null))
             .ToList();
 
@@ -224,4 +225,5 @@ public class InventoryEditorDebug
         }
     }
 }
+#endif
 #endif

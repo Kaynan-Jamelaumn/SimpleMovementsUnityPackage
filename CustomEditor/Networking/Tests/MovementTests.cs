@@ -287,7 +287,7 @@ namespace GameNet.Tests
         {
             public float Clock;
             public bool Replaying;
-            public CountingState A = new CountingState(TestState.A), B = new CountingState(TestState.B);
+            [System.NonSerialized] public CountingState A = new CountingState(TestState.A), B = new CountingState(TestState.B);
             protected override float CurrentTime => Clock;
             protected override bool SuppressStateEvents => Replaying;
             public void Build()

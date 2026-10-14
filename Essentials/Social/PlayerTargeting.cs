@@ -56,7 +56,8 @@ public class PlayerTargeting : MonoBehaviour
     public Material ringMaterial;
 
     [Header("Interface")]
-    [Tooltip("Create the target frame, the party frame and the inspect window.")]
+    [Tooltip("Create the target frame, the party frame, the inspect window, the nameplates and highlights of other " +
+             "players and the dungeon portal panel (each one only when the scene has none of its own).")]
     public bool createInterface = true;
 
     /// <summary>When true (the default), a Player Targeting is created by itself when a game starts with a player.</summary>
@@ -71,7 +72,11 @@ public class PlayerTargeting : MonoBehaviour
     /// <summary>The Target Menu key was pressed (the target frame opens its menu).</summary>
     public event Action MenuRequested;
 
+    /// <summary>A dungeon portal was clicked (the portal panel shows its free player slots), or deselected (null).</summary>
+    public event Action<Portal> PortalSelected;
+
     private CombatEntity target;
+    private Portal selectedPortal;
     private GlobalInputBinding selectInput, cycleInput, inspectInput, menuInput;
     private LineRenderer ring;
     private GameObject customHighlight;
@@ -81,6 +86,21 @@ public class PlayerTargeting : MonoBehaviour
 
     /// <summary>The current target, or null.</summary>
     public CombatEntity Target => target;
+
+    /// <summary>The dungeon portal last clicked, or null (see <see cref="PortalInfoPanel"/>).</summary>
+    public Portal SelectedPortal => selectedPortal;
+
+    /// <summary>Selects a dungeon portal (null deselects it).</summary>
+    public void SelectPortal(Portal portal)
+    {
+        if (portal != null && !portal.LeadsToDungeon)
+            portal = null;
+        if (ReferenceEquals(portal, selectedPortal))
+            return;
+        selectedPortal = portal;
+        try { PortalSelected?.Invoke(portal); }
+        catch (Exception ex) { Debug.LogException(ex, this); }
+    }
 
     /// <summary>This machine's player.</summary>
     public static CombatEntity Me => PlayerLocator.Local;
@@ -132,6 +152,9 @@ public class PlayerTargeting : MonoBehaviour
             if (GetComponent<TargetFrame>() == null) gameObject.AddComponent<TargetFrame>();
             if (GetComponent<PartyFrame>() == null) gameObject.AddComponent<PartyFrame>();
             if (GetComponent<InspectWindow>() == null) gameObject.AddComponent<InspectWindow>();
+            if (PlayerNameplates.Instance == null) gameObject.AddComponent<PlayerNameplates>();
+            if (PlayerHighlights.Instance == null) gameObject.AddComponent<PlayerHighlights>();
+            if (PortalInfoPanel.Instance == null) gameObject.AddComponent<PortalInfoPanel>();
         }
     }
 
@@ -258,6 +281,13 @@ public class PlayerTargeting : MonoBehaviour
             if (e != null && Targetable(e))
             {
                 SetTarget(e);
+                return;
+            }
+            // A dungeon portal: its panel shows how many players it can still take.
+            Portal portal = e == null ? c.GetComponentInParent<Portal>() : null;
+            if (portal != null && portal.LeadsToDungeon && portal.IsOpen)
+            {
+                SelectPortal(portal);
                 return;
             }
             if (!c.isTrigger)

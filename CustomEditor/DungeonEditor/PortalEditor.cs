@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -11,6 +12,7 @@ namespace ProceduralDungeon.EditorTools
         public override void OnInspectorGUI()
         {
             var portal = (Portal)target;
+            SimpleMovements.Guides.ComponentGuide.DrawCached(portal, () => SimpleMovements.Guides.WorldGuides.Portal(portal));
             List<string> problems = portal.GetSetupProblems();
             if (problems.Count == 0)
             {
@@ -61,3 +63,4 @@ namespace ProceduralDungeon.EditorTools
         }
     }
 }
+#endif

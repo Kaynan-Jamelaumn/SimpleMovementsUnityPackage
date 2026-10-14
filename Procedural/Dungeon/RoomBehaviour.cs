@@ -31,7 +31,7 @@ public class RoomBehaviour : MonoBehaviour
         public Vector3 Position { get; set; }
     }
 
-    [SerializeField] private GridCell[,] roomGrid;
+    [System.NonSerialized] private GridCell[,] roomGrid; // built at runtime (Unity cannot save 2D arrays)
     [SerializeField] private int gridRows = 5;
     [SerializeField] private int gridColumns = 5;
 

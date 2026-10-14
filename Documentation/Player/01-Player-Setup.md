@@ -4,10 +4,13 @@ Everything needed to build a working player: the project-wide settings assets, t
 ones you add, which ones are added for you), body parts, the armor sets window, input, the scene (character creation
 screen, pause and settings menu), and a final checklist.
 
-> **Fastest check:** add **Player Setup Validator** to the player (*Tools ▸ SimpleMovements ▸ Player ▸ Add Player Setup Validator To
-> Selection*). Its inspector lists every script below as present or missing with an **Add** button (and **Add All
-> Required / Recommended**), checks the hands, animator, layer and body-part hitboxes, and the project and scene setup
-> (Combat Settings, Trait Database, EventSystem, pause menu, character creation) with a button to fix each.
+> **Fastest check:** *Tools ▸ SimpleMovements ▸ Scene and Prefab Setup ▸ Player Prefab*, or add the **Player Setup
+> Validator** to the player (*Tools ▸ SimpleMovements ▸ Player ▸ Add Setup Validator To Selection*) to see the same
+> check in its inspector. It lists every script below grouped by area, and how the player is set up (tag and layer,
+> Character Controller, no physics Rigidbody, animator, hands, camera, Player Input and Input Actions, interaction,
+> network components, project assets, missing scripts), each line with what was found, why it matters, how to do it by
+> hand and a **Fix** button — plus **Fix All Required / Required + Recommended** and a report for the Console. See
+> [Validation 02](../Validation/02-Scene-and-Prefab-Setup.md).
 
 ---
 
@@ -140,7 +143,7 @@ Add them yourself only to change their settings in the inspector.
 | Body Part Controller | **Create Editable Profile**, **Add Hitboxes (Humanoid)** | Body parts (§5) |
 | Availability State Machine (Play Mode) | Stun, Silence, Clear, Kill, Revive | Test states |
 | Combat Stats / Combat Entity (Play Mode) | — | Show stat totals and sources, threat, active buffs / debuffs |
-| Player Setup Validator | **Add**, **Add All Required / Recommended**, **Run Status Setup Wizard**, **Auto-assign References**, fix buttons | Checks and completes the whole player (see the note at the top) |
+| Player Setup Validator | **Fix All Required**, **Fix Required + Recommended**, a **Fix** per line, **Run Status Setup Wizard**, **Auto-assign References**, **Log / Copy Report**, **Check The Prefab** | Checks and completes the whole player — scripts, settings, references, input, multiplayer, project assets — with why and how for each line (the same check as *Scene and Prefab Setup ▸ Player Prefab*) |
 | *Tools ▸ SimpleMovements* | *Validate ▸ Validate All Players*, *Player ▸ Auto-Setup All Players In Scene* | Every player in the open scenes |
 
 ---

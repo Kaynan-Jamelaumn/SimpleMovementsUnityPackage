@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -281,4 +282,5 @@ public class PauseMenuManagerEditor : Editor
         DrawDefaultInspector();
     }
 }
+#endif
 #endif

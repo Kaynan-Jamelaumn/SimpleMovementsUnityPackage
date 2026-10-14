@@ -38,6 +38,7 @@ Added by **Create Bootstrap Scene**.
 | `NetTrading` | Player-to-player trading: request (T key), offers, lock, confirm. The server swaps items and money when both confirm. Builds the `TradeWindow` UI on clients. |
 | `NetWorldChunks` | The open world's shared state: terrain objects removed on the server (chopped trees, mined rocks) and the weather clock. |
 | `NetSocial` | Parties (the server's `PartySystem` decides; every client gets every party, so all machines know who is in whose party), every player's guild, alliance, fame, title and level, and inspection (the server builds the answer from its copy and sends it to the asker only). See Player 09. Added to old Bootstrap scenes by **Add Missing Relays To Network World**. |
+| `NetPortals` | Dungeon portal slots: a client's portal panel asks about a portal (about once a second while shown) and the server answers that client only with the portal's player limit, the players inside its running shared or linked dungeon, whether it is open and its difficulty. Rate-limited; only portals near the asking player. Added to old Bootstrap scenes by **Add Missing Relays To Network World**. |
 
 ## 3. On the player prefab root
 

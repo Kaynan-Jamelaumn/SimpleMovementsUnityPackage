@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿#if UNITY_EDITOR
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using UnityEditor;
@@ -290,3 +291,4 @@ public partial class TerrainGeneratorEditor
         EditorGUILayout.LabelField($"   Biome texture array: {how} - about {megabytes:0.#} MB of video memory, shared by every chunk.", EditorStyles.wordWrappedMiniLabel);
     }
 }
+#endif

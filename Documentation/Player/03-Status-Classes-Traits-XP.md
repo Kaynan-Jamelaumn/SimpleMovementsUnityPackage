@@ -51,7 +51,7 @@ manager and the **player class**. Other systems reach the player's stats through
 
 Inspector tools: **Complete Setup Wizard**, **Auto-Assign All Components**, **Create Missing Components**, the
 *Setup … Only* buttons, **Validate Setup**, **Validate Status Values**, **Apply Reasonable Defaults**,
-**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Players* and *Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Auto-Setup All Players In Scene* run them
+**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Players* and *Tools ▸ SimpleMovements ▸ Player ▸ Auto-Setup All Players In Scene* run them
 on every player in the open scenes.
 
 ---

@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -290,4 +291,5 @@ public class TraitManagerEditor : Editor
         }
     }
 }
+#endif
 #endif

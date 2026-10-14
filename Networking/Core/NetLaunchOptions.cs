@@ -26,13 +26,13 @@ namespace GameNet
         public const ushort DefaultPort = 7770;
 
         /// <summary>The mode asked for, or null when the command line says nothing (show the menu).</summary>
-        public NetMode? mode;
+        [NonSerialized] public NetMode? mode;
         public string address = DefaultAddress;
         public ushort port = DefaultPort;
         public int maxPlayers = 16;
         public string playerName;
         public ushort tickRate;
-        public int? shardSeed;
+        [NonSerialized] public int? shardSeed;
 
         /// <summary>Unknown arguments, kept for diagnostics.</summary>
         public readonly List<string> ignored = new List<string>();

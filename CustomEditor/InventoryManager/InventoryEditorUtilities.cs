@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Reflection;
@@ -339,4 +340,5 @@ public static class InventoryEditorPrefs
         set => EditorPrefs.SetBool(PERFORMANCE_TRACKING_KEY, value);
     }
 }
+#endif
 #endif

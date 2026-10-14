@@ -4,9 +4,10 @@
 /// sections that share a hundred (200, 201, 202...) form one block and blocks are separated:
 /// <code>
 /// Project Validator...          ┐ checking and fixing
-/// Setup Checklist...            │
-/// Validate ▸                    │
-/// Auto-Assign ▸                 ┘
+/// Check Everything...           │
+/// Scene and Prefab Setup ▸      │  one page per scene / prefab the game needs, with Fix buttons
+/// Validate ▸                    │  one check per area (results in the Console / Project Validator)
+/// Auto-Assign ▸                 ┘  fill empty references automatically
 /// ─────────────
 /// Project Setup ▸               ┐ project assets and input
 /// Input ▸                       ┘
@@ -19,6 +20,10 @@
 /// ─────────────
 /// Legacy ▸ Help ▸
 /// </code>
+/// Where things go: a tool that creates or changes one kind of thing lives in that thing's section (Player ▸ for
+/// players, Weather ▸ for the weather...); Validate ▸ only checks (plus the one-click fix of the scene setup next to its
+/// check); Auto-Assign ▸ only fills empty references; Scene and Prefab Setup ▸ checks and completes a whole scene or
+/// prefab. Each section ends with its Help entry when it has one.
 /// A section's items use its priority plus a small offset; offsets 10 apart make separators inside the section.
 /// </summary>
 public static class SMMenu
@@ -27,8 +32,9 @@ public static class SMMenu
 
     // ---------------------------------------------------------------- checking and fixing
     public const int Top = 0;
-    public const int Validate = 2;
-    public const int AutoAssign = 3;
+    public const int Setup = 2;
+    public const int Validate = 3;
+    public const int AutoAssign = 4;
 
     // ---------------------------------------------------------------- project
     public const int ProjectSetup = 100;

@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -630,4 +631,5 @@ public static class ItemPresets
         EditorGUIUtility.PingObject(asset);
     }
 }
+#endif
 #endif

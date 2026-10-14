@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -63,3 +64,4 @@ public static class PlayerAudioSetup
             "clips in: City, World (and per zone ring), Dungeons. It plays the music of where your own player is.", "OK");
     }
 }
+#endif

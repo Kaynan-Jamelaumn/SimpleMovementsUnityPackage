@@ -21,7 +21,7 @@ public abstract class StateManager<EState> : MonoBehaviour where EState : Enum
     protected Dictionary<EState, BaseState<EState>> States = new Dictionary<EState, BaseState<EState>>();
 
     // The current state of the state machine.
-    public BaseState<EState> CurrentState;
+    [System.NonSerialized] public BaseState<EState> CurrentState;
 
     // Flag to indicate whether a state transition is in progress.
     protected bool IsTransitioningState = false;

@@ -22,7 +22,7 @@ namespace ProceduralDungeon
 
         internal DungeonPuzzle Puzzle;
 
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
         private Light[] lights;
         private Vector3 rest;
 

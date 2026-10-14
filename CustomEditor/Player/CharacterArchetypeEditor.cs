@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -276,4 +277,5 @@ public static class ArchetypePresets
         a.characterStatsPerLevel.Add(TraitModifier.Flat(TraitStat.MaxMana, 6f));
     }
 }
+#endif
 #endif

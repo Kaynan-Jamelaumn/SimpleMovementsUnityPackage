@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 
@@ -188,4 +189,5 @@ public class CharacterCreationUIEditor : Editor
         EditorGUILayout.EndHorizontal();
     }
 }
+#endif
 #endif

@@ -104,7 +104,8 @@ Bootstrap.unity
     ├─ NetDuels              duel requests and duels
     ├─ NetTrading            player-to-player trading
     ├─ NetWorldChunks        world terrain changes (removed trees, rocks) and weather
-    └─ NetSocial             parties, guilds / fame / levels, inspecting other players
+    ├─ NetSocial             parties, guilds / fame / levels, inspecting other players
+    └─ NetPortals            free player slots of dungeon portals
 ```
 
 **What happens when you press Play in Bootstrap:**

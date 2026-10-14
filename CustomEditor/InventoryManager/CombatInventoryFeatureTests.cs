@@ -1,4 +1,5 @@
-﻿#if UNITY_INCLUDE_TESTS && UNITY_EDITOR
+﻿#if UNITY_EDITOR
+#if UNITY_INCLUDE_TESTS && UNITY_EDITOR
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEditor;
@@ -248,4 +249,5 @@ namespace InventorySystem.Tests
         }
     }
 }
+#endif
 #endif

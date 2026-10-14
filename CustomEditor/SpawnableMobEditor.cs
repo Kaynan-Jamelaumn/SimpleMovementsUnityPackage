@@ -1,4 +1,5 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -19,7 +20,6 @@ public class SpawnableMobEditor : EditorWindow
     private SerializedProperty mobsProperty;
     private Vector2 scrollPosition;
     private TerrainGenerator terrainGenerator;
-    private bool showHelp = true;
 
     private void OnEnable()
     {
@@ -186,3 +186,4 @@ public class SpawnableMobEditor : EditorWindow
         }
     }
 }
+#endif

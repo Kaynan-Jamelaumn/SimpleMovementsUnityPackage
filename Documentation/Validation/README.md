@@ -6,6 +6,9 @@ build.
 
 | Tool | What it does |
 |---|---|
+| [Scene and Prefab Setup](02-Scene-and-Prefab-Setup.md) | One page per scene and prefab the game needs (Bootstrap, Hub City, World, Dungeon scenes; Player, Mob, Item prefabs): every requirement, why it matters, how to do it by hand, and a **Fix** button |
+| [Player Setup Validator](#player-setup-validator) | The player's full check in its own inspector |
+| [Guides in the inspectors](#guides-in-the-inspectors) | What a component does, where it goes, how it works and whether it is set up, above its fields |
 | [Project Validator window](#project-validator-window) | Lists every problem of the selection, the open scenes or all prefabs, with **Select** and **Fix** buttons |
 | [Auto-assign references](#auto-assign-references) | Fills empty object fields of components from their own hierarchy |
 | [`[AutoAssign]` and `[RequiredReference]`](#attributes-for-your-own-scripts) | Tell the tools where a field's object is, or that a field must not stay empty |
@@ -14,6 +17,39 @@ build.
 | [Game setup checks](#game-setup-checks) | The Input Actions asset (every action the scripts read, keys bound twice) and the open scenes (weather, day/night, relays) |
 | [The Tools ▸ SimpleMovements menu](#the-tools--simplemovements-menu) | How the menu is organised |
 | [Tests](#tests) | Edit Mode tests for the validators, the network core and every network module |
+
+## Player Setup Validator
+
+**Player ▸ Add Setup Validator To Selection** puts a `PlayerSetupValidator` on the player. Its inspector shows the
+same check as **Scene and Prefab Setup ▸ Player Prefab**, so the two always agree:
+
+* a summary with a progress bar and **Fix All Required** / **Fix Required + Recommended**;
+* every script the player needs, grouped by area, and how it is set up: tag and layer, the Character Controller's shape,
+  no physics Rigidbody, no duplicated scripts, the animator, the hands, the camera, the Player Input and the Input
+  Actions asset, the Player Interactor, the network components, the project assets, missing scripts and broken
+  references — each with what was found, **Why**, **By hand**, **Select** and **Fix**;
+* what is being checked: the prefab asset (fixes saved to it), the prefab open in Prefab Mode, or an instance in a
+  scene (fixes become overrides — **Check The Prefab** opens the window on its prefab);
+* the scene the player is in: EventSystem, pause menu, character creation, camera, one player;
+* **Log Report** (the whole check in the Console) and **Copy Report** (to the clipboard), **Run Status Setup Wizard**,
+  **Auto-assign References**.
+
+In Play mode the component logs what is missing, each script with what it is for.
+
+## Guides in the inspectors
+
+The inspectors of the systems you set up once — Player Targeting, Party System, Player Social, Player Nameplates,
+Player Highlights, Portal Info Panel, Day Night Cycle, Player Weather Effects, Weather System, Hub World Director,
+Realm Scene, Realm Gate, Zone Borders, NPC, Merchant, Portal — start with a guide:
+
+* **About**: what it does, **where it goes** (which scene or object, and whether it is created automatically), **how
+  it works** (with the current values of its settings), a link to its documentation page and related actions;
+* **Setup**: live checks of its own setup (one per scene, in the right scene, the relay it needs online, input actions,
+  shader, trigger...), each with a fix when one is safe;
+* **Now (Play mode)**: what it is doing (the target, the parties and invitations, the time of day, the cycle and where
+  each player is, a portal's free slots...).
+
+Both foldouts remember whether you closed them. The guides live in `CustomEditor/Guides/`.
 
 ## Project Validator window
 
@@ -166,7 +202,7 @@ Part of the Project Validator (the **Game Setup** check), and also in the menu:
 
 | Check | Severity | Fix |
 |---|---|---|
-| An action the scripts read is missing from the Input Actions asset's Player map: Movement, Jump, Use, Interact, Inventory... (error), or SelectTarget, CycleTarget, InspectTarget, TargetMenu, Trade, AcceptRequest, DeclineRequest, InteractClick, Map... (warning) | Error / Warning | **Add**: added on its usual key when that key is free, else without a key. All at once: **Auto-Assign ▸ Add Missing Input Actions** |
+| An action the scripts read is missing from the Input Actions asset's Player map: Movement, Jump, Use, Interact, Inventory... (error), or SelectTarget, CycleTarget, InspectTarget, TargetMenu, Trade, AcceptRequest, DeclineRequest, InteractClick, Map... (warning) | Error / Warning | **Add**: added on its usual key when that key is free, else without a key. All at once: **Input ▸ Add Missing Input Actions** |
 | One key bound to several actions of the same map | Warning (Info when it is on purpose: the left click shared by Use, SelectTarget and InteractClick) | Rebind one in the Input Actions editor |
 | The Weather System is not in a scene with the terrain, or is on a player | Warning / Error | - |
 | No Player Weather Effects (the weather is only visual) | Info | **Add Player Weather Effects** |
@@ -175,21 +211,38 @@ Part of the Project Validator (the **Game Setup** check), and also in the menu:
 | Shelter Layers includes the players' layer | Warning | **Exclude the player layer** |
 | Several Day Night Cycles open, or one on a player; none at all | Warning / Error / Info | **Remove from the player** |
 | Several Player Targeting or Party System objects | Warning | - |
-| The Network World misses a relay (NetHubWorld, NetDuels, NetTrading, NetWorldChunks, NetSocial) | Warning | **Add the relays** |
+| The Network World misses a relay (NetHubWorld, NetDuels, NetTrading, NetWorldChunks, NetSocial, NetPortals) | Warning | **Add the relays** |
 
-**Auto-Assign ▸ Fix Scene Setup (open scenes)** applies every fix of the scene checks at once.
+**Validate ▸ Fix Scene Setup (open scenes)** applies every fix of the scene checks at once. For a complete check of one
+scene (everything it must contain), use **Scene and Prefab Setup**.
 
 ## The Tools ▸ SimpleMovements menu
 
 Sections are grouped with separators. The layout (paths and order) is defined in one file, `CustomEditor/SMMenu.cs`.
+**Help ▸ What Is In This Menu** shows the same overview in the editor.
 
 | Block | Sections | What is there |
 |---|---|---|
-| Checking and fixing | **Project Validator...**, **Check Everything...**, **Validate**, **Auto-Assign** | The validator window; everything at once; one area at a time (Selection, Open Scenes, All Prefabs, Players, Abilities, Traits, NPCs, Dungeon Portals, Hub World, Network Setup and Prefabs, Input Actions, Scene Setup, Remove Missing Scripts); fixers (references, players' setup, player interactors, missing input actions, scene setup) |
+| Checking and fixing | **Project Validator...**, **Check Everything...**, **Scene and Prefab Setup**, **Validate**, **Auto-Assign** | The validator window; everything at once; one page per scene / prefab with Fix buttons (Bootstrap, Hub City, World, Dungeon; Player, Mob, Item; Check Selection Or Active Scene); one check per area (Selection, Open Scenes, All Prefabs, Players, Abilities, Traits, NPCs, Dungeon Portals, Hub World, Network Setup and Prefabs, Input Actions, Scene Setup and its one-click fix, Remove Missing Scripts); filling empty references (selection, open scenes, all prefabs, with previews) |
 | Project | **Project Setup**, **Input** | Settings and databases in Resources (combat, abilities, traits, absorption, item categories, currency, hub world), building the item and ability databases; checking / completing the Input Actions asset and the saved key bindings |
-| Characters and items | **Player**, **Inventory**, **Mobs**, **NPC**, **Social** | Setup validator, animator controller, movement audio, player social; inventory UI and tools; mob creation; NPCs; targeting and parties |
-| World | **Hub World**, **Weather**, **Dungeon**, **Scene** | City scene and gates; day/night, weather effects, condition assets; dungeons and portals; menus, character creation, realm music |
-| Multiplayer | **Network** | Bootstrap scene, networked prefabs, relays, builds, local runs, Play In Editor As |
-| Other | **Legacy**, **Help** | Old-asset converters; open the documentation, what is in the menu |
+| Characters and items | **Player**, **Inventory**, **Mobs**, **NPC**, **Social** | Setup validator, auto-setup of the scene's players, animator controller, movement audio, player social, player interactors, Help; inventory UI and tools; mob creation and Help; NPCs and Help; targeting and parties, Help |
+| World | **Hub World**, **Weather**, **Dungeon**, **Scene** | City scene, World scene, gates, Help; day/night, weather effects, condition assets, Help; dungeons and portals; menus, character creation, realm music |
+| Multiplayer | **Network** | Bootstrap scene, networked prefabs, relays, builds, local runs, Play In Editor As, Help |
+| Other | **Legacy**, **Help** | Old-asset converters; the documentation, what is in the menu |
 
-Moved items: *Validate All …* are now **Validate ▸ Players / Abilities / Traits**; *Auto-Assign References* is its own **Auto-Assign** section; *NPC ▸ Validate NPCs*, *Dungeon ▸ Validate Portal Setup*, *Hub World ▸ Validate Setup* and *Network ▸ Validate Network Setup / Prefabs* are under **Validate**; *Network ▸ Build Item / Ability Database* and *Hub World ▸ Create Settings Asset* are under **Project Setup**; *Player ▸ Auto-Setup All Players* and *NPC ▸ Add Player Interactor To Players* are under **Auto-Assign**; *Scene UI* and *Audio* are merged into **Scene**; *Social ▸ Add Player Social* is under **Player**.
+**Where things go.** A tool that makes or changes one kind of thing is in that thing's section (Player ▸ for players,
+Weather ▸ for the weather…). **Validate** only checks (plus the scene setup's one-click fix, next to its check).
+**Auto-Assign** only fills empty references. **Scene and Prefab Setup** checks and completes a whole scene or prefab.
+
+Moved in this version: *Auto-Assign ▸ Auto-Setup All Players In Scene* → **Player ▸ Auto-Setup All Players In Scene**;
+*Auto-Assign ▸ Add Player Interactor To Players* → **Player ▸ Add Player Interactor To Players In Scene**;
+*Auto-Assign ▸ Fix Scene Setup (open scenes)* → **Validate ▸ Fix Scene Setup (open scenes)**; *Auto-Assign ▸ Add
+Missing Input Actions* is only in **Input ▸ Add Missing Input Actions**. New: **Scene and Prefab Setup**, **Player ▸
+Help**, **Social ▸ Help**, **Weather ▸ Help**.
+
+Earlier moves: *Validate All …* are now **Validate ▸ Players / Abilities / Traits**; *Auto-Assign References* is its
+own **Auto-Assign** section; *NPC ▸ Validate NPCs*, *Dungeon ▸ Validate Portal Setup*, *Hub World ▸ Validate Setup*
+and *Network ▸ Validate Network Setup / Prefabs* are under **Validate**; *Network ▸ Build Item / Ability Database* and
+*Hub World ▸ Create Settings Asset* are under **Project Setup**; *Scene UI* and *Audio* are merged into **Scene**;
+*Social ▸ Add Player Social* is under **Player**.
+

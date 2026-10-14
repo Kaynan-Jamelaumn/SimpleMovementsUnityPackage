@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿#if UNITY_EDITOR
+using System.Collections.Generic;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -218,3 +219,4 @@ public partial class TerrainGeneratorEditor
         EditorGUILayout.HelpBox(info.ToString(), MessageType.None);
     }
 }
+#endif

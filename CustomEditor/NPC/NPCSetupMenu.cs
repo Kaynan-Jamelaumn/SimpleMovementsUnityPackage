@@ -93,7 +93,7 @@ public static class NPCSetupMenu
     }
 
     // ------------------------------------------------------------------ players
-    [MenuItem(SMMenu.Root + "Auto-Assign/Add Player Interactor To Players", false, SMMenu.AutoAssign + 61)]
+    [MenuItem(SMMenu.Root + "Player/Add Player Interactor To Players In Scene", false, SMMenu.Player + 42)]
     private static void AddInteractorMenu()
     {
         int n = AddInteractorToPlayers();
@@ -158,7 +158,7 @@ public static class NPCSetupMenu
             interactor |= p.GetComponentInChildren<PlayerInteractor>(true) != null;
         if (npcs.Length > 0 && !interactor)
         {
-            Debug.LogWarning("[NPC] No player in the scene has a Player Interactor: only Player.OnInteract can open NPCs (Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Add Player Interactor To Players).");
+            Debug.LogWarning("[NPC] No player in the scene has a Player Interactor: only Player.OnInteract can open NPCs (Tools ▸ SimpleMovements ▸ Player ▸ Add Player Interactor To Players In Scene).");
             problems++;
         }
         EditorUtility.DisplayDialog("NPC", npcs.Length == 0 ? "There is no NPC in the scene." :

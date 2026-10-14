@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -278,4 +279,5 @@ public static class UIBuildKit
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 }
+#endif
 #endif

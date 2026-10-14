@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -33,6 +34,23 @@ public static class SocialSetupMenu
             "settings, so this is only needed to change the settings (keys, colours, party size).\n\n" +
             "Network sessions also need the Net Social relay on the Network World object: Tools ▸ SimpleMovements ▸ Network ▸ " +
             "Add Missing Relays To Network World.", "OK");
+    }
+
+    [MenuItem(SMMenu.Root + "Social/Help", false, SMMenu.Social + 40)]
+    private static void Help()
+    {
+        if (EditorUtility.DisplayDialog("Social: targeting, parties, guilds",
+                "WITHOUT ANY SETUP (created at runtime on each player's machine):\n" +
+                "• Player Targeting: click a player (or Tab) to target them; G opens the target menu (party, trade, duel, inspect); U inspects.\n" +
+                "• Party System: invitations (Y / N), leader, no friendly fire between members (Combat Settings), duels still allowed.\n" +
+                "• Nameplates (names, health bars for party, duels and combat), highlights (party / guild / duel silhouettes), the dungeon portal panel.\n" +
+                "• Player Social on every player: guild, alliance, fame, title (set them from your game code on the server).\n\n" +
+                "TO CHANGE THE SETTINGS: Social ▸ Create Player Targeting And Party System, then select them - each inspector explains its options " +
+                "and checks its setup. Add Player Nameplates / Player Highlights / Portal Info Panel to the Player Targeting object to change those.\n\n" +
+                "MULTIPLAYER: the server decides; the Net Social relay (parties, guilds, inspection) and Net Portals (portal slots) must be on the " +
+                "Bootstrap scene's Network World (Scene and Prefab Setup ▸ Bootstrap Scene adds them).",
+                "Open Guide", "Close"))
+            SimpleMovements.Setup.DocLinks.Open("Player/09-Targeting-Party-Guild-Inspect.md");
     }
 
     [MenuItem(SMMenu.Root + "Player/Add Player Social (selected player prefab)", false, SMMenu.Player + 41)]
@@ -75,3 +93,4 @@ public static class SocialSetupMenu
                "automatically at runtime; add it to set values for testing.)";
     }
 }
+#endif

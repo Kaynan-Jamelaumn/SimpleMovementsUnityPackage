@@ -23,7 +23,7 @@ namespace ProceduralDungeon
 
         private static readonly Dictionary<CombatEntity, float> readyAt = new Dictionary<CombatEntity, float>();
         private readonly Dictionary<CombatEntity, float> held = new Dictionary<CombatEntity, float>();
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
         private DungeonTeleporter partner;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

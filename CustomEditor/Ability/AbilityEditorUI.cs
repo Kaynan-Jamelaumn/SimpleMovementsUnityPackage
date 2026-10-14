@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -376,4 +377,5 @@ public static class AbilityEditorUI
         menu.ShowAsContext();
     }
 }
+#endif
 #endif

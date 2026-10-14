@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
@@ -191,3 +192,4 @@ public partial class TerrainGeneratorEditor : Editor
         Debug.Log($"[TerrainGenerator] Loaded biome state for '{biome.name}' from {path}");
     }
 }
+#endif

@@ -24,7 +24,7 @@ namespace ProceduralDungeon
         private bool initialized;
         private Collider[] colliders;
         private NavMeshObstacle obstacle;
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
 
         /// <summary>The dungeon this barrier belongs to (from its DungeonSpawned).</summary>
         protected DungeonInstance Dungeon => tag != null ? tag.Dungeon : (tag = GetComponent<DungeonSpawned>()) != null ? tag.Dungeon : null;

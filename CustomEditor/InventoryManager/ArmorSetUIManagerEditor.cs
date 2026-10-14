@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -84,4 +85,5 @@ public class ArmorSetUIManagerEditor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 }
+#endif
 #endif

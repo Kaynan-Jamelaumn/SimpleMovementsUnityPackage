@@ -2,7 +2,8 @@
 
 **Scripts:** `Essentials/Social/PlayerTargeting.cs`, `PartySystem.cs`, `PartyBook.cs`, `PlayerSocial.cs`
 (`PlayerSocial`, `CombatSocial`), `PlayerInspection.cs`, `PlayerActions.cs`; UI in `Essentials/Social/UI/`
-(`TargetFrame`, `PartyFrame`, `InspectWindow`, `SocialUI`); network relay `Networking/Runtime/Social/NetSocial.cs`
+(`TargetFrame`, `PartyFrame`, `InspectWindow`, `PlayerNameplates`, `PortalInfoPanel`, `SocialUI`); `PlayerHighlights.cs`
+with its shader `Resources/SimpleMovementsSilhouette.shader`; `PlayerBonds.cs` (`PlayerBonds`, `CombatActivity`); network relay `Networking/Runtime/Social/NetSocial.cs`
 (`#if FISHNET`); editor `CustomEditor/Social/SocialSetupMenu.cs`, tests `PartyBookTests.cs`. Combat rule changes in
 `CombatEntity.cs` (`CombatRelations.Get`) and `CombatSettings.cs`.
 
@@ -31,6 +32,9 @@ The ring and the name are coloured by how the target relates to you:
 
 Every key is rebindable in **Key Bindings**: *Select Target, Cycle Target, Inspect Target, Target Menu*. While the
 cursor is locked (third-person aiming), a click selects whoever is under the **middle of the screen**.
+
+You also get, without selecting anyone, the **nameplates** and **highlights** of other players (sections 8 and 9) and the
+**dungeon portal panel** (section 10).
 
 ## 2. The target frame and its menu
 
@@ -167,16 +171,78 @@ Create it with **Tools ▸ SimpleMovements ▸ Social ▸ Create Player Targetin
 | Select Layers | everything | What a click can hit |
 | Show Ring, colours, Ring Width, Ring Material | | The ring under the target |
 | Highlight Prefab | none | Your own highlight (a decal, an outline) instead of the ring |
-| Create Interface | on | The target frame, party frame and inspect window |
+| Create Interface | on | The target frame, party frame, inspect window, nameplates, highlights and portal panel (each only when the scene has none of its own) |
 
 **From code:**
-* `PlayerTargeting.Instance.Target` and `SetTarget(entity)`.
-* Events `TargetChanged` and `MenuRequested`.
+* `PlayerTargeting.Instance.Target` and `SetTarget(entity)`; `SelectedPortal` and `SelectPortal(portal)`.
+* Events `TargetChanged`, `MenuRequested` and `PortalSelected`.
+* `PlayerBonds.Between(me, other)` (Duel, Party, Guild, Alliance or None) and `CombatActivity.InCombat(player)`.
 * `PartySystem.Instance` methods `Invite`, `Accept`, `Leave`, `Kick`, `Promote`, `PartyOf`, `MembersOf`, and the
   `Changed` event.
 * `PlayerInspection.Request(me, target)` and the `Received` event.
 
-## 8. Troubleshooting
+## 8. Nameplates of other players
+
+`PlayerNameplates` draws names and health bars above other players' heads (screen-space, under the HUD):
+
+| Who | Name | Health bar |
+|---|---|---|
+| Any other player within **Max Distance** (45 m) | yes | no |
+| Your **party** members | yes, green | yes, green |
+| Players in a **duel** (countdown or fight; yours or anyone's) | yes, orange | yes, orange |
+| Players **in combat** (took or landed a hit in the last *Combat Seconds*, 6 s; a summon's hits count for its owner) | yes | yes: red if they can attack you, amber otherwise, green for your party/guild/alliance |
+| Players farther than Max Distance, or in another realm | no | no |
+
+Names are coloured like the relation: green party, light blue guild, blue alliance, orange duel, red "can attack you
+here", white otherwise, grey when dead. The guild tag follows the name (`Name [KNT]`). Plates fade out over the last
+*Fade Distance* metres and shrink with distance (*Far Scale*); nearer plates are drawn over farther ones.
+
+Settings (put a `PlayerNameplates` on the Player Targeting object to change them): Show Names, Show Guild Tag, Max
+Distance, Fade Distance, Hide Behind Walls (a line-of-sight test per player a few times a second; off by default), Bars
+For Party / Duels / In Combat / Guild, Always Show Bars, Combat Seconds, Head Offset, Font Size, Bar Size, Far Scale and
+every colour.
+
+## 9. Highlights: party, guild, alliance and duellists
+
+`PlayerHighlights` marks the players bound to you with a subtle effect, one **style** per bond:
+
+| Bond | Default |
+|---|---|
+| Party (group) | green glow along the character's outline, faint green silhouette through walls |
+| Guild | light-blue outline glow |
+| Alliance | fainter blue outline glow |
+| Duel (anyone's, countdown or fight) | orange outline glow, orange silhouette through walls and a pulsing glow on the ground |
+
+Each style has: Enabled, Color (alpha = strength), Outline Glow, Through Walls, Ground Glow. Also Max Distance (60 m),
+Outline Sharpness, Through Walls Strength and Ground Glow Scale. A duel wins over the other bonds, then party, guild,
+alliance.
+
+How it works: the glow and the silhouette are two extra materials (shader *SimpleMovements/Player Silhouette*, in
+`Essentials/Social/Resources/`, so it is always in builds; works in URP and the Built-in pipeline) added to the
+character's Skinned Mesh / Mesh Renderers, and removed when the bond ends or the player leaves the range. Renderers are
+re-checked every second, so newly equipped armour is marked too. A renderer with several sub-meshes is marked on its
+last sub-mesh only (Unity draws extra materials with the last sub-mesh). Without the shader, the ground glow is used
+instead.
+
+## 10. Dungeon portal panel: free player slots
+
+Clicking a dungeon portal (the Select Target click) selects it; walking within *Near Distance* (10 m) of one shows it
+too. `PortalInfoPanel` then shows, at the top of the screen:
+
+| Portal | Panel |
+|---|---|
+| Shared Run or linked portals, with a limit | **"3 of 5 slots free"** (amber when a quarter or less is left, red **"Full (5 / 5 players)"**) and "A run is going: 2 players inside. Entering joins it." |
+| Separate Runs, with a limit | **"4 slots free"**, "Each group gets a dungeon of its own (up to 4 players)"; Max Players 1 shows "solo only" |
+| No limit | **"No player limit"** (and how many are inside a running shared dungeon) |
+| Closed after use | **"Closed"** |
+
+The dungeon's difficulty is shown next to the title when it is not 1. The numbers come from `Portal.Slots`
+(`PortalSlots`: Max Players, players inside the running shared dungeon, open, difficulty). In a network session the
+client asks the server about once a second while the panel is shown, through the `NetPortals` relay on the Network World
+(**Add Missing Relays To Network World**); until the answer arrives the panel shows the portal's own settings with
+"(asking the server…)". The selection is dropped when the player gets farther than *Keep Distance* (40 m).
+
+## 11. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -187,3 +253,7 @@ Create it with **Tools ▸ SimpleMovements ▸ Social ▸ Create Player Targetin
 | Party members still hurt each other | Party Friendly Fire is on, the attack's Target Rules say Always, or they are dueling | Combat Settings / the attack's Target Rules |
 | Inspect shows no equipment | The target's Equipment Manager has nothing equipped on the machine that runs the rules | Equip items through the inventory |
 | "Trading works in a network session" | Offline there is nobody to trade with | Expected |
+| No names above players | Create Interface off, or they are farther than Max Distance / in another realm | Check the Player Nameplates settings |
+| Party members show no green bar or glow online | Parties do not reach the clients | Add `NetSocial` to the Network World |
+| No outline glow, only a disc on the ground | The *SimpleMovements/Player Silhouette* shader is missing from the build | Keep `Essentials/Social/Resources/SimpleMovementsSilhouette.shader` |
+| Portal panel stays on "(asking the server…)" | No `NetPortals` on the Network World, or the portal is not a network object | Add Missing Relays To Network World |

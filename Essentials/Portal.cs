@@ -212,6 +212,80 @@ public class Portal : MonoBehaviour
     /// <summary>False while the portal is closed after use (it lets nobody in, and is hidden or gone).</summary>
     public bool IsOpen => !closed;
 
+    /// <summary>Every enabled portal.</summary>
+    public static IReadOnlyList<Portal> All => live;
+
+    /// <summary>
+    /// Network clients: asks the server for a portal's player slots (its answer arrives through
+    /// <see cref="ApplyReplicatedSlots"/>). Installed by the networking layer; null offline and on the server.
+    /// </summary>
+    public static System.Action<Portal> ClientSlotsRequest;
+
+    // Network clients: the server's last answer about the slots, when it came and when it was last asked for.
+    private PortalSlots replicatedSlots;
+    private float replicatedAt = -100f, slotsRequestedAt = -100f;
+
+    /// <summary>
+    /// How many more players this portal can take (shown when a player selects it, see <see cref="PortalInfoPanel"/>).
+    /// Where the rules run it is worked out now; on a network client it is the server's last answer, asked again at most
+    /// once a second while it is read (until the first answer arrives: <see cref="PortalSlots.known"/> is false and the
+    /// values are this copy's own settings, with nobody inside).
+    /// </summary>
+    public PortalSlots Slots
+    {
+        get
+        {
+            if (!GameNet.NetAuthority.IsClientOnly)
+                return ComputeSlots();
+            float now = Time.unscaledTime;
+            if (ClientSlotsRequest != null && now - slotsRequestedAt >= 1f)
+            {
+                slotsRequestedAt = now;
+                ClientSlotsRequest(this);
+            }
+            if (replicatedSlots.known && now - replicatedAt < 5f)
+                return replicatedSlots;
+            PortalSlots guess = ComputeSlots();
+            guess.known = false;
+            guess.running = false;
+            guess.inside = 0;
+            return guess;
+        }
+    }
+
+    /// <summary>The slots as this machine's dungeon runs see them (the server's answer to <see cref="ClientSlotsRequest"/>).</summary>
+    public PortalSlots ComputeSlots()
+    {
+        var slots = new PortalSlots
+        {
+            known = true,
+            open = shouldInstantiateDungeon && !closed,
+            maxPlayers = MaxPlayers,
+            difficulty = dungeonDifficulty,
+        };
+        string key = shouldInstantiateDungeon ? ShareKey : null;
+        slots.shared = key != null;
+        DungeonRun run = slots.shared ? DungeonSession.FindShared(key) : null;
+        if (run != null)
+        {
+            // A running shared or linked dungeon keeps the limit of the portal that started it.
+            slots.running = true;
+            slots.inside = run.PlayerCount;
+            slots.maxPlayers = run.MaxPlayers;
+        }
+        return slots;
+    }
+
+    /// <summary>Network clients: the server's answer about this portal's slots (called by the networking layer).</summary>
+    public void ApplyReplicatedSlots(PortalSlots slots)
+    {
+        if (!GameNet.NetAuthority.IsClientOnly)
+            return;
+        slots.known = true;
+        replicatedSlots = slots;
+        replicatedAt = Time.unscaledTime;
+    }
+
     /// <summary>A player was turned away (portal, player, reason) - e.g. its dungeon is full. Server side.</summary>
     public static event System.Action<Portal, GameObject, string> EntryRefused;
 
@@ -359,6 +433,7 @@ public class Portal : MonoBehaviour
         portalCounter = 0;
         live.Clear();
         EntryRefused = null;
+        ClientSlotsRequest = null;
     }
 
     /// <summary>The player who entered, then the party members travelling with them (Bring Party Within).</summary>

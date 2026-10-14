@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
@@ -260,3 +261,4 @@ public partial class TerrainGeneratorEditor
         EditorGUILayout.PropertyField(property, new GUIContent(label, TipFor(property)), includeChildren);
     }
 }
+#endif

@@ -728,6 +728,7 @@ public partial class TerrainGenerator : MonoBehaviour
     /// Base frequency for clustering spawned objects. No longer used (see <see cref="BiomeObject.densityNoise"/>).
     /// </summary>
     [Tooltip("Not used by the current object placement (each object has its own Density Noise and Clustering settings); kept for older setups.")]
+#pragma warning disable 0414 // kept (serialized) for older setups; only the inspector reads them
     [HideInInspector][SerializeField] private float clusterBaseFrequency = 1f;
 
     /// <summary>
@@ -735,6 +736,7 @@ public partial class TerrainGenerator : MonoBehaviour
     /// </summary>
     [Tooltip("Not used by the current object placement (each object has its own Density Noise and Clustering settings); kept for older setups.")]
     [HideInInspector][SerializeField] private float clusterAmplitude = 1f;
+#pragma warning restore 0414
 
     [Tooltip("Ground steeper than this (degrees) counts as a cliff for objects' 'Cliff' distance rules.")]
     [SerializeField][Range(20f, 85f)] private float objectCliffAngle = 45f;

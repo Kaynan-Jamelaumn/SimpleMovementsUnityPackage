@@ -3,11 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Put it on the player: its inspector lists every script the player needs (required, recommended, optional, added
-/// automatically), shows which are missing with an Add button for each (or Add All), checks the important references
-/// (hands, animator, layer) and the scene / project setup (Combat Settings, Trait Database, EventSystem, pause menu),
-/// and offers the setup buttons of the other components. In Play Mode it can log what is missing. It does nothing else
-/// at runtime and can stay on the prefab.
+/// Put it on the player: its inspector runs the full Player Prefab check of Tools ▸ SimpleMovements ▸ Scene and Prefab
+/// Setup - every script the player needs (required, recommended, optional, added automatically) grouped by area, and how
+/// they are set up: tag and layer, the Character Controller's shape, no physics Rigidbody, no duplicated scripts, the
+/// animator, the hands, the camera, the Player Input and the Input Actions asset, interaction, the network components,
+/// project assets, missing scripts and broken references. Each line says what was found, why it matters and how to do it
+/// by hand, with a Fix button; Fix All buttons apply them by level, and the report can go to the Console or the clipboard.
+/// It also checks the scene the player is in (EventSystem, pause menu, camera). In Play Mode it can log what is missing.
+/// It does nothing else at runtime and can stay on the prefab.
 /// </summary>
 [DisallowMultipleComponent]
 public class PlayerSetupValidator : MonoBehaviour
@@ -122,9 +125,17 @@ public class PlayerSetupValidator : MonoBehaviour
         List<Check> required = Missing(gameObject, Importance.Required);
         List<Check> recommended = Missing(gameObject, Importance.Recommended);
         if (required.Count > 0)
-            Debug.LogError($"[Player Setup] {name} is missing required scripts: {string.Join(", ", required.ConvertAll(c => c.Name))}. " +
-                           "Select it and use the Player Setup Validator's Add buttons.", this);
+            Debug.LogError($"[Player Setup] {name} is missing {required.Count} required script(s) - the player cannot work without them:\n" +
+                           Describe(required) + "\nSelect the player and use the Player Setup Validator's Fix buttons (or Tools ▸ SimpleMovements ▸ Scene and Prefab Setup ▸ Player Prefab).", this);
         if (recommended.Count > 0)
-            Debug.LogWarning($"[Player Setup] {name} is missing recommended scripts: {string.Join(", ", recommended.ConvertAll(c => c.Name))}.", this);
+            Debug.LogWarning($"[Player Setup] {name} is missing {recommended.Count} recommended script(s) - a normal player has them:\n" + Describe(recommended), this);
+    }
+
+    private static string Describe(List<Check> checks)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (Check c in checks)
+            sb.Append("• ").Append(c.Name).Append(": ").Append(c.purpose).AppendLine();
+        return sb.ToString().TrimEnd();
     }
 }

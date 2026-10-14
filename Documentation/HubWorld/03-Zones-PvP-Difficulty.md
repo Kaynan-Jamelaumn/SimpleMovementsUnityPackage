@@ -84,3 +84,28 @@ Areas are read on the terrain worker threads, so they are set before the world l
 | above the hotbar | short messages (through the player's inventory message line) |
 | middle | the duel prompt (Accept [Y] / Decline [N]) |
 | full screen | a veil while travelling between realms, a flash at the jump |
+
+## 6. Seeing the borders
+
+`ZoneBorders` (added next to the director; turn off its *Show Zone Borders* to remove it) makes the edges of the safe
+zones visible while the player is out in the World:
+
+* a glowing **line on the ground** along the border, and
+* a **translucent wall** rising from it, fading to nothing at the top and towards both ends.
+
+Neither blocks anything: there is no collider, players walk straight through. Both appear when the player comes within
+*Show Distance* (70 m) of a border and get stronger as they come near. Only the piece around the player is built
+(*Arc Length*, 160 m), following the ground, so a 6 km ring costs the same as a small one.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Borders | Safe Zone Edges | *Safe Zone Edges*: only where PvP turns on or off (a safe ring next to a PvP ring, and the city walls when the first ring is PvP). *All Rings*: every ring border |
+| Show Distance / Arc Length / Segment Length | 70 / 160 / 2 m | When it shows, how much is drawn, how closely it follows the ground |
+| Ground Line, Line Width, Line Alpha | on, 0.6 m, 0.85 | The line on the ground |
+| Wall, Wall Height, Wall Alpha | on, 4 m, 0.35 | The translucent wall |
+| Safe Edge Color / Ring Color | orange-red / pale blue | Colour of safe-zone edges / other borders |
+| Pulse Amount / Pulse Speed | 0.25 / 1.6 | How the border breathes |
+| Material | empty | Your own transparent vertex-colour material (empty = a copy of the Combat Settings telegraph material) |
+
+Ground heights along the border are sampled with downward raycasts on the Combat Settings ground layers, cached, and
+sampled again after a dimensional jump and every 20 seconds (terrain chunks stream in).

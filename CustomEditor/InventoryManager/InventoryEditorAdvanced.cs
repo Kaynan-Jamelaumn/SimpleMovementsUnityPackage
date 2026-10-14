@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.UI;
@@ -119,7 +120,7 @@ public class InventoryEditorAdvanced
     private void CreateBasicInventoryUI()
     {
         // Find or create Canvas
-        Canvas canvas = Object.FindFirstObjectByType<Canvas>();
+        Canvas canvas = Object.FindAnyObjectByType<Canvas>();
         if (canvas == null)
         {
             GameObject canvasGO = new GameObject("Canvas");
@@ -354,4 +355,5 @@ public static class InventoryManagerContextMenu
         }
     }
 }
+#endif
 #endif

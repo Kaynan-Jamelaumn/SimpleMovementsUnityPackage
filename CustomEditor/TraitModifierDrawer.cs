@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -51,4 +52,5 @@ public class TraitModifierDrawer : PropertyDrawer
         EditorGUI.EndProperty();
     }
 }
+#endif
 #endif

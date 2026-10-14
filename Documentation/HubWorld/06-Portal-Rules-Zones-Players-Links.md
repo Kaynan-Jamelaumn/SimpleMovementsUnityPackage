@@ -65,6 +65,11 @@ Players who join a running dungeon are placed in it straight away. In multiplaye
 and receives the floors reached so far. Their controls stay frozen until their client has built the floor they stand
 on, as for the first group.
 
+**What players see.** A player who selects a dungeon portal (clicks it) or walks up to one sees how many slots it has
+left: "3 of 5 slots free", "Full (5 / 5 players)", "4 slots free" for private runs, "No player limit", or "Closed"
+(see Player 09, *Dungeon portal panel*). From code: `portal.Slots` (`PortalSlots.Remaining`, `IsFull`, `inside`,
+`running`...). On a network client the answer comes from the server through the `NetPortals` relay.
+
 ## 4. Linked portals: several entrances to one dungeon
 
 Linked portals lead into **one** dungeon instance. Whoever enters any of them while it is running joins it.

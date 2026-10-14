@@ -27,7 +27,7 @@ namespace ProceduralDungeon
         private float held;
         private float readyAt;
         private bool usedUpShown;
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
 
         protected DungeonInstance Dungeon => (tag != null || (tag = GetComponent<DungeonSpawned>()) != null) ? tag.Dungeon : GetComponentInParent<DungeonInstance>();
 

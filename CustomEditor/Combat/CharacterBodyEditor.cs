@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -48,3 +49,4 @@ public class CharacterBodyEditor : Editor
                                     "While playing, changing Height here or on the Character Identity updates the character at once.", MessageType.None);
     }
 }
+#endif

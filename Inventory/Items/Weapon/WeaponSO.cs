@@ -161,7 +161,7 @@ public class WeaponSO : ItemSO
     }
 
     public ToolType ToolType => toolType;
-    public WeaponCategory Category => weaponCategory;
+    public new WeaponCategory Category => weaponCategory;
     public WeaponScaling Scaling => scaling;
     public WeaponAnimationSet AnimationSet => animationSet;
     public bool UseCustomAnimatorController => useCustomAnimatorController;

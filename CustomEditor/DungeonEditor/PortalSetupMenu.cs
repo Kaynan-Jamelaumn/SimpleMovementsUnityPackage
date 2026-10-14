@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -232,3 +233,4 @@ namespace ProceduralDungeon.EditorTools
         private static string Truncate(string s, int max) => s.Length <= max ? s : s.Substring(0, max) + "...";
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 
 using System.Collections.Generic;
 using System.Linq;
@@ -319,3 +320,4 @@ public class PlayerClassEditor : Editor
         EditorUtility.SetDirty(playerClass);
     }
 }
+#endif

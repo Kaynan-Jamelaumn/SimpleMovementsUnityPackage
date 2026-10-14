@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -338,4 +339,5 @@ public class InventoryEditorValidation
         Debug.Log("🔧 Attempted to fix all detected issues");
     }
 }
+#endif
 #endif

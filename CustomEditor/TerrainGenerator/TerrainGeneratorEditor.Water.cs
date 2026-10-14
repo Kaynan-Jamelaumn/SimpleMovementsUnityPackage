@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
@@ -326,3 +327,4 @@ public partial class TerrainGeneratorEditor : Editor
         return $"{label}: at most about {chance * 1e6f / (spacing * spacing):0.#} per km² (one every {spacing / Mathf.Sqrt(chance):0} units)";
     }
 }
+#endif

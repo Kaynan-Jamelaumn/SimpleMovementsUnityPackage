@@ -45,7 +45,7 @@ namespace HubWorld.EditorTools
             return settings;
         }
 
-        private static HubWorldSettings Settings()
+        internal static HubWorldSettings Settings()
         {
             HubWorldSettings s = Resources.Load<HubWorldSettings>("HubWorldSettings");
             return s != null ? s : HubWorldSettings.Instance;
@@ -235,10 +235,36 @@ namespace HubWorld.EditorTools
         private static void AddGate(RealmGate.GateKind kind)
         {
             Vector3 pos = SceneView.lastActiveSceneView != null ? SceneView.lastActiveSceneView.pivot : Vector3.zero;
-            GameObject gate = BuildGate(kind == RealmGate.GateKind.CityGate ? "City Gate" : "Return Gate", pos, Quaternion.identity, kind,
+            Selection.activeObject = CreateGate(kind, pos);
+        }
+
+        /// <summary>A placeholder gate (pillars, lintel, glowing veil, the trigger and its <see cref="RealmGate"/>) at <paramref name="position"/>.</summary>
+        internal static GameObject CreateGate(RealmGate.GateKind kind, Vector3 position)
+        {
+            GameObject gate = BuildGate(kind == RealmGate.GateKind.CityGate ? "City Gate" : "Return Gate", position, Quaternion.identity, kind,
                 Mat("City Stone", new Color(0.55f, 0.52f, 0.47f)), kind == RealmGate.GateKind.CityGate ? new Color(0.35f, 1f, 0.6f, 0.55f) : new Color(0.4f, 0.7f, 1f, 0.6f));
             Undo.RegisterCreatedObjectUndo(gate, "Add gate");
-            Selection.activeObject = gate;
+            return gate;
+        }
+
+        /// <summary>
+        /// The World scene's copy of the city as seen from outside (walls, sealed inside, Return Gate), at the city centre
+        /// of the Hub World Settings, in the active scene.
+        /// </summary>
+        internal static GameObject CreateExterior()
+        {
+            ZoneSettings z = Settings().zones;
+            Vector3 center = new Vector3(z.cityCenter.x, z.cityGroundHeight, z.cityCenter.y);
+            float radius = Mathf.Max(20f, z.cityWallRadius);
+            return BuildExterior(center, radius, center + Vector3.back * radius);
+        }
+
+        /// <summary>Where the city's gate stands (south side of the walls), from the Hub World Settings.</summary>
+        internal static Vector3 CityGatePosition(out Vector3 center)
+        {
+            ZoneSettings z = Settings().zones;
+            center = new Vector3(z.cityCenter.x, z.cityGroundHeight, z.cityCenter.y);
+            return center + Vector3.back * Mathf.Max(20f, z.cityWallRadius);
         }
 
         // ------------------------------------------------------------------ validation
@@ -507,7 +533,7 @@ namespace HubWorld.EditorTools
             return go;
         }
 
-        private static Transform Point(string name, Transform parent, Vector3 position, Quaternion rotation)
+        internal static Transform Point(string name, Transform parent, Vector3 position, Quaternion rotation)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);

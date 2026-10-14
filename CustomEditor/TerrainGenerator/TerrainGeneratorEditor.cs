@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Text;
 using System.IO;
@@ -280,3 +281,4 @@ public partial class TerrainGeneratorEditor : Editor
         return names;
     }
 }
+#endif

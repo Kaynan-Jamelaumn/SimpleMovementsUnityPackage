@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿#if UNITY_EDITOR
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -936,3 +937,4 @@ public partial class TerrainGeneratorEditor
         }
     }
 }
+#endif

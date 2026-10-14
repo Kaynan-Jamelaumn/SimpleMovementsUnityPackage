@@ -19,7 +19,7 @@ namespace ProceduralDungeon
         public event System.Action<DungeonTripwire> Tripped;
 
         private float readyAt;
-        private DungeonSpawned tag;
+        private new DungeonSpawned tag;
 
         private void Update()
         {

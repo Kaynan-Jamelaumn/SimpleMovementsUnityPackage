@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -341,4 +342,5 @@ public static class HumanoidHitboxes
         hb.part = part;
     }
 }
+#endif
 #endif

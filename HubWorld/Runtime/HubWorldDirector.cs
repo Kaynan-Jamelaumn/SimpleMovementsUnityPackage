@@ -54,6 +54,9 @@ namespace HubWorld
         [SerializeField] private HubWorldSettings settings;
         [Tooltip("Create the HUD (zone, time until the jump, warnings, duel prompts) automatically.")]
         [SerializeField] private bool createHud = true;
+        [Tooltip("Draw the borders of the safe zones (a line on the ground and a translucent wall players walk through) " +
+                 "when the player comes near them (see the Zone Borders component added next to this one).")]
+        [SerializeField] private bool showZoneBorders = true;
         [Tooltip("Players found in no realm scene (DontDestroyOnLoad, spawned by a character creation scene...) are placed at the city's spawn point.")]
         [SerializeField] private bool adoptUnplacedPlayers = true;
 
@@ -231,6 +234,8 @@ namespace HubWorld
                 gameObject.AddComponent<CityAbilityRelay>();
             if (createHud && !GameNet.NetAuthority.IsHeadless && GetComponent<HubWorldHud>() == null)
                 gameObject.AddComponent<HubWorldHud>();
+            if (showZoneBorders && !GameNet.NetAuthority.IsHeadless && GetComponent<ZoneBorders>() == null)
+                gameObject.AddComponent<ZoneBorders>();
             SceneManager.sceneLoaded += OnSceneLoaded;
             SceneManager.sceneUnloaded += OnSceneUnloaded;
             GameNet.NetAuthority.ModeChanged += OnNetModeChanged;

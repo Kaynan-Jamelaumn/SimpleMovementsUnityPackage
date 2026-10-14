@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -21,7 +22,7 @@ public partial class TerrainGeneratorEditor
             "The Weather System component does the rest (effects, sounds, snow and wet ground on the terrain).",
             MessageType.Info);
 
-        WeatherSystem weather = UnityEngine.Object.FindFirstObjectByType<WeatherSystem>();
+        WeatherSystem weather = UnityEngine.Object.FindAnyObjectByType<WeatherSystem>();
         EditorGUILayout.BeginHorizontal();
         if (weather == null)
         {
@@ -221,3 +222,4 @@ public partial class TerrainGeneratorEditor
         return string.Join(", ", parts);
     }
 }
+#endif

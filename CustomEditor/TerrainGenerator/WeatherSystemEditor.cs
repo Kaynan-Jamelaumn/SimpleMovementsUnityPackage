@@ -1,4 +1,6 @@
-﻿using System;
+﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -82,6 +84,7 @@ public class WeatherSystemEditor : Editor
     {
         serializedObject.Update();
         var weather = (WeatherSystem)target;
+        SimpleMovements.Guides.ComponentGuide.DrawCached(weather, () => SimpleMovements.Guides.WorldGuides.Weather(weather));
 
         EditorGUILayout.Space(4);
         EditorGUILayout.LabelField("Weather System", EditorStyles.boldLabel);
@@ -363,3 +366,5 @@ public class WeatherSystemEditor : Editor
         return names[Mathf.RoundToInt(angle / 45f) % 8];
     }
 }
+#endif
+#endif

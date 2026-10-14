@@ -59,6 +59,7 @@ public class NPCEditor : Editor
     {
         var npc = (NPC)target;
         serializedObject.Update();
+        SimpleMovements.Guides.ComponentGuide.DrawCached(npc, () => SimpleMovements.Guides.WorldGuides.Npc(npc));
         if (EditorApplication.timeSinceStartup >= nextValidation)
         {
             nextValidation = EditorApplication.timeSinceStartup + 0.5;
@@ -138,6 +139,7 @@ public class MerchantEditor : Editor
     {
         var merchant = (Merchant)target;
         serializedObject.Update();
+        SimpleMovements.Guides.ComponentGuide.DrawCached(merchant, () => SimpleMovements.Guides.WorldGuides.Merchant(merchant));
         if (EditorApplication.timeSinceStartup >= nextValidation)
         {
             nextValidation = EditorApplication.timeSinceStartup + 0.5;

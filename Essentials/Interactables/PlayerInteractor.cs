@@ -41,7 +41,7 @@ public enum InteractionPromptPlacement
 /// a target aimed at but out of reach shows why ("Too far").</item>
 /// <item>While an interaction is open (a shop, a dialogue) targeting pauses and the Interact input closes it.</item>
 /// </list>
-/// Put it on the player (added by Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Add Player Interactor To Players). The older
+/// Put it on the player (added by Tools ▸ SimpleMovements ▸ Player ▸ Add Player Interactor To Players In Scene). The older
 /// <c>Player.OnInteract</c> keeps working for doors, items and chests; turn on Handle Legacy Interactables to use this
 /// component for them too (and then unwire Player.OnInteract so a key is not handled twice).
 /// <para>Network sessions: only the copy of the player controlled from this machine targets and reads input. On a

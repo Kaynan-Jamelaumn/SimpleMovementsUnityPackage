@@ -1,4 +1,5 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+using UnityEditor;
 using UnityEngine;
 
 // TerrainGeneratorEditor: the Performance Stats section - a summary of the generation timings and the Generation Stats window.
@@ -37,3 +38,4 @@ public partial class TerrainGeneratorEditor
         EditorGUILayout.EndHorizontal();
     }
 }
+#endif

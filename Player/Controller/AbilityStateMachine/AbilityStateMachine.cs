@@ -32,7 +32,7 @@ public class AbilityStateMachine : StateManager<AbilityStateMachine.EAbilityStat
     /// The player's input actions. Shared by every key of the player (one copy per player instead of one per key);
     /// assign your own before Awake to use a different one.
     /// </summary>
-    public PlayerInput playerInput;
+    [System.NonSerialized] public PlayerInput playerInput;
     private bool sharedInput;
     private AbilityContext context;
     private AbilitiesStateMachine keys;
