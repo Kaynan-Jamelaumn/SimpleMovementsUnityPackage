@@ -50,7 +50,15 @@ public class KeyRebindingMenu : MonoBehaviour
     /// </summary>
     public static bool IsRebinding => Time.frameCount <= busyUntilFrame;
 
+    private bool awoken;
+
     private void Awake()
+    {
+        awoken = true;
+        WireControls();
+    }
+
+    private void WireControls()
     {
         if (rowTemplate != null)
             rowTemplate.SetActive(false);
@@ -62,6 +70,22 @@ public class KeyRebindingMenu : MonoBehaviour
             gamepadTab.onClick.AddListener(() => Show(InputDeviceTracker.Kind.Gamepad));
         if (resetAllButton != null)
             resetAllButton.onClick.AddListener(ResetAll);
+    }
+
+    /// <summary>Sets the screen's parts (menus built from code, see <see cref="GameMenuFactory"/>).</summary>
+    public void Configure(Transform rows, GameObject template, Button keyboard, Button gamepad, Button resetAll,
+        GameObject waiting, TextMeshProUGUI waitingLabel, TextMeshProUGUI status)
+    {
+        rowContainer = rows;
+        rowTemplate = template;
+        keyboardTab = keyboard;
+        gamepadTab = gamepad;
+        resetAllButton = resetAll;
+        waitingOverlay = waiting;
+        waitingText = waitingLabel;
+        statusText = status;
+        if (awoken && Application.isPlaying)
+            WireControls(); // already awake: wire now (otherwise Awake does it)
     }
 
     private void OnEnable()
@@ -296,6 +320,11 @@ public class KeyRebindingMenu : MonoBehaviour
     {
         if (tab == null)
             return;
+        if (tab.GetComponent<UIRoundedImage>() != null)
+        {
+            UITheme.SetSelected(tab, selected); // themed menu: accent marker instead of a recoloured button
+            return;
+        }
         var img = tab.targetGraphic as Image;
         if (img != null)
             img.color = selected ? InventoryUIFactory.AccentColor : InventoryUIFactory.ButtonColor;

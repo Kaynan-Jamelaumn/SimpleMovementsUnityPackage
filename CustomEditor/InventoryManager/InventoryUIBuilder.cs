@@ -44,10 +44,14 @@ public class InventoryUIBuildSettings
     public float gridSpacing = 2f;
     public float gridPadding = 8f;
     public string prefabFolder = "Assets/Inventory/Generated";
-    public Color panelColor = new Color(0.08f, 0.09f, 0.11f, 0.92f);
-    public Color slotColor = new Color(1f, 1f, 1f, 0.12f);
-    public Color equipmentSlotColor = new Color(0.55f, 0.75f, 1f, 0.18f);
+    [Tooltip("The look of the menus (rounded panels and slots with a frame, accent titles, the selected hotbar slot outlined, " +
+             "hotbar numbers, slot names in empty equipment slots). Also restyles panels and the slot prefab that already exist.")]
+    public bool themedLook = true;
+    public Color panelColor = new Color(0.06f, 0.07f, 0.095f, 0.96f);
+    public Color slotColor = new Color(0.16f, 0.18f, 0.23f, 0.95f);
+    public Color equipmentSlotColor = new Color(0.19f, 0.25f, 0.37f, 0.95f);
     public Color textColor = new Color(0.92f, 0.92f, 0.92f, 1f);
+    public Color accentColor = new Color(0.36f, 0.62f, 1f, 1f);
 
     /// <summary>Default settings that keep the slot counts already configured on <paramref name="manager"/>.</summary>
     public static InventoryUIBuildSettings FromManager(InventoryManager manager)
@@ -102,6 +106,8 @@ public static class InventoryUIBuilder
     // Set while building inside a prefab asset loaded with PrefabUtility.LoadPrefabContents (no Undo there).
     private static GameObject isolatedRoot;
     private static bool noUndo;
+    // The settings of the build in progress (panels take the themed look from it).
+    private static InventoryUIBuildSettings theme;
 
     private static void Created(Object o, string label) { if (!noUndo) Undo.RegisterCreatedObjectUndo(o, label); }
     private static T AddComp<T>(GameObject go) where T : Component => noUndo ? go.AddComponent<T>() : Undo.AddComponent<T>(go);
@@ -112,7 +118,14 @@ public static class InventoryUIBuilder
     /// Builds what is missing directly in a prefab asset (the player prefab of a scene instance), so the UI lives in
     /// the prefab once instead of being added to every instance as overrides. Returns true when the asset was changed.
     /// </summary>
-    public static bool BuildInPrefabAsset(string assetPath)
+    public static bool BuildInPrefabAsset(string assetPath) => BuildInPrefabAsset(assetPath, null, onlyWhenMissing: true);
+
+    /// <summary>
+    /// Builds in a prefab asset (loaded with PrefabUtility.LoadPrefabContents, then saved): a prefab asset cannot be
+    /// edited directly (Unity refuses "Transform parent is not allowed be part of a Prefab Asset"). <paramref name="s"/>
+    /// null = the manager's own settings. With <paramref name="onlyWhenMissing"/> nothing is built when nothing is missing.
+    /// </summary>
+    public static bool BuildInPrefabAsset(string assetPath, InventoryUIBuildSettings s, bool onlyWhenMissing)
     {
         GameObject contents = PrefabUtility.LoadPrefabContents(assetPath);
         try
@@ -123,9 +136,9 @@ public static class InventoryUIBuilder
             GameObject player = ResolvePlayer(manager, null);
             if (player == null && manager == null)
                 return false;
-            if (MissingParts(manager, player).Count == 0)
+            if (onlyWhenMissing && MissingParts(manager, player).Count == 0)
                 return false;
-            Build(manager, player, InventoryUIBuildSettings.FromManager(manager), select: false);
+            Build(manager, player, s ?? InventoryUIBuildSettings.FromManager(manager), select: false);
             PrefabUtility.SaveAsPrefabAsset(contents, assetPath);
             return true;
         }
@@ -137,9 +150,37 @@ public static class InventoryUIBuilder
         }
     }
 
+    /// <summary>The prefab asset path when <paramref name="go"/> is part of a prefab ASSET (selected in the Project window), else null.</summary>
+    public static string PrefabAssetPathOf(GameObject go)
+    {
+        if (go == null || !EditorUtility.IsPersistent(go))
+            return null;
+        string path = AssetDatabase.GetAssetPath(go);
+        return string.IsNullOrEmpty(path) ? null : path;
+    }
+
     /// <summary>Builds what is missing for <paramref name="manager"/> (creates a manager when null). Returns the manager.</summary>
     public static InventoryManager Build(InventoryManager manager, GameObject player, InventoryUIBuildSettings s, bool select = true)
     {
+        // A prefab asset (picked in the Project window) is built through LoadPrefabContents, never edited directly.
+        if (isolatedRoot == null)
+        {
+            string assetPath = PrefabAssetPathOf(manager != null ? manager.gameObject : player);
+            if (assetPath != null)
+            {
+                BuildInPrefabAsset(assetPath, s, onlyWhenMissing: false);
+                GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+                InventoryManager built = asset != null ? asset.GetComponentInChildren<InventoryManager>(true) : null;
+                Debug.Log($"[Inventory UI Builder] Built the inventory UI inside the prefab '{assetPath}'. Every instance of it gets it.", asset);
+                if (select && asset != null)
+                    Selection.activeObject = asset;
+                return built;
+            }
+            // The player picked in the window belongs to a prefab asset but the manager does not (or the other way round).
+            if (manager != null && player != null && PrefabAssetPathOf(player) != null)
+                player = null;
+        }
+
         int group = 0;
         if (!noUndo)
         {
@@ -148,6 +189,7 @@ public static class InventoryUIBuilder
             Undo.SetCurrentGroupName("Build Inventory UI");
         }
 
+        theme = s;
         player = ResolvePlayer(manager, player);
         GameObject stageRoot = StageRoot(manager != null ? manager.gameObject : player);
 
@@ -167,6 +209,7 @@ public static class InventoryUIBuilder
 
         // Prefabs and sprites
         GameObject slotPrefab = GetOrCreateSlotPrefab(s);
+        ThemeSlotPrefab(slotPrefab, s); // a slot prefab generated before the themed look gets it
         GameObject itemPrefab = GetOrCreateItemPrefab(s);
 
         var so = new SerializedObject(manager);
@@ -206,11 +249,13 @@ public static class InventoryUIBuilder
             // on the panel (between slots) returns it instead of dropping it into the world.
             Panel(inventoryPanel, Color.clear, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 0.5f), new Vector2(20f, 20f), gridSize + new Vector2(24f, 64f), withImage: false);
             Transform bg = FindOrCreateChild(inventoryPanel, "Background", true);
-            GetOrAdd<Image>(bg.gameObject).color = s.panelColor;
+            Image bgImage = GetOrAdd<Image>(bg.gameObject);
+            bgImage.color = s.panelColor;
+            ThemePanel(bgImage, s);
             GetOrAdd<LayoutElement>(bg.gameObject).ignoreLayout = true;
             bg.SetAsFirstSibling();
         }
-        Label(inventoryPanel, "Title", "Inventory", s, 22, new Vector2(0f, -8f), TextAlignmentOptions.Center, top: true);
+        ThemeTitle(Label(inventoryPanel, "Title", "Inventory", s, 22, new Vector2(0f, -8f), TextAlignmentOptions.Center, top: true), s);
         Transform inventorySlotsParent = ExistingOr(creation.FindPropertyRelative("inventorySlotsParent"), () =>
         {
             Transform t = FindOrCreateChild(inventoryPanel, "InventorySlots", false);
@@ -254,7 +299,7 @@ public static class InventoryUIBuilder
             if (equipmentPanelGo == null)
                 Panel(equipmentPanel, s.panelColor, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-20f, 20f),
                     new Vector2(2f * (s.slotSize + 110f) + 36f, eqRows * (s.slotSize + s.spacing) + 76f));
-            Label(equipmentPanel, "Title", "Equipment", s, 22, new Vector2(0f, -8f), TextAlignmentOptions.Center, top: true);
+            ThemeTitle(Label(equipmentPanel, "Title", "Equipment", s, 22, new Vector2(0f, -8f), TextAlignmentOptions.Center, top: true), s);
             if (equipmentSlotsParent == null)
             {
                 equipmentSlotsParent = FindOrCreateChild(equipmentPanel, "EquipmentSlots", false);
@@ -927,6 +972,184 @@ public static class InventoryUIBuilder
             return;
         var img = GetOrAdd<Image>(t.gameObject);
         img.color = color;
+        if (theme != null)
+            ThemePanel(img, theme);
+    }
+
+    // ------------------------------------------------------------------ themed look
+    /// <summary>A rounded panel with a soft shadow (themed look).</summary>
+    private static void ThemePanel(Image img, InventoryUIBuildSettings s)
+    {
+        if (img == null || !s.themedLook)
+            return;
+        Record(img, "Style panel");
+        img.sprite = GetOrCreateRoundedSprite(s, "UI_Panel", 16, 0, 1f);
+        img.type = Image.Type.Sliced;
+        img.pixelsPerUnitMultiplier = 1f;
+        if (img.GetComponent<Shadow>() == null)
+        {
+            var sh = AddComp<Shadow>(img.gameObject);
+            sh.effectColor = new Color(0f, 0f, 0f, 0.45f);
+            sh.effectDistance = new Vector2(0f, -5f);
+        }
+        EditorUtility.SetDirty(img);
+    }
+
+    /// <summary>A panel title in the menus' style: small, spaced capitals in the accent colour.</summary>
+    private static void ThemeTitle(TextMeshProUGUI title, InventoryUIBuildSettings s)
+    {
+        if (title == null || !s.themedLook)
+            return;
+        Record(title, "Style title");
+        title.text = title.text.ToUpperInvariant();
+        title.fontSize = 17f;
+        title.fontStyle = FontStyles.Bold;
+        title.characterSpacing = 6f;
+        title.color = s.accentColor;
+        EditorUtility.SetDirty(title);
+    }
+
+    /// <summary>
+    /// A white rounded rectangle saved as a 9-sliced sprite next to the generated prefabs: <paramref name="border"/> &gt; 0
+    /// draws a solid frame of that width around a fill of <paramref name="fillAlpha"/> (slots); 0 = a plain fill.
+    /// </summary>
+    public static Sprite GetOrCreateRoundedSprite(InventoryUIBuildSettings s, string name, int radius, int border, float fillAlpha)
+    {
+        string folder = EnsureFolder(s.prefabFolder);
+        string path = $"{folder}/{name}.png";
+        Sprite existing = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        if (existing != null)
+            return existing;
+        int size = radius * 2 + 8;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        var pixels = new Color32[size * size];
+        float r = radius, half = size * 0.5f;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                // Signed distance to the rounded rectangle's edge (negative inside).
+                float px = Mathf.Abs(x + 0.5f - half) - (half - r);
+                float py = Mathf.Abs(y + 0.5f - half) - (half - r);
+                float outside = Mathf.Sqrt(Mathf.Max(px, 0f) * Mathf.Max(px, 0f) + Mathf.Max(py, 0f) * Mathf.Max(py, 0f));
+                float d = outside + Mathf.Min(Mathf.Max(px, py), 0f) - r;
+                float shape = Mathf.Clamp01(0.5f - d);
+                float a = shape * fillAlpha;
+                if (border > 0)
+                {
+                    float ring = Mathf.Clamp01(border + 0.5f + d); // 1 within the border width from the edge
+                    a = Mathf.Max(a, shape * ring);
+                }
+                pixels[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+            }
+        tex.SetPixels32(pixels);
+        tex.Apply();
+        File.WriteAllBytes(path, tex.EncodeToPNG());
+        Object.DestroyImmediate(tex);
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+        if (AssetImporter.GetAtPath(path) is TextureImporter importer)
+        {
+            importer.textureType = TextureImporterType.Sprite;
+            importer.spriteImportMode = SpriteImportMode.Single;
+            importer.alphaIsTransparency = true;
+            importer.mipmapEnabled = false;
+            importer.filterMode = FilterMode.Bilinear;
+            importer.spritePixelsPerUnit = 100f;
+            importer.spriteBorder = new Vector4(radius + 2, radius + 2, radius + 2, radius + 2);
+            importer.SaveAndReimport();
+        }
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+    }
+
+    /// <summary>
+    /// Gives a slot (prefab root or instance) the themed look: framed rounded background, selection outline, slot name
+    /// hint, hotbar number, and the <see cref="InventorySlotStyle"/> that drives them. Safe to run again.
+    /// </summary>
+    private static void ThemeSlot(GameObject slot, InventoryUIBuildSettings s)
+    {
+        var img = slot.GetComponent<Image>();
+        if (img != null)
+        {
+            img.sprite = GetOrCreateRoundedSprite(s, "UI_SlotFrame", 10, 2, 0.72f);
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = 1f;
+        }
+        Image selection = Child<Image>(slot.transform, "Selection");
+        selection.sprite = GetOrCreateRoundedSprite(s, "UI_SlotOutline", 12, 3, 0f);
+        selection.type = Image.Type.Sliced;
+        selection.color = s.accentColor;
+        selection.raycastTarget = false;
+        Stretch(selection.rectTransform, -3f);
+        selection.enabled = false;
+        selection.transform.SetAsFirstSibling();
+
+        TextMeshProUGUI hint = Child<TextMeshProUGUI>(slot.transform, "TypeHint");
+        hint.text = "";
+        hint.fontSize = 12f;
+        hint.enableAutoSizing = true;
+        hint.fontSizeMin = 8f;
+        hint.fontSizeMax = 13f;
+        hint.alignment = TextAlignmentOptions.Center;
+        hint.color = new Color(1f, 1f, 1f, 0.28f);
+        hint.raycastTarget = false;
+        Stretch(hint.rectTransform, 4f);
+
+        TextMeshProUGUI number = Child<TextMeshProUGUI>(slot.transform, "KeyNumber");
+        number.text = "";
+        number.fontSize = 13f;
+        number.fontStyle = FontStyles.Bold;
+        number.alignment = TextAlignmentOptions.TopLeft;
+        number.color = new Color(1f, 1f, 1f, 0.6f);
+        number.raycastTarget = false;
+        Stretch(number.rectTransform, 5f);
+        number.enabled = false;
+
+        InventorySlotStyle style = slot.GetComponent<InventorySlotStyle>();
+        if (style == null) style = slot.AddComponent<InventorySlotStyle>();
+        style.Configure(img, selection, hint, number);
+        EditorUtility.SetDirty(style);
+    }
+
+    private static T Child<T>(Transform parent, string name) where T : Component
+    {
+        Transform t = parent.Find(name);
+        if (t == null)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            t = go.transform;
+        }
+        T c = t.GetComponent<T>();
+        return c != null ? c : t.gameObject.AddComponent<T>();
+    }
+
+    private static void Stretch(RectTransform rt, float inset)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = new Vector2(inset, inset);
+        rt.offsetMax = new Vector2(-inset, -inset);
+    }
+
+    /// <summary>The themed look on a slot prefab asset that was generated before (it is opened, changed and saved).</summary>
+    private static void ThemeSlotPrefab(GameObject prefab, InventoryUIBuildSettings s)
+    {
+        if (prefab == null || !s.themedLook)
+            return;
+        string path = AssetDatabase.GetAssetPath(prefab);
+        if (string.IsNullOrEmpty(path) || prefab.GetComponent<InventorySlotStyle>() != null)
+            return;
+        GameObject contents = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            var img = contents.GetComponent<Image>();
+            if (img != null) img.color = s.slotColor;
+            ThemeSlot(contents, s);
+            PrefabUtility.SaveAsPrefabAsset(contents, path);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
     }
 
     private static GridLayoutGroup Grid(Transform parent, InventoryUIBuildSettings s, int columns) => Grid(parent, s.slotSize, s.spacing, s.spacing, columns);
@@ -1033,8 +1256,8 @@ public static class InventoryUIBuilder
             lrt.offsetMax = Vector2.zero;
             var tmp = label.AddComponent<TextMeshProUGUI>();
             tmp.text = SlotTypeHelper.GetDisplayName(type);
-            tmp.fontSize = 18f;
-            tmp.color = s.textColor;
+            tmp.fontSize = s.themedLook ? 16f : 18f;
+            tmp.color = s.themedLook ? new Color(s.textColor.r, s.textColor.g, s.textColor.b, 0.75f) : s.textColor;
             tmp.alignment = TextAlignmentOptions.Left;
             tmp.raycastTarget = false;
         }
@@ -1460,6 +1683,8 @@ public static class InventoryUIBuilder
         var img = go.GetComponent<Image>();
         img.color = s.slotColor;
         img.raycastTarget = true;
+        if (s.themedLook)
+            ThemeSlot(go, s);
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(go, path);
         Object.DestroyImmediate(go);
         return prefab;

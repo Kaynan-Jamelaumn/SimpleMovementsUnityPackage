@@ -57,6 +57,17 @@ public class QuickSlotCell : MonoBehaviour, IPointerClickHandler
         return cell;
     }
 
+    /// <summary>Takes the Player HUD's look: a rounded warm slot with a thin border, cream key and count.</summary>
+    public void ApplyStyle(HudPalette p)
+    {
+        if (p == null) return;
+        HudStyle.Restyle(background, p.slot, 9, p.slotBorder);
+        baseColor = p.slot;
+        if (keyText != null) keyText.color = p.muted;
+        if (countText != null) countText.color = p.text;
+        if (cooldown != null) cooldown.color = p.cooldown;
+    }
+
     public void Bind(QuickSlotBar owner, int slotIndex)
     {
         bar = owner;

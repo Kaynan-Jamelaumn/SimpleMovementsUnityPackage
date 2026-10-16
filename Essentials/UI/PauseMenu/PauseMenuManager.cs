@@ -51,6 +51,10 @@ public class PauseMenuManager : MonoBehaviour
     [Tooltip("Turn the player's gameplay input off while paused, so clicks on the menu never attack or jump.")]
     public bool pauseGameplayInput = true;
 
+    [Header("Building")]
+    [Tooltip("No Pause Menu UI assigned: build the pause and settings windows from code when the game starts (Game Menu Factory).")]
+    public bool buildMenuIfMissing = true;
+
     [Header("Scenes")]
     [Tooltip("Scene loaded by the Main Menu button (must be in Build Settings; the button hides itself otherwise).")]
     public string mainMenuSceneName = "MainMenu";
@@ -91,6 +95,8 @@ public class PauseMenuManager : MonoBehaviour
 
     void Start()
     {
+        if (Instance == this && pauseMenuUI == null && buildMenuIfMissing)
+            GameMenuFactory.Build(gameObject, this, null); // nothing built in the editor: the same menu, made now
         InitializeComponents();  // Initialize UI components and states
         EnsureGameIsUnpaused(); // Force game to start in unpaused state
         if (mainMenuButton != null)

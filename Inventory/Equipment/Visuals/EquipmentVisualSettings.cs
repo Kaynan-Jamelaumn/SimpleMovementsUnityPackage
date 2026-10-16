@@ -61,6 +61,12 @@ public enum ArmorAttachMode
     Rigid,
     /// <summary>No model on the character.</summary>
     None,
+    /// <summary>
+    /// Any model (a plain mesh, or one made for another skeleton) is placed like a rigid piece, then skinned to the
+    /// character's own body: every vertex takes the bone weights of the closest point of the body, so the piece wraps
+    /// the body and bends with it (chest plates, sleeves, leggings, boots). Needs Read/Write on the meshes in builds.
+    /// </summary>
+    FitToBody,
 }
 
 /// <summary>Rigid armour pieces worn on both sides (gloves, boots, bracers, pauldrons). Serialized as numbers: append only.</summary>
@@ -122,6 +128,22 @@ public class ArmorVisualSettings
     public Vector3 scale = Vector3.one;
     [Tooltip("Character renderers hidden while the piece is worn, by object name (hair under a helmet, the bare torso under a chestplate).")]
     public List<string> hideCharacterParts = new List<string>();
+    [Tooltip("Model worn by female bodies (Character Appearance ▸ Female). Empty = the Armor Model for everyone.")]
+    public GameObject femaleModel;
+    [Tooltip("Parts of the body hidden while worn, so skin never shows through. Auto = by slot (helmet → hair and ears, " +
+             "chestplate → torso, gloves → hands, leggings → legs, boots → feet).")]
+    public BodyRegionMode hideMode = BodyRegionMode.Auto;
+    [Tooltip("Custom: the parts of the body hidden while worn.")]
+    public BodyRegion hideRegions = BodyRegion.None;
+    [Tooltip("The body's blend shapes (Muscular, Female, Fat...) are copied onto the piece when it has the same ones, so it " +
+             "follows the body's shape.")]
+    public bool followBodyShape = true;
+    [Tooltip("Fit To Body: how far the piece sits out from the skin (metres), so the body never pokes through.")]
+    [Range(0f, 0.05f)] public float fitOffset = 0.006f;
+
+    /// <summary>The body regions the piece hides on a slot.</summary>
+    public BodyRegion RegionsFor(ArmorSlotType slot) =>
+        hideMode == BodyRegionMode.None ? BodyRegion.None : hideMode == BodyRegionMode.Custom ? hideRegions : BodyRegions.ForSlot(slot);
 
     /// <summary>Is the piece worn as a pair on this slot?</summary>
     public bool IsPair(ArmorSlotType slot)

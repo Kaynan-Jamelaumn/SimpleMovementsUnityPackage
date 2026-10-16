@@ -559,6 +559,13 @@ public class TraitManager : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// The live behaviours of a trait the character has (their runtime state: the ability slot of an active trait, its
+    /// key...). Empty when the character does not have it. For UI; do not keep them after the trait is removed.
+    /// </summary>
+    public IReadOnlyList<TraitBehaviour> GetRuntimeBehaviours(Trait trait) =>
+        trait != null && runtimes.TryGetValue(trait, out TraitRuntime rt) ? rt.behaviours : (IReadOnlyList<TraitBehaviour>)Array.Empty<TraitBehaviour>();
+
     /// <summary>Uses a trait's active part from a script or UI button (e.g. its ability). Returns true if something happened.</summary>
     public bool TryActivate(Trait trait)
     {

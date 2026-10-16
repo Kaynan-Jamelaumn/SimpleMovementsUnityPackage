@@ -58,6 +58,11 @@ public class CharacterArchetype : ScriptableObject
     [Tooltip("Height used when none was picked (metres).")]
     public float defaultHeight = 1.78f;
 
+    [Header("Appearance")]
+    [Tooltip("How characters of this archetype look on top of the player's choices: build, ears, beard rules, skin tones, " +
+             "blend shapes and attached parts (dwarves stocky and bearded, elves with pointed ears...). Height is the Body section above.")]
+    public RaceAppearance appearance = new RaceAppearance();
+
     [Header("Base Combat Stats")]
     [Tooltip("Combat stats of every character of this archetype: Strength, Defense, Critical Chance, Armor Penetration, Height, Threat...")]
     public List<CombatStatModifier> combatStats = new List<CombatStatModifier>();

@@ -15,6 +15,8 @@ the player carries are in the [Inventory guide](../Inventory/README.md).
 | [07 — Swimming, Water & Streamed Ground](07-Swimming-Water-and-Streamed-Ground.md) | Subnautica-style swimming (swim where you look, stay at your depth, float at the surface) and its settings, swimmable water, the oxygen fix, and how long dashes wait for terrain chunks to load |
 | [08 — Character Size, Animator, Audio, Interaction](08-Character-Size-Animator-Audio.md) | Character Identity vs Character Body (height, Scale Limits, CharacterController), completing the Animator controller, movement sounds and realm music, Player Interactor / Net Interactor |
 | [09 — Targeting, Party, Guild, Inspect](09-Targeting-Party-Guild-Inspect.md) | Clicking another player (highlight ring, target frame, menu), parties (invite, accept, leader, no damage between members, buffs still work, duels override), guilds and alliances, fame, inspecting equipment and stats, the NetSocial relay |
+| [10 — Character Creation, Appearance & Menus](10-Character-Creation-Appearance-and-Menus.md) | Start screens (solo, host, join, settings), character select and creation (race, class, traits, appearance with a 3D preview), saved characters, the server check, Character Appearance (body type, hair, beard, eyes, nose, colours; placeholder shapes until your art is set up), the inventory's character panel, the restyled pause and settings menu |
+| [11 — Player HUD](11-Player-HUD.md) | The HUD built in code: player frame (health, mana, stamina, level, experience), needs gauges, abilities bar (icons, keys, casting glow, cooldown countdowns, hover info), active trait, the restyled hotbar and quickslots, the palette and your own slot prefabs |
 
 ## The player at a glance
 

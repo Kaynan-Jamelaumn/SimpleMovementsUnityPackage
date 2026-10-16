@@ -11,8 +11,10 @@ namespace GameNet
     /// <summary>
     /// Starts the game in the right mode. Lives in the Bootstrap scene (the first scene of the build) next to the
     /// NetworkManager. With command-line arguments (see <see cref="NetLaunchOptions"/>) it starts at once - batch mode
-    /// and server builds start a dedicated server; without them it shows a small menu: Single player, Host, Join,
-    /// Dedicated server. Everything defaults to this machine (127.0.0.1), so no remote server is ever needed.
+    /// and server builds start a dedicated server; without them it shows the start screens (<see cref="FrontEndMenu"/>):
+    /// Play Solo, Host, Join, Dedicated Server, Settings, then the character select / creation screen. A new player
+    /// creates a character (race, class, traits, appearance) before the game starts; it is sent to the server when the
+    /// player spawns. Everything defaults to this machine (127.0.0.1), so no remote server is ever needed.
     /// </summary>
     /// <remarks>
     /// Single player loads the City scene directly (the Stage 1 game, no network). The network modes start Fish-Net;
@@ -40,6 +42,16 @@ namespace GameNet
         [Tooltip("Show a small connection status line while playing (toggle with F9).")]
         public bool showStatus = true;
 
+        [Tooltip("Start screens with character select and creation (race, class, traits, appearance). Off = the old small menu, no character.")]
+        public bool characterScreens = true;
+
+        [Tooltip("Title on the start screen.")]
+        public string gameTitle = "Simple Movements";
+
+        [Tooltip("Started from the command line or Play In Editor As (no menu): play the character played last. " +
+                 "Without one, the character screens open first.")]
+        public bool autoUseLastCharacter = true;
+
         public static NetBootstrap Instance { get; private set; }
 
         /// <summary>Name this machine's player asked for (sent to the server when its player spawns).</summary>
@@ -57,6 +69,11 @@ namespace GameNet
         private string nameText;
         private string status = "";
         private bool statusVisible = true;
+        private FrontEndMenu frontEnd;
+        private NetMode launchedMode = NetMode.Offline;
+        private ushort launchedPort;
+        private bool stopping;
+        private bool returning;
 
         private void Awake()
         {
@@ -84,7 +101,10 @@ namespace GameNet
             if (Instance == this)
                 Instance = null;
             if (manager != null)
+            {
                 manager.ClientManager.OnClientConnectionState -= OnClientState;
+                manager.ServerManager.OnServerConnectionState -= OnServerState;
+            }
         }
 
         private void Start()
@@ -92,10 +112,14 @@ namespace GameNet
             if (manager == null)
             {
                 Debug.LogError("[Net] No Fish-Net NetworkManager found: starting single player.", this);
-                Launch(NetMode.Offline);
+                if (showMenu)
+                    OpenMenu();
+                else
+                    BeginPlay(NetMode.Offline, true);
                 return;
             }
             manager.ClientManager.OnClientConnectionState += OnClientState;
+            manager.ServerManager.OnServerConnectionState += OnServerState;
             if (Options.tickRate > 0)
                 manager.TimeManager.SetTickRate(Options.tickRate);
 #if UNITY_EDITOR
@@ -105,11 +129,73 @@ namespace GameNet
                 Options.mode = chosen;
 #endif
             if (Options.mode.HasValue)
-                Launch(Options.mode.Value);
-            else
-                menuOpen = showMenu;
+                BeginPlay(Options.mode.Value, true);
+            else if (showMenu)
+                OpenMenu();
             if (!menuOpen && !started)
-                Launch(NetMode.Offline);
+                BeginPlay(NetMode.Offline, true);
+        }
+
+        /// <summary>
+        /// Starts <paramref name="mode"/> once this machine has a character: a dedicated server needs none; without one
+        /// the character screens open first (<paramref name="automatic"/>: the last character played is used if there is one).
+        /// </summary>
+        public void BeginPlay(NetMode mode, bool automatic = false)
+        {
+            if (started)
+                return;
+            bool needsCharacter = characterScreens && mode != NetMode.Server && !Application.isBatchMode && !NetAuthority.IsServerBuild;
+            if (!needsCharacter || CharacterSession.Current != null)
+            {
+                Launch(mode);
+                return;
+            }
+            CharacterSave last = automatic && autoUseLastCharacter ? CharacterSaveStore.LastPlayed() : null;
+            if (last != null)
+            {
+                CharacterSaveStore.MarkPlayed(last);
+                CharacterSession.Set(last);
+                Launch(mode);
+                return;
+            }
+            OpenMenu();
+            if (frontEnd != null)
+                frontEnd.ShowCharacters(mode);
+            else
+                Launch(mode);
+        }
+
+        /// <summary>Shows the start screens (or the old menu when Character Screens is off).</summary>
+        public void OpenMenu()
+        {
+            menuOpen = true;
+            if (!characterScreens || NetAuthority.IsHeadless || Application.isBatchMode)
+                return;
+            HideSceneCreationScreens();
+            if (frontEnd == null)
+            {
+                frontEnd = FrontEndMenu.Create(gameTitle, manager != null, true, address, portText);
+                frontEnd.PlayRequested += OnFrontEndPlay;
+            }
+            frontEnd.SetStatus(status);
+        }
+
+        private void CloseMenu()
+        {
+            menuOpen = false;
+            if (frontEnd != null)
+                Destroy(frontEnd.gameObject);
+            frontEnd = null;
+        }
+
+        private void OnFrontEndPlay(NetMode mode)
+        {
+            if (frontEnd != null)
+            {
+                address = string.IsNullOrWhiteSpace(frontEnd.Address) ? defaultAddress : frontEnd.Address.Trim();
+                portText = frontEnd.Port;
+            }
+            Launch(mode);
         }
 
         private void Update()
@@ -118,16 +204,64 @@ namespace GameNet
                 statusVisible = !statusVisible;
         }
 
+        /// <summary>
+        /// The scene-built creation screen (Build Character Creation Screen) would spawn an offline player in the
+        /// Bootstrap scene: with the start screens it is hidden (they create the character and start the game).
+        /// </summary>
+        private void HideSceneCreationScreens()
+        {
+            foreach (CharacterCreationUI old in FindObjectsByType<CharacterCreationUI>(FindObjectsInactive.Exclude))
+            {
+                if (old == null)
+                    continue;
+                Canvas c = old.GetComponentInParent<Canvas>();
+                GameObject go = c != null ? c.rootCanvas.gameObject : old.gameObject;
+                Debug.LogWarning($"[Start] '{go.name}' (a scene-built Character Creation UI) is hidden: the start screens create the character " +
+                                 "and start the game. Delete it from the Bootstrap scene, or turn off Character Screens on the Net Bootstrap to use it.", go);
+                go.SetActive(false);
+            }
+        }
+
         /// <summary>Starts the game as <paramref name="mode"/> (address and port from the menu or the command line).</summary>
         public void Launch(NetMode mode)
         {
             if (started)
                 return;
             started = true;
-            menuOpen = false;
-            LocalPlayerName = nameText;
+            stopping = false;
+            launchedMode = mode;
+            try
+            {
+                LaunchNow(mode);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogException(e, this);
+                BackToMenu("The game could not start: " + e.Message);
+            }
+        }
+
+        /// <summary>A start that failed: the start screens again, with the reason.</summary>
+        private void BackToMenu(string reason)
+        {
+            started = false;
+            status = reason;
+            Debug.LogWarning("[Start] " + reason, this);
+            if (showMenu || characterScreens)
+                OpenMenu();
+            if (frontEnd != null)
+                frontEnd.SetStatus(reason);
+        }
+
+        private void LaunchNow(NetMode mode)
+        {
+            CloseMenu();
+            CharacterSave character = CharacterSession.Current;
+            LocalPlayerName = character != null && !string.IsNullOrWhiteSpace(character.characterName) ? character.characterName : nameText;
             if (!ushort.TryParse(portText, out ushort port) || port == 0)
                 port = defaultPort;
+            launchedPort = port;
+            Debug.Log($"[Start] {mode}" + (character != null ? $" as '{character.characterName}' ({character.Summary()})" : " (no character: the prefab's own class and race)"), this);
 
             if (mode == NetMode.Offline || manager == null)
             {
@@ -135,9 +269,21 @@ namespace GameNet
                 if (string.IsNullOrEmpty(scene))
                 {
                     Debug.LogError("[Net] No offline scene set (Net Bootstrap) and no City scene in the Hub World Settings.", this);
+                    BackToMenu("No game scene to load: set the City scene in the Hub World Settings (or Offline Scene on the Net Bootstrap).");
+                    return;
+                }
+                if (!Application.CanStreamedLevelBeLoaded(scene))
+                {
+                    BackToMenu($"Scene '{scene}' is not in File ▸ Build Settings: add it to play solo.");
                     return;
                 }
                 SceneManager.LoadScene(scene, LoadSceneMode.Single);
+                return;
+            }
+            string city = HubWorldSettings.Instance.citySceneName;
+            if ((mode == NetMode.Host || mode == NetMode.Server) && !string.IsNullOrEmpty(city) && !Application.CanStreamedLevelBeLoaded(city))
+            {
+                BackToMenu($"The City scene '{city}' is not in File ▸ Build Settings: the server cannot load it.");
                 return;
             }
 
@@ -173,6 +319,7 @@ namespace GameNet
         /// <summary>Stops the session and goes back to the start menu (reloads the Bootstrap scene).</summary>
         public void Disconnect()
         {
+            stopping = true;
             if (manager != null)
             {
                 if (manager.ClientManager.Started)
@@ -185,15 +332,38 @@ namespace GameNet
 
         private IEnumerator ReturnToMenu()
         {
+            if (returning)
+                yield break;
+            returning = true;
             yield return null;
+            returning = false;
             started = false;
+            stopping = false;
             wasConnected = false;
             // The hub world director keeps itself in DontDestroyOnLoad: the next session's City brings a fresh one.
             if (HubWorldDirector.Instance != null)
                 Destroy(HubWorldDirector.Instance.gameObject);
             // The manager lives in DontDestroyOnLoad; reload the first scene of the build for a clean slate.
             SceneManager.LoadScene(0, LoadSceneMode.Single);
-            menuOpen = showMenu;
+            yield return null; // the start screens belong to the reloaded scene
+            if (showMenu)
+                OpenMenu();
+            else
+                menuOpen = false;
+        }
+
+        private void OnServerState(ServerConnectionStateArgs args)
+        {
+            // The server stopped on its own while hosting (the port is used by another window or program...).
+            if (args.ConnectionState != LocalConnectionState.Stopped || !started || stopping)
+                return;
+            if (launchedMode != NetMode.Host && launchedMode != NetMode.Server)
+                return;
+            status = $"The server stopped (port {launchedPort} may be used by another game window or program).";
+            Debug.LogWarning("[Net] " + status, this);
+            if (manager != null && manager.ClientManager.Started)
+                manager.ClientManager.StopConnection();
+            StartCoroutine(ReturnToMenu());
         }
 
         private void OnClientState(ClientConnectionStateArgs args)
@@ -205,8 +375,12 @@ namespace GameNet
             }
             else if (args.ConnectionState == LocalConnectionState.Stopped && !manager.ServerManager.Started)
             {
-                status = wasConnected ? "Disconnected from the server." : $"Could not connect to {address}.";
+                status = wasConnected ? "Disconnected from the server."
+                    : launchedMode == NetMode.Host ? $"Could not start the host on port {launchedPort} (is another game window using it?)."
+                    : $"Could not connect to {address}:{launchedPort}.";
                 Debug.Log("[Net] " + status);
+                if (frontEnd != null)
+                    frontEnd.SetStatus(status);
                 if (started)
                     StartCoroutine(ReturnToMenu());
             }
@@ -218,7 +392,8 @@ namespace GameNet
                 return;
             if (menuOpen)
             {
-                DrawMenu();
+                if (!characterScreens)
+                    DrawMenu(); // the start screens draw themselves
                 return;
             }
             if (showStatus && statusVisible && NetAuthority.IsNetworked)

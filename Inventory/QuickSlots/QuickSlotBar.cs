@@ -69,6 +69,12 @@ public class QuickSlotBar : MonoBehaviour
     private bool dpadUsable;
 
     public int SlotCount => slotCount;
+
+    /// <summary>The bar's UI root (null until built).</summary>
+    public RectTransform BarRoot => barRoot;
+
+    /// <summary>The bar's cells (empty until built).</summary>
+    public IReadOnlyList<QuickSlotCell> Cells => cells;
     public InventoryManager Inventory => inventory;
 
     // ------------------------------------------------------------------ lifecycle
@@ -296,7 +302,7 @@ public class QuickSlotBar : MonoBehaviour
             return false;
         ItemSO item = Get(index);
         if (item == null)
-            return Fail(index, $"Quickslot {index + 1} is empty.");
+            return false; // an empty quickslot: pressing its key does nothing (no message)
         if (inventory.IsInventoryOpened && !usableWhileInventoryOpen)
             return false;
         CombatEntity me = inventory.PlayerEntity;

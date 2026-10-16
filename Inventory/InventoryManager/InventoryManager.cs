@@ -73,6 +73,12 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     private SplitStackPopup splitPopup;
     [SerializeField, Tooltip("Right-click on a stack opens the split popup. Off = right-click shows the Item Info panel (old behaviour).")]
     private bool rightClickSplits = true;
+    [SerializeField, Tooltip("A character panel beside the open inventory: stats, traits and abilities with their descriptions. Created automatically when empty.")]
+    private bool showCharacterPanel = true;
+    [SerializeField, Tooltip("Side of the screen for the character panel (Auto = away from the inventory window).")]
+    private InventoryCharacterPanel.Side characterPanelSide = InventoryCharacterPanel.Side.Auto;
+    [SerializeField, Tooltip("The character panel (created automatically when empty).")]
+    private InventoryCharacterPanel characterPanel;
 
     [Header("Input")]
     [SerializeField, Tooltip("Actions of the player's input actions that open/close the inventory (the first one found is used). " +
@@ -106,6 +112,9 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     [SerializeField] private bool shieldBlocking = true;
     [Tooltip("The consumable quickslot bar next to the hotbar (adds a Quick Slot Bar when missing).")]
     [SerializeField] private bool quickSlots = true;
+    [Tooltip("The player's HUD, built when the game starts: player frame (health, mana, stamina, level), needs gauges, " +
+             "abilities bar, active trait, with the hotbar and quickslots in the same look (adds a Player HUD when missing).")]
+    [SerializeField] private bool playerHUD = true;
     [Tooltip("Short messages above the hotbar: an item cannot be used, does not fit, no ammo, an off-hand item stowed...")]
     [SerializeField] private bool showFeedbackMessages = true;
     [Tooltip("The message line (created automatically when empty).")]
@@ -751,6 +760,9 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             if (quickSlotBar == null)
                 quickSlotBar = gameObject.AddComponent<QuickSlotBar>();
         }
+        if (playerHUD && Application.isPlaying && GetComponent<PlayerHUD>() == null &&
+            (player == null || player.GetComponentInChildren<PlayerHUD>(true) == null))
+            gameObject.AddComponent<PlayerHUD>();
     }
 
     /// <summary>Shows a short message above the hotbar (when Show Feedback Messages is on).</summary>
@@ -1564,6 +1576,8 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             hoverPanel = ItemHoverPanel.Create(container);
         if (splitPopup == null && rightClickSplits)
             splitPopup = SplitStackPopup.Create(container);
+        if (characterPanel == null && showCharacterPanel && container is RectTransform)
+            characterPanel = InventoryCharacterPanel.Create(container, this, inventoryParent.transform as RectTransform, characterPanelSide);
         if (hoverPanel != null) hoverPanel.transform.SetAsLastSibling();
         if (splitPopup != null) splitPopup.transform.SetAsLastSibling();
     }

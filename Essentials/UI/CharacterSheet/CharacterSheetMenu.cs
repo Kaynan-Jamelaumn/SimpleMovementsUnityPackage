@@ -21,9 +21,20 @@ public class CharacterSheetMenu : MonoBehaviour
     [SerializeField] private TextMeshProUGUI hoverText;
     [Tooltip("The player shown. Empty = the first player in the scene.")]
     [SerializeField] private PlayerStatusController player;
+    [Tooltip("Show each trait's and ability's description under its name (not only on hover).")]
+    [SerializeField] private bool inlineDescriptions = true;
+    [Tooltip("Rebuild while shown when the stats, traits or equipment change (and at most every this many seconds otherwise; 0 = only when opened).")]
+    [SerializeField, Min(0f)] private float refreshSeconds = 0f;
 
     private readonly List<GameObject> built = new List<GameObject>();
     private Canvas canvas;
+    private bool dirty;
+    private float nextRefresh;
+    private bool hovering;
+    private PlayerStatusController watched;
+    private CombatStats watchedStats;
+    private TraitManager watchedTraits;
+    private EquipmentManager watchedEquipment;
 
     private void Awake()
     {
@@ -31,12 +42,58 @@ public class CharacterSheetMenu : MonoBehaviour
         HideHover();
     }
 
+    /// <summary>Sets the sheet's parts (sheets built from code: the settings menu, the inventory's character panel).</summary>
+    public void Configure(Transform rows, RectTransform hover, TextMeshProUGUI hoverLabel, bool descriptionsInline, float autoRefreshSeconds)
+    {
+        content = rows;
+        hoverPanel = hover;
+        hoverText = hoverLabel;
+        inlineDescriptions = descriptionsInline;
+        refreshSeconds = Mathf.Max(0f, autoRefreshSeconds);
+        HideHover();
+    }
+
     private void OnEnable() => Rebuild();
 
-    private void OnDisable() => HideHover();
+    private void OnDisable()
+    {
+        HideHover();
+        Watch(null);
+    }
+
+    private void OnDestroy() => Watch(null);
+
+    // Rebuilt when what it shows changes (while open), never while a row is hovered (its details would vanish).
+    private void Watch(PlayerStatusController p)
+    {
+        if (watched == p)
+            return;
+        if (watchedStats != null) watchedStats.Changed -= MarkDirty;
+        if (watchedTraits != null) watchedTraits.OnTraitsChanged -= MarkDirty;
+        if (watchedEquipment != null) watchedEquipment.Changed -= MarkDirty;
+        watched = p;
+        watchedStats = p != null ? p.GetComponentInChildren<CombatStats>(true) : null;
+        watchedTraits = p != null ? (p.TraitManager != null ? p.TraitManager : p.GetComponentInChildren<TraitManager>(true)) : null;
+        watchedEquipment = p != null ? p.GetComponentInChildren<EquipmentManager>(true) : null;
+        if (watchedStats == null && p != null) watchedStats = p.GetComponentInParent<CombatStats>();
+        if (watchedEquipment == null && p != null) watchedEquipment = p.GetComponentInParent<EquipmentManager>();
+        if (refreshSeconds <= 0f)
+            return;
+        if (watchedStats != null) watchedStats.Changed += MarkDirty;
+        if (watchedTraits != null) watchedTraits.OnTraitsChanged += MarkDirty;
+        if (watchedEquipment != null) watchedEquipment.Changed += MarkDirty;
+    }
+
+    private void MarkDirty() => dirty = true;
 
     private void Update()
     {
+        if (refreshSeconds > 0f && !hovering && Time.unscaledTime >= nextRefresh)
+        {
+            PlayerStatusController current = player != null ? player : LocalPlayerStatus();
+            if (dirty || current != watched || Time.unscaledTime >= nextRefresh + refreshSeconds * 4f)
+                Rebuild();
+        }
         if (hoverPanel == null || !hoverPanel.gameObject.activeSelf)
             return;
         Vector2 mouse = UnityEngine.InputSystem.Mouse.current != null ? UnityEngine.InputSystem.Mouse.current.position.ReadValue() : Vector2.zero;
@@ -69,12 +126,16 @@ public class CharacterSheetMenu : MonoBehaviour
 
     public void Rebuild()
     {
+        dirty = false;
+        nextRefresh = Time.unscaledTime + Mathf.Max(0.25f, refreshSeconds);
         foreach (GameObject go in built)
             if (go != null) Destroy(go);
         built.Clear();
         if (content == null)
             return;
         PlayerStatusController p = player != null ? player : LocalPlayerStatus();
+        if (isActiveAndEnabled)
+            Watch(p);
         if (p == null)
         {
             Text("No player in the game.", 18f, InventoryUIFactory.MutedColor);
@@ -156,7 +217,7 @@ public class CharacterSheetMenu : MonoBehaviour
             {
                 if (t == null) continue;
                 string tag = t.HasActiveSkill ? StatText.Paint("Active", 0) : t.Kind == TraitKind.Passive ? "Passive" : t.Kind.ToString();
-                Row(t.Name, tag, Hover(t.Name, t.description, StatText.Of(t)));
+                Row(t.Name, tag, Hover(t.Name, t.description, StatText.Of(t)), Detail(t.description, StatText.Of(t)));
             }
         }
 
@@ -171,7 +232,7 @@ public class CharacterSheetMenu : MonoBehaviour
                 anyAbility = true;
                 string source = slot.Source == AbilitySlotSource.Skill ? "Skill" : slot.Source == AbilitySlotSource.Innate ? "Innate" : "Item";
                 var lines = new List<StatText.Line> { new StatText.Line(slot.ability.Describe(slot.modifiers), 0) };
-                Row(slot.ability.DisplayName, $"Active · {source}", Hover(slot.ability.DisplayName, slot.ability.description, lines));
+                Row(slot.ability.DisplayName, $"Active · {source}", Hover(slot.ability.DisplayName, slot.ability.description, lines), Detail(slot.ability.description, lines));
             }
         }
         if (traits != null)
@@ -184,7 +245,8 @@ public class CharacterSheetMenu : MonoBehaviour
                     if (b == null || b.CountsAsActiveTrait) continue; // trait abilities are listed with the slots above
                     anyAbility = true;
                     string kind = b.IsActive ? "Movement" : "Passive";
-                    Row(b.MenuName, $"{kind} · {t.Name}", Hover(b.MenuName, null, new List<StatText.Line> { new StatText.Line(b.Describe(), b.IsActive ? 0 : 1) }));
+                    var bl = new List<StatText.Line> { new StatText.Line(b.Describe(), b.IsActive ? 0 : 1) };
+                    Row(b.MenuName, $"{kind} · {t.Name}", Hover(b.MenuName, null, bl), Detail(null, bl));
                 }
             }
         }
@@ -197,7 +259,8 @@ public class CharacterSheetMenu : MonoBehaviour
                 {
                     if (e == null) continue;
                     anyAbility = true;
-                    Row(e.MenuName, $"Passive · {a.Name}", Hover(e.MenuName, null, new List<StatText.Line> { new StatText.Line(e.Describe(), 0) }));
+                    var el = new List<StatText.Line> { new StatText.Line(e.Describe(), 0) };
+                    Row(e.MenuName, $"Passive · {a.Name}", Hover(e.MenuName, null, el), Detail(null, el));
                 }
             }
         }
@@ -234,24 +297,69 @@ public class CharacterSheetMenu : MonoBehaviour
         Row(label, $"{m.CurrentValue:0} / {m.MaxValue:0}", null);
     }
 
-    /// <summary>One row: label on the left, value on the right; hovering shows <paramref name="hover"/>.</summary>
-    private void Row(string label, string value, string hover)
+    /// <summary>
+    /// One row: label on the left, value on the right; hovering shows <paramref name="hover"/>. With inline
+    /// descriptions on, <paramref name="detail"/> is written under the label.
+    /// </summary>
+    private void Row(string label, string value, string hover, string detail = null)
     {
         Image bg = InventoryUIFactory.Panel("Row", content, new Color(1f, 1f, 1f, 0.03f));
+        UITheme.Round(bg, UITheme.RadiusSmall);
         bg.raycastTarget = hover != null;
-        HorizontalLayoutGroup h = InventoryUIFactory.Horizontal(bg.gameObject, 12f);
-        h.padding = new RectOffset(10, 10, 0, 0);
-        InventoryUIFactory.Size(bg, -1f, 32f);
-        TextMeshProUGUI l = InventoryUIFactory.Text("Label", bg.transform, label, 16f, InventoryUIFactory.TextColor);
-        InventoryUIFactory.Size(l, -1f, 32f, 1f);
-        TextMeshProUGUI v = InventoryUIFactory.Text("Value", bg.transform, value, 15f, InventoryUIFactory.MutedColor, TextAlignmentOptions.Right);
-        InventoryUIFactory.Size(v, 220f, 32f, 0f);
+        bool twoLines = inlineDescriptions && !string.IsNullOrEmpty(detail);
+        if (twoLines)
+        {
+            VerticalLayoutGroup v = InventoryUIFactory.Vertical(bg.gameObject, 0, 0f, false);
+            v.padding = new RectOffset(10, 10, 6, 8);
+            RectTransform top = InventoryUIFactory.Rect("Top", bg.transform);
+            InventoryUIFactory.Horizontal(top.gameObject, 12f);
+            InventoryUIFactory.Size(top, -1f, 26f);
+            TextMeshProUGUI l2 = InventoryUIFactory.Text("Label", top, label, 16f, InventoryUIFactory.TextColor, TextAlignmentOptions.Left, FontStyles.Bold);
+            InventoryUIFactory.Size(l2, -1f, 26f, 1f);
+            TextMeshProUGUI v2 = InventoryUIFactory.Text("Value", top, value, 14f, InventoryUIFactory.MutedColor, TextAlignmentOptions.Right);
+            InventoryUIFactory.Size(v2, 200f, 26f, 0f);
+            TextMeshProUGUI d = InventoryUIFactory.Text("Detail", bg.transform, detail, 14f, InventoryUIFactory.MutedColor, TextAlignmentOptions.TopLeft);
+            d.richText = true;
+        }
+        else
+        {
+            HorizontalLayoutGroup h = InventoryUIFactory.Horizontal(bg.gameObject, 12f);
+            h.padding = new RectOffset(10, 10, 0, 0);
+            InventoryUIFactory.Size(bg, -1f, 32f);
+            TextMeshProUGUI l = InventoryUIFactory.Text("Label", bg.transform, label, 16f, InventoryUIFactory.TextColor);
+            InventoryUIFactory.Size(l, -1f, 32f, 1f);
+            TextMeshProUGUI v = InventoryUIFactory.Text("Value", bg.transform, value, 15f, InventoryUIFactory.MutedColor, TextAlignmentOptions.Right);
+            InventoryUIFactory.Size(v, 220f, 32f, 0f);
+        }
         if (hover != null)
         {
             var trigger = bg.gameObject.AddComponent<CharacterSheetHover>();
             trigger.Setup(this, hover);
         }
         built.Add(bg.gameObject);
+    }
+
+    /// <summary>A short description and the coloured changes, for the line under a row's label.</summary>
+    private static string Detail(string description, List<StatText.Line> lines)
+    {
+        var sb = new StringBuilder();
+        if (!string.IsNullOrEmpty(description))
+        {
+            string d = description.Trim();
+            if (d.Length > 220) d = d.Substring(0, 217) + "...";
+            sb.Append(d);
+        }
+        if (lines != null)
+        {
+            int n = 0;
+            foreach (StatText.Line line in lines)
+            {
+                if (n++ >= 4) { sb.Append("\n…"); break; }
+                if (sb.Length > 0) sb.Append('\n');
+                sb.Append("• ").Append(line.Rich);
+            }
+        }
+        return sb.Length > 0 ? sb.ToString() : null;
     }
 
     private static string Hover(string title, string description, List<StatText.Line> lines)
@@ -274,6 +382,7 @@ public class CharacterSheetMenu : MonoBehaviour
     // ------------------------------------------------------------------ hover
     internal void ShowHover(string text)
     {
+        hovering = true;
         if (hoverPanel == null || hoverText == null)
             return;
         hoverText.text = text;
@@ -284,6 +393,7 @@ public class CharacterSheetMenu : MonoBehaviour
 
     internal void HideHover()
     {
+        hovering = false;
         if (hoverPanel != null)
             hoverPanel.gameObject.SetActive(false);
     }

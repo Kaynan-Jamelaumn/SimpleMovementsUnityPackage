@@ -21,7 +21,7 @@ namespace GameNet
     /// </remarks>
     [DefaultExecutionOrder(-2000)]
     [DisallowMultipleComponent]
-    public class NetPlayer : NetworkBehaviour
+    public partial class NetPlayer : NetworkBehaviour
     {
         [Tooltip("Extra components only the owning machine runs (camera scripts, local UI...).")]
         public Behaviour[] ownerOnly = new Behaviour[0];
@@ -73,6 +73,7 @@ namespace GameNet
             if (Entity == null)
                 Entity = PlayerLocator.Register(gameObject);
             DisplayName.OnChange += OnNameChanged;
+            CharacterCode.OnChange += OnCharacterChanged;
             // Before any Start: copies must not grab the camera, the cursor or the keyboard. The owner gets them back.
             if (NetAuthority.IsNetworked)
                 SwitchOffOwnerParts();
@@ -81,6 +82,7 @@ namespace GameNet
         private void OnDestroy()
         {
             DisplayName.OnChange -= OnNameChanged;
+            CharacterCode.OnChange -= OnCharacterChanged;
             all.Remove(this);
             if (Local == this)
                 Local = null;
@@ -121,6 +123,11 @@ namespace GameNet
                 string wanted = NetBootstrap.LocalPlayerName;
                 if (!string.IsNullOrWhiteSpace(wanted))
                     ServerSetName(wanted);
+                SendCharacter(); // the character picked on the start screens (race, class, traits, look)
+            }
+            else if (!IsServerInitialized)
+            {
+                ShowSyncedCharacter(); // another player who joined before this machine
             }
         }
 

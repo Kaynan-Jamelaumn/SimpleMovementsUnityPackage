@@ -37,6 +37,7 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
         public GameObject pairInstance;
         public Placement placement;
         public readonly List<Renderer> hidden = new List<Renderer>();
+        public CharacterBodyType body;
     }
 
     [Header("Attachment Points")]
@@ -87,6 +88,9 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
     private bool subWeapons, subBlock, subEquipment, subEntity;
     private bool drivenByInventory;
     private bool handsInitialized;
+    private CharacterAppearance appearance;
+    private CharacterBodyType appearanceBody;
+    private ProceduralBody knownBody;
 
     /// <summary>Are the weapons in the hands (true) or sheathed (false)?</summary>
     public bool IsDrawn => drawn;
@@ -168,6 +172,7 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
                 RebuildArmor();
             }
         }
+        EnsureAppearance();
         if (!subEntity)
         {
             if (entity == null)
@@ -197,7 +202,75 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
             equipment.Changed -= RebuildArmor;
         if (subEntity && entity != null)
             entity.DamageFeedback -= OnDamaged;
+        if (appearance != null)
+            appearance.Changed -= OnAppearanceChanged;
+        appearance = null;
         subWeapons = subBlock = subEquipment = subEntity = false;
+    }
+
+    /// <summary>The character's appearance (added later by the character creation): listened to for its body and shape.</summary>
+    private void EnsureAppearance()
+    {
+        if (appearance != null)
+            return;
+        appearance = GetComponentInChildren<CharacterAppearance>(true);
+        if (appearance == null)
+            return;
+        appearance.Changed += OnAppearanceChanged;
+        appearanceBody = appearance.Current.bodyType;
+        AdoptBody();
+    }
+
+    /// <summary>
+    /// A placeholder body (and its skeleton) built after this started: the sockets and the worn pieces move onto it.
+    /// True when it was new.
+    /// </summary>
+    private bool AdoptBody()
+    {
+        ProceduralBody pb = appearance != null ? appearance.Body : null;
+        if (pb == null || pb == knownBody)
+            return false;
+        knownBody = pb;
+        if (animator == null || !animator.isHuman)
+            animator = pb.Animator;
+        resolved.Clear();
+        foreach (Visual v in armor.Values)
+            DestroyVisual(v);
+        armor.Clear();
+        RebuildArmor();
+        ApplyPlacements();
+        return true;
+    }
+
+    /// <summary>
+    /// The look changed (character creation, another body type): pieces with a female model are put on again for the new
+    /// body, the others take the body's new shape (blend shapes).
+    /// </summary>
+    private void OnAppearanceChanged(CharacterAppearanceData data)
+    {
+        CharacterBodyType body = data != null ? data.bodyType : CharacterBodyType.Male;
+        bool rebuild = body != appearanceBody;
+        appearanceBody = body;
+        if (AdoptBody())
+            return;
+        var keys = new List<object>(armor.Keys);
+        foreach (object k in keys)
+        {
+            Visual v = armor[k];
+            if (v == null) continue;
+            // A new body shape: pieces with a female model change, and fitted pieces fit the new shape.
+            if (rebuild && v.item is ArmorSO a && v.body != body && (a.ArmorVisuals.femaleModel != null || a.ArmorVisuals.attach == ArmorAttachMode.FitToBody))
+            {
+                DestroyVisual(v);
+                armor[k] = WearArmor(a);
+            }
+            else if (v.item is ArmorSO b && b.ArmorVisuals.followBodyShape)
+            {
+                FollowBodyShape(v);
+            }
+            if (armor[k] != null && armor[k].item is ArmorSO c)
+                appearance?.HideRegions(armor[k], c.ArmorVisuals.RegionsFor(c.ArmorSlotType));
+        }
     }
 
     private void OnDestroy()
@@ -212,7 +285,7 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
 
     private void Update()
     {
-        if (!subWeapons || !subBlock || !subEquipment || !subEntity)
+        if (!subWeapons || !subBlock || !subEquipment || !subEntity || appearance == null)
         {
             // Parts added after this one (the inventory adds the block controller and the equipment later).
             if (Time.frameCount % 15 == 0)
@@ -584,9 +657,12 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
     {
         var v = new Visual { item = a, placement = Placement.Worn };
         ArmorVisualSettings vis = a.ArmorVisuals;
-        GameObject model = a.ArmorModel;
-        bool skinned = vis.attach == ArmorAttachMode.Skinned ||
-                       (vis.attach == ArmorAttachMode.Auto && model.GetComponentInChildren<SkinnedMeshRenderer>(true) != null);
+        EnsureAppearance();
+        v.body = appearance != null ? appearance.Current.bodyType : CharacterBodyType.Male;
+        GameObject model = v.body == CharacterBodyType.Female && vis.femaleModel != null ? vis.femaleModel : a.ArmorModel;
+        bool fit = vis.attach == ArmorAttachMode.FitToBody;
+        bool skinned = !fit && (vis.attach == ArmorAttachMode.Skinned ||
+                       (vis.attach == ArmorAttachMode.Auto && model.GetComponentInChildren<SkinnedMeshRenderer>(true) != null));
         if (skinned)
         {
             v.instance = Instantiate(model, transform);
@@ -597,11 +673,48 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
             foreach (Animator anim in v.instance.GetComponentsInChildren<Animator>(true))
                 anim.enabled = false;
             int bound = 0, missing = 0;
+            Dictionary<Transform, Transform> humanMap = HumanBoneMap(v.instance);
             foreach (SkinnedMeshRenderer smr in v.instance.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                Rebind(smr, ref bound, ref missing);
+                Rebind(smr, humanMap, ref bound, ref missing);
             if (missing > 0)
                 Debug.LogWarning($"[Equipment Visuals] {a.Name}: {missing} of {bound + missing} bones of its model were not found on the character " +
-                                 "(the armour must use the same skeleton, with the same bone names).", this);
+                                 "(different skeleton). Set Armor Visuals ▸ Attach to Fit To Body to wrap it around the body instead.", this);
+        }
+        else if (fit)
+        {
+            // Placed like a rigid piece (slot bone + offsets), then skinned to the body as it stands.
+            AttachPoint point = DefaultArmorPoint(a.ArmorSlotType, false);
+            Transform bone = !string.IsNullOrWhiteSpace(vis.bone) ? FindBone(vis.bone) : GetSocket(point);
+            v.instance = Instantiate(model);
+            v.instance.name = model.name;
+            StripForDisplay(v.instance);
+            foreach (Animator anim in v.instance.GetComponentsInChildren<Animator>(true))
+                anim.enabled = false;
+            if (bone != null)
+                Attach(v.instance, bone, vis.position, vis.rotation, vis.scale);
+            else
+                Attach(v.instance, transform, vis.position, vis.rotation, vis.scale);
+            if (vis.IsPair(a.ArmorSlotType) && string.IsNullOrWhiteSpace(vis.bone))
+            {
+                Transform other = GetSocket(DefaultArmorPoint(a.ArmorSlotType, true));
+                if (other != null && other != bone)
+                {
+                    v.pairInstance = Instantiate(model);
+                    v.pairInstance.name = model.name + " (pair)";
+                    StripForDisplay(v.pairInstance);
+                    Vector3 s = vis.scale;
+                    Attach(v.pairInstance, other, new Vector3(-vis.position.x, vis.position.y, vis.position.z),
+                        new Vector3(vis.rotation.x, -vis.rotation.y, -vis.rotation.z), new Vector3(-s.x, s.y, s.z));
+                }
+            }
+            List<SkinnedMeshRenderer> bodies = BodyMeshes(v);
+            foreach (GameObject piece in new[] { v.instance, v.pairInstance })
+            {
+                if (piece == null) continue;
+                int n = BodyFitter.Fit(piece, bodies, vis.fitOffset, out string problem);
+                if (problem != null)
+                    Debug.LogWarning($"[Equipment Visuals] {a.Name}: fitted {n} mesh(es) to the body; {problem}.", this);
+            }
         }
         else
         {
@@ -633,6 +746,10 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
         if (vis.hideCharacterParts != null)
             foreach (string part in vis.hideCharacterParts)
                 Hide(v, part);
+        if (vis.followBodyShape)
+            FollowBodyShape(v);
+        if (appearance != null)
+            appearance.HideRegions(v, vis.RegionsFor(a.ArmorSlotType));
         if (debugLog)
             Debug.Log($"[Equipment Visuals] Wearing {a.Name} ({(skinned ? "skinned" : "attached")}).", this);
         return v;
@@ -657,25 +774,145 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
         }
     }
 
-    private void Rebind(SkinnedMeshRenderer smr, ref int bound, ref int missing)
+    private void Rebind(SkinnedMeshRenderer smr, Dictionary<Transform, Transform> humanMap, ref int bound, ref int missing)
     {
         Transform[] bones = smr.bones;
         for (int i = 0; i < bones.Length; i++)
         {
             if (bones[i] == null)
                 continue;
-            Transform mine = FindBone(bones[i].name);
+            Transform mine = MatchBone(bones[i], humanMap);
             if (mine != null) { bones[i] = mine; bound++; }
             else missing++;
         }
         smr.bones = bones;
         if (smr.rootBone != null)
         {
-            Transform root = FindBone(smr.rootBone.name);
+            Transform root = MatchBone(smr.rootBone, humanMap);
             if (root != null)
                 smr.rootBone = root;
         }
         smr.updateWhenOffscreen = true; // its bounds follow the character's animation
+    }
+
+    /// <summary>
+    /// The character's bone for a bone of a worn model: same name, else the same name without rig prefixes
+    /// ("mixamorig:Spine", "Bip001 Spine", "spine_01" ...), else the same humanoid bone (both rigs Humanoid).
+    /// </summary>
+    private Transform MatchBone(Transform theirs, Dictionary<Transform, Transform> humanMap)
+    {
+        Transform t = FindBone(theirs.name);
+        if (t != null) return t;
+        if (normalizedBones == null)
+        {
+            normalizedBones = new Dictionary<string, Transform>();
+            Transform root = animator != null ? animator.transform : transform;
+            foreach (Transform b in root.GetComponentsInChildren<Transform>(true))
+            {
+                string k = NormalizeBone(b.name);
+                if (k.Length > 0 && !normalizedBones.ContainsKey(k)) normalizedBones[k] = b;
+            }
+        }
+        if (normalizedBones.TryGetValue(NormalizeBone(theirs.name), out t)) return t;
+        return humanMap != null && humanMap.TryGetValue(theirs, out t) ? t : null;
+    }
+
+    private Dictionary<string, Transform> normalizedBones;
+
+    private static string NormalizeBone(string n)
+    {
+        if (string.IsNullOrEmpty(n)) return "";
+        int colon = n.LastIndexOf(':');
+        if (colon >= 0) n = n.Substring(colon + 1);
+        n = n.ToLowerInvariant();
+        foreach (string prefix in new[] { "bip001", "bip01", "mixamorig", "def-", "def_", "b_", "bone_" })
+            if (n.StartsWith(prefix)) n = n.Substring(prefix.Length);
+        var sb = new System.Text.StringBuilder(n.Length);
+        foreach (char c in n)
+            if (char.IsLetterOrDigit(c)) sb.Append(c);
+        return sb.ToString();
+    }
+
+    /// <summary>Bones of a humanoid worn model → the character's humanoid bones (both Animators Humanoid).</summary>
+    private Dictionary<Transform, Transform> HumanBoneMap(GameObject model)
+    {
+        if (animator == null || !animator.isHuman || model == null)
+            return null;
+        Animator theirs = model.GetComponentInChildren<Animator>(true);
+        if (theirs == null || theirs.avatar == null || !theirs.avatar.isHuman)
+            return null;
+        var byName = new Dictionary<string, Transform>();
+        foreach (Transform t in model.GetComponentsInChildren<Transform>(true))
+            if (!byName.ContainsKey(t.name)) byName[t.name] = t;
+        var map = new Dictionary<Transform, Transform>();
+        string[] humanNames = HumanTrait.BoneName;
+        foreach (HumanBone hb in theirs.avatar.humanDescription.human)
+        {
+            int index = System.Array.IndexOf(humanNames, hb.humanName);
+            if (index < 0 || index >= (int)HumanBodyBones.LastBone || !byName.TryGetValue(hb.boneName, out Transform t)) continue;
+            Transform mine = animator.GetBoneTransform((HumanBodyBones)index);
+            if (mine != null) map[t] = mine;
+        }
+        return map;
+    }
+
+    /// <summary>The character's body meshes (its skinned meshes that are not worn pieces).</summary>
+    private List<SkinnedMeshRenderer> BodyMeshes(Visual exclude)
+    {
+        var list = new List<SkinnedMeshRenderer>();
+        Transform root = animator != null ? animator.transform : transform;
+        foreach (SkinnedMeshRenderer smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(false))
+        {
+            if (smr == null || !smr.enabled || smr.sharedMesh == null) continue;
+            if (IsWornPiece(smr.transform, exclude)) continue;
+            list.Add(smr);
+        }
+        return list;
+    }
+
+    private bool IsWornPiece(Transform t, Visual exclude)
+    {
+        if (exclude != null && ((exclude.instance != null && t.IsChildOf(exclude.instance.transform)) || (exclude.pairInstance != null && t.IsChildOf(exclude.pairInstance.transform))))
+            return true;
+        foreach (Visual v in armor.Values)
+            if (v != null && ((v.instance != null && t.IsChildOf(v.instance.transform)) || (v.pairInstance != null && t.IsChildOf(v.pairInstance.transform))))
+                return true;
+        foreach (Visual v in new[] { mainHand, offHand })
+            if (v.instance != null && t.IsChildOf(v.instance.transform))
+                return true;
+        return false;
+    }
+
+    /// <summary>The body's blend shape weights copied onto the piece's blend shapes of the same names.</summary>
+    private void FollowBodyShape(Visual v)
+    {
+        if (v == null || v.instance == null)
+            return;
+        var weights = new Dictionary<string, float>();
+        foreach (SkinnedMeshRenderer body in BodyMeshes(v))
+        {
+            Mesh m = body.sharedMesh;
+            for (int i = 0; i < m.blendShapeCount; i++)
+            {
+                string n = m.GetBlendShapeName(i);
+                float w = body.GetBlendShapeWeight(i);
+                if (!weights.TryGetValue(n, out float have) || w > have) weights[n] = w;
+            }
+        }
+        if (weights.Count == 0)
+            return;
+        foreach (GameObject piece in new[] { v.instance, v.pairInstance })
+        {
+            if (piece == null) continue;
+            foreach (SkinnedMeshRenderer smr in piece.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                Mesh m = smr.sharedMesh;
+                if (m == null) continue;
+                for (int i = 0; i < m.blendShapeCount; i++)
+                    if (weights.TryGetValue(m.GetBlendShapeName(i), out float w))
+                        smr.SetBlendShapeWeight(i, w);
+            }
+        }
     }
 
     private void Hide(Visual v, string rendererName)
@@ -816,6 +1053,8 @@ public class EquipmentVisuals : MonoBehaviour, IWeaponVisualHost
     {
         if (v == null)
             return;
+        if (appearance != null)
+            appearance.ShowRegions(v);
         if (v.instance != null)
             Destroy(v.instance);
         if (v.pairInstance != null)

@@ -72,6 +72,8 @@ public class PlayerStatusController : BaseStatusController
 
     // Properties
     public PlayerClass CurrentPlayerClass => currentPlayerClass;
+    /// <summary>True once Start applied the class and the stats are set up (a character from the creation screen is applied after that).</summary>
+    public bool IsInitialized { get; private set; }
     public ExperienceManager XPManager => xpManager;
     public TraitManager TraitManager => traitManager;
     public ArmorSetManager ArmorSetManager => armorSetManager;
@@ -120,6 +122,7 @@ public class PlayerStatusController : BaseStatusController
         }
 
         InitializeEffectHandlers();
+        IsInitialized = true;
         OnStatsInitialized?.Invoke();
     }
 

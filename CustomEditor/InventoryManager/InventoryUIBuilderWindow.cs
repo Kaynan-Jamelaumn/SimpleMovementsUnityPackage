@@ -22,10 +22,16 @@ public class InventoryUIBuilderWindow : EditorWindow
         if (target == null)
             target = Object.FindAnyObjectByType<InventoryManager>(FindObjectsInactive.Include);
         w.manager = target;
-        if (w.player == null)
+        if (target != null && InventoryUIBuilder.PrefabAssetPathOf(target.gameObject) != null)
+        {
+            // A prefab asset: its own player, never one from the open scene.
+            PlayerStatusController inAsset = target.transform.root.GetComponentInChildren<PlayerStatusController>(true);
+            w.player = inAsset != null ? inAsset.gameObject : null;
+        }
+        else if (w.player == null || InventoryUIBuilder.PrefabAssetPathOf(w.player) != null)
         {
             PlayerStatusController ps = Object.FindAnyObjectByType<PlayerStatusController>();
-            if (ps != null) w.player = ps.gameObject;
+            w.player = ps != null ? ps.gameObject : null;
         }
         w.Show();
     }
@@ -37,6 +43,8 @@ public class InventoryUIBuilderWindow : EditorWindow
 
         manager = (InventoryManager)EditorGUILayout.ObjectField(new GUIContent("Inventory Manager", "Empty = one is created on the generated UI root."), manager, typeof(InventoryManager), true);
         player = (GameObject)EditorGUILayout.ObjectField(new GUIContent("Player", "The player object (with the PlayerStatusController)."), player, typeof(GameObject), true);
+        if (manager != null && InventoryUIBuilder.PrefabAssetPathOf(manager.gameObject) != null)
+            EditorGUILayout.HelpBox("This Inventory Manager is in a prefab asset: the UI is built inside the prefab (saved), so every player spawned from it has it.", MessageType.Info);
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Slots", EditorStyles.boldLabel);
@@ -96,9 +104,28 @@ public class InventoryUIBuilderWindow : EditorWindow
         using (new EditorGUI.DisabledScope(EditorApplication.isPlaying))
         {
             GUI.backgroundColor = new Color(0.55f, 0.9f, 0.55f);
-            if (GUILayout.Button(manager == null ? "Build Inventory UI" : "Build / Repair Inventory UI", GUILayout.Height(34f)))
-                manager = InventoryUIBuilder.Build(manager, player, settings);
+            bool build = GUILayout.Button(manager == null ? "Build Inventory UI" : "Build / Repair Inventory UI", GUILayout.Height(34f));
             GUI.backgroundColor = Color.white;
+            if (build)
+            {
+                // Built after this GUI pass: a build changes the hierarchy (and may save a prefab asset), which must not
+                // happen in the middle of a GUILayout pass ("Invalid GUILayout state").
+                InventoryManager m = manager;
+                GameObject p = player;
+                InventoryUIBuildSettings s = settings;
+                EditorApplication.delayCall += () =>
+                {
+                    try
+                    {
+                        manager = InventoryUIBuilder.Build(m, p, s);
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogException(e);
+                    }
+                    Repaint();
+                };
+            }
         }
         if (EditorApplication.isPlaying)
             EditorGUILayout.HelpBox("Exit Play Mode to build.", MessageType.Warning);

@@ -1,5 +1,4 @@
 ﻿#if UNITY_EDITOR
-#if UNITY_EDITOR
 using TMPro;
 using UnityEditor;
 using UnityEngine;
@@ -83,15 +82,7 @@ public static class UIBuildKit
     }
 
     /// <summary>A centred window of a fixed size.</summary>
-    public static Image Window(string name, Transform parent, Vector2 size)
-    {
-        Image img = InventoryUIFactory.Panel(name, parent, InventoryUIFactory.PanelColor);
-        RectTransform rt = img.rectTransform;
-        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = size;
-        return img;
-    }
+    public static Image Window(string name, Transform parent, Vector2 size) => UITheme.Window(name, parent, size);
 
     public static TextMeshProUGUI Title(Transform parent, string text, float size = 30f)
     {
@@ -128,8 +119,7 @@ public static class UIBuildKit
     /// <summary>A button whose click calls <paramref name="call"/> (saved in the scene).</summary>
     public static Button Button(string name, Transform parent, string label, UnityAction call = null, float width = 0f, float height = 40f)
     {
-        Button b = InventoryUIFactory.Button(name, parent, label, null, width);
-        InventoryUIFactory.Size(b, width > 0f ? width : -1f, height);
+        Button b = UITheme.Button(name, parent, label, null, UITheme.ButtonStyle.Normal, width, height);
         if (call != null)
             UnityEditor.Events.UnityEventTools.AddPersistentListener(b.onClick, call);
         return b;
@@ -179,9 +169,9 @@ public static class UIBuildKit
     public static Toggle Toggle(Transform parent, string label, bool value)
     {
         RectTransform row = LabeledRow(parent, label);
-        Image box = InventoryUIFactory.Panel("Toggle", row, InventoryUIFactory.FieldColor);
+        Image box = UITheme.Panel("Toggle", row, InventoryUIFactory.FieldColor, 6);
         InventoryUIFactory.Size(box, 28f, 28f, 0f);
-        Image check = InventoryUIFactory.Panel("Checkmark", box.transform, InventoryUIFactory.AccentColor);
+        Image check = UITheme.Panel("Checkmark", box.transform, InventoryUIFactory.AccentColor, 4);
         InventoryUIFactory.Stretch(check.rectTransform, 5f, 5f);
         var toggle = box.gameObject.AddComponent<Toggle>();
         toggle.targetGraphic = box;
@@ -206,15 +196,7 @@ public static class UIBuildKit
     /// <summary>A TextMeshPro input field.</summary>
     public static TMP_InputField InputField(string name, Transform parent, string placeholder, int characterLimit = 0)
     {
-        GameObject go = TMP_DefaultControls.CreateInputField(Resources);
-        go.name = name;
-        go.transform.SetParent(parent, false);
-        InventoryUIFactory.Size((RectTransform)go.transform, -1f, 42f, 1f);
-        var field = go.GetComponent<TMP_InputField>();
-        field.characterLimit = characterLimit;
-        if (field.placeholder is TMP_Text ph)
-            ph.text = placeholder;
-        return field;
+        return UITheme.Input(name, parent, placeholder, characterLimit, 42f);
     }
 
     /// <summary>
@@ -223,7 +205,7 @@ public static class UIBuildKit
     /// </summary>
     public static RectTransform ScrollList(string name, Transform parent, float height, out ScrollRect scroll)
     {
-        Image bg = InventoryUIFactory.Panel(name, parent, Section);
+        Image bg = UITheme.Panel(name, parent, Section, UITheme.Radius);
         if (height > 0f) InventoryUIFactory.Size(bg, -1f, height);
         else InventoryUIFactory.Size(bg, -1f, 120f).flexibleHeight = 1f;
         scroll = bg.gameObject.AddComponent<ScrollRect>();
@@ -250,8 +232,7 @@ public static class UIBuildKit
     /// <summary>A list-item template (button with a left-aligned label), kept inactive.</summary>
     public static GameObject ItemTemplate(string name, Transform parent, string label, float height = 40f)
     {
-        Button b = InventoryUIFactory.Button(name, parent, label, null);
-        InventoryUIFactory.Size(b, -1f, height);
+        Button b = UITheme.Button(name, parent, label, null, UITheme.ButtonStyle.ListItem, 0f, height);
         TMP_Text t = b.GetComponentInChildren<TMP_Text>();
         if (t != null)
         {
@@ -279,5 +260,4 @@ public static class UIBuildKit
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 }
-#endif
 #endif

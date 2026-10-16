@@ -28,6 +28,9 @@ public abstract class StatusManager : MonoBehaviour
     protected List<CoroutineInfo> effectRoutines = new List<CoroutineInfo>();
 
     public float CurrentValue => currentValue;
+
+    /// <summary>The image this status fills (its UI bar). The Player HUD gives each status its own.</summary>
+    public Image UIImage { get => uiImage; set => uiImage = value; }
     public float MaxValue
     {
         get => maxValue;

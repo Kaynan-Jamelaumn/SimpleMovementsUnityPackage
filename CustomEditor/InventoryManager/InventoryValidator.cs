@@ -117,14 +117,14 @@ public static class InventoryValidator
         {
             if (status == null)
             {
-                var ps = player.GetComponentInChildren<PlayerStatusController>();
+                var ps = player.GetComponentInChildren<PlayerStatusController>(true);
                 issues.Add(new InventoryIssue(ps != null ? MessageType.Info : MessageType.Error,
                     ps != null ? "Player Status Controller is empty (found automatically at runtime)." : "The player has no PlayerStatusController.",
                     ps != null ? "Assign" : null, ps != null ? (Action)(() => SetRef(manager, "playerStatusController", ps)) : null));
             }
             if (so.FindProperty("weaponController").objectReferenceValue == null)
             {
-                var wc = player.GetComponentInChildren<WeaponController>();
+                var wc = player.GetComponentInChildren<WeaponController>(true);
                 issues.Add(new InventoryIssue(MessageType.Warning,
                     wc != null ? "Weapon Controller is empty (found automatically at runtime)." : "The player has no WeaponController: weapons in the hotbar cannot attack.",
                     wc != null ? "Assign" : "Add to player",
@@ -243,12 +243,12 @@ public static class InventoryValidator
 
         var wc = so.FindProperty("weaponController").objectReferenceValue as WeaponController;
         if (wc == null && player != null)
-            wc = player.GetComponentInChildren<WeaponController>();
+            wc = player.GetComponentInChildren<WeaponController>(true);
         if (wc != null && wc.offHandGameObject == null)
         {
-            Animator animator = wc.GetComponentInParent<Animator>();
+            Animator animator = wc.GetComponentInParent<Animator>(true);
             if (animator == null && player != null)
-                animator = player.GetComponentInChildren<Animator>();
+                animator = player.GetComponentInChildren<Animator>(true);
             if (animator == null || !animator.isHuman)
                 issues.Add(new InventoryIssue(MessageType.Info,
                     "Weapon Controller ▸ Off Hand Game Object is empty and the character is not a Humanoid: off-hand weapons and shields are held " +
@@ -276,7 +276,7 @@ public static class InventoryValidator
     {
         if (player.GetComponentInChildren<T>(true) != null)
             return;
-        GameObject host = player.GetComponentInChildren<PlayerStatusController>() is PlayerStatusController ps ? ps.gameObject : player;
+        GameObject host = player.GetComponentInChildren<PlayerStatusController>(true) is PlayerStatusController ps ? ps.gameObject : player;
         issues.Add(new InventoryIssue(MessageType.Info, $"The player has no {label} ({what}); it is added automatically at runtime.", "Add now", () => Undo.AddComponent<T>(host)));
     }
 
@@ -350,9 +350,10 @@ public static class InventoryValidator
 
     public static Canvas FindCanvas(InventoryManager manager, Transform hotbarParent, GameObject inventoryPanel)
     {
-        if (hotbarParent != null && hotbarParent.GetComponentInParent<Canvas>() is Canvas c1) return c1.rootCanvas;
-        if (inventoryPanel != null && inventoryPanel.GetComponentInParent<Canvas>() is Canvas c2) return c2.rootCanvas;
-        Canvas c3 = manager.GetComponentInParent<Canvas>();
+        // includeInactive: the inventory panel starts closed, and everything in a prefab asset counts as inactive.
+        if (hotbarParent != null && hotbarParent.GetComponentInParent<Canvas>(true) is Canvas c1) return c1.rootCanvas;
+        if (inventoryPanel != null && inventoryPanel.GetComponentInParent<Canvas>(true) is Canvas c2) return c2.rootCanvas;
+        Canvas c3 = manager.GetComponentInParent<Canvas>(true);
         return c3 != null ? c3.rootCanvas : null;
     }
 
@@ -380,11 +381,11 @@ public static class InventoryValidator
     {
         var so = new SerializedObject(manager);
         so.FindProperty("player").objectReferenceValue = player;
-        var ps = player.GetComponentInChildren<PlayerStatusController>();
+        var ps = player.GetComponentInChildren<PlayerStatusController>(true);
         if (ps != null) so.FindProperty("playerStatusController").objectReferenceValue = ps;
-        var wc = player.GetComponentInChildren<WeaponController>();
+        var wc = player.GetComponentInChildren<WeaponController>(true);
         if (wc != null) so.FindProperty("weaponController").objectReferenceValue = wc;
-        var asm = player.GetComponentInChildren<ArmorSetManager>();
+        var asm = player.GetComponentInChildren<ArmorSetManager>(true);
         if (asm != null) so.FindProperty("armorSetManager").objectReferenceValue = asm;
         if (so.FindProperty("handParent").objectReferenceValue == null && wc != null && wc.handGameObject != null)
             so.FindProperty("handParent").objectReferenceValue = wc.handGameObject.transform;

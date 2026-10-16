@@ -32,7 +32,10 @@ public class InventoryFeedback : MonoBehaviour
         rt.anchoredPosition = new Vector2(0f, 150f);
         rt.sizeDelta = new Vector2(760f, 40f);
         var f = rt.gameObject.AddComponent<InventoryFeedback>();
-        f.group = rt.gameObject.AddComponent<CanvasGroup>();
+        // AddComponent runs Awake at once, and Awake already adds the CanvasGroup: reuse it (adding a second one fails).
+        f.group = rt.GetComponent<CanvasGroup>();
+        if (f.group == null)
+            f.group = rt.gameObject.AddComponent<CanvasGroup>();
         f.group.blocksRaycasts = false;
         f.group.interactable = false;
         f.group.alpha = 0f;
