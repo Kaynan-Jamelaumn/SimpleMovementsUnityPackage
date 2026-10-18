@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
@@ -561,7 +561,7 @@ public class PlayerStatusEditorMenu
         template.oxygen = 100f;
         template.traitPoints = 10;
 
-        AssetDatabase.CreateAsset(template, "Assets/New Player Class.asset");
+        AssetDatabase.CreateAsset(template, AssetDatabase.GenerateUniqueAssetPath(SMAssetsEditor.SelectedFolderOr(SMAssets.Classes) + "/New Player Class.asset"));
         AssetDatabase.SaveAssets();
         EditorUtility.FocusProjectWindow();
         Selection.activeObject = template;

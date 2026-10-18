@@ -50,7 +50,7 @@ public class CharacterCatalog : ScriptableObject
         {
             if (instance != null)
                 return instance;
-            instance = Resources.Load<CharacterCatalog>("CharacterCatalog");
+            instance = SMAssets.Load<CharacterCatalog>(SMAssets.Databases, "CharacterCatalog");
             if (instance == null)
                 instance = Generate();
             return instance;
@@ -117,7 +117,7 @@ public class CharacterCatalog : ScriptableObject
             var list = traits.FindAll(t => t != null);
             if (list.Count > 0)
                 return list;
-            TraitDatabase db = Resources.Load<TraitDatabase>("TraitDatabase");
+            TraitDatabase db = SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase");
 #if UNITY_EDITOR
             if (db == null)
                 db = TraitDatabase.Instance;

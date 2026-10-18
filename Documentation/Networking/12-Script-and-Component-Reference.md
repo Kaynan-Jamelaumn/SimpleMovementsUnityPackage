@@ -38,7 +38,6 @@ Added by **Create Bootstrap Scene**.
 | `NetTrading` | Player-to-player trading: request (T key), offers, lock, confirm. The server swaps items and money when both confirm. Builds the `TradeWindow` UI on clients. |
 | `NetWorldChunks` | The open world's shared state: terrain objects removed on the server (chopped trees, mined rocks) and the weather clock. |
 | `NetSocial` | Parties (the server's `PartySystem` decides; every client gets every party, so all machines know who is in whose party), every player's guild, alliance, fame, title and level, and inspection (the server builds the answer from its copy and sends it to the asker only). See Player 09. Added to old Bootstrap scenes by **Add Missing Relays To Network World**. |
-| `NetPortals` | Dungeon portal slots: a client's portal panel asks about a portal (about once a second while shown) and the server answers that client only with the portal's player limit, the players inside its running shared or linked dungeon, whether it is open and its difficulty. Rate-limited; only portals near the asking player. Added to old Bootstrap scenes by **Add Missing Relays To Network World**. |
 
 ## 3. On the player prefab root
 
@@ -67,7 +66,7 @@ Added by **Make Selected Prefab Networked ▸ Player**, next to a `NetworkObject
 | Ability pickup | *▸ Ability Pickup* | `NetworkObject`. |
 | World portal | *▸ World Portal* | `NetworkObject`. The `Portal` reacts only on the server. |
 | Interactable (merchant, chest, door, gate) | *▸ Interactable* | `NetworkObject`, `NetInteractable` (replicates its open/locked state). |
-| `Resources/NetWorldItem.prefab` | *Create World Item Prefab* (also made by Create Bootstrap Scene) | The generic carrier used when an item has no networked world prefab of its own. |
+| `Resources/SimpleMovements/Networking/NetWorldItem.prefab` | *Create World Item Prefab* (also made by Create Bootstrap Scene) | The generic carrier used when an item has no networked world prefab of its own. |
 
 ## 5. In the DungeonInstance scene
 
@@ -104,7 +103,7 @@ Added by **Create Dungeon Instance Scene**.
 | Create Bootstrap Scene | Builds the Bootstrap scene described above. |
 | Fix Scene Network Ids (open scenes) | Regenerates Fish-Net scene ids of the open scenes. |
 | Create Dungeon Instance Scene | Builds the dungeon template scene. |
-| Create World Item Prefab | Builds `Resources/NetWorldItem.prefab`. |
+| Create World Item Prefab | Builds `Resources/SimpleMovements/Networking/NetWorldItem.prefab`. |
 | Build Item Database / Build Ability Database | Stable ids for items and abilities. |
 | Make Selected Prefab Networked ▸ ... | Adds the right components to a prefab (see sections 3 and 4). |
 | Make All Mob Prefabs Networked | Every mob prefab in the project. |

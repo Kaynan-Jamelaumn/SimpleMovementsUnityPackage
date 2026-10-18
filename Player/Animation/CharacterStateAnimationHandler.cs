@@ -7,6 +7,8 @@ using UnityEngine;
 /// <item><c>JumpTrigger</c> when a jump starts, <c>LandTrigger</c> when the character lands after being in the air;</item>
 /// <item><c>IsStunned</c> (cannot move but alive), <c>IsDead</c>, <c>DeathTrigger</c> once on death, <c>HitTrigger</c> on
 /// every hit that did damage.</item>
+/// <item><c>IsSleeping</c> while asleep, <c>IsUnconscious</c> while knocked out (an Animator without IsUnconscious shows
+/// the IsDead pose instead, without the DeathTrigger).</item>
 /// </list>
 /// Works on every machine that shows the character: the movement states run on every copy in a network session, and the
 /// hits and deaths come from the presentation events (<see cref="CombatEntity.DamageFeedback"/>,
@@ -113,9 +115,15 @@ public class CharacterStateAnimationHandler
         model.SetParameterSafe("AirTime", airTime);
 
         bool dead = entity != null && entity.IsDead;
-        bool stunned = !dead && availability != null && !availability.CanMove();
+        bool unconscious = !dead && entity != null && entity.IsUnconscious;
+        bool sleeping = !dead && !unconscious && entity != null && entity.IsSleeping;
+        bool stunned = !dead && !unconscious && !sleeping && availability != null && !availability.CanMove();
         model.SetParameterSafe("IsStunned", stunned);
-        model.SetParameterSafe("IsDead", dead);
+        model.SetParameterSafe("IsSleeping", sleeping);
+        // Unconscious: its own parameter when the Animator has one, else the death pose (lying down) without the death trigger.
+        bool ownDownedPose = model.HasAnimationParameter("IsUnconscious");
+        model.SetParameterSafe("IsUnconscious", unconscious);
+        model.SetParameterSafe("IsDead", dead || (unconscious && !ownDownedPose));
         if (dead && !deadShown)
             ShowDeath();
         else if (!dead)

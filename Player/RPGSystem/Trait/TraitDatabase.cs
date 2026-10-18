@@ -23,7 +23,7 @@ public class TraitDatabase : ScriptableObject
             if (instance == null)
             {
                 // First try Resources folder
-                instance = Resources.Load<TraitDatabase>("TraitDatabase");
+                instance = SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase");
 
                 // If not found in Resources, search entire project
                 if (instance == null)

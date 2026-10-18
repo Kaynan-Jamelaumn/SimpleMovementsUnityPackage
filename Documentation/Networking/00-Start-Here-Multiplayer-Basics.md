@@ -104,8 +104,7 @@ Bootstrap.unity
     ├─ NetDuels              duel requests and duels
     ├─ NetTrading            player-to-player trading
     ├─ NetWorldChunks        world terrain changes (removed trees, rocks) and weather
-    ├─ NetSocial             parties, guilds / fame / levels, inspecting other players
-    └─ NetPortals            free player slots of dungeon portals
+    └─ NetSocial             parties, guilds / fame / levels, inspecting other players
 ```
 
 **What happens when you press Play in Bootstrap:**
@@ -131,7 +130,7 @@ Menus are under **Tools ▸ SimpleMovements ▸ Network**.
    ▸ Scripting Define Symbols* contains `FISHNET`.
 2. **Set up the hub world first** (City and World scenes): see *Hub World 05 - Setup and Configuration*.
 3. **Create Bootstrap Scene.** Creates `Assets/Scenes/Bootstrap.unity`, puts it first in *Build Settings*, creates the
-   observer condition asset and `Resources/NetWorldItem.prefab` (the networked carrier for dropped items).
+   observer condition asset and `Resources/SimpleMovements/Networking/NetWorldItem.prefab` (the networked carrier for dropped items).
 4. **Create Dungeon Instance Scene.** The empty template each dungeon run stacks.
 5. **Build Item Database** and **Build Ability Database.** Gives every item and ability a stable number that is the
    same on every machine (messages send the number, not the asset).

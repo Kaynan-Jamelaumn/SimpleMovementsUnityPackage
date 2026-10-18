@@ -1,17 +1,22 @@
-﻿using System;
+using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace ProceduralDungeon
 {
     /// <summary>
-    /// A loot chest: opening it lifts its lid (a child named "Lid"), drops its Drops in front of it (item pickups, gold...)
-    /// and raises <see cref="Opened"/> / <see cref="AnyOpened"/> with its tier (DungeonSpawned.tier) so your loot code can
-    /// fill it.
+    /// A loot chest: opening it lifts its lid (a child named "Lid"), drops items from its <see cref="dropTable"/> (else the
+    /// Item Drop Manager's Chest table) at its tier (DungeonSpawned.tier) and its Drops prefabs in front of it, and raises
+    /// <see cref="Opened"/> / <see cref="AnyOpened"/> with its tier for your own loot code.
     /// </summary>
     public class DungeonChest : DungeonInteractable
     {
-        [Tooltip("Prefabs dropped in front of the chest when it opens (e.g. item pickups). Optional.")]
+        [Tooltip("What it drops: items with chances, quantities and tiers (Create ▸ SimpleMovements ▸ Items ▸ Item Drop Table). " +
+                 "Empty = the dungeon loot entry's table, else the Item Drop Manager's Chest table.")]
+        public ItemDropTable dropTable;
+        [Tooltip("Tiers added to the chest's own tier for the roll (more rolls, better entries).")]
+        public int tierBonus;
+        [Tooltip("Prefabs dropped in front of the chest when it opens (pickups made by hand), every time. Optional.")]
         public GameObject[] drops = new GameObject[0];
         [Tooltip("Degrees the lid opens.")]
         public float lidAngle = 70f;
@@ -44,6 +49,9 @@ namespace ProceduralDungeon
             IsOpen = true;
             var tag = GetComponent<DungeonSpawned>();
             int tier = tag != null ? tag.tier : 0;
+            ItemDropTable table = dropTable != null ? dropTable : ItemDropManager.Instance.chestTable;
+            if (table != null)
+                ItemDropManager.Drop(table, tier + tierBonus, transform.position + transform.forward * 1f, gameObject);
             for (int i = 0; drops != null && i < drops.Length; i++)
             {
                 if (drops[i] == null)

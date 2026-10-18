@@ -27,6 +27,21 @@ public class WeatherStatusRate
     public float perSecond = -0.5f;
 }
 
+/// <summary>How weather conditions about cold and heat work together with the player's Body Heat.</summary>
+public enum WeatherTemperatureHandling
+{
+    /// <summary>Every condition applies (cold and heat can be penalised twice: by the weather status and by the body temperature).</summary>
+    KeepAll,
+    /// <summary>
+    /// Conditions that only measure the air temperature (Colder Than / Hotter Than: Chilled, Heatstroke) are left to the
+    /// player's Body Heat, which applies cold and heat effects from the body temperature with the player's ideal temperature
+    /// and resistances. Ice / Fire conditions (Frostbite) still apply, scaled by Cold / Heat Resistance (immune = none).
+    /// </summary>
+    SkipTemperatureRules,
+    /// <summary>Like Skip Temperature Rules, and Ice / Fire conditions only chill or warm the body (their body-heat shift), without their own status.</summary>
+    SkipAllColdAndHeatRules,
+}
+
 /// <summary>A player event of a weather condition (the player's root object is passed).</summary>
 [Serializable]
 public class WeatherPlayerEvent : UnityEvent<GameObject> { }
@@ -234,6 +249,12 @@ public class PlayerWeatherEffects : MonoBehaviour
     [Min(0f)] public float windChillPerMeterPerSecond = 0.35f;
     [Tooltip("Shelter brings the felt temperature this much of the way back to Comfort Temperature (0.3 = a roof keeps some cold out).")]
     [Range(0f, 1f)] public float shelterComfort = 0.3f;
+    [Tooltip("Players with a Body Heat Manager get cold and heat effects from their body temperature (their race's ideal " +
+             "temperature, Heat / Cold Resistance, immunities). So that cold and heat are not penalised twice: Skip Temperature Rules " +
+             "leaves Colder Than / Hotter Than conditions (Chilled, Heatstroke) to the body heat and scales Ice / Fire conditions " +
+             "(Frostbite) by the player's resistance; Skip All Cold And Heat Rules also keeps only the body-heat shift of Ice / Fire " +
+             "conditions; Keep All applies everything.")]
+    public WeatherTemperatureHandling temperatureHandling = WeatherTemperatureHandling.SkipTemperatureRules;
 
     [Header("Lightning")]
     [Tooltip("Lightning can strike players standing under the open sky in a thunderstorm.")]
@@ -376,6 +397,7 @@ public class PlayerWeatherEffects : MonoBehaviour
         t.Sheltered = sheltered;
 
         float heatShift = 0f;
+        bool bodyOwnsTemperature = temperatureHandling != WeatherTemperatureHandling.KeepAll && t.BodyHeat != null && t.BodyHeat.HandlesTemperatureEffects;
         CollectRules();
         foreach (WeatherExposureRule rule in ruleBuffer)
         {
@@ -389,6 +411,22 @@ public class PlayerWeatherEffects : MonoBehaviour
             if (exposed && rule.Matches(w, out float intensity))
             {
                 float strength = rule.StrengthFor(intensity);
+                // Cold and heat: left to the body temperature, or scaled by the player's resistance (immune = none).
+                if (bodyOwnsTemperature && LeftToBodyHeat(rule))
+                {
+                    heatShift += rule.bodyHeatShift * strength;
+                    if (t.Active.ContainsKey(rule))
+                        Remove(t, rule, true);
+                    continue;
+                }
+                float resisted = ResistanceFactor(t, rule);
+                if (resisted <= 0.001f)
+                {
+                    if (t.Active.ContainsKey(rule))
+                        Remove(t, rule, true);
+                    continue;
+                }
+                strength *= resisted;
                 Apply(t, rule, strength);
                 heatShift += rule.bodyHeatShift * strength;
                 if (rule.damagePerSecond > 0f)
@@ -403,6 +441,7 @@ public class PlayerWeatherEffects : MonoBehaviour
 
         if (driveBodyHeat && t.BodyHeat != null)
         {
+            t.BodyHeat.SetScale(comfortTemperature, pointsPerDegree);
             t.BodyHeat.SetEnvironmentalTemperature(BodyHeatFor(w, sheltered, underwater) + heatShift);
             t.HeatManaged = true;
         }
@@ -419,6 +458,36 @@ public class PlayerWeatherEffects : MonoBehaviour
                     Debug.Log($"[PlayerWeatherEffects] lightning struck {p.name} for {dealt:0}", p);
             }
         }
+    }
+
+    /// <summary>Is <paramref name="rule"/> about cold or heat only, so the body temperature handles it instead?</summary>
+    private bool LeftToBodyHeat(WeatherExposureRule rule)
+    {
+        if (rule.measure == WeatherMeasure.ColderThan || rule.measure == WeatherMeasure.HotterThan)
+            return true;
+        return temperatureHandling == WeatherTemperatureHandling.SkipAllColdAndHeatRules &&
+               (rule.element == ElementType.Ice || rule.element == ElementType.Fire);
+    }
+
+    /// <summary>
+    /// How much of an Ice / Fire condition reaches the player after Cold / Heat Resistance (1 = all, 0 = immune; a
+    /// weakness can raise it to 2). Other conditions: 1.
+    /// </summary>
+    private static float ResistanceFactor(Tracked t, WeatherExposureRule rule)
+    {
+        bool cold = rule.element == ElementType.Ice || rule.measure == WeatherMeasure.ColderThan;
+        bool hot = rule.element == ElementType.Fire || rule.measure == WeatherMeasure.HotterThan;
+        if (!cold && !hot)
+            return 1f;
+        float resist;
+        if (t.BodyHeat != null)
+            resist = cold ? t.BodyHeat.ColdResistance : t.BodyHeat.HeatResistance;
+        else
+        {
+            CombatStats stats = t.Entity != null ? t.Entity.Stats : null;
+            resist = stats != null ? Mathf.Clamp(stats.Get(cold ? CombatStatType.ColdResistance : CombatStatType.HeatResistance), -100f, 100f) : 0f;
+        }
+        return Mathf.Clamp(1f - resist / 100f, 0f, 2f);
     }
 
     /// <summary>The body-heat environment (0-100, 50 = normal) for the weather a player feels.</summary>
@@ -495,7 +564,7 @@ public class PlayerWeatherEffects : MonoBehaviour
             if (r.bar == WeatherStatusBar.BodyHeat)
             {
                 if (t.Status.BodyHeatManager != null)
-                    t.Status.BodyHeatManager.ModifyBodyHeat(amount);
+                    t.Status.BodyHeatManager.ApplyHeatChange(amount); // resisted by Cold / Heat Resistance
                 continue;
             }
             StatusManager bar = Bar(t.Status, r.bar);
@@ -585,7 +654,7 @@ public class PlayerWeatherEffects : MonoBehaviour
                 Remove(t, rule, true);
         }
         if (t.HeatManaged && t.BodyHeat != null)
-            t.BodyHeat.SetEnvironmentalTemperature(50f);
+            t.BodyHeat.ClearEnvironment(); // back to the player's own ideal temperature
         t.HeatManaged = false;
     }
 

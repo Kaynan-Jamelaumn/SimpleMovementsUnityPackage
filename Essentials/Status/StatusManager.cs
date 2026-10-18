@@ -7,22 +7,39 @@ using UnityEngine.UI;
 public abstract class StatusManager : MonoBehaviour
 {
 
+    [Tooltip("The value right now (0 .. Max Value).")]
     [SerializeField] protected float currentValue;
+    [Tooltip("Highest value.")]
     [SerializeField] protected float maxValue = 100;
+    [Tooltip("REGENERATION tick: seconds between two gains. Each tick adds Increment Value (changed by Increment Factor). " +
+             "E.g. Tick Rate 0.5 + Increment Value 1 = 2 points per second.")]
     [SerializeField] protected float tickRate = 0.5f;
+    [Tooltip("CONSUMPTION tick: seconds between two losses of a status that drains by itself (hunger, thirst, rest). Each tick " +
+             "removes Decrement Value (changed by Decrement Factor). E.g. Consuming Tick Rate 5 + Decrement Value 1 = 1 point every 5 s " +
+             "(12 per minute).")]
     [SerializeField] protected float consumingTickRate = 0.5f;
     [SerializeField] protected float maxValueModifier = 15;
 
+    [Tooltip("Points gained per regeneration tick (see Tick Rate), before Increment Factor.")]
     [SerializeField] protected float incrementValue = 1f; // The amount to increment the value by each tick
+    [Tooltip("Points lost per consumption tick (see Consuming Tick Rate), before Decrement Factor. The AMOUNT of each loss.")]
     [SerializeField] protected float decrementValue = 1f; // The amount to decrese the value by each tick when it's a decresable stats like hunger
-    [SerializeField] protected float incrementFactor = 1f; // The factor by whic h will influence the increment in the value
-    [SerializeField] protected float decrementFactor = 1f; // The factor by which will influence the  decrement in the value
+    [Tooltip("PERCENT bonus on every gain (regeneration, food, potions, heals): +50 = gains are 50% bigger, -50 = half. 0 = no change. " +
+             "It is a percentage, not a multiplier: 1 means +1%.")]
+    [SerializeField] protected float incrementFactor = 0f; // The factor by whic h will influence the increment in the value
+    [Tooltip("PERCENT bonus on every loss (drain ticks, damage, costs): +50 = losses are 50% bigger, -50 = half. 0 = no change. " +
+             "It is a percentage, not a multiplier: 1 means +1%. Decrement Value says HOW MUCH is lost per tick; this scales it.")]
+    [SerializeField] protected float decrementFactor = 0f; // The factor by which will influence the  decrement in the value
     [SerializeField] protected float statusIncrementValue = 1f; // The factor by which the status will increase
+    [Tooltip("The image this status fills (legacy bar). The Player HUD assigns its own; leave empty otherwise.")]
     [SerializeField] protected Image uiImage;
 
 
+    [Tooltip("The status drains by itself every Consuming Tick Rate seconds (hunger, thirst).")]
     [SerializeField] protected bool shouldConsume; // Should the status be decreasing by each tick
+    [Tooltip("Read only: the status is losing value right now.")]
     [SerializeField] protected bool isConsuming;
+    [Tooltip("Read only: the status is regenerating right now.")]
     [SerializeField] protected bool isRegenerating;
 
     protected List<CoroutineInfo> effectRoutines = new List<CoroutineInfo>();
@@ -53,7 +70,84 @@ public abstract class StatusManager : MonoBehaviour
     /// <summary>Percent bonus applied to losses (damage taken, costs).</summary>
     public float DecrementFactor => decrementFactor;
 
-    public void AddCurrentValue(float amount)
+    /// <summary>Points lost per consumption tick, before <see cref="DecrementFactor"/>.</summary>
+    public float DecrementValue => decrementValue;
+
+    /// <summary>Seconds between two regeneration ticks.</summary>
+    public float TickRate => tickRate;
+
+    /// <summary>Seconds between two consumption ticks.</summary>
+    public float ConsumingTickRate => consumingTickRate;
+
+    /// <summary>Does the status drain by itself (hunger, thirst)?</summary>
+    public bool ShouldConsume { get => shouldConsume; set => shouldConsume = value; }
+
+    /// <summary>The value as a fraction of the max (0-1).</summary>
+    public float Fraction => maxValue > 0f ? Mathf.Clamp01(currentValue / maxValue) : 0f;
+
+    /// <summary>Is the status regenerating right now?</summary>
+    public bool IsRegenerating => isRegenerating;
+
+    // ------------------------------------------------------------------ drain rate multipliers
+    private readonly Dictionary<object, float> rateMultipliers = new Dictionary<object, float>();
+    private float rateMultiplier = 1f;
+
+    /// <summary>
+    /// How fast the status drains by itself right now: the product of every multiplier set with
+    /// <see cref="SetRateMultiplier"/> (cold makes you hungry faster, sleeping slows thirst...). 1 = normal.
+    /// </summary>
+    public float RateMultiplier => rateMultiplier;
+
+    /// <summary>
+    /// Sets one named multiplier of the drain speed (1 = no change, 1.5 = 50% faster, 0 = stops it). The same
+    /// <paramref name="key"/> replaces its previous value; <see cref="ClearRateMultiplier"/> removes it. Never stacks by
+    /// accident: each source owns one key.
+    /// </summary>
+    public void SetRateMultiplier(object key, float multiplier)
+    {
+        if (key == null)
+            return;
+        if (float.IsNaN(multiplier) || float.IsInfinity(multiplier))
+            multiplier = 1f;
+        multiplier = Mathf.Max(0f, multiplier);
+        if (Mathf.Approximately(multiplier, 1f))
+        {
+            ClearRateMultiplier(key);
+            return;
+        }
+        rateMultipliers[key] = multiplier;
+        RecomputeRate();
+    }
+
+    /// <summary>Removes the drain multiplier of <paramref name="key"/>.</summary>
+    public void ClearRateMultiplier(object key)
+    {
+        if (key != null && rateMultipliers.Remove(key))
+            RecomputeRate();
+    }
+
+    private void RecomputeRate()
+    {
+        float m = 1f;
+        foreach (float v in rateMultipliers.Values)
+            m *= v;
+        rateMultiplier = m;
+    }
+
+    /// <summary>
+    /// Sets the value to <paramref name="fraction"/> (0-1) of the max, without factors (a respawn, a full rest).
+    /// Ignored on a client's copy (the server's value arrives through replication).
+    /// </summary>
+    public virtual void ResetForRespawn(float fraction)
+    {
+        if (IsReplica)
+            return;
+        float f = float.IsNaN(fraction) ? 1f : Mathf.Clamp01(fraction);
+        currentValue = maxValue * f;
+        isConsuming = false;
+    }
+
+    public virtual void AddCurrentValue(float amount)
     {
         if (IsReplica)
             return; // the server's value arrives through replication
@@ -132,6 +226,7 @@ public abstract class StatusManager : MonoBehaviour
         if (on)
         {
             StopAllCoroutines();
+            effectReverts.Clear();
             isRegenerating = false;
             isConsuming = false;
         }
@@ -183,6 +278,11 @@ public abstract class StatusManager : MonoBehaviour
 
     private static bool IsFinite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
 
+    // Undo actions of running timed effects (factor and regeneration changes), so an effect that is replaced, removed or
+    // stopped early is reverted exactly. Before, a replaced effect never ran its end and left its change forever.
+    private readonly Dictionary<CoroutineInfo, Action> effectReverts = new Dictionary<CoroutineInfo, Action>();
+    private Action pendingEffectRevert;
+
     protected void AddEffect(
         List<CoroutineInfo> effectList,
         string effectName,
@@ -212,13 +312,49 @@ public abstract class StatusManager : MonoBehaviour
             }
         }
 
-        Coroutine effectCoroutine = StartCoroutine(effectRoutineFunc(effectName, amount, duration, tickInterval, isProcedural, isStackable));
-        effectList.Add(new CoroutineInfo
+        pendingEffectRevert = null;
+        IEnumerator routine = effectRoutineFunc(effectName, amount, duration, tickInterval, isProcedural, isStackable);
+        Action revert = pendingEffectRevert;
+        pendingEffectRevert = null;
+        var info = new CoroutineInfo
         {
-            coroutine = effectCoroutine,
             effectName = effectName,
             isBuff = amount > 0
-        });
+        };
+        effectList.Add(info);
+        if (revert != null)
+            effectReverts[info] = revert;
+        info.coroutine = StartCoroutine(Tracked(effectList, info, routine));
+    }
+
+    // Runs an effect and forgets it when it ends by itself (its own end already reverted it).
+    private IEnumerator Tracked(List<CoroutineInfo> list, CoroutineInfo info, IEnumerator routine)
+    {
+        while (routine.MoveNext())
+            yield return routine.Current;
+        effectReverts.Remove(info);
+        list.Remove(info);
+    }
+
+    /// <summary>
+    /// For effect routines that change a field for a while (a factor, a regeneration amount): call it while building the
+    /// routine (before returning it). It adds the amount, tracks exactly what was added, and takes it away when the effect
+    /// ends, is replaced, removed or stopped.
+    /// </summary>
+    protected IEnumerator ModifierEffect(string effectName, float amount, float duration, float tickInterval, bool isProcedural,
+        bool isStackable, Action<float> add)
+    {
+        float applied = 0f;
+        Action revert = () =>
+        {
+            if (applied != 0f) add(-applied);
+            applied = 0f;
+        };
+        pendingEffectRevert = revert;
+        return ApplyEffectRoutine(effectName, amount, duration, tickInterval, isProcedural, isStackable,
+            perTick => { add(perTick); applied += perTick; },
+            total => { add(total); applied += total; },
+            _ => revert());
     }
 
     protected void RemoveEffect(List<CoroutineInfo> effectList, string effectName = null, Coroutine effectRoutine = null)
@@ -235,10 +371,8 @@ public abstract class StatusManager : MonoBehaviour
 
     protected void StopAllEffects(List<CoroutineInfo> effectList)
     {
-        foreach (var effect in effectList)
-        {
-            StopCoroutine(effect.coroutine);
-        }
+        foreach (var effect in effectList.ToList())
+            StopAndRemoveEffect(effectList, effect);
         effectList.Clear();
     }
 
@@ -253,8 +387,14 @@ public abstract class StatusManager : MonoBehaviour
 
     private void StopAndRemoveEffect(List<CoroutineInfo> effectList, CoroutineInfo effect)
     {
-        StopCoroutine(effect.coroutine);
+        if (effect.coroutine != null)
+            StopCoroutine(effect.coroutine);
         effectList.Remove(effect);
+        if (effectReverts.TryGetValue(effect, out Action revert))
+        {
+            effectReverts.Remove(effect);
+            revert?.Invoke();
+        }
     }
     protected void UpdateBar()
     {

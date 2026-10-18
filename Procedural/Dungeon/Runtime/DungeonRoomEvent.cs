@@ -38,7 +38,7 @@ namespace ProceduralDungeon
 
         private DungeonInstance dungeon;
         private readonly List<DungeonSpawned> members = new List<DungeonSpawned>();
-        private float nextPoll, empty;
+        private float nextPoll, empty, outside;
         private bool locked;
 
         public void Setup(DungeonInstance owner, int floorIndex, int areaId, RoomEventMode eventMode, int waveCount)
@@ -74,11 +74,25 @@ namespace ProceduralDungeon
                 Finish();
                 return;
             }
-            if (someoneInside)
+            // The room's mobs that are inside. Mobs that chased a player out (or were pulled through the doorway) before the
+            // doors shut would otherwise leave the players locked in with nobody to fight: the doors open until they are back.
+            bool enemiesInside = MembersInside() > 0;
+            if (someoneInside && enemiesInside)
             {
                 empty = 0f;
+                outside = 0f;
                 if (!locked)
                     Lock(true);
+            }
+            else if (someoneInside)
+            {
+                empty = 0f;
+                if (locked && (outside += 0.2f) >= 1f)
+                {
+                    Lock(false);
+                    if (messages)
+                        DungeonMessages.Show(this, "The enemies left the room - the doors open.");
+                }
             }
             else if ((empty += 0.2f) >= leaveGrace && locked)
             {
@@ -138,6 +152,36 @@ namespace ProceduralDungeon
                 }
             }
             return false;
+        }
+
+        /// <summary>How many living mobs of the fight are inside the room (or in its doorways).</summary>
+        private int MembersInside()
+        {
+            if (dungeon.Layout == null)
+                return members.Count;
+            TileGrid g = dungeon.Layout.Floors[floor].Grid;
+            int n = 0;
+            foreach (DungeonSpawned m in members)
+            {
+                if (m == null) continue;
+                CombatEntity e = m.GetComponentInChildren<CombatEntity>();
+                Vector3 pos = e != null ? e.Position : m.transform.position;
+                if (!dungeon.WorldToCell(pos, out int f, out Vector2Int cell) || f != floor)
+                    continue;
+                int i = g.Index(cell);
+                if (g.Area[i] == area)
+                {
+                    n++;
+                    continue;
+                }
+                // A doorway of the room counts as inside (a mob standing in it keeps the fight going).
+                for (int d = 0; d < 4; d++)
+                {
+                    int nb = g.Neighbor(i, d);
+                    if (nb >= 0 && g.Area[nb] == area) { n++; break; }
+                }
+            }
+            return n;
         }
 
         private bool HasHiddenMobs()

@@ -28,7 +28,8 @@ public class InventoryUIBuildSettings
     public int storageSlots = 16;
     public bool buildItemInfo = true;
     public bool buildDropZone = true;
-    [Tooltip("One bar per status manager of the player (health, stamina, mana, hunger...), assigned to it.")]
+    [Tooltip("Status bars: adds the Player HUD (status frame and needs gauges) when the player has none. The old StatusBars " +
+             "panel is no longer generated (an existing one is hidden by the HUD).")]
     public bool buildStatusBars = true;
     [Tooltip("The Player's interaction prompt (progress circle and text) when it is not assigned.")]
     public bool buildInteractionPrompt = true;
@@ -43,7 +44,8 @@ public class InventoryUIBuildSettings
     public float gridCellSize = 56f;
     public float gridSpacing = 2f;
     public float gridPadding = 8f;
-    public string prefabFolder = "Assets/Inventory/Generated";
+    [Tooltip("Where the slot and item prefabs are saved (existing ones are reused).")]
+    public string prefabFolder = SMAssets.FolderPath(SMAssets.InventoryUI);
     [Tooltip("The look of the menus (rounded panels and slots with a frame, accent titles, the selected hotbar slot outlined, " +
              "hotbar numbers, slot names in empty equipment slots). Also restyles panels and the slot prefab that already exist.")]
     public bool themedLook = true;
@@ -93,7 +95,7 @@ public class InventoryUIBuildSettings
 
 /// <summary>
 /// Builds (or repairs) the player's UI: canvas, hotbar, inventory grid, equipment panel with typed and labelled slots,
-/// storage panel, item info tooltip, drop zone, status bars (one per status manager of the player, assigned to it),
+/// storage panel, item info tooltip, drop zone, the Player HUD (status bars),
 /// the interaction prompt of the Player component, the slot and item prefabs - and wires every reference of the
 /// <see cref="InventoryManager"/>. Existing, already assigned parts are kept; only what is missing is created.
 /// Works on scene objects and inside Prefab Mode (the canvas is placed inside the player so the prefab carries its
@@ -350,14 +352,11 @@ public static class InventoryUIBuilder
         if (s.buildItemInfo && info == null)
             info = BuildItemInfo(root, manager, s);
 
-        // Player HUD: status bars and the interaction prompt
-        if (player != null)
-        {
-            if (s.buildStatusBars)
-                BuildStatusBars(root, player, s);
-            if (s.buildInteractionPrompt)
-                BuildInteractionPrompt(root, player, manager, s);
-        }
+        // Player HUD (status bars) and the interaction prompt
+        if (s.buildStatusBars)
+            EnsurePlayerHud(manager, player);
+        if (player != null && s.buildInteractionPrompt)
+            BuildInteractionPrompt(root, player, manager, s);
         if (s.buildArmorSetUI)
         {
             ArmorSetUIManager armorUI = BuildArmorSetUI(so.FindProperty("armorSetUIManager").objectReferenceValue as ArmorSetUIManager,
@@ -391,7 +390,7 @@ public static class InventoryUIBuilder
         // Drawing order: panels below, then the hotbar, the HUD and the tooltip on top (the inventory's full-screen drop
         // zone must never cover the hotbar).
         hotbarPanel.SetAsLastSibling();
-        foreach (string hud in new[] { "StatusBars", "InteractionPrompt", "ItemInfo" })
+        foreach (string hud in new[] { "StatusBars", "InteractionPrompt", "ItemInfo" }) // StatusBars: from older builds
         {
             Transform t = root.Find(hud);
             if (t != null) t.SetAsLastSibling();
@@ -440,14 +439,9 @@ public static class InventoryUIBuilder
         }
         if (player != null)
         {
-            foreach (StatusManager status in DistinctStatuses(player))
-            {
-                if (new SerializedObject(status).FindProperty("uiImage")?.objectReferenceValue == null)
-                {
-                    missing.Add("status bars");
-                    break;
-                }
-            }
+            if (player.GetComponentInChildren<PlayerHUD>(true) == null && manager.GetComponentInChildren<PlayerHUD>(true) == null &&
+                manager.GetComponentInParent<PlayerHUD>() == null)
+                missing.Add("player HUD (status bars)");
             Player p = FindPlayerComponent(player);
             if (p != null)
             {
@@ -509,26 +503,6 @@ public static class InventoryUIBuilder
     }
 
     // ------------------------------------------------------------------ player HUD
-    private static readonly string[] StatusOrder = { "Health", "Mana", "Stamina", "Hunger", "Thirst", "Sleep", "Sanity", "BodyHeat", "Oxygen", "Weight" };
-
-    private static Color StatusColor(string key)
-    {
-        switch (key)
-        {
-            case "Health": return new Color(0.85f, 0.2f, 0.22f);
-            case "Mana": return new Color(0.25f, 0.45f, 0.95f);
-            case "Stamina": return new Color(0.3f, 0.8f, 0.35f);
-            case "Hunger": return new Color(0.9f, 0.6f, 0.2f);
-            case "Thirst": return new Color(0.25f, 0.75f, 0.9f);
-            case "Sleep": return new Color(0.6f, 0.5f, 0.9f);
-            case "Sanity": return new Color(0.75f, 0.4f, 0.8f);
-            case "BodyHeat": return new Color(0.95f, 0.4f, 0.2f);
-            case "Oxygen": return new Color(0.6f, 0.9f, 1f);
-            case "Weight": return new Color(0.75f, 0.7f, 0.6f);
-            default: return new Color(0.8f, 0.8f, 0.8f);
-        }
-    }
-
     /// <summary>
     /// The player's status managers, one per type (health, stamina...). A second component of the same type is a
     /// setup mistake (it would get a second bar): it is reported and skipped.
@@ -551,188 +525,20 @@ public static class InventoryUIBuilder
     }
 
     /// <summary>
-    /// One bar per status of the player (top left), each assigned as that manager's UI Image. Bars that already exist
-    /// are reused (never duplicated), and duplicate bars left by earlier builds are removed.
+    /// Status bars are the Player HUD's job now (status frame, needs gauges): the old "StatusBars" panel is no longer
+    /// generated. The HUD is added to the Inventory Manager's object when the player has none (it builds its UI when the
+    /// game starts, or use Player HUD ▸ Build Status UI to build it into the prefab and restyle it).
     /// </summary>
-    private static void BuildStatusBars(Transform root, GameObject player, InventoryUIBuildSettings s)
+    private static void EnsurePlayerHud(InventoryManager manager, GameObject player)
     {
-        List<StatusManager> statuses = DistinctStatuses(player);
-        if (statuses.Count == 0)
-            return;
-        statuses.Sort((a, b) => Order(a).CompareTo(Order(b)));
-
-        Transform panel = FindOrCreateChild(root, "StatusBars", false);
-        var prt = (RectTransform)panel;
-        bool fresh = panel.GetComponent<StatusBarsUI>() == null;
-        if (fresh)
-        {
-            prt.anchorMin = prt.anchorMax = new Vector2(0f, 1f);
-            prt.pivot = new Vector2(0f, 1f);
-            prt.anchoredPosition = new Vector2(20f, -20f);
-            prt.sizeDelta = new Vector2(340f, 0f);
-            var layout = GetOrAdd<VerticalLayoutGroup>(panel.gameObject);
-            layout.spacing = 6f;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-            layout.childForceExpandHeight = false;
-            var fitter = GetOrAdd<ContentSizeFitter>(panel.gameObject);
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        }
-        var bars = GetOrAdd<StatusBarsUI>(panel.gameObject);
-        Record(bars, "Add status bars");
-        Sprite white = GetOrCreateSprite(s, "UIWhite", false);
-
-        RemoveDuplicateBars(panel, statuses);
-
-        foreach (StatusManager status in statuses)
-        {
-            var sso = new SerializedObject(status);
-            SerializedProperty uiImage = sso.FindProperty("uiImage");
-            string key = Key(status);
-            Transform existingRow = panel.Find(key + "Bar");
-            Image assigned = uiImage.objectReferenceValue as Image;
-
-            if (assigned != null)
-            {
-                // Already has a bar: only make sure the value text / visibility row is registered when it is ours.
-                if (existingRow != null && assigned.transform.IsChildOf(existingRow) && !bars.HasRow(status))
-                    bars.AddRow(status, assigned, existingRow.GetComponentInChildren<TMP_Text>(true) is TMP_Text t0 && t0.name == "Value" ? t0 : FindValue(existingRow), existingRow.gameObject);
-                continue;
-            }
-
-            if (existingRow != null)
-            {
-                // A bar from an earlier build whose link was lost: reuse it instead of adding another one.
-                Image oldFill = existingRow.Find("Background/Fill")?.GetComponent<Image>();
-                if (oldFill != null)
-                {
-                    uiImage.objectReferenceValue = oldFill;
-                    sso.ApplyModifiedProperties();
-                    bars.AddRow(status, oldFill, FindValue(existingRow), existingRow.gameObject);
-                    continue;
-                }
-                DestroyObj(existingRow.gameObject);
-            }
-
-            var row = new GameObject(key + "Bar", typeof(RectTransform));
-            Created(row, "Create status bar");
-            row.transform.SetParent(panel, false);
-            var le = row.AddComponent<LayoutElement>();
-            le.minHeight = le.preferredHeight = 24f;
-
-            var label = new GameObject("Label", typeof(RectTransform));
-            label.transform.SetParent(row.transform, false);
-            var lrt = (RectTransform)label.transform;
-            lrt.anchorMin = new Vector2(0f, 0f); lrt.anchorMax = new Vector2(0f, 1f);
-            lrt.pivot = new Vector2(0f, 0.5f);
-            lrt.sizeDelta = new Vector2(90f, 0f);
-            var ltmp = label.AddComponent<TextMeshProUGUI>();
-            ltmp.text = ObjectNames.NicifyVariableName(key);
-            ltmp.fontSize = 15f;
-            ltmp.alignment = TextAlignmentOptions.MidlineLeft;
-            ltmp.color = s.textColor;
-            ltmp.raycastTarget = false;
-
-            var back = new GameObject("Background", typeof(RectTransform), typeof(Image));
-            back.transform.SetParent(row.transform, false);
-            var brt = (RectTransform)back.transform;
-            brt.anchorMin = new Vector2(0f, 0f); brt.anchorMax = new Vector2(1f, 1f);
-            brt.offsetMin = new Vector2(94f, 2f); brt.offsetMax = new Vector2(0f, -2f);
-            var bimg = back.GetComponent<Image>();
-            bimg.sprite = white;
-            bimg.color = new Color(0f, 0f, 0f, 0.55f);
-            bimg.raycastTarget = false;
-
-            var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
-            fillGo.transform.SetParent(back.transform, false);
-            var frt = (RectTransform)fillGo.transform;
-            frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one;
-            frt.offsetMin = new Vector2(2f, 2f); frt.offsetMax = new Vector2(-2f, -2f);
-            var fill = fillGo.GetComponent<Image>();
-            fill.sprite = white;
-            fill.type = Image.Type.Filled;
-            fill.fillMethod = Image.FillMethod.Horizontal;
-            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
-            fill.fillAmount = 1f;
-            fill.color = StatusColor(key);
-            fill.raycastTarget = false;
-
-            var valueGo = new GameObject("Value", typeof(RectTransform));
-            valueGo.transform.SetParent(back.transform, false);
-            var vrt = (RectTransform)valueGo.transform;
-            vrt.anchorMin = Vector2.zero; vrt.anchorMax = Vector2.one;
-            vrt.offsetMin = new Vector2(6f, 0f); vrt.offsetMax = new Vector2(-6f, 0f);
-            var vtmp = valueGo.AddComponent<TextMeshProUGUI>();
-            vtmp.text = "100 / 100";
-            vtmp.fontSize = 13f;
-            vtmp.alignment = TextAlignmentOptions.MidlineRight;
-            vtmp.color = Color.white;
-            vtmp.raycastTarget = false;
-
-            uiImage.objectReferenceValue = fill;
-            sso.ApplyModifiedProperties();
-            bars.AddRow(status, fill, vtmp, row);
-        }
-        bars.RemoveMissingRows();
-        EditorUtility.SetDirty(bars);
-
-        int Order(StatusManager st)
-        {
-            int i = System.Array.IndexOf(StatusOrder, Key(st));
-            return i < 0 ? StatusOrder.Length : i;
-        }
-    }
-
-    private static TMP_Text FindValue(Transform row)
-    {
-        Transform v = row.Find("Background/Value");
-        return v != null ? v.GetComponent<TMP_Text>() : null;
-    }
-
-    /// <summary>
-    /// Removes extra bars with the same name (left by builds that ran twice): the one a status manager uses is kept,
-    /// otherwise the first one.
-    /// </summary>
-    private static void RemoveDuplicateBars(Transform panel, List<StatusManager> statuses)
-    {
-        var used = new HashSet<Transform>();
-        foreach (StatusManager st in statuses)
-        {
-            var img = new SerializedObject(st).FindProperty("uiImage").objectReferenceValue as Image;
-            if (img != null && img.transform.IsChildOf(panel))
-            {
-                Transform row = img.transform;
-                while (row.parent != panel) row = row.parent;
-                used.Add(row);
-            }
-        }
-        var byName = new Dictionary<string, List<Transform>>();
-        foreach (Transform child in panel)
-        {
-            if (!child.name.EndsWith("Bar")) continue;
-            if (!byName.TryGetValue(child.name, out List<Transform> list)) byName[child.name] = list = new List<Transform>();
-            list.Add(child);
-        }
-        int removed = 0;
-        foreach (List<Transform> group in byName.Values)
-        {
-            if (group.Count < 2) continue;
-            Transform keep = group.Find(t => used.Contains(t)) ?? group[0];
-            foreach (Transform t in group)
-            {
-                if (t == keep) continue;
-                DestroyObj(t.gameObject);
-                removed++;
-            }
-        }
-        if (removed > 0)
-            Debug.Log($"[Inventory UI Builder] Removed {removed} duplicate status bar(s) under '{panel.name}'.", panel);
-    }
-
-    private static string Key(StatusManager status)
-    {
-        string n = status.GetType().Name;
-        return n.EndsWith("Manager") ? n.Substring(0, n.Length - "Manager".Length) : n;
+        if (manager == null) return;
+        PlayerHUD hud = player != null ? player.GetComponentInChildren<PlayerHUD>(true) : null;
+        if (hud == null) hud = manager.GetComponentInChildren<PlayerHUD>(true) ?? manager.GetComponentInParent<PlayerHUD>();
+        if (hud != null) return;
+        hud = AddComp<PlayerHUD>(manager.gameObject);
+        EditorUtility.SetDirty(manager.gameObject);
+        Debug.Log("[Inventory UI Builder] Added a Player HUD: it shows the status bars (the old StatusBars panel is no longer built). " +
+                  "Player HUD ▸ Build Status UI builds them into the prefab to restyle them.", hud);
     }
 
     /// <summary>The "look at something to interact" prompt of the Player component: a progress circle and a text.</summary>
@@ -1653,9 +1459,13 @@ public static class InventoryUIBuilder
     }
 
     // ------------------------------------------------------------------ prefabs
+    private const string LegacyPrefabFolder = "Assets/Inventory/Generated";
+
     private static string EnsureFolder(string folder)
     {
-        folder = string.IsNullOrWhiteSpace(folder) ? "Assets/Inventory/Generated" : folder.Replace('\\', '/').TrimEnd('/');
+        // Empty, or the folder older versions used: the organised one (Organise Generated Assets moves the old prefabs there).
+        folder = string.IsNullOrWhiteSpace(folder) || folder.TrimEnd('/') == LegacyPrefabFolder && !AssetDatabase.IsValidFolder(LegacyPrefabFolder)
+            ? SMAssets.FolderPath(SMAssets.InventoryUI) : folder.Replace('\\', '/').TrimEnd('/');
         if (!folder.StartsWith("Assets"))
             folder = "Assets/" + folder;
         string[] parts = folder.Split('/');

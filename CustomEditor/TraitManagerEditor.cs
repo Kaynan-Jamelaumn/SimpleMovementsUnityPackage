@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Linq;
@@ -47,9 +47,9 @@ public class TraitManagerEditor : Editor
         AbilityEditorUI.Section("Configuration");
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.PropertyField(serializedObject.FindProperty("traitDatabase"));
-        if (GUILayout.Button(new GUIContent("Find", "Use Resources/TraitDatabase, or the first Trait Database in the project."), GUILayout.Width(50)))
+        if (GUILayout.Button(new GUIContent("Find", "Use Resources/SimpleMovements/Databases/TraitDatabase, or the first Trait Database in the project."), GUILayout.Width(50)))
         {
-            TraitDatabase db = Resources.Load<TraitDatabase>("TraitDatabase");
+            TraitDatabase db = SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase");
             if (db == null)
             {
                 string[] guids = AssetDatabase.FindAssets("t:TraitDatabase");
@@ -158,7 +158,7 @@ public class TraitManagerEditor : Editor
             if (all.Count == 0) menu.AddDisabledItem(new GUIContent("No traits yet - use Create From Preset"));
             menu.ShowAsContext();
         }
-        if (GUILayout.Button(new GUIContent("+ Create From Preset ▾", "Create a new Trait asset from a preset (saved next to this prefab), add it to the database and to the starting traits.")))
+        if (GUILayout.Button(new GUIContent("+ Create From Preset ▾", "Create a new Trait asset from a preset (saved in Resources/SimpleMovements/Characters/Traits), add it to the database and to the starting traits.")))
         {
             var menu = new GenericMenu();
             foreach (TraitPresets.Preset p in TraitPresets.All)
@@ -166,7 +166,7 @@ public class TraitManagerEditor : Editor
                 TraitPresets.Preset captured = p;
                 menu.AddItem(new GUIContent($"{p.category}/{p.name}", p.description), false, () =>
                 {
-                    Trait t = TraitPresets.CreateAsset(captured, AbilityEditorUI.FolderFor(m));
+                    Trait t = TraitPresets.CreateAsset(captured, SMAssetsEditor.Folder(SMAssets.Traits));
                     TraitDatabase db = dbRef != null ? dbRef : TraitDatabase.Instance;
                     if (db != null) db.AddTrait(t);
                     AddStarting(m, t);
@@ -209,7 +209,7 @@ public class TraitManagerEditor : Editor
         var w = new List<string>();
         if (go.GetComponent<PlayerStatusController>() == null && go.GetComponentInParent<PlayerStatusController>() == null)
             AbilityEditorUI.Add(issues, MessageType.Error, "No PlayerStatusController on this object or a parent: stat modifiers have nothing to change.");
-        if (serializedObject.FindProperty("traitDatabase").objectReferenceValue == null && Resources.Load<TraitDatabase>("TraitDatabase") == null)
+        if (serializedObject.FindProperty("traitDatabase").objectReferenceValue == null && SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase") == null)
             AbilityEditorUI.Add(issues, MessageType.Warning, "No Trait Database assigned or in Resources: the character creation screen has no traits to show.", "Create",
                 () => EditorApplication.ExecuteMenuItem("Tools/SimpleMovements/Project Setup/Create Trait Database (Resources)"));
 

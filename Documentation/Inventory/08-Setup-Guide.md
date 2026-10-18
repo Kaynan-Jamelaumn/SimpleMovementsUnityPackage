@@ -21,7 +21,7 @@ Step-by-step recipes. The reference for every field is in chapters 02–05; the 
    | Status bars (one per status manager) | Top left |
    | Interaction prompt | Screen centre |
    | Armor Sets window + a **Sets** button on the inventory | Centre, closed |
-   | Slot and item prefabs, sprites | `Assets/Inventory/Generated` |
+   | Slot and item prefabs, sprites | `Assets/Resources/SimpleMovements/UI/Inventory` |
 
    Every reference is assigned. **Build / Repair UI Now** on the `InventoryManager` does it on demand;
    **UI Builder…** lets you choose slot counts, sizes, colours and which parts to build.

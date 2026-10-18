@@ -62,6 +62,11 @@ namespace ProceduralDungeon
             "#.....#\n" +
             "###D###";
 
+        [Header("Shape Mask mode: building pieces (optional)")]
+        [Tooltip("This room's own floor tiles, walls, ceiling tiles, door frames and pillars (instead of the theme's tile kit or " +
+                 "the generated geometry). Empty pieces use the theme's. Prefab mode rooms bring their own geometry instead.")]
+        public RoomPieces pieces = new RoomPieces();
+
         [Header("Prefab mode")]
         [Tooltip("REQUIRED in Prefab mode. The room prefab, covering Footprint cells (x Cell Size meters). It must bring its own floor, walls and colliders.")]
         public GameObject prefab;

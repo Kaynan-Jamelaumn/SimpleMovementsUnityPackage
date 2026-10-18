@@ -76,7 +76,7 @@ It creates only what is missing, once per object and editor session, as one undo
 | **Status bars**: one per status manager of the player (health, mana, stamina, hunger, thirst, sleep, sanity, body heat, oxygen, weight) with "75 / 100" values | top left | each manager's **UI Image** |
 | Interaction prompt (progress circle + text) | screen centre | `Player` ▸ Interaction UI, Filling Circle, Interaction Text, Inventory Manager |
 | **Armor Sets window**: worn-set list, selected set (icon, name, progress bar, description), its pieces, active / next bonuses, close button; a **Sets** button on the inventory panel | centre, closed | every field of `ArmorSetUIManager` (player's `ArmorSetManager`, `InventoryManager`, canvas, audio source) and the inventory's Armor Set UI Manager |
-| Slot and item prefabs, bar and circle sprites, armor set entry prefabs (`ArmorSetListItem`, `ArmorSetBonus`, `ArmorSetPieceSlot`) | `Assets/Inventory/Generated` | Item Prefab, Slot Prefab, the set UI's prefabs |
+| Slot and item prefabs, bar and circle sprites, armor set entry prefabs (`ArmorSetListItem`, `ArmorSetBonus`, `ArmorSetPieceSlot`) | `Assets/Resources/SimpleMovements/UI/Inventory` | Item Prefab, Slot Prefab, the set UI's prefabs |
 
 * The preview slots show the layout while editing; when the game starts the inventory replaces them with the
   configured **Number Of Hot Bar Slots / Number Of Inventory Slots**.

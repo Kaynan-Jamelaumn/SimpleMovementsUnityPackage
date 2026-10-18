@@ -116,7 +116,8 @@ public class AppearanceOption
     [Tooltip("Blend shapes set while this option is picked (set back to 0 when another one is).")]
     public AppearanceBlendShape[] blendShapes = new AppearanceBlendShape[0];
     [Tooltip("Parts of the body hidden while this option is shown: a new torso hides the Torso, a hood the Hair. " +
-             "Body Models: None = the whole placeholder body is replaced.")]
+             "None = what the part replaces: the whole placeholder body for Body Models, the Ears / Torso / Arms / Hands / " +
+             "Legs / Feet for those parts, nothing for Outfits (tick what an outfit covers: armour covering all of it hides it too).")]
     public BodyRegion hides = BodyRegion.None;
     [Tooltip("The colour it takes. Auto = the hair colour for hair, beards and eyebrows, none for the rest.")]
     public AppearanceTint tint = AppearanceTint.Auto;
@@ -129,7 +130,8 @@ public class AppearanceOption
 
 /// <summary>
 /// What a character looks like, applied to its model: male / female body, skin colour, hairstyle and colour, beard,
-/// eye shape and colour, nose shape and two face sliders (<see cref="CharacterAppearanceData"/>).
+/// eye shape and colour, nose shape, head / face, ears, body model, torso, arms, hands, legs, feet, outfit and two face
+/// sliders (<see cref="CharacterAppearanceData"/>).
 /// <para><b>Your own model:</b> list the options of each part — objects of the model to show (hair meshes, beards),
 /// prefabs to attach to a bone, and / or blend shapes — plus the male / female body objects or blend shapes and the
 /// renderers that take the skin, hair and eye colours.</para>
@@ -168,6 +170,28 @@ public class CharacterAppearance : MonoBehaviour
              "parts, made for the character's skeleton (same bone names, or Humanoid) - they move with its animation. " +
              "Hides = None replaces the whole placeholder body; tick regions to replace only those parts.")]
     public List<AppearanceOption> bodyModels = new List<AppearanceOption>();
+
+    [Header("Body Parts (choices after the default one)")]
+    [Tooltip("Ears the player can pick (Appearance > Head > Ears) instead of the default ones. Hides = None replaces the Ears region " +
+             "(the model's ears, the placeholder head's and the race's pointed ears).")]
+    public List<AppearanceOption> earStyles = new List<AppearanceOption>();
+    [Tooltip("Torsos / chests (Appearance > Body > Torso). A skinned mesh made for the character's skeleton moves with it. " +
+             "Hides = None replaces the Torso region.")]
+    public List<AppearanceOption> torsoStyles = new List<AppearanceOption>();
+    [Tooltip("Arms (both, one mesh or one option with the two objects). Hides = None replaces the Arms region.")]
+    public List<AppearanceOption> armStyles = new List<AppearanceOption>();
+    [Tooltip("Hands. Hides = None replaces the Hands region.")]
+    public List<AppearanceOption> handStyles = new List<AppearanceOption>();
+    [Tooltip("Legs (and hips). Hides = None replaces the Legs region.")]
+    public List<AppearanceOption> legStyles = new List<AppearanceOption>();
+    [Tooltip("Feet (bare feet, boots). Hides = None replaces the Feet region.")]
+    public List<AppearanceOption> footStyles = new List<AppearanceOption>();
+
+    [Header("Outfits (clothes under armour)")]
+    [Tooltip("Clothes the player can pick (Appearance > Body > Outfit), after \"None\": a shirt, a robe, a whole outfit. Tick in " +
+             "Hides the regions it covers (the body under it is hidden; armour covering all of them hides it too). Tint Shirt / " +
+             "Trousers lets the player colour it with the Clothes swatches. Worn equipment is separate (Equipment Visuals).")]
+    public List<AppearanceOption> outfits = new List<AppearanceOption>();
 
     [Header("Body Regions (hidden under armour)")]
     [Tooltip("Renderers of each part of the body: worn armour hides the regions it covers (a helmet the hair, boots the feet) " +
@@ -248,6 +272,7 @@ public class CharacterAppearance : MonoBehaviour
     private static readonly string[] BrowNames = { "Natural", "Thick", "Thin", "Arched", "Straight", "None" };
     private static readonly string[] HeadNames = { "Oval", "Round", "Long", "Square", "Narrow" };
     private static readonly string[] BodyNames = { "Default" };
+    private static readonly string[] OutfitNames = { "None" };
     private static readonly Vector3[] HeadShapes =
     {
         Vector3.one, new Vector3(1.05f, 0.97f, 1.03f), new Vector3(0.96f, 1.07f, 0.99f), new Vector3(1.06f, 1.0f, 1.04f), new Vector3(0.93f, 1.03f, 0.97f),
@@ -277,7 +302,14 @@ public class CharacterAppearance : MonoBehaviour
             case AppearancePart.Eyes: return EyeNames;
             case AppearancePart.Eyebrows: return BrowNames;
             case AppearancePart.Head: return HeadNames;
-            case AppearancePart.Body: return BodyNames;
+            case AppearancePart.Body:
+            case AppearancePart.Ears:
+            case AppearancePart.Torso:
+            case AppearancePart.Arms:
+            case AppearancePart.Hands:
+            case AppearancePart.Legs:
+            case AppearancePart.Feet: return BodyNames;
+            case AppearancePart.Outfit: return OutfitNames;
             default: return NoseNames;
         }
     }
@@ -292,21 +324,67 @@ public class CharacterAppearance : MonoBehaviour
             case AppearancePart.Eyebrows: return eyebrowStyles ?? (eyebrowStyles = new List<AppearanceOption>());
             case AppearancePart.Head: return headStyles ?? (headStyles = new List<AppearanceOption>());
             case AppearancePart.Body: return bodyModels ?? (bodyModels = new List<AppearanceOption>());
+            case AppearancePart.Ears: return earStyles ?? (earStyles = new List<AppearanceOption>());
+            case AppearancePart.Torso: return torsoStyles ?? (torsoStyles = new List<AppearanceOption>());
+            case AppearancePart.Arms: return armStyles ?? (armStyles = new List<AppearanceOption>());
+            case AppearancePart.Hands: return handStyles ?? (handStyles = new List<AppearanceOption>());
+            case AppearancePart.Legs: return legStyles ?? (legStyles = new List<AppearanceOption>());
+            case AppearancePart.Feet: return footStyles ?? (footStyles = new List<AppearanceOption>());
+            case AppearancePart.Outfit: return outfits ?? (outfits = new List<AppearanceOption>());
             default: return noseStyles;
+        }
+    }
+
+    /// <summary>
+    /// The part's first choice is the default one ("Default" body, ears, torso..., "None" outfit) and the rest are your
+    /// options; no placeholder shapes.
+    /// </summary>
+    public static bool HasDefaultChoice(AppearancePart part) =>
+        part == AppearancePart.Body || part == AppearancePart.Ears || part == AppearancePart.Torso || part == AppearancePart.Arms ||
+        part == AppearancePart.Hands || part == AppearancePart.Legs || part == AppearancePart.Feet || part == AppearancePart.Outfit;
+
+    /// <summary>The regions a chosen option of the part replaces when its Hides is None.</summary>
+    public static BodyRegion DefaultHides(AppearancePart part)
+    {
+        switch (part)
+        {
+            case AppearancePart.Body: return WholeBody;
+            case AppearancePart.Ears: return BodyRegion.Ears;
+            case AppearancePart.Torso: return BodyRegion.Torso;
+            case AppearancePart.Arms: return BodyRegion.Arms;
+            case AppearancePart.Hands: return BodyRegion.Hands;
+            case AppearancePart.Legs: return BodyRegion.Legs;
+            case AppearancePart.Feet: return BodyRegion.Feet;
+            default: return BodyRegion.None;
+        }
+    }
+
+    /// <summary>The shirt / trouser colours show: on the placeholder body, or on a chosen option tinted Shirt / Trousers.</summary>
+    public bool UsesClothColors
+    {
+        get
+        {
+            if (procedural != null) return true;
+            foreach (AppearancePart part in (AppearancePart[])Enum.GetValues(typeof(AppearancePart)))
+            {
+                AppearanceOption o = OptionAt(part, current.Style(part));
+                if (o != null && (o.tint == AppearanceTint.Shirt || o.tint == AppearanceTint.Trousers)) return true;
+            }
+            return false;
         }
     }
 
     /// <summary>The part has no options of its own and shows only placeholder shapes.</summary>
     public bool UsesPlaceholder(AppearancePart part) =>
-        part != AppearancePart.Body && placeholderParts && (Options(part) == null || Options(part).Count == 0);
+        !HasDefaultChoice(part) && placeholderParts && (Options(part) == null || Options(part).Count == 0);
 
     /// <summary>
     /// How many placeholder choices come first: all of them when the part has no options, or when your options are extra
-    /// choices (Placeholder Styles); the body always starts with "Default".
+    /// choices (Placeholder Styles); the body, body parts and outfits always start with "Default" / "None".
     /// </summary>
     public int PlaceholderCount(AppearancePart part)
     {
-        if (part == AppearancePart.Body) return 1;
+        if (HasDefaultChoice(part)) return 1;
         if (!placeholderParts) return 0;
         List<AppearanceOption> o = Options(part);
         if (o == null || o.Count == 0) return PlaceholderNames(part).Length;
@@ -512,8 +590,8 @@ public class CharacterAppearance : MonoBehaviour
             }
         }
         BodyRegion hides = pick.hides;
-        if (part == AppearancePart.Body && hides == BodyRegion.None)
-            hides = WholeBody;
+        if (hides == BodyRegion.None)
+            hides = DefaultHides(part);
         if (hides != BodyRegion.None) HideRegions(PartKey(part), hides);
         else ShowRegions(PartKey(part));
         if (part == AppearancePart.Body && !keep)
@@ -995,10 +1073,33 @@ public class CharacterAppearance : MonoBehaviour
         BodyRegion h = HiddenRegions;
         if (h == BodyRegion.None)
             return;
+        // A chosen body model, body part or outfit hides what it replaces, not itself (its objects may be listed in the
+        // Body Regions): it stays shown unless something else (worn armour) covers everything it replaces.
+        var keep = new HashSet<Renderer>();
+        var covered = new List<AppearancePart>();
+        foreach (AppearancePart part in ReplacingParts)
+        {
+            AppearanceOption chosen = OptionAt(part, current.Style(part));
+            if (chosen == null) continue;
+            BodyRegion own = chosen.hides != BodyRegion.None ? chosen.hides : DefaultHides(part);
+            BodyRegion others = BodyRegion.None;
+            string key = PartKey(part);
+            foreach (KeyValuePair<object, BodyRegion> kv in hiddenBy)
+                if (!Equals(kv.Key, key)) others |= kv.Value;
+            if (own != BodyRegion.None && (others & own) == own)
+            {
+                covered.Add(part);
+                continue;
+            }
+            foreach (GameObject go in chosen.objects)
+                if (go != null) keep.UnionWith(go.GetComponentsInChildren<Renderer>(true));
+            if (attached.TryGetValue(part, out GameObject inst) && inst != null)
+                keep.UnionWith(inst.GetComponentsInChildren<Renderer>(true));
+        }
         void HideAll(IEnumerable<Renderer> rs)
         {
             foreach (Renderer r in rs)
-                if (r != null && r.enabled) { r.enabled = false; regionHidden.Add(r); }
+                if (r != null && r.enabled && !keep.Contains(r)) { r.enabled = false; regionHidden.Add(r); }
         }
         foreach (AppearanceRegion ar in bodyRegions)
             if (ar != null && ar.renderers != null && (ar.region & h) != 0)
@@ -1026,9 +1127,23 @@ public class CharacterAppearance : MonoBehaviour
             HidePart(AppearancePart.Eyebrows);
             if (headSkin != null) HideAll(headSkin.GetComponentsInChildren<Renderer>(true));
         }
-        if ((h & BodyRegion.Ears) != 0 && earGroup != null)
-            HideAll(earGroup.GetComponentsInChildren<Renderer>(true));
+        if ((h & BodyRegion.Ears) != 0)
+        {
+            if (earGroup != null) HideAll(earGroup.GetComponentsInChildren<Renderer>(true));
+            if (headSkin != null)
+                foreach (Renderer r in headSkin.GetComponentsInChildren<Renderer>(true))
+                    if (r.name == "Ear") HideAll(new[] { r });
+        }
+        foreach (AppearancePart part in covered)
+            HidePart(part);
     }
+
+    /// <summary>The parts whose options replace regions of the body.</summary>
+    private static readonly AppearancePart[] ReplacingParts =
+    {
+        AppearancePart.Body, AppearancePart.Ears, AppearancePart.Torso, AppearancePart.Arms, AppearancePart.Hands,
+        AppearancePart.Legs, AppearancePart.Feet, AppearancePart.Outfit,
+    };
 
     // ------------------------------------------------------------------ modular models
     private static readonly string[] BodyWords = { "torso", "chest", "arm", "hand", "leg", "hip", "foot", "feet", "body", "spine", "shoulder", "elbow", "knee" };
@@ -1204,7 +1319,7 @@ public class CharacterAppearance : MonoBehaviour
 
     private void ClearPlaceholder(AppearancePart part)
     {
-        if (part == AppearancePart.Body)
+        if (HasDefaultChoice(part))
             return;
         if (part == AppearancePart.Head)
         {
@@ -1219,8 +1334,8 @@ public class CharacterAppearance : MonoBehaviour
 
     private void BuildPlaceholder(AppearancePart part)
     {
-        if (part == AppearancePart.Body)
-            return; // the default body: the model's own, or the placeholder body
+        if (HasDefaultChoice(part))
+            return; // the default body / part: the model's own, or the placeholder body's; no outfit
         if (part == AppearancePart.Head)
         {
             ApplyHeadShape(current.Style(part));

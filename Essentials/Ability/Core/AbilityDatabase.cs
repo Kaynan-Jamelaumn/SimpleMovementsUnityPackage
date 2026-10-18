@@ -23,7 +23,7 @@ public class AbilityDatabase : ScriptableObject
     /// </summary>
     private static readonly Dictionary<string, AbilityDefinition> runtimeById = new Dictionary<string, AbilityDefinition>();
 
-    /// <summary>The database in Resources/AbilityDatabase (null if there is none).</summary>
+    /// <summary>The database in Resources/SimpleMovements/Databases/AbilityDatabase (null if there is none).</summary>
     public static AbilityDatabase Instance
     {
         get
@@ -31,7 +31,7 @@ public class AbilityDatabase : ScriptableObject
             if (instance == null && !searched)
             {
                 searched = true;
-                instance = Resources.Load<AbilityDatabase>("AbilityDatabase");
+                instance = SMAssets.Load<AbilityDatabase>(SMAssets.Databases, "AbilityDatabase");
             }
             return instance;
         }

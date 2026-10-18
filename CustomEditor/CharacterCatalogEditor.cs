@@ -11,12 +11,11 @@ using UnityEngine;
 [CustomEditor(typeof(CharacterCatalog))]
 public class CharacterCatalogEditor : Editor
 {
-    private const string AssetPath = "Assets/Resources/CharacterCatalog.asset";
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Character Catalog (Resources)", false, SMMenu.ProjectSetup + 3)]
     public static void CreateCatalog()
     {
-        CharacterCatalog existing = Resources.Load<CharacterCatalog>("CharacterCatalog");
+        CharacterCatalog existing = SMAssets.Load<CharacterCatalog>(SMAssets.Databases, "CharacterCatalog");
         if (existing != null)
         {
             if (EditorUtility.DisplayDialog("Character Catalog", $"A catalog already exists at {AssetDatabase.GetAssetPath(existing)}.", "Fill From Project", "Select It"))
@@ -24,16 +23,11 @@ public class CharacterCatalogEditor : Editor
             Selection.activeObject = existing;
             return;
         }
-        Directory.CreateDirectory(Path.GetDirectoryName(AssetPath));
-        var catalog = CreateInstance<CharacterCatalog>();
-        Fill(catalog, false);
-        AssetDatabase.CreateAsset(catalog, AssetPath);
-        AssetDatabase.SaveAssets();
-        Selection.activeObject = catalog;
-        Debug.Log($"[Characters] Character Catalog created at {AssetPath} with {catalog.races.Count} race(s) and {catalog.classes.Count} class(es).", catalog);
+        CharacterCatalog catalog = SMAssetsEditor.FindOrCreate<CharacterCatalog>(SMAssets.Databases, "CharacterCatalog", c => Fill(c, false));
+        Debug.Log($"[Characters] Character Catalog at {AssetDatabase.GetAssetPath(catalog)} with {catalog.races.Count} race(s) and {catalog.classes.Count} class(es).", catalog);
     }
 
-    private const string ExampleFolder = "Assets/Characters/Races";
+    private static string ExampleFolder => SMAssetsEditor.Folder(SMAssets.Races);
 
     /// <summary>
     /// Creates four example races with their look (height, build, ears, beards) and a few stats, and adds them to the
@@ -43,7 +37,6 @@ public class CharacterCatalogEditor : Editor
     [MenuItem(SMMenu.Root + "Project Setup/Create Example Races (Human, Dwarf, Elf, Barbarian)", false, SMMenu.ProjectSetup + 4)]
     public static void CreateExampleRaces()
     {
-        Directory.CreateDirectory(ExampleFolder);
         var made = new List<CharacterArchetype>();
         made.Add(Race("Human", "Adaptable and ambitious: humans learn a little of everything.", new Vector2(1.6f, 1.95f), 1.78f, a =>
         {
@@ -81,11 +74,11 @@ public class CharacterCatalogEditor : Editor
         }));
         AssetDatabase.SaveAssets();
 
-        CharacterCatalog catalog = Resources.Load<CharacterCatalog>("CharacterCatalog");
+        CharacterCatalog catalog = SMAssets.Load<CharacterCatalog>(SMAssets.Databases, "CharacterCatalog");
         if (catalog == null)
         {
             CreateCatalog();
-            catalog = Resources.Load<CharacterCatalog>("CharacterCatalog");
+            catalog = SMAssets.Load<CharacterCatalog>(SMAssets.Databases, "CharacterCatalog");
         }
         if (catalog != null)
         {
@@ -194,13 +187,20 @@ public class CharacterAppearanceEditor : Editor
         var a = (CharacterAppearance)target;
         EditorGUILayout.HelpBox("Body type, hair, beard, eyes and nose chosen on the creation screen are shown here. Parts without options " +
                                 "use placeholder shapes on the head; list real options (objects of the model, prefabs on a bone, or blend " +
-                                "shapes) to replace them. Male / Female objects or blend shapes switch the body.", MessageType.None);
+                                "shapes) to replace them. Male / Female objects or blend shapes switch the body. Head Styles are head / face " +
+                                "meshes; Body Models, Body Parts (ears, torso, arms, hands, legs, feet) and Outfits are extra choices after " +
+                                "the default one (their cards show on the creation screen once they have options).", MessageType.None);
         var lines = new List<string>();
         foreach (AppearancePart part in (AppearancePart[])System.Enum.GetValues(typeof(AppearancePart)))
         {
             int own = a.Options(part) != null ? a.Options(part).Count : 0;
             if (part == AppearancePart.Body)
                 lines.Add(own > 0 ? $"Body: default + {own} body model(s)" : "Body: default only (add Body Models for other bodies)");
+            else if (CharacterAppearance.HasDefaultChoice(part))
+            {
+                string first = CharacterAppearance.PlaceholderNames(part)[0].ToLowerInvariant();
+                lines.Add(own > 0 ? $"{part}: {first} + {own} of yours" : $"{part}: {first} only");
+            }
             else
                 lines.Add($"{part}: " + (a.UsesPlaceholder(part) ? "placeholder shapes"
                     : a.PlaceholderCount(part) > 0 ? $"placeholder shapes + {own} of yours" : $"{own} of yours"));

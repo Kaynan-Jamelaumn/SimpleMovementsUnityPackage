@@ -126,6 +126,7 @@ public class PlayerAbilityController : AbilityCaster
     protected override void Awake()
     {
         base.Awake();
+        AbilityReceived += RecordAbsorbedLevel;
         if (animator == null)
         {
             PlayerAnimationModel model = GetComponentInChildren<PlayerAnimationModel>();
@@ -521,6 +522,66 @@ public class PlayerAbilityController : AbilityCaster
         enabledControllers.Remove(this);
         EndTargeting(false);
         base.OnDisable();
+    }
+
+    // ------------------------------------------------------------------ absorption milestones
+    /// <summary>
+    /// Also refuses a new absorbed ability when the character's absorption milestones are full (one ability per milestone
+    /// level reached, see <see cref="AbsorptionMilestones"/>). A stronger copy of an ability it already holds is still accepted.
+    /// </summary>
+    public override bool CanReceive(AbilityGrant grant)
+    {
+        if (!base.CanReceive(grant))
+            return false;
+        AbsorptionMilestones m = AbsorptionMilestones.For(this);
+        if (m == null || !m.enabled || IndexOf(grant.ability) >= 0)
+            return true;
+        return AbsorbedCount < m.CapacityAt(AbsorptionMilestones.LevelOf(this));
+    }
+
+    /// <summary>How many absorbed abilities the player holds.</summary>
+    public int AbsorbedCount
+    {
+        get
+        {
+            int n = 0;
+            for (int i = 0; i < slots.Count; i++)
+                if (slots[i] != null && slots[i].Grant != null && slots[i].ability != null) n++;
+            return n;
+        }
+    }
+
+    private void RecordAbsorbedLevel(AbilityGrant grant, int index)
+    {
+        if (grant != null && grant.absorbedAtLevel <= 0)
+            grant.absorbedAtLevel = AbsorptionMilestones.LevelOf(this);
+    }
+
+    /// <summary>
+    /// Removes the <paramref name="count"/> most recently absorbed abilities (highest absorption level, then latest) and
+    /// returns their names. Used by the Milestone Regression death penalty.
+    /// </summary>
+    public List<string> ForgetLatestAbsorbed(int count)
+    {
+        var lost = new List<string>();
+        for (int n = 0; n < count; n++)
+        {
+            int best = -1;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                AbilitySlot s = slots[i];
+                if (s == null || s.Grant == null || s.ability == null) continue;
+                if (best < 0) { best = i; continue; }
+                AbilityGrant b = slots[best].Grant;
+                if (s.Grant.absorbedAtLevel > b.absorbedAtLevel ||
+                    (s.Grant.absorbedAtLevel == b.absorbedAtLevel && s.Grant.receivedTime > b.receivedTime))
+                    best = i;
+            }
+            if (best < 0) break;
+            lost.Add(slots[best].Grant.Name);
+            ClearSlot(best);
+        }
+        return lost;
     }
 
     // ------------------------------------------------------------------ saving absorbed abilities

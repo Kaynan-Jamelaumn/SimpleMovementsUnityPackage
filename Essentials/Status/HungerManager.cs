@@ -1,80 +1,43 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Assertions;
-using UnityEngine.UI;
 
-public class HungerManager : StatusManager
+/// <summary>
+/// Hunger (100 = fed, 0 = starving). Drains <b>Decrement Value</b> every <b>Consuming Tick Rate</b> seconds (see
+/// <see cref="NeedStatusManager"/>); food, potions and abilities fill it. While empty the character loses
+/// <see cref="starvingHpPenalty"/> health every <see cref="starvingHpPenaltyTickRate"/> seconds.
+/// </summary>
+public class HungerManager : NeedStatusManager
 {
-    private HealthManager healthManager;
-
-
     [Header("Hunger-related fields")]
+    [Tooltip("Health lost per starvation tick while hunger is 0.")]
     [SerializeField] private float starvingHpPenalty = 1f;
-    //[SerializeField] private float starvingHpPenaltyTickRate = 1f;
-    private Coroutine foodConsumptionRoutine;
-    private Coroutine foodPenaltyRoutine;
+    [Tooltip("Seconds between two starvation ticks.")]
+    [SerializeField] private float starvingHpPenaltyTickRate = 2f;
 
     private List<CoroutineInfo> foodEffectRoutines = new List<CoroutineInfo>();
-    public Coroutine FoodConsumptionRoutine { get => foodConsumptionRoutine; set => foodConsumptionRoutine = value; }
-    public Coroutine FoodPenaltyRoutine { get => foodPenaltyRoutine; set => foodPenaltyRoutine = value; }
     public List<CoroutineInfo> FoodEffectRoutines { get => foodEffectRoutines; set => foodEffectRoutines = value; }
 
-    private void Awake()
-    {
-        healthManager = GetComponent<HealthManager>();   
-    }
-    private void Start()
-    {
-        // A client's copy keeps the value the server sent (it may have arrived before Start).
-        if (!IsReplica)
-            currentValue = maxValue;
-        ValidateAssignments();
-    }
+    /// <summary>Kept for older scripts: hunger no longer uses a consumption coroutine (always null).</summary>
+    public Coroutine FoodConsumptionRoutine { get => null; set { } }
+    /// <summary>Kept for older scripts: the starvation penalty no longer uses a coroutine (always null).</summary>
+    public Coroutine FoodPenaltyRoutine { get => null; set { } }
 
-    private void Update()
-    {
-        if (IsReplica)
-            return; // decay and the starvation penalty run on the server
-        if (currentValue <= 0 && FoodPenaltyRoutine == null)
-        {
-            ApplyHungerPenalty();
-        }
-        FoodConsumptionRoutine = shouldConsume && !isConsuming ? StartCoroutine(ConsumeFoodRoutine()) : null;
+    protected override float PenaltyDamage => starvingHpPenalty;
+    protected override float PenaltyInterval => starvingHpPenaltyTickRate;
 
-    }
-    private void ValidateAssignments()
-    {
-        Assert.IsNotNull(healthManager, "HealthManager is not assigned in healthManager.");
-    }
     public void UpdateFoodBar()
     {
         UpdateBar(currentValue, maxValue, uiImage);
         currentValue = Mathf.Clamp(currentValue, 0, maxValue);
     }
 
-    public void ApplyHungerPenalty()
-    {
-        if (IsReplica) return;
-        FoodPenaltyRoutine = StartCoroutine(HungerPenalty());
-    }
-    public void ConsumeFood(float amount)
-    {
-        if (IsReplica) return;
-        if (currentValue <= 0) return;
-        currentValue -= RemoveFactor(amount);
-    }
+    /// <summary>Kept for older scripts: the penalty runs by itself while hunger is 0.</summary>
+    public void ApplyHungerPenalty() { }
 
-    protected override void UpdateStatus() => UpdateBar();
+    /// <summary>Removes <paramref name="amount"/> hunger now (changed by Decrement Factor).</summary>
+    public void ConsumeFood(float amount) => Consume(amount);
 
-    protected override void OnReplicaChanged(bool on)
-    {
-        // The routines were stopped: forget their handles so the penalty can start again when this machine simulates.
-        FoodConsumptionRoutine = null;
-        FoodPenaltyRoutine = null;
-    }
-    protected override float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
-    protected override float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
     public void AddFoodEffect(string effectName, float foodAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
         => AddEffect(FoodEffectRoutines, effectName, foodAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyFoodEffectRoutine);
     public void AddFoodAddFactorEffect(string effectName, float foodFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
@@ -82,52 +45,10 @@ public class HungerManager : StatusManager
     public void AddFoodRemoveFactorEffect(string effectName, float foodRemoveFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
         => AddEffect(FoodEffectRoutines, effectName, foodRemoveFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, ApplyFoodRemoveFactorEffectRoutine);
 
-    public void RemoveFoodEffect(string effectName = null, Coroutine effectRoutine = null)
-    {
-        RemoveEffect(FoodEffectRoutines, effectName, effectRoutine);
-    }
+    public void RemoveFoodEffect(string effectName = null, Coroutine effectRoutine = null) => RemoveEffect(FoodEffectRoutines, effectName, effectRoutine);
+    public void StopAllFoodEffects() => StopAllEffects(FoodEffectRoutines);
+    public void StopAllFoodEffectsByType(bool isBuff = true) => StopAllEffectsByType(FoodEffectRoutines, isBuff);
 
-    public void StopAllFoodEffects()
-    {
-        StopAllEffects(FoodEffectRoutines);
-    }
-    public void StopAllFoodEffectsByType(bool isBuff = true)
-    {
-        StopAllEffectsByType(FoodEffectRoutines, isBuff);
-    }
-    public IEnumerator ConsumeFoodRoutine()
-    {
-        if (isRegenerating)
-        {
-            isRegenerating = false;
-            yield break;
-        }
-        isRegenerating = true;
-
-        //consume food while it's not below 0
-        while (currentValue >= 0)
-        {
-            currentValue -= decrementValue;
-
-            if (!isRegenerating)
-            {
-                isRegenerating = true;
-                break;
-            }
-            yield return new WaitForSeconds(tickRate);
-        }
-    }
-
-    public IEnumerator HungerPenalty()
-    {
-        while (currentValue <= 0)
-        {
-            healthManager.ConsumeHP(starvingHpPenalty, true);
-            yield return new WaitForSeconds(starvingHpPenalty);
-        }
-
-        FoodPenaltyRoutine = null; // Libera a referência para que a rotina possa ser reiniciada
-    }
     public IEnumerator ApplyFoodEffectRoutine(string effectName, float foodAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
     {
         return ApplyEffectRoutine(
@@ -137,47 +58,23 @@ public class HungerManager : StatusManager
             tickCooldown,
             isProcedural,
             isStackable,
-            perTick =>
-            {
-                float newAmount = perTick > 0 ? AddFactor(perTick) : RemoveFactor(perTick);
-                currentValue += newAmount;
-            },
-            total =>
-            {
-                float newAmount = total > 0 ? AddFactor(total) : RemoveFactor(total);
-                currentValue += newAmount;
-            },
-            _ => currentValue = Mathf.Min(currentValue, maxValue)
+            perTick => currentValue = Mathf.Clamp(currentValue + (perTick > 0 ? AddFactor(perTick) : -RemoveFactor(-perTick)), 0f, maxValue),
+            total => currentValue = Mathf.Clamp(currentValue + (total > 0 ? AddFactor(total) : -RemoveFactor(-total)), 0f, maxValue),
+            _ => currentValue = Mathf.Clamp(currentValue, 0f, maxValue)
         );
     }
 
     public IEnumerator ApplyFoodAddFactorEffectRoutine(string effectName, float foodAddFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            foodAddFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementFactor += perTick,
-            total => incrementFactor = total,
-            original => incrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, foodAddFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementFactor += v);
 
     public IEnumerator ApplyFoodRemoveFactorEffectRoutine(string effectName, float foodRemoveFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
+        => ModifierEffect(effectName, foodRemoveFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => decrementFactor += v);
+
+    protected override void OnValidate()
     {
-        return ApplyEffectRoutine(
-            effectName,
-            foodRemoveFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => decrementFactor += perTick,
-            total => decrementFactor = total,
-            original => decrementFactor -= original
-        );
+        base.OnValidate();
+        starvingHpPenalty = Mathf.Max(0f, starvingHpPenalty);
+        starvingHpPenaltyTickRate = Mathf.Max(0.1f, starvingHpPenaltyTickRate);
     }
 }

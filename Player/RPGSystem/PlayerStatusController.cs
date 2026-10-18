@@ -122,9 +122,22 @@ public class PlayerStatusController : BaseStatusController
         }
 
         InitializeEffectHandlers();
+        if (entity != null)
+            entity.Revived += OnRevived;
         IsInitialized = true;
         OnStatsInitialized?.Invoke();
     }
+
+    // Coming back to life refills the needs (they used to stay at 0 after a death). A Death Penalty component does it with
+    // its own Status Rules; without one the default rules are used.
+    private void OnRevived()
+    {
+        if (IsReplica || GetComponent<DeathPenalty>() != null || GetComponentInParent<DeathPenalty>() != null)
+            return;
+        DeathPenalty.Restore(this, defaultRespawnRules);
+    }
+
+    private static readonly RespawnStatusRules defaultRespawnRules = new RespawnStatusRules();
 
     private void Update()
     {
@@ -133,6 +146,8 @@ public class PlayerStatusController : BaseStatusController
 
     private void OnDestroy()
     {
+        if (entity != null)
+            entity.Revived -= OnRevived;
         // Unsubscribe from events
         if (xpManager != null)
         {

@@ -11,7 +11,7 @@ using UnityEngine;
 public class ArmorSetWizard : EditorWindow
 {
     private string setName = "New Armor Set";
-    private string folder = "Assets";
+    private string folder = SMAssets.FolderPath(SMAssets.Armor);
     private Color color = Color.white;
     private readonly Dictionary<ArmorSlotType, bool> slots = new Dictionary<ArmorSlotType, bool>
     {
@@ -30,12 +30,8 @@ public class ArmorSetWizard : EditorWindow
     {
         var w = GetWindow<ArmorSetWizard>("Armor Set Wizard");
         w.minSize = new Vector2(340, 420);
-        if (Selection.activeObject != null)
-        {
-            string p = AssetDatabase.GetAssetPath(Selection.activeObject);
-            if (!string.IsNullOrEmpty(p))
-                w.folder = AssetDatabase.IsValidFolder(p) ? p : System.IO.Path.GetDirectoryName(p).Replace('\\', '/');
-        }
+        // The folder selected in the Project window, else Resources/SimpleMovements/Items/Armor.
+        w.folder = SMAssetsEditor.SelectedFolderOr(SMAssets.Armor);
     }
 
     private void OnGUI()

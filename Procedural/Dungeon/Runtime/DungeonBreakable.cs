@@ -3,12 +3,20 @@ using UnityEngine;
 namespace ProceduralDungeon
 {
     /// <summary>
-    /// Something that breaks: barrels, crates, wine barrels. A weapon hit (it is an <see cref="IWeaponHittable"/>) or a
-    /// kick (using it) smashes it into a few pieces. In a room with a barrel stash (a wine cellar's hidden loot) every
-    /// broken barrel may be the one hiding it - the last one always is - and the stash appears where the barrel stood.
+    /// Something that breaks: urns, barrels, crates, wine barrels. A weapon hit (it is an <see cref="IWeaponHittable"/>) or
+    /// a kick (using it) smashes it into a few pieces and drops items from its <see cref="dropTable"/> (else the Item Drop
+    /// Manager's Breakable table). In a room with a barrel stash (a wine cellar's hidden loot) every broken barrel may be
+    /// the one hiding it - the last one always is - and the stash appears where the barrel stood.
     /// </summary>
     public class DungeonBreakable : DungeonInteractable, IWeaponHittable
     {
+        [Tooltip("What it drops when it breaks: items with chances, quantities and tiers. Empty = the dungeon loot / prop " +
+                 "entry's table, else the Item Drop Manager's Breakable table (none = nothing).")]
+        public ItemDropTable dropTable;
+        [Tooltip("Tiers added to its own tier for the roll.")]
+        public int tierBonus;
+        [Tooltip("Use the Item Drop Manager's Breakable table when it has no table of its own.")]
+        public bool useDefaultTable = true;
         [Tooltip("Hits it takes to break.")]
         [Min(1)] public int hits = 1;
         [Tooltip("Seconds the pieces lie around.")]
@@ -41,7 +49,18 @@ namespace ProceduralDungeon
         {
             ShowBroken();
             DungeonNet.Publish(this, 1);
+            DropItems();
             RevealStash();
+        }
+
+        private void DropItems()
+        {
+            ItemDropTable table = dropTable != null ? dropTable : useDefaultTable ? ItemDropManager.Instance.breakableTable : null;
+            if (table == null)
+                return;
+            var tag = GetComponent<DungeonSpawned>();
+            int tier = (tag != null ? tag.tier : 0) + tierBonus;
+            ItemDropManager.Drop(table, tier, transform.position, gameObject);
         }
 
         private void ShowBroken()

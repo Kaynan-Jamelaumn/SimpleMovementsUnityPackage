@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -69,7 +69,7 @@ public class PlayerAnimationModel : MonoBehaviour
         "HitTrigger", "DeathTrigger",
         
         // State parameters
-        "IsInputLocked", "IsBlocking", "IsStunned", "IsGrounded", "IsDead"
+        "IsInputLocked", "IsBlocking", "IsStunned", "IsGrounded", "IsDead", "IsSleeping", "IsUnconscious"
     };
 
         int cachedCount = 0;

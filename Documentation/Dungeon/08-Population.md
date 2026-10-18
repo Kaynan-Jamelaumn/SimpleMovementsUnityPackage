@@ -159,6 +159,22 @@ Higher tiers appear **later along the path, in rewarding rooms, and in harder du
 weights towards high tiers in treasure and boss rooms. **Dormant** loot (the boss's, a puzzle's, a cleared room's)
 is built hidden and appears when the room's event completes.
 
+### What a chest or urn drops (items)
+
+A loot entry is the **container** (chest, ornate chest, urn); what it **drops** is an **Item Drop Table**
+([Inventory 12](../Inventory/12-Item-Drops.md)): items with weights, chances, quantities and tiers.
+
+| Where | Field |
+|---|---|
+| DungeonLoot ▸ entry ▸ **Drop Table** | the items this kind of container drops (rolled at the placement's tier) |
+| DungeonLoot ▸ entry ▸ **Roles** | only in rooms of these roles (an urn only in crypts; empty = any) |
+| DungeonLoot ▸ entry ▸ **Add Mechanics** | a prefab of yours gets the placeholder's behaviour (Chest → `DungeonChest`, Barrel / Urn → `DungeonBreakable`) when it has none |
+| Item Drop Manager ▸ **Chest Table / Breakable Table** | used by every chest / breakable without a table of its own |
+
+Chests drop when opened, breakables (urns, barrels, crates) when broken (a hit or *Use*). The tier is the placement's
+(deeper, treasure and boss rooms higher) plus the component's *Tier Bonus*. Drops are rolled on the server and become
+networked items.
+
 ## 6. Props
 
 ```mermaid
@@ -306,7 +322,24 @@ Hive, Brood, Platform, Island), the swinging logs and every floor modifier that 
 built-in entries above, so new rooms are never empty with an older table.
 
 Default loot: Chest (weight 1, tier 0, wall), Ornate Chest (0.5, tier 1, progress ≥ 0.4), Urn (0.7, tier 0, corner,
-built/ruins). Default encounters: Placeholder Mob (cost 1, packs of 1–3), Placeholder Brute (cost 3, progress ≥ 0.3,
+built/ruins). They drop from the Item Drop Manager's Chest / Breakable tables until you give them tables of their own.
+
+### Traps with your own prefabs
+
+The built-in traps are working objects (`DungeonHazard` floors: spikes, fire jets, lava, vents; `DungeonBladeTrap`
+pendulums and logs; `DungeonDartTrap` dart walls; pressure plates). For your own art:
+
+1. Make a prefab with the trap's **mesh only** (no script needed). Pivot at the base; a pendulum's first child is the
+   pivot and its lowest mesh the blade.
+2. In DungeonProps, add (or edit) an entry with **Kind = Hazard**, the **Prefab**, and the **Placeholder** whose
+   behaviour it should get (Spike Trap, Fire Jet, Blade Trap, Dart Trap, Lava Pool...). Keep **Add Mechanics** on.
+3. At build time the prefab gets the placeholder's components (with their values) and a trigger fitted to its mesh.
+   Components already on the prefab are kept: put your own `DungeonHazard` on it to set everything by hand.
+4. **Trap** (on the entry) ▸ *Override Trap*: damage, damage type, element, who it hurts, always on / cycle, active
+   and safe seconds, hit interval, swing period / volley interval and knockback — for prefabs and placeholders alike.
+5. Where it can appear: the entry's **Roles** (Trap Room...), **Placement** (Corridor, Anywhere, Off Path...),
+   **Styles**, **Modifiers**, floors and progress, **Chance** and counts — as for any prop.
+ Default encounters: Placeholder Mob (cost 1, packs of 1–3), Placeholder Brute (cost 3, progress ≥ 0.3,
 tier 1), Placeholder Boss (boss, cost 10, tier 2).
 
 ## 7. Tables
@@ -314,8 +347,8 @@ tier 1), Placeholder Boss (boss, cost 10, tier 2).
 | Table | Entry fields |
 |---|---|
 | **Encounter** (`DungeonEncounterTable`) | Name, Prefab (NavMeshAgent of the profile's agent type), Placeholder, Boss, Weight, Cost, Pack Size, Pack Radius, Min/Max Floor, Progress, Styles, Roles (empty = any area except Entrance, Rest and landings), Clearance, Tier. The inspector's **Import** copies the world's `SpawnableMob` list (prefab, weight, rarity, pack behaviour; biome and height preferences don't apply underground). |
-| **Loot** (`DungeonLootTable`) | Name, Prefab, Placeholder, Weight, Tier, Progress, Styles, Placement, Min/Max Floor |
-| **Prop** (`DungeonPropTable`) | Name, Kind, Prefab, Placeholder, Placement, Roles, Area Tag, Styles, Modifiers, Main Path (Any / Only / Off), Chance, Per Area, Per Hundred Cells, Spacing, Away From Mobs, Progress, Min/Max Floor, Height Offset, Scale, Light Colour/Range (primitives) |
+| **Loot** (`DungeonLootTable`) | Name, Prefab, Placeholder, Add Mechanics, **Drop Table**, **Roles**, Weight, Tier, Progress, Styles, Placement, Min/Max Floor |
+| **Prop** (`DungeonPropTable`) | Name, Kind, Prefab, Placeholder, Add Mechanics, **Trap** (overrides), **Drop Table** (breakables), Placement, Roles, Area Tag, Styles, Modifiers, Main Path (Any / Only / Off), Chance, Per Area, Per Hundred Cells, Spacing, Away From Mobs, Progress, Min/Max Floor, Height Offset, Scale, Light Colour/Range (primitives) |
 
 Profile › Population also has *Default Loot*, *Default Props* and *Placeholder Mobs* (use the built-ins when a table
 is missing or a mob has no prefab).

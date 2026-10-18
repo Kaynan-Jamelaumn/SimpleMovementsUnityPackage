@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -273,34 +273,17 @@ public static class TraitToolsMenu
     [MenuItem(SMMenu.Root + "Project Setup/Create Trait Database (Resources)", false, SMMenu.ProjectSetup + 2)]
     private static void CreateDatabase()
     {
-        TraitDatabase existing = Resources.Load<TraitDatabase>("TraitDatabase");
-        if (existing != null)
+        SMAssetsEditor.FindOrCreate<TraitDatabase>(SMAssets.Databases, "TraitDatabase", db =>
         {
-            Selection.activeObject = existing;
-            return;
-        }
-        AbilityEditorUI.EnsureFolder("Assets/Resources");
-        var db = ScriptableObject.CreateInstance<TraitDatabase>();
-        AssetDatabase.CreateAsset(db, "Assets/Resources/TraitDatabase.asset");
-        foreach (string guid in AssetDatabase.FindAssets("t:Trait"))
-        {
-            var t = AssetDatabase.LoadAssetAtPath<Trait>(AssetDatabase.GUIDToAssetPath(guid));
-            if (t != null) db.AddTrait(t);
-        }
-        AssetDatabase.SaveAssets();
-        Selection.activeObject = db;
+            foreach (string guid in AssetDatabase.FindAssets("t:Trait"))
+            {
+                var t = AssetDatabase.LoadAssetAtPath<Trait>(AssetDatabase.GUIDToAssetPath(guid));
+                if (t != null) db.AddTrait(t);
+            }
+        });
     }
 
-    private static string SelectedFolder()
-    {
-        foreach (Object o in Selection.GetFiltered(typeof(Object), SelectionMode.Assets))
-        {
-            string p = AssetDatabase.GetAssetPath(o);
-            if (string.IsNullOrEmpty(p)) continue;
-            return AssetDatabase.IsValidFolder(p) ? p : System.IO.Path.GetDirectoryName(p).Replace('\\', '/');
-        }
-        return "Assets";
-    }
+    private static string SelectedFolder() => SMAssetsEditor.SelectedFolderOr(SMAssets.Traits);
 }
 #endif
 #endif

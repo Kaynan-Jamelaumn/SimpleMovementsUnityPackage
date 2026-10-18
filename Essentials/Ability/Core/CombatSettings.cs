@@ -1,9 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Project-wide combat settings (layers, telegraph look, AI budgets). Optional: create one with
-/// Assets > Create > SimpleMovements > Combat > Combat Settings and put it in a Resources folder named exactly
-/// "CombatSettings" - otherwise the defaults below are used.
+/// Project-wide combat settings (layers, telegraph look, AI budgets). Optional: Tools ▸ SimpleMovements ▸ Project Setup ▸
+/// Create Combat Settings puts one at Resources/SimpleMovements/Settings/CombatSettings (an older one named
+/// "CombatSettings" at the root of a Resources folder still works) - otherwise the defaults below are used.
 /// </summary>
 [CreateAssetMenu(fileName = "CombatSettings", menuName = "SimpleMovements/Combat/Combat Settings", order = 0)]
 public class CombatSettings : ScriptableObject
@@ -44,6 +44,12 @@ public class CombatSettings : ScriptableObject
 
     [Tooltip("Call AvailabilityStateMachine.Kill() on a player whose health reaches 0 through combat damage.")]
     public bool killPlayersAtZeroHealth = true;
+
+    [Header("Unconsciousness (characters with an Unconsciousness component)")]
+    [Tooltip("Global rules of unconsciousness: the death threshold (damage below 0 health survived), the unconscious time, " +
+             "revives and giving up. A character's Unconsciousness can use its own rules instead. Traits, races, classes and " +
+             "equipment add to them with the Death Threshold and Unconscious Time combat stats.")]
+    public DownedRules downedRules = new DownedRules();
 
     [Header("Body Parts")]
     [Tooltip("Give every character (players and mobs) body-part damage: head / torso / arms / legs multipliers, armour that " +
@@ -138,14 +144,14 @@ public class CombatSettings : ScriptableObject
 
     private static CombatSettings instance;
 
-    /// <summary>The settings asset from Resources/CombatSettings, or defaults.</summary>
+    /// <summary>The settings asset (Resources/SimpleMovements/Settings/CombatSettings), or defaults.</summary>
     public static CombatSettings Instance
     {
         get
         {
             if (instance == null)
             {
-                instance = Resources.Load<CombatSettings>("CombatSettings");
+                instance = SMAssets.Load<CombatSettings>(SMAssets.Settings, "CombatSettings");
                 if (instance == null)
                 {
                     instance = CreateInstance<CombatSettings>();

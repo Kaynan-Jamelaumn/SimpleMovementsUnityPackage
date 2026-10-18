@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using UnityEditor;
@@ -19,7 +19,7 @@ public class PlayerSetupValidatorEditor : Editor
     {
         { Importance.Required, true }, { Importance.Recommended, true }, { Importance.Optional, false }, { Importance.Automatic, false },
     };
-    private static bool showReferences = true, showProject = true, showHud = true;
+    private static bool showReferences = true, showProject = true, showHud = true, showSurvival = true;
     private static GUIStyle ok, bad, warn, muted;
 
     private static void Styles()
@@ -78,6 +78,10 @@ public class PlayerSetupValidatorEditor : Editor
         showHud = EditorGUILayout.Foldout(showHud, "Player HUD", true);
         if (showHud)
             DrawHud(go);
+
+        showSurvival = EditorGUILayout.Foldout(showSurvival, "Survival, Death & Respawn", true);
+        if (showSurvival)
+            DrawSurvival(go);
 
         showProject = EditorGUILayout.Foldout(showProject, "Project & Scene", true);
         if (showProject)
@@ -212,7 +216,7 @@ public class PlayerSetupValidatorEditor : Editor
                 });
         }
 
-        CombatSettings settings = Resources.Load<CombatSettings>("CombatSettings");
+        CombatSettings settings = SMAssets.Load<CombatSettings>(SMAssets.Settings, "CombatSettings");
         if (settings != null)
         {
             bool inLayers = (settings.characterLayers.value & (1 << go.layer)) != 0;
@@ -255,16 +259,48 @@ public class PlayerSetupValidatorEditor : Editor
         EditorGUILayout.EndVertical();
     }
 
+    // ------------------------------------------------------------------ survival
+    private void DrawSurvival(GameObject go)
+    {
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        Unconsciousness downed = go.GetComponentInChildren<Unconsciousness>(true);
+        DownedRules r = downed != null ? downed.Rules : CombatSettings.Instance.downedRules;
+        Row(downed != null, "Unconsciousness", downed != null
+                ? $"At 0 health: unconscious for {r.unconsciousSeconds:0} s (+ Unconscious Time stat), dies below -{r.deathThreshold:0} (+ Death Threshold stat). Rules: Combat Settings ▸ Downed Rules or the component's own."
+                : "Missing: the player dies at 0 health at once.",
+            downed != null ? null : "Add Unconsciousness", () => Undo.AddComponent<Unconsciousness>(go));
+        DeathPenalty penalty = go.GetComponentInChildren<DeathPenalty>(true);
+        Row(penalty != null, "Death Penalty", penalty != null ? $"Mode: {ObjectNames.NicifyVariableName(penalty.Mode.ToString())}. Needs refilled on respawn by its Status Rules."
+                : "Missing: no penalty, no offline respawn (needs are still refilled on revive with the default rules).",
+            penalty != null ? null : "Add Death Penalty", () => Undo.AddComponent<DeathPenalty>(go));
+        SleepController sleepInput = go.GetComponentInChildren<SleepController>(true);
+        Row(sleepInput != null, "Sleep input", sleepInput != null ? "Press Sleep (Z by default) to sleep on the ground; beds and benches: a Sleep Spot + Interact."
+                : "Missing: the player can only sleep at Sleep Spots.",
+            sleepInput != null ? null : "Add Sleep Controller", () => Undo.AddComponent<SleepController>(go));
+        int spots = UnityEngine.Object.FindObjectsByType<SleepSpot>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+        Row(spots > 0, "Sleep spots in the scene", spots > 0 ? $"{spots} (beds, benches, bedrolls)." : "None: add a Sleep Spot to a bed (Add Component ▸ SimpleMovements ▸ Sleep Spot).", null, null);
+        BodyHeatManager heat = go.GetComponentInChildren<BodyHeatManager>(true);
+        if (heat != null)
+        {
+            TemperatureProfile prof = Application.isPlaying ? heat.Profile : null;
+            Row(true, "Body temperature", (prof != null ? "Race / class profile: " + prof.Describe() : $"Ideal {heat.IdealCelsius:0} °C ± {heat.ToleranceCelsius:0} °C (a race / class Temperature profile replaces it)") +
+                ". Heat / Cold Resistance stats (100 = immune).", null, null);
+        }
+        AbsorptionMilestones m = AbsorptionMilestones.For(go.transform);
+        Row(true, "Absorption milestones", m != null ? m.Describe() : "No level limit", null, null);
+        EditorGUILayout.EndVertical();
+    }
+
     // ------------------------------------------------------------------ project and scene
     private void DrawProject(GameObject go)
     {
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-        bool combat = Resources.Load<CombatSettings>("CombatSettings") != null;
+        bool combat = SMAssets.Load<CombatSettings>(SMAssets.Settings, "CombatSettings") != null;
         Row(combat, "Combat Settings (Resources)", combat ? "Found." : "Defaults are used; layers, PvP, body parts and threat cannot be changed.",
             combat ? null : "Create", () => EditorApplication.ExecuteMenuItem("Tools/SimpleMovements/Project Setup/Create Combat Settings (Resources)"));
         if (go.GetComponent<TraitManager>() != null)
         {
-            bool traits = Resources.Load<TraitDatabase>("TraitDatabase") != null;
+            bool traits = SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase") != null;
             Row(traits, "Trait Database (Resources)", traits ? "Found." : "Needed for traits at character creation.",
                 traits ? null : "Create", () => EditorApplication.ExecuteMenuItem("Tools/SimpleMovements/Project Setup/Create Trait Database (Resources)"));
         }

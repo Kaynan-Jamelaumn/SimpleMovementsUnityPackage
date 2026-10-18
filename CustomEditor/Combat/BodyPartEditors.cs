@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
@@ -239,10 +239,8 @@ public class BodyPartControllerEditor : Editor
     {
         var copy = from != null ? Object.Instantiate(from) : BodyPartProfile.CreateHumanoid();
         copy.name = c.gameObject.name + " Body Parts";
-        string folder = "Assets";
-        string prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(c.gameObject);
-        if (!string.IsNullOrEmpty(prefabPath))
-            folder = System.IO.Path.GetDirectoryName(prefabPath).Replace('\\', '/');
+        // A mob's go with its other assets (Mobs/<Type>), anything else in Combat/Body Parts.
+        string folder = c.GetComponentInParent<Mob>() != null ? MobSetupUtility.FolderFor(c.gameObject) : SMAssetsEditor.Folder(SMAssets.BodyParts);
         string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{copy.name}.asset");
         AssetDatabase.CreateAsset(copy, path);
         AssetDatabase.SaveAssets();

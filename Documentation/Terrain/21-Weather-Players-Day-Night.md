@@ -15,7 +15,7 @@
 | **Weather System** | In the **World scene**. The object with `EndlessTerrain` and the `TerrainGenerator` is a good place, but any object of that scene works: it finds the Terrain Generator and the viewer by itself | One | The weather belongs to the open world. The "only players in the World get weather" rule reads the Weather System's scene, so it must not be in the City, the Bootstrap scene or a persistent object |
 | **Player Weather Effects** | On the **same object as the Weather System** (its inspector has an Add button). **Not on the player** | One for all players | One component checks every player at their own position, on the machine that runs the rules (offline, or the server). On the player prefab it would run once per player copy, including every client's copies |
 | **Day Night Cycle** | **One** in a scene that loads **first and stays**: the **Bootstrap** scene in a network game, else the first gameplay scene (the City). Not on the player, not in every scene | One per game | It keeps itself across scene changes (*Persistent*). A second one, for example in a scene loaded later, removes itself, so an extra copy does no harm |
-| **Weather Condition** assets | Anywhere in the project (default: `Assets/SimpleMovements/Weather Conditions`), listed on the Player Weather Effects | As many as you like | Each one is one condition (Soaked, Chilled…) you edit in its own asset |
+| **Weather Condition** assets | Anywhere in the project (default: `Assets/Resources/SimpleMovements/World/Weather`), listed on the Player Weather Effects | As many as you like | Each one is one condition (Soaked, Chilled…) you edit in its own asset |
 
 **Multiplayer:**
 * Each player is affected by the weather **where they stand**: one player can be Soaked in a storm while another is
@@ -70,7 +70,7 @@ is edited in the Unity Editor. Two ways:
 
 1. **Weather Condition assets (recommended).** Run **Tools ▸ SimpleMovements ▸ Weather ▸ Create Default Weather
    Condition Assets**. It writes Soaked, Chilled, Frostbite, Heatstroke, Sandblasted, Windswept and Pelted by Hail as
-   assets in `Assets/SimpleMovements/Weather Conditions`, and puts them in the Player Weather Effects' **Conditions**
+   assets in `Assets/Resources/SimpleMovements/World/Weather`, and puts them in the Player Weather Effects' **Conditions**
    list. The component's own copies are removed so nothing applies twice. Select an asset and change it.
    * **New condition:** *Create ▸ SimpleMovements ▸ Weather ▸ Weather Condition*, then drag it into *Conditions*.
    * **Same set in several scenes:** use the same assets.
@@ -100,13 +100,24 @@ temperature part of the way back to comfortable (*Shelter Comfort*).
 That is the air temperature, with wind chill when it is cold, the shelter and the rules' shifts, turned into the
 body-heat scale (50 = normal). Defaults, at 1.6 points per °C from 18 °C:
 
-| Air | Body heat it moves toward | Body Heat level |
+| Air | Body heat it moves toward | For a human (ideal 18 °C ± 8 °C) |
 |---|---|---|
-| 18 °C | 50 | Normal |
-| 5 °C | 29 | Cold (eats more food) |
-| −7 °C | 10 | Extremely cold (loses health) |
-| 31 °C | 71 | Hot (more thirst and stamina use) |
-| 43 °C | 90 | Extremely hot (loses health) |
+| 18 °C | 50 | Comfortable |
+| 5 °C | 29 | Chilly (more hunger, a little slower) |
+| −7 °C | 10 | Freezing / Hypothermia (loses health, shivers) |
+| 31 °C | 71 | Warm (more thirst and stamina use) |
+| 43 °C | 90 | Overheated / Heat Exhaustion (loses health, faints) |
+
+The comfortable range depends on the player's **race / class** (Character Archetype ▸ Survival ▸ Temperature: a desert
+race with an ideal of 30 °C is comfortable at 31 °C and chilly at 18 °C), and **Heat / Cold Resistance** (combat stats
+from races, classes, traits, equipment, abilities; 100 = immune) keep the body nearer its ideal. See
+[Player 12 — Survival](../Player/12-Survival-Death-and-Respawn.md#4-body-temperature).
+
+**No double penalties (*Temperature Handling*):** players with a Body Heat Manager get their cold and heat effects
+from the body temperature, so by default (*Skip Temperature Rules*) the conditions that only measure the air
+temperature (**Chilled**, **Heatstroke**) are not applied to them, and Ice / Fire conditions (**Frostbite**) are
+scaled by the player's Cold / Heat Resistance (immune = no status, no damage). *Skip All Cold And Heat Rules* also
+turns Ice / Fire conditions into a pure body-heat shift; *Keep All* applies everything as before.
 
 **Lightning (off by default):** with *Lightning Strikes* on, a player under the open sky in a thunderstorm can be
 struck: *Strike Chance Per Minute* × the storm's strength, for *Strike Damage* Lightning damage. The bolt, the flash
@@ -116,7 +127,7 @@ player only sees the damage, so keep this off for multiplayer unless that is fin
 **Where it runs:** where the game rules run (offline, or on the server or host for every player). Clients run
 nothing; they receive the statuses, the health and the body heat. Only players **in the Weather System's world**
 count. A player in the City, in a dungeon or travelling gets nothing: their weather statuses end and their body heat
-goes back to normal.
+goes back to their own ideal temperature.
 
 Events for your UI or sounds: `StatusChanged(player, rule, on)` and `PlayerStruck(player, damage)`.
 `TryGetPlayerWeather(player, out weather, out sheltered)` gives the last weather a player was checked in.

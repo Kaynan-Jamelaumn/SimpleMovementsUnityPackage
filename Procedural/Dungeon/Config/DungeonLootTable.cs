@@ -12,8 +12,17 @@ namespace ProceduralDungeon
         public string name = "Chest";
         [Tooltip("The loot prefab (chest, pickup...). Empty = the Placeholder primitive.")]
         public GameObject prefab;
-        [Tooltip("Built-in stand-in used when Prefab is empty.")]
+        [Tooltip("Built-in stand-in used when Prefab is empty. With a Prefab it also says what it is: a Chest prefab without a " +
+                 "DungeonChest gets one, a Barrel (urn, crate) prefab without a DungeonBreakable gets one (see Add Mechanics).")]
         public DungeonPrimitive placeholder = DungeonPrimitive.Chest;
+        [Tooltip("With a Prefab: give it the Placeholder's mechanics (chest, breakable) when it has none of its own.")]
+        public bool addMechanics = true;
+        [Tooltip("WHAT IT DROPS when opened / broken: an Item Drop Table (items, chances, quantities, tiers). Given to the " +
+                 "chest or breakable placed for this entry (prefab or placeholder). Empty = the Item Drop Manager's Chest / " +
+                 "Breakable table.")]
+        public ItemDropTable dropTable;
+        [Tooltip("Only in areas with these roles (empty = any): e.g. an urn only in crypts, a weapon crate only in armories.")]
+        public List<AreaRole> roles = new List<AreaRole>();
         [Tooltip("Relative chance of this entry.")]
         [Min(0f)] public float weight = 1f;
         [Tooltip("0 = common. Higher tiers are favoured deeper, in treasure rooms and after bosses.")]

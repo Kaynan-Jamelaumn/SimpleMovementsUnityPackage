@@ -567,7 +567,7 @@ namespace SimpleMovements.Setup
         }
 
         /// <summary>The Hub World Settings asset in Resources (null = the built-in defaults are used).</summary>
-        public static HubWorld.HubWorldSettings HubSettingsAsset() => Resources.Load<HubWorld.HubWorldSettings>("HubWorldSettings");
+        public static HubWorld.HubWorldSettings HubSettingsAsset() => SMAssets.Load<HubWorld.HubWorldSettings>("HubWorldSettings");
 
         /// <summary>The Hub World Settings in use (the asset, else the defaults).</summary>
         public static HubWorld.HubWorldSettings HubSettings()
@@ -648,11 +648,12 @@ namespace SimpleMovements.Setup
         public static SetupRequirement ResourcesAsset<T>(string group, string title, string resourcesName, SetupLevel level, string why, Func<bool> create)
             where T : Object =>
             SetupRequirement.Make(group, title, level)
-                .Explain(why, $"Tools ▸ SimpleMovements ▸ Project Setup creates it in Assets/Resources/{resourcesName}.asset.")
+                .Explain(why, $"Tools ▸ SimpleMovements ▸ Project Setup creates it in {SMAssets.AssetPath(SMAssets.FolderOf(resourcesName), resourcesName + ".asset")}.")
                 .Checks(_ =>
                 {
-                    T asset = Resources.Load<T>(resourcesName);
-                    return SetupResult.Present(asset != null, $"Resources/{resourcesName} found.", $"No Resources/{resourcesName}: the built-in defaults are used.", asset);
+                    T asset = SMAssets.Load<T>(resourcesName);
+                    string where = "Resources/" + SMAssets.ResourcePath(SMAssets.FolderOf(resourcesName), resourcesName);
+                    return SetupResult.Present(asset != null, $"{where} found.", $"No {where}: the built-in defaults are used.", asset);
                 })
                 .Fixes("Create", _ => create(), fixesAsset: true); // a project asset: the prefab itself is not touched
     }

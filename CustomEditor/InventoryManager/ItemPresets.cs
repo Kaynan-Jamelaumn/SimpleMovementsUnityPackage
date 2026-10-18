@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -615,16 +615,15 @@ public static class ItemPresets
         AutoFill(item);
     }
 
-    /// <summary>Saves <paramref name="asset"/> in the folder selected in the Project window and selects it.</summary>
+    /// <summary>
+    /// Saves <paramref name="asset"/> in the folder selected in the Project window (else its kind's folder in
+    /// Resources/SimpleMovements/Items) and selects it.
+    /// </summary>
     public static void CreateAsset(ScriptableObject asset, string fileName)
     {
-        string folder = "Assets";
-        if (Selection.activeObject != null)
-        {
-            string p = AssetDatabase.GetAssetPath(Selection.activeObject);
-            if (!string.IsNullOrEmpty(p))
-                folder = AssetDatabase.IsValidFolder(p) ? p : Path.GetDirectoryName(p).Replace('\\', '/');
-        }
+        string kind = asset is AmmoSO ? SMAssets.Ammo : asset is ConsumableSO ? SMAssets.Consumables : asset is WeaponSO ? SMAssets.Weapons
+            : asset is ArmorSO ? SMAssets.Armor : SMAssets.Items;
+        string folder = SMAssetsEditor.SelectedFolderOr(kind);
         AssetDatabase.CreateAsset(asset, AssetDatabase.GenerateUniqueAssetPath($"{folder}/{fileName}.asset"));
         AssetDatabase.SaveAssets();
         Selection.activeObject = asset;

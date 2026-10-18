@@ -984,7 +984,7 @@ namespace GameNet
             AbilityDefinition def = AbilityDatabase.Resolve(id);
             if (def == null && reportedUnknown.Add(id))
                 Debug.LogWarning($"[{name}] The server used ability '{id}', which this machine does not know. Add it to the Ability Database " +
-                                 "(Resources/AbilityDatabase) so every machine can find it by id.", this);
+                                 "(Resources/SimpleMovements/Databases/AbilityDatabase) so every machine can find it by id.", this);
             return def;
         }
 

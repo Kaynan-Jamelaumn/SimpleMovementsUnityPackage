@@ -310,7 +310,7 @@ namespace ProceduralDungeon
             {
                 new RoleRule
                 {
-                    name = "Guardian", role = AreaRole.MiniBoss, perFloor = new IntRange(0, 1), progress = new FloatRange(0.35f, 0.9f),
+                    name = "Guardian (Mini Boss)", role = AreaRole.MiniBoss, perFloor = new IntRange(0, 1), progress = new FloatRange(0.35f, 0.9f),
                     placement = RolePlacement.OnMainPath, size = SizePreference.Large, minCells = 36, chance = 0.4f, ceilingHeight = 8f,
                 },
                 new RoleRule

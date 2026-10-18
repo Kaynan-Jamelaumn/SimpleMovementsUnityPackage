@@ -53,7 +53,9 @@ public class CharacterCreatorPanel
     private Button maleButton, femaleButton;
     private readonly List<Button> skinSwatches = new List<Button>(), hairSwatches = new List<Button>(), eyeSwatches = new List<Button>();
     private readonly List<Button> topSwatches = new List<Button>(), bottomSwatches = new List<Button>();
-    private GameObject clothesCard, bodyModelCard;
+    private GameObject clothesCard;
+    /// <summary>Cards of parts that only show when the model has options of its own (body models, body parts, ears, outfits).</summary>
+    private readonly Dictionary<AppearancePart, GameObject> optionalCards = new Dictionary<AppearancePart, GameObject>();
     private readonly Dictionary<AppearancePart, TextMeshProUGUI> styleLabels = new Dictionary<AppearancePart, TextMeshProUGUI>();
     private readonly Dictionary<AppearancePart, GameObject> styleRows = new Dictionary<AppearancePart, GameObject>();
     private Slider noseSlider, eyeSlider;
@@ -74,6 +76,48 @@ public class CharacterCreatorPanel
     {
         public Button button;
         public TextMeshProUGUI name, cost;
+        public Image icon;
+    }
+
+    private Image traitDetailIcon;
+    private TextMeshProUGUI traitDetailIconLetter;
+
+    /// <summary>A trait's icon in <paramref name="img"/> (a tinted square with its initial when it has none).</summary>
+    private static void ShowTraitIcon(Image img, TextMeshProUGUI letter, Trait t)
+    {
+        if (img == null) return;
+        bool has = t != null && t.icon != null;
+        img.sprite = has ? t.icon : UITheme.RoundedSprite(8);
+        img.type = has ? Image.Type.Simple : Image.Type.Sliced;
+        img.preserveAspect = has;
+        img.color = has ? Color.white : TraitTint(t);
+        if (letter != null)
+        {
+            letter.gameObject.SetActive(!has && t != null);
+            letter.text = t != null && !string.IsNullOrEmpty(t.Name) ? t.Name.Substring(0, 1).ToUpperInvariant() : "";
+        }
+    }
+
+    private static Color TraitTint(Trait t)
+    {
+        if (t == null) return new Color(1f, 1f, 1f, 0.15f);
+        if (t.cost < 0) return new Color(0.62f, 0.28f, 0.26f, 1f);   // drawbacks
+        switch ((int)t.type % 5)
+        {
+            case 0: return new Color(0.32f, 0.45f, 0.7f, 1f);
+            case 1: return new Color(0.55f, 0.38f, 0.66f, 1f);
+            case 2: return new Color(0.3f, 0.58f, 0.42f, 1f);
+            case 3: return new Color(0.72f, 0.55f, 0.28f, 1f);
+            default: return new Color(0.45f, 0.5f, 0.55f, 1f);
+        }
+    }
+
+    private static TextMeshProUGUI IconLetter(Image img, float size)
+    {
+        TextMeshProUGUI l = UITheme.Label(img.transform, "", size, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        l.raycastTarget = false;
+        InventoryUIFactory.Stretch(l.rectTransform, 0f, 0f);
+        return l;
     }
 
     public GameObject GameObject => root.gameObject;
@@ -193,6 +237,13 @@ public class CharacterCreatorPanel
         RectTransform card = UITheme.CardColumn("Trait Detail", pages[2], 14, 8f, UITheme.SurfaceRaised);
         InventoryUIFactory.Size(card, -1f, 270f);
         card.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+        // The focused trait's icon, large, above its description.
+        RectTransform iconRow = UITheme.Row("Trait Icon Row", card, 64f, 0f);
+        traitDetailIcon = InventoryUIFactory.Panel("Trait Icon", iconRow, Color.white);
+        traitDetailIcon.raycastTarget = false;
+        InventoryUIFactory.Size(traitDetailIcon, 64f, 64f, 0f);
+        traitDetailIconLetter = IconLetter(traitDetailIcon, 28f);
+        iconRow.gameObject.SetActive(false);
         RectTransform detailScroll = UITheme.ScrollList("Text", card, 0f, out _, new Color(0f, 0f, 0f, 0f), 2, 2f);
         traitDetail = UITheme.Label(detailScroll, "Select a trait to see what it does.", 15f, UITheme.Muted, TextAlignmentOptions.TopLeft);
         traitAction = UITheme.Button("Action", card, "Add Trait", ToggleFocusedTrait, UITheme.ButtonStyle.Primary, 0f, 46f);
@@ -483,8 +534,13 @@ public class CharacterCreatorPanel
         UITheme.Colors(b, UITheme.ButtonStyle.ListItem);
         InventoryUIFactory.Size(bg, -1f, 52f);
         HorizontalLayoutGroup h = InventoryUIFactory.Horizontal(bg.gameObject, 10f);
-        h.padding = new RectOffset(18, 16, 4, 4);
+        h.padding = new RectOffset(10, 16, 6, 6);
         var row = new TraitRow { button = b };
+        // The trait's icon on the left.
+        row.icon = InventoryUIFactory.Panel("Icon", bg.transform, Color.white);
+        row.icon.raycastTarget = false;
+        InventoryUIFactory.Size(row.icon, 40f, 40f, 0f);
+        ShowTraitIcon(row.icon, IconLetter(row.icon, 18f), trait);
         row.name = UITheme.Label(bg.transform, trait.Name, 17f, null, TextAlignmentOptions.Left);
         row.name.textWrappingMode = TextWrappingModes.NoWrap;
         row.name.overflowMode = TextOverflowModes.Ellipsis;
@@ -554,8 +610,15 @@ public class CharacterCreatorPanel
         RectTransform bodyRow = UITheme.Row("Types", body, 46f, 10f);
         maleButton = UITheme.Button("Male", bodyRow, "Male", () => SetBody(CharacterBodyType.Male), UITheme.ButtonStyle.Normal, 0f, 44f);
         femaleButton = UITheme.Button("Female", bodyRow, "Female", () => SetBody(CharacterBodyType.Female), UITheme.ButtonStyle.Normal, 0f, 44f);
-        // Body models of your own (Character Appearance > Body Models), shown when there are some.
-        bodyModelCard = ChipCard(lookSections[(int)LookTab.Body], AppearancePart.Body, "Body model").gameObject;
+        // Body models, body parts and outfits of your own (Character Appearance > Body Models / Body Parts / Outfits),
+        // each shown when there are some.
+        OptionalCard(LookTab.Body, AppearancePart.Body, "Body model");
+        OptionalCard(LookTab.Body, AppearancePart.Torso, "Torso");
+        OptionalCard(LookTab.Body, AppearancePart.Arms, "Arms");
+        OptionalCard(LookTab.Body, AppearancePart.Hands, "Hands");
+        OptionalCard(LookTab.Body, AppearancePart.Legs, "Legs");
+        OptionalCard(LookTab.Body, AppearancePart.Feet, "Feet");
+        OptionalCard(LookTab.Body, AppearancePart.Outfit, "Outfit");
         RectTransform skin = UITheme.CardColumn("Skin", lookSections[(int)LookTab.Body], 14, 8f);
         skinGrid = SwatchGrid(skin, "Skin tone", CharacterAppearanceData.SkinTones, skinSwatches, c => { look.skinColor = c; AfterLook(); });
         // Clothes of the placeholder body (shown only when the model uses it).
@@ -567,6 +630,7 @@ public class CharacterCreatorPanel
 
         // Head
         ChipCard(lookSections[(int)LookTab.Head], AppearancePart.Head, "Head shape");
+        OptionalCard(LookTab.Head, AppearancePart.Ears, "Ears");
 
         // Hair
         ChipCard(lookSections[(int)LookTab.Hair], AppearancePart.Hair, "Hairstyle");
@@ -606,6 +670,10 @@ public class CharacterCreatorPanel
         chipGrids[part] = grid;
         return card;
     }
+
+    /// <summary>A <see cref="ChipCard"/> shown only while the model has options of its own for the part.</summary>
+    private void OptionalCard(LookTab tab, AppearancePart part, string title) =>
+        optionalCards[part] = ChipCard(lookSections[(int)tab], part, title).gameObject;
 
     private void ShowLookTab(LookTab t)
     {
@@ -740,11 +808,12 @@ public class CharacterCreatorPanel
 
     private void Randomize()
     {
-        CharacterBodyType keep = look.bodyType;
-        int keepModel = look.bodyStyle;
+        CharacterAppearanceData before = look;
         look = CharacterAppearanceData.Random(stage != null ? stage.Appearance : null);
-        look.bodyType = keep;
-        look.bodyStyle = keepModel;
+        look.bodyType = before.bodyType;
+        // The body model and body parts stay as picked.
+        foreach (AppearancePart part in (AppearancePart[])Enum.GetValues(typeof(AppearancePart)))
+            if (CharacterAppearanceData.IsBodyPiece(part)) look.SetStyle(part, before.Style(part));
         Color[] palette = rules.SkinPalette;
         look.skinColor = palette[UnityEngine.Random.Range(0, palette.Length)];
         look = Validate(look);
@@ -847,7 +916,13 @@ public class CharacterCreatorPanel
         {
             traitDetail.text = StatText.Paint("Select a trait to see what it does.", 0);
             traitAction.gameObject.SetActive(false);
+            if (traitDetailIcon != null) traitDetailIcon.transform.parent.gameObject.SetActive(false);
             return;
+        }
+        if (traitDetailIcon != null)
+        {
+            traitDetailIcon.transform.parent.gameObject.SetActive(true);
+            ShowTraitIcon(traitDetailIcon, traitDetailIconLetter, f);
         }
         bool has = build.traits.Contains(f);
         string problem = has ? build.WhyCannotRemove(f) : build.WhyCannotAdd(f, catalog);
@@ -877,8 +952,9 @@ public class CharacterCreatorPanel
         Mark(topSwatches, CharacterAppearanceData.ClothColors, look.topColor);
         Mark(bottomSwatches, CharacterAppearanceData.ClothColors, look.bottomColor);
         CharacterAppearance a = stage != null ? stage.Appearance : null;
-        if (clothesCard != null) clothesCard.SetActive(a == null || a.Body != null);
-        if (bodyModelCard != null) bodyModelCard.SetActive(a != null && a.OptionCount(AppearancePart.Body) > 1);
+        if (clothesCard != null) clothesCard.SetActive(a == null || a.UsesClothColors);
+        foreach (KeyValuePair<AppearancePart, GameObject> kv in optionalCards)
+            if (kv.Value != null) kv.Value.SetActive(a != null && a.OptionCount(kv.Key) > 1);
         foreach (AppearancePart part in chipGrids.Keys)
             RebuildChips(part);
         if (beardNote != null)

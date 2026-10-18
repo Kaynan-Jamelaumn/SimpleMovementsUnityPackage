@@ -93,6 +93,14 @@ Then the **special rooms** (`DungeonProfile.SpecialRoomRules`, also appended to 
 Garden and Throne — each optional, 20–40% per floor. Their rules, contents and mechanics are in
 [15 Types, Special Rooms and Mechanics](15-Types-Special-Rooms-Mechanics.md#3-special-rooms).
 
+**Where the mini boss comes from.** There is no separate "mini boss room" switch; three things put a mini boss in:
+
+| Source | Where to change it |
+|---|---|
+| The **Guardian** role rule (role *MiniBoss*; called "Guardian (Mini Boss)" in new profiles): a room with one elite that locks until it dies | DungeonProfile ▸ Roles ▸ the rule named *Guardian* — lower its Chance / Per Floor, or delete it |
+| **Throne** rooms also place an elite (on the throne) | DungeonProfile ▸ Roles ▸ *Throne* |
+| The **roaming mini boss**: an elite that wanders the floor, independent of roles | DungeonProfile ▸ Mechanics ▸ *Roaming, shifting floors, traps* ▸ **Roamer Chance** (0.35 per floor by default; 0 = never) |
+
 Anchor areas already carry roles from stage 2: Entrance, Exit, StairsUp, StairsDown, DropSource, DropLanding.
 Catacomb galleries (area kind Corridor) never take a role.
 
@@ -112,6 +120,7 @@ Catacomb galleries (area kind Corridor) never take a role.
 | Templates | room templates to fit into the chosen area |
 | Secret Entrance | built corridors into it become secret passages (only off the main path) |
 | Ceiling Height, Vaulted | the room's own ceiling (meters, × Height Scale; 0 = the normal room / hall height) and an arched ceiling ([07 §3](07-Carve-Validate-Analysis.md#3-heights--how-floor-and-ceiling-heights-are-calculated)) |
+| **Pieces** | the rooms' own building pieces: floor tile, wall segment, ceiling tile, door frame, pillar (see *Room pieces* below) |
 
 ## 5. Room templates
 
@@ -139,6 +148,26 @@ flowchart TD
     H --> I
     I --> J["build: Shape Mask → generated meshes<br/>Prefab → prefab placed at the footprint,<br/>socket children toggled, Prefab cells left empty by the mesher"]
 ```
+
+### Room pieces (walls, floors, ceilings, doors, pillars)
+
+Instead of a whole room prefab, give a role or a template the **pieces** it is built from; the generator lays them on
+the room's cells, so any size and shape of room gets them:
+
+| Where | Field | Applies to |
+|---|---|---|
+| DungeonProfile ▸ Roles ▸ a rule ▸ **Pieces** | Floor Tile, Wall Segment, Ceiling Tile, Door Frame, Pillar, Module Size, Wall Prefab Height | every room of that role (a Kitchen with tiled walls, a Crypt with carved stone) |
+| Room Template (Shape Mask mode) ▸ **Pieces** | the same | rooms using that template (wins over the role's pieces) |
+| DungeonTheme ▸ Tile Kit | the same pieces | every other room (optional) |
+
+* Each empty piece falls back to the theme's tile kit, else to the generated geometry: a role can bring only its own
+  walls and keep the generated floor.
+* Pieces follow the tile kit rules: one module square (Module Size, 0 = the theme's), pivot at the base centre, walls
+  facing +z into the room, with colliders. Wall segments are stretched to the room's wall height (Wall Prefab Height
+  says how tall the prefab is).
+* Profile ▸ Build ▸ **Use Tile Kit** must be on. The generated floor / walls / ceiling / door frames are left out only
+  on the cells that get a piece. Doorways between two rooms take the pieces of the room they open into.
+* Prefab mode templates bring their own geometry and ignore pieces.
 
 ## 6. Example
 

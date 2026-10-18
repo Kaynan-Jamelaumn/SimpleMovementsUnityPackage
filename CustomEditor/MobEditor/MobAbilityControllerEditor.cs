@@ -245,9 +245,7 @@ public class MobAbilityControllerEditor : AbilityCasterEditor
             if (h == null || h.abilityEffect == null)
                 continue;
             AbilityDefinition def = LegacyAbilityConverter.CreateDefinition(h.abilityEffect, true, h.attackCast, h.particle);
-            string src = AssetDatabase.GetAssetPath(h.abilityEffect);
-            string folder = string.IsNullOrEmpty(src) ? FolderFor(c) : System.IO.Path.GetDirectoryName(src).Replace('\\', '/');
-            AbilityDefinition asset = SaveAbilityAsset(def, folder, h.abilityEffect.name + " (Mob)");
+            AbilityDefinition asset = SaveAbilityAsset(def, FolderFor(c), h.abilityEffect.name + " (Mob)");
             converted.Add(new KeyValuePair<AbilityEffectSO, AbilityDefinition>(h.abilityEffect, asset));
         }
         if (converted.Count == 0)
@@ -561,21 +559,7 @@ public class MobAbilityControllerEditor : AbilityCasterEditor
         return def;
     }
 
-    /// <summary>The folder of the mob's prefab (asset, instance or open prefab stage), else "Assets".</summary>
-    private static string FolderFor(Component c)
-    {
-        string path = AssetDatabase.GetAssetPath(c.gameObject);
-        if (string.IsNullOrEmpty(path))
-            path = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(c.gameObject);
-#if UNITY_2021_2_OR_NEWER
-        if (string.IsNullOrEmpty(path))
-        {
-            var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
-            if (stage != null)
-                path = stage.assetPath;
-        }
-#endif
-        return string.IsNullOrEmpty(path) ? "Assets" : System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
-    }
+    /// <summary>The mob type's folder: Resources/SimpleMovements/Mobs/&lt;Type&gt;.</summary>
+    private static string FolderFor(Component c) => MobSetupUtility.FolderFor(c.gameObject);
 }
 #endif

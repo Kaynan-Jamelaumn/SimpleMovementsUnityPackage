@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -143,47 +143,14 @@ public class ManaManager : StatusManager
     }
 
     public IEnumerator ApplyManaHealFactorEffectRoutine(string effectName, float manaHealFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            manaHealFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementFactor += perTick,
-            total => incrementFactor += total,
-            original => incrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, manaHealFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementFactor += v);
 
     public IEnumerator ApplyManaDamageFactorEffectRoutine(string effectName, float manaDamageFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            manaDamageFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => decrementFactor += perTick,
-            total => decrementFactor += total,
-            original => decrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, manaDamageFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => decrementFactor += v);
 
     public IEnumerator ApplyManaRegenEffectRoutine(string effectName, float manaRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            manaRegenAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementValue += perTick,
-            total => incrementValue += total,
-            original => incrementValue -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, manaRegenAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementValue += v);
 }

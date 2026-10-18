@@ -109,7 +109,7 @@ run everywhere. Damage, healing, item use and every number that matters are deci
   **network-spawned** (`WorldItems.Publish`): interest management and physics are per scene.
 - **Which prefab**: when the item's own world prefab is a network prefab (Tools ▸ SimpleMovements ▸ Network ▸ Make
   Selected Prefab Networked ▸ Pickup or Loot Drop: NetworkObject + `NetWorldItem` + NetworkTransform), it is used.
-  Otherwise the generic **carrier** is used: a prefab `Resources/NetWorldItem` with a NetworkObject and a
+  Otherwise the generic **carrier** is used: a prefab `Resources/SimpleMovements/Networking/NetWorldItem` with a NetworkObject and a
   `NetWorldItem` and no renderer; it builds the item's model (Equipment Visuals model, else its world prefab, stripped of
   scripts and physics) on every machine and fits a collider for the pickup raycast. Without either, the item exists on
   the server only (a warning says so).
@@ -143,7 +143,7 @@ items keep their uses left and rounds loaded, and random contents are rolled onl
   its UI canvas must be part of the player prefab (`NetPlayer` hides the canvas of other players' copies).
 - **Item database**: Tools ▸ SimpleMovements ▸ Project Setup ▸ Build Item Database. Items that are not in it cannot be sent
   (they are left out of snapshots, with a warning).
-- **Carrier**: `Assets/Resources/NetWorldItem.prefab` - an empty GameObject with a NetworkObject and `NetWorldItem`
+- **Carrier**: `Assets/Resources/SimpleMovements/Networking/NetWorldItem.prefab` - an empty GameObject with a NetworkObject and `NetWorldItem`
   (Fish-Net registers it as a network prefab automatically).
 - **Networked pickups / loot / collectables**: Make Selected Prefab Networked ▸ Pickup or Loot Drop (adds the
   NetworkObject, `NetWorldItem` and a NetworkTransform). Scene chests and pickups can stay plain scene objects.

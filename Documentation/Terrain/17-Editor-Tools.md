@@ -128,7 +128,7 @@ rivers traced). **Copy** produces a report with PC specs, relevant project setti
 | Biome presets | Biome entry → Presets | 15 archetypes ([Biomes](08-Biomes.md) §6) |
 | Object presets | Biomes → object → Presets | 19 rule sets (grass, trees, reeds, rocks, landmarks…) |
 | Copy Settings | inspector | text dump of all generator and biome settings (for sharing/diffing) |
-| Biome backups | Biome → Save/Load backup | JSON under `Assets/BiomeBackups/` |
+| Biome backups | Biome → Save/Load backup | JSON under `Assets/Resources/SimpleMovements/World/Biome Backups/` (older ones in `Assets/BiomeBackups/` still load) |
 | Erosion Debug Visualization | TerrainGenerator | Scene-view cubes where erosion removed/deposited |
 | Weather System inspector | WeatherSystem | live weather, force buttons, 1-hour forecast, weather map |
 | EndlessTerrain inspector | EndlessTerrain | status box (viewer, portals, mobs, distances), Add Portal Prefab, recommended portal/mob settings, play-mode lists of chunks, mobs and planned portal sites |

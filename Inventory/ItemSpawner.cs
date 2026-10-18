@@ -20,14 +20,31 @@ public class ItemDrop
 /// </summary>
 public class ItemSpawner : MonoBehaviour
 {
+    [Tooltip("Items with chances, quantities and tiers (Create ▸ SimpleMovements ▸ Items ▸ Item Drop Table), rolled through " +
+             "the Item Drop Manager. Optional: the prefab list below still works (both are used).")]
+    [SerializeField] private ItemDropTable dropTable;
+    [Tooltip("Tier of the table roll (-1 = from the dungeon placement, elites and bosses add the manager's bonus).")]
+    [SerializeField] private int tableTier = -1;
     [SerializeField] private List<ItemDrop> itemDrops = new List<ItemDrop>();
 
     public List<ItemDrop> ItemDrops => itemDrops;
+    public ItemDropTable DropTable { get => dropTable; set => dropTable = value; }
+
+    /// <summary>Does it drop anything (a table or prefabs)?</summary>
+    public bool HasDrops => dropTable != null || (itemDrops != null && itemDrops.Count > 0);
 
     public void SpawnItem(Vector3 position)
     {
         if (!GameNet.NetSpawn.ShouldSpawnHere)
             return; // a client: the server's loot arrives over the network
+        if (dropTable != null)
+        {
+            CombatEntity self = CombatEntity.Resolve(gameObject);
+            ItemDropOnDeath.Describe(self, out int t, out bool elite, out bool boss);
+            ItemDropManager m = ItemDropManager.Instance;
+            int tier = tableTier >= 0 ? tableTier : t + (boss ? m.bossTierBonus : elite ? m.eliteTierBonus : 0);
+            ItemDropManager.Drop(dropTable, tier, position, gameObject, elite || boss ? m.eliteChanceMultiplier : 1f);
+        }
         foreach (ItemDrop drop in itemDrops)
         {
             if (drop == null || drop.item == null || Random.value > drop.spawnChance)

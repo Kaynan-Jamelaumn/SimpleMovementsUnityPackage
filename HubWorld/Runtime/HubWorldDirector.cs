@@ -50,7 +50,7 @@ namespace HubWorld
     [DefaultExecutionOrder(-80)]
     public class HubWorldDirector : MonoBehaviour, DungeonSession.IExitHandler
     {
-        [Tooltip("OPTIONAL. The settings asset. Empty = Resources/HubWorldSettings, else the defaults.")]
+        [Tooltip("OPTIONAL. The settings asset. Empty = Resources/SimpleMovements/Settings/HubWorldSettings, else the defaults.")]
         [SerializeField] private HubWorldSettings settings;
         [Tooltip("Create the HUD (zone, time until the jump, warnings, duel prompts) automatically.")]
         [SerializeField] private bool createHud = true;

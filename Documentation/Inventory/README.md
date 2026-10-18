@@ -17,6 +17,7 @@ their attacks, and the equipment layer that turns worn/held items into stats, tr
 | [09 — Teams, Factions & Targeting](09-Teams-Factions-and-Targeting.md) | Layers vs relations vs filters, teams, factions, parties, friendly fire, recipes, multiplayer |
 | [10 — Hands, Shields, Ranged & Body Parts](10-Hands-Shields-Ranged-and-Body-Parts.md) | One/two-handed and dual-wielded weapons, body-part damage, shield blocking and parries, bows / crossbows / firearms / throwing and ammo, equipment visuals, consumable quickslots, controls |
 | [11 — Grid Inventory](11-Grid-Inventory.md) | The optional grid mode: settings, item sizes, rotation, drag and drop, switching modes, limitations |
+| [12 — Item Drops](12-Item-Drops.md) | **What drops from chests, urns, barrels, mobs and bosses**: Item Drop Tables (items, chances, quantities, tiers) and the Item Drop Manager (every table, defaults, multipliers, blocked items) |
 
 ## Five-minute setup
 

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>What an archetype is. One data model serves races, classes and anything else that defines a character.</summary>
@@ -97,6 +97,14 @@ public class CharacterArchetype : ScriptableObject
     public List<TraitAffinity> traitAffinities = new List<TraitAffinity>();
     [Tooltip("Trait points added to (or removed from) the character's budget at creation.")]
     public int bonusTraitPoints = 0;
+
+    [Header("Survival")]
+    [Tooltip("Body temperature of this race / class: ideal temperature, comfortable range and its own temperature effects. " +
+             "Heat / Cold Resistance (100 = immune) go in Base Combat Stats. Races are used first, then classes.")]
+    public TemperatureProfile temperature = new TemperatureProfile();
+    [Tooltip("Ability absorption milestones of this race / class (the levels at which one more ability can be absorbed). " +
+             "Off = the Absorption Settings' milestones. Classes are used first, then races.")]
+    public AbsorptionMilestones absorptionMilestones = new AbsorptionMilestones { enabled = false };
 
     [Header("Combinations")]
     [Tooltip("Archetypes that cannot be combined with this one (a race that cannot be a Paladin).")]

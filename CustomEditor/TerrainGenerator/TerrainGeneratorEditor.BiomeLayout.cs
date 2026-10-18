@@ -235,7 +235,7 @@ public partial class TerrainGeneratorEditor : Editor
         }
         if (GUILayout.Button(new GUIContent("Save State",
             "Writes every tunable field on this biome (height range, weight, noise shape, climate, erosion) to " +
-            "a backup file under Assets/BiomeBackups/, so you can restore it later after applying a preset or " +
+            "a backup file under Assets/Resources/SimpleMovements/World/Biome Backups/, so you can restore it later after applying a preset or " +
             "experimenting with values."), EditorStyles.miniButton))
         {
             SaveBiomeState(biome);

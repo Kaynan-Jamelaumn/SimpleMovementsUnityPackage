@@ -74,7 +74,12 @@ namespace ProceduralDungeon
 
         private void Awake()
         {
-            GetComponent<Collider>().isTrigger = true;
+            // The trap zone: a trigger collider of this object (a prefab's solid collider stays solid), else the first collider.
+            Collider zone = null;
+            foreach (Collider c in GetComponents<Collider>())
+                if (c.isTrigger) { zone = c; break; }
+            if (zone == null) zone = GetComponent<Collider>();
+            if (zone != null) zone.isTrigger = true;
             spikeRest = new Vector3[transform.childCount];
             for (int i = 0; i < transform.childCount; i++)
                 spikeRest[i] = transform.GetChild(i).localPosition;

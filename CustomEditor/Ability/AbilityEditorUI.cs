@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
@@ -288,7 +288,7 @@ public static class AbilityEditorUI
     public static T SaveAsset<T>(T obj, string folder, string fileName) where T : ScriptableObject
     {
         if (string.IsNullOrEmpty(folder) || !AssetDatabase.IsValidFolder(folder))
-            folder = EnsureFolder("Assets/Generated");
+            folder = SMAssetsEditor.Folder(SMAssets.Abilities);
         foreach (char ch in System.IO.Path.GetInvalidFileNameChars())
             fileName = fileName.Replace(ch, '_');
         string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{fileName}.asset");
@@ -322,32 +322,24 @@ public static class AbilityEditorUI
         return path;
     }
 
-    /// <summary>The folder of the object's prefab (asset, instance or open prefab stage), else "Assets/Generated".</summary>
+    /// <summary>
+    /// Where abilities made from a component (presets, converted legacy abilities, saved runtime copies) go:
+    /// Resources/SimpleMovements/Abilities (mobs: their type's folder under Mobs).
+    /// </summary>
     public static string FolderFor(Component c)
     {
-        string path = AssetDatabase.GetAssetPath(c.gameObject);
-        if (string.IsNullOrEmpty(path))
-            path = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(c.gameObject);
-#if UNITY_2021_2_OR_NEWER
-        if (string.IsNullOrEmpty(path))
-        {
-            var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
-            if (stage != null)
-                path = stage.assetPath;
-        }
-#endif
-        return string.IsNullOrEmpty(path) ? "Assets/Generated" : System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
+        if (c != null && c.GetComponentInParent<Mob>() != null)
+            return MobSetupUtility.FolderFor(c.gameObject);
+        return SMAssetsEditor.Folder(SMAssets.Abilities);
     }
 
     /// <summary>
     /// Converts a legacy AbilityEffectSO (with its holder's attack casts and particle) into an Ability Definition asset
-    /// saved next to it.
+    /// saved in <paramref name="folder"/> (see <see cref="FolderFor"/>).
     /// </summary>
-    public static AbilityDefinition ConvertLegacy(AbilityEffectSO legacy, bool forMob, IList<AttackCast> casts, GameObject particle, string fallbackFolder)
+    public static AbilityDefinition ConvertLegacy(AbilityEffectSO legacy, bool forMob, IList<AttackCast> casts, GameObject particle, string folder)
     {
         AbilityDefinition def = LegacyAbilityConverter.CreateDefinition(legacy, forMob, casts, particle);
-        string src = AssetDatabase.GetAssetPath(legacy);
-        string folder = string.IsNullOrEmpty(src) ? fallbackFolder : System.IO.Path.GetDirectoryName(src).Replace('\\', '/');
         return SaveAsset(def, folder, legacy.name + (forMob ? " (Mob)" : " (Player)"));
     }
 

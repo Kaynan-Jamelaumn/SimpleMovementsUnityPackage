@@ -35,6 +35,8 @@ namespace ProceduralDungeon
             public bool SkipBuiltWalls;
             public bool SkipBuiltCeilings;
             public bool SkipBuiltDoorFrames;
+            /// <summary>Per cell: the room's own building pieces (null = only the flags above). Those cells skip the generated pieces they replace.</summary>
+            public RoomPiecesInfo[] CellPieces;
             public bool DoorFrames = true;
             public float TextureScale = 3f;
             /// <summary>Cave wall contour jitter, fraction of a cell (0..0.45).</summary>
@@ -135,6 +137,14 @@ namespace ProceduralDungeon
         }
 
         private static bool Flag(Ctx c, int x, int y, CellFlags flag) => c.G.InBounds(x, y) && c.G.Has(x + y * c.G.Width, flag);
+
+        /// <summary>The room pieces of a cell (null = none, or no room pieces at all).</summary>
+        private static RoomPiecesInfo PiecesAt(Ctx c, int x, int y)
+        {
+            if (c.O.CellPieces == null || !c.G.InBounds(x, y))
+                return null;
+            return c.O.CellPieces[x + y * c.G.Width];
+        }
 
         private static bool Organic(Ctx c, int x, int y)
         {
@@ -277,8 +287,9 @@ namespace ProceduralDungeon
             for (int k = 0; k < 4; k++)
             {
                 bool built = s[k] == Sample.Open && !Organic(c, cx[k], cy[k]);
-                skip[k] = built && c.O.SkipBuiltFloors;
-                skipCeiling[k] = built && c.O.SkipBuiltCeilings;
+                RoomPiecesInfo rp = PiecesAt(c, cx[k], cy[k]);
+                skip[k] = built && (c.O.SkipBuiltFloors || (rp != null && rp.Floor));
+                skipCeiling[k] = built && (c.O.SkipBuiltCeilings || (rp != null && rp.Ceiling));
             }
 
             float mF = CenterHeight(c, cx, cy, s, false), mC = CenterHeight(c, cx, cy, s, true);
@@ -387,7 +398,7 @@ namespace ProceduralDungeon
                     continue;
                 }
                 bool organic = Organic(c, cx[open], cy[open]);
-                if (c.O.SkipBuiltWalls && !organic)
+                if (!organic && (c.O.SkipBuiltWalls || (PiecesAt(c, cx[open], cy[open]) is RoomPiecesInfo wp && wp.Wall)))
                     continue;
                 Vector2 e = E(k);
                 Vector2 toOpen = P(open) - (P(k) + P(n)) * 0.5f;
@@ -779,8 +790,8 @@ namespace ProceduralDungeon
             {
                 if (g.Type[i] != CellType.Door || g.Has(i, CellFlags.Secret | CellFlags.Prefab))
                     continue;
-                if (c.O.SkipBuiltDoorFrames && !g.Has(i, CellFlags.Organic))
-                    continue;   // the tile kit's door frame prefab takes over
+                if ((c.O.SkipBuiltDoorFrames || (c.O.CellPieces != null && c.O.CellPieces[i] != null && c.O.CellPieces[i].DoorFrame)) && !g.Has(i, CellFlags.Organic))
+                    continue;   // the tile kit's (or the room's) door frame prefab takes over
                 int x = i % g.Width, y = i / g.Width;
                 bool passageNS = g.IsWalkable(g.Neighbor(i, 0)) && g.IsWalkable(g.Neighbor(i, 2));
                 float floor = g.FloorHeight[i];

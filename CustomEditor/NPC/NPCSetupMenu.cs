@@ -10,7 +10,6 @@ using UnityEngine;
 /// </summary>
 public static class NPCSetupMenu
 {
-    private const string ResourcesFolder = "Assets/Resources";
 
     // ------------------------------------------------------------------ creating NPCs
     [MenuItem("GameObject/SimpleMovements/NPC/Merchant NPC", false, 20)]
@@ -187,21 +186,12 @@ public static class NPCSetupMenu
     [MenuItem(SMMenu.Root + "Project Setup/Create Item Category Database (Resources)", false, SMMenu.ProjectSetup + 4)]
     public static ItemCategoryDatabase CreateCategoryDatabase()
     {
-        string path = $"{ResourcesFolder}/{ItemCategoryDatabase.ResourcesName}.asset";
-        var existing = AssetDatabase.LoadAssetAtPath<ItemCategoryDatabase>(path);
+        ItemCategoryDatabase existing = SMAssetsEditor.Find<ItemCategoryDatabase>(SMAssets.Databases, ItemCategoryDatabase.ResourcesName);
         if (existing != null)
-        {
-            Selection.activeObject = existing;
-            EditorGUIUtility.PingObject(existing);
-            return existing;
-        }
-        EnsureResourcesFolder();
-        var db = ScriptableObject.CreateInstance<ItemCategoryDatabase>();
-        AssetDatabase.CreateAsset(db, path);
+            return SMAssetsEditor.FindOrCreate<ItemCategoryDatabase>(SMAssets.Databases, ItemCategoryDatabase.ResourcesName);
+        ItemCategoryDatabase db = SMAssetsEditor.FindOrCreate<ItemCategoryDatabase>(SMAssets.Databases, ItemCategoryDatabase.ResourcesName);
         FillWithDefaults(db);
-        Selection.activeObject = db;
-        EditorGUIUtility.PingObject(db);
-        Debug.Log($"[Categories] Created {path} with the standard categories (Weapons, Armor, Accessories, Consumables, Materials, Miscellaneous and their subcategories). Edit them in its inspector.", db);
+        Debug.Log($"[Categories] Created {AssetDatabase.GetAssetPath(db)} with the standard categories (Weapons, Armor, Accessories, Consumables, Materials, Miscellaneous and their subcategories). Edit them in its inspector.", db);
         return db;
     }
 
@@ -219,27 +209,7 @@ public static class NPCSetupMenu
     [MenuItem(SMMenu.Root + "Project Setup/Create Default Currency (Resources)", false, SMMenu.ProjectSetup + 5)]
     public static CurrencyDefinition CreateDefaultCurrency()
     {
-        string path = $"{ResourcesFolder}/{CurrencyDefinition.ResourcesName}.asset";
-        var existing = AssetDatabase.LoadAssetAtPath<CurrencyDefinition>(path);
-        if (existing != null)
-        {
-            Selection.activeObject = existing;
-            EditorGUIUtility.PingObject(existing);
-            return existing;
-        }
-        EnsureResourcesFolder();
-        var currency = ScriptableObject.CreateInstance<CurrencyDefinition>();
-        AssetDatabase.CreateAsset(currency, path);
-        AssetDatabase.SaveAssets();
-        Selection.activeObject = currency;
-        EditorGUIUtility.PingObject(currency);
-        return currency;
-    }
-
-    private static void EnsureResourcesFolder()
-    {
-        if (!AssetDatabase.IsValidFolder(ResourcesFolder))
-            AssetDatabase.CreateFolder("Assets", "Resources");
+        return SMAssetsEditor.FindOrCreate<CurrencyDefinition>(SMAssets.Economy, CurrencyDefinition.ResourcesName);
     }
 
     // ------------------------------------------------------------------ items

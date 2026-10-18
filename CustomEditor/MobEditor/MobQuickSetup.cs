@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
 #if UNITY_EDITOR
@@ -80,15 +82,32 @@ public static class MobSetupUtility
     /// </summary>
     public static void SetupMob(GameObject mobObject, bool isNew, bool createAssets = true)
     {
+        if (settingUp)
+            return;   // a fix of the validator below asked for the setup again
+        settingUp = true;
+        try
+        {
+            SetupMobNow(mobObject, isNew, createAssets);
+        }
+        finally
+        {
+            settingUp = false;
+        }
+    }
+
+    private static bool settingUp;
+
+    private static void SetupMobNow(GameObject mobObject, bool isNew, bool createAssets)
+    {
         Undo.RegisterFullObjectHierarchyUndo(mobObject, "Setup Mob");
         int added = 0;
 
+        // The model first, so the collider and the agent can be sized to it.
+        Animator animator = SetupModelHierarchy(mobObject, ref added);
+
         if (mobObject.GetComponent<Collider>() == null)
         {
-            CapsuleCollider capsule = Undo.AddComponent<CapsuleCollider>(mobObject);
-            capsule.radius = 0.5f;
-            capsule.height = 2f;
-            capsule.center = new Vector3(0f, 1f, 0f);
+            MobSetupValidator.FitCollider(mobObject, true);   // fitted to the model's meshes
             added++;
         }
 
@@ -113,12 +132,11 @@ public static class MobSetupUtility
             agent.acceleration = 24f;
             agent.stoppingDistance = 0.3f;
             agent.autoBraking = true;
-            agent.radius = 0.5f;
-            agent.height = 2f;
+            CapsuleCollider capsule = mobObject.GetComponent<CapsuleCollider>();
+            agent.radius = capsule != null ? capsule.radius : 0.5f;
+            agent.height = capsule != null ? capsule.height : 2f;
             added++;
         }
-
-        Animator animator = SetupModelHierarchy(mobObject, ref added);
 
         MobStatusController status = mobObject.GetComponent<MobStatusController>();
         if (status == null)
@@ -214,10 +232,20 @@ public static class MobSetupUtility
                 created += $" Basic attack: '{bite.name}'.";
         }
 
+        // Then everything the validator can correct safely (wiring, kinematic body, agent size, root motion...).
+        int fixedCount = MobSetupValidator.FixAllSafe(mobObject);
+        List<MobSetupValidator.Issue> left = MobSetupValidator.Check(mobObject);
+        int errors = left.Count(i => i.severity == MobSetupValidator.Severity.Error);
+        int warnings = left.Count(i => i.severity == MobSetupValidator.Severity.Warning);
+        string fixedText = fixedCount > 0 ? $" Fixed {fixedCount} problem(s)." : "";
+        string leftText = errors + warnings > 0
+            ? $" {errors} error(s) and {warnings} warning(s) left: see the mob inspector ▸ Setup checks (or Tools ▸ SimpleMovements ▸ Mobs ▸ Mob Setup Validator)."
+            : " No problems left.";
+
         EditorUtility.SetDirty(mobObject);
         Debug.Log(added > 0
-            ? $"<color=green>Mob setup: added {added} component(s) to {mobObject.name}.</color>{created} Next: assign an Animator Controller, set Type/Preys, add abilities, bake the NavMesh."
-            : $"Mob setup: {mobObject.name} already has every component (references re-wired).{created}", mobObject);
+            ? $"<color=green>Mob setup: added {added} component(s) to {mobObject.name}.</color>{created}{fixedText}{leftText}"
+            : $"Mob setup: {mobObject.name} already has every component (references re-wired).{created}{fixedText}{leftText}", mobObject);
     }
 
     /// <summary>
@@ -324,33 +352,23 @@ public static class MobSetupUtility
         so.ApplyModifiedProperties();
     }
 
-    /// <summary>The folder of the mob's prefab (asset, instance or open prefab stage), else Assets/Generated/Mobs.</summary>
+    /// <summary>
+    /// Where the assets generated for a mob go (its profile, basic attack, abilities, body parts):
+    /// Resources/SimpleMovements/Mobs/&lt;Type&gt; (the mob's Type, else the object's name).
+    /// </summary>
     public static string FolderFor(GameObject go)
     {
-        string prefabPath = AssetDatabase.GetAssetPath(go);
-        if (string.IsNullOrEmpty(prefabPath))
-            prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go);
-#if UNITY_2021_2_OR_NEWER
-        if (string.IsNullOrEmpty(prefabPath))
-        {
-            var stage = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage();
-            if (stage != null)
-                prefabPath = stage.assetPath;
-        }
-#endif
-        if (!string.IsNullOrEmpty(prefabPath))
-            return System.IO.Path.GetDirectoryName(prefabPath).Replace('\\', '/');
-        return EnsureFolder("Assets/Generated/Mobs");
+        Mob mob = go != null ? go.GetComponentInParent<Mob>() ?? go.GetComponentInChildren<Mob>(true) : null;
+        string type = mob != null && !string.IsNullOrWhiteSpace(mob.type) ? mob.type : go != null ? PrefabRootName(go) : "Mob";
+        return SMAssetsEditor.MobFolder(ObjectNames.NicifyVariableName(type));
     }
 
-    private static string EnsureFolder(string path)
+    /// <summary>The name of the prefab the object belongs to (without "(Clone)" or a variant suffix), else its own.</summary>
+    private static string PrefabRootName(GameObject go)
     {
-        if (AssetDatabase.IsValidFolder(path))
-            return path;
-        string parent = System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
-        EnsureFolder(parent);
-        AssetDatabase.CreateFolder(parent, System.IO.Path.GetFileName(path));
-        return path;
+        GameObject root = PrefabUtility.GetOutermostPrefabInstanceRoot(go);
+        string n = (root != null ? root : go.transform.root.gameObject).name;
+        return n.Replace("(Clone)", "").Trim();
     }
 
     private static Animator SetupModelHierarchy(GameObject mobObject, ref int added)
@@ -358,6 +376,20 @@ public static class MobSetupUtility
         Animator existing = MobMovementStateMachine.FindAnimator(mobObject.transform);
         if (existing != null)
             return existing;
+
+        // A model of your own already there (a mesh anywhere under the mob): the Animator goes on its root, no placeholder.
+        foreach (Renderer r in mobObject.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r is ParticleSystemRenderer || r is TrailRenderer || r is LineRenderer)
+                continue;
+            Transform host = r.transform;
+            while (host != mobObject.transform && host.parent != null && host.parent != mobObject.transform)
+                host = host.parent;
+            Animator a = Undo.AddComponent<Animator>(host.gameObject);
+            a.applyRootMotion = false;
+            added++;
+            return a;
+        }
 
         Transform model = mobObject.transform.Find("Model");
         if (model == null)

@@ -537,11 +537,38 @@ public class CombatEntity : MonoBehaviour
             if (Kind == EntityKind.Player && Availability != null && Availability.CurrentState != null &&
                 Availability.CurrentState.StateKey == EAvailabilityState.Death)
                 return true;
-            return healthSeen && Health != null && Health.CurrentValue <= 0f;
+            return healthSeen && Health != null && Health.CurrentValue <= 0f && !IsUnconscious;
         }
     }
 
     public bool IsAlive => !IsDead && isActiveAndEnabled;
+
+    /// <summary>
+    /// The character's <see cref="Unconsciousness"/> component (set by it), or null: health reaching 0 then knocks the
+    /// character out instead of killing it, unless the damage goes past its death threshold.
+    /// </summary>
+    public Unconsciousness Downed { get; internal set; }
+
+    /// <summary>Knocked out (health 0, waiting for a revive or death). Not dead: <see cref="IsDead"/> is false.</summary>
+    public bool IsUnconscious => Downed != null && Downed.IsDown;
+
+    private SleepManager sleep;
+    private bool sleepSearched;
+
+    /// <summary>Asleep (in a bed, on the ground, collapsed from exhaustion).</summary>
+    public bool IsSleeping
+    {
+        get
+        {
+            if (!sleepSearched)
+            {
+                sleepSearched = true;
+                sleep = GetComponentInChildren<SleepManager>();
+                if (sleep == null) sleep = GetComponentInParent<SleepManager>();
+            }
+            return sleep != null && sleep.IsSleeping;
+        }
+    }
 
     public float HealthRatio => Health != null && Health.MaxValue > 0f ? Mathf.Clamp01(Health.CurrentValue / Health.MaxValue) : 1f;
     public float MaxHealth => Health != null ? Health.MaxValue : 0f;
@@ -653,7 +680,15 @@ public class CombatEntity : MonoBehaviour
         }
         float removed = info.amount;
 
-        if (Health != null)
+        bool killedWhileDown = false;
+        if (Health != null && IsUnconscious)
+        {
+            // Already down: the damage pushes the character toward its death threshold.
+            removed = Downed.TakeDamageWhileDown(info, out killedWhileDown);
+            lastKnownHealth = Health.CurrentValue;
+            healthSeen = true;
+        }
+        else if (Health != null)
         {
             float before = Health.CurrentValue;
             Health.ConsumeHP(info.amount);
@@ -662,7 +697,9 @@ public class CombatEntity : MonoBehaviour
             {
                 DamageInfo lethal = info;
                 lethal.amount = removed;
-                TrySurviveLethal(lethal);
+                // Cheat Death & co. first; then the knock-out (unless the overkill passes the death threshold).
+                if (!TrySurviveLethal(lethal) && Downed != null)
+                    Downed.TryKnockOut(lethal, Mathf.Max(0f, -Health.CurrentValue));
             }
             lastKnownHealth = Health.CurrentValue;
             healthSeen = true;
@@ -678,7 +715,7 @@ public class CombatEntity : MonoBehaviour
         CombatEvents.RaiseDamaged(info);
         DamageFeedback?.Invoke(info);
 
-        if (Health != null && Health.CurrentValue <= 0f)
+        if (killedWhileDown || (Health != null && Health.CurrentValue <= 0f && !IsUnconscious))
             HandleDeath(info.source);
         return removed;
     }
@@ -791,6 +828,8 @@ public class CombatEntity : MonoBehaviour
     {
         if (IsReplica || IsDead || amount <= 0f || Health == null)
             return;
+        if (IsUnconscious && !Downed.AcceptHeal(ref amount, source))
+            return; // healing does not wake a knocked-out character (a revive does), unless Unconsciousness allows it
         float before = Health.CurrentValue;
         Health.AddCurrentValue(amount);
         lastKnownHealth = Health.CurrentValue;
@@ -855,6 +894,8 @@ public class CombatEntity : MonoBehaviour
         if (deathRaised || IsReplica)
             return;
         deathRaised = true;
+        if (Downed != null)
+            Downed.OnDeath();
         if (killer == null)
             killer = RecentAttacker(15f);
         if (Caster != null) Caster.Interrupt(CastInterruptReason.Death, true);
@@ -873,6 +914,8 @@ public class CombatEntity : MonoBehaviour
         healthSeen = false;
         threats.Clear();
         lastAttacker = null;
+        if (Downed != null)
+            Downed.OnRevived();
         if (Kind == EntityKind.Player && Availability != null)
             Availability.Revive();
         Revived?.Invoke();
@@ -1211,7 +1254,7 @@ public class CombatEntity : MonoBehaviour
     {
         get
         {
-            if (IsStunned || IsRooted)
+            if (IsStunned || IsRooted || IsIncapacitated)
                 return 0f;
             float m = IsSlowed ? 1f - slowFraction : 1f;
             return m * Mathf.Clamp01(CastMoveMultiplier) * Mathf.Clamp01(GuardMoveMultiplier);
@@ -1222,10 +1265,13 @@ public class CombatEntity : MonoBehaviour
     public CombatEntity TauntedBy => Time.time < tauntUntil && tauntSource != null && tauntSource.IsAlive ? tauntSource : null;
 
     /// <summary>Can this character use abilities right now?</summary>
-    public bool CanCast => !IsDead && !IsStunned && !IsSilenced;
+    public bool CanCast => !IsDead && !IsStunned && !IsSilenced && !IsIncapacitated;
 
     /// <summary>Can this character move by itself right now?</summary>
-    public bool CanMove => !IsDead && !IsStunned && !IsRooted;
+    public bool CanMove => !IsDead && !IsStunned && !IsRooted && !IsIncapacitated;
+
+    /// <summary>Asleep or unconscious: cannot move or act (not crowd control).</summary>
+    public bool IsIncapacitated => IsUnconscious || (Kind == EntityKind.Player && Availability != null && Availability.IsIncapacitated);
 
     /// <summary>
     /// Applies crowd control. <paramref name="magnitude"/> is the slow fraction (0-0.95) for Slow. Returns false when
@@ -1421,8 +1467,14 @@ public class CombatEntity : MonoBehaviour
         }
 
         // Health reached 0 outside the ability system (weapons, legacy effects): give Cheat Death & co. a chance first.
-        if (hp <= 0f && !deathRaised && TrySurviveLethal(lostHealth ? info : new DamageInfo { target = this, point = Center }))
-            hp = Health.CurrentValue;
+        if (hp <= 0f && !deathRaised && !IsUnconscious)
+        {
+            DamageInfo lethal = lostHealth ? info : new DamageInfo { target = this, point = Center };
+            if (TrySurviveLethal(lethal))
+                hp = Health.CurrentValue;
+            else if (Downed != null && Downed.TryKnockOut(lethal, Mathf.Max(0f, -hp)))
+                hp = Health.CurrentValue;
+        }
 
         if (lostHealth)
         {
@@ -1433,7 +1485,7 @@ public class CombatEntity : MonoBehaviour
         }
 
         lastKnownHealth = hp;
-        if (hp <= 0f && !deathRaised)
+        if (hp <= 0f && !deathRaised && !IsUnconscious)
             HandleDeath(RecentAttacker(15f));
     }
 

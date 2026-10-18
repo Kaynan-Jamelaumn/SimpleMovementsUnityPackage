@@ -40,7 +40,7 @@ namespace SimpleMovements.Guides
                 .Doc(SocialGuideText.Doc);
             GuideUtil.One<PlayerTargeting>(g, "One Player Targeting", "Keep one: the other is destroyed at runtime.");
             SocialGuideText.InputActions(g, "SelectTarget", "CycleTarget", "InspectTarget", "TargetMenu");
-            CombatSettings settings = Resources.Load<CombatSettings>("CombatSettings");
+            CombatSettings settings = SMAssets.Load<CombatSettings>("CombatSettings");
             if (settings != null && (t.selectLayers.value & settings.characterLayers.value) == 0)
                 g.Check(false, "Select Layers", "Select Layers include none of the Combat Settings' Character Layers: clicks can never hit a player.");
             g.Note("Interface", t.createInterface ? "Create Interface is on: the frames, nameplates, highlights and portal panel are created at runtime." : "Create Interface is off: use your own UI (events TargetChanged, MenuRequested, PortalSelected).");
@@ -59,7 +59,7 @@ namespace SimpleMovements.Guides
         protected override Guide BuildGuide()
         {
             var ps = (PartySystem)target;
-            CombatSettings cs = Resources.Load<CombatSettings>("CombatSettings");
+            CombatSettings cs = SMAssets.Load<CombatSettings>("CombatSettings");
             var g = new Guide("PartySystem", "Party System",
                     "Parties of players: invite (target menu), accept or decline (Y / N, or the prompt), leave, remove a member, hand over the lead. Party members are allies: their heals and buffs reach each other, they cannot hurt each other, and a duel still lets two of them fight.")
                 .Where("Created by itself when first needed and kept across scene changes. Put one in a scene that stays loaded only to change the Rules (party size, invitation time, who may invite).")
@@ -86,7 +86,7 @@ namespace SimpleMovements.Guides
         protected override Guide BuildGuide()
         {
             var s = (PlayerSocial)target;
-            CombatSettings cs = Resources.Load<CombatSettings>("CombatSettings");
+            CombatSettings cs = SMAssets.Load<CombatSettings>("CombatSettings");
             var g = new Guide("PlayerSocial", "Player Social",
                     "Who this player is to others: guild (name and tag), alliance, fame and title. Shown on the target frame, the nameplates and the inspect window, and used by the combat rules.")
                 .Where("On the player (next to the Player Status Controller). Every player gets one automatically at runtime; put it on the prefab only to set values for testing.")

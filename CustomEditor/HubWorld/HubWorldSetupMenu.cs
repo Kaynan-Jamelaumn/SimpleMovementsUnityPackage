@@ -27,27 +27,13 @@ namespace HubWorld.EditorTools
         [MenuItem(SMMenu.Root + "Project Setup/Create Hub World Settings (Resources)", false, SMMenu.ProjectSetup + 6)]
         public static HubWorldSettings CreateSettings()
         {
-            HubWorldSettings existing = Resources.Load<HubWorldSettings>("HubWorldSettings");
-            if (existing != null)
-            {
-                Selection.activeObject = existing;
-                EditorGUIUtility.PingObject(existing);
-                return existing;
-            }
-            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
-                AssetDatabase.CreateFolder("Assets", "Resources");
-            var settings = ScriptableObject.CreateInstance<HubWorldSettings>();
-            AssetDatabase.CreateAsset(settings, "Assets/Resources/HubWorldSettings.asset");
-            AssetDatabase.SaveAssets();
-            Selection.activeObject = settings;
-            EditorGUIUtility.PingObject(settings);
-            Debug.Log("Hub World: created Assets/Resources/HubWorldSettings.asset (cycle, zones, penalties, duels, dungeon scenes).");
-            return settings;
+            // Cycle, zones, penalties, duels, dungeon scenes: Resources/SimpleMovements/Settings/HubWorldSettings.
+            return SMAssetsEditor.FindOrCreate<HubWorldSettings>(SMAssets.Settings, "HubWorldSettings");
         }
 
         internal static HubWorldSettings Settings()
         {
-            HubWorldSettings s = Resources.Load<HubWorldSettings>("HubWorldSettings");
+            HubWorldSettings s = SMAssets.Load<HubWorldSettings>(SMAssets.Settings, "HubWorldSettings");
             return s != null ? s : HubWorldSettings.Instance;
         }
 
@@ -277,8 +263,8 @@ namespace HubWorld.EditorTools
             var warnings = new List<string>();
             var ok = new List<string>();
 
-            if (Resources.Load<HubWorldSettings>("HubWorldSettings") == null)
-                warnings.Add("No Resources/HubWorldSettings asset: the defaults are used (Create Settings Asset).");
+            if (SMAssets.Load<HubWorldSettings>(SMAssets.Settings, "HubWorldSettings") == null)
+                warnings.Add("No Hub World Settings asset (Resources/SimpleMovements/Settings/HubWorldSettings): the defaults are used (Create Settings Asset).");
             else
                 ok.Add("Settings asset found.");
 
@@ -395,9 +381,7 @@ namespace HubWorld.EditorTools
         private static GameObject Prism(string name, Transform parent, float apothem, int segments, float bottom, float top, Material material)
         {
             Mesh mesh = PrismMesh(apothem, segments, bottom, top);
-            const string folder = "Assets/HubWorld Materials";
-            if (!AssetDatabase.IsValidFolder(folder))
-                AssetDatabase.CreateFolder("Assets", "HubWorld Materials");
+            string folder = SMAssetsEditor.Folder(SMAssets.HubWorld);
             string path = $"{folder}/{name} {apothem:0.##}m {segments} sides.asset";
             Mesh existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             if (existing != null)
@@ -541,12 +525,10 @@ namespace HubWorld.EditorTools
             return go.transform;
         }
 
-        /// <summary>A simple lit material saved next to the scenes (so scene objects keep it), reused by name.</summary>
+        /// <summary>A simple lit material saved in Resources/SimpleMovements/World/Hub World (so scene objects keep it), reused by name.</summary>
         private static Material Mat(string name, Color color, bool transparent = false)
         {
-            const string folder = "Assets/HubWorld Materials";
-            if (!AssetDatabase.IsValidFolder(folder))
-                AssetDatabase.CreateFolder("Assets", "HubWorld Materials");
+            string folder = SMAssetsEditor.Folder(SMAssets.HubWorld);
             string path = $"{folder}/{name}.mat";
             Material m = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (m != null)

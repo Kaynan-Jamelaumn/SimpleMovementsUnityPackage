@@ -43,7 +43,7 @@ public class ElementalSystem : ScriptableObject
         {
             if (instance == null)
             {
-                instance = Resources.Load<ElementalSystem>("ElementalSystem");
+                instance = SMAssets.Load<ElementalSystem>(SMAssets.Settings, "ElementalSystem");
                 if (instance == null)
                 {
                     Debug.LogWarning("ElementalSystem not found in Resources folder!");

@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
@@ -80,7 +80,7 @@ public class InventoryEditorAdvanced
     {
         string prefabName = EditorUtility.SaveFilePanel(
             "Create Item Prefab",
-            "Assets/Prefabs",
+            SMAssetsEditor.Folder(SMAssets.InventoryUI),
             "NewInventoryItem",
             "prefab");
 

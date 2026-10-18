@@ -29,10 +29,10 @@ public class TraitDatabaseEditor : Editor
 
         EditorGUILayout.HelpBox(
             "Every trait of the game. The character creation screen lists the traits with 'Available At Creation' on. " +
-            "Keep this asset in a Resources folder named exactly 'TraitDatabase' so it is found at runtime.", MessageType.Info);
-        string path = AssetDatabase.GetAssetPath(database);
-        if (!path.Contains("/Resources/") || System.IO.Path.GetFileNameWithoutExtension(path) != "TraitDatabase")
-            EditorGUILayout.HelpBox("This database is not at Resources/TraitDatabase: the Trait Manager only finds it at runtime if it is assigned directly.", MessageType.Warning);
+            "It is found at runtime at Resources/SimpleMovements/Databases/TraitDatabase (Project Setup ▸ Create Trait Database).", MessageType.Info);
+        if (SMAssets.Load<TraitDatabase>(SMAssets.Databases, "TraitDatabase") != database)
+            EditorGUILayout.HelpBox("This is not the database the game loads (Resources/SimpleMovements/Databases/TraitDatabase): the Trait Manager " +
+                                    "only uses it when it is assigned directly.", MessageType.Warning);
 
         // Counts.
         int passive = all.Count(t => t.Kind == TraitKind.Passive), active = all.Count(t => t.Kind == TraitKind.Active), hybrid = all.Count(t => t.Kind == TraitKind.Hybrid);
@@ -122,8 +122,8 @@ public class TraitDatabaseEditor : Editor
 
     private static string Folder(TraitDatabase db)
     {
-        string p = AssetDatabase.GetAssetPath(db);
-        return string.IsNullOrEmpty(p) ? "Assets" : System.IO.Path.GetDirectoryName(p).Replace('\\', '/');
+        // New traits go with the others (not next to the database).
+        return SMAssetsEditor.Folder(SMAssets.Traits);
     }
 
     private static void CollectAll(TraitDatabase database)

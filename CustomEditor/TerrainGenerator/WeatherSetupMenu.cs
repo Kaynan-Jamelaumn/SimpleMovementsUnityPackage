@@ -48,7 +48,6 @@ public static class WeatherSetupMenu
         EditorGUIUtility.PingObject(effects);
     }
 
-    private const string ConditionFolder = "Assets/SimpleMovements/Weather Conditions";
 
     /// <summary>
     /// Writes the default conditions (Soaked, Chilled, Frostbite, Heatstroke, Sandblasted, Windswept, Pelted by Hail) as
@@ -58,10 +57,7 @@ public static class WeatherSetupMenu
     [MenuItem(SMMenu.Root + "Weather/Create Default Weather Condition Assets", false, SMMenu.Weather + 20)]
     private static void CreateConditionAssets()
     {
-        if (!AssetDatabase.IsValidFolder("Assets/SimpleMovements"))
-            AssetDatabase.CreateFolder("Assets", "SimpleMovements");
-        if (!AssetDatabase.IsValidFolder(ConditionFolder))
-            AssetDatabase.CreateFolder("Assets/SimpleMovements", "Weather Conditions");
+        string ConditionFolder = SMAssetsEditor.Folder(SMAssets.Weather);
         var created = new System.Collections.Generic.List<WeatherCondition>();
         int existing = 0;
         foreach (WeatherExposureRule rule in PlayerWeatherEffects.DefaultRules())

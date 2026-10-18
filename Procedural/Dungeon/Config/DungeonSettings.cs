@@ -681,6 +681,10 @@ namespace ProceduralDungeon
         public bool vaulted;
         [Tooltip("A neighbouring dead end off the main path becomes a hidden room behind a secret door, opened by a hidden lever in this room (wine cellars).")]
         public bool hiddenRoom;
+        [Tooltip("Building pieces of the rooms of this role: their own floor tiles, walls, ceiling tiles, door frames and pillars " +
+                 "(a kitchen with tiled walls, a crypt with carved stone). Empty pieces use the theme's tile kit, else the generated " +
+                 "geometry. A Room Template's own pieces win over these.")]
+        public RoomPieces pieces = new RoomPieces();
     }
 
     [Serializable]

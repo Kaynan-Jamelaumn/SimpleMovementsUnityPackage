@@ -9,10 +9,14 @@ namespace ProceduralDungeon.EditorTools
     /// <summary>Menu items that create a ready-to-use dungeon setup.</summary>
     public static class DungeonSetupMenu
     {
-        /// <summary>Asks for a folder inside Assets (created if needed); returns its project path ("Assets/...") or null.</summary>
-        public static string PickAssetFolder(string title)
+        /// <summary>
+        /// Asks for a folder inside Assets (created if needed), starting in Resources/SimpleMovements/Dungeons with
+        /// <paramref name="suggestedName"/>; returns its project path ("Assets/...") or null.
+        /// </summary>
+        public static string PickAssetFolder(string title, string suggestedName = "Dungeon")
         {
-            string absolute = EditorUtility.SaveFolderPanel(title, Application.dataPath, "Dungeon");
+            string start = SMAssetsEditor.Folder(SMAssets.Dungeons);
+            string absolute = EditorUtility.SaveFolderPanel(title, Path.GetFullPath(start), suggestedName);
             if (string.IsNullOrEmpty(absolute))
                 return null;
             absolute = absolute.Replace('\\', '/');
@@ -77,7 +81,8 @@ namespace ProceduralDungeon.EditorTools
         /// <summary>A complete setup (profile, theme, tables, templates, manager and world portal) for a kind of dungeon.</summary>
         public static void CreateSetup(DungeonType dungeonType)
         {
-            string folder = PickAssetFolder($"Folder for the {ObjectNames.NicifyVariableName(dungeonType.ToString())} dungeon assets");
+            string typeName = ObjectNames.NicifyVariableName(dungeonType.ToString());
+            string folder = PickAssetFolder($"Folder for the {typeName} dungeon assets", typeName);
             if (folder == null)
                 return;
             string prefix = dungeonType == DungeonType.Classic ? "" : dungeonType + "_";

@@ -291,7 +291,7 @@ namespace ProceduralDungeon
             }
 
             // Tile kit.
-            if (profile.HasTileKit && B.useTileKit && profile.Theme != null)
+            if (B.useTileKit && ((profile.HasTileKit && profile.Theme != null) || profile.HasRoomPieces))
             {
                 IEnumerator kit = BuildTileKit(floor, Child(fr, "Tiles"));
                 while (kit.MoveNext())
@@ -405,30 +405,49 @@ namespace ProceduralDungeon
         private IEnumerator BuildTileKit(FloorLayout floor, Transform parent)
         {
             DungeonTheme t = profile.Theme;
+            bool themeKit = profile.HasTileKit && t != null;
+            float module = profile.TileKit.ModuleSize > 0f ? profile.TileKit.ModuleSize : 2f;
+            float wallHeight = profile.TileKit.WallPrefabHeight > 0f ? profile.TileKit.WallPrefabHeight : 4f;
             List<TileKitItem> items = TileKitPlanner.Plan(floor, new TileKitPlanner.Options
             {
                 CellSize = layout.CellSize,
-                ModuleSize = profile.TileKit.ModuleSize,
-                WallPrefabHeight = profile.TileKit.WallPrefabHeight,
+                ModuleSize = module,
+                WallPrefabHeight = wallHeight,
                 ScaleWallsToCeiling = profile.TileKit.ScaleWallsToCeiling,
                 Ceilings = B.buildCeilings,
                 DoorFrames = B.doorFrames,
             });
+            RoomPiecesInfo[] cellPieces = RoomPiecesMap.Cells(profile, floor);
             foreach (TileKitItem item in items)
             {
-                GameObject prefab;
-                switch (item.Piece)
+                // The room's own piece first, else the theme's tile kit.
+                RoomPiecesInfo rp = cellPieces != null && item.Cell >= 0 && item.Cell < cellPieces.Length ? cellPieces[item.Cell] : null;
+                GameObject prefab = rp != null && rp.Has(item.Piece) ? rp.Source.For(item.Piece) : null;
+                Vector3 scale = item.Scale;
+                if (prefab != null)
                 {
-                    case TileKitPiece.Floor: prefab = t.floorTile; break;
-                    case TileKitPiece.Wall: prefab = t.wallSegment; break;
-                    case TileKitPiece.Ceiling: prefab = t.ceilingTile; break;
-                    case TileKitPiece.DoorFrame: prefab = t.doorFrame; break;
-                    default: prefab = t.pillar; break;
+                    // Pieces of another module size / wall height than the theme's are scaled to fit the cell.
+                    float r = rp.ModuleSize > 0f ? module / rp.ModuleSize : 1f;
+                    float h = rp.WallPrefabHeight > 0f ? wallHeight / rp.WallPrefabHeight : 1f;
+                    scale = item.Piece == TileKitPiece.Wall ? new Vector3(scale.x * r, scale.y * h, scale.z)
+                        : item.Piece == TileKitPiece.Pillar ? new Vector3(scale.x * r, scale.y * h, scale.z * r)
+                        : new Vector3(scale.x * r, scale.y, scale.z * r);
+                }
+                else if (themeKit)
+                {
+                    switch (item.Piece)
+                    {
+                        case TileKitPiece.Floor: prefab = t.floorTile; break;
+                        case TileKitPiece.Wall: prefab = t.wallSegment; break;
+                        case TileKitPiece.Ceiling: prefab = t.ceilingTile; break;
+                        case TileKitPiece.DoorFrame: prefab = t.doorFrame; break;
+                        default: prefab = t.pillar; break;
+                    }
                 }
                 if (prefab == null)
-                    continue;
+                    continue;   // the generated geometry is there
                 GameObject go = pool.Get(prefab, parent, item.Position, Quaternion.Euler(0f, item.Yaw, 0f));
-                go.transform.localScale = Vector3.Scale(prefab.transform.localScale, item.Scale);
+                go.transform.localScale = Vector3.Scale(prefab.transform.localScale, scale);
                 pooledInstances.Add(go);
                 if (Tick())
                     yield return null;
@@ -816,6 +835,9 @@ namespace ProceduralDungeon
                     if (DungeonNet.ServerSession && IsItemPickup(prefab))
                         return SpawnNetworkPickup(p, index, parent, local, rot, prefab, entryName);
                     go = prefab != null ? pool.Get(prefab, parent, local, rot) : Primitive(e.Placeholder, e.Name, Color.white, 0f, e.Tier, parent, local, rot);
+                    if (prefab != null && e.AddMechanics)
+                        primitives.GiveMechanics(go, e.Placeholder, 0f, e.Tier);   // a chest / urn prefab without its script works anyway
+                    GiveDropTable(go, e.DropTable);
                     break;
                 }
                 default:
@@ -828,8 +850,12 @@ namespace ProceduralDungeon
                     // Pendulums, logs, roots and stalactites reach the ceiling: the stand-in gets the room's height instead of a light range.
                     float range = HangsFromCeiling(e.Placeholder) ? CeilingAt(p) : e.LightRange;
                     go = prefab != null ? pool.Get(prefab, parent, local, rot) : Primitive(e.Placeholder, e.Name, e.LightColor, range, index, parent, local, rot);
+                    if (prefab != null && e.AddMechanics)
+                        primitives.GiveMechanics(go, e.Placeholder, range, index);   // a trap prefab without its script works anyway
                     if (p.Scale > 0f && Mathf.Abs(p.Scale - 1f) > 0.001f)
                         go.transform.localScale = go.transform.localScale * p.Scale;
+                    e.Trap?.ApplyTo(go);
+                    GiveDropTable(go, e.DropTable);
                     break;
                 }
             }
@@ -890,6 +916,17 @@ namespace ProceduralDungeon
             else
                 DungeonNet.SpawnContent(Instance, go, p.Floor, false);   // once its floor is sent to the run's clients
             return go;
+        }
+
+        /// <summary>The entry's Item Drop Table goes to the chest / breakable it placed (kept as it is when the entry has none).</summary>
+        private static void GiveDropTable(GameObject go, ItemDropTable table)
+        {
+            if (go == null || table == null)
+                return;
+            foreach (DungeonChest chest in go.GetComponentsInChildren<DungeonChest>(true))
+                chest.dropTable = table;
+            foreach (DungeonBreakable b in go.GetComponentsInChildren<DungeonBreakable>(true))
+                b.dropTable = table;
         }
 
         private static bool HangsFromCeiling(DungeonPrimitive kind) =>

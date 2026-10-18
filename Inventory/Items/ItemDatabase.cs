@@ -28,7 +28,7 @@ public class ItemDatabase : ScriptableObject
     private static ItemDatabase instance;
     private static bool searched;
 
-    /// <summary>The database in Resources/ItemDatabase (null if there is none).</summary>
+    /// <summary>The database in Resources/SimpleMovements/Databases/ItemDatabase (null if there is none).</summary>
     public static ItemDatabase Instance
     {
         get
@@ -36,7 +36,7 @@ public class ItemDatabase : ScriptableObject
             if (instance == null && !searched)
             {
                 searched = true;
-                instance = Resources.Load<ItemDatabase>(ResourcesName);
+                instance = SMAssets.Load<ItemDatabase>(SMAssets.Databases, ResourcesName);
             }
             return instance;
         }

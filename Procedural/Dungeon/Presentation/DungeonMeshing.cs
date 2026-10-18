@@ -49,6 +49,7 @@ namespace ProceduralDungeon
                 SkipBuiltWalls = kit && kitInfo.HasWall,
                 SkipBuiltCeilings = kit && kitInfo.HasCeiling,
                 SkipBuiltDoorFrames = kit && kitInfo.HasDoorFrame,
+                CellPieces = profile.Build.useTileKit ? RoomPiecesMap.Cells(profile, floor) : null,
             };
             FloorMeshData data = DungeonMesher.Build(floor, options);
             float newel = profile.Tower != null ? profile.Tower.newelRadius : 1.1f;

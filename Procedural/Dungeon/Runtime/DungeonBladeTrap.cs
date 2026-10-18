@@ -37,6 +37,26 @@ namespace ProceduralDungeon
         {
             pivot = transform.Find("Pivot");
             blade = pivot != null ? pivot.Find("Blade") : null;
+            if (pivot == null && transform.childCount > 0)
+            {
+                // A prefab without the "Pivot" / "Blade" names: its first child swings, its lowest part is the blade.
+                pivot = transform.GetChild(0);
+                Debug.Log($"[Dungeon] Blade trap '{name}': no child named \"Pivot\" - '{pivot.name}' swings. Name the swinging part " +
+                          "\"Pivot\" (at the top, where it hangs) and its cutting part \"Blade\" for full control.", this);
+            }
+            if (pivot != null && blade == null)
+            {
+                Renderer lowest = null;
+                foreach (Renderer r in pivot.GetComponentsInChildren<Renderer>())
+                    if (lowest == null || r.bounds.min.y < lowest.bounds.min.y) lowest = r;
+                blade = lowest != null ? lowest.transform : pivot;
+                if (lowest != null)
+                {
+                    Vector3 size = lowest.bounds.size;
+                    if (size.sqrMagnitude > 0.01f && bladeSize == new Vector3(1.6f, 0.35f, 0.15f))
+                        bladeSize = size;
+                }
+            }
         }
 
         private void Update()

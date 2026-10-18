@@ -13,12 +13,13 @@ managers are used by mobs (mobs need at least `HealthManager` and `SpeedManager`
 
 | Manager | What it represents | Typical behaviour |
 |---|---|---|
-| `HealthManager` | Hit points | Regenerates slowly; damage / heal factors; 0 = death |
+| `HealthManager` | Hit points | Regenerates slowly; damage / heal factors; 0 = unconscious (with `Unconsciousness`) or death |
 | `StaminaManager` | Energy for sprinting, jumping, dashing, rolling, attacks | Spent by actions, regenerates when idle |
 | `ManaManager` | Ability resource | Spent by abilities, regenerates |
-| `HungerManager`, `ThirstManager`, `SleepManager` | Survival needs | Decrease over time (*Should Consume*); food and drink restore them |
-| `SanityManager` | Mental state | Changed by effects and events |
-| `BodyHeatManager` | Temperature | Changed by status effects (cold, heat) |
+| `HungerManager`, `ThirstManager` | Survival needs | Drain one tick every *Consuming Tick Rate* s (*Should Consume*); food and drink restore them; empty = damage |
+| `SleepManager` | Rest (100 = rested) | Drains while awake, tiredness stages, sleep in beds / on the ground restores it ([12](12-Survival-Death-and-Respawn.md)) |
+| `SanityManager` | Mental state | Auras, hits, items, abilities lower / restore it; stages of consequences ([12](12-Survival-Death-and-Respawn.md)) |
+| `BodyHeatManager` | Body temperature | Follows the weather; ideal range per race / class; heat / cold resistance; cold and heat effects ([12](12-Survival-Death-and-Respawn.md)) |
 | `OxygenManager` | Breath | Changed by status effects (drowning, thin air) |
 | `WeightManager` | Carried weight vs capacity | The inventory sets it; overweight slows the player |
 | `SpeedManager` | Movement speed | Base speed, running / crouching multipliers, slows and hastes |
@@ -28,14 +29,20 @@ Common fields:
 | Field | Meaning |
 |---|---|
 | Current Value / Max Value | The value and its maximum |
-| Tick Rate / Consuming Tick Rate | Seconds between regeneration / consumption ticks |
-| Increment Value / Decrement Value | Amount per tick when regenerating / consuming |
-| Increment Factor / Decrement Factor | Multipliers on those amounts (traits, equipment, effects change them) |
-| Should Consume | The value goes down over time (hunger, thirst, sleep) |
-| UI Image | The bar's fill image (assigned by the inventory UI builder: status bars are built automatically) |
+| Tick Rate | **Regeneration** tick: seconds between two gains (health, stamina, mana) |
+| Consuming Tick Rate | **Consumption** tick: seconds between two losses of a status that drains by itself (hunger, thirst) |
+| Increment Value / Decrement Value | **How much** is gained / lost per tick |
+| Increment Factor / Decrement Factor | **Percent** change of every gain / loss: +50 = 50% more, -50 = half, 0 = unchanged (it is not a multiplier: 1 means +1%) |
+| Should Consume | The value goes down over time by itself (hunger, thirst) |
+| UI Image | The image the status fills (the Player HUD assigns its own) |
 
-The **status bars** (top left, with "75 / 100" values) are created by the inventory UI builder, one per status type
-the player has, and wired to each manager's *UI Image* ([Inventory 06 §3a](../Inventory/06-Editor-Tools.md)).
+Example: hunger with *Consuming Tick Rate* 6, *Decrement Value* 1 and *Decrement Factor* 0 loses 1 point every 6 s =
+10 per minute (a bar of 100 lasts 10 minutes). *Decrement Factor* 50 makes it 1.5 per tick (15 per minute). Cold
+(body heat) and sleeping change the drain through drain multipliers on top (`StatusManager.SetRateMultiplier`).
+
+The **status bars** are drawn by the [Player HUD](11-Player-HUD.md) (status frame and needs gauges). The inventory UI
+builder no longer generates the old "StatusBars" panel: it adds the Player HUD instead (an old panel in your prefab is
+hidden by the HUD while it runs, and can be deleted).
 
 ---
 
@@ -51,7 +58,7 @@ manager and the **player class**. Other systems reach the player's stats through
 
 Inspector tools: **Complete Setup Wizard**, **Auto-Assign All Components**, **Create Missing Components**, the
 *Setup … Only* buttons, **Validate Setup**, **Validate Status Values**, **Apply Reasonable Defaults**,
-**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Players* and *Tools ▸ SimpleMovements ▸ Player ▸ Auto-Setup All Players In Scene* run them
+**Log Component Hierarchy**. *Tools ▸ SimpleMovements ▸ Validate ▸ Players* and *Tools ▸ SimpleMovements ▸ Auto-Assign ▸ Auto-Setup All Players In Scene* run them
 on every player in the open scenes.
 
 ---
@@ -110,7 +117,7 @@ traits.AddTrait(myTrait, ignoreRequirements: true, isTemporary: true, duration: 
 traits.RemoveTrait(myTrait);                      // refunds exactly what was paid
 ```
 
-The **Trait Database** (`Resources/TraitDatabase`) lists every trait of the game for the character creation screen
+The **Trait Database** (`Resources/SimpleMovements/Databases/TraitDatabase`) lists every trait of the game for the character creation screen
 and lookups. *Tools ▸ SimpleMovements ▸ Validate ▸ Traits* checks them all.
 
 ### Weapon traits vs player traits

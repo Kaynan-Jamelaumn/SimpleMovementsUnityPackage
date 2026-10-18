@@ -52,14 +52,13 @@ public class PlayerClassEditor : Editor
         playerClass.Validate(errors, warnings);
         foreach (string e in errors) EditorGUILayout.HelpBox(e, MessageType.Error);
         foreach (string w in warnings) EditorGUILayout.HelpBox(w, MessageType.Warning);
-        if (playerClass.archetype == null && GUILayout.Button(new GUIContent("Create Class Archetype", "Creates a Character Archetype of kind Class next to this asset and links it.")))
+        if (playerClass.archetype == null && GUILayout.Button(new GUIContent("Create Class Archetype", "Creates a Character Archetype of kind Class (in Resources/SimpleMovements/Characters/Classes) and links it.")))
         {
             var a = ScriptableObject.CreateInstance<CharacterArchetype>();
             a.kind = ArchetypeKind.Class;
             a.displayName = playerClass.GetClassName();
             a.setsHeight = false;
-            string folder = System.IO.Path.GetDirectoryName(AssetDatabase.GetAssetPath(playerClass)).Replace('\\', '/');
-            AssetDatabase.CreateAsset(a, AssetDatabase.GenerateUniqueAssetPath($"{folder}/{playerClass.GetClassName()} Archetype.asset"));
+            AssetDatabase.CreateAsset(a, SMAssetsEditor.UniquePath(SMAssets.Classes, $"{playerClass.GetClassName()} Archetype.asset"));
             Undo.RecordObject(playerClass, "Link Class Archetype");
             playerClass.archetype = a;
             EditorUtility.SetDirty(playerClass);

@@ -40,6 +40,8 @@ namespace SimpleMovements.Validation
         ProjectAssets = 32,
         /// <summary>The Input Actions asset (every action the scripts read) and the open scenes' setup (weather, day/night, relays).</summary>
         GameSetup = 64,
+        /// <summary>Every mob's setup: components, references, physics, animation, profile, attacks, drops (Mob Setup Validator).</summary>
+        Mobs = 128,
     }
 
     /// <summary>
@@ -55,13 +57,16 @@ namespace SimpleMovements.Validation
         /// <summary>Every check.</summary>
         public const ValidationChecks AllChecks = ValidationChecks.MissingScripts | ValidationChecks.BrokenReferences
             | ValidationChecks.RequiredReferences | ValidationChecks.AssignableReferences | ValidationChecks.Network | ValidationChecks.ProjectAssets
-            | ValidationChecks.GameSetup;
+            | ValidationChecks.GameSetup | ValidationChecks.Mobs;
 
         /// <summary>Every check except the (informative) assignable references.</summary>
         public const ValidationChecks DefaultChecks = AllChecks & ~ValidationChecks.AssignableReferences;
 
         /// <summary>Extra checks run on each root object (scene root or prefab asset root). The network validator registers one.</summary>
         public static event Action<GameObject, List<ValidationIssue>> ValidateRoot;
+
+        /// <summary>Extra checks run on each root object with the checks of the run (the mob validator registers one).</summary>
+        public static event Action<GameObject, ValidationChecks, List<ValidationIssue>> ValidateRootWithChecks;
 
         /// <summary>Extra project-wide checks (run once per validation, when <see cref="ValidationChecks.ProjectAssets"/> or Network is on).</summary>
         public static event Action<ValidationChecks, List<ValidationIssue>> ValidateProject;
@@ -159,6 +164,7 @@ namespace SimpleMovements.Validation
 
             if ((checks & ValidationChecks.Network) != 0)
                 ValidateRoot?.Invoke(root, issues);
+            ValidateRootWithChecks?.Invoke(root, checks, issues);
         }
 
         /// <summary>Applies every available fix. Returns how many changed something.</summary>
@@ -279,25 +285,32 @@ namespace SimpleMovements.Validation
         private static void CheckProjectAssets(List<ValidationIssue> issues)
         {
             const string setup = "Tools/SimpleMovements/Project Setup/";
-            CheckResource(issues, "CombatSettings", "Combat Settings", setup + "Create Combat Settings (Resources)");
-            CheckResource(issues, "AbsorptionSettings", "Absorption Settings", setup + "Create Absorption Settings (Resources)");
-            CheckResource(issues, "AbilityDatabase", "Ability Database", setup + "Create Ability Database (Resources)");
-            CheckResource(issues, "TraitDatabase", "Trait Database", setup + "Create Trait Database (Resources)");
-            CheckResource(issues, ItemCategoryDatabase.ResourcesName, "Item Category Database", setup + "Create Item Category Database (Resources)");
-            CheckResource(issues, CurrencyDefinition.ResourcesName, "Default Currency", setup + "Create Default Currency (Resources)");
-            CheckResource(issues, "HubWorldSettings", "Hub World Settings", "Tools/SimpleMovements/Project Setup/Create Hub World Settings (Resources)");
-            if (Resources.Load<ItemDatabase>(ItemDatabase.ResourcesName) == null)
+            CheckResource<CombatSettings>(issues, SMAssets.Settings, "CombatSettings", "Combat Settings", setup + "Create Combat Settings (Resources)");
+            CheckResource<AbsorptionSettings>(issues, SMAssets.Settings, "AbsorptionSettings", "Absorption Settings", setup + "Create Absorption Settings (Resources)");
+            CheckResource<AbilityDatabase>(issues, SMAssets.Databases, "AbilityDatabase", "Ability Database", setup + "Create Ability Database (Resources)");
+            CheckResource<TraitDatabase>(issues, SMAssets.Databases, "TraitDatabase", "Trait Database", setup + "Create Trait Database (Resources)");
+            CheckResource<ItemCategoryDatabase>(issues, SMAssets.Databases, ItemCategoryDatabase.ResourcesName, "Item Category Database", setup + "Create Item Category Database (Resources)");
+            CheckResource<CurrencyDefinition>(issues, SMAssets.Economy, CurrencyDefinition.ResourcesName, "Default Currency", setup + "Create Default Currency (Resources)");
+            CheckResource<HubWorld.HubWorldSettings>(issues, SMAssets.Settings, "HubWorldSettings", "Hub World Settings", setup + "Create Hub World Settings (Resources)");
+            if (SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName) == null)
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Project",
-                    "No Resources/ItemDatabase: items have no stable ids (needed for network sessions and saves)")
+                    $"No {SMAssets.ResourcePath(SMAssets.Databases, ItemDatabase.ResourcesName)}: items have no stable ids (needed for network sessions and saves)")
                     .WithFix("Build", () => EditorApplication.ExecuteMenuItem("Tools/SimpleMovements/Project Setup/Build Item Database")));
+            int toMove = SMAssetsEditor.PlanMoves().Count;
+            if (toMove > 0)
+                issues.Add(new ValidationIssue(IssueSeverity.Info, "Project",
+                        $"{toMove} generated asset(s) are where older versions put them (Resources root, Assets/Generated...): " +
+                        $"they work, but can be moved into {SMAssets.ProjectRoot}")
+                    .WithFix("Organise", () => { SMAssetsEditor.OrganiseMenu(); return true; }));
             CheckScenesInBuild(issues);
         }
 
-        private static void CheckResource(List<ValidationIssue> issues, string resourceName, string label, string createMenu)
+        private static void CheckResource<T>(List<ValidationIssue> issues, string folder, string resourceName, string label, string createMenu) where T : Object
         {
-            if (Resources.Load(resourceName) != null)
+            if (SMAssets.Load<T>(folder, resourceName) != null)
                 return;
-            var issue = new ValidationIssue(IssueSeverity.Info, "Project", $"No Resources/{resourceName} ({label}): built-in defaults are used");
+            var issue = new ValidationIssue(IssueSeverity.Info, "Project",
+                $"No Resources/{SMAssets.ResourcePath(folder, resourceName)} ({label}): built-in defaults are used");
             if (!string.IsNullOrEmpty(createMenu))
                 issue.WithFix("Create", () => EditorApplication.ExecuteMenuItem(createMenu));
             issues.Add(issue);

@@ -39,7 +39,7 @@ public class ActiveTraitInfo
 public class TraitManager : MonoBehaviour
 {
     [Header("Configuration")]
-    [Tooltip("All traits of the game (for the character creation screen and lookups). Empty = Resources/TraitDatabase or the first one in the project (editor).")]
+    [Tooltip("All traits of the game (for the character creation screen and lookups). Empty = Resources/SimpleMovements/Databases/TraitDatabase or the first one in the project (editor).")]
     [SerializeField] private TraitDatabase traitDatabase;
     [Tooltip("Points left to spend on traits. Positive traits cost points, negative traits give points back.")]
     [SerializeField] private int availableTraitPoints = 10;

@@ -70,7 +70,7 @@ public partial class TerrainGeneratorEditor : Editor
         Debug.Log($"[TerrainGenerator] Applied '{preset.Name}' preset to biome '{biome.name}'. Amplitude/Frequency are relative starting points - rescale them to match your world's overall height scale.");
     }
 
-    // --- Save/Load a full backup of a biome's tunable fields, as JSON under Assets/BiomeBackups/. Keyed
+    // --- Save/Load a full backup of a biome's tunable fields, as JSON under Assets/Resources/SimpleMovements/World/Biome Backups/. Keyed
     // by the biome asset's GUID (falling back to its name) so a rename doesn't orphan its backup. ---
 
     [System.Serializable]
@@ -90,7 +90,7 @@ public partial class TerrainGeneratorEditor : Editor
         public int placement;
     }
 
-    private const string BiomeBackupFolder = "Assets/BiomeBackups";
+    private static string BiomeBackupFolder => SMAssets.FolderPath(SMAssets.BiomeBackups);
 
     private static string GetBiomeBackupPath(Biome biome)
     {
@@ -98,7 +98,11 @@ public partial class TerrainGeneratorEditor : Editor
         string guid = !string.IsNullOrEmpty(assetPath) ? AssetDatabase.AssetPathToGUID(assetPath) : null;
         string safeName = string.IsNullOrEmpty(biome.name) ? "UnnamedBiome" : biome.name;
         string fileKey = !string.IsNullOrEmpty(guid) ? guid : safeName;
-        return $"{BiomeBackupFolder}/{safeName}_{fileKey}.json";
+        string file = $"{safeName}_{fileKey}.json";
+        // A backup made by an older version (Assets/BiomeBackups) until Organise Generated Assets moves it.
+        string legacy = $"Assets/BiomeBackups/{file}";
+        string current = $"{BiomeBackupFolder}/{file}";
+        return !File.Exists(current) && File.Exists(legacy) ? legacy : current;
     }
 
     private static bool HasSavedBiomeState(Biome biome)
@@ -108,10 +112,7 @@ public partial class TerrainGeneratorEditor : Editor
 
     private static void SaveBiomeState(Biome biome)
     {
-        if (!AssetDatabase.IsValidFolder(BiomeBackupFolder))
-        {
-            AssetDatabase.CreateFolder("Assets", "BiomeBackups");
-        }
+        SMAssetsEditor.Folder(SMAssets.BiomeBackups);
 
         BiomeStateSnapshot snapshot = new BiomeStateSnapshot
         {

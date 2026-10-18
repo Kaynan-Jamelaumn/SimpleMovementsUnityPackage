@@ -23,6 +23,8 @@ namespace ProceduralDungeon
         public ZoneMask Styles;
         public float CeilingHeight;
         public bool AllowPopulation;
+        /// <summary>The template's own building pieces (null = none).</summary>
+        public RoomPiecesInfo Pieces;
         /// <summary>Main thread only.</summary>
         public RoomTemplate Source;
 
@@ -63,6 +65,8 @@ namespace ProceduralDungeon
         public bool Vaulted;
         /// <summary>A neighbouring dead end becomes a hidden room behind a secret door with a lever in this room.</summary>
         public bool HiddenRoom;
+        /// <summary>Building pieces of the rooms of this role (null = none).</summary>
+        public RoomPiecesInfo Pieces;
     }
 
     public sealed class EncounterInfo
@@ -99,6 +103,12 @@ namespace ProceduralDungeon
         public PropPlacement Placement;
         public int MinFloor, MaxFloor;
         public GameObject Prefab;
+        /// <summary>What the placed chest / breakable drops (null = the Item Drop Manager's default).</summary>
+        public ItemDropTable DropTable;
+        /// <summary>Only in these roles (empty = any).</summary>
+        public AreaRole[] Roles = new AreaRole[0];
+        /// <summary>A prefab gets the placeholder's mechanics when it has none.</summary>
+        public bool AddMechanics = true;
     }
 
     public sealed class PropInfo
@@ -126,6 +136,12 @@ namespace ProceduralDungeon
         public Color LightColor;
         public float LightRange;
         public GameObject Prefab;
+        /// <summary>What a breakable / chest prop drops (null = the defaults).</summary>
+        public ItemDropTable DropTable;
+        /// <summary>A prefab gets the placeholder's mechanics when it has none.</summary>
+        public bool AddMechanics = true;
+        /// <summary>Trap overrides (null / off = the trap's own values).</summary>
+        public TrapSettings Trap;
     }
 
     /// <summary>Which tile-kit pieces a theme has (plain data for the mesher).</summary>
@@ -197,6 +213,8 @@ namespace ProceduralDungeon
 
         public bool HasTileKit;
         public readonly TileKitInfo TileKit = new TileKitInfo();
+        /// <summary>Some template or role has its own building pieces.</summary>
+        public bool HasRoomPieces;
         /// <summary>Meters per texture repeat on generated meshes.</summary>
         public float TextureScale = 3f;
         /// <summary>Custom stages from the profile (their Run is called on the worker thread).</summary>
@@ -351,8 +369,10 @@ namespace ProceduralDungeon
                     Styles = t.styles,
                     CeilingHeight = t.ceilingHeight,
                     AllowPopulation = t.allowPopulation,
+                    Pieces = t.mode == RoomTemplate.TemplateMode.ShapeMask ? RoomPiecesInfo.From(t.pieces) : null,
                     Source = t,
                 };
+                c.HasRoomPieces |= info.Pieces != null;
                 c.Templates.Add(info);
                 templateIndex[t] = info.Index;
                 return info.Index;
@@ -405,7 +425,9 @@ namespace ProceduralDungeon
                         CeilingHeight = Mathf.Max(0f, r.ceilingHeight),
                         Vaulted = r.vaulted,
                         HiddenRoom = r.hiddenRoom,
+                        Pieces = RoomPiecesInfo.From(r.pieces),
                     });
+                    c.HasRoomPieces |= r.pieces != null && r.pieces.IsUsed;
                 }
             }
 
@@ -464,6 +486,9 @@ namespace ProceduralDungeon
                         Placement = e.placement,
                         MinFloor = e.minFloor,
                         MaxFloor = e.maxFloor,
+                        DropTable = e.dropTable,
+                        Roles = e.roles != null ? e.roles.ToArray() : new AreaRole[0],
+                        AddMechanics = e.addMechanics,
                     });
                 }
             }
@@ -504,6 +529,9 @@ namespace ProceduralDungeon
                         Scale = e.scale,
                         LightColor = e.lightColor,
                         LightRange = e.lightRange,
+                        DropTable = e.dropTable,
+                        AddMechanics = e.addMechanics,
+                        Trap = e.trap,
                     });
                 }
             }

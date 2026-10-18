@@ -143,6 +143,13 @@ The mesher skips exactly the built parts the kit provides (floor, wall, ceiling,
 geometry never overlap. Tile-kit pieces bring their own colliders. Set *Cell Size* equal to the kit's *Module Size* to
 avoid scaling.
 
+**Per-room pieces.** A role rule or a Shape Mask template can bring its own **Pieces** (floor tile, wall segment,
+ceiling tile, door frame, pillar — [06](06-Roles-and-Templates.md#room-pieces-walls-floors-ceilings-doors-pillars)).
+`RoomPiecesMap` resolves the pieces of every cell (template first, then the role rule; corridor and doorway cells take
+those of the room next to them); the planner uses a cell's own piece where it has one and the theme's otherwise, and the
+mesher skips only the parts that cell gets as a piece. Rooms with pieces work without a theme tile kit (Build ▸ *Use
+Tile Kit* on).
+
 ## 6. Colliders, NavMesh and mobs
 
 ```mermaid

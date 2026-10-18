@@ -20,7 +20,7 @@ round.
 ### Adding abilities
 
 1. Select the mob's `MobAbilityController`.
-2. **Add Ability From Preset ▾** — creates an Ability Definition next to the prefab and puts it in a new slot — or drag
+2. **Add Ability From Preset ▾** — creates an Ability Definition in the mob type's folder (`Resources/SimpleMovements/Mobs/<Type>`) and puts it in a new slot — or drag
    an existing Ability Definition into a slot.
 3. Set the ability's **Mob AI** hints (below). **Remove Empty Slots** cleans up.
 4. A **Cast Point** (a child at chest height: *Create*) is where projectiles start; **Find** assigns the Animator.

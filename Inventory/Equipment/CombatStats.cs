@@ -76,6 +76,18 @@ public enum CombatStatType
     ManaCostReduction,
     /// <summary>Percent shorter cooldowns (capped). Can be limited to skills, innate or item abilities (items also shortens consumable cooldowns).</summary>
     CooldownReduction,
+    /// <summary>Points. How far below 0 health the character can go and stay unconscious instead of dying (see Unconsciousness).</summary>
+    DeathThreshold,
+    /// <summary>Seconds added to how long the character stays unconscious before dying (see Unconsciousness).</summary>
+    UnconsciousDuration,
+    /// <summary>Percent less effect of heat on the body temperature (100 = immune to heat).</summary>
+    HeatResistance,
+    /// <summary>Percent less effect of cold on the body temperature (100 = immune to cold).</summary>
+    ColdResistance,
+    /// <summary>Percent less sanity lost (100 = immune to sanity loss).</summary>
+    SanityResistance,
+    /// <summary>Percent faster recovery of rest while sleeping (negative = slower).</summary>
+    RestRecovery,
 }
 
 /// <summary>Which abilities a cost / cooldown modifier counts for.</summary>
@@ -252,6 +264,12 @@ public readonly struct CombatStatInfo
             case CombatStatType.ReloadSpeed: return new CombatStatInfo("Reload Speed", true, "Percent faster reloading of crossbows and firearms.");
             case CombatStatType.ManaCostReduction: return new CombatStatInfo("Mana Cost Reduction", true, "Percent less mana spent by abilities (capped). Can be limited to skills, innate or item abilities.");
             case CombatStatType.CooldownReduction: return new CombatStatInfo("Cooldown Reduction", true, "Percent shorter ability cooldowns (capped). Can be limited to skills, innate or item abilities; Items also shortens consumable cooldowns.");
+            case CombatStatType.DeathThreshold: return new CombatStatInfo("Death Threshold", false, "Points of damage below 0 health the character survives unconscious (added to the Unconsciousness threshold). Higher = harder to kill outright.");
+            case CombatStatType.UnconsciousDuration: return new CombatStatInfo("Unconscious Time", false, "Seconds added to how long the character stays unconscious (waiting for a revive) before dying.");
+            case CombatStatType.HeatResistance: return new CombatStatInfo("Heat Resistance", true, "Percent less effect of heat on the body temperature. 100 = immune to heat.");
+            case CombatStatType.ColdResistance: return new CombatStatInfo("Cold Resistance", true, "Percent less effect of cold on the body temperature. 100 = immune to cold.");
+            case CombatStatType.SanityResistance: return new CombatStatInfo("Sanity Resistance", true, "Percent less sanity lost from every source. 100 = immune.");
+            case CombatStatType.RestRecovery: return new CombatStatInfo("Rest Recovery", true, "Percent faster recovery of rest while sleeping (negative = slower).");
             default: return new CombatStatInfo(stat.ToString(), false, "");
         }
     }

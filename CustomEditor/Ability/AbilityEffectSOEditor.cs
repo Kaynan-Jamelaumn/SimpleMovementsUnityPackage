@@ -185,14 +185,12 @@ public class AbilityEffectSOEditor : Editor
     }
 }
 
-/// <summary>Saves a converted copy of a legacy ability next to it (usable from runtime-assembly editors).</summary>
+/// <summary>Saves a converted copy of a legacy ability in Resources/SimpleMovements/Abilities (usable from runtime-assembly editors).</summary>
 public static class AbilityToolsMenuBridge
 {
     public static AbilityDefinition Convert(AbilityEffectSO legacy, bool forMob)
     {
-        string src = AssetDatabase.GetAssetPath(legacy);
-        string folder = string.IsNullOrEmpty(src) ? "Assets" : System.IO.Path.GetDirectoryName(src).Replace('\\', '/');
-        string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{legacy.name} ({(forMob ? "Mob" : "Player")}).asset");
+        string path = SMAssetsEditor.UniquePath(SMAssets.Abilities, $"{legacy.name} ({(forMob ? "Mob" : "Player")}).asset");
         AbilityDefinition def = LegacyAbilityConverter.CreateDefinition(legacy, forMob);
         AssetDatabase.CreateAsset(def, path);
         def.SetId(AssetDatabase.AssetPathToGUID(path));

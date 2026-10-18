@@ -21,10 +21,24 @@ public enum AppearancePart
     Head,
     /// <summary>Body model: the default body (the model's own or the placeholder body), or one of the Body Models.</summary>
     Body,
+    /// <summary>Ears: the default ones (the model's, the placeholder head's or the race's), or one of the Ear Styles.</summary>
+    Ears,
+    /// <summary>Torso / chest: the default one, or one of the Torso Styles (it replaces the body's torso).</summary>
+    Torso,
+    /// <summary>Arms: the default ones, or one of the Arm Styles.</summary>
+    Arms,
+    /// <summary>Hands: the default ones, or one of the Hand Styles.</summary>
+    Hands,
+    /// <summary>Legs: the default ones, or one of the Leg Styles.</summary>
+    Legs,
+    /// <summary>Feet: the default ones, or one of the Foot Styles.</summary>
+    Feet,
+    /// <summary>Clothes worn under armour: none, or one of the Outfits.</summary>
+    Outfit,
 }
 
 /// <summary>
-/// What a character looks like: body type, skin, hair, beard, eyes and nose (style indices into the
+/// What a character looks like: body type, skin, hair, beard, eyes, nose, ears, body parts and outfit (style indices into the
 /// <see cref="CharacterAppearance"/>'s options), their colours and two face sliders. Small and plain so it is saved
 /// with the character and sent over the network as a short string (<see cref="Encode"/> / <see cref="Decode"/>).
 /// </summary>
@@ -43,6 +57,20 @@ public class CharacterAppearanceData
     public int headStyle = 0;
     [Tooltip("0 = the default body; 1+ = the Character Appearance's Body Models.")]
     public int bodyStyle = 0;
+    [Tooltip("0 = the default ears; 1+ = the Character Appearance's Ear Styles.")]
+    public int earStyle = 0;
+    [Tooltip("0 = the default torso; 1+ = the Torso Styles.")]
+    public int torsoStyle = 0;
+    [Tooltip("0 = the default arms; 1+ = the Arm Styles.")]
+    public int armStyle = 0;
+    [Tooltip("0 = the default hands; 1+ = the Hand Styles.")]
+    public int handStyle = 0;
+    [Tooltip("0 = the default legs; 1+ = the Leg Styles.")]
+    public int legStyle = 0;
+    [Tooltip("0 = the default feet; 1+ = the Foot Styles.")]
+    public int footStyle = 0;
+    [Tooltip("0 = no outfit; 1+ = the Character Appearance's Outfits.")]
+    public int outfitStyle = 0;
     [Range(0f, 1f)] public float noseSize = 0.5f;
     [Range(0f, 1f)] public float eyeSize = 0.5f;
     [Tooltip("Shirt colour of the placeholder body.")]
@@ -90,6 +118,13 @@ public class CharacterAppearanceData
             case AppearancePart.Eyebrows: return eyebrowStyle;
             case AppearancePart.Head: return headStyle;
             case AppearancePart.Body: return bodyStyle;
+            case AppearancePart.Ears: return earStyle;
+            case AppearancePart.Torso: return torsoStyle;
+            case AppearancePart.Arms: return armStyle;
+            case AppearancePart.Hands: return handStyle;
+            case AppearancePart.Legs: return legStyle;
+            case AppearancePart.Feet: return footStyle;
+            case AppearancePart.Outfit: return outfitStyle;
             default: return noseStyle;
         }
     }
@@ -104,6 +139,13 @@ public class CharacterAppearanceData
             case AppearancePart.Eyebrows: eyebrowStyle = index; break;
             case AppearancePart.Head: headStyle = index; break;
             case AppearancePart.Body: bodyStyle = index; break;
+            case AppearancePart.Ears: earStyle = index; break;
+            case AppearancePart.Torso: torsoStyle = index; break;
+            case AppearancePart.Arms: armStyle = index; break;
+            case AppearancePart.Hands: handStyle = index; break;
+            case AppearancePart.Legs: legStyle = index; break;
+            case AppearancePart.Feet: footStyle = index; break;
+            case AppearancePart.Outfit: outfitStyle = index; break;
             default: noseStyle = index; break;
         }
     }
@@ -125,7 +167,7 @@ public class CharacterAppearanceData
         };
         foreach (AppearancePart part in (AppearancePart[])Enum.GetValues(typeof(AppearancePart)))
         {
-            if (part == AppearancePart.Body) continue; // the body model is a choice, not a random look
+            if (IsBodyPiece(part)) continue; // the body model and body parts are choices, not a random look
             int count = appearance != null ? appearance.OptionCount(part) : CharacterAppearance.PlaceholderNames(part).Length;
             int pick = count > 0 ? rng.Next(part == AppearancePart.Eyebrows && count > 1 ? count - 1 : count) : 0; // eyebrows: never "None" at random
             for (int tries = 0; appearance != null && tries < 12 && !appearance.IsAllowed(part, pick, d.bodyType); tries++)
@@ -139,17 +181,24 @@ public class CharacterAppearanceData
         return d;
     }
 
+    /// <summary>The body model and the parts of the body (torso, arms, hands, legs, feet): never picked at random (the creator's Randomize keeps them).</summary>
+    public static bool IsBodyPiece(AppearancePart part) =>
+        part == AppearancePart.Body || part == AppearancePart.Torso || part == AppearancePart.Arms ||
+        part == AppearancePart.Hands || part == AppearancePart.Legs || part == AppearancePart.Feet;
+
     // ------------------------------------------------------------------ wire format
     private const string Version = "a1";
 
-    /// <summary>A short text form ("a1|0|E0B090|2|3B2617|0|1|523821|0|0.50|0.50|0|0|6B5C45|423D38"); older, shorter texts still read.</summary>
+    /// <summary>A short text form ("a1|0|E0B090|2|3B2617|0|1|523821|0|0.50|0.50|0|0|6B5C45|423D38|0|0|0|0|0|0|0|0"); older, shorter texts still read.</summary>
     public string Encode()
     {
         var c = CultureInfo.InvariantCulture;
         return string.Join("|", Version, ((int)bodyType).ToString(c), Hex(skinColor), hairStyle.ToString(c), Hex(hairColor),
             beardStyle.ToString(c), eyeStyle.ToString(c), Hex(eyeColor), noseStyle.ToString(c),
             Mathf.Clamp01(noseSize).ToString("0.00", c), Mathf.Clamp01(eyeSize).ToString("0.00", c),
-            eyebrowStyle.ToString(c), headStyle.ToString(c), Hex(topColor), Hex(bottomColor), bodyStyle.ToString(c));
+            eyebrowStyle.ToString(c), headStyle.ToString(c), Hex(topColor), Hex(bottomColor), bodyStyle.ToString(c),
+            earStyle.ToString(c), torsoStyle.ToString(c), armStyle.ToString(c), handStyle.ToString(c), legStyle.ToString(c),
+            footStyle.ToString(c), outfitStyle.ToString(c));
     }
 
     /// <summary>Reads <see cref="Encode"/>'s text; anything missing or broken keeps its default.</summary>
@@ -177,6 +226,13 @@ public class CharacterAppearanceData
         if (p.Length > 13) d.topColor = FromHex(p[13], d.topColor);
         if (p.Length > 14) d.bottomColor = FromHex(p[14], d.bottomColor);
         if (p.Length > 15) d.bodyStyle = Index(p[15], c);
+        if (p.Length > 16) d.earStyle = Index(p[16], c);
+        if (p.Length > 17) d.torsoStyle = Index(p[17], c);
+        if (p.Length > 18) d.armStyle = Index(p[18], c);
+        if (p.Length > 19) d.handStyle = Index(p[19], c);
+        if (p.Length > 20) d.legStyle = Index(p[20], c);
+        if (p.Length > 21) d.footStyle = Index(p[21], c);
+        if (p.Length > 22) d.outfitStyle = Index(p[22], c);
         return d;
     }
 

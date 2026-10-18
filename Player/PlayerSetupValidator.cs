@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -76,6 +76,16 @@ public class PlayerSetupValidator : MonoBehaviour
         C(typeof(PlayerNameComponent), Importance.Recommended, "The character's name (set by character creation)."),
         C(typeof(CharacterIdentity), Importance.Recommended, "Race, class combat stats, height, level and attribute points."),
         C(typeof(UnityEngine.InputSystem.PlayerInput), Importance.Recommended, "Unity's Player Input: camera look, interact and pause events (assign the input actions, Invoke Unity Events)."),
+        C(typeof(HungerManager), Importance.Recommended, "Hunger: drains every Consuming Tick Rate seconds, food fills it, starvation hurts (status setup wizard).", false, true),
+        C(typeof(ThirstManager), Importance.Recommended, "Thirst: like hunger, drinks fill it (status setup wizard).", false, true),
+        C(typeof(SleepManager), Importance.Recommended, "Rest: drains while awake, tiredness debuffs, sleeping in beds / on the ground restores it (status setup wizard).", false, true),
+        C(typeof(SanityManager), Importance.Recommended, "Sanity: auras, hits, items and abilities lower or restore it; stages of consequences (status setup wizard).", false, true),
+        C(typeof(BodyHeatManager), Importance.Recommended, "Body temperature: ideal range per race / class, heat / cold resistance, cold and heat effects (status setup wizard).", false, true),
+        C(typeof(OxygenManager), Importance.Recommended, "Oxygen under water and at altitude (status setup wizard).", false, true),
+        C(typeof(Unconsciousness), Importance.Recommended, "0 health knocks the player out instead of killing it: death threshold, countdown, revive by allies, give up."),
+        C(typeof(DeathPenalty), Importance.Recommended, "What dying costs (items, experience, milestone regression, character reset), the offline respawn and the needs refilled on respawn."),
+        C(typeof(SleepController), Importance.Recommended, "The Sleep input: sleep anywhere on the ground, wake up; the sleeping screen."),
+        C(typeof(SanityScreenEffect), Importance.Optional, "Low sanity on screen: darkening, pulsing edges and whispers (local player)."),
 
         // Optional
         C(typeof(AbilitiesStateMachine), Importance.Optional, "Ability keys."),

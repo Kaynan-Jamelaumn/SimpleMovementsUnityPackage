@@ -6,7 +6,7 @@
 
 | # | Do | Result |
 |---|---|---|
-| 1 | *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Hub World Settings (Resources)* | `Assets/Resources/HubWorldSettings.asset` |
+| 1 | *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Hub World Settings (Resources)* | `Assets/Resources/SimpleMovements/Settings/HubWorldSettings.asset` |
 | 2 | Select your player prefab in the Project window, then *Hub World ▸ Build City Scene…* | A City scene: ground and walls (placeholders), the **City Gate** on the south side, *Realm: City* with the arrival point (inside the gate) and the spawn point (the square), the **Hub World Director**, your player at the spawn. Saved, first in Build Settings, its name written to the settings. |
 | 3 | Replace the placeholder walls with your city (keep a City Gate and the Realm: City points). Add NPCs and merchants — no mobs. | |
 | 4 | Open the scene with your `TerrainGenerator`, `EndlessTerrain` and `WeatherSystem`; *Hub World ▸ Make Open Scene The World Scene* | The exterior copy of the city at *City Center* (walls, sealed inside), the **Return Gate**, *Realm: World* with the arrival point outside the gate; the EndlessTerrain's Viewer cleared (the director sets it). Saved, added to Build Settings. Remove any player or camera from this scene. |

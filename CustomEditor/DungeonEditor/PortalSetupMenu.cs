@@ -16,7 +16,7 @@ namespace ProceduralDungeon.EditorTools
         [MenuItem(SMMenu.Root + "Dungeon/Create World Portal Prefab...", false, SMMenu.Dungeon + 21)]
         public static void CreatePortalPrefabMenu()
         {
-            string folder = DungeonSetupMenu.PickAssetFolder("Folder for the world portal prefab");
+            string folder = DungeonSetupMenu.PickAssetFolder("Folder for the world portal prefab", "Portals");
             if (folder == null)
                 return;
             DungeonManager manager = FindManagerPrefab();

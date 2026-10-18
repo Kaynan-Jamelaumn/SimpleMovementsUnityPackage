@@ -278,7 +278,7 @@ namespace SimpleMovements.Setup
                          "Tools ▸ SimpleMovements ▸ Network ▸ Create World Item Prefab.")
                 .Checks(_ =>
                 {
-                    var carrier = Resources.Load<GameObject>("NetWorldItem");
+                    var carrier = SMAssets.Load<GameObject>("NetWorldItem");
                     return SetupResult.Present(carrier != null, "Found.", "Missing: items dropped by players would only exist on the server.", carrier);
                 })
                 .Fixes("Create It", _ =>

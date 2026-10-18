@@ -39,14 +39,14 @@ public class CurrencyDefinition : ScriptableObject
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => defaultCurrency = null;
 
-    /// <summary>Resources/DefaultCurrency, else a built-in "Gold" made in memory.</summary>
+    /// <summary>Resources/SimpleMovements/Economy/DefaultCurrency, else a built-in "Gold" made in memory.</summary>
     public static CurrencyDefinition Default
     {
         get
         {
             if (defaultCurrency == null)
             {
-                defaultCurrency = Resources.Load<CurrencyDefinition>(ResourcesName);
+                defaultCurrency = SMAssets.Load<CurrencyDefinition>(SMAssets.Economy, ResourcesName);
                 if (defaultCurrency == null)
                 {
                     defaultCurrency = CreateInstance<CurrencyDefinition>();

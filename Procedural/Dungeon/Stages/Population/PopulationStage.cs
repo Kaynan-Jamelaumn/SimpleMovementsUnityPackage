@@ -551,6 +551,8 @@ namespace ProceduralDungeon
                     continue;
                 if (!e.Progress.Contains(area.Progress) || !e.Styles.Contains(area.Style) || e.Tier > Mathf.Max(0, maxTier))
                     continue;
+                if (e.Roles != null && e.Roles.Length > 0 && System.Array.IndexOf(e.Roles, area.Role) < 0)
+                    continue;   // limited to some rooms
                 options.Add(e);
                 weights.Add(e.Weight * (1f + e.Tier * tierBonus * 0.5f));
             }

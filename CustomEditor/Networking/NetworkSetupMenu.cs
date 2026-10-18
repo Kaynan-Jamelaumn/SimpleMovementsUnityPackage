@@ -30,7 +30,6 @@ namespace GameNet.EditorTools
     public static class NetworkSetupMenu
     {
         private const string Menu = "Tools/SimpleMovements/Network/";
-        private const string NetworkFolder = "Assets/Networking";
         internal const string BootstrapPath = "Assets/Scenes/Bootstrap.unity";
         internal const string DungeonInstancePath = "Assets/Scenes/DungeonInstance.unity";
         private const string BuildsFolder = "Builds";
@@ -132,7 +131,7 @@ namespace GameNet.EditorTools
 
         /// <summary>The project's RealmObserverCondition asset (created when missing).</summary>
         internal static RealmObserverCondition RealmCondition() =>
-            LoadOrCreateAsset<RealmObserverCondition>(NetworkFolder + "/RealmObserverCondition.asset");
+            LoadOrCreateAsset<RealmObserverCondition>(SMAssetsEditor.Folder(SMAssets.Networking) + "/RealmObserverCondition.asset");
 
         /// <summary>Makes the realm interest rule the only default condition of <paramref name="observers"/>.</summary>
         internal static void AssignRealmCondition(ObserverManager observers)
@@ -336,23 +335,23 @@ namespace GameNet.EditorTools
 
         // ------------------------------------------------------------------ world item carrier
 
-        private const string WorldItemPrefabPath = "Assets/Resources/NetWorldItem.prefab";
+        private static string WorldItemPrefabPath => SMAssets.AssetPath(SMAssets.Networking, "NetWorldItem.prefab");
 
         /// <summary>
-        /// Creates Resources/NetWorldItem.prefab: the networked carrier of dropped items, loot and recovered thrown weapons
+        /// Creates Resources/SimpleMovements/Networking/NetWorldItem.prefab: the networked carrier of dropped items, loot and recovered thrown weapons
         /// (a NetworkObject plus NetWorldItem, which builds the item's model on every machine from its replicated id).
         /// </summary>
         [MenuItem(SMMenu.Root + "Network/Create World Item Prefab", false, SMMenu.Network + 12)]
         public static void CreateWorldItemPrefab()
         {
 #if FISHNET
-            if (AssetDatabase.LoadAssetAtPath<GameObject>(WorldItemPrefabPath) != null)
+            GameObject existing = SMAssets.Load<GameObject>(SMAssets.Networking, "NetWorldItem");
+            if (existing != null)
             {
-                Debug.Log($"[Net] {WorldItemPrefabPath} already exists.");
+                Debug.Log($"[Net] {AssetDatabase.GetAssetPath(existing)} already exists.", existing);
                 return;
             }
-            if (!AssetDatabase.IsValidFolder("Assets/Resources"))
-                AssetDatabase.CreateFolder("Assets", "Resources");
+            SMAssetsEditor.Folder(SMAssets.Networking);
             var go = new GameObject("NetWorldItem");
             try
             {
@@ -378,14 +377,9 @@ namespace GameNet.EditorTools
         [MenuItem(SMMenu.Root + "Project Setup/Build Item Database", false, SMMenu.ProjectSetup + 20)]
         public static void BuildItemDatabase()
         {
-            ItemDatabase db = Resources.Load<ItemDatabase>(ItemDatabase.ResourcesName);
+            ItemDatabase db = SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName);
             if (db == null)
-            {
-                if (!AssetDatabase.IsValidFolder("Assets/Resources"))
-                    AssetDatabase.CreateFolder("Assets", "Resources");
-                db = ScriptableObject.CreateInstance<ItemDatabase>();
-                AssetDatabase.CreateAsset(db, "Assets/Resources/" + ItemDatabase.ResourcesName + ".asset");
-            }
+                db = SMAssetsEditor.FindOrCreate<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName, null, false);
             int before = db.items.Count;
             foreach (string guid in AssetDatabase.FindAssets("t:ItemSO"))
             {
@@ -1016,11 +1010,11 @@ namespace GameNet.EditorTools
                     if (FindType(t) != null && player.GetComponent(FindType(t)) == null)
                         problems.Add($"The player prefab '{player.name}' has no {t.Substring(t.LastIndexOf('.') + 1)}.");
             }
-            GameObject carrier = Resources.Load<GameObject>("NetWorldItem");
+            GameObject carrier = SMAssets.Load<GameObject>(SMAssets.Networking, "NetWorldItem");
             if (carrier == null || carrier.GetComponent<NetworkObject>() == null)
-                problems.Add("No networked Resources/NetWorldItem prefab (Create World Item Prefab): dropped items and loot stay on the server.");
-            if (Resources.Load<ItemDatabase>(ItemDatabase.ResourcesName) == null)
-                problems.Add("No Resources/ItemDatabase (Build Item Database): items cannot be named over the network.");
+                problems.Add("No networked NetWorldItem prefab in Resources/SimpleMovements/Networking (Create World Item Prefab): dropped items and loot stay on the server.");
+            if (SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName) == null)
+                problems.Add("No Item Database in Resources/SimpleMovements/Databases (Build Item Database): items cannot be named over the network.");
             NetPlayerSpawner spawner = UnityEngine.Object.FindAnyObjectByType<NetPlayerSpawner>(FindObjectsInactive.Include);
             if (spawner != null && spawner.playerPrefab == null)
                 problems.Add("The Net Player Spawner (open scene) has no player prefab.");

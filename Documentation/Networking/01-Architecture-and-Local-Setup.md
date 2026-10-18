@@ -78,7 +78,7 @@ client sends carries the tick of the last state it received; the server derives 
    World scenes in the build).
 3. **Tools ▸ SimpleMovements ▸ Network ▸ Create Bootstrap Scene** - creates `Assets/Scenes/Bootstrap.unity` with the
    NetworkManager configured as above (and the "Network World" object with the global relays), puts it first in the
-   build, and creates `Resources/NetWorldItem.prefab`, the networked carrier of dropped items and loot.
+   build, and creates `Resources/SimpleMovements/Networking/NetWorldItem.prefab`, the networked carrier of dropped items and loot.
 4. **Create Dungeon Instance Scene** - the template every dungeon run stacks (with its NetworkObject and NetDungeonRun).
 5. **Build Item Database** and **Build Ability Database** - stable ids for every item and ability.
 6. Select your player prefab: **Make Selected Prefab Networked ▸ Player** (NetworkObject with prediction settings,

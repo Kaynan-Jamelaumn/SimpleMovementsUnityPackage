@@ -14,7 +14,9 @@ public enum EStatusEffect
     Stunned = 1 << 1,
     // Add more status effects as needed
     Poisoned = 1 << 2,
-    Slowed = 1 << 3
+    Slowed = 1 << 3,
+    /// <summary>Asleep or unconscious: cannot move or act (like a stun), but it is not crowd control.</summary>
+    Incapacitated = 1 << 4
 }
 
 
@@ -104,7 +106,7 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
 
         // Priority: Death > Stunned > Ready
         // Note: Silence alone does NOT change the state - player stays in Ready
-        if (HasStatusEffect(EStatusEffect.Stunned))
+        if (HasStatusEffect(EStatusEffect.Stunned) || HasStatusEffect(EStatusEffect.Incapacitated))
         {
             targetState = EAvailabilityState.Stunned;
         }
@@ -227,9 +229,36 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
         ApplyStatusEffect(EStatusEffect.Silenced, duration);
     }
 
+    private readonly HashSet<object> incapacitatedBy = new HashSet<object>();
+
+    /// <summary>Is the character asleep or unconscious (cannot move or act)?</summary>
+    public bool IsIncapacitated => incapacitatedBy.Count > 0;
+
+    /// <summary>
+    /// Sleep and unconsciousness: while any <paramref name="key"/> holds it, the character cannot move or act (the Stunned
+    /// state), without counting as stunned for crowd control. Each system owns its key.
+    /// </summary>
+    public void SetIncapacitated(object key, bool on)
+    {
+        if (key == null)
+            return;
+        if (on) incapacitatedBy.Add(key);
+        else incapacitatedBy.Remove(key);
+        if (incapacitatedBy.Count > 0)
+        {
+            if (!activeStatusEffects.ContainsKey(EStatusEffect.Incapacitated))
+                ApplyStatusEffect(EStatusEffect.Incapacitated, float.MaxValue);
+        }
+        else
+        {
+            RemoveStatusEffect(EStatusEffect.Incapacitated);
+        }
+    }
+
     public void Kill()
     {
         // Clear all status effects and go to death state
+        incapacitatedBy.Clear();
         activeStatusEffects.Clear();
         currentStatusFlags = EStatusEffect.None;
         var previous = CurrentState != null ? CurrentState.StateKey : EAvailabilityState.UnnafectedState;
@@ -241,6 +270,7 @@ public class AvailabilityStateMachine : StateManager<EAvailabilityState>
 
     public void Revive()
     {
+        incapacitatedBy.Clear();
         activeStatusEffects.Clear();
         currentStatusFlags = EStatusEffect.None;
         var previous = CurrentState != null ? CurrentState.StateKey : EAvailabilityState.Death;

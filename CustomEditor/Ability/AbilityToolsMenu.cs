@@ -7,7 +7,6 @@ using UnityEngine;
 /// <summary>Menu commands for the ability system (Tools > Abilities and Assets > Create).</summary>
 public static class AbilityToolsMenu
 {
-    private const string ResourcesFolder = "Assets/Resources";
 
     // ------------------------------------------------------------------ legacy conversion
     [MenuItem(SMMenu.Root + "Legacy/Convert Selected Legacy Abilities/For Player", false, SMMenu.Legacy + 0)]
@@ -49,15 +48,15 @@ public static class AbilityToolsMenu
 
     // ------------------------------------------------------------------ settings assets
     [MenuItem(SMMenu.Root + "Project Setup/Create Combat Settings (Resources)", false, SMMenu.ProjectSetup + 0)]
-    private static void CreateCombatSettings() => CreateInResources<CombatSettings>("CombatSettings");
+    private static void CreateCombatSettings() => SMAssetsEditor.FindOrCreate<CombatSettings>(SMAssets.Settings, "CombatSettings");
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Absorption Settings (Resources)", false, SMMenu.ProjectSetup + 3)]
-    private static void CreateAbsorptionSettings() => CreateInResources<AbsorptionSettings>("AbsorptionSettings");
+    private static void CreateAbsorptionSettings() => SMAssetsEditor.FindOrCreate<AbsorptionSettings>(SMAssets.Settings, "AbsorptionSettings");
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Ability Database (Resources)", false, SMMenu.ProjectSetup + 1)]
     private static void CreateDatabase()
     {
-        AbilityDatabase db = CreateInResources<AbilityDatabase>("AbilityDatabase");
+        AbilityDatabase db = SMAssetsEditor.FindOrCreate<AbilityDatabase>(SMAssets.Databases, "AbilityDatabase");
         if (db == null)
             return;
         foreach (string guid in AssetDatabase.FindAssets("t:AbilityDefinition"))
@@ -68,26 +67,6 @@ public static class AbilityToolsMenu
         }
         EditorUtility.SetDirty(db);
         AssetDatabase.SaveAssets();
-    }
-
-    private static T CreateInResources<T>(string assetName) where T : ScriptableObject
-    {
-        string path = $"{ResourcesFolder}/{assetName}.asset";
-        var existing = AssetDatabase.LoadAssetAtPath<T>(path);
-        if (existing != null)
-        {
-            Selection.activeObject = existing;
-            EditorGUIUtility.PingObject(existing);
-            return existing;
-        }
-        if (!AssetDatabase.IsValidFolder(ResourcesFolder))
-            AssetDatabase.CreateFolder("Assets", "Resources");
-        T asset = ScriptableObject.CreateInstance<T>();
-        AssetDatabase.CreateAsset(asset, path);
-        AssetDatabase.SaveAssets();
-        Selection.activeObject = asset;
-        EditorGUIUtility.PingObject(asset);
-        return asset;
     }
 
     // ------------------------------------------------------------------ validation
@@ -133,7 +112,7 @@ public static class AbilityToolsMenu
     [MenuItem("Assets/Create/SimpleMovements/Abilities/Ability From Preset...", false, -9)]
     private static void CreateFromPreset()
     {
-        string folder = SelectedFolder();
+        string folder = SMAssetsEditor.SelectedFolderOr(SMAssets.Abilities);
         var menu = new GenericMenu();
         foreach (AbilityPresets.Preset p in AbilityPresets.All)
         {
@@ -155,7 +134,7 @@ public static class AbilityToolsMenu
     [MenuItem("Assets/Create/SimpleMovements/Mobs/Mob Profile From Preset...", false, 1)]
     private static void CreateMobProfilePreset()
     {
-        string folder = SelectedFolder();
+        string folder = SMAssetsEditor.SelectedFolderOr(SMAssets.Mobs);
         var menu = new GenericMenu();
         foreach (MobProfile.Preset preset in System.Enum.GetValues(typeof(MobProfile.Preset)))
         {
@@ -170,20 +149,6 @@ public static class AbilityToolsMenu
             });
         }
         menu.ShowAsContext();
-    }
-
-    private static string SelectedFolder()
-    {
-        string path = "Assets";
-        foreach (Object o in Selection.GetFiltered(typeof(Object), SelectionMode.Assets))
-        {
-            string p = AssetDatabase.GetAssetPath(o);
-            if (string.IsNullOrEmpty(p))
-                continue;
-            path = AssetDatabase.IsValidFolder(p) ? p : Path.GetDirectoryName(p).Replace('\\', '/');
-            break;
-        }
-        return path;
     }
 }
 #endif

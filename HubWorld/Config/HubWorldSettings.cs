@@ -215,14 +215,14 @@ namespace HubWorld
 
         private static HubWorldSettings instance;
 
-        /// <summary>The settings asset from Resources/HubWorldSettings, or defaults.</summary>
+        /// <summary>The settings asset from Resources/SimpleMovements/Settings/HubWorldSettings, or defaults.</summary>
         public static HubWorldSettings Instance
         {
             get
             {
                 if (instance == null)
                 {
-                    instance = Resources.Load<HubWorldSettings>("HubWorldSettings");
+                    instance = SMAssets.Load<HubWorldSettings>(SMAssets.Settings, "HubWorldSettings");
                     if (instance == null)
                     {
                         instance = CreateInstance<HubWorldSettings>();

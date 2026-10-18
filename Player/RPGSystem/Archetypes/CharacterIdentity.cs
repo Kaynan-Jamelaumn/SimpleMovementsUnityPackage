@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -113,6 +113,7 @@ public class CharacterIdentity : MonoBehaviour
     {
         if (status != null) status.OnPlayerClassChanged += HandleClassChanged;
         if (experience != null) experience.OnLevelUp += HandleLevelUp;
+        if (experience != null) experience.OnLevelDown += HandleLevelUp; // growth follows a lost level too
         if (started) ApplyAll();
     }
 
@@ -120,6 +121,7 @@ public class CharacterIdentity : MonoBehaviour
     {
         if (status != null) status.OnPlayerClassChanged -= HandleClassChanged;
         if (experience != null) experience.OnLevelUp -= HandleLevelUp;
+        if (experience != null) experience.OnLevelDown -= HandleLevelUp;
         RemoveAll();
     }
 

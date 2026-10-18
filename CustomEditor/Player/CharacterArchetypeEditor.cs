@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -148,9 +148,7 @@ public class CharacterArchetypeEditor : Editor
 
     private static void CreateMany(string prefix)
     {
-        string folder = AssetDatabase.GetAssetPath(Selection.activeObject);
-        if (string.IsNullOrEmpty(folder)) folder = "Assets";
-        else if (!AssetDatabase.IsValidFolder(folder)) folder = System.IO.Path.GetDirectoryName(folder).Replace('\\', '/');
+        string folder = SMAssetsEditor.SelectedFolderOr(prefix == "Races/" ? SMAssets.Races : SMAssets.Classes);
         UnityEngine.Object last = null;
         foreach (KeyValuePair<string, Action<CharacterArchetype>> p in ArchetypePresets.All)
         {

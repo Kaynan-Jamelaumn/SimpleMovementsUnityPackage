@@ -233,46 +233,12 @@ public class StaminaManager : StatusManager
         );
     }
     public IEnumerator ApplyStaminaHealFactorEffectRoutine(string effectName, float staminaHealFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            staminaHealFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementFactor += perTick,
-            total => incrementFactor = total,
-            original => incrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, staminaHealFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementFactor += v);
     public IEnumerator ApplyStaminaDamageFactorEffectRoutine(string effectName, float staminaDamageFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            staminaDamageFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            // Note: Original code uses incrementFactor in procedural case and decrementFactor in total case
-            perTick => incrementFactor += perTick,
-            total => decrementFactor = total,
-            original => decrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, staminaDamageFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => decrementFactor += v);
     public IEnumerator ApplyStaminaRegenEffectRoutine(string effectName, float staminaRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            staminaRegenAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementValue += perTick,
-            total => incrementValue = total,
-            original => incrementValue -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, staminaRegenAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementValue += v);
 }

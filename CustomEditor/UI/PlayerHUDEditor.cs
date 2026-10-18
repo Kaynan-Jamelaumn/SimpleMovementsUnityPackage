@@ -13,7 +13,8 @@ using UnityEngine;
 [CustomEditor(typeof(PlayerHUD))]
 public class PlayerHUDEditor : Editor
 {
-    public const string PrefabFolder = "Assets/UI/HUD";
+    /// <summary>Where the HUD prefabs made here go (Resources/SimpleMovements/UI/HUD).</summary>
+    public static string PrefabFolder => SMAssets.FolderPath(SMAssets.HUD);
     private static GUIStyle ok, warn, muted;
 
     public override void OnInspectorGUI()
@@ -160,8 +161,7 @@ public class PlayerHUDEditor : Editor
     // ------------------------------------------------------------------ prefabs to customise
     private static string NewPath(string name)
     {
-        Directory.CreateDirectory(PrefabFolder);
-        return AssetDatabase.GenerateUniqueAssetPath($"{PrefabFolder}/{name}.prefab");
+        return AssetDatabase.GenerateUniqueAssetPath($"{SMAssetsEditor.Folder(SMAssets.HUD)}/{name}.prefab");
     }
 
     private static void Assign(PlayerHUD hud, string undoName, Action<PlayerHUD> set)

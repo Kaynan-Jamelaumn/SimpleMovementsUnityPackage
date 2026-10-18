@@ -250,7 +250,7 @@ public class MobActionsControllerEditor : Editor
     private void MakeUniqueProfile(MobActionsController mob, MobProfile profile)
     {
         string src = AssetDatabase.GetAssetPath(profile);
-        string folder = string.IsNullOrEmpty(src) ? MobSetupUtility.FolderFor(mob.gameObject) : System.IO.Path.GetDirectoryName(src).Replace('\\', '/');
+        string folder = MobSetupUtility.FolderFor(mob.gameObject);
         string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{CleanName(mob.name)} Profile.asset");
         if (!AssetDatabase.CopyAsset(src, path))
             return;
@@ -320,6 +320,14 @@ public class MobActionsControllerEditor : Editor
         showChecks = EditorGUILayout.BeginFoldoutHeaderGroup(showChecks, $"Setup checks ({errors} errors, {warnings} warnings, {issues.Count - errors - warnings} tips)");
         if (showChecks)
         {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(new GUIContent("Fix All Safe", "Applies every fix that only adds, wires or corrects (components, references, " +
+                                                                    "kinematic body, agent size, root motion...). Design choices are left to you.")))
+                    pendingFix = () => Debug.Log($"[Mobs] {mob.name}: {MobSetupValidator.FixAllSafe(mob.gameObject)} fix(es) applied.", mob);
+                if (GUILayout.Button(new GUIContent("Validate All Mobs...", "The Mob Setup Validator: every mob of the open scenes or the project.")))
+                    pendingFix = () => MobSetupValidatorWindow.Open();
+            }
             foreach (Issue i in issues)
             {
                 EditorGUILayout.BeginHorizontal();
@@ -337,99 +345,19 @@ public class MobActionsControllerEditor : Editor
         issues.Add(new Issue { type = type, message = message, fixLabel = fixLabel, fix = fix });
     }
 
+    /// <summary>The shared mob checks (<see cref="MobSetupValidator"/>), shown with their Fix buttons.</summary>
     private void Validate(MobActionsController mob)
     {
-        GameObject go = mob.gameObject;
-        NavMeshAgent agent = go.GetComponent<NavMeshAgent>();
-        if (agent == null)
-            Add(MessageType.Error, "Missing NavMeshAgent: the mob cannot move.", "Configure", () => MobSetupUtility.SetupMob(go, false));
-        if (go.GetComponent<MobMovementStateMachine>() == null)
-            Add(MessageType.Error, "Missing MobMovementStateMachine: the mob will not think or move.", "Add AI", () => Undo.AddComponent<MobMovementStateMachine>(go));
-        if (go.GetComponent<MobAbilityController>() == null)
-            Add(MessageType.Warning, "Missing MobAbilityController: the mob never attacks (not even the basic attack).", "Add", () => Undo.AddComponent<MobAbilityController>(go));
-
-        MobStatusController status = go.GetComponent<MobStatusController>();
-        if (status != null && status.HealthManager == null && go.GetComponentInChildren<HealthManager>() == null)
-            Add(MessageType.Error, "No HealthManager: the mob cannot take damage or die.", "Add", () => Undo.AddComponent<HealthManager>(go));
-
-        Collider col = go.GetComponentInChildren<Collider>();
-        if (col == null)
-            Add(MessageType.Error, "No Collider: abilities and projectiles cannot hit this mob.", "Add Capsule", () => AddCapsule(go, agent));
-
-        // Identity.
-        if (string.IsNullOrEmpty(mob.type))
-            Add(MessageType.Warning, "Type is empty. Other mobs recognise prey, predators and allies by Type.", "Use Name",
-                () => SetType(mob, CleanName(go.name)));
-        else if (mob.mobTypes != null && !mob.mobTypes.Contains(mob.type))
-            Add(MessageType.Info, $"Type '{mob.type}' is not in the Mob Types helper list.", "Add To List", () => AddToTypes(mob, mob.type));
-
-        List<string> preys = mob.PreysReference;
-        if (preys != null)
+        foreach (MobSetupValidator.Issue i in MobSetupValidator.Check(mob.gameObject))
         {
-            if (!string.IsNullOrEmpty(mob.type) && preys.Contains(mob.type))
-                Add(MessageType.Warning, $"The mob hunts its own type '{mob.type}', but mobs of the same type are allies unless a Team Override is set.");
-            foreach (string p in preys)
+            MessageType type = i.severity == MobSetupValidator.Severity.Error ? MessageType.Error
+                : i.severity == MobSetupValidator.Severity.Warning ? MessageType.Warning : MessageType.Info;
+            System.Action fix = i.fix;
+            Add(type, $"[{i.area}] {i.message}", i.fixLabel, fix == null ? null : (System.Action)(() =>
             {
-                if (string.IsNullOrEmpty(p))
-                    Add(MessageType.Warning, "Preys has an empty entry.", "Remove", () => RemovePrey(mob, p));
-                else if (p != "Player" && mob.mobTypes != null && !mob.mobTypes.Contains(p))
-                    Add(MessageType.Info, $"Prey '{p}' is not in the Mob Types list - check the spelling (it must match the other mob's Type exactly).", "Add To List",
-                        () => AddToTypes(mob, p));
-            }
-        }
-
-        // Physics.
-        Rigidbody rb = go.GetComponent<Rigidbody>();
-        if (rb != null && !rb.isKinematic)
-            Add(MessageType.Warning, "The Rigidbody is not kinematic: it fights the NavMeshAgent (it is made kinematic at runtime).", "Make Kinematic",
-                () => { Undo.RecordObject(rb, "Kinematic Rigidbody"); rb.isKinematic = true; rb.useGravity = false; });
-        CapsuleCollider capsule = go.GetComponent<CapsuleCollider>();
-        if (agent != null && capsule != null && Mathf.Abs(agent.radius - capsule.radius) > 0.3f)
-            Add(MessageType.Warning, $"NavMeshAgent radius ({agent.radius:0.##}) and collider radius ({capsule.radius:0.##}) differ a lot: mobs may overlap or keep too far apart.",
-                "Match Agent", () => { Undo.RecordObject(agent, "Match Agent Size"); agent.radius = capsule.radius; agent.height = capsule.height; });
-        if (col != null && (CombatSettings.Instance.characterLayers.value & (1 << col.gameObject.layer)) == 0)
-            Add(MessageType.Warning, $"The collider's layer '{LayerMask.LayerToName(col.gameObject.layer)}' is not in Combat Settings ▸ Character Layers: abilities will not hit this mob.");
-        if (agent != null && go.scene.IsValid() && !EditorUtility.IsPersistent(go) && !Application.isPlaying &&
-            !NavMesh.SamplePosition(go.transform.position, out _, 2f, NavMesh.AllAreas))
-            Add(MessageType.Warning, "This mob is not on (or near) a baked NavMesh. Bake the NavMesh or move the mob onto it.");
-
-        // Profile.
-        MobProfile profile = mob.ProfileAsset;
-        if (profile != null)
-        {
-            var e = new List<string>();
-            var w = new List<string>();
-            profile.Validate(e, w);
-            foreach (string s in e) Add(MessageType.Error, "Profile: " + s);
-            foreach (string s in w) Add(MessageType.Warning, "Profile: " + s);
-        }
-        MobAggression aggression = profile != null ? profile.aggression : MobAggression.Aggressive;
-        bool noPreys = preys == null || preys.Count == 0;
-        if (aggression == MobAggression.Aggressive && noPreys)
-            Add(MessageType.Warning, "The mob is Aggressive but Preys is empty: it only fights back when attacked.", "+ Player", () => AddPrey(mob, "Player"));
-
-        // Patrol.
-        Transform route = RouteOf(mob);
-        if (route != null)
-        {
-            if (route.IsChildOf(go.transform))
-                Add(MessageType.Error, "Patrol Route is a child of the mob: it moves with the mob, so the mob never reaches a point. Put the route outside the mob.");
-            else if (route.childCount == 0)
-                Add(MessageType.Warning, "Patrol Route has no children. Each child is one patrol point.");
-        }
-        else if (mob.PatrolPoints != null && mob.PatrolPoints.Length > 0 && EditorUtility.IsPersistent(go) && !RelativePatrol())
-            Add(MessageType.Warning, "Absolute patrol points on a prefab: every spawned copy walks to the same world positions.", "Make Relative",
-                () => MakeRelative(mob));
-
-        // Attacks.
-        MobAbilityController abilities = go.GetComponent<MobAbilityController>();
-        if (abilities != null)
-        {
-            var e = new List<string>();
-            var w = new List<string>();
-            abilities.Validate(e, w);
-            foreach (string s in e) Add(MessageType.Error, "Abilities: " + s);
-            foreach (string s in w) Add(MessageType.Warning, "Abilities: " + s);
+                fix();
+                serializedObject.Update();
+            }));
         }
     }
 
@@ -670,13 +598,6 @@ public class MobActionsControllerEditor : Editor
     private void SetType(MobActionsController mob, string type) =>
         Modify(mob, "Set Mob Type", so => so.FindProperty("type").stringValue = type);
 
-    private void AddToTypes(MobActionsController mob, string type) => Modify(mob, "Add Mob Type", so =>
-    {
-        SerializedProperty list = so.FindProperty("mobTypes");
-        list.arraySize++;
-        list.GetArrayElementAtIndex(list.arraySize - 1).stringValue = type;
-    });
-
     private void AddPrey(MobActionsController mob, string prey) => Modify(mob, "Add Prey", so =>
     {
         SerializedProperty list = so.FindProperty("Preys");
@@ -687,29 +608,7 @@ public class MobActionsControllerEditor : Editor
         list.GetArrayElementAtIndex(list.arraySize - 1).stringValue = prey;
     });
 
-    private void RemovePrey(MobActionsController mob, string prey) => Modify(mob, "Remove Prey", so =>
-    {
-        SerializedProperty list = so.FindProperty("Preys");
-        for (int i = list.arraySize - 1; i >= 0; i--)
-            if (list.GetArrayElementAtIndex(i).stringValue == prey)
-            {
-                list.DeleteArrayElementAtIndex(i);
-                return;
-            }
-    });
-
     private Transform RouteOf(MobActionsController mob) => serializedObject.FindProperty("patrolRoute").objectReferenceValue as Transform;
-
-    private bool RelativePatrol() => serializedObject.FindProperty("patrolPointsRelativeToHome").boolValue;
-
-    private void MakeRelative(MobActionsController mob) => Modify(mob, "Relative Patrol Points", so =>
-    {
-        SerializedProperty pts = so.FindProperty("patrolPoints");
-        Vector3 home = mob.transform.position;
-        for (int i = 0; i < pts.arraySize; i++)
-            pts.GetArrayElementAtIndex(i).vector3Value -= home;
-        so.FindProperty("patrolPointsRelativeToHome").boolValue = true;
-    });
 
     private void SquarePatrol(MobActionsController mob)
     {
@@ -763,15 +662,6 @@ public class MobActionsControllerEditor : Editor
                 pts.GetArrayElementAtIndex(i).vector3Value = route.GetChild(i).position - (relative ? home : Vector3.zero);
             so.FindProperty("patrolRoute").objectReferenceValue = null;
         });
-    }
-
-    private static void AddCapsule(GameObject go, NavMeshAgent agent)
-    {
-        CapsuleCollider c = Undo.AddComponent<CapsuleCollider>(go);
-        float h = agent != null ? agent.height : 2f;
-        c.radius = agent != null ? agent.radius : 0.5f;
-        c.height = h;
-        c.center = new Vector3(0f, h * 0.5f, 0f);
     }
 }
 #endif

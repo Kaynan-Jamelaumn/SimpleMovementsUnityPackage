@@ -50,6 +50,8 @@ public class AbilityGrant
     [Tooltip("The mob ability it came from (can differ from Ability when the rules say 'Absorbed As').")]
     public AbilityDefinition sourceAbility;
     [NonSerialized] public float receivedTime;
+    [Tooltip("Level of the character when it absorbed this ability (absorption milestones, death penalties). 0 = unknown.")]
+    public int absorbedAtLevel;
 
     public AbilityGrant() { }
 
@@ -84,6 +86,7 @@ public class AbilityGrant
         modifiersJson = modifiers != null ? JsonUtility.ToJson(modifiers) : "",
         displayName = displayName,
         tier = tier,
+        absorbedAtLevel = absorbedAtLevel,
     };
 
     /// <summary>Rebuilds a grant from save data (abilities are looked up in the Ability Database).</summary>
@@ -107,7 +110,7 @@ public class AbilityGrant
         AbilityDefinition src = database != null && !string.IsNullOrEmpty(data.sourceAbilityId) ? database.Find(data.sourceAbilityId) : null;
         if (src == null && !string.IsNullOrEmpty(data.sourceAbilityId))
             src = AbilityDatabase.Resolve(data.sourceAbilityId);
-        return new AbilityGrant(def, mods, data.displayName, data.tier, src);
+        return new AbilityGrant(def, mods, data.displayName, data.tier, src) { absorbedAtLevel = data.absorbedAtLevel };
     }
 }
 
@@ -122,6 +125,8 @@ public class AbilityGrantSaveData
     public string modifiersJson;
     public string displayName;
     public AbsorbTier tier;
+    /// <summary>Level when it was absorbed (0 = unknown, older saves).</summary>
+    public int absorbedAtLevel;
 }
 
 /// <summary>

@@ -35,7 +35,7 @@ public class CurrencyBalance
 public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
 {
     [Tooltip("The currency used when none is named (merchants without a currency of their own). Empty = the project's default " +
-             "currency (Resources/DefaultCurrency, else a built-in Gold).")]
+             "currency (Resources/SimpleMovements/Economy/DefaultCurrency, else a built-in Gold).")]
     [SerializeField] private CurrencyDefinition defaultCurrency;
     [Tooltip("Balances. A currency missing from the list starts at its Starting Amount the first time it is used. Currencies " +
              "with a Backing Item are counted from the inventory instead (their amount here is ignored).")]

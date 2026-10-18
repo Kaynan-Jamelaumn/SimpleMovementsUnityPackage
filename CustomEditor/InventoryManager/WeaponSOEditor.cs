@@ -607,8 +607,7 @@ public class WeaponSOEditor : ItemSOEditor
 
     private static void CreateAmmo(WeaponSO weapon, string ammoType)
     {
-        string path = AssetDatabase.GetAssetPath(weapon);
-        string dir = string.IsNullOrEmpty(path) ? "Assets" : System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
+        string dir = SMAssetsEditor.Folder(SMAssets.Ammo);
         var ammo = CreateInstance<AmmoSO>();
         var so = new SerializedObject(ammo);
         so.FindProperty("ammoType").stringValue = ammoType.Trim();
@@ -910,8 +909,7 @@ public class WeaponSOEditor : ItemSOEditor
 
     private static void CreateComboTree(WeaponSO weapon)
     {
-        string path = AssetDatabase.GetAssetPath(weapon);
-        string dir = string.IsNullOrEmpty(path) ? "Assets" : System.IO.Path.GetDirectoryName(path).Replace('\\', '/');
+        string dir = SMAssetsEditor.Folder(SMAssets.Weapons + "/Combo Trees");
         var tree = CreateInstance<ComboTree>();
         tree.treeName = weapon.Name + " Combos";
         tree.associatedWeapon = weapon;

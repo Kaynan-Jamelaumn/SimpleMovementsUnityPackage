@@ -45,7 +45,7 @@ player of this machine (a HUD saved in the prefab stays hidden on other players'
 | **Hud Resource Bar** | Low warning, trail delay, show value. |
 | **Hud Shape** | Keeps the code-made rounded / circle / ring / glow sprites after a reload; set Kind to None to use your own sprite. |
 | **Your Own UI prefabs** (Player HUD) | *Status Frame Prefab*, *Ability Bar Prefab*, *Ability Slot Prefab*, *Trait Slot Prefab*, *Need Gauge Prefab*: used by the Build buttons (and at runtime). |
-| **Make a prefab to customise** (inspector buttons) | *Ability Slot Prefab*, *Trait Slot Prefab*, *Need Gauge Prefab* create a ready prefab in `Assets/UI/HUD` and assign it; *Save Status UI / Abilities UI As Prefab* save what you built (with your changes) and assign it. Open the prefab, restyle it, press Build again. |
+| **Make a prefab to customise** (inspector buttons) | *Ability Slot Prefab*, *Trait Slot Prefab*, *Need Gauge Prefab* create a ready prefab in `Assets/Resources/SimpleMovements/UI/HUD` and assign it; *Save Status UI / Abilities UI As Prefab* save what you built (with your changes) and assign it. Open the prefab, restyle it, press Build again. |
 | **Custom Root** | Build the HUD inside your own canvas or panel. |
 | **Palette, sizes, margin, spacing** | The look of everything built. |
 

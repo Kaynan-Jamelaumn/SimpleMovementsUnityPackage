@@ -108,6 +108,22 @@ namespace GameNet
             public override int GetHashCode() => flags * 397 ^ oxygenTank.GetHashCode() ^ environmentTemperature.GetHashCode() * 31;
         }
 
+        /// <summary>Unconsciousness (everyone who sees the character: the downed pose, revive prompts).</summary>
+        public struct DownedState : IEquatable<DownedState>
+        {
+            public bool down;
+            /// <summary>Server tick when the character dies if nobody revives it (0 = no timer).</summary>
+            public uint endTick;
+            /// <summary>Damage below 0 health so far (quantized).</summary>
+            public float deficit;
+            /// <summary>Asleep (other players see the sleeping pose; the owner gets it with its survival state too).</summary>
+            public bool sleeping;
+
+            public bool Equals(DownedState o) => down == o.down && endTick == o.endTick && deficit == o.deficit && sleeping == o.sleeping;
+            public override bool Equals(object obj) => obj is DownedState o && Equals(o);
+            public override int GetHashCode() => (down ? 1 : 0) * 397 ^ (int)endTick ^ deficit.GetHashCode();
+        }
+
         /// <summary>The owner's progression (the level itself is sent to everyone).</summary>
         public struct Progress : IEquatable<Progress>
         {
@@ -208,6 +224,7 @@ namespace GameNet
         private readonly SyncVar<SurvivalState> survival = new SyncVar<SurvivalState>(new SyncTypeSettings(WritePermission.ServerOnly, ReadPermission.OwnerOnly, 0.1f, Channel.Reliable));
         private readonly SyncVar<Progress> progress = new SyncVar<Progress>(new SyncTypeSettings(WritePermission.ServerOnly, ReadPermission.OwnerOnly, 0.1f, Channel.Reliable));
         private readonly SyncVar<uint> respawnTick = new SyncVar<uint>(new SyncTypeSettings(WritePermission.ServerOnly, ReadPermission.OwnerOnly, 0f, Channel.Reliable));
+        private readonly SyncVar<DownedState> downed = new SyncVar<DownedState>(new SyncTypeSettings(WritePermission.ServerOnly, ReadPermission.Observers, 0.05f, Channel.Reliable));
 
         // ------------------------------------------------------------------ runtime
 
@@ -233,6 +250,7 @@ namespace GameNet
         private bool hasSpawnPose;
         private float lastUpgradeRequest = -1000f;
         private float lastSleepRequest = -1000f;
+        private float lastGiveUpRequest = -1000f;
         private readonly List<string> traitNames = new List<string>();
 
         // Client.
@@ -399,6 +417,7 @@ namespace GameNet
                 health.Value = Quantized(healthManager);
             dead.Value = entity.IsDead;
             PollControl();
+            PollDowned();
 
             if (speedManager != null && playerStatus != null)
             {
@@ -456,6 +475,32 @@ namespace GameNet
                     traitPoints = traitManager != null ? traitManager.AvailableTraitPoints : 0,
                 };
             }
+        }
+
+        private void PollDowned()
+        {
+            Unconsciousness u = entity.Downed;
+            bool sleeping = playerStatus != null && playerStatus.SleepManager != null && playerStatus.SleepManager.IsSleeping;
+            if (u == null || !u.IsDown)
+            {
+                if (downed.Value.down || downed.Value.sleeping != sleeping)
+                    downed.Value = new DownedState { sleeping = sleeping };
+                return;
+            }
+            float left = u.Remaining;
+            DownedState next = new DownedState
+            {
+                down = true,
+                endTick = float.IsInfinity(left) ? 0u : StatusReplication.EndTick(Time.time + left, Time.time, TimeManager.Tick, TimeManager.TickDelta),
+                deficit = StatusReplication.Quantize(u.Deficit),
+                sleeping = sleeping,
+            };
+            // The end tick is computed from a float timer: only send it again when it really moved (not every tick).
+            DownedState current = downed.Value;
+            if (current.down && current.sleeping == next.sleeping && current.deficit == next.deficit &&
+                (next.endTick > current.endTick ? next.endTick - current.endTick : current.endTick - next.endTick) <= 2u)
+                return;
+            downed.Value = next;
         }
 
         private static Resource Quantized(StatusManager m) => new Resource
@@ -677,7 +722,7 @@ namespace GameNet
                 return;
             if (!StatusReplication.Allow(ref lastSleepRequest, Time.unscaledTime, requestInterval))
                 return;
-            if (sleep && (entity.IsDead || entity.IsStunned))
+            if (sleep && (entity.IsDead || entity.IsStunned || entity.IsUnconscious))
                 return;
             if (sleep)
                 playerStatus.SleepManager.StartSleeping();
@@ -697,6 +742,23 @@ namespace GameNet
         {
             if (IsClientInitialized && IsOwner)
                 ServerSetSleeping(sleep);
+        }
+
+        /// <summary>The unconscious owner gives up (dies at once); the server checks it is really down and the rules allow it.</summary>
+        [ServerRpc]
+        private void ServerGiveUp()
+        {
+            if (entity == null || entity.Downed == null || !entity.Downed.IsDown || !entity.Downed.Rules.allowGiveUp)
+                return;
+            if (!StatusReplication.Allow(ref lastGiveUpRequest, Time.unscaledTime, requestInterval))
+                return;
+            entity.Downed.GiveUp();
+        }
+
+        private void SendGiveUp()
+        {
+            if (IsClientInitialized && IsOwner)
+                ServerGiveUp();
         }
 
         // ------------------------------------------------------------------ client
@@ -761,6 +823,8 @@ namespace GameNet
                     xpManager.UpgradeRequest = on && IsOwner ? (Func<string, bool>)SendUpgrade : null;
                 playerStatus.SleepRequest = on && IsOwner ? (Action<bool>)SendSleep : null;
             }
+            if (entity.Downed != null)
+                entity.Downed.GiveUpRequest = on && IsOwner ? (Action)SendGiveUp : null;
             else if (healthManager != null)
             {
                 healthManager.SetReplica(on);
@@ -808,6 +872,7 @@ namespace GameNet
                 oxygen.OnChange += OnOwnerResourceChanged;
                 survival.OnChange += OnSurvivalChanged;
                 progress.OnChange += OnProgressChanged;
+                downed.OnChange += OnDownedChanged;
             }
             else
             {
@@ -829,6 +894,7 @@ namespace GameNet
                 oxygen.OnChange -= OnOwnerResourceChanged;
                 survival.OnChange -= OnSurvivalChanged;
                 progress.OnChange -= OnProgressChanged;
+                downed.OnChange -= OnDownedChanged;
             }
         }
 
@@ -845,6 +911,20 @@ namespace GameNet
         private void OnOwnerResourceChanged(Resource prev, Resource next, bool asServer) { if (Applies(asServer)) ApplyOwnerResources(); }
         private void OnSurvivalChanged(SurvivalState prev, SurvivalState next, bool asServer) { if (Applies(asServer)) ApplySurvival(next); }
         private void OnProgressChanged(Progress prev, Progress next, bool asServer) { if (Applies(asServer)) ApplyProgress(); }
+        private void OnDownedChanged(DownedState prev, DownedState next, bool asServer) { if (Applies(asServer)) ApplyDowned(next); }
+
+        private void ApplyDowned(DownedState d)
+        {
+            if (entity == null || TimeManager == null)
+                return;
+            // Other players' copies: the sleeping pose (the owner gets it from its survival state).
+            if (!IsOwner && playerStatus != null && playerStatus.SleepManager != null)
+                playerStatus.SleepManager.ApplyReplicatedState(d.sleeping, false);
+            if (entity.Downed == null)
+                return;
+            float left = d.endTick == 0u ? float.PositiveInfinity : StatusReplication.SecondsLeft(d.endTick, TimeManager.Tick, TimeManager.TickDelta);
+            entity.Downed.ApplyReplicated(d.down, left, d.deficit, null);
+        }
 
         private void OnBuffsChanged(SyncListOperation op, int index, BuffView oldItem, BuffView newItem, bool asServer)
         {
@@ -896,6 +976,7 @@ namespace GameNet
             ApplyProgress();
             ApplyBuffs();
             ApplyTraits();
+            ApplyDowned(downed.Value);
         }
 
         private void ApplyHealth(Resource r)

@@ -125,7 +125,7 @@ Barrier segments are built on every machine (they are colliders that movement an
 **Aim Send Rate**, **Slot Poll Rate**.
 
 **Ability ids.** Messages carry ability ids, never definitions. Every castable ability asset must be in the Ability
-Database (`Resources/AbilityDatabase`): Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Ability Database (Resources)
+Database (`Resources/SimpleMovements/Databases/AbilityDatabase`): Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Ability Database (Resources)
 creates it or adds every `AbilityDefinition` asset to the existing one. Definitions created in code are found by id
 too: converted legacy abilities (`legacy:<name>:mob|player`), mob basic attacks (`basic:<key>`) and presets
 (`AbilityPresets.AsRuntime(def, id)`, or `unsaved:<name>` for an unnamed one) - as long as the client has created the

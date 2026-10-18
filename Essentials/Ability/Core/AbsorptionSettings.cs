@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -41,6 +41,12 @@ public class AbsorptionSettings : ScriptableObject
     [Tooltip("When every ability slot is already used.")]
     public FullSlotsPolicy fullSlotsPolicy = FullSlotsPolicy.ReplaceOldestAbsorbed;
 
+    [Header("Level Milestones")]
+    [Tooltip("Levels at which the player can absorb one more ability (e.g. 10, 20, 35, 40, 45). Off = no level limit. A race " +
+             "or class (Character Archetype) or the player's Death Penalty can use their own. The Milestone Regression death " +
+             "penalty sends a dead player back to their last milestone and removes the latest absorbed ability.")]
+    public AbsorptionMilestones milestones = new AbsorptionMilestones();
+
     [Header("Default Variants (used by abilities with 'Use Default Variants')")]
     [Tooltip("Possible absorbed forms and their relative weights. An ability's own Custom Variants are added to these.")]
     public List<AbilityVariant> defaultVariants = CreateDefaultVariants();
@@ -76,7 +82,7 @@ public class AbsorptionSettings : ScriptableObject
         {
             if (instance == null)
             {
-                instance = Resources.Load<AbsorptionSettings>("AbsorptionSettings");
+                instance = SMAssets.Load<AbsorptionSettings>(SMAssets.Settings, "AbsorptionSettings");
                 if (instance == null)
                 {
                     instance = CreateInstance<AbsorptionSettings>();

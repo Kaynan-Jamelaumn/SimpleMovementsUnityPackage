@@ -20,10 +20,18 @@ public class HealthManager : StatusManager
             currentValue = maxValue;
     }
 
+    /// <summary>
+    /// No regeneration while true (set while the character is unconscious): health stays where it is until a revive or a
+    /// heal changes it.
+    /// </summary>
+    public bool RegenerationBlocked { get; set; }
+
     private void Update()
     {
         if (IsReplica)
             return; // regeneration runs on the server
+        if (RegenerationBlocked)
+            return;
         if (!isRegenerating && currentValue < maxValue &&  Time.time - healthRegenCooldownTimer > healthRegenCooldownDuration)
         {
             healthRegenCooldownTimer = Time.time;
@@ -84,9 +92,9 @@ public class HealthManager : StatusManager
         isRegenerating = true;
 
         // Regenerate stamina while it is below the maximum
-        while (currentValue < maxValue)
+        while (currentValue < maxValue && !RegenerationBlocked)
         {
-            currentValue += incrementValue;
+            currentValue = Mathf.Min(maxValue, currentValue + AddFactor(incrementValue));
 
             // Check the flag and exit the coroutine if needed
             if (isConsuming)
@@ -127,47 +135,14 @@ public class HealthManager : StatusManager
     }
 
     public IEnumerator ApplyHpHealFactorEffectRoutine(string effectName, float hpHealFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            hpHealFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementFactor += perTick,
-            total => incrementFactor += total,
-            original => incrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, hpHealFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementFactor += v);
 
     public IEnumerator ApplyHpDamageFactorEffectRoutine(string effectName, float hpDamageFactorAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            hpDamageFactorAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => decrementFactor += perTick,
-            total => decrementFactor = total,
-            original => decrementFactor -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, hpDamageFactorAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => decrementFactor += v);
 
     public IEnumerator ApplyHpRegenEffectRoutine(string effectName, float hpRegenAmount, float timeBuffEffect, float tickCooldown, bool isProcedural = false, bool isStackable = false)
-    {
-        return ApplyEffectRoutine(
-            effectName,
-            hpRegenAmount,
-            timeBuffEffect,
-            tickCooldown,
-            isProcedural,
-            isStackable,
-            perTick => incrementValue += perTick,
-            total => incrementValue = total,
-            original => incrementValue -= original
-        );
-    }
+        // Added while it lasts and taken away exactly when it ends, is replaced or removed.
+        => ModifierEffect(effectName, hpRegenAmount, timeBuffEffect, tickCooldown, isProcedural, isStackable, v => incrementValue += v);
 }

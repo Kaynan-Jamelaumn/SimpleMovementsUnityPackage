@@ -45,14 +45,14 @@ public class ItemCategoryDatabase : ScriptableObject
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => defaultDatabase = null;
 
-    /// <summary>The project's database (Resources/ItemCategoryDatabase), else a built-in one made in memory.</summary>
+    /// <summary>The project's database (Resources/SimpleMovements/Databases/ItemCategoryDatabase), else a built-in one made in memory.</summary>
     public static ItemCategoryDatabase Default
     {
         get
         {
             if (defaultDatabase == null)
             {
-                defaultDatabase = Resources.Load<ItemCategoryDatabase>(ResourcesName);
+                defaultDatabase = SMAssets.Load<ItemCategoryDatabase>(SMAssets.Databases, ResourcesName);
                 if (defaultDatabase == null)
                     defaultDatabase = CreateDefault();
             }

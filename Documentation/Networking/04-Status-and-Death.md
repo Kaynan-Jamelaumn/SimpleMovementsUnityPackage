@@ -115,7 +115,7 @@ Clients never send amounts, max values, damage, durations or positions.
   are ignored for mobs.
 - Tools ▸ SimpleMovements ▸ Network adds it automatically (`NetworkSetupMenu.PrefabComponents`).
 - Traits must be findable by name on clients: in the player's `TraitManager` database, its starting traits, the
-  class's starting traits, or `Resources/TraitDatabase`.
+  class's starting traits, or `Resources/SimpleMovements/Databases/TraitDatabase`.
 
 ## Testing locally
 

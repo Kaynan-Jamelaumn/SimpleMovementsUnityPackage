@@ -20,7 +20,7 @@ flowchart LR
 ## 1. Setup (once)
 
 1. *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Character Catalog (Resources)*. It lists every **race** (Character
-   Archetype of kind Race) and **class** (Player Class) of the project. Builds read it from `Resources/CharacterCatalog`.
+   Archetype of kind Race) and **class** (Player Class) of the project. Builds read it from `Resources/SimpleMovements/Databases/CharacterCatalog`.
    Without it the editor assembles one from the project (with a warning in builds if nothing is found).
 2. Traits come from each class's trait list; a class without one offers the catalog's Traits list, else every trait of
    the Trait Database marked *Available At Creation*.
@@ -36,10 +36,14 @@ Without Fish-Net, put an **Offline Start Screens** component in a menu scene (it
 
 | Area | What it does |
 |---|---|
-| Step tabs | **Race** (cards + full description, height range, bonus points), **Class** (base resources, attributes, starting traits, cheaper / dearer trait types), **Traits** (filters by type, points left, cost with race / class changes, rules: required, incompatible, one active trait), **Appearance** |
+| Step tabs | **Race** (cards + full description, height range, bonus points), **Class** (base resources, attributes, starting traits, cheaper / dearer trait types), **Traits** (each row and the detail card show the trait's **Icon**; filters by type, points left, cost with race / class changes, rules: required, incompatible, one active trait), **Appearance** |
 | Preview | The player model, live: drag to turn, scroll / *Face* to zoom, **Height** slider (the race's range) |
 | Summary | Name field and everything the character gets: resources, attribute totals, race and class bonuses, chosen and granted traits with their effects, **abilities with their descriptions** (racial passives, trait behaviours, class passives, starting skills) |
 | Footer | Back, the current problem ("Choose a class", "Not enough points"...), Randomize Look, Previous / Next, **Create Character** |
+
+**Trait icons:** the *Icon* of each Trait asset is shown in its row (40 px) and, larger, in the detail card. A trait
+without an icon gets a coloured badge with its initial (red for drawbacks, a colour per trait type), so the list stays
+aligned until the art is ready.
 
 Changing race or class drops picked traits that no longer fit (the footer says which). Names are unique per computer
 (Catalog ▸ Unique Names). The server re-checks everything (`CharacterBuild.Sanitize`): unknown or forbidden choices are
@@ -48,7 +52,8 @@ replaced, illegal or unaffordable traits removed, the name cleaned — a modifie
 ## 3. Appearance
 
 `CharacterAppearanceData`: body type (Male / Female), skin colour, hairstyle + colour, beard, eye shape + colour,
-nose shape, nose size, eye size. It is applied by **Character Appearance** on the model:
+nose shape, eyebrows, head, nose size, eye size, body model, **ears, torso, arms, hands, legs, feet and outfit**. It is
+applied by **Character Appearance** on the model:
 
 | Part | Set up with your art | Without options (placeholder) |
 |---|---|---|
@@ -115,6 +120,45 @@ can show objects of the model, set blend shapes and / or put a **prefab** on the
   character mesh rigged like the player. The creation screen shows a **Body model** card (Appearance ▸ Body) as soon
   as there is one; the first choice is always the default body. The choice is saved and synced like the rest.
 * A different body changes the measured size: the Character Body fits the colliders to it again.
+
+### Where each custom model goes
+
+Everything is on the **Character Appearance** component of the player's model (the object with the Animator; select it
+in the player prefab). Each list takes options as described above (objects of the model, a prefab, blend shapes):
+
+| You have a model for... | Character Appearance list | Shown on the creation screen as |
+|---|---|---|
+| Head (whole head mesh) | *Styles ▸ Head Styles* | Appearance ▸ Head ▸ Head shape |
+| Face (face mesh, or the face parts) | *Head Styles* for a face mesh; *Eye Styles*, *Nose Styles*, *Eyebrow Styles*, *Beard Styles*; *Face Sliders* for nose / eye size blend shapes | Head, Eyes, Nose, Hair ▸ Eyebrows, Facial Hair |
+| Ears | *Body Parts ▸ Ear Styles* | Appearance ▸ Head ▸ **Ears** |
+| Eyes | *Styles ▸ Eye Styles* (colour: *Colours ▸ Eye Targets*) | Appearance ▸ Eyes |
+| Hair | *Styles ▸ Hair Styles* | Appearance ▸ Hair |
+| Torso / chest | *Body Parts ▸ Torso Styles* | Appearance ▸ Body ▸ **Torso** |
+| Arms | *Body Parts ▸ Arm Styles* | Appearance ▸ Body ▸ **Arms** |
+| Hands | *Body Parts ▸ Hand Styles* | Appearance ▸ Body ▸ **Hands** |
+| Legs (and hips) | *Body Parts ▸ Leg Styles* | Appearance ▸ Body ▸ **Legs** |
+| Feet (bare feet, boots) | *Body Parts ▸ Foot Styles* | Appearance ▸ Body ▸ **Feet** |
+| Clothes worn under armour | ***Outfits*** | Appearance ▸ Body ▸ **Outfit** |
+| A whole body | *Body Models* | Appearance ▸ Body ▸ Body model |
+| Armour, weapons | not here: the item's *Armor Model* / weapon visuals (section 4) | worn in the game |
+
+* **Ears, torso, arms, hands, legs, feet**: the first choice is always **Default** (the model's own part, or the
+  placeholder body's), then your options. A chosen option **replaces** its region: with *Hides* = None it hides the
+  matching Body Region (Ears, Torso, Arms, Hands, Legs, Feet) of the model / placeholder body; tick more regions when the
+  mesh covers more (a torso with sleeves: Torso + Arms). Ear options also hide the placeholder head's ears and a race's
+  pointed ears.
+* **Outfits**: the first choice is **None**. Tick in *Hides* what the outfit covers (a shirt: Torso + Arms; a robe: Torso,
+  Arms, Legs): the skin under it is hidden, and worn armour that covers **all** of those regions hides the outfit too.
+  *Tint* = Shirt / Trousers lets the player colour it with the **Clothes** swatches (shown for such outfits and for the
+  placeholder body).
+* Your own option is never hidden by its own region, even when its objects are listed in *Body Regions* (Scan Model
+  puts them there); armour covering everything it replaces hides it.
+* Each of these cards appears on the creation screen only when the list has at least one option. *Randomize Look*
+  keeps the body model and the body parts; it picks ears and outfits.
+* The parts' meshes bind to the character's skeleton (*Attach Mode* Auto / Skinned) — use meshes rigged like the
+  character (same bone names, or Humanoid) — or use *Fit To Body* for any mesh.
+* Modular packs with left / right meshes (Arm Upper Left, Arm Upper Right...): put both objects in one option's
+  *Objects* (or both in one prefab), so one choice shows the pair.
 
 ### Size: body, colliders and everything placed on the body
 
@@ -202,6 +246,8 @@ In builds, Fit To Body reads the meshes: tick **Read/Write** in the import setti
 One JSON file per character in `Application.persistentDataPath/Characters` (the catalog inspector has *Open Folder* and
 *Delete All Saved Characters*). Several game windows on one computer share them, so the host and each client can pick a
 different character. The save holds the creation choices; level, inventory and position are not part of it.
+The appearance text (`a1|...`) gained seven fields for ears, torso, arms, hands, legs, feet and outfit; older saves still
+read (the new parts take their default).
 
 ## 6. In the game
 

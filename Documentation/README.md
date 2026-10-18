@@ -6,14 +6,15 @@ step-by-step, the others explain how the system works and what every setting doe
 | Part | Folder | Start with |
 |---|---|---|
 | **Player** — the player prefab and its scripts: movement and input, stamina and status bars, classes, traits, experience, camera, animation, ability keys, targeting other players, parties, guilds, inspecting | [`Player/`](Player/README.md) | [Player 01 — Setup](Player/01-Player-Setup.md) |
-| **Mobs** — creatures and enemies: setup, AI profiles, perception, temperament, combat, abilities, animation, death, spawning | [`Mobs/`](Mobs/README.md) | [Mobs 01 — Setup](Mobs/01-Mob-Setup.md) |
+| **Mobs** — creatures and enemies: setup, AI profiles, perception, temperament, combat, abilities, animation, death, spawning | [`Mob/`](Mob/README.md) | [Mobs 01 — Setup](Mob/01-Mob-Setup.md) |
 | **Inventory, items, armor and weapons** — inventory UI (slots or grid), items, equipment, armor sets, weapons and attacks, dual wielding, shields and blocking, ranged weapons and ammo, body-part damage, equipment visuals, quickslots, teams / factions / friendly fire | [`Inventory/`](Inventory/README.md) | [Inventory 08 — Setup Guide](Inventory/08-Setup-Guide.md) |
 | **NPCs, interaction & merchants** — the player's interaction (key, click, proximity, prompt), NPCs, options and dialogue, merchants (buy / sell, stock, prices, categories and tabs, money), the shop window (slots or grid like the inventory, custom skins, generated fallback) | [`NPC/`](NPC/README.md) | [NPC 03 — Merchant Setup](NPC/03-Merchant-Setup.md) |
 | **Terrain** — the endless open world: noise, landforms, mountains, volcanoes, Voronoi biomes, climate, water (oceans, lakes, rivers, waterfalls), erosion, meshes, colliders, textures and shaders, weather (and its effects on players), day and night, objects, world portals and mobs | [`Terrain/`](Terrain/README.md) | [Terrain 01 — Architecture](Terrain/01-Architecture.md) |
 | **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
 | **Hub World** — the permanent hub city, the open world regenerated every dimensional cycle (warnings, the jump, loot loss, Dimensional Disorientation, modifiers), dungeons in scenes of their own with their own physics, safe and dangerous zones (PvP, difficulty), visual-only abilities in the city, duels | [`HubWorld/`](HubWorld/README.md) | [Hub World 05 — Setup](HubWorld/05-Setup-and-Configuration.md) |
 | **Networking** — Fish-Net multiplayer run locally (host, headless dedicated server, clients on 127.0.0.1): movement prediction, authoritative combat with lag compensation, mobs, inventory, trading, world cycles, stacked dungeon scenes, interest management | [`Networking/`](Networking/README.md) | [Networking 01 — Architecture and local setup](Networking/01-Architecture-and-Local-Setup.md) |
-| **Validation & auto-assign** — the Scene and Prefab Setup (what every scene and prefab needs, with Fix buttons), the Player Setup Validator, guides in the inspectors, the Project Validator window (missing scripts, broken and required references, network prefabs, project assets, one-click fixes), automatic filling of empty references, `[AutoAssign]` / `[RequiredReference]`, the Edit Mode tests | [`Validation/`](Validation/README.md) | [Validation — overview](Validation/README.md) |
+| **Project organisation** — where every generated asset goes (`Assets/Resources/SimpleMovements/...`), moving older ones there, and the recommended layout of the scripts | [`Project-Organisation.md`](Project-Organisation.md) | [Project Organisation](Project-Organisation.md) |
+| **Validation & auto-assign** — the Project Validator window (missing scripts, broken and required references, network prefabs, project assets, one-click fixes), automatic filling of empty references, `[AutoAssign]` / `[RequiredReference]`, the Edit Mode tests | [`Validation/`](Validation/README.md) | [Validation — overview](Validation/README.md) |
 
 ## How the parts fit together
 
@@ -98,17 +99,14 @@ Everything is under one **SimpleMovements** entry in each menu.
 | *… ▸ Mobs* / *World* / *Dungeon* | Mob Profile (+ presets) / Biome / dungeon profiles, themes, tables, room templates |
 | *… ▸ Hub World* | Hub World Settings, Dimensional Modifier |
 | *… ▸ Legacy* | Old ability assets (AbilityEffectSO, PlayerAbilitySO) and the old Player Class template, kept for existing assets — use the entries above for new ones |
-| *Tools ▸ SimpleMovements ▸ Scene and Prefab Setup* | One page per scene and prefab the game needs — Bootstrap, Hub City, World, Dungeon scenes; Player, Mob, Item prefabs — with every requirement, why, how, and Fix buttons ([Validation 02](Validation/02-Scene-and-Prefab-Setup.md)) |
 | *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database / Item Category Database / Default Currency (Resources) |
-| *… ▸ Player* | Add Setup Validator To Selection, Auto-Setup All Players In Scene, Complete / Check Player Animator Controller, Add Movement Audio, Add Player Social, Add Player Interactor To Players In Scene, Help |
-| *… ▸ Social* | Create Player Targeting And Party System, Help |
-| *… ▸ Weather* | Add Day Night Cycle, Add Player Weather Effects, Create Default Weather Condition Assets, Help |
-| *… ▸ Scene* | Build Character Creation Screen, Build Pause & Settings Menu, Create Realm Music |
+| *… ▸ Player* | Add Player Setup Validator To Selection, Auto-Setup All Players In Scene |
+| *… ▸ Social* | Create Player Targeting And Party System, Add Player Social (selected player prefab) |
+| *… ▸ Scene UI* | Build Character Creation Screen, Build Pause & Settings Menu |
 | *… ▸ Inventory* | UI Builder, Auto-Build UI When Missing, Armor Set Wizard, Attack Preview, Grid Inventory |
 | *… ▸ Mobs* | Create New Mob, Add Missing Components, Spawnable Mob Helper, Help |
-| *… ▸ NPC* | Create Merchant NPC / Talking NPC (or make the selection one), Help |
-| *… ▸ Validate* | Selection, Open Scenes, All Prefabs, Players, Abilities, Traits, NPCs In Scene, Dungeon Portals, Hub World, Network Setup / Prefabs, Input Actions, Scene Setup, Fix Scene Setup, Remove Missing Scripts |
-| *… ▸ Auto-Assign* | References In Selection / Open Scenes / All Prefabs, with previews |
+| *… ▸ NPC* | Create Merchant NPC / Talking NPC (or make the selection one), Add Player Interactor To Players, Validate NPCs In Scene, Help |
+| *… ▸ Validate* | Validate All Abilities / Players / Traits |
 | *… ▸ Dungeon* / *Legacy* | Dungeon tools / Convert Selected Legacy Abilities |
 | *… ▸ Hub World* | Create Settings Asset, Build City Scene, Make Open Scene The World Scene, Add City / Return Gate, Validate Setup, Help |
 | *GameObject ▸ SimpleMovements* | Quick Setup Mob (right-click a model), NPC ▸ Merchant NPC / Talking NPC |

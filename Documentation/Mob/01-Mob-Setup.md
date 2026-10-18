@@ -35,7 +35,13 @@ They add **only what is missing** and keep existing settings:
 | `CombatEntity` | Team, faction, party, body size, crowd control immunities |
 
 *Create New Mob* also creates a **`<Type> Profile`** asset and, when the mob would use the invisible automatic bite,
-a **`<Type> Basic Attack`** ability asset, so both can be seen and edited.
+a **`<Type> Basic Attack`** ability asset, so both can be seen and edited. They go in
+`Assets/Resources/SimpleMovements/Mobs/<Type>/` (one folder per mob type; the mob's abilities and body parts too).
+
+The setup also **sizes things to your model**: a model already under the mob gets the Animator on its root (no
+placeholder capsule is added), the capsule collider is fitted to the model's meshes and the NavMeshAgent takes the
+capsule's radius and height. Then it applies every safe fix of the Mob Setup Validator (below) and logs how many
+problems are left.
 
 *Tools ▸ SimpleMovements ▸ Mobs ▸ Add Missing Components* repairs the selected mob; *Tools ▸ SimpleMovements ▸ Mobs ▸ Help* summarises the steps.
 
@@ -78,7 +84,32 @@ a **`<Type> Basic Attack`** ability asset, so both can be seen and edited.
 
 ---
 
-## 5. Checklist
+## 5. Mob Setup Validator
+
+**Tools ▸ SimpleMovements ▸ Mobs ▸ Mob Setup Validator** (also *Validate ▸ Mobs*, and the **Mobs** checks of the Project
+Validator). It checks every mob of the **selection**, the **open scenes** or **every mob prefab of the project**, lists the
+problems per mob (errors first), and fixes them one by one (**Fix**), per mob (**Fix Safe**, **Configure**) or all at
+once (**Fix All Safe (all)**, **Auto-Configure (all)**). Prefabs are fixed in their prefab file, so every instance follows.
+The mob inspector's **Setup checks** use the same checks, with **Fix All Safe** and **Validate All Mobs...** buttons.
+
+| Area | What is checked | Fix |
+|---|---|---|
+| Components | Mob, NavMeshAgent, AI (MobMovementStateMachine), Status Controller, Health / Speed Managers, Ability Controller, CombatEntity, collider, Rigidbody; more than one Mob in a hierarchy; missing scripts | Add (safe), Add Fitted Capsule, Remove missing scripts |
+| References | The AI's Mob / agent / status / Animator, the Status Controller's managers, the Ability Controller's mob and Animator | Wire (safe) |
+| Identity | Type empty or not in the Mob Types list, hunting its own type, empty or misspelt preys | Use Name, Add To List, Remove |
+| Physics | Rigidbody not kinematic / with gravity, trigger-only collider, agent vs capsule radius and height, root scale and non-uniform scale, capsule much smaller or bigger than the model, collider layer not in Character Layers, deleted agent type, agent speed 0, not on a NavMesh | Make Kinematic, Match Agent, Fit To Model, Use layer…, Use Humanoid |
+| Model & animation | No mesh, still the placeholder capsule, no Animator, Apply Root Motion on, no controller, no avatar, the controller missing the profile's movement parameters / Moving states, death and hit triggers, parameters of the wrong type | Add Animator, Turn Off root motion |
+| Profile | No profile, the profile's own checks, Aggressive without preys | Create Profile, + Player |
+| Patrol | Route inside the mob, empty route, scene route on a prefab, absolute points on a prefab | Make Relative |
+| Attacks | The ability controller's checks, no way to hurt anything, the hidden runtime bite | Create Basic Attack asset |
+| Status | Max health 0, current above max, base speed 0 | Set values |
+| Drops | Item Drop On Death + Item Spawner (double drops), drops nothing, items without prefabs in its table | Add Item Drop On Death |
+| Network | A mob prefab without a NetworkObject (when Fish-Net is installed) | — |
+
+**Safe** fixes only add, wire or correct something plainly wrong; anything that changes a choice of yours (layers, the
+collider size, preys, removing components) is a separate button.
+
+## 6. Checklist
 
 - [ ] No errors in the mob inspector's Checks.
 - [ ] Type set; Preys contain `Player` if it should attack the player.

@@ -23,6 +23,14 @@ namespace ProceduralDungeon
         public GameObject prefab;
         [Tooltip("Built-in stand-in used when Prefab is empty (torch, brazier, crystal, barrel, crate, altar, trap...).")]
         public DungeonPrimitive placeholder = DungeonPrimitive.Barrel;
+        [Tooltip("With a Prefab: give it the mechanics of its Placeholder when it has none of its own (a Spike Trap prefab gets a " +
+                 "DungeonHazard with a trigger fitted to it, a Blade Trap prefab a DungeonBladeTrap, a Dart Trap a DungeonDartTrap, a " +
+                 "Barrel / Crate a DungeonBreakable, a Chest a DungeonChest, a Fountain a rest point...). Components already on the prefab are kept.")]
+        public bool addMechanics = true;
+        [Tooltip("Traps: damage, element, rhythm and who they hurt, for prefabs and placeholders alike (off = the trap's own values).")]
+        public TrapSettings trap = new TrapSettings();
+        [Tooltip("Breakables and chests (barrels, crates, urns): what they drop (an Item Drop Table). Empty = the Item Drop Manager's defaults.")]
+        public ItemDropTable dropTable;
         [Tooltip("Where in an area it goes: Anywhere, Wall Adjacent (against a wall), Center, Corner, Corridor, Doorway, Dead End, Chokepoint, Transition (where zone styles meet), Back Wall (the wall farthest from the ways in, facing the room) or Off Path (away from the route through the floor).")]
         public PropPlacement placement = PropPlacement.WallAdjacent;
         [Tooltip("Only in areas with these roles (empty = any).")]

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System;
 using System.Collections.Generic;
 
@@ -10,6 +10,26 @@ public class LevelUpReward
     public int attributePoints;
     public int statUpgradePoints;
     public List<Trait> unlockedTraits = new List<Trait>();
+}
+
+/// <summary>What one level gave (kept so a lost level can be taken back exactly).</summary>
+[System.Serializable]
+public struct LevelGain
+{
+    public int level;
+    public int skillPoints;
+    public int attributePoints;
+    public int statUpgradePoints;
+}
+
+/// <summary>One stat upgrade point spent (kept so a lost level can undo it).</summary>
+[System.Serializable]
+public struct StatUpgradeRecord
+{
+    public string stat;
+    public float amount;
+    /// <summary>The level the character was when it spent the point.</summary>
+    public int level;
 }
 
 public class ExperienceManager : MonoBehaviour
@@ -36,6 +56,17 @@ public class ExperienceManager : MonoBehaviour
     public event Action OnAttributePointGained;
     public event Action<int> OnStatUpgradePointsGained;
     public event Action<string> OnStatUpgraded; // Fired when a stat is actually upgraded
+    /// <summary>The character lost levels (death penalties): the new level.</summary>
+    public event Action<int> OnLevelDown;
+    /// <summary>Experience was lost (amount).</summary>
+    public event Action<int> OnExperienceLost;
+
+    // What each level gave and which stat points were spent (this play session), so regressions undo them exactly.
+    [System.NonSerialized] private readonly List<LevelGain> levelGains = new List<LevelGain>();
+    [System.NonSerialized] private readonly List<StatUpgradeRecord> upgradeHistory = new List<StatUpgradeRecord>();
+
+    /// <summary>The stat points spent so far (this session), oldest first.</summary>
+    public IReadOnlyList<StatUpgradeRecord> UpgradeHistory => upgradeHistory;
 
     // Properties
     public int CurrentExperience { get => currentExperience; set => currentExperience = value; }
@@ -91,9 +122,10 @@ public class ExperienceManager : MonoBehaviour
         currentLevel++;
 
         // Award standard points
-        int skillPointsGained = CalculateSkillPointsGained();
-        int attributePointsGained = CalculateAttributePointsGained();
-        int statPointsGained = CalculateStatUpgradePointsGained();
+        int skillPointsGained = CalculateSkillPointsGained(currentLevel);
+        int attributePointsGained = CalculateAttributePointsGained(currentLevel);
+        int statPointsGained = CalculateStatUpgradePointsGained(currentLevel);
+        var gain = new LevelGain { level = currentLevel, skillPoints = skillPointsGained, attributePoints = attributePointsGained, statUpgradePoints = statPointsGained };
 
         skillPoints += skillPointsGained;
         attributePoints += attributePointsGained;
@@ -106,6 +138,9 @@ public class ExperienceManager : MonoBehaviour
             skillPoints += specialReward.skillPoints;
             attributePoints += specialReward.attributePoints;
             statUpgradePoints += specialReward.statUpgradePoints;
+            gain.skillPoints += specialReward.skillPoints;
+            gain.attributePoints += specialReward.attributePoints;
+            gain.statUpgradePoints += specialReward.statUpgradePoints;
 
             // Handle unlocked traits if needed
             foreach (var trait in specialReward.unlockedTraits)
@@ -115,6 +150,8 @@ public class ExperienceManager : MonoBehaviour
         }
 
         experienceToNextLevel = CalculateExperienceForLevel(currentLevel + 1);
+        levelGains.RemoveAll(g => g.level == currentLevel);
+        levelGains.Add(gain);
 
         // Fire events
         OnLevelUp?.Invoke(currentLevel);
@@ -160,6 +197,7 @@ public class ExperienceManager : MonoBehaviour
         if (success)
         {
             statUpgradePoints--;
+            upgradeHistory.Add(new StatUpgradeRecord { stat = statType.ToLower(), amount = upgradeAmount, level = currentLevel });
             OnStatUpgraded?.Invoke(statType);
             Debug.Log($"Upgraded {statType} by {upgradeAmount:F1}. Remaining stat points: {statUpgradePoints}");
             return true;
@@ -188,6 +226,8 @@ public class ExperienceManager : MonoBehaviour
         statUpgradePoints = statUpgrade;
         if (level > previousLevel)
             OnLevelUp?.Invoke(level);
+        else if (level < previousLevel)
+            OnLevelDown?.Invoke(level);
         if (statUpgrade > previousStatPoints)
             OnStatUpgradePointsGained?.Invoke(statUpgrade - previousStatPoints);
     }
@@ -283,33 +323,148 @@ public class ExperienceManager : MonoBehaviour
     }
 
     // Calculate skill points gained per level
-    private int CalculateSkillPointsGained()
+    private int CalculateSkillPointsGained(int level)
     {
         // Every level gives 1 skill point, every 5 levels gives bonus
-        return 1 + (currentLevel % 5 == 0 ? 1 : 0);
+        return 1 + (level % 5 == 0 ? 1 : 0);
     }
 
     // Calculate attribute points gained per level
-    private int CalculateAttributePointsGained()
+    private int CalculateAttributePointsGained(int level)
     {
         // Every 3 levels gives 1 attribute point
-        return currentLevel % 3 == 0 ? 1 : 0;
+        return level % 3 == 0 ? 1 : 0;
     }
 
     // Calculate stat upgrade points gained per level
-    private int CalculateStatUpgradePointsGained()
+    private int CalculateStatUpgradePointsGained(int level)
     {
         // Every level gives 1 stat upgrade point, with bonuses at certain levels
         int basePoints = 1;
         int bonusPoints = 0;
 
         // Bonus points at every 10 levels
-        if (currentLevel % 10 == 0) bonusPoints += 2;
+        if (level % 10 == 0) bonusPoints += 2;
         // Small bonus at every 5 levels
-        else if (currentLevel % 5 == 0) bonusPoints += 1;
+        else if (level % 5 == 0) bonusPoints += 1;
 
         return basePoints + bonusPoints;
     }
+
+    /// <summary>What reaching <paramref name="level"/> gave (recorded this session, else the level formulas and special rewards).</summary>
+    public LevelGain GainOf(int level)
+    {
+        for (int i = levelGains.Count - 1; i >= 0; i--)
+            if (levelGains[i].level == level) return levelGains[i];
+        var g = new LevelGain
+        {
+            level = level,
+            skillPoints = CalculateSkillPointsGained(level),
+            attributePoints = CalculateAttributePointsGained(level),
+            statUpgradePoints = CalculateStatUpgradePointsGained(level),
+        };
+        LevelUpReward r = GetSpecialLevelReward(level);
+        if (r != null)
+        {
+            g.skillPoints += r.skillPoints;
+            g.attributePoints += r.attributePoints;
+            g.statUpgradePoints += r.statUpgradePoints;
+        }
+        return g;
+    }
+
+    // ------------------------------------------------------------------ losing experience and levels (death penalties)
+
+    /// <summary>
+    /// Removes <paramref name="amount"/> experience. With <paramref name="allowDelevel"/> the character can drop levels
+    /// (never below <paramref name="minimumLevel"/>): each lost level takes back its points and undoes the stat points spent
+    /// at it (<see cref="RegressToLevel"/>). Without, experience stops at 0 of the current level. Where the rules run only.
+    /// </summary>
+    public void LoseExperience(int amount, bool allowDelevel, int minimumLevel = 1)
+    {
+        if (amount <= 0 || !GameNet.NetAuthority.RunsRules(gameObject))
+            return;
+        minimumLevel = Mathf.Max(1, minimumLevel);
+        currentExperience -= amount;
+        int guard = 0;
+        while (currentExperience < 0 && guard++ < 1000)
+        {
+            if (!allowDelevel || currentLevel <= minimumLevel)
+            {
+                currentExperience = 0;
+                break;
+            }
+            int deficit = -currentExperience;
+            RegressToLevel(currentLevel - 1, true);
+            currentExperience = experienceToNextLevel - deficit;
+        }
+        OnExperienceLost?.Invoke(amount);
+    }
+
+    /// <summary>
+    /// Sends the character back to <paramref name="targetLevel"/> (a death penalty): the skill, attribute and stat points of
+    /// every lost level are taken back, and with <paramref name="undoStatUpgrades"/> the stat points spent at those levels
+    /// are undone (max health, stamina... go back down; if more points were spent than are left, the latest upgrades are
+    /// undone too). Experience restarts at 0 of the new level. Raises <see cref="OnLevelDown"/>. Where the rules run only.
+    /// </summary>
+    public void RegressToLevel(int targetLevel, bool undoStatUpgrades = true)
+    {
+        if (!GameNet.NetAuthority.RunsRules(gameObject))
+            return;
+        targetLevel = Mathf.Max(1, targetLevel);
+        if (targetLevel >= currentLevel)
+            return;
+        var controller = GetComponent<PlayerStatusController>();
+        int lostSkill = 0, lostAttribute = 0, lostStat = 0;
+        for (int lv = currentLevel; lv > targetLevel; lv--)
+        {
+            LevelGain g = GainOf(lv);
+            lostSkill += g.skillPoints;
+            lostAttribute += g.attributePoints;
+            lostStat += g.statUpgradePoints;
+        }
+
+        if (undoStatUpgrades && controller != null)
+        {
+            // The points spent above the new level are refunded (then taken back with the level).
+            for (int i = upgradeHistory.Count - 1; i >= 0; i--)
+            {
+                if (upgradeHistory[i].level <= targetLevel) continue;
+                UndoUpgrade(upgradeHistory[i], controller);
+                upgradeHistory.RemoveAt(i);
+                statUpgradePoints++;
+            }
+        }
+        skillPoints = Mathf.Max(0, skillPoints - lostSkill);
+        attributePoints = Mathf.Max(0, attributePoints - lostAttribute);
+        statUpgradePoints -= lostStat;
+        // More points were spent than the remaining levels gave: undo the latest upgrades.
+        while (statUpgradePoints < 0 && undoStatUpgrades && controller != null && upgradeHistory.Count > 0)
+        {
+            UndoUpgrade(upgradeHistory[upgradeHistory.Count - 1], controller);
+            upgradeHistory.RemoveAt(upgradeHistory.Count - 1);
+            statUpgradePoints++;
+        }
+        statUpgradePoints = Mathf.Max(0, statUpgradePoints);
+
+        int from = currentLevel;
+        currentLevel = targetLevel;
+        currentExperience = 0;
+        experienceToNextLevel = CalculateExperienceForLevel(currentLevel + 1);
+        levelGains.RemoveAll(g => g.level > targetLevel);
+        Debug.Log($"[Experience] {name} went back from level {from} to {targetLevel}.", this);
+        OnLevelDown?.Invoke(currentLevel);
+    }
+
+    private void UndoUpgrade(StatUpgradeRecord r, PlayerStatusController controller)
+    {
+        if (string.IsNullOrEmpty(r.stat) || Mathf.Approximately(r.amount, 0f))
+            return;
+        ApplyStatUpgrade(r.stat, -r.amount, controller);
+    }
+
+    /// <summary>Experience needed to go from <paramref name="level"/> - 1 to <paramref name="level"/>.</summary>
+    public int ExperienceForLevel(int level) => CalculateExperienceForLevel(level);
 
     // Get special reward for a specific level
     private LevelUpReward GetSpecialLevelReward(int level)

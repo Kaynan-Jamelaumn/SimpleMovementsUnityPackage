@@ -691,7 +691,7 @@ namespace SimpleMovements.Setup
                     List<ItemSO> items = ItemsUsing(ctx);
                     if (items.Count == 0)
                         return SetupResult.Skip("No item uses this prefab.");
-                    ItemDatabase db = Resources.Load<ItemDatabase>(ItemDatabase.ResourcesName);
+                    ItemDatabase db = SMAssets.Load<ItemDatabase>(ItemDatabase.ResourcesName);
                     if (db == null)
                         return SetupResult.Missing("No Item Database in Resources.");
                     List<ItemSO> missing = items.Where(i => string.IsNullOrEmpty(db.IdOf(i))).ToList();
@@ -718,7 +718,7 @@ namespace SimpleMovements.Setup
                          "Tools ▸ SimpleMovements ▸ Network ▸ Create World Item Prefab.")
                 .Checks(_ =>
                 {
-                    var carrier = Resources.Load<GameObject>("NetWorldItem");
+                    var carrier = SMAssets.Load<GameObject>("NetWorldItem");
                     return SetupResult.Present(carrier != null, "Found.", "Missing: dropped items only exist on the server.", carrier);
                 })
                 .Fixes("Create It", _ =>
@@ -777,7 +777,7 @@ namespace SimpleMovements.Setup
                          "Combat Settings (Resources) ▸ Character Layers: include this layer.")
                 .Checks(ctx =>
                 {
-                    CombatSettings settings = Resources.Load<CombatSettings>("CombatSettings");
+                    CombatSettings settings = SMAssets.Load<CombatSettings>("CombatSettings");
                     string layer = LayerMask.LayerToName(ctx.Root.layer);
                     if (settings == null)
                         return SetupResult.Note($"Layer '{layer}'. No Combat Settings asset: every layer counts.");
@@ -787,7 +787,7 @@ namespace SimpleMovements.Setup
                 })
                 .Fixes("Add Layer To Combat Settings", ctx =>
                 {
-                    CombatSettings settings = Resources.Load<CombatSettings>("CombatSettings");
+                    CombatSettings settings = SMAssets.Load<CombatSettings>("CombatSettings");
                     if (settings == null)
                         return false;
                     Undo.RecordObject(settings, "Character layer");

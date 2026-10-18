@@ -341,14 +341,14 @@ namespace GameNet
                 if (!searched)
                 {
                     searched = true;
-                    GameObject p = Resources.Load<GameObject>(NetWorldItem.CarrierResourcePath);
+                    GameObject p = SMAssets.Load<GameObject>(SMAssets.Networking, NetWorldItem.CarrierResourcePath);
                     if (p != null && IsNetworkPrefab(p) && p.GetComponent<NetWorldItem>() != null)
                         carrierPrefab = p;
                 }
                 if (carrierPrefab == null && !warned)
                 {
                     warned = true;
-                    Debug.LogWarning("[Network] No world item carrier (a prefab 'Resources/" + NetWorldItem.CarrierResourcePath +
+                    Debug.LogWarning("[Network] No world item carrier (a prefab 'Resources/" + SMAssets.ResourcePath(SMAssets.Networking, NetWorldItem.CarrierResourcePath) +
                                      "' with a NetworkObject and a NetWorldItem, registered as a network prefab): items whose own prefab is " +
                                      "not networked stay on the server only, and clients cannot see or pick them up.");
                 }

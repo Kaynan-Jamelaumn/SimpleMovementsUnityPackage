@@ -207,13 +207,7 @@ public static class WeaponTemplates
 
     private static void Create(Template t)
     {
-        string folder = "Assets";
-        if (Selection.activeObject != null)
-        {
-            string p = AssetDatabase.GetAssetPath(Selection.activeObject);
-            if (!string.IsNullOrEmpty(p))
-                folder = AssetDatabase.IsValidFolder(p) ? p : System.IO.Path.GetDirectoryName(p).Replace('\\', '/');
-        }
+        string folder = SMAssetsEditor.SelectedFolderOr(SMAssets.Weapons);
         var weapon = ScriptableObject.CreateInstance<WeaponSO>();
         string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{t}.asset");
         AssetDatabase.CreateAsset(weapon, path);
