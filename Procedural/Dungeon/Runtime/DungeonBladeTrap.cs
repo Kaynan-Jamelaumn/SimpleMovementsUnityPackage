@@ -92,6 +92,7 @@ namespace ProceduralDungeon
                     point = hits[i].ClosestPoint(blade.position),
                     direction = swing,
                     type = DamageType.Physical,
+                    form = DamageForm.Slash,
                 });
                 if (knockback > 0f && e.Controller != null && e.Controller.enabled)
                 {

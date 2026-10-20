@@ -99,6 +99,9 @@ public class ImpactSettings
 
     [Tooltip("Weapon damage dealt by the impact, as a fraction of this attack's damage (1 = the same as the swing, 0 = only the effects below).")]
     [Min(0f)] public float damageMultiplier = 1f;
+    [Tooltip("What the impact's shockwave does to a body (Blunt by default: bruises, broken bones; Crush for a giant's stomp). " +
+             "None = the attack's form.")]
+    public DamageForm damageForm = DamageForm.Blunt;
     [Tooltip("Strength at the edge of the area compared to the centre (1 = the same everywhere, 0.5 = half at the edge). Scales damage and effects.")]
     [Range(0f, 1f)] public float edgeMultiplier = 0.5f;
     [Tooltip("Applied to each character hit by the impact: knock-up, stun, slow, burn...")]
@@ -165,6 +168,9 @@ public abstract class AttackComponent : IAttackComponent
     public DamageType damageType = DamageType.Physical;
     [Tooltip("Element of this attack. None = the weapon's element.")]
     public ElementType elementOverride = ElementType.None;
+    [Tooltip("What this attack does to a body: Slash, Pierce, Blunt, Bite, Claw, Crush. None = the weapon's Damage Form " +
+             "(a sword's thrust can Pierce, its pommel strike be Blunt, a shield bash is Blunt...).")]
+    public DamageForm damageForm = DamageForm.None;
     [Tooltip("Extra critical chance (0-1) for this attack.")]
     [Range(0f, 1f)] public float criticalChanceBonus = 0f;
     [Tooltip("Multiplies the weapon's knockback for this attack (0 = none).")]

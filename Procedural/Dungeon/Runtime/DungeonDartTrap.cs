@@ -64,7 +64,7 @@ namespace ProceduralDungeon
                 {
                     CombatEntity e = CombatEntity.Resolve(hit.collider);
                     if (e != null && e.IsAlive)
-                        e.ApplyDamage(new DamageInfo { amount = damage, target = e, point = hit.point, direction = transform.forward, type = DamageType.Physical, element = element });
+                        e.ApplyDamage(new DamageInfo { amount = damage, target = e, point = hit.point, direction = transform.forward, type = DamageType.Physical, element = element, form = DamageForm.Pierce });
                     done = true;
                 }
                 d.position += transform.forward * step;

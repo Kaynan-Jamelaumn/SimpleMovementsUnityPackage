@@ -37,6 +37,18 @@ public enum TraitStat
     ProjectileSpeed,
     AbilityCharges,
     ExtraProjectiles,
+    // Damage forms and injuries (see DamageForm, InjuryResistances)
+    SlashDamageTaken,
+    PierceDamageTaken,
+    BluntDamageTaken,
+    InjuryChance,
+    WoundChance,
+    FractureChance,
+    BurnChance,
+    InfectionChance,
+    BleedingRate,
+    InjuryHealing,
+    LimbLossChance,
 }
 
 /// <summary>How a modifier's value is read.</summary>
@@ -149,6 +161,17 @@ public static class TraitStats
             case TraitStat.ProjectileSpeed: return new StatInfo("Projectile Speed", "", Modes.PercentOnly, true, "Speed of the character's projectiles.");
             case TraitStat.AbilityCharges: return new StatInfo("Ability Charges", "charges", Modes.FlatOnly, true, "Extra charges for every ability (+1 = one more use before the cooldown).");
             case TraitStat.ExtraProjectiles: return new StatInfo("Extra Projectiles", "projectiles", Modes.FlatOnly, true, "Extra projectiles per volley for every projectile ability.");
+            case TraitStat.SlashDamageTaken: return new StatInfo("Slash Damage Taken", "", Modes.PercentOnly, false, "Damage of slashing hits (swords, axes) and claws. Negative = takes less (-20 = 20% less).");
+            case TraitStat.PierceDamageTaken: return new StatInfo("Pierce Damage Taken", "", Modes.PercentOnly, false, "Damage of piercing hits (spears, stabs, arrows, horns) and bites. Negative = takes less.");
+            case TraitStat.BluntDamageTaken: return new StatInfo("Blunt Damage Taken", "", Modes.PercentOnly, false, "Damage of blunt hits (maces, hammers, fists, pushes) and crushing blows. Negative = takes less.");
+            case TraitStat.InjuryChance: return new StatInfo("Injury Chance", "", Modes.PercentOnly, false, "Chance that a hit causes any injury (injury system). Negative = fewer injuries (-30 = 30% less likely).");
+            case TraitStat.WoundChance: return new StatInfo("Wound Chance", "", Modes.PercentOnly, false, "Chance of cuts: scratches, lacerations, deep wounds, punctures, bites (injuries tagged 'wound'). Negative = tougher skin.");
+            case TraitStat.FractureChance: return new StatInfo("Fracture Chance", "", Modes.PercentOnly, false, "Chance of broken bones (injuries tagged 'fracture'). Negative = stronger bones.");
+            case TraitStat.BurnChance: return new StatInfo("Burn Chance", "", Modes.PercentOnly, false, "Chance of burns and frostbite (injuries tagged 'burn'). Negative = fewer burns.");
+            case TraitStat.InfectionChance: return new StatInfo("Infection Chance", "", Modes.PercentOnly, false, "Chance that an untreated wound gets infected or sick when its time comes (injuries tagged 'infection'). Negative = fights infections off.");
+            case TraitStat.BleedingRate: return new StatInfo("Bleeding", "", Modes.PercentOnly, false, "How fast the character bleeds from wounds. Negative = bleeds less (thick blood).");
+            case TraitStat.InjuryHealing: return new StatInfo("Injury Healing", "", Modes.PercentOnly, true, "How fast injuries heal and stop bleeding by themselves.");
+            case TraitStat.LimbLossChance: return new StatInfo("Limb Loss Chance", "", Modes.PercentOnly, false, "Chance of losing a limb to a heavy hit. Negative = sturdier limbs.");
             default: return new StatInfo(stat.ToString(), "", Modes.Both, true, "");
         }
     }
@@ -184,9 +207,32 @@ public static class TraitStats
             case TraitStat.ProjectileSpeed:
             case TraitStat.AbilityCharges:
             case TraitStat.ExtraProjectiles:
+            case TraitStat.SlashDamageTaken:
+            case TraitStat.PierceDamageTaken:
+            case TraitStat.BluntDamageTaken:
+            case TraitStat.InjuryChance:
+            case TraitStat.WoundChance:
+            case TraitStat.FractureChance:
+            case TraitStat.BurnChance:
+            case TraitStat.InfectionChance:
+            case TraitStat.BleedingRate:
+            case TraitStat.InjuryHealing:
+            case TraitStat.LimbLossChance:
                 return true;
             default:
                 return false;
+        }
+    }
+
+    /// <summary>The stat that changes the damage taken from hits of <paramref name="form"/>'s family (null = formless).</summary>
+    public static TraitStat? DamageTakenFor(DamageForm form)
+    {
+        switch (DamageForms.Family(form))
+        {
+            case DamageForm.Slash: return TraitStat.SlashDamageTaken;
+            case DamageForm.Pierce: return TraitStat.PierceDamageTaken;
+            case DamageForm.Blunt: return TraitStat.BluntDamageTaken;
+            default: return null;
         }
     }
 

@@ -283,6 +283,7 @@ public class CombatEntity : MonoBehaviour
     {
         CacheComponents();
         BodyPartController.EnsureFor(this);
+        InjuryController.EnsureFor(this);
     }
 
     private void OnEnable()
@@ -651,6 +652,7 @@ public class CombatEntity : MonoBehaviour
             return 0f;
 
         info.target = this;
+        info.form = DamageForms.Resolve(info); // a sword's hit slashes, a mace's is blunt (unless the attack says otherwise)
         // The attacker's outgoing modifiers first (elemental damage...), then this character's.
         if (info.source != null && info.source != this && info.source.damageDealtModifiers.Count > 0)
             info.amount = info.source.ApplyDamageDealtModifiers(info);
@@ -1265,7 +1267,22 @@ public class CombatEntity : MonoBehaviour
     public CombatEntity TauntedBy => Time.time < tauntUntil && tauntSource != null && tauntSource.IsAlive ? tauntSource : null;
 
     /// <summary>Can this character use abilities right now?</summary>
-    public bool CanCast => !IsDead && !IsStunned && !IsSilenced && !IsIncapacitated;
+    public bool CanCast => !IsDead && !IsStunned && !IsSilenced && !IsIncapacitated && AllowsAction(BodyAction.CastAbilities);
+
+    /// <summary>
+    /// What the character's body allows (injuries, missing limbs): set by the <see cref="InjuryController"/>, null = no
+    /// limits. Movement, weapons, hands, blocking, items and abilities ask it through <see cref="AllowsAction"/>.
+    /// </summary>
+    public IBodyActionLimits BodyLimits { get; set; }
+
+    /// <summary>Does the character's body allow <paramref name="action"/> (true without an injury system)?</summary>
+    public bool AllowsAction(BodyAction action) => BodyLimits == null || BodyLimits.Allows(action);
+
+    /// <summary>Which hands can hold things (both without an injury system).</summary>
+    public HandCapability Hands => BodyLimits != null ? BodyLimits.Hands : HandCapability.Full;
+
+    /// <summary>How the character's legs let it move (limp, hop, crawl); normal without an injury system.</summary>
+    public BodyLocomotion Locomotion => BodyLimits is IBodyLocomotion l ? l.Locomotion : BodyLocomotion.Normal;
 
     /// <summary>Can this character move by itself right now?</summary>
     public bool CanMove => !IsDead && !IsStunned && !IsRooted && !IsIncapacitated;

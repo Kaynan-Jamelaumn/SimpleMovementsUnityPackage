@@ -27,6 +27,11 @@ public struct DamageInfo
     public ElementType element;
     /// <summary>The weapon that dealt it (null for abilities, hazards, falls...).</summary>
     public WeaponSO weapon;
+    /// <summary>
+    /// The shape of the hit: slash, pierce, blunt, bite, claw, crush (None = the weapon's, else formless). Set from the
+    /// start of <see cref="CombatEntity.ApplyDamage"/> on, so resistances and injuries always see the resolved form.
+    /// </summary>
+    public DamageForm form;
 
     // ---------------------------------------------------------------- hit location and defence
     /// <summary>How the hit arrived (melee swing, projectile, area...). Unknown for older callers.</summary>

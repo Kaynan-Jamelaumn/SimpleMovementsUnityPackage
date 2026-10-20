@@ -5,8 +5,10 @@ using UnityEngine.UI;
 /// <summary>
 /// The character panel beside the open inventory: name, class, race, level, resources, combat stats, traits and
 /// abilities, each with its description (hover a row for every source). It is a <see cref="CharacterSheetMenu"/>
-/// that refreshes while open (equipment, traits and stat changes show at once). Created by the
-/// <see cref="InventoryManager"/> (Show Character Panel); the header button folds it.
+/// that refreshes while open (equipment, traits and stat changes show at once). While the project's injury system is
+/// on, a Health tab shows the body's condition, injuries and missing limbs, where injuries are treated
+/// (<see cref="InjuryHealthPanel"/>). Created by the <see cref="InventoryManager"/> (Show Character Panel); the header
+/// button folds it.
 /// </summary>
 public class InventoryCharacterPanel : MonoBehaviour
 {
@@ -17,11 +19,18 @@ public class InventoryCharacterPanel : MonoBehaviour
     [SerializeField] private RectTransform body;
     [SerializeField] private CharacterSheetMenu sheet;
     [SerializeField] private TextMeshProUGUI foldLabel;
+    [SerializeField] private RectTransform healthPage;
+    [SerializeField] private InjuryHealthPanel health;
+    [SerializeField] private Button statsTab;
+    [SerializeField] private Button healthTab;
     [SerializeField] private Side side = Side.Auto;
     [SerializeField, Min(280f)] private float width = 430f;
 
     private bool folded;
     private bool shown;
+    private bool showingHealth;
+    private bool healthAvailable;
+    private bool tabsChecked;
     private RectTransform inventoryRect;
 
     /// <summary>Builds the panel under <paramref name="container"/> (the inventory's canvas area), hidden.</summary>
@@ -47,6 +56,10 @@ public class InventoryCharacterPanel : MonoBehaviour
         TextMeshProUGUI title = UITheme.Label(header, "CHARACTER", 15f, UITheme.Accent, TextAlignmentOptions.Left, FontStyles.Bold);
         title.characterSpacing = 5f;
         InventoryUIFactory.Size(title, -1f, 40f, 1f);
+        p.statsTab = UITheme.Button("Stats Tab", header, "Stats", () => p.ShowPage(false), UITheme.ButtonStyle.Tab, 78f, 36f);
+        p.healthTab = UITheme.Button("Health Tab", header, "Health", () => p.ShowPage(true), UITheme.ButtonStyle.Tab, 86f, 36f);
+        p.statsTab.gameObject.SetActive(false);
+        p.healthTab.gameObject.SetActive(false);
         Button fold = UITheme.Button("Fold", header, "Hide", null, UITheme.ButtonStyle.Ghost, 80f, 36f);
         p.foldLabel = fold.GetComponentInChildren<TextMeshProUGUI>(true);
         if (p.foldLabel != null) p.foldLabel.fontSize = 14f;
@@ -65,6 +78,11 @@ public class InventoryCharacterPanel : MonoBehaviour
             p.sheet.SetPlayer(inventory.PlayerStatus);
         content.gameObject.SetActive(true);
 
+        // The Health page (injuries), next to the sheet; shown by the Health tab while the injury system is on.
+        p.healthPage = UITheme.Area("Health", bg.transform, Vector2.zero, Vector2.one, new Vector2(12f, 12f), new Vector2(-12f, -62f));
+        p.health = InjuryHealthPanel.Create(p.healthPage, inventory, container);
+        p.healthPage.gameObject.SetActive(false);
+
         bg.gameObject.SetActive(false);
         return p;
     }
@@ -72,6 +90,8 @@ public class InventoryCharacterPanel : MonoBehaviour
     private void LateUpdate()
     {
         bool open = inventory != null && inventory.IsInventoryOpened && inventory.isActiveAndEnabled;
+        if (open)
+            UpdateTabs();
         if (open == shown)
             return;
         shown = open;
@@ -117,13 +137,52 @@ public class InventoryCharacterPanel : MonoBehaviour
             panel.offsetMin = new Vector2(-24f - w, folded ? -92f : bottom);
             panel.offsetMax = new Vector2(-24f, -24f);
         }
-        if (body != null) body.gameObject.SetActive(!folded);
+        ApplyPage();
+    }
+
+    /// <summary>Shows the Health tab only while the injury system is on (and this player has injuries tracked).</summary>
+    private void UpdateTabs()
+    {
+        bool available = InjuryHealthPanel.Available(inventory);
+        if (available == healthAvailable && tabsChecked)
+            return;
+        tabsChecked = true;
+        healthAvailable = available;
+        if (statsTab != null) statsTab.gameObject.SetActive(available && !folded);
+        if (healthTab != null) healthTab.gameObject.SetActive(available && !folded);
+        if (!available && showingHealth)
+            showingHealth = false;
+        ApplyPage();
+    }
+
+    /// <summary>Shows the character sheet (false) or the Health page (true).</summary>
+    public void ShowPage(bool showHealth)
+    {
+        showingHealth = showHealth && healthAvailable;
+        ApplyPage();
+    }
+
+    /// <summary>Opens the Health page (when the injury system is on).</summary>
+    public void ShowHealth()
+    {
+        healthAvailable = InjuryHealthPanel.Available(inventory);
+        ShowPage(true);
+    }
+
+    private void ApplyPage()
+    {
+        if (body != null) body.gameObject.SetActive(!folded && !showingHealth);
+        if (healthPage != null) healthPage.gameObject.SetActive(!folded && showingHealth);
+        if (statsTab != null) UITheme.SetSelected(statsTab, !showingHealth);
+        if (healthTab != null) UITheme.SetSelected(healthTab, showingHealth);
     }
 
     private void ToggleFold()
     {
         folded = !folded;
         if (foldLabel != null) foldLabel.text = folded ? "Show" : "Hide";
+        if (statsTab != null) statsTab.gameObject.SetActive(healthAvailable && !folded);
+        if (healthTab != null) healthTab.gameObject.SetActive(healthAvailable && !folded);
         Place();
     }
 
@@ -132,5 +191,7 @@ public class InventoryCharacterPanel : MonoBehaviour
     {
         if (sheet != null && sheet.isActiveAndEnabled)
             sheet.Rebuild();
+        if (health != null && health.isActiveAndEnabled)
+            health.Refresh();
     }
 }

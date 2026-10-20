@@ -160,6 +160,9 @@ public class TraitEditor : Editor
             case TraitStat.MaxStamina: case TraitStat.StaminaRegen: case TraitStat.StaminaCost: case TraitStat.MaxMana: case TraitStat.ManaRegen: return "Stamina & Mana";
             case TraitStat.MoveSpeed: case TraitStat.SprintSpeed: case TraitStat.CrouchSpeed: case TraitStat.JumpForce: case TraitStat.CarryWeight: return "Movement";
             case TraitStat.WeaponDamage: case TraitStat.ControlDealt: case TraitStat.ControlTaken: return "Combat";
+            case TraitStat.SlashDamageTaken: case TraitStat.PierceDamageTaken: case TraitStat.BluntDamageTaken: return "Health & Defence";
+            case TraitStat.InjuryChance: case TraitStat.WoundChance: case TraitStat.FractureChance: case TraitStat.BurnChance:
+            case TraitStat.InfectionChance: case TraitStat.BleedingRate: case TraitStat.InjuryHealing: case TraitStat.LimbLossChance: return "Injuries";
             default: return "Abilities";
         }
     }

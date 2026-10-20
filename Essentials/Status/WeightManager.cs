@@ -17,11 +17,18 @@ public class WeightManager : StatusManager
     protected override void UpdateStatus() => UpdateBar();
     protected override float AddFactor(float amount) => ApplyFactor(amount, incrementFactor);
     protected override float RemoveFactor(float amount) => ApplyFactor(amount, decrementFactor);
+    private bool warnedNoImage;
+
     public void UpdateWeightBar()
     {
         if (uiImage == null)
         {
-            Debug.LogWarning("WeightImage is not assigned.");
+            // Optional (the HUD can show weight elsewhere): say it once, not every frame.
+            if (!warnedNoImage)
+            {
+                warnedNoImage = true;
+                Debug.LogWarning($"[Weight] {name}: no Weight Image assigned, the weight bar is not drawn.", this);
+            }
             return;
         }
 

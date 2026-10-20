@@ -131,6 +131,34 @@ public static class TraitPresets
                 condition = ConditionalModifiersTrait.Condition.Casting,
                 modifiers = new List<TraitModifier> { TraitModifier.Percent(TraitStat.DamageTaken, -25f) },
             })),
+
+        // Injuries and damage forms (injury system: see InjuryResistance)
+        P("Injuries", "Tough Skin", "-40% wound chance (scratches, cuts, punctures, bites), -10% slash damage.", () => New("Tough Skin", "Blades and claws struggle to break the skin.", 2, TraitType.Physical, Good,
+            TraitModifier.Percent(TraitStat.WoundChance, -40f), TraitModifier.Percent(TraitStat.SlashDamageTaken, -10f))),
+        P("Injuries", "Strong Bones", "-40% fracture chance, fractures are milder, -10% blunt damage.", () => New("Strong Bones", "Bones that bend instead of breaking.", 2, TraitType.Physical, Good,
+            TraitModifier.Percent(TraitStat.FractureChance, -40f), TraitModifier.Percent(TraitStat.BluntDamageTaken, -10f),
+            new InjuryResistanceTrait { resistances = new List<InjuryResistance> { new InjuryResistance("Strong Bones", InjuryDefaults.TagFracture) { severity = -35f } } })),
+        P("Injuries", "Thick Blood", "-40% bleeding.", () => New("Thick Blood", "Wounds bleed slowly and clot fast.", 2, TraitType.Survival, Good,
+            TraitModifier.Percent(TraitStat.BleedingRate, -40f))),
+        P("Injuries", "Fast Healer", "+50% injury healing.", () => New("Fast Healer", "Cuts close and bones knit quickly.", 2, TraitType.Survival, Good,
+            TraitModifier.Percent(TraitStat.InjuryHealing, 50f))),
+        P("Injuries", "Iron Constitution", "-60% infection chance.", () => New("Iron Constitution", "Rarely gets sick, even from dirty wounds.", 2, TraitType.Survival, Good,
+            TraitModifier.Percent(TraitStat.InfectionChance, -60f))),
+        P("Injuries", "Thick Skull", "-60% concussions, head injuries are milder.", () => New("Thick Skull", "Takes a hit to the head like it is nothing.", 1, TraitType.Physical, Good,
+            new InjuryResistanceTrait { resistances = new List<InjuryResistance> { new InjuryResistance("Thick Skull", InjuryDefaults.TagConcussion) { injuryChance = -60f },
+                new InjuryResistance("Thick Skull") { partKinds = new List<BodyPartKind> { BodyPartKind.Head }, severity = -30f } } })),
+        P("Injuries", "Scaled Hide", "-25% slash and claw damage, -50% scratches and lacerations from slashes and claws, +15% blunt damage.", () => New("Scaled Hide", "Scales turn blades aside, but blows still land.", 3, TraitType.Physical, Good,
+            TraitModifier.Percent(TraitStat.SlashDamageTaken, -25f), TraitModifier.Percent(TraitStat.BluntDamageTaken, 15f),
+            new InjuryResistanceTrait { resistances = new List<InjuryResistance> { new InjuryResistance("Scaled Hide", InjuryDefaults.Scratch, InjuryDefaults.Laceration)
+                { forms = DamageFormMask.Slash | DamageFormMask.Claw, injuryChance = -50f } } })),
+        P("Injuries", "Hemophiliac", "+60% bleeding, -30% injury healing. Gives 2 points.", () => New("Hemophiliac", "Every cut is dangerous.", -2, TraitType.Survival, Bad,
+            TraitModifier.Percent(TraitStat.BleedingRate, 60f), TraitModifier.Percent(TraitStat.InjuryHealing, -30f))),
+        P("Injuries", "Brittle Bones", "+50% fracture chance, +20% limb loss chance. Gives 2 points.", () => New("Brittle Bones", "Breaks like glass.", -2, TraitType.Physical, Bad,
+            TraitModifier.Percent(TraitStat.FractureChance, 50f), TraitModifier.Percent(TraitStat.LimbLossChance, 20f))),
+        P("Injuries", "Thin Skin", "+40% wound chance. Gives 1 point.", () => New("Thin Skin", "Bruises and bleeds at the slightest touch.", -1, TraitType.Physical, Bad,
+            TraitModifier.Percent(TraitStat.WoundChance, 40f))),
+        P("Injuries", "Sickly", "+60% infection chance. Gives 2 points.", () => New("Sickly", "Every dirty wound turns bad.", -2, TraitType.Survival, Bad,
+            TraitModifier.Percent(TraitStat.InfectionChance, 60f))),
     };
 
     private static Preset P(string category, string name, string description, Func<Trait> create) =>

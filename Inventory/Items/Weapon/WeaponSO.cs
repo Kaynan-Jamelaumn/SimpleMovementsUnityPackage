@@ -15,12 +15,24 @@ public class WeaponSO : ItemSO
     [Header("Weapon Attributes")]
     [Tooltip("Weapon family (Sword, Axe, Bow...). Equipment bonuses such as '+15% damage with swords' and 'While wielding' conditions use it.")]
     [SerializeField] private WeaponCategory weaponCategory = WeaponCategory.None;
+    [Tooltip("What its hits do to a body: Slash (bleeding cuts, severed limbs), Pierce (deep punctures), Blunt (bruises, broken bones), " +
+             "Bite, Claw, Crush. None = from the Weapon Category (swords and axes slash, spears, daggers and bows pierce, maces, " +
+             "hammers, staves and fists are blunt). Each attack can change it (a pommel strike, a dagger's slash).")]
+    [SerializeField] private DamageForm damageForm = DamageForm.None;
     [Tooltip("What the weapon can harvest as a tool (trees need an Axe, ore a PickAxe...).")]
     [SerializeField] protected ToolType toolType;
-    [Tooltip("Lowest damage of a hit (before attack multipliers, stats and the target's defense).")]
+    [Tooltip("How the base damage of a hit is decided.\n• Range: random between Min and Max Damage.\n• Fixed: always Damage (no max).\n" +
+             "• Stats: mostly the wielder - Base Damage + Damage Per Point × the Scaling attribute's points, ± Variance.\n" +
+             "In every mode the attack's multiplier, the wielder's Weapon Damage bonuses, crits and the target's defense apply after.")]
+    [SerializeField] private WeaponDamageRoll damageRoll = WeaponDamageRoll.Range;
+    [Tooltip("Lowest damage of a hit (Range), the damage of every hit (Fixed), or the base the stats add to (Stats).")]
     [SerializeField] private float minDamage;
-    [Tooltip("Highest damage of a hit.")]
+    [Tooltip("Highest damage of a hit (Range only).")]
     [SerializeField] private float maxDamage;
+    [Tooltip("Stats: damage added per point of the Scaling attribute (10 Strength × 1.5 = +15).")]
+    [SerializeField, Min(0f)] private float damagePerPoint = 1f;
+    [Tooltip("Stats: random spread of a hit (0.1 = between 90% and 110%).")]
+    [SerializeField, Range(0f, 1f)] private float damageVariance = 0.1f;
     [Tooltip("Damage multiplier of critical hits.")]
     [SerializeField] private float criticalDamageMultiplier = 1.0f;
     [Tooltip("Chance (0-1) of a critical hit.")]
@@ -150,6 +162,14 @@ public class WeaponSO : ItemSO
     /// <summary>Replaces the ranged mechanic (templates, editor tools).</summary>
     public void SetRanged(RangedMechanic mechanic) => ranged = mechanic;
 
+    /// <summary>Replaces the weapon's hit volumes (Weapon Blade hit detection): templates, editor tools.</summary>
+    public void SetHitVolumes(IEnumerable<WeaponBlade> volumes)
+    {
+        hitVolumes = volumes != null ? new List<WeaponBlade>(volumes) : new List<WeaponBlade>();
+        if (hitVolumes.Count > 0)
+            blade = hitVolumes[0];
+    }
+
     /// <summary>Replaces the guard (templates, editor tools).</summary>
     public void SetGuard(ShieldDefense defense) => guard = defense;
 
@@ -162,6 +182,10 @@ public class WeaponSO : ItemSO
 
     public ToolType ToolType => toolType;
     public new WeaponCategory Category => weaponCategory;
+    /// <summary>The form of its hits: its own Damage Form, else its category's (<see cref="DamageForms.ForCategory"/>).</summary>
+    public DamageForm DamageForm => damageForm != DamageForm.None ? damageForm : DamageForms.ForCategory(weaponCategory);
+    /// <summary>The form set on the weapon itself (None = from the category).</summary>
+    public DamageForm DamageFormSetting => damageForm;
     public WeaponScaling Scaling => scaling;
     public WeaponAnimationSet AnimationSet => animationSet;
     public bool UseCustomAnimatorController => useCustomAnimatorController;
@@ -224,6 +248,78 @@ public class WeaponSO : ItemSO
     }
     public float MinDamage => minDamage;
     public float MaxDamage => maxDamage;
+    /// <summary>How the base damage of a hit is decided (Range, Fixed, Stats).</summary>
+    public WeaponDamageRoll DamageRoll => damageRoll;
+    /// <summary>Stats mode: damage per point of the Scaling attribute.</summary>
+    public float DamagePerPoint => damagePerPoint;
+    /// <summary>Stats mode: the random spread (0-1).</summary>
+    public float DamageVariance => damageVariance;
+
+    /// <summary>Does the weapon itself deal damage (in its mode)?</summary>
+    public bool HasDamage
+    {
+        get
+        {
+            switch (damageRoll)
+            {
+                case WeaponDamageRoll.Fixed: return minDamage > 0f;
+                case WeaponDamageRoll.Stats: return minDamage > 0f || (damagePerPoint > 0f && scaling != WeaponScaling.None);
+                default: return Mathf.Max(minDamage, maxDamage) > 0f;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The lowest and highest base damage of a hit by a wielder with <paramref name="stats"/> (null = no stats: Stats mode
+    /// gives just its Base Damage), before attacks, multipliers and defense.
+    /// </summary>
+    public void BaseDamageRange(CombatStats stats, out float min, out float max)
+    {
+        switch (damageRoll)
+        {
+            case WeaponDamageRoll.Fixed:
+                min = max = Mathf.Max(0f, minDamage);
+                return;
+            case WeaponDamageRoll.Stats:
+                float points = stats != null ? Mathf.Max(0f, stats.ScalingPoints(scaling, weaponCategory)) : 0f;
+                float b = Mathf.Max(0f, minDamage + damagePerPoint * points);
+                float v = Mathf.Clamp01(damageVariance);
+                min = b * (1f - v);
+                max = b * (1f + v);
+                return;
+            default:
+                min = Mathf.Max(0f, minDamage);
+                max = Mathf.Max(min, maxDamage);
+                return;
+        }
+    }
+
+    /// <summary>A random base damage roll for a wielder with <paramref name="stats"/> (see <see cref="BaseDamageRange"/>).</summary>
+    public float RollBaseDamage(CombatStats stats)
+    {
+        BaseDamageRange(stats, out float min, out float max);
+        return max > min ? Random.Range(min, max) : min;
+    }
+
+    /// <summary>The average base damage of a hit (tooltips, AI, objects hit).</summary>
+    public float AverageBaseDamage(CombatStats stats = null)
+    {
+        BaseDamageRange(stats, out float min, out float max);
+        return (min + max) * 0.5f;
+    }
+
+    /// <summary>"8-12", "10", "5 + 1.5 per Strength (±10%)".</summary>
+    public string DescribeBaseDamage()
+    {
+        switch (damageRoll)
+        {
+            case WeaponDamageRoll.Fixed: return $"{minDamage:0.#}";
+            case WeaponDamageRoll.Stats:
+                string per = scaling != WeaponScaling.None ? $" + {damagePerPoint:0.##} per {scaling}" : "";
+                return $"{minDamage:0.#}{per}{(damageVariance > 0f ? $" (±{damageVariance * 100f:0}%)" : "")}";
+            default: return $"{minDamage:0.#}-{Mathf.Max(minDamage, maxDamage):0.#}";
+        }
+    }
     public float CriticalChance => criticalChance;
     public float CriticalDamageMultiplier => criticalDamageMultiplier;
     public float KnockBack => knockBack;
@@ -277,7 +373,7 @@ public class WeaponSO : ItemSO
         SyncActionType(heavyAction, AttackType.Heavy);
         SyncActionType(specialAction, AttackType.Special);
         SyncActionType(alternateAction, AttackType.Alternate);
-        if (maxDamage < minDamage)
+        if (damageRoll == WeaponDamageRoll.Range && maxDamage < minDamage)
             maxDamage = minDamage;
         if (handling == null)
             handling = new WeaponHandling();
@@ -350,10 +446,10 @@ public class WeaponSO : ItemSO
 
     public bool HasCombos() => (comboSequences != null && comboSequences.Any(c => c != null && c.IsValid())) || comboTree != null;
 
-    /// <summary>A random damage roll between Min and Max Damage, with the weapon's critical chance.</summary>
+    /// <summary>A random base damage roll (its Damage Roll mode, no stats), with the weapon's critical chance.</summary>
     public float CalculateDamage(AttackAction action = null)
     {
-        float baseDamage = Random.Range(minDamage, maxDamage);
+        float baseDamage = RollBaseDamage(null);
         float critMultiplier = Random.value <= criticalChance ? criticalDamageMultiplier : 1.0f;
         return baseDamage * critMultiplier;
     }
@@ -371,7 +467,8 @@ public class WeaponSO : ItemSO
     public override void AppendTooltip(List<string> lines)
     {
         string cat = weaponCategory != WeaponCategory.None ? weaponCategory.ToString() : "Weapon";
-        lines.Add($"{cat}: {minDamage:0.#}-{maxDamage:0.#} damage" + (elementType != ElementType.None ? $" ({elementType})" : ""));
+        string form = DamageForms.Adjective(DamageForm);
+        lines.Add($"{cat}: {DescribeBaseDamage()} {(form.Length > 0 ? form + " " : "")}damage" + (elementType != ElementType.None ? $" ({elementType})" : ""));
         if (criticalChance > 0f)
             lines.Add($"{criticalChance * 100f:0}% critical chance (x{criticalDamageMultiplier:0.##})");
         if (scaling != WeaponScaling.None)
@@ -399,8 +496,12 @@ public class WeaponSO : ItemSO
             warnings.Add($"Item Type is '{itemType}'; weapons normally use 'Weapon'.");
         if (GetAction(AttackType.Normal) == null)
             errors.Add("The weapon has no Normal action: the primary attack input does nothing.");
-        if (maxDamage <= 0f && toolDamage <= 0f)
-            warnings.Add("Min/Max Damage are 0: attacks only do what their effects do.");
+        if (!HasDamage && toolDamage <= 0f)
+            warnings.Add(damageRoll == WeaponDamageRoll.Stats
+                ? "Stats damage with no Base Damage and no Scaling attribute: attacks only do what their effects do."
+                : "The weapon's damage is 0: attacks only do what their effects do.");
+        if (damageRoll == WeaponDamageRoll.Stats && scaling == WeaponScaling.None)
+            warnings.Add("Damage Roll is Stats but Scaling is None: pick the attribute the damage comes from (Strength, Agility, Intelligence).");
         if (criticalChance < 0f || criticalChance > 1f)
             errors.Add("Critical Chance must be between 0 and 1.");
 

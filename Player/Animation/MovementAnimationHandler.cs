@@ -11,6 +11,8 @@ public class MovementAnimationHandler
     private readonly bool useAdvancedBlending;
 
     private Vector2 currentMovement, movementVelocity;
+    private CombatEntity body;
+    private bool bodySearched;
 
     public MovementAnimationHandler(PlayerAnimationModel model, PlayerMovementModel movementModel,
         MovementStateMachine movementStateMachine, float smoothTime, bool useAdvancedBlending)
@@ -67,6 +69,35 @@ public class MovementAnimationHandler
             ["SwimSpeed"] = state == MovementStateMachine.EMovementState.Swimming ? movementStateMachine.SwimVelocity.magnitude : 0f,
             ["IsAttacking"] = model.IsAttacking,
             ["IsInputLocked"] = model.IsInputLocked
+        });
+        ApplyBodyAnimations();
+    }
+
+    /// <summary>
+    /// How the legs let the player move (injury system, optional Animator parameters): limping, hopping on one leg,
+    /// crawling without legs, and what is missing - for limp / hop / crawl / one-armed animations.
+    /// </summary>
+    private void ApplyBodyAnimations()
+    {
+        if (body == null && !bodySearched && movementModel != null)
+        {
+            bodySearched = true;
+            body = CombatEntity.Resolve(movementModel.gameObject);
+        }
+        BodyLocomotion l = body != null ? body.Locomotion : BodyLocomotion.Normal;
+        float time = movementStateMachine != null ? movementStateMachine.SimTime : Time.time;
+        SetAnimationParameters(new Dictionary<string, object>
+        {
+            ["LocomotionMode"] = (int)l.mode,
+            ["IsLimping"] = l.mode == LocomotionMode.Limping,
+            ["LimpAmount"] = l.mode == LocomotionMode.Normal ? 0f : l.limp,
+            ["LimpSide"] = l.limpSide,
+            ["IsHopping"] = l.mode == LocomotionMode.Hopping,
+            ["HopCycle"] = l.mode == LocomotionMode.Hopping ? l.HopPhase(time) : 0f,
+            ["IsCrawling"] = l.mode == LocomotionMode.Crawling,
+            ["IsLegless"] = l.missingLegs >= 2,
+            ["MissingLegs"] = l.missingLegs,
+            ["MissingArms"] = l.missingArms,
         });
     }
 

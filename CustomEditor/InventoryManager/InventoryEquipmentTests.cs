@@ -232,6 +232,36 @@ namespace InventorySystem.Tests
         }
 
         [Test]
+        public void WeaponDamageRoll_RangeFixedAndStats()
+        {
+            WeaponSO w = Track(ScriptableObject.CreateInstance<WeaponSO>());
+            w.SetStats(WeaponCategory.Sword, 8f, 12f, 0f, 1f, 0f, WeaponScaling.Strength);
+            var so = new SerializedObject(w);
+            w.BaseDamageRange(null, out float min, out float max);
+            Assert.AreEqual(8f, min, 1e-4f);
+            Assert.AreEqual(12f, max, 1e-4f);
+
+            so.FindProperty("damageRoll").enumValueIndex = (int)WeaponDamageRoll.Fixed;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            w.BaseDamageRange(null, out min, out max);
+            Assert.AreEqual(8f, min, 1e-4f);
+            Assert.AreEqual(8f, max, 1e-4f, "Fixed: no max");
+            Assert.AreEqual(8f, w.RollBaseDamage(null), 1e-4f);
+
+            so.FindProperty("damageRoll").enumValueIndex = (int)WeaponDamageRoll.Stats;
+            so.FindProperty("minDamage").floatValue = 5f;
+            so.FindProperty("damagePerPoint").floatValue = 1.5f;
+            so.FindProperty("damageVariance").floatValue = 0f;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            CombatStats stats = NewStats();
+            stats.AddModifiers("Strong", new[] { new CombatStatModifier(CombatStatType.Strength, 10f) });
+            Assert.AreEqual(5f, w.AverageBaseDamage(null), 1e-4f, "no stats: the base only");
+            Assert.AreEqual(20f, w.AverageBaseDamage(stats), 1e-4f, "5 + 10 Strength x 1.5");
+            Assert.IsTrue(w.HasDamage);
+            StringAssert.Contains("per Strength", w.DescribeBaseDamage());
+        }
+
+        [Test]
         public void ConsumablePresetsSetEffects()
         {
             ConsumableSO meat = Track(ScriptableObject.CreateInstance<ConsumableSO>());

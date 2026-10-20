@@ -62,7 +62,7 @@ public static class AbilityPresets
 
     // ------------------------------------------------------------------ melee
     /// <summary>A mob's plain melee attack: short wind-up and a small frontal cone.</summary>
-    public static AbilityDefinition BasicMelee(float damage, float reach, float cooldown, float windUp = 0.35f)
+    public static AbilityDefinition BasicMelee(float damage, float reach, float cooldown, float windUp = 0.35f, DamageForm form = DamageForm.Bite)
     {
         AbilityDefinition d = New("Basic Attack", AbilityTag.Melee);
         d.castTime = windUp;
@@ -77,7 +77,7 @@ public static class AbilityPresets
         d.actions.Add(new AreaHitAction
         {
             shape = new HitShape { type = HitShapeType.Cone, radius = reach + 0.6f, angle = 80f, height = 3f, baseOffset = -1f },
-            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = damage, variance = 0.15f }) { maxTargets = 1 },
+            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = damage, variance = 0.15f, form = form }) { maxTargets = 1 },
         });
         d.presentation.castTrigger = "Attack";
         d.presentation.showTelegraph = false;
@@ -100,7 +100,7 @@ public static class AbilityPresets
         d.actions.Add(new AreaHitAction
         {
             shape = HitShape.ConeShape(radius, angle),
-            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = damage }, new KnockbackEffect { distance = 1.5f, arcHeight = 0f, disableTarget = false }),
+            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = damage, form = DamageForm.Slash }, new KnockbackEffect { distance = 1.5f, arcHeight = 0f, disableTarget = false }),
         });
         d.presentation.castTrigger = "Attack";
         return d;
@@ -119,7 +119,7 @@ public static class AbilityPresets
         d.actions.Add(new AreaHitAction
         {
             shape = HitShape.CircleShape(4f),
-            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 15f }, new StunEffect { duration = 1.5f }) { edgeMultiplier = 0.6f },
+            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 15f, form = DamageForm.Blunt }, new StunEffect { duration = 1.5f }) { edgeMultiplier = 0.6f },
         });
         d.ai.priority = 1.4f;
         d.ai.minTargets = 1;
@@ -324,7 +324,7 @@ public static class AbilityPresets
             speed = 30f,
             maxDistance = 15f,
             radius = 0.35f,
-            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 5f }, new PullEffect { maxDistance = 14f, stopDistance = 1f, duration = 0.35f }),
+            hit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 5f, form = DamageForm.Pierce }, new PullEffect { maxDistance = 14f, stopDistance = 1f, duration = 0.35f }),
         });
         d.ai.preferredMinDistance = 5f;
         return d;
@@ -416,7 +416,7 @@ public static class AbilityPresets
             arcHeight = 3f,
             stopDistance = 0.5f,
             landingShape = HitShape.CircleShape(3f),
-            landingHit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 16f }, new KnockbackEffect { distance = 2.5f }),
+            landingHit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 16f, form = DamageForm.Crush }, new KnockbackEffect { distance = 2.5f }),
         });
         d.ai.preferredMinDistance = 5f;
         return d;
@@ -440,7 +440,7 @@ public static class AbilityPresets
             distance = 12f,
             speed = 22f,
             pathWidth = 1.8f,
-            pathHit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 14f }, new KnockbackEffect { distance = 3.5f, arcHeight = 0.8f, direction = DisplacementDirection.AwayFromOrigin }),
+            pathHit = new HitSettings(TargetFilter.Enemies, new DamageEffect { amount = 14f, form = DamageForm.Blunt }, new KnockbackEffect { distance = 3.5f, arcHeight = 0.8f, direction = DisplacementDirection.AwayFromOrigin }),
         });
         d.ai.preferredMinDistance = 4f;
         return d;

@@ -306,7 +306,7 @@ public enum SeveralPartsRule
 }
 
 /// <summary>
-/// The body parts of a kind of character: a humanoid (head, torso, arms, legs), a quadruped, a dragon with a weak belly...
+/// The body parts of a kind of character: a humanoid (head, neck, torso, limbs segment by segment), a quadruped, a dragon with a weak belly...
 /// Assign it to a <see cref="BodyPartController"/> (or to Combat Settings for everyone). Hits find their part from a
 /// hitbox collider, or from the hit's height and side on the body; the part scales the damage, decides which armour
 /// protects, and runs its effects.
@@ -405,22 +405,132 @@ public class BodyPartProfile : ScriptableObject
         }
         if (Find(defaultPart) == null)
             warnings.Add($"Default Part '{defaultPart}' is not a part of this profile (the first part is used).");
-        // Every height should belong to some centre part.
+        // Every height should belong to some part across the whole body: a centre part, or parts on both sides that
+        // reach the middle (legs), or one part on either side.
         for (float h = 0.02f; h < 1f; h += 0.05f)
         {
-            bool covered = false;
+            bool centre = false, left = false, right = false;
             foreach (BodyPartDefinition p in parts)
-                if (p != null && p.side == BodySide.Any && p.InHeight(h)) { covered = true; break; }
-            if (!covered)
             {
-                warnings.Add($"No centre part covers the height {h:0.00} of the body (hits there use the nearest part).");
+                if (p == null || !p.InHeight(h)) continue;
+                if (p.side == BodySide.Any) centre = true;
+                else if (p.sideOffset <= 0.01f)
+                {
+                    if (p.side == BodySide.Left || p.side == BodySide.EitherSide) left = true;
+                    if (p.side == BodySide.Right || p.side == BodySide.EitherSide) right = true;
+                }
+            }
+            if (!centre && !(left && right))
+            {
+                warnings.Add($"No part covers the middle of the body at the height {h:0.00} (hits there use the nearest part).");
                 break;
             }
         }
     }
 
-    /// <summary>Fills this profile with a humanoid layout (head, torso, arms, legs) and sensible effects.</summary>
+    /// <summary>
+    /// Fills this profile with a detailed humanoid layout and sensible effects: head, neck, upper and lower torso, groin, and
+    /// on each side the upper arm, forearm, hand, thigh, shin and foot. Every part keeps the old broad names as aliases
+    /// (Torso, Arms, Legs, Hands, Feet), so shields' Covered Body Parts and attacks' Aimed Body Part still work.
+    /// </summary>
     public void FillHumanoid()
+    {
+        parts = new List<BodyPartDefinition>
+        {
+            new BodyPartDefinition
+            {
+                name = "Head", aliases = new List<string> { "Face", "Skull" }, heightRange = new Vector2(0.87f, 1f), damageMultiplier = 1.6f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Helmet },
+                effects = new List<BodyPartEffect> { new StaggerBodyPartEffect { chance = 0.35f, minDamageFraction = 0.05f, duration = 0.4f } },
+                redirectWhenSevered = "UpperTorso",
+            },
+            new BodyPartDefinition
+            {
+                name = "Neck", aliases = new List<string> { "Throat", "Head" }, heightRange = new Vector2(0.82f, 0.87f), damageMultiplier = 1.8f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Helmet },
+                effects = new List<BodyPartEffect> { new StaggerBodyPartEffect { chance = 0.25f, minDamageFraction = 0.05f, duration = 0.3f } },
+                redirectWhenSevered = "UpperTorso",
+            },
+            new BodyPartDefinition
+            {
+                name = "UpperTorso", aliases = new List<string> { "Torso", "Chest", "Body", "Back" }, heightRange = new Vector2(0.62f, 0.82f), damageMultiplier = 1f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Chestplate, ArmorSlotType.Shoulders, ArmorSlotType.Cloak },
+                redirectWhenSevered = "",
+            },
+            new BodyPartDefinition
+            {
+                name = "LowerTorso", aliases = new List<string> { "Torso", "Abdomen", "Belly", "Stomach", "Body" }, heightRange = new Vector2(0.5f, 0.62f), damageMultiplier = 1.05f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Chestplate, ArmorSlotType.Belt, ArmorSlotType.Cloak },
+                redirectWhenSevered = "UpperTorso",
+            },
+            new BodyPartDefinition
+            {
+                name = "Groin", aliases = new List<string> { "Pelvis", "Hips", "Torso" }, heightRange = new Vector2(0.44f, 0.5f), damageMultiplier = 1.2f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Leggings, ArmorSlotType.Belt },
+                effects = new List<BodyPartEffect> { new StaggerBodyPartEffect { chance = 0.3f, minDamageFraction = 0.08f, duration = 0.5f } },
+                redirectWhenSevered = "LowerTorso",
+            },
+        };
+        // Arms first: at hand and forearm height a hit far out to the side is the arm, nearer the middle the thigh.
+        foreach (BodySide side in new[] { BodySide.Left, BodySide.Right })
+        {
+            string sn = side.ToString();
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "UpperArm", aliases = new List<string> { "UpperArms", "Arms", "Arm", sn + "Arm" }, heightRange = new Vector2(0.62f, 0.82f),
+                side = side, sideOffset = 0.65f, damageMultiplier = 0.8f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Shoulders, ArmorSlotType.Shield },
+                redirectWhenSevered = "UpperTorso",
+            });
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "Forearm", aliases = new List<string> { "Forearms", "LowerArms", "Arms", "Arm", sn + "LowerArm" }, heightRange = new Vector2(0.48f, 0.62f),
+                side = side, sideOffset = 0.65f, damageMultiplier = 0.75f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Bracers, ArmorSlotType.Shield },
+                redirectWhenSevered = sn + "UpperArm",
+            });
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "Hand", aliases = new List<string> { "Hands", "Hand", "Arms" }, heightRange = new Vector2(0.38f, 0.48f),
+                side = side, sideOffset = 0.65f, damageMultiplier = 0.6f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Gloves, ArmorSlotType.Shield },
+                redirectWhenSevered = sn + "Forearm",
+            });
+        }
+        foreach (BodySide side in new[] { BodySide.Left, BodySide.Right })
+        {
+            string sn = side.ToString();
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "Thigh", aliases = new List<string> { "Thighs", "Legs", "Leg", sn + "Leg", sn + "UpperLeg" }, heightRange = new Vector2(0.26f, 0.44f),
+                side = side, sideOffset = 0f, damageMultiplier = 0.9f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Leggings },
+                effects = new List<BodyPartEffect> { new ImpairMovementBodyPartEffect { chance = 0.3f, minDamageFraction = 0.05f, slow = 0.3f, duration = 2f } },
+                redirectWhenSevered = "Groin",
+            });
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "Shin", aliases = new List<string> { "Shins", "LowerLegs", "Legs", "Leg", sn + "LowerLeg", sn + "Calf" }, heightRange = new Vector2(0.07f, 0.26f),
+                side = side, sideOffset = 0f, damageMultiplier = 0.8f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Leggings, ArmorSlotType.Boots },
+                effects = new List<BodyPartEffect> { new ImpairMovementBodyPartEffect { chance = 0.3f, minDamageFraction = 0.05f, slow = 0.3f, duration = 2f } },
+                redirectWhenSevered = sn + "Thigh",
+            });
+            parts.Add(new BodyPartDefinition
+            {
+                name = sn + "Foot", aliases = new List<string> { "Feet", "Foot", "Legs" }, heightRange = new Vector2(0f, 0.07f),
+                side = side, sideOffset = 0f, damageMultiplier = 0.6f,
+                protectedBy = new List<ArmorSlotType> { ArmorSlotType.Boots },
+                effects = new List<BodyPartEffect> { new ImpairMovementBodyPartEffect { chance = 0.2f, minDamageFraction = 0.05f, slow = 0.2f, duration = 1.5f } },
+                redirectWhenSevered = sn + "Shin",
+            });
+        }
+        defaultPart = "UpperTorso";
+        otherArmorShare = 0.25f;
+    }
+
+    /// <summary>The simple humanoid layout: head, torso, arms and legs (broad parts, no left / right).</summary>
+    public void FillSimpleHumanoid()
     {
         parts = new List<BodyPartDefinition>
         {

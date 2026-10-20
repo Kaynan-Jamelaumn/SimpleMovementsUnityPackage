@@ -102,7 +102,7 @@ namespace ProceduralDungeon
             if (p.PlayerMovement != null)
                 p.PlayerMovement.VerticalVelocity = 0f;
             if (fallDamage > 0f)
-                p.ApplyDamage(new DamageInfo { amount = p.MaxHealth * fallDamage, target = p, point = to, direction = Vector3.down, type = DamageType.True });
+                p.ApplyDamage(new DamageInfo { amount = p.MaxHealth * fallDamage, target = p, point = to, direction = Vector3.down, type = DamageType.True, form = DamageForm.Crush });
             DungeonMessages.Show(this, message, true);
         }
 

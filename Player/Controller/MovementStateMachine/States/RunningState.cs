@@ -32,7 +32,8 @@ public class RunningState : MovementState
 
         if (!HasMoveInput())
             return MovementStateMachine.EMovementState.Idle;
-        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfSprintStaminaCost) == false || !Context.Input.Sprint)
+        if (Context.StatusController.StaminaManager.HasEnougCurrentValue(Context.MovementModel.AmountOfSprintStaminaCost) == false || !Context.Input.Sprint ||
+            !Context.BodyAllows(BodyAction.Sprint))
            return MovementStateMachine.EMovementState.Walking;
 
 

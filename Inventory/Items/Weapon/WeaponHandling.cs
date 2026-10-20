@@ -98,6 +98,13 @@ public struct HandState
     public bool offHandSuppressed;
     /// <summary>Why the off-hand item is stowed or refused (empty when everything is valid).</summary>
     public string reason;
+    /// <summary>
+    /// The main-hand item cannot be held at all (injuries: no usable hand, or a two-handed weapon without both hands).
+    /// It stays in its hotbar slot but is not equipped or used.
+    /// </summary>
+    public bool mainHandBlocked;
+    /// <summary>Why the main-hand item cannot be held.</summary>
+    public string mainHandReason;
 
     public bool IsTwoHanded => mainWeapon != null && mainWeapon.IsTwoHanded;
     public bool IsDualWielding => mainWeapon != null && activeOffHand is WeaponSO;
@@ -176,6 +183,50 @@ public static class HandRules
             return s;
         }
         s.activeOffHand = offHand;
+        return s;
+    }
+
+    /// <summary>
+    /// The rules with what the hands can do (<see cref="IBodyActionLimits.Hands"/>: injuries, missing limbs):
+    /// <list type="bullet">
+    /// <item>A two-handed weapon needs both hands: without them it cannot be held.</item>
+    /// <item>With the main hand unusable, the other hand carries a one-handed main item and the off-hand item is stowed;
+    /// with no usable hand the main item cannot be held.</item>
+    /// <item>With the off hand unusable, the off-hand item (shield, second weapon) is stowed.</item>
+    /// </list>
+    /// </summary>
+    public static HandState Evaluate(ItemSO mainHand, ItemSO offHand, HandCapability hands)
+    {
+        if (hands.IsFull)
+            return Evaluate(mainHand, offHand);
+        string blockedBecause = null;
+        bool carriedByOffHand = false;
+        if (mainHand != null)
+        {
+            if (mainHand is WeaponSO w && w.IsTwoHanded && !hands.twoHanded)
+                blockedBecause = $"{w.Name} needs both hands ({hands.twoHandedReason}).";
+            else if (!hands.mainHand)
+            {
+                if (hands.offHand)
+                    carriedByOffHand = true;
+                else
+                    blockedBecause = $"You cannot hold {mainHand.Name} ({hands.mainReason}).";
+            }
+        }
+        HandState s = Evaluate(blockedBecause != null ? null : mainHand, offHand);
+        if (blockedBecause != null)
+        {
+            s.mainHandBlocked = true;
+            s.mainHandReason = blockedBecause;
+        }
+        if (s.activeOffHand != null && (carriedByOffHand || !hands.offHand))
+        {
+            s.offHandSuppressed = true;
+            s.reason = carriedByOffHand
+                ? $"{mainHand.Name} is held in your other hand: {s.activeOffHand.Name} is stowed."
+                : $"{s.activeOffHand.Name} is stowed ({hands.offReason}).";
+            s.activeOffHand = null;
+        }
         return s;
     }
 }

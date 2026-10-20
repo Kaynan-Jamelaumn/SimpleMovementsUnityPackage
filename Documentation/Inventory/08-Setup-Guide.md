@@ -106,7 +106,7 @@ Axe, Bow or Staff. You get a full moveset (chains, charged attacks, alternate at
 | Section | What to set |
 |---|---|
 | Item | Name, icon, prefab, weight, durability, hand position |
-| Damage & Stats | Category, scaling attribute, **min–max damage**, crit, knockback, attack speed, element; tool type / damage for axes and pickaxes |
+| Damage & Stats | Category, scaling attribute, **Damage Roll** (min–max, fixed, or from the wielder's stats) and its values, crit, knockback, attack speed, element; tool type / damage for axes and pickaxes |
 | Attacks | One tab per input — **Normal** (required), Light, Heavy, Special, Alternate. Each attack: timing (startup → active → recovery), cost and movement, damage, **hit area**, on-hit effects, charge, behaviours, sound, chain hits |
 | Hit Area & Range | What each attack reaches, **Set Max Range From Attacks**, the **Weapon Blade**, the old Attack Cast |
 | Combos | Fixed input strings and the Combo Tree |

@@ -402,6 +402,25 @@ public static class ItemPresets
     public static void ApplyConsumable(ConsumableSO item, Consumable preset)
     {
         var d = ConsumableData(preset);
+        ApplyConsumable(item, d.name, d.description, d.food, d.stack, d.weight, d.price, d.cooldown, d.effects);
+    }
+
+    /// <summary>
+    /// A custom consumable: name and description (when empty), food or potion, stack, weight, price, cooldown, and its
+    /// effects - (type, amount, seconds (0 = instant), tick seconds, effect name).
+    /// </summary>
+    public static void ApplyConsumable(ConsumableSO item, string name, string description, bool food, int stack, float weight, float price, float cooldown,
+        params (ConsumableEffectType type, float amount, float duration, float tick, string name)[] effects)
+    {
+        var list = new Fx[effects.Length];
+        for (int i = 0; i < effects.Length; i++)
+            list[i] = new Fx(effects[i].type, effects[i].amount, effects[i].duration, effects[i].tick, effects[i].name);
+        ApplyConsumable(item, name, description, food, stack, weight, price, cooldown, list);
+    }
+
+    private static void ApplyConsumable(ConsumableSO item, string name, string description, bool food, int stack, float weight, float price, float cooldown, Fx[] fxs)
+    {
+        var d = (name: name, description: description, food: food, stack: stack, weight: weight, price: price, cooldown: cooldown, effects: fxs);
         var so = new SerializedObject(item);
         SerializedProperty n = so.FindProperty("name");
         if (string.IsNullOrWhiteSpace(n.stringValue)) n.stringValue = d.name;

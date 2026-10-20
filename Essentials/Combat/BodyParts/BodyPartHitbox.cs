@@ -9,7 +9,7 @@
 [RequireComponent(typeof(Collider))]
 public class BodyPartHitbox : MonoBehaviour
 {
-    [Tooltip("Name of the body part (as in the character's Body Part Profile: Head, Torso, Arms, Legs...).")]
+    [Tooltip("Name of the body part (as in the character's Body Part Profile: Head, UpperTorso, LeftForearm, RightShin..., or a simple profile's Arms, Legs).")]
     public string part = "Head";
     [Tooltip("Make the collider a trigger (recommended: hitboxes must not push the character or its CharacterController).")]
     public bool forceTrigger = true;

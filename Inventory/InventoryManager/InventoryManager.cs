@@ -886,6 +886,9 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             else HotbarHandler.RefreshIfItemChanged(this.hotbar, hotbar, handParent);
         }
         SyncHandWeapon();
+        // An item no hand can hold (injuries) is not shown in the hand either; RefreshHands shows it again.
+        if (hands.mainHandBlocked && handParent != null)
+            HotbarHandler.ClearHand(handParent);
     }
 
     private void SyncHandWeapon()
@@ -898,16 +901,37 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
                 eq.SyncFromSlots(EquipmentSlots);
         }
         InventoryItem held = SelectedHotbarItem;
+        // An item no hand can hold (injuries: a missing arm, a two-handed weapon with one hand) stays in its slot unused.
+        InventoryItem inHand = hands.mainHandBlocked ? null : held;
         if (weaponController != null)
         {
-            if (held != null && held.itemScriptableObject is WeaponSO weapon)
-                weaponController.EquipWeapon(weapon, held);
+            if (inHand != null && inHand.itemScriptableObject is WeaponSO weapon)
+                weaponController.EquipWeapon(weapon, inHand);
             else if (weaponController.EquippedWeapon != null)
                 weaponController.UnequipWeapon();
             weaponController.SetOffHand(hands.activeOffHand != null ? OffHandItem : null);
         }
         if (visuals != null)
-            visuals.SetHands(held, OffHandItem, stowedOffHand != null);
+            visuals.SetHands(inHand, OffHandItem, stowedOffHand != null);
+    }
+
+    /// <summary>
+    /// Applies the hand rules again now (the character's hands changed: an injury, a lost or reattached limb). The
+    /// injury system calls it.
+    /// </summary>
+    public void RefreshHands()
+    {
+        bool wasBlocked = hands.mainHandBlocked;
+        RefreshHand(true);
+        if (hands.mainHandBlocked && !wasBlocked && !string.IsNullOrEmpty(hands.mainHandReason))
+            ShowMessage(hands.mainHandReason, InventoryFeedback.Kind.Warning);
+    }
+
+    /// <summary>What the player's hands can hold (injuries); both hands without an injury system.</summary>
+    private HandCapability PlayerHands()
+    {
+        CombatEntity e = PlayerEntity;
+        return e != null ? e.Hands : HandCapability.Full;
     }
 
     /// <summary>
@@ -919,7 +943,7 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     {
         InventoryItem main = SelectedHotbarItem;
         InventoryItem off = OffHandItem;
-        hands = HandRules.Evaluate(main != null ? main.itemScriptableObject : null, off != null ? off.itemScriptableObject : null);
+        hands = HandRules.Evaluate(main != null ? main.itemScriptableObject : null, off != null ? off.itemScriptableObject : null, PlayerHands());
         InventoryItem nowStowed = hands.offHandSuppressed ? off : null;
         if (nowStowed == stowedOffHand)
             return false;
@@ -1082,6 +1106,8 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         InventoryNetRole role = NetRole;
         if (role == InventoryNetRole.RemoteCopy)
             return false;
+        if (!BodyAllowsUse(heldItem.itemScriptableObject))
+            return false;
 
         if (heldItem.itemScriptableObject is WeaponSO weapon)
         {
@@ -1121,6 +1147,27 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         if (used)
             NotifyInventoryChanged();
         return used;
+    }
+
+    /// <summary>
+    /// Can the player's body use <paramref name="item"/> from the hand (injuries)? A main-hand item no hand can hold
+    /// cannot be used; other items need the body to allow using items. Tells the player why not.
+    /// </summary>
+    private bool BodyAllowsUse(ItemSO item)
+    {
+        if (hands.mainHandBlocked)
+        {
+            ShowMessage(string.IsNullOrEmpty(hands.mainHandReason) ? "You cannot hold that." : hands.mainHandReason);
+            return false;
+        }
+        CombatEntity e = PlayerEntity;
+        if (e != null && !(item is WeaponSO) && !e.AllowsAction(BodyAction.UseItems))
+        {
+            string why = e.BodyLimits != null ? e.BodyLimits.ReasonFor(BodyAction.UseItems) : "";
+            ShowMessage(string.IsNullOrEmpty(why) ? "You cannot use items now." : $"You cannot use items: {why}.");
+            return false;
+        }
+        return true;
     }
 
     private void HandleHotbarInput()
@@ -2684,6 +2731,12 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         if (!item.CanUseFromQuickSlot)
         {
             reason = $"{item.Name} cannot be used like this.";
+            return false;
+        }
+        CombatEntity body = PlayerEntity;
+        if (body != null && !body.AllowsAction(BodyAction.UseItems))
+        {
+            reason = "You cannot use items: " + (body.BodyLimits != null ? body.BodyLimits.ReasonFor(BodyAction.UseItems) : "injured") + ".";
             return false;
         }
         switch (NetRole)

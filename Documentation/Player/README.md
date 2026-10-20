@@ -18,6 +18,8 @@ the player carries are in the [Inventory guide](../Inventory/README.md).
 | [10 — Character Creation, Appearance & Menus](10-Character-Creation-Appearance-and-Menus.md) | Start screens (solo, host, join, settings), character select and creation (race, class, traits, appearance with a 3D preview), saved characters, the server check, Character Appearance (body type, hair, beard, eyes, nose, colours; placeholder shapes until your art is set up), the inventory's character panel, the restyled pause and settings menu |
 | [11 — Player HUD](11-Player-HUD.md) | The HUD built in code: player frame (health, mana, stamina, level, experience), needs gauges, abilities bar (icons, keys, casting glow, cooldown countdowns, hover info), active trait, the restyled hotbar and quickslots, the palette and your own slot prefabs |
 | [12 — Survival, Death & Respawn](12-Survival-Death-and-Respawn.md) | Hunger / thirst numbers (tick rates, values, factors), rest and sleeping (beds, benches, ground, potions, sleep quality, tiredness), sanity (sources, consequences, restoring it), body temperature (ideal range per race / class, resistances and immunity, weather), unconsciousness (death threshold, revive, give up), death penalties (lose items, character reset, lose experience, milestone regression) and respawn |
+| [13 — Injuries, Limb Loss & Treatment](13-Injuries-and-Treatment.md) | Project-Zomboid-like body damage (optional, Injury Settings): body parts with their own condition, scratches / cuts / deep wounds / fractures / burns / infections with severities, bleeding, effects on movement, weapons, hands and survival, losing limbs (armour and held items drop, the limb drops as an item), reattaching them within a time limit, medical items and healing abilities, the Health tab of the inventory, city treatment (placeholder) |
+| [14 — Damage Forms & Injury Resistances](14-Damage-Forms-and-Injury-Resistances.md) | Slash, pierce, blunt, bite, claw and crush hits (from the weapon category, the attack, the ammo, the ability, the mob's attack): slashes bleed, blunt blows bruise, break bones and concuss, bites tear and infect; resisting them by race, class, trait, item or buff (Tough Skin, Strong Bones, Thick Blood, Fast Healer...), the injury character stats, creature presets (skeleton, golem, troll...) |
 
 ## The player at a glance
 
@@ -41,6 +43,7 @@ flowchart TB
     ID["CharacterIdentity<br/>race, class stats, height, level"] --> CS
     CS --- CE
     BP["BodyPartController<br/>head · torso · arms · legs"] --- CE
+    IJ["InjuryController<br/>condition, injuries, bleeding, limbs<br/>(added when the injury system is on)"] --- CE
 ```
 
 ## Ten-minute setup

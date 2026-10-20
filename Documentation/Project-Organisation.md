@@ -13,7 +13,7 @@ once, in `Essentials/Project/SMAssets.cs` (runtime) and `CustomEditor/Project/SM
 
 ```
 Assets/Resources/SimpleMovements/
-├─ Settings/          CombatSettings, AbsorptionSettings, HubWorldSettings, ElementalSystem
+├─ Settings/          CombatSettings, AbsorptionSettings, HubWorldSettings, ElementalSystem, InjurySettings
 ├─ Databases/         AbilityDatabase, TraitDatabase, ItemDatabase, ItemCategoryDatabase, CharacterCatalog
 ├─ Economy/           DefaultCurrency
 ├─ Characters/
@@ -30,6 +30,8 @@ Assets/Resources/SimpleMovements/
 │  ├─ Armor/          armor sets (Armor Set Wizard)
 │  ├─ Consumables/    consumable presets
 │  ├─ Ammo/           ammo presets, ammo made from a weapon
+│  ├─ Medical/        medical item presets (bandage, splint, suture kit...) and their icons / model
+│  ├─ Limbs/          severed limb items (one per body part that can be lost), icons, models
 │  └─ Drops/          ItemDropManager; Tables/ (Chest Drops, Breakable Drops, your tables)
 ├─ UI/
 │  ├─ HUD/            HUD prefabs made from the Player HUD inspector
@@ -49,6 +51,8 @@ Assets/Resources/SimpleMovements/
 | Trait Database, Character Catalog, Item Category Database, Default Currency, Hub World Settings | Project Setup ▸ Create … | `Databases/`, `Economy/`, `Settings/` |
 | Item Database | Project Setup ▸ Build Item Database | `Databases/` |
 | Item Drop Manager, drop tables | Inventory ▸ Item Drops ▸ Create Item Drop Manager / Create New Drop Table | `Items/Drops/`, `Items/Drops/Tables/` |
+| Injury Settings | Project Setup ▸ Create Injury Settings (Resources) | `Settings/` |
+| Medical items, severed limb items | Player ▸ Injuries ▸ Create Medical Items / Create Severed Limb Items | `Items/Medical/`, `Items/Limbs/` |
 | A mob's profile, basic attack, abilities, body parts | Mobs ▸ Create New Mob, Quick Setup Mob, the mob inspectors | `Mobs/<Type>/` |
 | Player abilities | Ability presets on the player, casters, legacy conversion | `Abilities/` |
 | Example races, class archetypes | Project Setup ▸ Create Example Races, Player Class ▸ Create Class Archetype | `Characters/Races/`, `Characters/Classes/` |

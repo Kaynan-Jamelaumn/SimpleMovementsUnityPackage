@@ -42,7 +42,7 @@ namespace GameNet.EditorTools
             {
                 "GameNet.NetPlayer", "GameNet.NetPlayerMovement", "GameNet.NetAbilityCaster", "GameNet.NetWeaponCombat",
                 "GameNet.NetCombatStatus", "GameNet.NetInventory", "GameNet.NetWallet", "GameNet.NetPlayerRealm",
-                "GameNet.NetInteractor",
+                "GameNet.NetInteractor", "GameNet.NetInjuries",
             },
             ["Mob"] = new[]
             {

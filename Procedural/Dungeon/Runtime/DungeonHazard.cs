@@ -37,6 +37,8 @@ namespace ProceduralDungeon
         public DamageType damageType = DamageType.Physical;
         [Tooltip("Element of the damage (fire, poison, ice...): elemental resistances and reactions apply.")]
         public ElementType element = ElementType.None;
+        [Tooltip("What the hits do to a body (injuries): Pierce for spike floors, Slash for blades, Crush for falling rocks. None = formless (fire jets, spore vents).")]
+        public DamageForm form = DamageForm.None;
         [Tooltip("Kinds of characters the trap hurts (players, mobs, others).")]
         public EntityKinds affects = EntityKinds.Players;
         [Tooltip("Fallback for objects without a Combat Entity / status controller: they are hurt when they have this tag (empty = never).")]
@@ -122,6 +124,7 @@ namespace ProceduralDungeon
                     direction = Vector3.up,
                     type = damageType,
                     element = element,
+                    form = form,
                 });
             onHit.Invoke(target);
             AnyHit?.Invoke(this, target, damage);

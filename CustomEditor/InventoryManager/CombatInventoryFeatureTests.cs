@@ -185,9 +185,24 @@ namespace InventorySystem.Tests
         {
             BodyPartProfile p = Track(BodyPartProfile.CreateHumanoid());
             Assert.AreEqual("Head", p.Locate(0.95f, 0f).name);
-            Assert.AreEqual("Torso", p.Locate(0.6f, 0f).name);
-            Assert.AreEqual("Legs", p.Locate(0.2f, 0f).name);
-            Assert.AreEqual("Arms", p.Locate(0.6f, 0.95f).name, "the side of the torso height is an arm");
+            Assert.AreEqual("UpperTorso", p.Locate(0.7f, 0f).name);
+            Assert.AreEqual("LowerTorso", p.Locate(0.55f, 0f).name);
+            Assert.AreEqual("Groin", p.Locate(0.47f, 0f).name);
+            Assert.AreEqual("RightShin", p.Locate(0.2f, 0.3f).name);
+            Assert.AreEqual("LeftThigh", p.Locate(0.35f, -0.3f).name);
+            Assert.AreEqual("RightForearm", p.Locate(0.55f, 0.95f).name, "the side of the belly height is a forearm");
+            Assert.AreEqual("LeftUpperArm", p.Locate(0.7f, -0.95f).name);
+            Assert.AreEqual("RightHand", p.Locate(0.42f, 0.95f).name, "far out at the hips is the hand, nearer the middle the thigh");
+            Assert.AreEqual("RightThigh", p.Locate(0.42f, 0.3f).name);
+            // The broad names still find a part (shields' Covered Body Parts, aimed attacks).
+            Assert.IsTrue(p.Locate(0.55f, 0f).Matches("Torso"));
+            Assert.IsTrue(p.Locate(0.2f, 0.3f).Matches("Legs"));
+            Assert.IsTrue(p.Locate(0.55f, 0.95f).Matches("Arms"));
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            p.Validate(errors, warnings);
+            Assert.IsEmpty(errors, string.Join("\n", errors));
+            Assert.IsEmpty(warnings, string.Join("\n", warnings));
             Assert.Greater(p.Find("Head").damageMultiplier, p.Find("Torso").damageMultiplier);
             Assert.IsTrue(p.Find("Head").IsProtectedBy(ArmorSlotType.Helmet));
             Assert.IsFalse(p.Find("Head").IsProtectedBy(ArmorSlotType.Boots));

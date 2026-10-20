@@ -52,6 +52,7 @@ public static class SMMenu
     public const int Weather = 301;
     public const int Dungeon = 302;
     public const int Scene = 303;
+    public const int Minigames = 304;
 
     // ---------------------------------------------------------------- multiplayer
     public const int Network = 400;

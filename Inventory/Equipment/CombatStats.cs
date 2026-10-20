@@ -841,7 +841,7 @@ public class CombatStats : MonoBehaviour, IDamageTakenModifier, IDamageDealtModi
     /// Damage this character TAKES. True damage ignores all of it. Physical: armour (Defense, located by body part) minus
     /// the attacker's Armor Penetration (%) then Physical Penetration (points), through the reduction curve; then Physical
     /// Defense (%). Magical: Magic Resistance minus the attacker's Magic Penetration (%), then Magic Defense (%). Then the
-    /// elemental resistance of the hit's element.
+    /// elemental resistance of the hit's element, and the Slash / Pierce / Blunt Damage Taken of its form.
     /// </summary>
     float IDamageTakenModifier.ModifyDamageTaken(in DamageInfo info, float amount)
     {
@@ -871,6 +871,11 @@ public class CombatStats : MonoBehaviour, IDamageTakenModifier, IDamageDealtModi
         }
         if (info.element != ElementType.None)
             amount *= 1f - GetResistance(info.element) / 100f;
+        // Slash / Pierce / Blunt Damage Taken (traits, races, classes, items, buffs): claws count as slashes, bites as
+        // piercing, crushing as blunt.
+        TraitStat? formStat = traits != null ? TraitStats.DamageTakenFor(info.form) : null;
+        if (formStat.HasValue)
+            amount *= traits.GetStatMultiplier(formStat.Value);
         return Mathf.Max(0f, amount);
     }
 

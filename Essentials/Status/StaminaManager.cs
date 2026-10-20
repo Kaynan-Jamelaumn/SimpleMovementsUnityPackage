@@ -35,9 +35,6 @@ public class StaminaManager : StatusManager
     /// </summary>
     [System.NonSerialized] public bool DrivenBySimulation;
 
-    /// <summary>True while regeneration is running (between its first and last amount).</summary>
-    public bool IsRegenerating => isRegenerating;
-
     private void Update()
     {
         if (!DrivenBySimulation)

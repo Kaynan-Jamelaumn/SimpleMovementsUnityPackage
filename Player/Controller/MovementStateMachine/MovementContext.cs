@@ -46,6 +46,40 @@ public class MovementContext
     /// <summary>The machine that owns this context.</summary>
     public MovementStateMachine Machine { get; set; }
 
+    private CombatEntity bodyEntity;
+
+    /// <summary>
+    /// Does the player's body allow <paramref name="action"/> (injuries: a broken leg stops sprinting, a missing foot
+    /// rolling)? Always true without the injury system. Client copies use the state the server sends, so predicted
+    /// steps match the server's.
+    /// </summary>
+    public bool BodyAllows(BodyAction action)
+    {
+        if (bodyEntity == null && statusController != null)
+            bodyEntity = CombatEntity.Resolve(statusController.gameObject);
+        return bodyEntity == null || bodyEntity.AllowsAction(action);
+    }
+
+    /// <summary>
+    /// How the player's legs let it move (injuries: limping, hopping on one leg, crawling without legs); normal without
+    /// the injury system. Client copies use the state the server sends, like <see cref="BodyAllows"/>.
+    /// </summary>
+    public BodyLocomotion BodyLocomotion
+    {
+        get
+        {
+            if (bodyEntity == null && statusController != null)
+                bodyEntity = CombatEntity.Resolve(statusController.gameObject);
+            return bodyEntity != null ? bodyEntity.Locomotion : BodyLocomotion.Normal;
+        }
+    }
+
+    /// <summary>
+    /// The body's speed multiplier for this step: steady while limping or crawling, in bursts while hopping (measured on
+    /// <see cref="SimTime"/>, so a replayed step moves the same).
+    /// </summary>
+    public float BodySpeed => BodyLocomotion.SpeedAt(SimTime);
+
     // ------------------------------------------------------------------ the step being simulated
 
     /// <summary>The input of the step being simulated (already sanitized; neutral while frozen or stunned).</summary>

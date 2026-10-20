@@ -386,7 +386,7 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
         return true;
     }
 
-    private bool CanAct() => entity == null || (!entity.IsDead && !entity.IsStunned);
+    private bool CanAct() => entity == null || (!entity.IsDead && !entity.IsStunned && entity.AllowsAction(BodyAction.Block));
 
     private void TryRaise()
     {

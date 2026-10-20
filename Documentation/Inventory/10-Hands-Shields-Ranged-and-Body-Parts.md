@@ -58,12 +58,23 @@ automatically; the validator warns otherwise.
 A **Body Part Profile** (`Assets ▸ Create ▸ SimpleMovements ▸ Combat ▸ Body Part Profile`, or the built-in
 humanoid) lists the parts of a character:
 
-| Part (built-in humanoid) | Height | × damage | Protected by | Effect |
+| Part (built-in detailed humanoid) | Height | × damage | Protected by | Effect |
 |---|---|---|---|---|
-| Head | 83–100 % | 1.6 | Helmet | 35 % stagger |
-| Torso | 45–83 % | 1.0 | Chestplate, Shoulders, Cloak, Belt | — |
-| Arms (either side) | 45–86 %, outer side | 0.8 | Gloves, Bracers, Shoulders, Shield | — |
-| Legs | 0–45 % | 0.85 | Leggings, Boots | 30 % slow |
+| Head | 87–100 % | 1.6 | Helmet | 35 % stagger |
+| Neck | 82–87 % | 1.8 | Helmet | 25 % stagger |
+| UpperTorso (alias Torso, Chest) | 62–82 % | 1.0 | Chestplate, Shoulders, Cloak | — |
+| LowerTorso (alias Torso, Abdomen) | 50–62 % | 1.05 | Chestplate, Belt, Cloak | — |
+| Groin | 44–50 % | 1.2 | Leggings, Belt | 30 % stagger |
+| Left / Right UpperArm (alias Arms) | 62–82 %, outer side | 0.8 | Shoulders, Shield | — |
+| Left / Right Forearm (alias Arms) | 48–62 %, outer side | 0.75 | Bracers, Shield | — |
+| Left / Right Hand (alias Hands, Arms) | 38–48 %, outer side | 0.6 | Gloves, Shield | — |
+| Left / Right Thigh (alias Legs) | 26–44 %, its side | 0.9 | Leggings | 30 % slow |
+| Left / Right Shin (alias Legs) | 7–26 %, its side | 0.8 | Leggings, Boots | 30 % slow |
+| Left / Right Foot (alias Feet, Legs) | 0–7 %, its side | 0.6 | Boots | 20 % slow |
+
+The old broad names are aliases, so shields covering `Torso` / `Arms` and attacks aimed at `Legs` keep working.
+*Reset To Simple Humanoid* in a profile gives the old four parts (Head, Torso, Arms, Legs). The injury system (Player
+docs, chapter 13) tracks the same segments, so a hit on the forearm hitbox injures — and can cut off — the forearm.
 
 Each part (`BodyPartDefinition`) has: name and aliases, a height band (0 = feet, 1 = top), a side, a damage
 multiplier, the armour slots that protect it, extra natural defense / magic resistance, and **effects** picked from
@@ -112,9 +123,10 @@ ogre hits heads. Projectiles land where they touch.
    * **Damage Multiplier**, **Protected By** (armour slots), **Bonus Defense / Magic Resistance**;
    * **Effects** (Stagger, Impair Movement, Ability Effects, Sever), each with a chance and a minimum damage;
    * the profile's **Default Part** (area damage), **Other Armor Share** and **Global Damage Scale**.
-   *Reset To Humanoid* in the profile restores the defaults. Give non-humanoids (a wolf, a spider) their own profile.
-4. Optional, for exact hits that follow the animation: **Add Hitboxes (Humanoid)** puts a sphere on the head, a
-   capsule on the torso and capsules on the upper and lower arms and legs (triggers named `Hitbox_…`, on the
+   *Reset To Detailed Humanoid* / *Reset To Simple Humanoid* in the profile restores the defaults. Give non-humanoids (a wolf, a spider) their own profile.
+4. Optional, for exact hits that follow the animation: **Add Hitboxes (Humanoid)** puts one hitbox on each segment
+   the profile has — a sphere on the head, capsules on the neck, upper and lower torso, a sphere at the groin, and
+   capsules on each upper arm, forearm, hand, thigh, shin and foot (a simple profile gets Head / Torso / Arms / Legs) (triggers named `Hitbox_…`, on the
    character's layer). Adjust their radius on each object; **Remove Hitboxes** deletes them. On other rigs, add a
    collider plus a **Body Part Hitbox** (Part = a part's name) to each bone.
 

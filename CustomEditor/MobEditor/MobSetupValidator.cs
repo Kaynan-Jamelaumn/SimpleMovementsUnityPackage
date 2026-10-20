@@ -505,7 +505,7 @@ public static class MobSetupValidator
         if (!networkSearched)
         {
             networkSearched = true;
-            networkObjectType = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("FishNet.Object.NetworkObject", false)).FirstOrDefault(t => t != null);
+            networkObjectType = SimpleMovements.Setup.SetupUtil.TypeByName("FishNet.Object.NetworkObject");
         }
         if (networkObjectType == null || !EditorUtility.IsPersistent(go) && PrefabUtility.GetPrefabAssetType(go) == PrefabAssetType.NotAPrefab)
             return;

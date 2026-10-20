@@ -134,7 +134,7 @@ public class WeaponSOEditor : ItemSOEditor
 
         if (Section("Damage & Stats", "The base numbers of every attack. Each attack multiplies them (its Damage Multiplier, Knockback Multiplier...).", true))
             DrawDamage(weapon);
-        else Mark("weaponCategory", "scaling", "minDamage", "maxDamage", "criticalChance", "criticalDamageMultiplier", "knockBack", "attackSpeed",
+        else Mark("weaponCategory", "damageForm", "scaling", "damageRoll", "minDamage", "maxDamage", "damagePerPoint", "damageVariance", "criticalChance", "criticalDamageMultiplier", "knockBack", "attackSpeed",
                   "elementType", "elementalBuildupRate", "toolType", "toolDamage");
 
         if (Section("Hands & Guard", "One or two hands, dual wielding, and guarding (blocking) with the weapon itself.", false))
@@ -181,32 +181,62 @@ public class WeaponSOEditor : ItemSOEditor
 
     private void DrawDamage(WeaponSO weapon)
     {
-        P("weaponCategory", "scaling");
+        P("weaponCategory", "damageForm");
+        if (open && weapon.DamageFormSetting == DamageForm.None && weapon.DamageForm != DamageForm.None)
+            EditorGUILayout.LabelField(" ", $"→ {weapon.DamageForm} (from the category)", EditorStyles.miniLabel);
+        P("scaling", "damageRoll");
         SerializedProperty min = serializedObject.FindProperty("minDamage");
         SerializedProperty max = serializedObject.FindProperty("maxDamage");
-        Mark("minDamage", "maxDamage");
-        Rect r = EditorGUILayout.GetControlRect();
-        r = EditorGUI.PrefixLabel(r, new GUIContent("Damage (min - max)", "Damage of one hit is picked between these (before the attack's " +
-                                                                          "multiplier, stats, charge and the target's defense)."));
-        int indent = EditorGUI.indentLevel;
-        EditorGUI.indentLevel = 0;
-        float half = (r.width - 16f) * 0.5f;
-        EditorGUI.PropertyField(new Rect(r.x, r.y, half, r.height), min, GUIContent.none);
-        EditorGUI.LabelField(new Rect(r.x + half, r.y, 16f, r.height), "–", EditorStyles.centeredGreyMiniLabel);
-        EditorGUI.PropertyField(new Rect(r.x + half + 16f, r.y, half, r.height), max, GUIContent.none);
-        EditorGUI.indentLevel = indent;
+        Mark("minDamage", "maxDamage", "damagePerPoint", "damageVariance");
+        switch (weapon.DamageRoll)
+        {
+            case WeaponDamageRoll.Fixed:
+                EditorGUILayout.PropertyField(min, new GUIContent("Damage", "The damage of every hit (before the attack's multiplier, stats, charge and the target's defense)."));
+                break;
+            case WeaponDamageRoll.Stats:
+                EditorGUILayout.PropertyField(min, new GUIContent("Base Damage", "What the weapon deals by itself; the wielder's attribute adds to it."));
+                using (new EditorGUI.DisabledScope(weapon.Scaling == WeaponScaling.None))
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("damagePerPoint"),
+                        new GUIContent($"Damage Per {(weapon.Scaling != WeaponScaling.None ? weapon.Scaling.ToString() : "Point")}",
+                            "Damage added per point of the Scaling attribute."));
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("damageVariance"), new GUIContent("Variance", "Random spread of a hit (0.1 = ±10%)."));
+                if (weapon.Scaling == WeaponScaling.None)
+                    EditorGUILayout.HelpBox("Pick a Scaling attribute: Stats damage comes from it.", MessageType.Warning);
+                else
+                {
+                    var examples = new List<string>();
+                    foreach (int pts in new[] { 0, 10, 25, 50 })
+                        examples.Add($"{pts} {weapon.Scaling}: {Mathf.Max(0f, weapon.MinDamage + weapon.DamagePerPoint * pts):0.#}");
+                    Help("Base damage of a hit: " + string.Join("  ·  ", examples) + ". The attribute's % bonus is not added again.");
+                }
+                break;
+            default:
+            {
+                Rect r = EditorGUILayout.GetControlRect();
+                r = EditorGUI.PrefixLabel(r, new GUIContent("Damage (min - max)", "Damage of one hit is picked between these (before the attack's " +
+                                                                                  "multiplier, stats, charge and the target's defense)."));
+                int indent = EditorGUI.indentLevel;
+                EditorGUI.indentLevel = 0;
+                float half = (r.width - 16f) * 0.5f;
+                EditorGUI.PropertyField(new Rect(r.x, r.y, half, r.height), min, GUIContent.none);
+                EditorGUI.LabelField(new Rect(r.x + half, r.y, 16f, r.height), "–", EditorStyles.centeredGreyMiniLabel);
+                EditorGUI.PropertyField(new Rect(r.x + half + 16f, r.y, half, r.height), max, GUIContent.none);
+                EditorGUI.indentLevel = indent;
+                break;
+            }
+        }
 
         SerializedProperty crit = serializedObject.FindProperty("criticalChance");
         Mark("criticalChance");
         EditorGUILayout.Slider(crit, 0f, 1f, new GUIContent("Critical Chance", "Chance (0-1) that a hit is critical. 0.1 = 10%."));
         P("criticalDamageMultiplier", "knockBack", "attackSpeed", "elementType", "elementalBuildupRate");
 
-        float avg = (weapon.MinDamage + weapon.MaxDamage) * 0.5f;
+        float avg = weapon.AverageBaseDamage();
         float withCrit = avg * (1f + Mathf.Clamp01(weapon.CriticalChance) * (Mathf.Max(1f, weapon.CriticalDamageMultiplier) - 1f));
         AttackAction first = weapon.NormalAction;
         float normalHit = first != null ? withCrit * first.damageMultiplier : 0f;
         float normalTime = first != null ? AttackPreviewUtility.Duration(weapon, first) : 0f;
-        Help($"Average hit {avg:0.#} (≈{withCrit:0.#} with crits)" +
+        Help($"Average hit {avg:0.#}{(weapon.DamageRoll == WeaponDamageRoll.Stats ? " with no stats" : "")} (≈{withCrit:0.#} with crits)" +
              (normalTime > 0f ? $" · repeating the Normal attack ≈ {normalHit / normalTime:0.#} damage per second (before stats and defense)" : ""));
 
         Sub("Tool");
@@ -310,7 +340,7 @@ public class WeaponSOEditor : ItemSOEditor
         R(a, used, g, "staminaCost", "lockMovement", "movementSpeedMultiplier", "forwardMovement");
 
         g = Group(a, "damage", "Damage", "Multiplies the weapon's damage (Damage & Stats) for this attack.");
-        R(a, used, g, "damageMode", "damageMultiplier", "damageType", "elementOverride", "criticalChanceBonus", "knockbackMultiplier");
+        R(a, used, g, "damageMode", "damageMultiplier", "damageType", "elementOverride", "damageForm", "criticalChanceBonus", "knockbackMultiplier");
 
         g = Group(a, "hit", "Hit Area & Targets", "WHAT the attack hits. Hit Shape: an area in front of the character. Weapon Blade: the " +
                                                   "weapon itself, following the animation. Hit Filter = who counts (see the buttons' tooltips); " +

@@ -65,6 +65,20 @@ public enum WeaponScaling
     Intelligence,
 }
 
+/// <summary>How a weapon's base damage per hit is decided (before attacks, stats and the target's defense).</summary>
+public enum WeaponDamageRoll
+{
+    /// <summary>A random value between Min and Max Damage; the wielder's stats then multiply it.</summary>
+    Range,
+    /// <summary>Always the same Damage (no max); the wielder's stats then multiply it.</summary>
+    Fixed,
+    /// <summary>
+    /// Mostly the wielder: Base Damage + Damage Per Point × the points of the Scaling attribute (Strength, Agility,
+    /// Intelligence), ± Variance. A strong character hits hard with any sword.
+    /// </summary>
+    Stats,
+}
+
 /// <summary>How an attack deals its damage.</summary>
 public enum WeaponDamageMode
 {

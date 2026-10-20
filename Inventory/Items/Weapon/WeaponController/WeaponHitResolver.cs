@@ -46,7 +46,8 @@ public static class WeaponHitResolver
     /// <summary>The weapon's damage of one hit before the target's defenses, and whether it was a critical hit.</summary>
     public static float RollDamage(WeaponSO weapon, in AttackNumbers n, TraitManager traits, CombatStats stats, ElementType targetElement, out bool critical)
     {
-        float dmg = Random.Range(weapon.MinDamage, Mathf.Max(weapon.MinDamage, weapon.MaxDamage));
+        // The base: Min-Max, a fixed value, or (Stats) mostly the wielder's attribute.
+        float dmg = weapon.RollBaseDamage(stats);
 
         // Classic string trait effects: weapon traits ("damage" multipliers) and the wielder's ("damage"/"attack").
         dmg = weapon.CalculateTraitModifiedDamage(dmg);
@@ -56,7 +57,9 @@ public static class WeaponHitResolver
         if (traits != null)
             dmg *= traits.GetStatMultiplier(TraitStat.WeaponDamage);
         if (stats != null)
-            dmg *= stats.WeaponDamageMultiplier(weapon.Category, weapon.Scaling, n.element != ElementType.None);
+            // A Stats weapon already counted its attribute in the base: only the Weapon Damage bonuses multiply it.
+            dmg *= stats.WeaponDamageMultiplier(weapon.Category, weapon.DamageRoll == WeaponDamageRoll.Stats ? WeaponScaling.None : weapon.Scaling,
+                n.element != ElementType.None);
 
         dmg *= Mathf.Max(0f, n.damageMultiplier);
 

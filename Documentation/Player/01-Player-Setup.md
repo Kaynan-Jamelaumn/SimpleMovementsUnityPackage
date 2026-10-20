@@ -167,11 +167,12 @@ shields cover chosen parts, and parts can have effects (a leg hit slows). Hits a
 on the bones) or, without hitboxes, by the **height** where they land.
 
 1. Add a **`BodyPartController`** to the player (or turn on *Combat Settings ▸ Body Parts For Every Character*).
-2. **Profile:** empty uses a built-in humanoid (Head ×1.6, Torso ×1, Arms ×0.8, Legs ×0.85). To change parts,
+2. **Profile:** empty uses a built-in detailed humanoid (Head ×1.6, Neck ×1.8, Upper / Lower Torso ×1, Groin ×1.2,
+   and per side Upper Arm ×0.8, Forearm ×0.75, Hand ×0.6, Thigh ×0.9, Shin ×0.8, Foot ×0.6). To change parts,
    multipliers, natural armour or effects press **Create Editable Profile** (or *Create ▸ SimpleMovements ▸ Combat ▸
    Body Part Profile*) and edit it.
-3. **Hitboxes (recommended):** with a Humanoid Animator press **Add Hitboxes (Humanoid)**: a sphere on the head and
-   capsules on the torso, arms and legs, as triggers named `Hitbox_…` on the player's layer. Adjust each radius on its
+3. **Hitboxes (recommended):** with a Humanoid Animator press **Add Hitboxes (Humanoid)**: one per segment (head,
+   neck, upper / lower torso, groin, each upper arm, forearm, hand, thigh, shin and foot), as triggers named `Hitbox_…` on the player's layer. Adjust each radius on its
    object. Other rigs: add a collider + `BodyPartHitbox` (Part = the part's name) to each bone yourself.
 4. **Check it:** select the player to see the coloured parts and hitboxes in the Scene view (*Always Show Parts* to
    see them unselected). In Play Mode each hit is marked with its part and damage in the Scene and Game views, and the

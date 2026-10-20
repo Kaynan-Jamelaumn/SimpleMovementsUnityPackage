@@ -28,7 +28,7 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
         public float nextStagger;
     }
 
-    [Tooltip("The body parts. Empty = Combat Settings' default profile, else a built-in humanoid (head, torso, arms, legs).")]
+    [Tooltip("The body parts. Empty = Combat Settings' default profile, else a built-in detailed humanoid (head, neck, torso, groin, and each limb segment by segment).")]
     [SerializeField] private BodyPartProfile profile;
     [Tooltip("Hits closer than this to a hitbox collider count as hitting it (metres), for hits that report only a point.")]
     [SerializeField, Min(0f)] private float hitboxTolerance = 0.15f;
@@ -71,15 +71,25 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
     /// <summary>The colour of the part at <paramref name="index"/> in its profile (Scene view, inspectors).</summary>
     public static Color PartColor(int index) => index < 0 ? Color.white : PartColors[index % PartColors.Length];
 
-    /// <summary>The colour of a part by name in <paramref name="p"/>.</summary>
+    /// <summary>
+    /// The colour of a part by name in <paramref name="p"/>: its region's (head red, torso blue, arms green, legs purple...,
+    /// left and right alike), else its index's.
+    /// </summary>
     public static Color PartColor(BodyPartProfile p, string partName)
     {
         if (p == null || p.parts == null)
             return Color.white;
         for (int i = 0; i < p.parts.Count; i++)
             if (p.parts[i] != null && p.parts[i].Matches(partName))
-                return PartColor(i);
+                return PartColor(p.parts[i], i);
         return Color.white;
+    }
+
+    /// <summary>The colour of <paramref name="part"/> (at <paramref name="index"/> in its profile): its region's, else the index's.</summary>
+    public static Color PartColor(BodyPartDefinition part, int index)
+    {
+        BodyPartLayout.Region r = BodyPartLayout.Classify(part);
+        return r != BodyPartLayout.Region.Other ? BodyPartLayout.RegionColor(r) : PartColor(index);
     }
 
     /// <summary>A part was hit (after the damage was applied).</summary>
@@ -605,7 +615,7 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
             float age = Time.time - h.time;
             if (age > hitMarkerTime)
                 continue;
-            Color c = PartColor(h.partIndex);
+            Color c = HitColor(h);
             c.a = Mathf.Lerp(1f, 0.15f, age / hitMarkerTime);
             Gizmos.color = c;
             Gizmos.DrawSphere(h.point, 0.06f);
@@ -625,7 +635,28 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
         return labelStyle;
     }
 
-    /// <summary>Each part's height band in its colour (side parts on the outer sides) and the hitboxes.</summary>
+    private Color HitColor(RecentHit h)
+    {
+        BodyPartProfile p = profile != null ? profile : CombatSettings.Instance.defaultBodyPartProfile;
+        Color c = p != null ? PartColor(p, h.part) : Color.white;
+        return c == Color.white ? PartColor(h.partIndex) : c;
+    }
+
+    private static GUIStyle smallLabel;
+
+    private static GUIStyle SmallLabel(Color c)
+    {
+        if (smallLabel == null)
+            smallLabel = new GUIStyle(GUI.skin.box) { fontSize = 9, alignment = TextAnchor.MiddleCenter, padding = new RectOffset(3, 3, 0, 0) };
+        smallLabel.normal.textColor = Color.Lerp(c, Color.white, 0.45f);
+        return smallLabel;
+    }
+
+    /// <summary>
+    /// The parts on a figure in the Scene view: each part's height band (what hits use without a hitbox) placed where it
+    /// is on a body - arms beside the torso, legs apart, left and right - in its region's colour, with a short label;
+    /// the hitboxes on the bones. With hitboxes the bands are only faint (the hitboxes decide).
+    /// </summary>
     private void DrawParts()
     {
         BodyPartProfile p = profile != null ? profile : CombatSettings.Instance.defaultBodyPartProfile;
@@ -634,53 +665,80 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
         if (p.parts == null || !Body(out Vector3 b, out float hgt, out float rad))
             return;
         hgt = Mathf.Max(0.1f, hgt);
-        Vector3 right = transform.right, fwd = transform.forward;
+        IEnumerable<BodyPartHitbox> boxes = Application.isPlaying ? (IEnumerable<BodyPartHitbox>)hitboxes : GetComponentsInChildren<BodyPartHitbox>(true);
+        bool anyBox = false;
+        foreach (BodyPartHitbox h in boxes)
+            if (h != null && h.Collider != null) { anyBox = true; break; }
+
+        // Across the figure: the template's torso half-width (0.21) is ~0.9 × the body radius.
+        float k = rad * 0.9f / 0.21f;
+        Quaternion rot = Quaternion.LookRotation(Vector3.ProjectOnPlane(transform.forward, Vector3.up).sqrMagnitude > 1e-4f
+            ? Vector3.ProjectOnPlane(transform.forward, Vector3.up) : Vector3.forward, Vector3.up);
+        Vector3 right = rot * Vector3.right, fwd = rot * Vector3.forward;
+        float fill = anyBox ? 0.05f : 0.14f, wire = anyBox ? 0.35f : 0.9f;
         for (int i = 0; i < p.parts.Count; i++)
         {
             BodyPartDefinition part = p.parts[i];
             if (part == null)
                 continue;
-            Color c = PartColor(i);
+            BodyPartLayout.Region region = BodyPartLayout.Classify(part);
+            Color c = PartColor(part, i);
             float lo = Mathf.Min(part.heightRange.x, part.heightRange.y) * hgt;
             float hi = Mathf.Max(part.heightRange.x, part.heightRange.y) * hgt;
-            string label = $"{part.name} ×{part.damageMultiplier:0.##}";
-            if (part.side == BodySide.Any)
+            Vector2[] shape = BodyPartLayout.Shape(region);
+            string label = $"{BodyPartLayout.ShortName(part.name)} ×{part.damageMultiplier:0.##}";
+            if (shape == null)
             {
-                UnityEditor.Handles.color = new Color(c.r, c.g, c.b, 0.9f);
-                UnityEditor.Handles.DrawWireDisc(b + Vector3.up * lo, Vector3.up, rad);
-                UnityEditor.Handles.DrawWireDisc(b + Vector3.up * hi, Vector3.up, rad);
-                foreach (Vector3 d in new[] { right, -right, fwd, -fwd })
-                    UnityEditor.Handles.DrawLine(b + Vector3.up * lo + d * rad, b + Vector3.up * hi + d * rad);
-                UnityEditor.Handles.color = new Color(c.r, c.g, c.b, 0.12f);
-                UnityEditor.Handles.DrawSolidDisc(b + Vector3.up * (lo + hi) * 0.5f, Vector3.up, rad);
-                UnityEditor.Handles.Label(b + Vector3.up * (lo + hi) * 0.5f - right * (rad + 0.35f), label, LabelStyle(c));
+                // A part the figure has no place for (a tail, wings): its band around the whole body, as before.
+                UnityEditor.Handles.color = new Color(c.r, c.g, c.b, wire);
+                UnityEditor.Handles.DrawWireDisc(b + Vector3.up * lo, Vector3.up, rad * 1.05f);
+                UnityEditor.Handles.DrawWireDisc(b + Vector3.up * hi, Vector3.up, rad * 1.05f);
+                if (!anyBox)
+                    UnityEditor.Handles.Label(b + Vector3.up * (lo + hi) * 0.5f - right * (rad * 1.6f + 0.2f), label, SmallLabel(c));
+                continue;
             }
-            else
-            {
-                // Side parts take the outer part of the body: from Side Offset × radius to the edge (and a little beyond).
-                float inner = Mathf.Clamp01(part.sideOffset) * rad, outer = rad * 1.35f;
-                Vector3 size = new Vector3(outer - inner, hi - lo, rad * 1.2f);
-                Gizmos.color = new Color(c.r, c.g, c.b, 0.9f);
-                bool left = part.side == BodySide.Left || part.side == BodySide.EitherSide;
-                bool rightSide = part.side == BodySide.Right || part.side == BodySide.EitherSide;
-                Matrix4x4 old = Gizmos.matrix;
-                Gizmos.matrix = Matrix4x4.TRS(b, transform.rotation, Vector3.one);
-                if (left) Gizmos.DrawWireCube(new Vector3(-(inner + outer) * 0.5f, (lo + hi) * 0.5f, 0f), size);
-                if (rightSide) Gizmos.DrawWireCube(new Vector3((inner + outer) * 0.5f, (lo + hi) * 0.5f, 0f), size);
-                Gizmos.color = new Color(c.r, c.g, c.b, 0.12f);
-                if (left) Gizmos.DrawCube(new Vector3(-(inner + outer) * 0.5f, (lo + hi) * 0.5f, 0f), size);
-                if (rightSide) Gizmos.DrawCube(new Vector3((inner + outer) * 0.5f, (lo + hi) * 0.5f, 0f), size);
-                Gizmos.matrix = old;
-                UnityEditor.Handles.Label(b + Vector3.up * (lo + hi) * 0.5f + (rightSide ? right : -right) * (outer + 0.35f), label, LabelStyle(c));
-            }
+            BodyPartLayout.Sides(part, region, out bool left, out bool rightSide);
+            bool limb = BodyPartLayout.IsLimb(region);
+            float depth = limb ? rad * 0.75f : rad * 1.15f;
+            if (!limb || rightSide)
+                DrawBand(b, rot, right, fwd, shape, k, lo, hi, depth, c, fill, wire, anyBox ? null : label, limb ? 1 : 0);
+            if (limb && left)
+                DrawBand(b, rot, right, fwd, BodyPartLayout.Mirror(shape), k, lo, hi, depth, c, fill, wire, anyBox ? null : label, -1);
         }
-        IEnumerable<BodyPartHitbox> boxes = Application.isPlaying ? (IEnumerable<BodyPartHitbox>)hitboxes : GetComponentsInChildren<BodyPartHitbox>(true);
         foreach (BodyPartHitbox h in boxes)
         {
             if (h == null || h.Collider == null)
                 continue;
             DrawHitbox(h, PartColor(p, h.part));
         }
+    }
+
+    /// <summary>
+    /// One part's box: across the body from its outline, its own height band, <paramref name="depth"/> deep. The label
+    /// goes outside the limb on its side (<paramref name="side"/> +1 right, -1 left), or on the front of a centre part.
+    /// </summary>
+    private static void DrawBand(Vector3 b, Quaternion rot, Vector3 right, Vector3 fwd, Vector2[] shape, float k, float lo, float hi, float depth,
+        Color c, float fill, float wire, string label, int side)
+    {
+        Rect bounds = BodyPartLayout.Bounds(shape);
+        // The outline's x: < 0.5 = the character's right (a front view mirrors it).
+        float x0 = (0.5f - bounds.xMax) * k, x1 = (0.5f - bounds.xMin) * k;
+        var centre = new Vector3((x0 + x1) * 0.5f, (lo + hi) * 0.5f, 0f);
+        var size = new Vector3(Mathf.Max(0.02f, x1 - x0), Mathf.Max(0.02f, hi - lo), depth);
+        Matrix4x4 old = Gizmos.matrix;
+        Gizmos.matrix = Matrix4x4.TRS(b, rot, Vector3.one);
+        Gizmos.color = new Color(c.r, c.g, c.b, wire);
+        Gizmos.DrawWireCube(centre, size);
+        Gizmos.color = new Color(c.r, c.g, c.b, fill);
+        Gizmos.DrawCube(centre, size);
+        Gizmos.matrix = old;
+        if (string.IsNullOrEmpty(label))
+            return;
+        Vector3 world = b + right * centre.x + Vector3.up * centre.y;
+        if (side > 0) world = b + right * (x1 + 0.22f) + Vector3.up * centre.y;
+        else if (side < 0) world = b + right * (x0 - 0.22f) + Vector3.up * centre.y;
+        else world += fwd * (depth * 0.5f + 0.02f);
+        UnityEditor.Handles.Label(world, label, SmallLabel(c));
     }
 
     /// <summary>Editor, while playing: each recent hit's part and damage, over the character in the Game view.</summary>
@@ -700,7 +758,7 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
             Vector3 sp = cam.WorldToScreenPoint(h.point + Vector3.up * (0.1f + age * 0.15f));
             if (sp.z <= 0f)
                 continue;
-            Color c = PartColor(h.partIndex);
+            Color c = HitColor(h);
             c.a = Mathf.Lerp(1f, 0f, age / hitMarkerTime);
             GUIStyle st = LabelStyle(c);
             string text = $"{h.part} −{h.damage:0.#}";

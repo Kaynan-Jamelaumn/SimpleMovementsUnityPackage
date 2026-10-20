@@ -59,6 +59,9 @@ public class PlayerAnimationModel : MonoBehaviour
         "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
         "MovementX", "MovementZ", "MovementSpeed", "AirTime",
         "IsSwimming", "IsUnderwater", "SwimVertical", "SwimPitch", "SwimSpeed",
+        // Injuries (how the legs let the player move)
+        "LocomotionMode", "IsLimping", "LimpAmount", "LimpSide", "IsHopping", "HopCycle", "IsCrawling", "IsLegless",
+        "MissingLegs", "MissingArms", "IsSitting", "SeatValue",
         
         // Combat parameters
         "AttackCombo", "AttackTrigger", "LightAttackTrigger",

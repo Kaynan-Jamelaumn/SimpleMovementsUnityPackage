@@ -292,6 +292,7 @@ namespace SimpleMovements.Validation
             CheckResource<ItemCategoryDatabase>(issues, SMAssets.Databases, ItemCategoryDatabase.ResourcesName, "Item Category Database", setup + "Create Item Category Database (Resources)");
             CheckResource<CurrencyDefinition>(issues, SMAssets.Economy, CurrencyDefinition.ResourcesName, "Default Currency", setup + "Create Default Currency (Resources)");
             CheckResource<HubWorld.HubWorldSettings>(issues, SMAssets.Settings, "HubWorldSettings", "Hub World Settings", setup + "Create Hub World Settings (Resources)");
+            CheckInjurySettings(issues);
             if (SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName) == null)
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Project",
                     $"No {SMAssets.ResourcePath(SMAssets.Databases, ItemDatabase.ResourcesName)}: items have no stable ids (needed for network sessions and saves)")
@@ -314,6 +315,29 @@ namespace SimpleMovements.Validation
             if (!string.IsNullOrEmpty(createMenu))
                 issue.WithFix("Create", () => EditorApplication.ExecuteMenuItem(createMenu));
             issues.Add(issue);
+        }
+
+        /// <summary>The injury system's settings (optional: without them the system is off).</summary>
+        private static void CheckInjurySettings(List<ValidationIssue> issues)
+        {
+            InjurySettings s = SMAssets.Load<InjurySettings>(SMAssets.Settings, InjurySettings.ResourcesName);
+            if (s == null || !s.enabled)
+                return;
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            s.Validate(errors, warnings);
+            foreach (string e in errors)
+                issues.Add(new ValidationIssue(IssueSeverity.Error, "Injuries", e, s));
+            foreach (string w in warnings)
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, "Injuries", w, s));
+            bool missingLimbItems = s.bodyParts.Any(p => p != null && p.limbLoss != null && p.limbLoss.canBeLost && p.limbLoss.limbItem == null);
+            if (missingLimbItems)
+                issues.Add(new ValidationIssue(IssueSeverity.Info, "Injuries",
+                        "Some body parts that can be lost have no Severed Limb item: limbs are made at runtime offline, but a network session cannot drop them", s)
+                    .WithFix("Create Limb Items", () => InjuryEditorTools.CreateLimbItems(s, false) > 0));
+            if (InjuryEditorTools.FindMedicalItems().Count == 0)
+                issues.Add(new ValidationIssue(IssueSeverity.Info, "Injuries", "The injury system is on but the project has no medical items (bandages, splints...)", s)
+                    .WithFix("Create Presets", () => InjuryEditorTools.CreateMedicalItems(false).Count > 0));
         }
 
         private static void CheckScenesInBuild(List<ValidationIssue> issues)

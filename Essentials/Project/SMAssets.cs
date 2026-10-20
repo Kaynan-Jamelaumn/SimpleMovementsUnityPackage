@@ -7,14 +7,14 @@ using UnityEngine;
 /// <para>Everything generated goes under <c>Assets/Resources/SimpleMovements/</c>, one folder per kind of asset:</para>
 /// <code>
 /// Resources/SimpleMovements/
-///   Settings/      Combat, Absorption, Hub World, Elemental settings
+///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings
 ///   Databases/     Ability, Trait, Item and Item Category databases, Character Catalog
 ///   Economy/       Default currency
 ///   Characters/    Races/, Classes/, Traits/
 ///   Abilities/     ability definitions made from presets and conversions
 ///   Mobs/          one folder per mob type (profile, basic attack, abilities)
 ///   Combat/        Body Parts/
-///   Items/         Weapons/, Armor/, Consumables/, Ammo/, Drops/ (Item Drop Manager + Tables/)
+///   Items/         Weapons/, Armor/, Consumables/, Ammo/, Medical/, Limbs/, Drops/ (Item Drop Manager + Tables/)
 ///   UI/            HUD/, Inventory/
 ///   World/         Weather/, Hub World/, Biome Backups/
 ///   Dungeons/      one folder per dungeon setup
@@ -48,6 +48,8 @@ public static class SMAssets
     public const string Armor = "Items/Armor";
     public const string Consumables = "Items/Consumables";
     public const string Ammo = "Items/Ammo";
+    public const string Medical = "Items/Medical";
+    public const string Limbs = "Items/Limbs";
     public const string ItemDrops = "Items/Drops";
     public const string DropTables = "Items/Drops/Tables";
     public const string UI = "UI";
@@ -58,6 +60,7 @@ public static class SMAssets
     public const string HubWorld = "World/Hub World";
     public const string BiomeBackups = "World/Biome Backups";
     public const string Dungeons = "Dungeons";
+    public const string Minigames = "Minigames";
     public const string Networking = "Networking";
     public const string Generated = "Generated";
 
@@ -103,7 +106,7 @@ public static class SMAssets
     {
         switch (name)
         {
-            case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": return Settings;
+            case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": case "InjurySettings": return Settings;
             case "AbilityDatabase": case "TraitDatabase": case "ItemDatabase": case "ItemCategoryDatabase": case "CharacterCatalog": return Databases;
             case "DefaultCurrency": return Economy;
             case "ItemDropManager": return ItemDrops;

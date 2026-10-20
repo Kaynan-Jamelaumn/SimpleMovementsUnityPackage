@@ -22,6 +22,8 @@ public abstract class MovementState : BaseState<MovementStateMachine.EMovementSt
         Vector3 currentDirection = Context.MovementModel.Direction;
         RotatePlayerByCameraAngle(ref currentDirection);
         speedAfterWeightApplied = Context.StatusController.WeightManager.CalculateSpeedBasedOnWeight(Context.MovementModel.CurrentSpeed);
+        // The legs (injuries): a stump walk, hops in bursts, a crawl.
+        speedAfterWeightApplied *= Context.BodySpeed;
         Context.Move(speedAfterWeightApplied * currentDirection * Context.Dt);
     }
 
@@ -32,13 +34,14 @@ public abstract class MovementState : BaseState<MovementStateMachine.EMovementSt
 
     // Buffered: the press is remembered for a moment (it used to count only on its exact frame, so presses right
     // before or while landing were lost).
-    protected bool TriggeredJump() => Context.JumpPressBuffered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost) && Context.AvailabilityState.CanMove();
-    protected bool TriggeredDash() => Context.Input.DashPressed && CanDash() && Context.AvailabilityState.CanMove();
-    protected bool TriggeredRoll() => Context.Input.RollPressed && CanRoll() && Context.AvailabilityState.CanMove();
+    // The body checks come last: injuries (a broken leg, a missing foot) stop these actions (see InjuryController).
+    protected bool TriggeredJump() => Context.JumpPressBuffered && HasStaminaForAction(Context.MovementModel.AmountOfJumpStaminaCost) && Context.AvailabilityState.CanMove() && Context.BodyAllows(BodyAction.Jump);
+    protected bool TriggeredDash() => Context.Input.DashPressed && CanDash() && Context.AvailabilityState.CanMove() && Context.BodyAllows(BodyAction.Dash);
+    protected bool TriggeredRoll() => Context.Input.RollPressed && CanRoll() && Context.AvailabilityState.CanMove() && Context.BodyAllows(BodyAction.Roll);
     protected bool IsMoving() => HasMoveInput() && Context.AvailabilityState.CanMove();
 
-    protected bool TriggeredSprint() => Context.Input.Sprint && HasStaminaForAction(Context.MovementModel.AmountOfSprintStaminaCost) && Context.AvailabilityState.CanMove();
-    protected bool TriggeredCrouch() => Context.Input.Crouch && HasStaminaForAction(Context.MovementModel.AmountOfCrouchStaminaCost) && Context.AvailabilityState.CanMove();
+    protected bool TriggeredSprint() => Context.Input.Sprint && HasStaminaForAction(Context.MovementModel.AmountOfSprintStaminaCost) && Context.AvailabilityState.CanMove() && Context.BodyAllows(BodyAction.Sprint);
+    protected bool TriggeredCrouch() => Context.Input.Crouch && HasStaminaForAction(Context.MovementModel.AmountOfCrouchStaminaCost) && Context.AvailabilityState.CanMove() && Context.BodyAllows(BodyAction.Crouch);
 
     /// <summary>The move stick / keys are pushed this step.</summary>
     protected bool HasMoveInput() => Context.Input.Move.sqrMagnitude != 0f;

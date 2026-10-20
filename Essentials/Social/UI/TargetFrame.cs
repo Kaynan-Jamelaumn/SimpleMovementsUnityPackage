@@ -241,7 +241,7 @@ public class TargetFrame : MonoBehaviour, IGameplayPanel
         InventoryUIFactory.Size(nameText, -1f, 30f, 1f);
         levelText = InventoryUIFactory.Text("Level", top, "", 17f, InventoryUIFactory.MutedColor, TextAlignmentOptions.Right, FontStyles.Bold);
         InventoryUIFactory.Size(levelText, 60f, 30f, 0f);
-        Button menuButton = InventoryUIFactory.Button("Menu", top, "▾", ToggleMenu, 36f);
+        Button menuButton = InventoryUIFactory.Button("Menu", top, "...", ToggleMenu, 36f); // ASCII: the default TMP font has no "▾"
         InventoryUIFactory.Size(menuButton, 36f, 30f, 0f);
 
         guildText = InventoryUIFactory.Text("Guild", panel.transform, "", 16f, InventoryUIFactory.TextColor);

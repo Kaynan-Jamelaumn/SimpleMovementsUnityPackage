@@ -30,6 +30,16 @@ public enum ItemType
     /// <summary>Anything else: keys, junk, valuables, quest items (<see cref="MiscItemSO"/>).</summary>
     Miscellaneous
 }
+
+/// <summary>
+/// An item whose tooltip depends on the one copy hovered (a severed limb: whose it is, its condition, its time limit),
+/// not only on the item asset. The item hover panel adds these lines after <see cref="ItemSO.AppendTooltip"/>.
+/// </summary>
+public interface IItemInstanceTooltip
+{
+    void AppendInstanceTooltip(InventoryItem item, List<string> lines);
+}
+
 /// <summary>
 /// Base of every item asset: name, icon, stack size, weight, durability, cooldown, how it sits in the hand and how it
 /// looks and sounds when used. Consumables, equippables (armor, trinkets) and weapons derive from it.
@@ -162,6 +172,9 @@ public abstract class ItemSO : ScriptableObject
 
     /// <summary>Can it be put in a consumable quickslot (potions, food, buffs, throwables)?</summary>
     public virtual bool CanUseFromQuickSlot => false;
+
+    /// <summary>Does the item panel show a durability bar (off for items whose durability list holds other data)?</summary>
+    public virtual bool ShowsDurability => true;
 
     /// <summary>Sets the grid size (editor tools, presets).</summary>
     public void SetGridSize(Vector2Int size, bool rotatable = true)

@@ -90,6 +90,11 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     [Tooltip("Damage of the automatic basic attack (used when the mob has no melee ability).")]
     [SerializeField] protected int biteDamage = 3;
 
+    [Tooltip("What the basic attack does to a body: Bite (wolves, rats), Claw (bears, cats), Blunt (golems, a charge or a kick), " +
+             "Pierce (horns, stingers), Slash, Crush (a giant's stomp). Injuries depend on it: bites tear and get infected, blunt " +
+             "blows bruise and break bones.")]
+    [SerializeField] protected DamageForm biteForm = DamageForm.Bite;
+
     [Tooltip("OFF: after a basic attack the mob pauses for a moment (recovery). ON: it keeps moving.")]
     [SerializeField] protected bool isPartialWait = false;
 
@@ -154,6 +159,8 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     public NavMeshAgent NavMeshAgentReference { get => navMeshAgent; set => navMeshAgent = value; }
     public int BiteDamage { get => biteDamage; }
     public float BiteCooldown { get => biteCooldown; }
+    /// <summary>The form of the basic attack's hits (Bite, Claw, Blunt...).</summary>
+    public DamageForm BiteForm => biteForm;
     public float AttackDistance { get => attackDistance; }
     public float EscapeMaxDistance { get => escapeMaxDistance; }
 

@@ -539,7 +539,7 @@ public class AttackExecutor
         weapon.CollectSpecialTraitEffects(r.classicEffects);
 
         // Harmful attacks (damage, knockback, harmful effects) are the ones friendly fire can turn on friends.
-        r.harmful = (c.DealsWeaponDamage && weapon.MaxDamage > 0f) || c.EffectsDealDamage() || c.knockbackMultiplier * weapon.KnockBack > 0.01f ||
+        r.harmful = (c.DealsWeaponDamage && weapon.HasDamage) || c.EffectsDealDamage() || c.knockbackMultiplier * weapon.KnockBack > 0.01f ||
                     HasHarmful(c.onHitEffects) || r.ranged != null;
         // Weapon Blade: the held model and the hit volumes this attack uses (and the one that touches the ground)
         r.bladeModel = controller.HeldModelFor(r.hand.Side);
@@ -1335,7 +1335,7 @@ public class AttackExecutor
 
             float strength = pendingHits[i].strength;
             if (imp.damageMultiplier > 0f && (attacker == null || (CombatTargeting.CanHarm(rel, imp.rules) && CombatRules.MayHarm(attacker, e))))
-                DealWeaponDamage(r, e, imp.damageMultiplier * strength, e.Center, false, null);
+                DealWeaponDamage(r, e, imp.damageMultiplier * strength, e.Center, false, null, imp.damageForm);
             if (hitSettings != null && e.IsAlive)
             {
                 if (cast == null)
@@ -1391,7 +1391,7 @@ public class AttackExecutor
                 attackerObject = r.ctx.AttackerObject,
                 point = point,
                 direction = r.ctx.Forward,
-                damage = (weapon.MinDamage + weapon.MaxDamage) * 0.5f * r.numbers.damageMultiplier,
+                damage = weapon.AverageBaseDamage(r.stats) * r.numbers.damageMultiplier,
             };
             if (hittable.OnWeaponHit(info))
             {
@@ -1455,7 +1455,7 @@ public class AttackExecutor
 
         float dealt = 0f;
         bool blockedFully = false;
-        if (canHarm && (r.component.DealsWeaponDamage || r.delivery == DamageDelivery.Projectile) && weapon.MaxDamage > 0f)
+        if (canHarm && (r.component.DealsWeaponDamage || r.delivery == DamageDelivery.Projectile) && weapon.HasDamage)
             dealt = DealWeaponDamage(r, target, r.projectileFraction, point, col, dir, out blockedFully);
 
         // A fully blocked or parried hit lands nothing else (no knockback, no status effects).
@@ -1547,14 +1547,16 @@ public class AttackExecutor
     }
 
     /// <summary>Deals a fraction of this attack's weapon damage to a character. Returns the damage dealt.</summary>
-    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, bool direct, Collider col) =>
-        DealWeaponDamage(r, target, fraction, point, col, Vector3.zero, out _);
+    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, bool direct, Collider col, DamageForm form = DamageForm.None) =>
+        DealWeaponDamage(r, target, fraction, point, col, Vector3.zero, out _, form);
 
     /// <summary>
     /// Deals weapon damage. <paramref name="hitDirection"/> = the way the hit travels (zero = from the attacker to the
-    /// target); <paramref name="stopped"/> = a block or parry stopped it completely.
+    /// target); <paramref name="stopped"/> = a block or parry stopped it completely; <paramref name="form"/> = the hit's
+    /// form when it is not the attack's (a ground slam's shockwave).
     /// </summary>
-    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, Collider col, Vector3 hitDirection, out bool stopped)
+    private float DealWeaponDamage(Running r, CombatEntity target, float fraction, Vector3 point, Collider col, Vector3 hitDirection, out bool stopped,
+        DamageForm form = DamageForm.None)
     {
         stopped = false;
         WeaponSO weapon = r.weapon;
@@ -1580,6 +1582,7 @@ public class AttackExecutor
             type = r.numbers.damageType,
             element = r.numbers.element,
             weapon = weapon,
+            form = form != DamageForm.None ? form : FormOf(r, weapon),
             delivery = r.delivery,
             hitCollider = col,
             aimedBodyPart = r.component.aimedBodyPart,
@@ -1589,6 +1592,16 @@ public class AttackExecutor
         });
         stopped = target.StoppedHitCount != stoppedBefore; // a full block or a parry
         return dealt;
+    }
+
+    /// <summary>The form of this attack's hits: the ammo's (shots), else the attack's, else the weapon's.</summary>
+    private static DamageForm FormOf(Running r, WeaponSO weapon)
+    {
+        if (r.ammo != null && r.delivery == DamageDelivery.Projectile && r.ammo.DamageForm != DamageForm.None)
+            return r.ammo.DamageForm;
+        if (r.component != null && r.component.damageForm != DamageForm.None)
+            return r.component.damageForm;
+        return weapon != null ? weapon.DamageForm : DamageForm.None;
     }
 
     // ------------------------------------------------------------------ movement

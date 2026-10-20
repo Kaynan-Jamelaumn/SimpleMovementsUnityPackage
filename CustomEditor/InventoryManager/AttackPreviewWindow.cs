@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Animations;
+using UnityEngine.Playables;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Previews one attack of a weapon without entering Play Mode: plays (or scrubs) its animation on a character in the
-/// scene and draws, in the Scene view, the area it hits - coloured by phase (yellow wind-up, red while it hits, grey
-/// recovery) and moving with the attack's lunge - plus the weapon's range and its old Attack Cast around the hand.
+/// Previews one attack of a weapon: plays (or scrubs) its animation on a character in the scene and draws, in the Scene
+/// view, the area it hits - coloured by phase (yellow wind-up, red while it hits, grey recovery) and moving with the
+/// attack's lunge - plus the weapon's range and its old Attack Cast around the hand. Outside Play Mode the clip is
+/// sampled on the character (nothing changes); in Play Mode it plays on the live character (a generated appearance, a
+/// spawned player) through a temporary animation graph that overrides its Animator until Stop.
 /// Open it with the ▶ buttons of the weapon inspector or Tools ▸ SimpleMovements ▸ Inventory ▸ Attack Preview.
 /// </summary>
 public class AttackPreviewWindow : EditorWindow
@@ -27,6 +31,12 @@ public class AttackPreviewWindow : EditorWindow
     [SerializeField] private bool showTrail = true;
 
     private bool playing;
+    // Play Mode: the clip is played on the live character through its own graph (AnimationMode only works in Edit Mode).
+    private PlayableGraph liveGraph;
+    private AnimationClipPlayable liveClip;
+    private Animator liveAnimator;
+    private AnimationClip liveClipAsset;
+    private bool liveRootMotion;
     // Temporary copy of the weapon in the animated hand (HideFlags.DontSave: never saved, removed on Stop / close).
     private GameObject previewModel;
     private WeaponSO previewModelOf;
@@ -58,7 +68,9 @@ public class AttackPreviewWindow : EditorWindow
         w.variation = Mathf.Max(0, variation);
         w.time = 0f;
         w.playing = true;
-        if (w.character == null)
+        // In Play Mode the character must be a live one (not the prefab being edited, nor one left from Edit Mode).
+        if (w.character == null || (EditorApplication.isPlaying &&
+            (!w.character.scene.isLoaded || EditorSceneManager.IsPreviewScene(w.character.scene) || !w.character.activeInHierarchy)))
             w.character = FindCharacter();
         w.lastTick = EditorApplication.timeSinceStartup;
         w.Show();
@@ -89,7 +101,15 @@ public class AttackPreviewWindow : EditorWindow
     {
         playing = false;
         StopSampling();
+        // The character of Edit Mode is not the one of Play Mode (and a spawned player only exists while playing).
+        if ((change == PlayModeStateChange.EnteredPlayMode || change == PlayModeStateChange.EnteredEditMode) &&
+            (character == null || !character.scene.IsValid() || !character.scene.isLoaded))
+            character = FindCharacter();
+        Repaint();
     }
+
+    /// <summary>Edit Mode, or Play Mode once it runs (not while switching between them).</summary>
+    private static bool CanPreview => !EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isPlaying;
 
     private void ResetSimulation()
     {
@@ -108,12 +128,13 @@ public class AttackPreviewWindow : EditorWindow
 
     private static GameObject FindCharacter()
     {
-        if (Selection.activeGameObject != null && Selection.activeGameObject.scene.IsValid())
+        if (Selection.activeGameObject != null && Selection.activeGameObject.scene.IsValid() &&
+            !(EditorApplication.isPlaying && EditorSceneManager.IsPreviewScene(Selection.activeGameObject.scene)))
         {
             Animator a = Selection.activeGameObject.GetComponentInChildren<Animator>(true);
             if (a != null) return a.gameObject;
         }
-        var stage = PrefabStageUtility.GetCurrentPrefabStage();
+        var stage = EditorApplication.isPlaying ? null : PrefabStageUtility.GetCurrentPrefabStage();
         if (stage != null)
         {
             Animator a = stage.prefabContentsRoot.GetComponentInChildren<Animator>(true);
@@ -134,7 +155,9 @@ public class AttackPreviewWindow : EditorWindow
         double now = EditorApplication.timeSinceStartup;
         float dt = Mathf.Min(0.1f, (float)(now - lastTick));
         lastTick = now;
-        if (!playing || EditorApplication.isPlayingOrWillChangePlaymode)
+        if (CanPreview)
+            SyncWeaponPose();
+        if (!playing || !CanPreview)
             return;
         AttackComponent c = Current();
         if (c == null)
@@ -166,10 +189,17 @@ public class AttackPreviewWindow : EditorWindow
 
     private void Sample(AttackComponent c)
     {
-        if (c == null || EditorApplication.isPlayingOrWillChangePlaymode)
+        if (c == null || !CanPreview)
             return;
         AnimationClip clip = c.AnimationClip;
-        if (sampleAnimation && character != null && clip != null)
+        if (EditorApplication.isPlaying)
+        {
+            if (sampleAnimation && character != null && clip != null)
+                PlayLive(clip, Mathf.Clamp01(time / Mathf.Max(0.01f, Duration(c))) * clip.length);
+            else
+                StopLive();
+        }
+        else if (sampleAnimation && character != null && clip != null)
         {
             if (!AnimationMode.InAnimationMode())
                 AnimationMode.StartAnimationMode();
@@ -191,8 +221,52 @@ public class AttackPreviewWindow : EditorWindow
     {
         if (AnimationMode.InAnimationMode())
             AnimationMode.StopAnimationMode();
+        StopLive();
         DestroyPreviewModel();
         ResetSimulation();
+    }
+
+    /// <summary>
+    /// Play Mode: holds the live character in the pose at <paramref name="clipTime"/> of <paramref name="clip"/> (a graph
+    /// whose output overrides the Animator Controller while it exists; root motion is off meanwhile, so the preview never
+    /// moves the character).
+    /// </summary>
+    private void PlayLive(AnimationClip clip, float clipTime)
+    {
+        Animator a = character.GetComponent<Animator>();
+        if (a == null) a = character.GetComponentInChildren<Animator>();
+        if (a == null || !a.isActiveAndEnabled)
+        {
+            StopLive();
+            return;
+        }
+        if (!liveGraph.IsValid() || liveAnimator != a || liveClipAsset != clip)
+        {
+            StopLive();
+            liveGraph = PlayableGraph.Create("Attack Preview");
+            liveGraph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
+            var output = AnimationPlayableOutput.Create(liveGraph, "Attack Preview", a);
+            liveClip = AnimationClipPlayable.Create(liveGraph, clip);
+            liveClip.SetSpeed(0d); // the window drives the time
+            output.SetSourcePlayable(liveClip);
+            liveAnimator = a;
+            liveClipAsset = clip;
+            liveRootMotion = a.applyRootMotion;
+            a.applyRootMotion = false;
+            liveGraph.Play();
+        }
+        liveClip.SetTime(clipTime);
+    }
+
+    /// <summary>Gives the live character back to its Animator Controller.</summary>
+    private void StopLive()
+    {
+        if (liveGraph.IsValid())
+            liveGraph.Destroy();
+        if (liveAnimator != null)
+            liveAnimator.applyRootMotion = liveRootMotion;
+        liveAnimator = null;
+        liveClipAsset = null;
     }
 
     // ------------------------------------------------------------------ weapon in the hand
@@ -250,6 +324,34 @@ public class AttackPreviewWindow : EditorWindow
                 t.gameObject.hideFlags = HideFlags.DontSave | HideFlags.NotEditable;
         }
         return previewModel.transform;
+    }
+
+    /// <summary>
+    /// Keeps the weapon in the hand where the weapon asset says (In the hand ▸ Position / Rotation / Scale): edit them in
+    /// the inspector and the preview follows at once, playing or paused. The swing trail starts over (it was drawn with
+    /// the old grip).
+    /// </summary>
+    private void SyncWeaponPose()
+    {
+        if (weapon == null || character == null)
+            return;
+        Transform hand = FindHand();
+        Transform model = previewModel != null ? previewModel.transform : EditorApplication.isPlaying ? HeldModel(false) : null;
+        if (model == null || model == hand)
+            return;
+        Vector3 pos = weapon.Position, scale = weapon.Scale;
+        Quaternion rot = Quaternion.Euler(weapon.Rotation);
+        if ((model.localPosition - pos).sqrMagnitude < 1e-10f && Quaternion.Angle(model.localRotation, rot) < 0.01f &&
+            (model.localScale - scale).sqrMagnitude < 1e-10f)
+            return;
+        model.localPosition = pos;
+        model.localRotation = rot;
+        model.localScale = scale;
+        ResetSimulation();
+        if (!playing)
+            Sample(Current()); // paused: redraw the volumes and impact at the same moment
+        SceneView.RepaintAll();
+        Repaint();
     }
 
     private void DestroyPreviewModel()
@@ -475,6 +577,8 @@ public class AttackPreviewWindow : EditorWindow
             info.Add(impactShown
                 ? $"Impact at {impactTime:0.00}s{(impactEstimated ? " (estimated: no character / hand)" : "")} - {c.impact.area.Describe(AreaScale(c))} (orange)"
                 : c.impact.trigger == ImpactSettings.Trigger.GroundContact ? "Impact: the weapon has not touched the ground yet (Ground Contact only)" : "Impact: not yet");
+        if (EditorApplication.isPlaying && character != null && c.AnimationClip != null && sampleAnimation)
+            info.Add("Play Mode: the clip plays on the live character (it overrides its Animator while previewing; Stop gives it back).");
         if (c.AnimationClip == null)
             info.Add($"No animation clip: the game triggers '{AttackAnimationHandler.GetFallbackAttackTrigger(input)}' on the Animator, which cannot be previewed here.");
         else if (character == null)

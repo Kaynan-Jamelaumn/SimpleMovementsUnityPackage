@@ -642,6 +642,11 @@ public class WeaponController : MonoBehaviour
             NetBridge?.SendAttackInput(this, WeaponInputKind.Tap, attackType);
             return;
         }
+        if (BodyBlocksAttack(attackType))
+        {
+            RaiseAttackFailed(attackType, "injured");
+            return;
+        }
         attackExecutor.BeginInput(player != null ? player : PlayerObject, attackType, false, true);
     }
 
@@ -666,13 +671,26 @@ public class WeaponController : MonoBehaviour
         BlockController b = Block;
         if (b != null && b.IsBlocking)
             return b.TryBash(); // attacking with the block up = shield bash
-        if (bodyParts != null && bodyParts.WeaponAttacksDisabled)
+        if ((bodyParts != null && bodyParts.WeaponAttacksDisabled) || BodyBlocksAttack(mapped))
         {
             RaiseAttackFailed(mapped, "injured");
             return false;
         }
         DrawWeapons();
         return attackExecutor.BeginInput(PlayerObject, mapped, false, false);
+    }
+
+    /// <summary>
+    /// The character's body stops this attack (injuries: both arms broken, the off hand missing for an off-hand attack).
+    /// The weapon of a hand that cannot hold it is never equipped in the first place (the inventory's hand rules).
+    /// </summary>
+    private bool BodyBlocksAttack(AttackType mapped)
+    {
+        CombatEntity me = Entity;
+        if (me == null)
+            return false;
+        BodyAction needed = mapped == AttackType.OffHand ? BodyAction.WeaponAttacks | BodyAction.OffHand : BodyAction.WeaponAttacks;
+        return !me.AllowsAction(needed);
     }
 
     /// <summary>The attack input of <paramref name="attackType"/> was released.</summary>
@@ -743,6 +761,8 @@ public class WeaponController : MonoBehaviour
         InventoryItem item = HeldItem;
         WeaponSO weapon = EquippedWeapon;
         if (primary && item != null && item.IsOnCooldown())
+            return false;
+        if (BodyBlocksAttack(attackType))
             return false;
         bool started = attackExecutor.BeginInput(PlayerObject, attackType, false, true);
         if (started && primary && item != null && weapon != null && weapon.Cooldown > 0f)

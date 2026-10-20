@@ -273,11 +273,24 @@ public class PlayerSetupValidatorEditor : Editor
         Row(penalty != null, "Death Penalty", penalty != null ? $"Mode: {ObjectNames.NicifyVariableName(penalty.Mode.ToString())}. Needs refilled on respawn by its Status Rules."
                 : "Missing: no penalty, no offline respawn (needs are still refilled on revive with the default rules).",
             penalty != null ? null : "Add Death Penalty", () => Undo.AddComponent<DeathPenalty>(go));
+        InjurySettings injurySettings = SMAssets.Load<InjurySettings>(SMAssets.Settings, InjurySettings.ResourcesName);
+        bool injuriesOn = injurySettings != null && injurySettings.enabled;
+        InjuryController injuries = go.GetComponentInChildren<InjuryController>(true);
+        Row(!injuriesOn || injurySettings.players || injuries != null, "Injuries (body parts, bleeding, limb loss)", !injuriesOn
+                ? "Off in this project: Project Setup ▸ Create Injury Settings turns on Project-Zomboid-like injuries and the Health tab."
+                : injuries != null ? $"Injury Controller on '{injuries.gameObject.name}': {injurySettings.bodyParts.Count} body parts tracked; the inventory's Health tab treats them."
+                : injurySettings.players ? "Added automatically when the game starts (Injury Settings ▸ Players)." : "Injury Settings ▸ Players is off: add an Injury Controller to track this player's body.",
+            injuriesOn ? (injuries != null ? null : "Add Injury Controller") : "Create Injury Settings",
+            () =>
+            {
+                if (!injuriesOn) InjuryEditorTools.CreateSettings(true);
+                else Undo.AddComponent<InjuryController>(go);
+            });
         SleepController sleepInput = go.GetComponentInChildren<SleepController>(true);
         Row(sleepInput != null, "Sleep input", sleepInput != null ? "Press Sleep (Z by default) to sleep on the ground; beds and benches: a Sleep Spot + Interact."
                 : "Missing: the player can only sleep at Sleep Spots.",
             sleepInput != null ? null : "Add Sleep Controller", () => Undo.AddComponent<SleepController>(go));
-        int spots = UnityEngine.Object.FindObjectsByType<SleepSpot>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+        int spots = UnityEngine.Object.FindObjectsByType<SleepSpot>(FindObjectsInactive.Include).Length;
         Row(spots > 0, "Sleep spots in the scene", spots > 0 ? $"{spots} (beds, benches, bedrolls)." : "None: add a Sleep Spot to a bed (Add Component ▸ SimpleMovements ▸ Sleep Spot).", null, null);
         BodyHeatManager heat = go.GetComponentInChildren<BodyHeatManager>(true);
         if (heat != null)

@@ -23,9 +23,14 @@ public static class WeaponTemplates
         Crossbow,
         ThrowingKnife,
         Pistol,
+        /// <summary>Knuckles, wraps, cestus, gauntlets, claws: fast punches, a charged haymaker and a dash punch.</summary>
+        Knuckles,
     }
 
-    public static void Apply(WeaponSO weapon, Template t)
+    public static void Apply(WeaponSO weapon, Template t) => Apply(weapon, t, true);
+
+    /// <summary>Applies the template; <paramref name="log"/> = say what is left to assign (off when making many at once).</summary>
+    public static void Apply(WeaponSO weapon, Template t, bool log)
     {
         Undo.RecordObject(weapon, $"Apply {t} template");
         // A template sets the whole moveset: no leftover projectile or guard from what the weapon was before.
@@ -159,6 +164,22 @@ public static class WeaponTemplates
                     so.ApplyModifiedPropertiesWithoutUndo();
                     break;
                 }
+            case Template.Knuckles:
+                {
+                    weapon.SetStats(WeaponCategory.Fist, 5f, 8f, 0.12f, 1.8f, 0.3f, WeaponScaling.Strength);
+                    var punches = Chain("Jab", 4, 0.05f, 0.08f, 0.16f, 0.8f, 4f, Cone(1.5f, 70f));
+                    punches.cancelPoint = 0.3f;
+                    string[] names = { "Cross", "Hook", "Uppercut" };
+                    for (int i = 0; i < punches.variations.Count && i < names.Length; i++)
+                        punches.variations[i].variationName = names[i];
+                    weapon.SetAction(AttackType.Normal, punches);
+                    var haymaker = Charged(Attack("Haymaker", 0.15f, 0.1f, 0.35f, 1.6f, 12f, Cone(1.7f, 80f)), 0.3f, 1f, 2.2f, 1.1f);
+                    haymaker.onHitEffects.Add(new KnockbackEffect { distance = 2f });
+                    haymaker.onHitEffects.Add(new StunEffect { duration = 0.4f, chance = 0.3f });
+                    weapon.SetAction(AttackType.Heavy, haymaker);
+                    weapon.SetAction(AttackType.Alternate, Lunge(Attack("Dash Punch", 0.06f, 0.12f, 0.3f, 1.1f, 8f, Line(2.4f, 0.8f)), 2f));
+                    break;
+                }
             case Template.Pistol:
                 {
                     weapon.SetStats(WeaponCategory.Other, 14f, 18f, 0.1f, 2f, 0.3f, WeaponScaling.Agility);
@@ -190,7 +211,8 @@ public static class WeaponTemplates
             : t == Template.Bow ? ", and create Arrows (Ammo of type Arrow)"
             : t == Template.Crossbow ? ", and create Bolts (Ammo of type Bolt)"
             : t == Template.Pistol ? ", and create Bullets (Ammo of type Bullet)" : "";
-        Debug.Log($"[Weapons] Applied the {t} template to '{weapon.name}'. Assign animations and sounds{extra}.", weapon);
+        if (log)
+            Debug.Log($"[Weapons] Applied the {t} template to '{weapon.name}'. Assign animations and sounds{extra}.", weapon);
     }
 
     [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Sword", priority = 100)] private static void CreateSword() => Create(Template.Sword);
@@ -204,6 +226,7 @@ public static class WeaponTemplates
     [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Crossbow", priority = 108)] private static void CreateCrossbow() => Create(Template.Crossbow);
     [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Throwing Knife", priority = 109)] private static void CreateKnife() => Create(Template.ThrowingKnife);
     [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Pistol", priority = 110)] private static void CreatePistol() => Create(Template.Pistol);
+    [MenuItem("Assets/Create/SimpleMovements/Items/Weapon From Template/Knuckles", priority = 111)] private static void CreateKnuckles() => Create(Template.Knuckles);
 
     private static void Create(Template t)
     {

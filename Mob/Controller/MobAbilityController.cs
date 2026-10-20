@@ -144,7 +144,7 @@ public class MobAbilityController : AbilityCaster, IAssignmentsValidator, IAbsor
     {
         float reach = Mathf.Max(0.8f, m.AttackDistance);
         float cooldown = Mathf.Max(0.3f, m.BiteCooldown);
-        string key = $"{m.type}|{m.BiteDamage}|{reach:0.##}|{cooldown:0.##}|{m.IsPartialWait}";
+        string key = $"{m.type}|{m.BiteDamage}|{reach:0.##}|{cooldown:0.##}|{m.IsPartialWait}|{m.BiteForm}";
         if (basicAttacks.TryGetValue(key, out AbilityDefinition def) && def != null)
             return def;
         def = CreateBasicAttackDefinition(m);
@@ -162,7 +162,7 @@ public class MobAbilityController : AbilityCaster, IAssignmentsValidator, IAbsor
     {
         float reach = Mathf.Max(0.8f, m.AttackDistance);
         float cooldown = Mathf.Max(0.3f, m.BiteCooldown);
-        AbilityDefinition def = AbilityPresets.BasicMelee(Mathf.Max(1, m.BiteDamage), reach, cooldown);
+        AbilityDefinition def = AbilityPresets.BasicMelee(Mathf.Max(1, m.BiteDamage), reach, cooldown, form: m.BiteForm);
         def.activeTime = m.IsPartialWait ? 0f : Mathf.Min(cooldown, 0.8f);
         def.movementWhileCasting = m.IsPartialWait ? CasterMovementRule.Slowed : CasterMovementRule.Stop;
         def.absorption.canBeAbsorbed = false; // a plain bite is not an ability the player can take

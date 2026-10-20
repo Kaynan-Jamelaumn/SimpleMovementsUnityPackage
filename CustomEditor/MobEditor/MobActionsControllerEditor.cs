@@ -77,7 +77,7 @@ public class MobActionsControllerEditor : Editor
     {
         "m_Script", "profile", "teamOverride", "type", "Preys", "mobTypes",
         "patrolRoute", "patrolPoints", "patrolPointsRelativeToHome", "currentPatrolPoint",
-        "biteDamage", "attackDistance", "biteCooldown", "isPartialWait",
+        "biteDamage", "biteForm", "attackDistance", "biteCooldown", "isPartialWait",
         "wanderDistance", "maxWalkTime", "idleTime", "detectionRange", "escapeMaxDistance", "maxChaseTime", "playerHasMaxChaseTime",
         "currentPredator", "currentChaseTarget", "currentPlayerTarget",
         "detectionCast", "detectionDistance", "offSetDetectionDistance", "mobTransform", "stoppingMargin", "statusController",
@@ -481,6 +481,7 @@ public class MobActionsControllerEditor : Editor
             "A simple melee bite made from these numbers. It is used only when the MobAbilityController has no melee ability " +
             "(and Profile ▸ Auto Basic Attack is on). Set Bite Damage to 0 to disable it.");
         EditorGUILayout.PropertyField(serializedObject.FindProperty("biteDamage"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("biteForm"), new GUIContent("Attack Form", serializedObject.FindProperty("biteForm").tooltip));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("attackDistance"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("biteCooldown"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("isPartialWait"));

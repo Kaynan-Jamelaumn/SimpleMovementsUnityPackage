@@ -18,6 +18,8 @@ public class AmmoSO : ItemSO
     [SerializeField] private float bonusDamage = 0f;
     [Tooltip("Element of the shot (None = the weapon's element).")]
     [SerializeField] private ElementType element = ElementType.None;
+    [Tooltip("What the shot does to a body (blunt arrows, stones: Blunt; broadheads: Slash). None = the attack's, else the weapon's form.")]
+    [SerializeField] private DamageForm damageForm = DamageForm.None;
     [Tooltip("Multiplies the projectile's speed (heavy bolts fly slower).")]
     [SerializeField, Min(0.1f)] private float velocityMultiplier = 1f;
     [Tooltip("Projectile model for this ammo (empty = the weapon's projectile).")]
@@ -31,6 +33,7 @@ public class AmmoSO : ItemSO
     public float DamageMultiplier => damageMultiplier;
     public float BonusDamage => bonusDamage;
     public ElementType Element => element;
+    public DamageForm DamageForm => damageForm;
     public float VelocityMultiplier => velocityMultiplier;
     public GameObject ProjectilePrefab => projectilePrefab;
     public List<AbilityEffect> OnHitEffects => onHitEffects ?? (onHitEffects = new List<AbilityEffect>());

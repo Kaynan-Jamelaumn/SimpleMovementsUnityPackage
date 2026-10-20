@@ -12,8 +12,9 @@ using UnityEngine;
 /// <item>adds every parameter the scripts set (movement, swimming, combat, blocking, actions, state) that is missing,
 /// and reports parameters that exist with the wrong type;</item>
 /// <item>adds the states the newer systems need when the controller has none: <b>Swim</b> (Any State → Swim on
-/// IsSwimming, back out when it turns off), <b>Fall</b> (from Any State on IsFalling, out when grounded) and <b>Death</b>
-/// (Any State on DeathTrigger, out on revive). They are created empty: drag your clips onto them.</item>
+/// IsSwimming, back out when it turns off), <b>Fall</b> (from Any State on IsFalling, out when grounded), <b>Death</b>
+/// (Any State on DeathTrigger, out on revive), and the injury states <b>Limp</b>, <b>Hop</b> (its Motion Time follows
+/// HopCycle) and <b>Crawl</b>. They are created empty: drag your clips onto them.</item>
 /// </list>
 /// Nothing that exists is changed or removed. Select the player prefab (or the controller asset) and use
 /// Tools ▸ SimpleMovements ▸ Player ▸ Complete Player Animator Controller. "Check" only reports.
@@ -47,6 +48,20 @@ public static class PlayerAnimatorSetup
         ("SwimVertical", AnimatorControllerParameterType.Float, "up/down speed m/s (+ = up)"),
         ("SwimPitch", AnimatorControllerParameterType.Float, "swim angle in degrees (+ = rising, - = diving)"),
         ("SwimSpeed", AnimatorControllerParameterType.Float, "swim speed m/s"),
+        // Injuries (MovementAnimationHandler: how the legs let the player move)
+        ("LocomotionMode", AnimatorControllerParameterType.Int, "0 normal, 1 limping, 2 hopping, 3 crawling"),
+        ("IsLimping", AnimatorControllerParameterType.Bool, "a hurt leg or foot, or walking on a stump"),
+        ("LimpAmount", AnimatorControllerParameterType.Float, "how badly it limps, 0-1 (blend a normal and a limping walk)"),
+        ("LimpSide", AnimatorControllerParameterType.Float, "the bad leg: -1 left, +1 right (mirror the limp clip)"),
+        ("IsHopping", AnimatorControllerParameterType.Bool, "one leg cannot carry weight: hops on the other"),
+        ("HopCycle", AnimatorControllerParameterType.Float, "where in the current hop, 0-1 (the Hop state's Motion Time)"),
+        ("IsCrawling", AnimatorControllerParameterType.Bool, "no leg can carry weight: drags itself with the arms"),
+        ("IsLegless", AnimatorControllerParameterType.Bool, "both legs are missing"),
+        ("MissingLegs", AnimatorControllerParameterType.Int, "legs missing (0-2)"),
+        ("MissingArms", AnimatorControllerParameterType.Int, "arms missing (0-2): one-armed attacks and crawling"),
+        // Seats (CardTable: sitting at a card table)
+        ("IsSitting", AnimatorControllerParameterType.Bool, "sitting on a seat (card tables)"),
+        ("SeatValue", AnimatorControllerParameterType.Float, "the table game's value for the seat: arm wrestling -1 (losing) .. 1 (winning), drinking 0-1 drunk"),
         // Actions
         ("DashTrigger", AnimatorControllerParameterType.Trigger, "a dash starts"),
         ("RollTrigger", AnimatorControllerParameterType.Trigger, "a roll starts"),
@@ -167,6 +182,29 @@ public static class PlayerAnimatorSetup
                 states.Add("Death: Any State → Death on DeathTrigger, back when IsDead turns off (respawn). Put a death clip here (Loop Time off).");
                 if (fix) AddDeath(sm);
             }
+            if (!HasState(sm, "limp"))
+            {
+                states.Add("Limp: Any State → Limp while IsLimping and moving. Put a limping walk here (a blend tree on LimpAmount from a normal to a " +
+                           "bad limp; mirror it by LimpSide).");
+                if (fix) AddInjuryState(sm, "Limp", "IsLimping", 3, moving: true, timeParameter: null);
+            }
+            if (!HasState(sm, "hop"))
+            {
+                states.Add("Hop: Any State → Hop while IsHopping. Put a one-legged hop here (one hop per loop): its Motion Time follows HopCycle, so " +
+                           "the feet land when the movement pauses.");
+                if (fix) AddInjuryState(sm, "Hop", "IsHopping", 4, moving: false, timeParameter: "HopCycle");
+            }
+            if (!HasState(sm, "sit"))
+            {
+                states.Add("Sit: Any State → Sit while IsSitting (card tables). Put a seated idle here (holding cards at chest height).");
+                if (fix) AddInjuryState(sm, "Sit", "IsSitting", 6, moving: false, timeParameter: null);
+            }
+            if (!HasState(sm, "crawl"))
+            {
+                states.Add("Crawl: Any State → Crawl while IsCrawling. Put a crawl here (a blend tree on MovementSpeed from lying still to " +
+                           "dragging with the arms; IsLegless for a legless pose).");
+                if (fix) AddInjuryState(sm, "Crawl", "IsCrawling", 5, moving: false, timeParameter: null);
+            }
         }
 
         if (fix)
@@ -250,6 +288,40 @@ public static class PlayerAnimatorSetup
         AnimatorStateTransition leave = death.AddExitTransition();
         Configure(leave, 0.2f);
         leave.AddCondition(AnimatorConditionMode.IfNot, 0f, "IsDead");
+    }
+
+    /// <summary>
+    /// An injury locomotion state: Any State → it while <paramref name="flag"/> is on (and, for <paramref name="moving"/>,
+    /// the player moves), back out when it turns off. A <paramref name="timeParameter"/> drives its Motion Time.
+    /// </summary>
+    private static void AddInjuryState(AnimatorStateMachine sm, string stateName, string flag, int row, bool moving, string timeParameter)
+    {
+        AnimatorState state = sm.AddState(stateName, FreeSpot(sm, row));
+        if (!string.IsNullOrEmpty(timeParameter))
+        {
+            state.timeParameterActive = true;
+            state.timeParameter = timeParameter;
+        }
+        AnimatorStateTransition enter = sm.AddAnyStateTransition(state);
+        Configure(enter, 0.2f);
+        enter.canTransitionToSelf = false;
+        enter.AddCondition(AnimatorConditionMode.If, 0f, flag);
+        enter.AddCondition(AnimatorConditionMode.IfNot, 0f, "IsSwimming");
+        enter.AddCondition(AnimatorConditionMode.IfNot, 0f, "IsDead");
+        if (moving)
+            enter.AddCondition(AnimatorConditionMode.Greater, 0.1f, "MovementSpeed");
+        AnimatorStateTransition leave = state.AddExitTransition();
+        Configure(leave, 0.2f);
+        leave.AddCondition(AnimatorConditionMode.IfNot, 0f, flag);
+        if (moving)
+        {
+            AnimatorStateTransition stop = state.AddExitTransition();
+            Configure(stop, 0.2f);
+            stop.AddCondition(AnimatorConditionMode.Less, 0.1f, "MovementSpeed");
+        }
+        AnimatorStateTransition die = state.AddExitTransition();
+        Configure(die, 0.1f);
+        die.AddCondition(AnimatorConditionMode.If, 0f, "IsDead");
     }
 
     private static void Configure(AnimatorStateTransition t, float duration)

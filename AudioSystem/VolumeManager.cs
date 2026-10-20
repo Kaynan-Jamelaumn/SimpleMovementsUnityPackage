@@ -124,7 +124,8 @@ public class VolumeManager
 
     private void ApplyVolumeToMixer(string parameter, float volume)
     {
-        if (masterMixerGroup?.audioMixer != null)
+        // Not "?.": an unassigned serialized field is a Unity fake-null object that "?." does not catch.
+        if (masterMixerGroup != null && masterMixerGroup.audioMixer != null)
         {
             float dbValue = volume > 0 ? Mathf.Log10(volume) * 20f : -80f;
             masterMixerGroup.audioMixer.SetFloat(parameter, dbValue);

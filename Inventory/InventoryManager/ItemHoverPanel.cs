@@ -136,11 +136,13 @@ public class ItemHoverPanel : MonoBehaviour
 
         lines.Clear();
         so.AppendTooltip(lines);
+        if (so is IItemInstanceTooltip instanceTooltip)
+            instanceTooltip.AppendInstanceTooltip(item, lines);
         statsText.text = string.Join("\n", lines);
         statsText.gameObject.SetActive(lines.Count > 0);
 
         // Durability of the unit in use (the last of the stack), out of the item's maximum.
-        bool durable = so.MaxDurability > 0 && durabilityNow >= 0;
+        bool durable = so.ShowsDurability && so.MaxDurability > 0 && durabilityNow >= 0;
         durabilityRow.SetActive(durable);
         if (durable)
         {

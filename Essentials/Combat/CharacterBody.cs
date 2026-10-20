@@ -87,6 +87,8 @@ public class CharacterBody : MonoBehaviour
     private Animator bodyAnimator;
     private Vector3 hipsWritten;
     private bool hipsShifted;
+    private float postureHeight = 1f;   // share of the colliders' height kept (no legs: from the waist up)
+    private float postureDrop;          // metres the body is lowered for the posture, at scale 1
 
     /// <summary>The final size multiplier (1 = the model as authored).</summary>
     public float Scale { get; private set; } = 1f;
@@ -99,6 +101,29 @@ public class CharacterBody : MonoBehaviour
 
     /// <summary>The CharacterController this body resizes (null when there is none).</summary>
     public CharacterController Controller => controller;
+
+    /// <summary>Share of the standing height the colliders keep for the posture (1 = standing).</summary>
+    public float PostureHeight => postureHeight;
+
+    /// <summary>
+    /// The body's posture (the injury system, without legs): the colliders keep <paramref name="heightFactor"/> of their
+    /// height with their bottom where it was, the model (its hips) is lowered by <paramref name="dropMetres"/> at the current
+    /// size so the waist rests on the ground, and the height anchors (camera targets) come down with it. (1, 0) = standing.
+    /// </summary>
+    public void SetPosture(float heightFactor, float dropMetres)
+    {
+        heightFactor = Mathf.Clamp(heightFactor, 0.1f, 1f);
+        float drop = Mathf.Max(0f, dropMetres) / Mathf.Max(0.01f, Scale);
+        if (Mathf.Abs(heightFactor - postureHeight) < 0.001f && Mathf.Abs(drop - postureDrop) < 0.001f)
+            return;
+        postureHeight = heightFactor;
+        postureDrop = drop;
+        applied = -1f; // apply again even at the same size
+        Apply();
+        // Standing again with Ground Feet off: LateUpdate no longer moves a generic model, so put it back here.
+        if (postureDrop <= 0f && !groundFeet && model != null && Application.isPlaying && Hips() == null)
+            model.localPosition = modelPosition;
+    }
 
     private void Awake()
     {
@@ -359,7 +384,7 @@ public class CharacterBody : MonoBehaviour
     {
         if (anchors.Count == 0 || authoredColliderHeight <= 0f)
             return;
-        float ratio = FinalHeight / authoredColliderHeight;
+        float ratio = FinalHeight * postureHeight / authoredColliderHeight;
         Transform root = CharacterRoot();
         foreach (var a in anchors)
         {
@@ -421,9 +446,9 @@ public class CharacterBody : MonoBehaviour
                 float bottom = ccCenter.y - ccHeight * 0.5f;
                 controller.enabled = false;
                 controller.radius = ccRadius * w;
-                controller.height = Mathf.Max(ccHeight * scale, controller.radius * 2f);
+                controller.height = Mathf.Max(ccHeight * scale * postureHeight, controller.radius * 2f);
                 controller.center = new Vector3(ccCenter.x, bottom + controller.height * 0.5f, ccCenter.z);
-                controller.stepOffset = Mathf.Min(ccStep * scale, controller.height);
+                controller.stepOffset = Mathf.Min(ccStep * scale * Mathf.Max(0.5f, postureHeight), controller.height);
                 // Unity's advice: skin width about 10 % of the radius (a thick skin keeps the capsule, and the feet, off the ground).
                 if (fitToModel)
                     controller.skinWidth = Mathf.Clamp(controller.radius * 0.1f, 0.005f, Mathf.Max(0.005f, ccSkin));
@@ -431,14 +456,14 @@ public class CharacterBody : MonoBehaviour
             }
             if (agent != null)
             {
-                agent.height = agentHeight * scale;
+                agent.height = agentHeight * scale * postureHeight;
                 agent.radius = agentRadius * w;
             }
             if (capsule != null)
             {
                 float bottom = capCenter.y - capHeight * 0.5f;
                 capsule.radius = capRadius * w;
-                capsule.height = Mathf.Max(capHeight * scale, capsule.radius * 2f);
+                capsule.height = Mathf.Max(capHeight * scale * postureHeight, capsule.radius * 2f);
                 capsule.center = new Vector3(capCenter.x, bottom + capsule.height * 0.5f, capCenter.z);
             }
         }
@@ -462,10 +487,10 @@ public class CharacterBody : MonoBehaviour
     // ------------------------------------------------------------------ feet on the ground
     private void LateUpdate()
     {
-        if (!groundFeet || !Application.isPlaying)
+        if ((!groundFeet && postureDrop <= 0f) || !Application.isPlaying)
             return;
-        if (groundPending)
-            TryGround();
+        if (groundPending && postureDrop <= 0f)
+            TryGround(); // without feet (no legs) there is nothing to measure
         ApplyGroundOffset();
     }
 
@@ -499,7 +524,7 @@ public class CharacterBody : MonoBehaviour
     private void ApplyGroundOffset()
     {
         Transform root = CharacterRoot();
-        float offset = groundOffset * Scale;
+        float offset = (groundOffset + postureDrop) * Scale;
         Transform h = Hips();
         if (h != null)
         {

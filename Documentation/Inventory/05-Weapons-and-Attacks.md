@@ -117,11 +117,19 @@ stateDiagram-v2
 
 ### Damage of a weapon hit
 
+The base comes from the weapon's **Damage Roll** (*Damage & Stats*):
+
+| Damage Roll | Base damage of a hit |
+|---|---|
+| **Range** (default) | random between *Min* and *Max Damage* |
+| **Fixed** | always *Damage* (no max) |
+| **Stats** | *Base Damage* + *Damage Per Point* × the points of the *Scaling* attribute, ± *Variance* — mostly the wielder: 5 + 1.5 per Strength hits for 20 with 10 Strength, 80 with 50 |
+
 ```
-damage = random(min, max)
+damage = base (above)
        × weapon trait and wielder trait multipliers (legacy string effects)
        × trait stat Weapon Damage
-       × CombatStats: (1 + Weapon Damage%) × (1 + scaling attribute × 1%) × (1 + Elemental Damage% if elemental)
+       × CombatStats: (1 + Weapon Damage%) × (1 + scaling attribute × 1%, not for Stats: it is in the base) × (1 + Elemental Damage% if elemental)
        × attack damage multiplier × charge × combo bonus
        × elemental multiplier (weapon/target elements)
        × crit multiplier (+ Critical Damage%) on a crit (chance = weapon + attack bonus + Critical Chance + Agility)

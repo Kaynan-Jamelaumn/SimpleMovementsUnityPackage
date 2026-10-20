@@ -53,6 +53,8 @@ Added by **Make Selected Prefab Networked ▸ Player**, next to a `NetworkObject
 | `NetCombatStatus` | Health, death, crowd control, buffs, speed, weight to everyone who sees the player; mana, needs, XP and points to the owner only. See page 04. |
 | `NetInventory` | The server's inventory is the truth. Every action is a request; the owner receives the whole inventory after changes. See page 07. |
 | `NetWallet` | Money. Balances go to the owner only. |
+| `NetCardTable` | Card tables (on the table, with a NetworkObject): the server runs the table and the game; each seated player gets their own view (their hand), everyone else the onlookers' view; seated players' actions go to the server. See [Minigames 01](../Minigames/01-Card-Games-and-Truco.md#5-multiplayer). |
+| `NetInjuries` | Injuries (when the injury system is on): the server's body-part condition, injuries, missing limbs and the treatment being applied, to everyone who sees the player; the owner's treatments go to the server as requests. See [Player 13](../Player/13-Injuries-and-Treatment.md#9-multiplayer). |
 | `NetPlayerRealm` | The player's realm (City, World, Dungeon, travelling), zone and PvP flag. |
 | `NetInteractor` | Interactions (talk, open, pick up, use) are sent to the server, which checks range and timing and runs them. See page 08. |
 

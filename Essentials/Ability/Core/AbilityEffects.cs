@@ -119,6 +119,9 @@ public class DamageEffect : AbilityEffect
     public DamageType damageType = DamageType.Physical;
     [Tooltip("Element of the damage. Targets with a resistance to it (armor, traits) take less. None = plain damage.")]
     public ElementType element = ElementType.None;
+    [Tooltip("What the hit does to a body: Slash, Pierce, Blunt (a push, a slam), Bite, Claw (a scratch), Crush (a stomp). Injuries " +
+             "depend on it (bites tear, blunt blows break bones) and characters resist each form. None = formless (spells, elements).")]
+    public DamageForm form = DamageForm.None;
 
     public override void Apply(ref EffectContext ctx)
     {
@@ -148,13 +151,15 @@ public class DamageEffect : AbilityEffect
             isCritical = crit,
             type = damageType,
             element = element,
+            form = form,
             threatMultiplier = ctx.Ability != null ? ctx.Ability.threatMultiplier : (float?)null,
         });
     }
 
     public override float EstimateDamage(in AbilityStats s) => amount * s.damage * (1f + criticalChance * (criticalMultiplier - 1f));
 
-    public override string Describe(in AbilityStats s) => $"{amount * s.damage:0.#} {DamageWords.Describe(damageType, element)}damage{Chance(chance)}";
+    public override string Describe(in AbilityStats s) =>
+        $"{amount * s.damage:0.#} {DamageWords.Describe(damageType, element)}{(form != DamageForm.None ? DamageForms.Adjective(form) + " " : "")}damage{Chance(chance)}";
 
     public override void Validate(string owner, List<string> errors, List<string> warnings)
     {

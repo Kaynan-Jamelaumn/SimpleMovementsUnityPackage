@@ -118,12 +118,42 @@ and by itself when a set is completed (closing again after *Auto Hide Delay*).
   **Animation & Sound**. Use Feedback is hidden (weapons do not use it). Every section explains its fields.
 * **Attack Preview** (▶, or *Tools ▸ SimpleMovements ▸ Inventory ▸ Attack Preview*): plays or scrubs an attack (any input, any
   chain hit, any charge) on the character in the scene - the selected object, the prefab being edited or the
-  player - without Play Mode. In the Scene view it draws, coloured by phase (yellow wind-up, red hitting, grey
+  player. Outside Play Mode the clip is sampled (nothing changes); **in Play Mode** it plays on the live character -
+  a spawned player, a generated appearance - through a temporary animation graph that overrides its Animator until
+  Stop (root motion off, so it does not move). In the Scene view it draws, coloured by phase (yellow wind-up, red hitting, grey
   recovery): the Hit Shape (moving with the lunge, with its height band), or for **Weapon Blade** attacks a
   **temporary copy of the weapon in the animated hand** (never saved; removed on Stop / close) with its **hit
   volumes** (unused ones faint) and the **trail** they sweep; the **Impact** area where the contact volume reaches
   the ground (orange); the weapon's range and the old Attack Cast at the hand. Stop / closing the window restores
   the pose. In Play Mode the Weapon Controller's debug gizmo draws the active attack's real hit area or volumes.
+  Editing the weapon's *In the hand* Position / Rotation / Scale moves the weapon in the preview at once (playing or
+  paused; in Play Mode the held weapon too), so the grip can be tuned while watching the swing.
+* **Starter Item Library** (*Tools ▸ SimpleMovements ▸ Inventory ▸ Generate Starter Item Library*): creates, in
+  `Resources/SimpleMovements/Items/.../Starter`:
+  * **About 125 weapons**: swords, **rapiers**, katanas, scimitars, longswords, greatswords, axes, greataxes, maces
+    and hammers, flails, mauls, spears, halberds and glaives, scythes, whips, daggers, knuckles and claws, battle and
+    mage staves, wands, short and long bows, crossbows (light, heavy, repeating), slings and blowguns, thrown weapons
+    (knives, javelins, axes, shuriken) and firearms (pistol, musket, blunderbuss, hand cannon), across the tiers,
+    with elemental and legendary versions.
+  * Every weapon gets the **moveset of its kind** (`StarterMovesets`): its own hit volumes (blade, tip, pommel, shaft,
+    head, chain ball, fists, claws, orb...), its chains, and attacks with their own hit detection, timing, damage
+    form and effects. Some examples: rapier thrusts with a Flèche lunge and a multi-hit Flurry, a katana Iaido
+    charged draw-cut, greatsword ground slams and a whirlwind, axe and halberd hooks that pull, mace armour breaks,
+    unblockable flail swings, hammer quakes, spear leg sweeps that root, whip snares that silence, dagger backstabs
+    and poison, mana-cost magic projectiles, and blowgun darts that poison. Ranged weapons get the right draw,
+    magazine or throw mechanic and ammo type. *Inventory ▸ Rebuild Starter Weapon Movesets* re-applies the movesets
+    to existing starter weapons.
+  * **19 armour sets** of five pieces with 2- and 4-piece bonuses: the six material sets, plus Assassin's Shroud,
+    Berserker's Hide, Paladin's Aegis, Shadow Weave, Dragonscale, Frostguard, Battlemage, Plague Doctor's,
+    Gladiator's, Druid's, Samurai, Sentinel's Bulwark and Wanderer's.
+  * **About 50 shields and accessories**: ward rings, crit, haste and regeneration rings, amulets, talismans,
+    trinkets, cloaks, belts, bracers and pauldrons, all with their effects.
+  * **About 45 potions, foods and drinks**, and **17 kinds of ammo**: fire, frost, blunt and barbed arrows,
+    armour-piercing bolts, poison and sleep darts, iron shot for the hand cannon, silver bullets and pebbles. Each
+    ammo has its own element, damage form and on-hit effects.
+  * The medical items, when the injury system is on.
+
+  Running it again only adds what is missing. Models, icons, animations and sounds are left to assign.
 * **Hit volumes**: *Hit Area & Range ▸ Add Volume ▾* presets; each volume shows only the fields of its shape; each
   attack has **Volumes Used** toggle buttons; problems (an attack naming a missing volume) are listed.
 * **Faction inspector**: how the faction stands toward every other faction of the project and toward characters

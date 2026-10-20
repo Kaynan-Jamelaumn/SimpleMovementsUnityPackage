@@ -90,7 +90,7 @@ namespace ProceduralDungeon
                     trigger.isTrigger = true;
                     trigger.center = new Vector3(0, 0.5f, 0);
                     trigger.size = new Vector3(1.2f, 1f, 1.2f);
-                    root.AddComponent<DungeonHazard>();
+                    root.AddComponent<DungeonHazard>().form = DamageForm.Pierce;
                     break;
                 case DungeonPrimitive.Fountain:
                     Part(root, PrimitiveType.Cylinder, new Vector3(0, 0.3f, 0), new Vector3(2f, 0.3f, 2f), Stone);
