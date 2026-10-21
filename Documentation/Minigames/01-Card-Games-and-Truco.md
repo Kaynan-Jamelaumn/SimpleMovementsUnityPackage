@@ -46,13 +46,23 @@ flowchart LR
 
 * **Sitting**: the player is placed on the seat facing the table, their controls are locked, the Animator's
   `IsSitting` turns on, and the **table window** opens (the cursor is free, clicks never attack).
-* **Lobby**: the first player seated is the **host** and picks the stake (when the table offers several). Everyone
-  presses **Ready**. When every seated player is ready the game starts: **empty seats are played by bots** (*Bots Fill
+* **Lobby**: the first player seated is the **host** and picks the stake from the ones the table offers (its *Stakes*
+  list). The host can change it as often as they like **in the lobby**, with any number of players seated. Each change
+  resets everyone's Ready, so the others accept the new stake by pressing **Ready** again (or leave). Once a game
+  starts, the stake is fixed until it ends. Everyone presses **Ready**. When every seated player is ready the game starts: **empty seats are played by bots** (*Bots Fill
   Empty Seats*; off = the game waits for four players), and every player's stake is taken.
 * **Cards**: each player's three cards are **in their hand** — on the Humanoid hand bone (the right hand; the left one
   if the right hand was lost to the injury system; in front of the seat without hands), face up for their owner, face
   down for everyone else. Played cards land in front of each seat; the vira and the deck lie in the middle. In the
   window, click a card of your hand to play it.
+* **Inventory**: while seated, the hotbar, quick slots, ability bar and the city or zone messages are hidden, so the
+  cards have the screen (`HudFocus`). Opening the inventory brings them back on top of the table window, and the number
+  keys go to the hotbar until it closes.
+* **Keys**: Sit uses the **Interact** action and Give Up (while knocked out) the **GiveUp** action. Change them in your
+  input actions asset or in the game's Key Bindings menu; the prompts ("[E] Sit", "Hold [X] to give up") show the
+  current key for the device in use.
+* **Several tables**: place as many Card Tables as you like (each with its own NetCardTable on a NetworkObject when
+  networked). Each runs its own game; a player sits at one table at a time.
 * **Leaving**: the *Leave* button, or Escape. During a game Escape asks first: **leaving forfeits the game** — your team
   loses (and so does your stake). Dying or being knocked out leaves the table too.
 * After a game the result stays a few seconds (*Result Seconds*), then the lobby opens again (press Ready to replay).
@@ -68,16 +78,17 @@ manilha), your hand at the bottom, the buttons on the right, the table's log on 
 **Players**: 4, in 2 teams of 2; teammates sit opposite each other (seats 1 + 3 = *Team A*, 2 + 4 = *Team B*). Play goes
 clockwise. The first team to **12 points** wins.
 
-**Deck**: the standard 52 cards (A–K in clubs, diamonds, hearts and spades), no jokers. Each hand is shuffled anew;
-three cards each (12 dealt, 40 left), then the top card is turned up: the **vira**.
+**Deck**: the 40-card Truco deck, with no 8, 9 or 10 (4, 5, 6, 7, Q, J, K, A, 2, 3 in clubs, diamonds, hearts and spades).
+Each hand is shuffled anew; three cards each (12 dealt, 28 left), then the top card is turned up: the **vira**.
+(*40-Card Deck* off plays the 8, 9 and 10 of the Rank Sequence too.)
 
 **Card strength** (`TrucoRules.Strength`: lower = stronger):
 
-1. The four **manilhas** — the rank *after* the vira's in the sequence `4 → 5 → 6 → 7 → 8 → 9 → 10 → Q → J → K → A → 2
-   → 3 → 4` (vira 9 → the 10s are manilhas; vira 3 → the 4s) — by suit: **Clubs, Hearts, Spades, Diamonds**. They beat
+1. The four **manilhas**: the rank *after* the vira's in the sequence `4 → 5 → 6 → 7 → Q → J → K → A → 2 → 3 → 4`
+   (vira 7 → the Qs are manilhas; vira 3 → the 4s), ordered by suit: **Clubs, Hearts, Spades, Diamonds**. They beat
    everything.
-2. Then the other cards by rank, from the end of the sequence: **3, 2, A, K, J, Q, 10, 9, 8, 7, 6, 5, 4**. Suits do not
-   matter: two cards of the same rank tie.
+2. Then the other cards by rank, from the end of the sequence: **3, 2, A, K, J, Q, 7, 6, 5, 4**. Suits do not matter:
+   two cards of the same rank tie.
 
 **A hand** is up to three tricks. The player after the dealer starts; everyone plays one card clockwise; the strongest
 card wins the trick for its team (equal strongest cards of the *same* team still win; of both teams the trick **ties**).

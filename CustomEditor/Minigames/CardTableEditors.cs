@@ -311,6 +311,7 @@ public class TrucoGameDefinitionEditor : Editor
         r.handValues = fresh.handValues;
         r.callNames = fresh.callNames;
         r.rankSequence = fresh.rankSequence;
+        r.fortyCardDeck = fresh.fortyCardDeck;
         r.manilhaSuits = fresh.manilhaSuits;
         r.trickPauseSeconds = fresh.trickPauseSeconds;
         r.handPauseSeconds = fresh.handPauseSeconds;

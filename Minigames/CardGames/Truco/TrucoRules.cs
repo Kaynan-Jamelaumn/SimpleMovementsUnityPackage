@@ -17,14 +17,53 @@ public class TrucoSettings
     [Tooltip("Name of each call (same order as Hand Values; the first is unused).")]
     public List<string> callNames = new List<string> { "", "Truco", "Six", "Nine", "Twelve" };
     [Tooltip("The ranks from weakest to strongest. The rank after the vira's (wrapping around) is the manilha. " +
-             "Default: 4 5 6 7 8 9 10 Q J K A 2 3.")]
+             "Default (the 40-card Truco deck): 4 5 6 7 Q J K A 2 3. A rank that is not in the list is not in the deck.")]
     public List<CardRank> rankSequence = new List<CardRank>
     {
-        CardRank.Four, CardRank.Five, CardRank.Six, CardRank.Seven, CardRank.Eight, CardRank.Nine, CardRank.Ten,
+        CardRank.Four, CardRank.Five, CardRank.Six, CardRank.Seven,
         CardRank.Queen, CardRank.Jack, CardRank.King, CardRank.Ace, CardRank.Two, CardRank.Three,
     };
+    [Tooltip("Play with the 40-card deck: no 8, 9 or 10 (after the 7 comes the Q; a vira 7 makes the Q the manilha). " +
+             "Off = the 8, 9 and 10 of the Rank Sequence are played too.")]
+    public bool fortyCardDeck = true;
+
+    [NonSerialized] private List<CardRank> playedRanks;
+    [NonSerialized] private int playedFrom = -1;
+
+    /// <summary>The ranks played, weakest to strongest (the Rank Sequence without 8, 9 and 10 with the 40-card deck).</summary>
+    public List<CardRank> PlayedRanks
+    {
+        get
+        {
+            int key = (rankSequence != null ? rankSequence.Count : 0) * 2 + (fortyCardDeck ? 1 : 0);
+            if (playedRanks == null || playedFrom != key)
+            {
+                playedRanks = new List<CardRank>();
+                if (rankSequence != null)
+                    foreach (CardRank r in rankSequence)
+                        if (!playedRanks.Contains(r) && !(fortyCardDeck && (r == CardRank.Eight || r == CardRank.Nine || r == CardRank.Ten)))
+                            playedRanks.Add(r);
+                playedFrom = key;
+            }
+            return playedRanks;
+        }
+    }
+
+    /// <summary>Is this rank in the deck?</summary>
+    public bool InDeck(CardRank rank) => PlayedRanks.Contains(rank);
     [Tooltip("The manilhas' suits from strongest to weakest. Default: Clubs, Hearts, Spades, Diamonds.")]
     public List<CardSuit> manilhaSuits = new List<CardSuit> { CardSuit.Clubs, CardSuit.Hearts, CardSuit.Spades, CardSuit.Diamonds };
+
+    [Header("Hand of eleven (mão de onze)")]
+    [Tooltip("When one team is one point from winning, that hand is played 'trucada': its players see each other's cards " +
+             "and decide to play it (worth Hand Of Eleven Value) or run (the other team scores 1). Nobody can call Truco " +
+             "in that hand. When both teams are one point from winning (mão de ferro), nobody sees anybody else's cards and " +
+             "nobody can call.")]
+    public bool handOfEleven = true;
+    [Tooltip("What a hand of eleven is worth when the team plays it.")]
+    [Min(1)] public int handOfElevenValue = 3;
+    [Tooltip("What the other team gets when the team at eleven runs.")]
+    [Min(0)] public int handOfElevenRunValue = 1;
 
     [Header("Pacing")]
     [Tooltip("Seconds the cards of a finished trick stay on the table.")]
@@ -55,8 +94,10 @@ public class TrucoSettings
             for (int i = 1; i < handValues.Count; i++)
                 if (handValues[i] <= handValues[i - 1])
                     warnings.Add($"Truco: Hand Values should grow ({handValues[i - 1]} → {handValues[i]}).");
-        if (rankSequence == null || rankSequence.Count != 13) errors.Add("Truco: Rank Sequence must hold the 13 ranks once each.");
-        else if (new HashSet<CardRank>(rankSequence).Count != 13) errors.Add("Truco: Rank Sequence has a rank twice.");
+        if (rankSequence == null || PlayedRanks.Count < 4) errors.Add("Truco: Rank Sequence needs at least 4 ranks that are played.");
+        else if (new HashSet<CardRank>(rankSequence).Count != rankSequence.Count) errors.Add("Truco: Rank Sequence has a rank twice.");
+        if (rankSequence != null && PlayedRanks.Count * 4 < 13)
+            errors.Add("Truco: the deck is too small to deal 3 cards to 4 players and a vira.");
         if (manilhaSuits == null || manilhaSuits.Count != 4 || new HashSet<CardSuit>(manilhaSuits).Count != 4)
             errors.Add("Truco: Manilha Suits must hold the 4 suits once each.");
         if (pointsToWin < 1) errors.Add("Truco: Points To Win must be at least 1.");
@@ -86,10 +127,10 @@ public sealed class TrucoRules
 
     public TrucoSettings Settings => settings;
 
-    /// <summary>The manilha rank for a vira: the next rank of the sequence, wrapping (vira 9 → 10; vira 3 → 4).</summary>
+    /// <summary>The manilha rank for a vira: the next rank played, wrapping (vira 7 → Q; vira 3 → 4).</summary>
     public CardRank ManilhaRankFor(PlayingCard vira)
     {
-        List<CardRank> seq = settings.rankSequence;
+        List<CardRank> seq = settings.PlayedRanks;
         int i = seq.IndexOf(vira.rank);
         if (i < 0)
             return vira.rank;
@@ -98,7 +139,7 @@ public sealed class TrucoRules
 
     public bool IsManilha(PlayingCard card, CardRank manilha) => card.rank == manilha;
 
-    /// <summary>Lower = stronger: manilhas 0-3 by suit, then ordinary ranks 4 (the strongest, 3) to 16 (the weakest, 4).</summary>
+    /// <summary>Lower = stronger: manilhas 0-3 by suit, then ordinary ranks from 4 (the strongest, 3) to <see cref="WeakestStrength"/> (4).</summary>
     public int Strength(PlayingCard card, CardRank manilha)
     {
         if (card.rank == manilha)
@@ -106,9 +147,22 @@ public sealed class TrucoRules
             int s = settings.manilhaSuits.IndexOf(card.suit);
             return s < 0 ? 3 : s;
         }
-        List<CardRank> seq = settings.rankSequence;
+        List<CardRank> seq = settings.PlayedRanks;
         int i = seq.IndexOf(card.rank);
         return 4 + (seq.Count - 1 - Mathf.Max(0, i));
+    }
+
+    /// <summary>The strength number of the weakest ordinary card (the higher end of the scale).</summary>
+    public int WeakestStrength => 4 + Mathf.Max(0, settings.PlayedRanks.Count - 1);
+
+    /// <summary>A new Truco deck: every suit of the ranks played (40 cards with the default rules).</summary>
+    public CardDeck NewDeck()
+    {
+        var cards = new List<PlayingCard>();
+        foreach (PlayingCard c in CardDeck.Standard52())
+            if (settings.InDeck(c.rank))
+                cards.Add(c);
+        return new CardDeck(cards);
     }
 
     /// <summary>Negative when <paramref name="a"/> beats <paramref name="b"/>, positive when it loses, 0 for a tie.</summary>

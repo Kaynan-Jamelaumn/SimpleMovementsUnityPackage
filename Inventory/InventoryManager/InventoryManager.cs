@@ -267,6 +267,16 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             return openPanels.Count > 0;
         }
     }
+    /// <summary>The inventory window itself or a storage is open (not other registered windows such as a card table).</summary>
+    public bool IsInventoryOrStorageOpen => IsInventoryOpened || IsStorageOpened;
+
+    /// <summary>Is the inventory window (or a storage) of the player owning <paramref name="anyOnPlayer"/> open? Other windows do not count.</summary>
+    public static bool IsInventoryOpenFor(Component anyOnPlayer)
+    {
+        InventoryManager m = anyOnPlayer != null ? For(anyOnPlayer) : null;
+        return m != null && m.IsInventoryOrStorageOpen;
+    }
+
     /// <summary>The inventory, a storage or a registered window is open: the mouse belongs to the UI.</summary>
     public bool IsAnyPanelOpen => IsInventoryOpened || IsStorageOpened || IsExternalPanelOpen;
     public SlotManager.LayoutData CurrentLayout => slotManager?.LegacyCurrentLayout;
@@ -444,6 +454,14 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
 
     private void Update()
     {
+        // Seated at a card table: the hotbar steps aside unless the inventory is open.
+        if (ReadsLocalInput)
+        {
+            GameObject[] hb = slotManager?.HotbarSlots;
+            Transform hbRoot = hb != null && hb.Length > 0 && hb[0] != null ? hb[0].transform.parent : null;
+            if (hbRoot != null)
+                HudFocus.Apply(hbRoot.gameObject, !HudFocus.Hidden || IsInventoryOrStorageOpen);
+        }
         // Only the player controlled from this machine reads its keys and mouse (a server holds every player's inventory).
         if (ReadsLocalInput)
         {

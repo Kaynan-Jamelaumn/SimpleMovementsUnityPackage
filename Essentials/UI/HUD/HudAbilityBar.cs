@@ -172,6 +172,7 @@ public class HudAbilityBar : MonoBehaviour
     /// <summary>Called every frame by the Player HUD.</summary>
     public void Tick()
     {
+        HudFocus.Apply(gameObject, !HudFocus.Hidden);
         if (Time.unscaledTime < nextCheck) return;
         nextCheck = Time.unscaledTime + 0.5f;
         if (keys != null && keys.KeyCount != keyCount) BindSlots();

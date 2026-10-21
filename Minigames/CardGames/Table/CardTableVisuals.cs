@@ -88,7 +88,8 @@ public class CardTableVisuals : MonoBehaviour
             int count = dealt ? sv.cardCount : 0;
             for (int k = 0; k < count; k++)
             {
-                byte code = s == v.viewerSeat && k < v.hand.Count ? v.hand[k] : PlayingCard.Hidden;
+                byte code = s == v.viewerSeat && k < v.hand.Count ? v.hand[k]
+                    : sv.revealed != null && k < sv.revealed.Count ? sv.revealed[k] : PlayingCard.Hidden; // a partner's hand shown (hand of eleven)
                 list.Add(MakeCard(code, root, scale));
             }
             handCards.Add(list);

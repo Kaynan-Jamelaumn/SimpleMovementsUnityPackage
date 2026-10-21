@@ -66,6 +66,8 @@ public sealed class CardSeatView
     public bool ready;
     public bool isTurn;
     public int cardCount;
+    /// <summary>This seat's cards the viewer may see face up (Truco's hand of eleven: the partner's hand).</summary>
+    public List<byte> revealed = new List<byte>();
     /// <summary>A word over the seat for a moment ("TRUCO!", "Accepted", "Fold").</summary>
     public string bubble = "";
     /// <summary>The seated player's network object id (−1 = none / offline): lets every machine find the body.</summary>
@@ -151,7 +153,7 @@ public sealed class CardTableView
     public bool Playing => tablePhase == 1;
 
     // ------------------------------------------------------------------ bytes
-    private const byte Version = 2;
+    private const byte Version = 3;
 
     public byte[] ToBytes()
     {
@@ -186,6 +188,9 @@ public sealed class CardTableView
                 w.Write(s.bubble ?? "");
                 w.Write(s.objectId);
                 w.Write(s.value);
+                int shown = s.revealed != null ? Math.Min(s.revealed.Count, 16) : 0;
+                w.Write((byte)shown);
+                for (int k = 0; k < shown; k++) w.Write(s.revealed[k]);
             }
             w.Write((byte)hand.Count);
             for (int i = 0; i < hand.Count; i++)
@@ -267,6 +272,8 @@ public sealed class CardTableView
                     s.bubble = r.ReadString();
                     s.objectId = r.ReadInt32();
                     s.value = r.ReadSingle();
+                    int shown = r.ReadByte();
+                    for (int k = 0; k < shown; k++) s.revealed.Add(r.ReadByte());
                     v.seats.Add(s);
                 }
                 int hand = r.ReadByte();

@@ -444,7 +444,22 @@ public class Unconsciousness : MonoBehaviour, IInteractable
     public float GiveUpProgress => Rules.giveUpHoldSeconds > 0f ? Mathf.Clamp01(giveUpHeld / Rules.giveUpHoldSeconds) : 0f;
 
     /// <summary>The key of the Give Up input ("X").</summary>
-    public string GiveUpKey => giveUpInput != null && giveUpInput.ReadAction != null ? HudStyle.ShortKey(giveUpInput.ReadAction.GetBindingDisplayString(0)) : "X";
+    /// <summary>
+    /// The Give Up key for the device in use, read from the action each time (so a key changed in the action map or the
+    /// Key Bindings menu shows at once).
+    /// </summary>
+    public string GiveUpKey
+    {
+        get
+        {
+            if (giveUpInput == null || giveUpInput.ReadAction == null)
+                return "X";
+            string s = InputDeviceTracker.DisplayString(giveUpInput.ReadAction);
+            if (string.IsNullOrEmpty(s))
+                s = giveUpInput.ReadAction.GetBindingDisplayString(0);
+            return HudStyle.ShortKey(s);
+        }
+    }
 
     private static bool IsLocalPlayer(CombatEntity e)
     {

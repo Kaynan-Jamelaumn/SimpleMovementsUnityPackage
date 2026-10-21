@@ -81,7 +81,28 @@ public class CardTableUI : MonoBehaviour, IGameplayPanel
             shownVersion = version;
             Refresh(table.LocalView);
         }
-        HotKeys(table.LocalView);
+        // The inventory (or a storage) opened while seated goes on top of the table window, and the number keys belong
+        // to its hotbar meanwhile.
+        // Only the inventory window itself counts: the table window is registered with the inventory as an open panel too.
+        bool inventoryOpen = table.LocalPlayer != null && InventoryManager.IsInventoryOpenFor(table.LocalPlayer);
+        canvas.sortingOrder = inventoryOpen ? BelowInventory(table.LocalPlayer) : TableOrder;
+        // The hotbar, ability bar and city messages step aside while seated, and come back with the inventory.
+        SetHudFocus(!inventoryOpen);
+        if (!inventoryOpen)
+            HotKeys(table.LocalView);
+    }
+
+    // Above the gameplay HUD (hotbar, ability bar: up to 50; HubWorld messages hide), below the unconscious (60) and death screens.
+    private const int TableOrder = 58;
+
+    /// <summary>A sorting order just below the player's inventory canvas.</summary>
+    private static int BelowInventory(CombatEntity player)
+    {
+        InventoryManager inv = InventoryManager.For(player);
+        Canvas c = inv != null ? inv.GetComponentInParent<Canvas>() : null;
+        if (c == null && inv != null) c = inv.GetComponentInChildren<Canvas>(true);
+        int order = c != null ? c.rootCanvas.sortingOrder : 0;
+        return Mathf.Min(TableOrder, order - 1);
     }
 
     /// <summary>Number keys press the buttons (1 = the first): handy to mash Push in arm wrestling.</summary>
@@ -100,8 +121,20 @@ public class CardTableUI : MonoBehaviour, IGameplayPanel
         }
     }
 
+    private bool hudFocus;
+
+    private void SetHudFocus(bool on)
+    {
+        if (on == hudFocus)
+            return;
+        hudFocus = on;
+        if (on) HudFocus.Take();
+        else HudFocus.Release();
+    }
+
     private void Hide()
     {
+        SetHudFocus(false);
         Unregister();
         table = null;
         shownHand = shownActions = null;
@@ -112,6 +145,7 @@ public class CardTableUI : MonoBehaviour, IGameplayPanel
 
     private void OnDestroy()
     {
+        SetHudFocus(false);
         Unregister();
         if (instance == this)
             instance = null;
@@ -181,7 +215,7 @@ public class CardTableUI : MonoBehaviour, IGameplayPanel
     // ------------------------------------------------------------------ building
     private void Build()
     {
-        canvas = UITheme.Canvas("Card Table", 45, transform);
+        canvas = UITheme.Canvas("Card Table", TableOrder, transform);
         Transform c = canvas.transform;
 
         // Top: title, stake, scores, value of the hand.
@@ -308,6 +342,18 @@ public class CardTableUI : MonoBehaviour, IGameplayPanel
             Vector2 at = new Vector2(dir.x * (half.x - 90f), dir.y * (half.y - 30f) + 20f);
             Center(label.rectTransform, at, new Vector2(220f, 52f));
             dynamicTable.Add(label.gameObject);
+            // Cards of this seat the viewer may see (Truco's hand of eleven: the partner's hand), under the name.
+            if (sv.revealed != null && sv.revealed.Count > 0)
+            {
+                Vector2 cardSize = new Vector2(46f, 66f);
+                float width = sv.revealed.Count * (cardSize.x + 4f) - 4f;
+                for (int k = 0; k < sv.revealed.Count; k++)
+                {
+                    GameObject card = CardWidget(tableArea, sv.revealed[k], cardSize, false);
+                    Center((RectTransform)card.transform, at + new Vector2(-width * 0.5f + cardSize.x * 0.5f + k * (cardSize.x + 4f), -62f), cardSize);
+                    dynamicTable.Add(card);
+                }
+            }
             if (!string.IsNullOrEmpty(sv.bubble))
             {
                 Image bubble = UITheme.Panel("Bubble", tableArea, UITheme.Gold, UITheme.Radius);

@@ -154,6 +154,12 @@ namespace HubWorld
 
         private void Update()
         {
+            // Seated at a card table: the zone and city messages step aside unless the inventory is open.
+            if (canvas != null)
+            {
+                bool shown = !HudFocus.Hidden || InventoryOpen();
+                if (canvas.enabled != shown) canvas.enabled = shown;
+            }
             if (director == null)
                 return;
             PlayerRealmState local = director.LocalState();
@@ -164,6 +170,12 @@ namespace HubWorld
             Fade(bannerGroup, bannerHideAt, 0.6f);
             Fade(lineGroup, lineHideAt, 0.4f);
             flashGroup.alpha = flashUntil > Time.unscaledTime ? Mathf.Clamp01((flashUntil - Time.unscaledTime) / 1.5f) * 0.85f : 0f;
+        }
+
+        private static bool InventoryOpen()
+        {
+            CombatEntity me = PlayerLocator.Local;
+            return me != null && InventoryManager.IsInventoryOpenFor(me);
         }
 
         private void UpdateZone(PlayerRealmState local)

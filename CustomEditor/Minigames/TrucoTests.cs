@@ -44,7 +44,7 @@ namespace SimpleMovements.Tests
             var v = new CardTableView();
             for (int i = 0; i < 4; i++) v.seats.Add(new CardSeatView());
             g.FillView(v, 0);
-            Assert.AreEqual(39, v.deckCount, "52 - 12 dealt - the vira");
+            Assert.AreEqual(27, v.deckCount, "40 - 12 dealt - the vira");
             Assert.AreEqual(1, v.shared.Count);
             Assert.AreEqual(3, v.hand.Count, "the viewer sees their own hand");
             g.FillView(v, -1);
@@ -53,28 +53,41 @@ namespace SimpleMovements.Tests
 
         // ------------------------------------------------------------------ rules
         [Test]
+        public void Deck_IsTheFortyCardDeck_NoEightsNinesOrTens()
+        {
+            CardDeck deck = Rules().NewDeck();
+            Assert.AreEqual(40, deck.Count);
+            foreach (PlayingCard c in deck.Cards)
+                Assert.IsFalse(c.rank == CardRank.Eight || c.rank == CardRank.Nine || c.rank == CardRank.Ten, c.ToString());
+            Assert.AreEqual(52, new TrucoRules(new TrucoSettings { fortyCardDeck = false, rankSequence = new List<CardRank>
+            {
+                CardRank.Four, CardRank.Five, CardRank.Six, CardRank.Seven, CardRank.Eight, CardRank.Nine, CardRank.Ten,
+                CardRank.Queen, CardRank.Jack, CardRank.King, CardRank.Ace, CardRank.Two, CardRank.Three,
+            } }).NewDeck().Count, "the 52-card variant");
+        }
+
+        [Test]
         public void Manilha_IsTheNextRankAfterTheVira()
         {
             TrucoRules r = Rules();
-            Assert.AreEqual(CardRank.Ten, r.ManilhaRankFor(C(CardRank.Nine, CardSuit.Hearts)), "vira 9 → 10");
+            Assert.AreEqual(CardRank.Queen, r.ManilhaRankFor(C(CardRank.Seven, CardSuit.Hearts)), "vira 7 → Q (no 8, 9, 10)");
             Assert.AreEqual(CardRank.Jack, r.ManilhaRankFor(C(CardRank.Queen, CardSuit.Clubs)), "Q → J");
             Assert.AreEqual(CardRank.King, r.ManilhaRankFor(C(CardRank.Jack, CardSuit.Clubs)), "J → K");
             Assert.AreEqual(CardRank.Ace, r.ManilhaRankFor(C(CardRank.King, CardSuit.Clubs)), "K → A");
             Assert.AreEqual(CardRank.Four, r.ManilhaRankFor(C(CardRank.Three, CardSuit.Spades)), "3 wraps to 4");
-            Assert.AreEqual(CardRank.Queen, r.ManilhaRankFor(C(CardRank.Ten, CardSuit.Spades)), "10 → Q");
         }
 
         [Test]
         public void Strength_ManilhasFirstBySuit_ThenThreeDownToFour()
         {
             TrucoRules r = Rules();
-            CardRank m = CardRank.Ten;
-            Assert.AreEqual(0, r.Strength(C(CardRank.Ten, CardSuit.Clubs), m));
-            Assert.AreEqual(1, r.Strength(C(CardRank.Ten, CardSuit.Hearts), m));
-            Assert.AreEqual(2, r.Strength(C(CardRank.Ten, CardSuit.Spades), m));
-            Assert.AreEqual(3, r.Strength(C(CardRank.Ten, CardSuit.Diamonds), m));
-            Assert.Less(r.Compare(C(CardRank.Ten, CardSuit.Diamonds), C(CardRank.Three, CardSuit.Clubs), m), 0, "the weakest manilha beats a 3");
-            CardRank[] order = { CardRank.Three, CardRank.Two, CardRank.Ace, CardRank.King, CardRank.Jack, CardRank.Queen, CardRank.Nine, CardRank.Eight,
+            CardRank m = CardRank.Jack;
+            Assert.AreEqual(0, r.Strength(C(CardRank.Jack, CardSuit.Clubs), m));
+            Assert.AreEqual(1, r.Strength(C(CardRank.Jack, CardSuit.Hearts), m));
+            Assert.AreEqual(2, r.Strength(C(CardRank.Jack, CardSuit.Spades), m));
+            Assert.AreEqual(3, r.Strength(C(CardRank.Jack, CardSuit.Diamonds), m));
+            Assert.Less(r.Compare(C(CardRank.Jack, CardSuit.Diamonds), C(CardRank.Three, CardSuit.Clubs), m), 0, "the weakest manilha beats a 3");
+            CardRank[] order = { CardRank.Three, CardRank.Two, CardRank.Ace, CardRank.King, CardRank.Queen,
                                  CardRank.Seven, CardRank.Six, CardRank.Five, CardRank.Four };
             for (int i = 1; i < order.Length; i++)
                 Assert.Less(r.Compare(C(order[i - 1], CardSuit.Hearts), C(order[i], CardSuit.Hearts), m), 0, $"{order[i - 1]} beats {order[i]}");
@@ -161,6 +174,81 @@ namespace SimpleMovements.Tests
             Assert.IsTrue(g.TryAct(t, new CardAction(CardGameSession.PlayCard, 0), out string why), why);
             Assert.AreEqual(2, g.Player(t).Hand.Count);
             Assert.AreEqual((t + 1) % 4, g.Turn, "clockwise");
+        }
+
+        // ------------------------------------------------------------------ hand of eleven
+        /// <summary>Plays bot actions until <paramref name="until"/> holds or the game ends.</summary>
+        private static void Drive(TrucoGame g, System.Func<bool> until)
+        {
+            for (int step = 0; step < 20000 && !g.IsOver && !until(); step++)
+            {
+                bool acted = false;
+                for (int s = 0; s < 4 && !acted; s++)
+                    if (g.WantsBotAction(s))
+                    {
+                        Assert.IsTrue(g.TryAct(s, g.BotDecide(s), out string why), why);
+                        acted = true;
+                    }
+                if (!acted)
+                    g.Tick(0.5f);
+            }
+        }
+
+        [Test]
+        public void HandOfEleven_TeamSeesPartnerCards_NoCalls_ThenDecides()
+        {
+            for (int seed = 1; seed <= 20; seed++)
+            {
+                // First to 2: a team at 1 point plays the next hand as a hand of eleven.
+                var g = new TrucoGame(new TrucoSettings { pointsToWin = 2, trickPauseSeconds = 0f, handPauseSeconds = 0f },
+                    new CardGameSetup { seed = seed, names = new[] { "A1", "B1", "A2", "B2" }, bots = new[] { true, true, true, true }, firstDealer = 0 });
+                g.Start();
+                Drive(g, () => g.State == TrucoGame.Phase.ElevenDecision || g.Kind == TrucoGame.HandKind.IronHand);
+                if (g.IsOver)
+                    continue; // a first hand worth 2 (an accepted Truco) ended it at once
+                if (g.Kind == TrucoGame.HandKind.IronHand)
+                {
+                    Assert.IsFalse(g.CanCallNow(0, out _), "no calls when both teams are at eleven");
+                    Assert.IsFalse(g.CanCallNow(1, out _));
+                    continue;
+                }
+                int team = g.ElevenTeam;
+                Assert.GreaterOrEqual(team, 0);
+                Assert.IsFalse(g.CanCallNow(0, out _), "nobody calls in a hand of eleven");
+                Assert.IsFalse(g.CanCallNow(1, out _));
+                var v = new CardTableView();
+                for (int i = 0; i < 4; i++) v.seats.Add(new CardSeatView());
+                g.FillView(v, team); // seat `team` (0 or 1) is on the team at eleven
+                Assert.AreEqual(3, v.seats[team + 2].revealed.Count, "the partner's hand is shown");
+                Assert.AreEqual(0, v.seats[1 - team].revealed.Count, "the opponents' hands stay hidden");
+                g.FillView(v, 1 - team);
+                Assert.AreEqual(0, v.seats[team].revealed.Count, "the other team sees nothing");
+                Assert.IsFalse(g.TryAct(1 - team, new CardAction(TrucoGame.PlayEleven), out _), "only the team at eleven decides");
+                Assert.IsTrue(g.TryAct(team, new CardAction(TrucoGame.PlayEleven), out string why), why);
+                Assert.AreEqual(3, g.HandValue, "a hand of eleven is worth 3");
+                Assert.AreEqual(TrucoGame.Phase.Playing, g.State);
+                return;
+            }
+            Assert.Fail("no seed reached a hand of eleven");
+        }
+
+        [Test]
+        public void HandOfEleven_Running_GivesTheOtherTeamOne()
+        {
+            for (int seed = 1; seed <= 20; seed++)
+            {
+                var g = new TrucoGame(new TrucoSettings { pointsToWin = 3, trickPauseSeconds = 0f, handPauseSeconds = 0f },
+                    new CardGameSetup { seed = seed, names = new[] { "A1", "B1", "A2", "B2" }, bots = new[] { true, true, true, true }, firstDealer = 0 });
+                g.Start();
+                Drive(g, () => g.State == TrucoGame.Phase.ElevenDecision);
+                if (g.IsOver || g.State != TrucoGame.Phase.ElevenDecision)
+                    continue;
+                int team = g.ElevenTeam, before = g.Score(1 - team);
+                Assert.IsTrue(g.TryAct(team, new CardAction(TrucoGame.RunEleven), out string why), why);
+                Assert.AreEqual(before + 1, g.Score(1 - team));
+                return;
+            }
+            Assert.Fail("no seed reached a hand of eleven");
         }
 
         // ------------------------------------------------------------------ whole games

@@ -138,6 +138,12 @@ public class QuickSlotBar : MonoBehaviour
             return;
         if (!GameNet.NetAuthority.IsLocallyControlled(inventory.Player != null ? inventory.Player : inventory.gameObject))
             return; // another player's copy: no keys, no UI
+        // Seated at a card table: the bar steps aside (and its keys rest) unless the inventory is open.
+        bool shown = !HudFocus.Hidden || inventory.IsInventoryOrStorageOpen;
+        if (barRoot != null)
+            HudFocus.Apply(barRoot.gameObject, shown);
+        if (!shown)
+            return;
         for (int i = 0; i < bindings.Count && i < slotCount; i++)
         {
             if (bindings[i] == null || !bindings[i].Pressed)

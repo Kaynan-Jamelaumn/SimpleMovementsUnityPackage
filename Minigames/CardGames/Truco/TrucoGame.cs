@@ -78,8 +78,22 @@ public sealed class TrucoGame : CardGameSession
     public const int Accept = 2;
     public const int Raise = 3;
     public const int Fold = 4;
+    /// <summary>Hand of eleven: the team at eleven plays the hand.</summary>
+    public const int PlayEleven = 5;
+    /// <summary>Hand of eleven: the team at eleven runs (the other team scores).</summary>
+    public const int RunEleven = 6;
 
-    public enum Phase { Playing, Responding, TrickPause, HandPause, Over }
+    public enum Phase { Playing, Responding, TrickPause, HandPause, Over, ElevenDecision }
+
+    /// <summary>The kind of hand being played.</summary>
+    public enum HandKind
+    {
+        Normal,
+        /// <summary>One team is one point from winning: it sees both hands and decides; no calls.</summary>
+        HandOfEleven,
+        /// <summary>Both teams are one point from winning: no calls, nobody sees anybody else's cards.</summary>
+        IronHand,
+    }
 
     private readonly TrucoSettings settings;
     private readonly TrucoRules rules;
@@ -98,6 +112,7 @@ public sealed class TrucoGame : CardGameSession
     private float timer;
     private int winningTeam = -1;
     private string lastEvent = "";
+    private int forcedValue;
 
     public Phase State { get; private set; } = Phase.HandPause;
     public TrucoRound Round { get; private set; } = new TrucoRound();
@@ -105,6 +120,10 @@ public sealed class TrucoGame : CardGameSession
     public TrucoRules Rules => rules;
     public TrucoSettings Settings => settings;
     public int HandNumber { get; private set; }
+    /// <summary>Normal, hand of eleven or iron hand (both teams at eleven).</summary>
+    public HandKind Kind { get; private set; }
+    /// <summary>The team at eleven in a hand of eleven (−1 otherwise).</summary>
+    public int ElevenTeam { get; private set; } = -1;
     public int Turn => turn;
     public int Dealer => dealer;
     public PlayingCard Vira => vira;
@@ -118,7 +137,18 @@ public sealed class TrucoGame : CardGameSession
     public override int TeamOf(int seat) => ((seat % 4) + 4) % 2;
 
     /// <summary>What the hand is worth now (the accepted value).</summary>
-    public int HandValue => settings.Value(Betting.AcceptedIndex);
+    public int HandValue => forcedValue > 0 ? forcedValue : settings.Value(Betting.AcceptedIndex);
+
+    /// <summary>Can <paramref name="team"/> call Truco now? Never in a hand of eleven or an iron hand.</summary>
+    public bool CanCallNow(int team, out string reason)
+    {
+        if (Kind != HandKind.Normal)
+        {
+            reason = Kind == HandKind.IronHand ? "Nobody can call when both teams are at eleven" : "Nobody can call in a hand of eleven";
+            return false;
+        }
+        return Betting.CanCall(team, settings, out reason);
+    }
 
     public TrucoGame(TrucoSettings settings, CardGameSetup setup, string teamA = "Team A", string teamB = "Team B")
     {
@@ -155,7 +185,7 @@ public sealed class TrucoGame : CardGameSession
     {
         HandNumber++;
         dealer = (dealer + 1) % 4;
-        deck = CardDeck.Standard();
+        deck = rules.NewDeck();
         deck.Shuffle(rng);
         foreach (TrucoPlayer p in players)
             p.Hand.Clear();
@@ -169,9 +199,34 @@ public sealed class TrucoGame : CardGameSession
         Betting.Reset();
         Array.Clear(botConsideredCall, 0, 4);
         turn = first;
+        forcedValue = 0;
+        ElevenTeam = -1;
+        Kind = HandKind.Normal;
         State = Phase.Playing;
         lastEvent = $"Hand {HandNumber}: the vira is {vira}, so the {PlayingCard.RankName(manilha)}s are manilhas.";
         Say(lastEvent);
+
+        // Hand of eleven: a team one point from winning plays "trucada".
+        int eleven = settings.pointsToWin - 1;
+        if (settings.handOfEleven && eleven > 0)
+        {
+            bool a = scores[0] == eleven, b = scores[1] == eleven;
+            if (a && b)
+            {
+                Kind = HandKind.IronHand;
+                lastEvent = "Both teams are at eleven: no calls, nobody sees anybody else's cards.";
+                Say(lastEvent);
+            }
+            else if (a || b)
+            {
+                Kind = HandKind.HandOfEleven;
+                ElevenTeam = a ? 0 : 1;
+                forcedValue = Mathf.Max(1, settings.handOfElevenValue);
+                State = Phase.ElevenDecision;
+                lastEvent = $"Hand of eleven: {teamNames[ElevenTeam]} sees both hands and decides to play (worth {forcedValue}) or run.";
+                Say(lastEvent);
+            }
+        }
     }
 
     public override void Tick(float dt)
@@ -206,15 +261,44 @@ public sealed class TrucoGame : CardGameSession
         switch (action.kind)
         {
             case PlayCard:
-                if (State != Phase.Playing) { reason = State == Phase.Responding ? "Waiting for an answer to the call" : "Wait"; return false; }
+                if (State != Phase.Playing)
+                {
+                    reason = State == Phase.Responding ? "Waiting for an answer to the call"
+                        : State == Phase.ElevenDecision ? "The team at eleven is deciding whether to play" : "Wait";
+                    return false;
+                }
                 if (seat != turn) { reason = "Not your turn"; return false; }
                 if (action.arg < 0 || action.arg >= players[seat].Hand.Count) { reason = "You do not have that card"; return false; }
                 PlayCardAt(seat, action.arg);
                 return true;
 
+            case PlayEleven:
+            case RunEleven:
+                if (State != Phase.ElevenDecision) { reason = "Not a hand of eleven"; return false; }
+                if (team != ElevenTeam) { reason = "The team at eleven decides"; return false; }
+                if (action.kind == PlayEleven)
+                {
+                    State = Phase.Playing;
+                    Bubble(seat, "We play!");
+                    lastEvent = $"{players[seat].Name} plays the hand of eleven: it is worth {HandValue}.";
+                    Say(lastEvent);
+                }
+                else
+                {
+                    Bubble(seat, "We run");
+                    forcedValue = Mathf.Max(0, settings.handOfElevenRunValue);
+                    lastEvent = $"{players[seat].Name} runs from the hand of eleven.";
+                    Say(lastEvent);
+                    if (forcedValue > 0)
+                        EndHand(1 - team, folded: true);
+                    else
+                        EndHand(TrucoRules.Draw, folded: true);
+                }
+                return true;
+
             case Call:
                 if (State != Phase.Playing || seat != turn) { reason = "You can call only on your turn"; return false; }
-                if (!Betting.CanCall(team, settings, out reason)) return false;
+                if (!CanCallNow(team, out reason)) return false;
                 Betting.PendingIndex = Betting.AcceptedIndex + 1;
                 Betting.CallerTeam = team;
                 Betting.CallerSeat = seat;
@@ -373,6 +457,19 @@ public sealed class TrucoGame : CardGameSession
             return false;
         if (State == Phase.Playing)
             return seat == turn;
+        if (State == Phase.ElevenDecision)
+        {
+            // A human of the team at eleven decides; otherwise its first bot.
+            if (TeamOf(seat) != ElevenTeam)
+                return false;
+            for (int s = 0; s < 4; s++)
+            {
+                if (TeamOf(s) != ElevenTeam) continue;
+                if (!players[s].Bot) return false;
+                return s == seat;
+            }
+            return false;
+        }
         if (State != Phase.Responding)
             return false;
         int team = Betting.RespondingTeam;
@@ -394,6 +491,12 @@ public sealed class TrucoGame : CardGameSession
         TrucoPlayer me = players[seat];
         float strength = HandStrength(me);
         float bold = settings.botBoldness;
+        if (State == Phase.ElevenDecision)
+        {
+            // Both hands of the team are known: play when together they are good enough.
+            float both = (strength + HandStrength(players[(seat + 2) % 4])) * 0.5f;
+            return new CardAction(both > 0.42f - bold * 0.12f ? PlayEleven : RunEleven);
+        }
         if (State == Phase.Responding)
         {
             float need = 0.34f - bold * 0.15f + 0.05f * Betting.PendingIndex;
@@ -403,7 +506,7 @@ public sealed class TrucoGame : CardGameSession
                 return new CardAction(Accept);
             return new CardAction(Fold);
         }
-        if (!botConsideredCall[seat] && Betting.CanCall(me.Team, settings, out _))
+        if (!botConsideredCall[seat] && CanCallNow(me.Team, out _))
         {
             botConsideredCall[seat] = true;
             bool strong = strength > 0.72f - bold * 0.2f;
@@ -423,7 +526,8 @@ public sealed class TrucoGame : CardGameSession
         foreach (PlayingCard c in p.Hand)
         {
             int s = rules.Strength(c, manilha);
-            sum += s <= 3 ? 1f - s * 0.04f : (16 - s) / 12f * 0.75f;
+            float span = Mathf.Max(1, rules.WeakestStrength - 4);
+            sum += s <= 3 ? 1f - s * 0.04f : (rules.WeakestStrength - s) / span * 0.75f;
         }
         return Mathf.Clamp01(sum / 3f + (Round.Results[0] == p.Team ? 0.15f : 0f));
     }
@@ -479,6 +583,8 @@ public sealed class TrucoGame : CardGameSession
         string value = $"Hand worth {HandValue}" + (Betting.AcceptedIndex > 0 ? $" ({settings.CallName(Betting.AcceptedIndex)})" : "");
         if (Betting.Pending)
             value += $" · {settings.CallName(Betting.PendingIndex)} ({settings.Value(Betting.PendingIndex)}) called by {teamNames[Betting.CallerTeam]}";
+        if (Kind == HandKind.HandOfEleven) value += " · HAND OF ELEVEN (no calls)";
+        else if (Kind == HandKind.IronHand) value += " · BOTH AT ELEVEN (no calls)";
         v.valueText = value + $" · first to {settings.pointsToWin}";
 
         for (int i = 0; i < 4 && i < v.seats.Count; i++)
@@ -488,6 +594,12 @@ public sealed class TrucoGame : CardGameSession
             s.cardCount = players[i].Hand.Count;
             s.isTurn = State == Phase.Playing && turn == i;
             s.bubble = bubbles[i] ?? "";
+            s.revealed.Clear();
+            // Hand of eleven: the team at eleven sees its partner's cards while it decides.
+            if (State == Phase.ElevenDecision && viewerSeat >= 0 && viewerSeat < 4 && i != viewerSeat &&
+                TeamOf(viewerSeat) == ElevenTeam && TeamOf(i) == ElevenTeam)
+                foreach (PlayingCard c in players[i].Hand)
+                    s.revealed.Add(c.Code);
         }
 
         v.hand.Clear();
@@ -523,7 +635,12 @@ public sealed class TrucoGame : CardGameSession
         if (viewerSeat < 0 || viewerSeat >= 4 || State == Phase.Over)
             return;
         int team = TeamOf(viewerSeat);
-        if (State == Phase.Playing && turn == viewerSeat && Betting.CanCall(team, settings, out _))
+        if (State == Phase.ElevenDecision && team == ElevenTeam)
+        {
+            v.actions.Add(new CardActionOption(new CardAction(PlayEleven), $"Play the hand ({HandValue})", true, "", 1));
+            v.actions.Add(new CardActionOption(new CardAction(RunEleven), $"Run (they get {settings.handOfElevenRunValue})", true, "", 2));
+        }
+        if (State == Phase.Playing && turn == viewerSeat && CanCallNow(team, out _))
         {
             int next = Betting.AcceptedIndex + 1;
             v.actions.Add(new CardActionOption(new CardAction(Call), $"{settings.CallName(next)}! ({settings.Value(next)})", true, "", 1));
@@ -556,8 +673,12 @@ public sealed class TrucoGame : CardGameSession
             case Phase.TrickPause:
             case Phase.HandPause:
                 return lastEvent;
+            case Phase.ElevenDecision:
+                return viewerSeat >= 0 && TeamOf(viewerSeat) == ElevenTeam
+                    ? $"Hand of eleven: you see your partner's cards. Play the hand (worth {HandValue}) or run?"
+                    : $"Hand of eleven: {teamNames[ElevenTeam]} is deciding whether to play or run.";
             default:
-                return turn == viewerSeat ? "Your turn: play a card" + (Betting.CanCall(TeamOf(viewerSeat), settings, out _) ? " or call." : ".")
+                return turn == viewerSeat ? "Your turn: play a card" + (CanCallNow(TeamOf(viewerSeat), out _) ? " or call." : ".")
                     : $"{players[turn].Name}'s turn.";
         }
     }
