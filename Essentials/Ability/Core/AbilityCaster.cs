@@ -201,6 +201,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         for (int i = 0; i < slots.Count; i++)
             PrepareSlot(i);
         OnInitialized();
+        Owned.Refresh(slots);
     }
 
     /// <summary>Hook for derived casters: add slots (converted legacy abilities, defaults) here.</summary>
@@ -208,6 +209,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
 
     protected virtual void OnDestroy()
     {
+        owned?.StopAll();
         if (Entity != null)
         {
             Entity.Damaged -= OnEntityDamaged;
@@ -246,6 +248,23 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
 
     private void OnSlotPhaseChanged(AbilitySlot slot, AbilityPhase from, AbilityPhase to) => SlotPhaseChanged?.Invoke(slot, from, to);
 
+    // ------------------------------------------------------------------ while owned
+    private AbilityOwnedBehaviours owned;
+    private AbilityOwnedBehaviours Owned => owned ?? (owned = new AbilityOwnedBehaviours(this));
+
+    /// <summary>A slot's content changed: start or stop the While Owned behaviours, then tell the listeners.</summary>
+    private void RaiseSlotChanged(int index)
+    {
+        Owned.Refresh(slots);
+        SlotChanged?.Invoke(index);
+    }
+
+    /// <summary>
+    /// Starts or stops the abilities' While Owned behaviours from what the slots hold now (call it after changing a
+    /// slot's <see cref="AbilitySlot.ability"/> directly instead of through <see cref="SetSlot"/>).
+    /// </summary>
+    public void RefreshWhileOwned() => Owned.Refresh(slots);
+
     // ------------------------------------------------------------------ slots
     public AbilitySlot GetSlot(int index) => index >= 0 && index < slots.Count ? slots[index] : null;
 
@@ -281,7 +300,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         slots.Add(new AbilitySlot(ability, modifiers));
         int i = slots.Count - 1;
         PrepareSlot(i);
-        SlotChanged?.Invoke(i);
+        RaiseSlotChanged(i);
         return i;
     }
 
@@ -304,7 +323,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         s.Set(ability, modifiers);
         if (ability != null)
             ability.Prewarm();
-        SlotChanged?.Invoke(index);
+        RaiseSlotChanged(index);
     }
 
     /// <summary>Empties a slot (keeps the other slots' indices).</summary>
@@ -801,6 +820,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     // ------------------------------------------------------------------ update
     protected virtual void Update()
     {
+        owned?.CheckDestroyed(slots);
         float now = Time.time;
         float dt = Time.deltaTime;
         float move = 1f;
@@ -1494,7 +1514,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             // The server changed what this slot holds at runtime (mob slots are built locally from the prefab).
             s.Set(ability, s.modifiers);
             ability.Prewarm();
-            SlotChanged?.Invoke(slotIndex);
+            RaiseSlotChanged(slotIndex);
         }
 
         castTime = Mathf.Max(0f, castTime);
@@ -1623,7 +1643,7 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         s.enabled = enabled;
         s.Grant = grant;
         if (changed)
-            SlotChanged?.Invoke(index);
+            RaiseSlotChanged(index);
         return changed;
     }
 

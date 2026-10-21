@@ -97,6 +97,25 @@ Old `AbilityEffectSO` abilities can be converted (*Tools ▸ SimpleMovements ▸
 | Casting rules | Moving while casting, interruption by damage / stun, refunds |
 | Targeting | Unit, point or direction; range; **Target Filter** (Self, Allies, Enemies, Neutral, Party) |
 | Actions | What it does: hit areas, projectiles, beams, dashes, summons, barriers… each with **Hit Settings** (filter, effects such as damage, heal, stun, knockback, and optional **Target Rules**: friendly fire, kinds, factions) |
+| While Owned | What the ability gives for as long as the character has it in a slot, cast or not: your own script (**Custom ▸ Attach Script**), double jump, glide, wall climb, life steal… |
+
+### While Owned: scripts and passives that come with an ability
+
+The **While Owned** list of an Ability Definition holds the same behaviours as a trait. They start when the ability
+lands in one of the character's slots (set in the inspector, `SetSlot`, absorbed, loaded from a save, sent by the
+server). They stop when it leaves the last slot that held it: replaced, cleared, forgotten, expired, its asset
+destroyed, or the character removed. If two slots hold the same ability, it runs once.
+
+To give the player your own script while they have the ability, add **Custom ▸ Attach Script** and drag your script
+onto it (or use a prefab, or turn on a script the player already carries; see
+[Player 03](03-Status-Classes-Traits-XP.md#your-own-scripts-on-a-trait-attach-script)). The script is added when the
+ability is acquired and destroyed when it is lost. An ability with only While Owned behaviours and no actions is a
+passive ability: casting it does nothing.
+
+They run through the player's **Trait Manager**, like a trait's behaviours (movement ones such as double jump are
+stepped by the movement simulation and saved in its snapshots). A character without a Trait Manager, such as a mob,
+skips them with a warning. If you change `AbilitySlot.ability` directly instead of calling `SetSlot`, call
+`caster.RefreshWhileOwned()` afterwards.
 
 Mobs use the same ability assets ([Mobs 03](../Mobs/03-Combat-and-Abilities.md)). Who an ability can hit
 (teams, factions, parties, friendly fire) is explained in

@@ -120,6 +120,48 @@ traits.RemoveTrait(myTrait);                      // refunds exactly what was pa
 The **Trait Database** (`Resources/SimpleMovements/Databases/TraitDatabase`) lists every trait of the game for the character creation screen
 and lookups. *Tools ▸ SimpleMovements ▸ Validate ▸ Traits* checks them all.
 
+### Your own scripts on a trait (Attach Script)
+
+A trait can do more than change stats. The built-in behaviours (Double Jump, Wall Climb, Glide, Life Steal...) are
+code that runs while the trait is owned. For your own mechanics, pick the **Custom ▸ Attach Script** behaviour: it puts
+one of your scripts on the character while the trait is owned and takes it away when the trait is removed.
+
+| Mode | What it does |
+|---|---|
+| **Add Script** | Adds the script (drag the `.cs` file onto the field, or pick it from the list) as a component, then removes it. If the character already has it, it is turned on and off instead (*Use Existing If Present*) |
+| **Spawn Prefab** | Spawns a prefab under the character, so its scripts keep the values you set on the prefab, then destroys it |
+| **Enable Existing** | Turns on a script the character already carries (left disabled on the prefab), and puts it back as it was afterwards |
+
+*Attach To* puts it on a child (a bone such as `Hand_R`) instead of the root. If two sources ask for the same script,
+they share one copy, which goes away when the last one ends.
+
+The same behaviour works on items: *Equipment Effects ▸ Traits ▸ Passive Behaviour ▸ Custom ▸ Attach Script* attaches
+the script while the item is worn. You can also give an armor piece a trait (*Inherent Traits*).
+
+Your script can implement `ITraitAttachedScript` to be told when it is attached (with the `TraitContext`: status,
+movement, abilities, input...), when its strength changes (armor set enhancements) and when it is about to be removed:
+
+```csharp
+public class RocketBoots : MonoBehaviour, ITraitAttachedScript
+{
+    private TraitContext ctx;
+    private float strength = 1f;
+
+    public void OnTraitAttached(TraitContext context, float s) { ctx = context; strength = s; }
+    public void OnTraitStrengthChanged(float s) => strength = s;
+    public void OnTraitDetached() { /* undo anything you changed */ }
+
+    private void Update()
+    {
+        if (ctx != null && ctx.JumpPressed && !ctx.IsGrounded)
+            ctx.Movement.VerticalVelocity = 12f * strength;
+    }
+}
+```
+
+In multiplayer the script is attached wherever the trait runs. If it only makes sense for the owner, check ownership
+inside the script.
+
 ### Weapon traits vs player traits
 
 A trait in a weapon's **Weapon Traits** list belongs to the weapon (it changes only that weapon's attacks); a trait

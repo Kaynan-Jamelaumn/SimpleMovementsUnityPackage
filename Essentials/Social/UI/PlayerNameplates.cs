@@ -144,8 +144,8 @@ public class PlayerNameplates : MonoBehaviour
             for (int i = 0; i < players.Count; i++)
             {
                 CombatEntity p = players[i];
-                if (p == null || p == me || !p.isActiveAndEnabled || (me != null && CombatRules.AreSeparated(me, p)))
-                    continue;
+                if (p == null || p == me || !p.isActiveAndEnabled || p.IsInvisible || (me != null && CombatRules.AreSeparated(me, p)))
+                    continue; // invisible players (powers) show no plate either
                 float d = Vector3.Distance(from, p.Position);
                 if (d > maxDistance)
                     continue;

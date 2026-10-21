@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -29,8 +30,10 @@ public static class StarterItemLibrary
     private static void GenerateMenu()
     {
         if (!EditorUtility.DisplayDialog("Starter Item Library",
-                "Creates about 125 weapons with full movesets (hit volumes, chains, charged attacks, slams, effects), 19 armour sets " +
-                "(95 pieces) with set bonuses, about 50 shields and accessories, about 45 potions, foods and drinks, 17 kinds of ammo " +
+                "Creates about 125 weapons with full movesets (hit volumes, chains, charged attacks, slams, effects), 60 armour sets " +
+                "(19 standard, 15 built from bracers, rings, cloaks, belts..., 22 with 2 to 9 pieces and bonuses at any count: full set only, " +
+                "one bonus at 2, 3 or 4, a bonus per piece, up to 5 steps), 144 armour pieces outside any set (some with powers, some with abilities on their key: Acid Blood Burst, Heist, Twin Gates...), " +
+                "about 50 shields and accessories, about 45 potions, foods and drinks, 17 kinds of ammo " +
                 "and the medical items in Resources/SimpleMovements/Items/.../Starter.\n\nItems that already exist are kept as they are.",
                 "Generate", "Cancel"))
             return;
@@ -381,6 +384,16 @@ public static class StarterItemLibrary
         /// <summary>Name of the pieces ("Assassin's") and the word per slot (helmet, chest, legs, boots, gloves); null = from the material.</summary>
         public string prefix;
         public string[] words;
+        /// <summary>The slots of the pieces (null = helmet, chest, legs, boots, gloves); <see cref="words"/> follows it.</summary>
+        public ArmorSlotType[] slots;
+        /// <summary>Pieces for the second bonus (0 = 4, or every piece when the set has fewer).</summary>
+        public int fullAt;
+
+        /// <summary>Any number of bonus steps (overrides <see cref="two"/> and <see cref="four"/>).</summary>
+        public TierSpec[] tiers;
+
+        public ArmorSlotType[] Slots => slots != null && slots.Length > 0 ? slots : SetSlots;
+        public int FullAt => fullAt > 0 ? fullAt : Mathf.Min(4, Slots.Length);
     }
 
     private static readonly ArmorSlotType[] SetSlots =
@@ -517,6 +530,371 @@ public static class StarterItemLibrary
                 new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 10f), TraitModifier.Percent(TraitStat.StaminaCost, -20f)) })),
     };
 
+    private static readonly ArmorSlotType
+        Head = ArmorSlotType.Helmet, Chest = ArmorSlotType.Chestplate, Legs = ArmorSlotType.Leggings, Feet = ArmorSlotType.Boots,
+        Hands = ArmorSlotType.Gloves, Shield = ArmorSlotType.Shield, Ring = ArmorSlotType.Ring, Trinket = ArmorSlotType.Trinket,
+        Cloak = ArmorSlotType.Cloak, Belt = ArmorSlotType.Belt, Shoulders = ArmorSlotType.Shoulders, Bracers = ArmorSlotType.Bracers,
+        Amulet = ArmorSlotType.Amulet;
+
+    // ================================================================== sets with any number of bonus steps
+    private struct TierSpec
+    {
+        public int pieces;
+        public string name, description, group;
+        public EquipmentEffect[] effects;
+    }
+
+    /// <summary>A bonus at <paramref name="pieces"/> pieces that adds up with the others.</summary>
+    private static TierSpec T(int pieces, string name, string description, params EquipmentEffect[] fx) =>
+        new TierSpec { pieces = pieces, name = name, description = description, effects = fx };
+
+    /// <summary>A bonus in an upgrade group: only the highest reached step of the group is active.</summary>
+    private static TierSpec Step(string group, int pieces, string name, string description, params EquipmentEffect[] fx) =>
+        new TierSpec { pieces = pieces, name = name, description = description, group = group, effects = fx };
+
+    private static SetSpec TSet(string name, ItemPresets.ArmorMaterial material, Color color, string description, string prefix,
+        ArmorSlotType[] slots, string[] words, params TierSpec[] tiers) => new SetSpec
+    {
+        name = name, material = material, color = color, description = description, prefix = prefix, slots = slots, words = words, tiers = tiers,
+    };
+
+    private static OnHitEffect OnHit(float chance, float cooldown, params AbilityEffect[] fx) =>
+        new OnHitEffect { chance = chance, cooldown = cooldown, effects = new List<AbilityEffect>(fx) };
+
+    private static WhenHitEffect WhenHit(float chance, float cooldown, params AbilityEffect[] fx) =>
+        new WhenHitEffect { chance = chance, cooldown = cooldown, effects = new List<AbilityEffect>(fx) };
+
+    private static PulseEffect Pulse(float interval, float radius, TargetFilter who, bool combatOnly, params AbilityEffect[] fx) =>
+        new PulseEffect { interval = interval, radius = radius, affects = who, onlyInCombat = combatOnly, effects = new List<AbilityEffect>(fx) };
+
+    private static WhileConditionEffect While(WhileConditionEffect.Condition condition, float threshold, params EquipmentEffect[] fx) =>
+        new WhileConditionEffect { condition = condition, threshold = threshold, effects = new List<EquipmentEffect>(fx) };
+
+    private static DamageOverTimeEffect Dot(ElementType element, float perTick, float seconds) =>
+        new DamageOverTimeEffect { element = element, damagePerTick = perTick, tickInterval = 0.5f, duration = seconds };
+
+    private static StatEffect Exhaust(float stamina) => new StatEffect { effectType = AttackEffectType.Stamina, amount = -stamina, effectName = "Exhausted" };
+
+    /// <summary>The power ability <paramref name="ability"/> on the item's key (the ability asset is generated if missing).</summary>
+    private static AbilityOnKeyEffect Key(string ability) => new AbilityOnKeyEffect { ability = PowerAbilityGenerator.GetOrCreate(ability) };
+
+    private static CombatStatsEffect Crit(float percent) => Combat(new CombatStatModifier(CombatStatType.CriticalChance, percent));
+
+    /// <summary>
+    /// Sets with their own bonus steps: some only at the full set, some with a single bonus at 2, 3 or 4 pieces, some
+    /// with a bonus for every piece, some whose steps replace each other (an upgrade group) and some with 4 or 5 steps.
+    /// </summary>
+    private static SetSpec[] TieredSets() => new[]
+    {
+        // ---------------- full set only
+        TSet("Regalia Of The Fallen King", ItemPresets.ArmorMaterial.Mythril, new Color(0.8f, 0.7f, 0.3f), "A dead king's armor. It does nothing until it is whole.", "Fallen King's",
+            new[] { Head, Chest, Legs, Feet, Hands, Cloak, Amulet }, new[] { "Crown", "Cuirass", "Greaves", "Sabatons", "Gauntlets", "Royal Mantle", "Seal" },
+            T(7, "Return Of The King", "Full set only: +20 Defense, +20% weapon and ability damage, survive a killing blow (every 5 minutes)",
+                Combat(new CombatStatModifier(CombatStatType.Defense, 20f)),
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 20f), TraitModifier.Percent(TraitStat.AbilityDamage, 20f)),
+                Behaviour(new CheatDeathTrait()))),
+        TSet("Dreadnought Plate", ItemPresets.ArmorMaterial.Steel, new Color(0.3f, 0.3f, 0.35f), "Walking siege armor. Only works as one machine.", "Dreadnought",
+            new[] { Head, Chest, Legs, Feet, Shoulders, Belt }, new[] { "Helm", "Hull", "Legplates", "Treads", "Bastions", "Girdle" },
+            T(6, "Unstoppable", "Full set only: -30% damage taken, -60% control taken, -50% limb loss, -20% move speed",
+                Stats(TraitModifier.Percent(TraitStat.DamageTaken, -30f), TraitModifier.Percent(TraitStat.ControlTaken, -60f),
+                      TraitModifier.Percent(TraitStat.LimbLossChance, -50f), TraitModifier.Percent(TraitStat.MoveSpeed, -20f)))),
+        TSet("Nomad's Wraps", ItemPresets.ArmorMaterial.Cloth, new Color(0.85f, 0.75f, 0.55f), "Desert cloth: three pieces, one purpose.", "Nomad's",
+            new[] { Head, Cloak, Feet }, new[] { "Headwrap", "Sand Cloak", "Sandals" },
+            T(3, "Desert Born", "Full set only: +25% fire resistance, -30% stamina cost, +10% move speed",
+                Ward(ElementType.Fire, 25f), Stats(TraitModifier.Percent(TraitStat.StaminaCost, -30f), TraitModifier.Percent(TraitStat.MoveSpeed, 10f)))),
+
+        // ---------------- a single bonus at 2, 3 or 4 pieces
+        TSet("Twin Fangs", ItemPresets.ArmorMaterial.Leather, new Color(0.45f, 0.7f, 0.3f), "A pair of venom-soaked bracers. Wear both.", "Twin Fang",
+            new[] { Hands, Bracers }, new[] { "Grips", "Bracers" },
+            T(2, "Venom", "2 pieces: 30% of weapon hits poison (3 damage every 0.5 s for 4 s)", OnHit(0.3f, 0f, Dot(ElementType.Poison, 3f, 4f)))),
+        TSet("Titan's Grip", ItemPresets.ArmorMaterial.Iron, new Color(0.6f, 0.5f, 0.4f), "Gauntlets and bracers forged for giants.", "Titan's",
+            new[] { Hands, Bracers }, new[] { "Gauntlets", "Bracers" },
+            T(2, "Titan Strength", "2 pieces: +8 Strength, +25% knockback, +20% hammer and mace damage",
+                Combat(new CombatStatModifier(CombatStatType.Strength, 8f), new CombatStatModifier(CombatStatType.Knockback, 25f),
+                       new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Hammer), new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Mace)))),
+        TSet("Stoneskin Totems", ItemPresets.ArmorMaterial.Leather, new Color(0.55f, 0.5f, 0.45f), "Three stone charms; any two of them harden the skin.", "Stoneskin",
+            new[] { Trinket, Amulet, Belt }, new[] { "Totem", "Pendant", "Belt" },
+            T(2, "Stoneskin", "2 pieces: -15% slash, pierce and blunt damage, -25% fracture chance",
+                Stats(TraitModifier.Percent(TraitStat.SlashDamageTaken, -15f), TraitModifier.Percent(TraitStat.PierceDamageTaken, -15f),
+                      TraitModifier.Percent(TraitStat.BluntDamageTaken, -15f), TraitModifier.Percent(TraitStat.FractureChance, -25f)))),
+        TSet("Hunter's Camouflage", ItemPresets.ArmorMaterial.Leather, new Color(0.35f, 0.45f, 0.25f), "Leaves and bark stitched to leather.", "Hunter's",
+            new[] { Head, Chest, Legs, Cloak, Feet }, new[] { "Ghillie Hood", "Ghillie Vest", "Leggings", "Leaf Cloak", "Moccasins" },
+            T(3, "Ambush", "3 pieces: +20% bow and crossbow damage, +10% critical chance, +20% crouch speed",
+                Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Bow), new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Crossbow),
+                       new CombatStatModifier(CombatStatType.CriticalChance, 10f)),
+                Stats(TraitModifier.Percent(TraitStat.CrouchSpeed, 20f)))),
+        TSet("Bloodbound Pact", ItemPresets.ArmorMaterial.Chainmail, new Color(0.6f, 0.05f, 0.05f), "Four cursed pieces sealed with blood.", "Bloodbound",
+            new[] { Chest, Hands, Ring, Amulet }, new[] { "Hauberk", "Gauntlets", "Ring", "Vial" },
+            T(4, "Blood Pact", "4 pieces: heal for 8% of damage dealt; below 30% health +30% weapon damage; +15% damage taken",
+                Behaviour(new LifeStealTrait()),
+                While(WhileConditionEffect.Condition.HealthBelow, 0.3f, Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 30f))),
+                Stats(TraitModifier.Percent(TraitStat.DamageTaken, 15f)))),
+
+        // ---------------- 3 and 5 (no 2-piece bonus)
+        TSet("Stormforged Plate", ItemPresets.ArmorMaterial.Steel, new Color(0.4f, 0.6f, 1f), "Steel struck by lightning while it cooled.", "Stormforged",
+            new[] { Head, Chest, Legs, Feet, Hands }, new[] { "Helm", "Breastplate", "Greaves", "Boots", "Gauntlets" },
+            T(3, "Conductor", "3 pieces: +30% lightning resistance, +10% attack speed",
+                Ward(ElementType.Lightning, 30f), Combat(new CombatStatModifier(CombatStatType.AttackSpeed, 10f))),
+            T(5, "Thunderclap", "5 pieces: 20% of hits stun for 0.6 s (every 3 s at most); attackers in melee are slowed",
+                OnHit(0.2f, 3f, new StunEffect { duration = 0.6f }),
+                WhenHit(0.5f, 2f, new SlowEffect { slowAmount = 0.4f, duration = 2f }))),
+        TSet("Inferno Regalia", ItemPresets.ArmorMaterial.Chainmail, new Color(1f, 0.4f, 0.1f), "Mail that is always warm to the touch.", "Inferno",
+            new[] { Head, Chest, Legs, Feet, Hands }, new[] { "Crown", "Coat", "Leggings", "Boots", "Gloves" },
+            T(3, "Kindling", "3 pieces: +25% fire resistance; 25% of hits set the target on fire",
+                Ward(ElementType.Fire, 25f), OnHit(0.25f, 0f, Dot(ElementType.Fire, 4f, 3f))),
+            T(5, "Living Inferno", "5 pieces: in combat, burn enemies within 4 m every 2 s",
+                Pulse(2f, 4f, TargetFilter.Enemies, true, new DamageEffect { amount = 8f, element = ElementType.Fire }))),
+
+        // ---------------- 2, 3 and full (three steps)
+        TSet("Frost Warden's Aegis", ItemPresets.ArmorMaterial.Iron, new Color(0.6f, 0.85f, 1f), "Shield and plates rimed with eternal frost.", "Frost Warden's",
+            new[] { Head, Chest, Shoulders, Shield }, new[] { "Helm", "Plate", "Pauldrons", "Glacier Shield" },
+            T(2, "Chill", "2 pieces: +25% ice resistance", Ward(ElementType.Ice, 25f)),
+            T(3, "Frostbite", "3 pieces: attackers are slowed by 40% for 2 s", WhenHit(1f, 1f, new SlowEffect { slowAmount = 0.4f, duration = 2f })),
+            T(4, "Permafrost", "Full set: 25% of attackers are frozen in place for 1.5 s, +10 Defense",
+                WhenHit(0.25f, 4f, new RootEffect { duration = 1.5f }), Combat(new CombatStatModifier(CombatStatType.Defense, 10f)))),
+        TSet("Whisperwind Gear", ItemPresets.ArmorMaterial.Cloth, new Color(0.75f, 0.95f, 0.95f), "Each piece makes you lighter.", "Whisperwind",
+            new[] { Feet, Cloak, Belt, Ring }, new[] { "Slippers", "Cloak", "Sash", "Band" },
+            T(2, "Light Step", "2 pieces: +10% move speed", Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 10f))),
+            T(3, "Updraft", "3 pieces: double jump", Behaviour(new DoubleJumpTrait())),
+            T(4, "Featherfall", "Full set: glide while holding Jump, +15% jump force",
+                Behaviour(new GlideTrait()), Stats(TraitModifier.Percent(TraitStat.JumpForce, 15f)))),
+        TSet("Necromancer's Shroud", ItemPresets.ArmorMaterial.Cloth, new Color(0.3f, 0.5f, 0.3f), "Robes that drink the last breath of the fallen.", "Necromancer's",
+            new[] { Head, Chest, Hands, Amulet, Ring }, new[] { "Cowl", "Robe", "Bone Gloves", "Phylactery", "Ring" },
+            T(2, "Grave Chill", "2 pieces: +20% dark resistance, +10% ability damage",
+                Ward(ElementType.Dark, 20f), Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 10f))),
+            T(4, "Soul Harvest", "4 pieces: kills heal 5% and restore 10 stamina", Behaviour(new OnKillRewardsTrait())),
+            T(5, "Lich Form", "Full set: survive a killing blow; +20% max mana; -20% healing received",
+                Behaviour(new CheatDeathTrait()), Stats(TraitModifier.Percent(TraitStat.MaxMana, 20f), TraitModifier.Percent(TraitStat.HealingReceived, -20f)))),
+
+        // ---------------- four or five steps
+        TSet("Shadow Stalker", ItemPresets.ArmorMaterial.Leather, new Color(0.15f, 0.1f, 0.2f), "Six pieces, four secrets.", "Shadow Stalker",
+            new[] { Head, Chest, Legs, Feet, Hands, Cloak }, new[] { "Mask", "Vest", "Leggings", "Boots", "Gloves", "Shroud" },
+            T(2, "Soft Steps", "2 pieces: +25% crouch speed", Stats(TraitModifier.Percent(TraitStat.CrouchSpeed, 25f))),
+            T(3, "Precision", "3 pieces: +8% critical chance", Crit(8f)),
+            T(4, "Hamstring", "4 pieces: critical hits slow the target by 50% for 2 s",
+                new OnHitEffect { chance = 1f, onlyCriticalHits = true, effects = new List<AbilityEffect> { new SlowEffect { slowAmount = 0.5f, duration = 2f } } }),
+            T(6, "Assassinate", "Full set: +40% critical damage, +25% dagger damage",
+                Combat(new CombatStatModifier(CombatStatType.CriticalDamage, 40f), new CombatStatModifier(CombatStatType.WeaponDamage, 25f, WeaponCategory.Dagger)))),
+        TSet("Sanctified Templar", ItemPresets.ArmorMaterial.Steel, new Color(1f, 0.95f, 0.75f), "Seven pieces blessed in seven temples.", "Templar",
+            new[] { Head, Chest, Legs, Feet, Hands, Shield, Amulet }, new[] { "Helm", "Hauberk", "Chausses", "Sabatons", "Gauntlets", "Aegis", "Reliquary" },
+            T(2, "Devotion", "2 pieces: +15% holy resistance", Ward(ElementType.Holy, 15f)),
+            T(3, "Smite", "3 pieces: 20% of hits deal 10 holy damage", OnHit(0.2f, 0f, new DamageEffect { amount = 10f, element = ElementType.Holy })),
+            T(5, "Bulwark Of Faith", "5 pieces: -15% damage taken, +20% healing received",
+                Stats(TraitModifier.Percent(TraitStat.DamageTaken, -15f), TraitModifier.Percent(TraitStat.HealingReceived, 20f))),
+            T(7, "Consecration", "Full set: heal allies within 6 m for 8 every 3 s",
+                Pulse(3f, 6f, TargetFilter.Allies | TargetFilter.Self, false, new HealEffect { amount = 8f }))),
+        TSet("Warborn Fury", ItemPresets.ArmorMaterial.Iron, new Color(0.7f, 0.2f, 0.1f), "The more it bleeds, the harder it hits.", "Warborn",
+            new[] { Head, Chest, Legs, Feet, Hands, Belt }, new[] { "Helm", "Cuirass", "Tassets", "Boots", "Fists", "War Belt" },
+            T(2, "Battle Cry", "2 pieces: in combat, +10% attack speed",
+                While(WhileConditionEffect.Condition.InCombat, 0f, Combat(new CombatStatModifier(CombatStatType.AttackSpeed, 10f)))),
+            T(3, "Blood Rage", "3 pieces: below 50% health, +20% weapon damage",
+                While(WhileConditionEffect.Condition.HealthBelow, 0.5f, Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 20f)))),
+            T(4, "Stagger", "4 pieces: half of your hits drain 15 stamina from the target", OnHit(0.5f, 0f, Exhaust(15f))),
+            T(5, "Second Wind", "5 pieces: below 25% health heal 30% (every 90 s)", Behaviour(new SecondWindTrait())),
+            T(6, "Undying Rage", "Full set: below 25% health, -40% damage taken",
+                While(WhileConditionEffect.Condition.HealthBelow, 0.25f, Stats(TraitModifier.Percent(TraitStat.DamageTaken, -40f))))),
+
+        // ---------------- every piece counts (upgrade groups: only the highest step is active)
+        TSet("Gambler's Luck", ItemPresets.ArmorMaterial.Cloth, new Color(0.2f, 0.75f, 0.35f), "Every lucky charm adds to the odds.", "Gambler's",
+            new[] { Ring, Amulet, Trinket, Belt, Hands }, new[] { "Dice Ring", "Clover", "Lucky Coin", "Card Belt", "Gloves" },
+            Step("luck", 1, "Lucky", "1 piece: +2% critical chance", Crit(2f)),
+            Step("luck", 2, "Luckier", "2 pieces: +4% critical chance", Crit(4f)),
+            Step("luck", 3, "Charmed", "3 pieces: +7% critical chance", Crit(7f)),
+            Step("luck", 4, "Blessed By Fortune", "4 pieces: +10% critical chance", Crit(10f)),
+            T(5, "Jackpot", "Full set: critical hits heal you for 5 and deal +30% critical damage",
+                Combat(new CombatStatModifier(CombatStatType.CriticalDamage, 30f)),
+                new OnHitEffect { chance = 1f, onlyCriticalHits = true, effects = new List<AbilityEffect> { new HealEffect { amount = 5f, recipient = EffectRecipient.Caster } } })),
+        TSet("Ascendant Seraph", ItemPresets.ArmorMaterial.Mythril, new Color(1f, 1f, 0.85f), "Eight radiant pieces; the light grows with each one.", "Seraph",
+            new[] { Head, Chest, Legs, Feet, Hands, Shoulders, Cloak, Amulet }, new[] { "Halo", "Raiment", "Greaves", "Sandals", "Gauntlets", "Wings", "Mantle", "Sigil" },
+            Step("radiance", 2, "Glimmer", "2 pieces: +5% max health and holy resistance",
+                Stats(TraitModifier.Percent(TraitStat.MaxHealth, 5f)), Ward(ElementType.Holy, 5f)),
+            Step("radiance", 4, "Radiance", "4 pieces: +10% max health and holy resistance (replaces Glimmer)",
+                Stats(TraitModifier.Percent(TraitStat.MaxHealth, 10f)), Ward(ElementType.Holy, 10f)),
+            Step("radiance", 6, "Blinding Light", "6 pieces: +15% max health and holy resistance (replaces Radiance)",
+                Stats(TraitModifier.Percent(TraitStat.MaxHealth, 15f)), Ward(ElementType.Holy, 15f)),
+            T(6, "Wings", "6 pieces: glide while holding Jump", Behaviour(new GlideTrait())),
+            T(8, "Ascension", "Full set: double jump, survive a killing blow, 6 holy damage to enemies within 5 m every 2 s in combat",
+                Behaviour(new DoubleJumpTrait()), Behaviour(new CheatDeathTrait()),
+                Pulse(2f, 5f, TargetFilter.Enemies, true, new DamageEffect { amount = 6f, element = ElementType.Holy }))),
+        TSet("Iron Fortress", ItemPresets.ArmorMaterial.Iron, new Color(0.5f, 0.5f, 0.55f), "The more of it you wear, the less can hurt you.", "Fortress",
+            new[] { Head, Chest, Legs, Feet, Hands, Shield }, new[] { "Helm", "Plate", "Greaves", "Boots", "Gauntlets", "Wall" },
+            Step("fortress", 3, "Battlements", "3 pieces: +8 Defense", Combat(new CombatStatModifier(CombatStatType.Defense, 8f))),
+            Step("fortress", 5, "Keep", "5 pieces: +16 Defense (replaces Battlements)", Combat(new CombatStatModifier(CombatStatType.Defense, 16f))),
+            Step("fortress", 6, "Citadel", "Full set: +25 Defense, -30% control taken (replaces Keep)",
+                Combat(new CombatStatModifier(CombatStatType.Defense, 25f)), Stats(TraitModifier.Percent(TraitStat.ControlTaken, -30f)))),
+        TSet("Sunforged Panoply", ItemPresets.ArmorMaterial.Mythril, new Color(1f, 0.75f, 0.2f), "Nine pieces forged at noon on the longest day.", "Sunforged",
+            new[] { Head, Chest, Legs, Feet, Hands, Shoulders, Bracers, Belt, Cloak },
+            new[] { "Sun Helm", "Sun Plate", "Sun Greaves", "Sun Boots", "Sun Gauntlets", "Sun Pauldrons", "Sun Vambraces", "Sun Belt", "Sun Cloak" },
+            Step("sun", 3, "Dawn", "3 pieces: +5% weapon damage, +10% fire resistance",
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 5f)), Ward(ElementType.Fire, 10f)),
+            Step("sun", 5, "Morning", "5 pieces: +10% weapon damage, +20% fire resistance (replaces Dawn)",
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 10f)), Ward(ElementType.Fire, 20f)),
+            Step("sun", 7, "Noon", "7 pieces: +15% weapon damage, +30% fire resistance (replaces Morning)",
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 15f)), Ward(ElementType.Fire, 30f)),
+            T(7, "Sunfire", "7 pieces: 20% of hits burn the target", OnHit(0.2f, 0f, Dot(ElementType.Fire, 5f, 3f))),
+            T(9, "Solar Flare", "Full set: burn enemies within 5 m every 2 s in combat, +2 health regeneration",
+                Pulse(2f, 5f, TargetFilter.Enemies, true, new DamageEffect { amount = 10f, element = ElementType.Fire }),
+                Stats(TraitModifier.Flat(TraitStat.HealthRegen, 2f)))),
+
+        // ---------------- mixed steps with groups and extras
+        TSet("Trinity Of Elements", ItemPresets.ArmorMaterial.Mythril, new Color(0.7f, 0.4f, 0.9f), "Ring, pendant and charm: fire, ice and lightning.", "Trinity",
+            new[] { Ring, Amulet, Trinket }, new[] { "Ring Of Embers", "Pendant Of Frost", "Charm Of Storms" },
+            T(1, "Attunement", "1 piece: +10% fire, ice and lightning resistance",
+                new CombatStatsEffect(null, new[] { new ElementalResistance(ElementType.Fire, 10f), new ElementalResistance(ElementType.Ice, 10f), new ElementalResistance(ElementType.Lightning, 10f) })),
+            T(2, "Confluence", "2 pieces: +15% ability damage", Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 15f))),
+            T(3, "Trinity", "Full set: hits may burn, chill (slow) or shock (stun)",
+                OnHit(0.15f, 0f, Dot(ElementType.Fire, 3f, 3f)), OnHit(0.15f, 0f, new SlowEffect { slowAmount = 0.35f, duration = 2f }),
+                OnHit(0.08f, 3f, new StunEffect { duration = 0.5f }))),
+        TSet("Tidecaller's Raiment", ItemPresets.ArmorMaterial.Cloth, new Color(0.2f, 0.55f, 0.85f), "Robes that never quite dry.", "Tidecaller's",
+            new[] { Head, Chest, Legs, Amulet }, new[] { "Coral Crown", "Robe", "Wraps", "Pearl" },
+            T(2, "Tides", "2 pieces: +1 mana regeneration, +20% water resistance",
+                Stats(TraitModifier.Flat(TraitStat.ManaRegen, 1f)), Ward(ElementType.Water, 20f)),
+            T(3, "Undertow", "3 pieces: 20% of ability hits slow the target by 50%",
+                new OnHitEffect { trigger = ProcTrigger.AbilityHits, chance = 0.2f, effects = new List<AbilityEffect> { new SlowEffect { slowAmount = 0.5f, duration = 2f } } }),
+            T(4, "Tsunami", "Full set: +25% ability area, +1 ability charge",
+                Stats(TraitModifier.Percent(TraitStat.AbilityArea, 25f), TraitModifier.Flat(TraitStat.AbilityCharges, 1f)))),
+        TSet("Juggernaut's Harness", ItemPresets.ArmorMaterial.Steel, new Color(0.45f, 0.35f, 0.3f), "Built to charge through walls.", "Juggernaut",
+            new[] { Chest, Shoulders, Feet, Belt, Bracers }, new[] { "Harness", "Spiked Pauldrons", "Stompers", "Belt", "Vambraces" },
+            T(3, "Momentum", "3 pieces: +20% knockback, +5 Endurance",
+                Combat(new CombatStatModifier(CombatStatType.Knockback, 20f), new CombatStatModifier(CombatStatType.Endurance, 5f))),
+            T(5, "Trample", "Full set: hits drain 20 stamina and 25% of them stun for 0.8 s (every 4 s at most)",
+                OnHit(1f, 0f, Exhaust(20f)), OnHit(0.25f, 4f, new StunEffect { duration = 0.8f }))),
+
+        // ---------------- sets with powers
+        TSet("Colossus Plate", ItemPresets.ArmorMaterial.Steel, new Color(0.55f, 0.45f, 0.35f), "Armor forged for a giant, and it makes you one.", "Colossus",
+            new[] { Head, Chest, Legs, Feet, Hands }, new[] { "Helm", "Breastplate", "Greaves", "Stompers", "Fists" },
+            T(2, "Bulk", "2 pieces: +10 Defense", Combat(new CombatStatModifier(CombatStatType.Defense, 10f))),
+            T(4, "Colossal", "4 pieces: you are 25% bigger; health, strength and knockback grow with you",
+                new PowerWhileWornEffect("Colossal", new SizeChangePower { sizePercent = 25f })),
+            T(5, "Unmovable", "Full set: immune to knockback, pulls and slows",
+                new PowerWhileWornEffect("Unmovable", new ControlImmunityPower { immuneTo = ControlImmunity.AllDisplacement | ControlImmunity.Slow, cleanseOnStart = false }))),
+        TSet("Featherlight Regalia", ItemPresets.ArmorMaterial.Cloth, new Color(0.85f, 0.9f, 1f), "Silk so light it floats.", "Featherlight",
+            new[] { Head, Chest, Feet, Cloak }, new[] { "Circlet", "Robe", "Slippers", "Wings" },
+            T(2, "Light", "2 pieces: +10% move speed, +15% jump force",
+                Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 10f), TraitModifier.Percent(TraitStat.JumpForce, 15f))),
+            T(4, "Skywalker", "Full set: walk on air for 6 mana per second",
+                new PowerWhileWornEffect("Skywalker", new MovementPower { behaviour = new SkyWalkTrait { cost = SkyWalkCost.Mana, costPerSecond = 6f, endWhenEmpty = false } }))),
+        TSet("Sprite's Trinkets", ItemPresets.ArmorMaterial.Mythril, new Color(0.6f, 1f, 0.6f), "Tiny trinkets of the fae.", "Sprite's",
+            new[] { Ring, Amulet, Trinket }, new[] { "Ring", "Locket", "Acorn" },
+            T(3, "Fae Size", "Full set: you are 35% smaller, 25% faster, +10% critical chance; you take 20% more damage",
+                new PowerWhileWornEffect("Fae Size", new SizeChangePower { sizePercent = -35f, healthPerSize = 0f, weaponDamagePerSize = 0f, knockbackPerSize = 0f,
+                    strengthPerSize = 0f, jumpPerSize = 0f, moveSpeedPercent = 25f, damageTakenPercent = 20f }), Crit(10f))),
+        TSet("Juggernaut Titan", ItemPresets.ArmorMaterial.Iron, new Color(0.4f, 0.4f, 0.45f), "Each piece adds more mass.", "Titan",
+            new[] { Head, Chest, Legs, Feet, Shoulders, Belt }, new[] { "Helm", "Plate", "Legplates", "Boots", "Pauldrons", "Girdle" },
+            Step("titan", 2, "Heavy", "2 pieces: 5% bigger", new PowerWhileWornEffect("Heavy", new SizeChangePower { sizePercent = 5f })),
+            Step("titan", 4, "Massive", "4 pieces: 15% bigger (replaces Heavy)", new PowerWhileWornEffect("Massive", new SizeChangePower { sizePercent = 15f })),
+            Step("titan", 6, "Titanic", "Full set: 30% bigger (replaces Massive)", new PowerWhileWornEffect("Titanic", new SizeChangePower { sizePercent = 30f })),
+            T(6, "Immovable", "Full set: immune to knockback and stuns",
+                new PowerWhileWornEffect("Immovable", new ControlImmunityPower { immuneTo = ControlImmunity.AllDisplacement | ControlImmunity.Stun, cleanseOnStart = false }))),
+    };
+
+    private static SetSpec Set(string name, ItemPresets.ArmorMaterial material, Color color, string description, string prefix,
+        ArmorSlotType[] slots, string[] words, int fullAt, (string, string, EquipmentEffect[]) two, (string, string, EquipmentEffect[]) four)
+    {
+        SetSpec s = Set(name, material, color, description, prefix, words, two, four);
+        s.slots = slots;
+        s.fullAt = fullAt;
+        return s;
+    }
+
+    private static PassiveBehaviourEffect Behaviour(TraitBehaviour b) => new PassiveBehaviourEffect { behaviour = b };
+
+    private static CombatStatsEffect Ward(ElementType element, float percent) =>
+        new CombatStatsEffect(null, new[] { new ElementalResistance(element, percent) });
+
+    /// <summary>Sets made of the other slots (jewellery, cloaks, belts, bracers, shoulders, shields) or mixing them in.</summary>
+    private static SetSpec[] AccessorySets() => new[]
+    {
+        Set("Windwalker's Regalia", ItemPresets.ArmorMaterial.Cloth, new Color(0.6f, 0.95f, 0.85f), "Light gear that rides the wind.", "Windwalker's",
+            new[] { Cloak, Feet, Belt, Bracers }, new[] { "Cloak", "Boots", "Sash", "Wristwraps" }, 4,
+            ("Tailwind", "+10% move speed, +10% jump force",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 10f), TraitModifier.Percent(TraitStat.JumpForce, 10f)) }),
+            ("Ride The Wind", "Double jump, and glide while holding Jump",
+                new EquipmentEffect[] { Behaviour(new DoubleJumpTrait()), Behaviour(new GlideTrait()) })),
+        Set("Duelist's Finery", ItemPresets.ArmorMaterial.Leather, new Color(0.85f, 0.75f, 0.45f), "For those who fight with one blade and one hand free.", "Duelist's",
+            new[] { Hands, Bracers, Cloak, Ring }, new[] { "Gloves", "Bracers", "Half-Cape", "Signet" }, 4,
+            ("Poise", "+5% critical chance", new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.CriticalChance, 5f)) }),
+            ("Riposte", "+15% sword and dagger damage, +10% attack speed",
+                new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 15f, WeaponCategory.Sword),
+                                               new CombatStatModifier(CombatStatType.WeaponDamage, 15f, WeaponCategory.Dagger),
+                                               new CombatStatModifier(CombatStatType.AttackSpeed, 10f)) })),
+        Set("Archmage's Jewels", ItemPresets.ArmorMaterial.Mythril, new Color(0.55f, 0.45f, 1f), "Rings and charms that hum with power.", "Archmage's",
+            new[] { Ring, Amulet, Trinket }, new[] { "Ring", "Pendant", "Focus Crystal" }, 3,
+            ("Attuned", "+20% max mana, +1 mana regeneration",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.MaxMana, 20f), TraitModifier.Flat(TraitStat.ManaRegen, 1f)) }),
+            ("Arcane Mastery", "+20% ability damage, -15% ability cooldowns, +1 ability charge",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 20f), TraitModifier.Percent(TraitStat.AbilityCooldown, -15f),
+                                              TraitModifier.Flat(TraitStat.AbilityCharges, 1f)) })),
+        Set("Bulwark Of The Legion", ItemPresets.ArmorMaterial.Steel, new Color(0.75f, 0.2f, 0.2f), "Standard issue of the shield wall.", "Legion",
+            new[] { Shield, Shoulders, Bracers, Belt }, new[] { "Scutum", "Pauldrons", "Vambraces", "Cingulum" }, 4,
+            ("Shield Wall", "+10 Defense", new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.Defense, 10f)) }),
+            ("Hold The Line", "-15% damage taken, -40% control taken",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.DamageTaken, -15f), TraitModifier.Percent(TraitStat.ControlTaken, -40f)) })),
+        Set("Ranger's Kit", ItemPresets.ArmorMaterial.Leather, new Color(0.4f, 0.6f, 0.3f), "A hunter's hood, quiver strap and bracers.", "Ranger's Kit",
+            new[] { Head, Cloak, Bracers, Belt, Feet }, new[] { "Hood", "Cloak", "Bracers", "Quiver Belt", "Boots" }, 4,
+            ("Keen Eye", "+15% projectile speed", new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.ProjectileSpeed, 15f)) }),
+            ("Volley", "+1 extra projectile, +15% bow damage",
+                new EquipmentEffect[] { Stats(TraitModifier.Flat(TraitStat.ExtraProjectiles, 1f)),
+                                        Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 15f, WeaponCategory.Bow)) })),
+        Set("Vampire Lord's Vestments", ItemPresets.ArmorMaterial.Cloth, new Color(0.55f, 0.05f, 0.1f), "Velvet and blood rubies.", "Vampire Lord's",
+            new[] { Cloak, Amulet, Ring, Hands }, new[] { "Cape", "Blood Ruby", "Signet", "Gloves" }, 4,
+            ("Thirst", "+15% dark resistance, -20% holy resistance",
+                new EquipmentEffect[] { new CombatStatsEffect(null, new[] { new ElementalResistance(ElementType.Dark, 15f), new ElementalResistance(ElementType.Holy, -20f) }) }),
+            ("Blood Drinker", "Heal for 8% of the damage you deal",
+                new EquipmentEffect[] { Behaviour(new LifeStealTrait()) })),
+        Set("Thornguard", ItemPresets.ArmorMaterial.Iron, new Color(0.35f, 0.5f, 0.25f), "Iron grown over with thorny vines.", "Thornguard",
+            new[] { Shoulders, Chest, Bracers, Shield }, new[] { "Spaulders", "Hauberk", "Bracers", "Spiked Shield" }, 4,
+            ("Bramble Skin", "-20% slash and pierce damage",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.SlashDamageTaken, -20f), TraitModifier.Percent(TraitStat.PierceDamageTaken, -20f)) }),
+            ("Thorns", "Attackers within 4 m take 20% of their damage back", new EquipmentEffect[] { Behaviour(new ThornsTrait()) })),
+        Set("Elementalist's Charms", ItemPresets.ArmorMaterial.Mythril, new Color(0.95f, 0.6f, 0.2f), "Four charms, one per element.", "Elementalist's",
+            new[] { Ring, Amulet, Trinket, Bracers }, new[] { "Ember Ring", "Frost Pendant", "Storm Charm", "Stone Bracers" }, 4,
+            ("Balance", "+10% fire, ice, lightning and earth resistance",
+                new EquipmentEffect[] { new CombatStatsEffect(null, new[] { new ElementalResistance(ElementType.Fire, 10f), new ElementalResistance(ElementType.Ice, 10f),
+                                                                            new ElementalResistance(ElementType.Lightning, 10f), new ElementalResistance(ElementType.Earth, 10f) }) }),
+            ("Elemental Lord", "+20% ability damage, +15% ability area",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 20f), TraitModifier.Percent(TraitStat.AbilityArea, 15f)) })),
+        Set("Pilgrim's Blessing", ItemPresets.ArmorMaterial.Cloth, new Color(0.95f, 0.9f, 0.75f), "Simple gifts carried on a long road.", "Pilgrim's",
+            new[] { Amulet, Cloak, Belt, Feet }, new[] { "Holy Symbol", "Mantle", "Rope Belt", "Sandals" }, 4,
+            ("Faith", "+15% healing received, +15% holy resistance",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.HealingReceived, 15f)), Ward(ElementType.Holy, 15f) }),
+            ("Second Wind", "Below 25% health: heal 30% and 1 s invulnerability (every 90 s)", new EquipmentEffect[] { Behaviour(new SecondWindTrait()) })),
+        Set("Executioner's Garb", ItemPresets.ArmorMaterial.Leather, new Color(0.2f, 0.15f, 0.15f), "Black hood and heavy gloves.", "Executioner's",
+            new[] { Head, Hands, Bracers, Belt }, new[] { "Hood", "Gloves", "Bracers", "Belt" }, 4,
+            ("Grim", "+10% critical damage", new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.CriticalDamage, 10f)) }),
+            ("Clean Cut", "+20% axe and greatsword damage, +10% weapon damage",
+                new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Axe),
+                                               new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Greatsword)),
+                                        Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 10f)) })),
+        Set("Monk's Discipline", ItemPresets.ArmorMaterial.Cloth, new Color(0.95f, 0.6f, 0.25f), "Wraps, beads and a sash.", "Monk's",
+            new[] { Hands, Bracers, Belt, Amulet, Feet }, new[] { "Hand Wraps", "Arm Wraps", "Sash", "Prayer Beads", "Sandals" }, 4,
+            ("Inner Calm", "+1 stamina regeneration, -20% stamina cost",
+                new EquipmentEffect[] { Stats(TraitModifier.Flat(TraitStat.StaminaRegen, 1f), TraitModifier.Percent(TraitStat.StaminaCost, -20f)) }),
+            ("Flowing Fists", "+20% knuckle damage, +15% attack speed, +10% move speed",
+                new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Fist),
+                                               new CombatStatModifier(CombatStatType.AttackSpeed, 15f)),
+                                        Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 10f)) })),
+        Set("Miner's Gear", ItemPresets.ArmorMaterial.Leather, new Color(0.6f, 0.45f, 0.25f), "Tough gear from the deep mines.", "Miner's",
+            new[] { Head, Hands, Belt, Feet }, new[] { "Lamp Helmet", "Work Gloves", "Tool Belt", "Steel-Toe Boots" }, 4,
+            ("Hard Hat", "-30% fracture chance, -20% blunt damage",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.FractureChance, -30f), TraitModifier.Percent(TraitStat.BluntDamageTaken, -20f)) }),
+            ("Deep Delver", "+25 carry weight, +15% earth resistance",
+                new EquipmentEffect[] { Stats(TraitModifier.Flat(TraitStat.CarryWeight, 25f)), Ward(ElementType.Earth, 15f) })),
+        Set("Storm Caller's Regalia", ItemPresets.ArmorMaterial.Chainmail, new Color(0.45f, 0.65f, 1f), "Copper-laced mail that crackles.", "Storm Caller's",
+            new[] { Shoulders, Chest, Bracers, Ring, Amulet }, new[] { "Pauldrons", "Coat", "Coils", "Spark Ring", "Lightning Rod" }, 4,
+            ("Grounded", "+25% lightning resistance", new EquipmentEffect[] { Ward(ElementType.Lightning, 25f) }),
+            ("Eye Of The Storm", "+15% ability damage, +15% casting speed, +10% move speed",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 15f), TraitModifier.Percent(TraitStat.MoveSpeed, 10f)),
+                                        Combat(new CombatStatModifier(CombatStatType.CastingSpeed, 15f)) })),
+        Set("Warlord's Trappings", ItemPresets.ArmorMaterial.Steel, new Color(0.7f, 0.55f, 0.2f), "Trophies of a hundred battles.", "Warlord's",
+            new[] { Shoulders, Cloak, Belt, Trinket, Amulet, Bracers }, new[] { "Trophy Pauldrons", "War Banner", "Champion Belt", "War Horn", "Medal", "Vambraces" }, 4,
+            ("Commanding", "+5 Strength, +5 Endurance",
+                new EquipmentEffect[] { Combat(new CombatStatModifier(CombatStatType.Strength, 5f), new CombatStatModifier(CombatStatType.Endurance, 5f)) }),
+            ("Warlord", "+15% weapon damage, +15% max health, 2% health per second after 6 s out of combat",
+                new EquipmentEffect[] { Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 15f), TraitModifier.Percent(TraitStat.MaxHealth, 15f)),
+                                        Behaviour(new OutOfCombatRegenTrait()) })),
+    };
+
     private static SetSpec Set(string name, ItemPresets.ArmorMaterial material, Color color, string description, string prefix, string[] words,
         (string, string, EquipmentEffect[]) two, (string, string, EquipmentEffect[]) four) => new SetSpec
     {
@@ -530,7 +908,7 @@ public static class StarterItemLibrary
 
     private static void ArmorSets(Report r)
     {
-        foreach (SetSpec spec in Sets())
+        foreach (SetSpec spec in Sets().Concat(AccessorySets()).Concat(TieredSets()))
         {
             string folder = SMAssetsEditor.Folder($"{SMAssets.Armor}/{Sub}/{SMAssetsEditor.CleanFileName(spec.name)}");
             string setPath = $"{folder}/{SMAssetsEditor.CleanFileName(spec.name)} Set.asset";
@@ -544,19 +922,31 @@ public static class StarterItemLibrary
                 setSo.FindProperty("setName").stringValue = spec.name;
                 setSo.FindProperty("setDescription").stringValue = spec.description;
                 setSo.FindProperty("setColor").colorValue = spec.color;
-                setSo.FindProperty("minimumPiecesForSet").intValue = 2;
-                setSo.FindProperty("maximumSetPieces").intValue = SetSlots.Length;
+                int minimum = spec.tiers != null ? spec.tiers.Min(t => t.pieces) : 2;
+                setSo.FindProperty("minimumPiecesForSet").intValue = minimum;
+                setSo.FindProperty("maximumSetPieces").intValue = spec.Slots.Length;
+                setSo.FindProperty("requiresAllPiecesToComplete").boolValue = true;
                 setSo.ApplyModifiedPropertiesWithoutUndo();
                 set.SetEffects.Clear();
-                set.SetEffects.Add(Tier(2, spec.name, spec.two));
-                set.SetEffects.Add(Tier(4, spec.name, spec.four));
+                if (spec.tiers != null)
+                {
+                    foreach (TierSpec t in spec.tiers)
+                        set.SetEffects.Add(Tier(t));
+                    r.lines.Add($"Armor set: {spec.name}, {spec.Slots.Length} pieces (" +
+                                string.Join("; ", spec.tiers.Select(t => $"{(t.pieces == spec.Slots.Length ? "full set" : t.pieces.ToString())}: {t.description}")) + ")");
+                }
+                else
+                {
+                    set.SetEffects.Add(Tier(2, spec.name, spec.two));
+                    set.SetEffects.Add(Tier(spec.FullAt, spec.name, spec.four));
+                    r.lines.Add($"Armor set: {spec.name} (2: {spec.two.description}; {spec.FullAt}: {spec.four.description})");
+                }
                 r.created++;
-                r.lines.Add($"Armor set: {spec.name} (2: {spec.two.description}; 4: {spec.four.description})");
             }
             else
                 r.skipped++;
 
-            foreach (ArmorSlotType slot in SetSlots)
+            foreach (ArmorSlotType slot in spec.Slots)
             {
                 string pieceName = PieceName(spec, slot);
                 string path = $"{folder}/{SMAssetsEditor.CleanFileName(pieceName)}.asset";
@@ -589,8 +979,8 @@ public static class StarterItemLibrary
     /// <summary>"Apprentice Hood", "Knight's Plate Greaves"...: a name per material and slot.</summary>
     private static string PieceName(SetSpec spec, ArmorSlotType slot)
     {
-        if (!string.IsNullOrEmpty(spec.prefix) && spec.words != null && spec.words.Length == SetSlots.Length)
-            return $"{spec.prefix} {spec.words[Array.IndexOf(SetSlots, slot)]}";
+        if (!string.IsNullOrEmpty(spec.prefix) && spec.words != null && spec.words.Length == spec.Slots.Length)
+            return $"{spec.prefix} {spec.words[Array.IndexOf(spec.Slots, slot)]}";
         string[] words;
         switch (spec.material)
         {
@@ -605,6 +995,15 @@ public static class StarterItemLibrary
             : spec.material == ItemPresets.ArmorMaterial.Steel ? "Knight's" : "Mythril";
         return $"{prefix} {words[Mathf.Clamp(i, 0, words.Length - 1)]}";
     }
+
+    private static ArmorSetEffect Tier(TierSpec t) => new ArmorSetEffect
+    {
+        piecesRequired = t.pieces,
+        effectName = $"{t.name} ({t.pieces})",
+        effectDescription = t.description,
+        upgradeGroup = t.group ?? "",
+        effects = new List<EquipmentEffect>(t.effects),
+    };
 
     private static ArmorSetEffect Tier(int pieces, string setName, (string name, string description, EquipmentEffect[] effects) t) => new ArmorSetEffect
     {
@@ -726,10 +1125,234 @@ public static class StarterItemLibrary
         new A { name = "Mythril Spaulders", slot = ArmorSlotType.Shoulders, material = ItemPresets.ArmorMaterial.Mythril, description = "Light mythril shoulder guards." },
     };
 
+    /// <summary>Pieces that belong to no set: plain ones per material for the extra slots, and unique pieces with their own effects.</summary>
+    private static A[] PieceList()
+    {
+        const ItemPresets.ArmorMaterial Cloth = ItemPresets.ArmorMaterial.Cloth, Leather = ItemPresets.ArmorMaterial.Leather,
+            Chain = ItemPresets.ArmorMaterial.Chainmail, Iron = ItemPresets.ArmorMaterial.Iron, Steel = ItemPresets.ArmorMaterial.Steel,
+            Mythril = ItemPresets.ArmorMaterial.Mythril;
+        A P(string name, ArmorSlotType slot, ItemPresets.ArmorMaterial m, string description, params EquipmentEffect[] fx) =>
+            new A { name = name, slot = slot, material = m, description = description, effects = fx.Length > 0 ? fx : null };
+        var list = new List<A>
+        {
+            // Plain pieces (no set, no effect) for every material
+            P("Padded Cap", Head, Cloth, "A quilted cap."),
+            P("Padded Gambeson", Chest, Cloth, "Layers of quilted cloth."),
+            P("Linen Trousers", Legs, Cloth, "Plain travelling trousers."),
+            P("Cloth Shoes", Feet, Cloth, "Soft and quiet."),
+            P("Studded Leather Cap", Head, Leather, "Leather with iron studs."),
+            P("Studded Leather Armor", Chest, Leather, "Leather with iron studs."),
+            P("Studded Leather Leggings", Legs, Leather, "Leather with iron studs."),
+            P("Riding Boots", Feet, Leather, "Tall leather boots."),
+            P("Leather Gloves", Hands, Leather, "Plain leather gloves."),
+            P("Leather Shoulder Guards", Shoulders, Leather, "Hardened leather on the shoulders."),
+            P("Leather Belt", Belt, Leather, "A plain belt with a buckle."),
+            P("Travelling Cloak", Cloak, Cloth, "Keeps the rain off."),
+            P("Mail Shirt", Chest, Chain, "A short shirt of mail."),
+            P("Mail Mittens", Hands, Chain, "Mail that covers the hands."),
+            P("Mail Mantle", Shoulders, Chain, "Mail over the shoulders."),
+            P("Iron Kettle Hat", Head, Iron, "A wide-brimmed iron helmet."),
+            P("Iron Brigandine", Chest, Iron, "Iron plates riveted inside cloth."),
+            P("Iron Greaves", Legs, Iron, "Iron shin and thigh plates."),
+            P("Iron Boots", Feet, Iron, "Heavy iron boots."),
+            P("Iron Gauntlets", Hands, Iron, "Iron gauntlets."),
+            P("Iron Girdle", Belt, Iron, "A belt of iron plates."),
+            P("Steel Barbute", Head, Steel, "An open-faced steel helm."),
+            P("Steel Breastplate", Chest, Steel, "A polished steel breastplate."),
+            P("Steel Cuisses", Legs, Steel, "Steel thigh plates."),
+            P("Steel Sabatons", Feet, Steel, "Steel foot plates."),
+            P("Steel Vambraces", Bracers, Steel, "Steel forearm guards."),
+            P("Mythril Circlet", Head, Mythril, "Weighs nothing, stops a sword."),
+            P("Mythril Shirt", Chest, Mythril, "Light as silk, hard as dragon scale."),
+            P("Mythril Greaves", Legs, Mythril, "Mythril leg guards."),
+            P("Mythril Boots", Feet, Mythril, "Mythril boots."),
+            P("Mythril Gauntlets", Hands, Mythril, "Mythril gauntlets."),
+            P("Mythril Bracers", Bracers, Mythril, "Mythril bracers."),
+            P("Mythril Belt", Belt, Mythril, "A belt of mythril links."),
+            // Unique pieces
+            P("Thief's Hood", Head, Leather, "+8% move speed, +3% critical chance.",
+                Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 8f)), Combat(new CombatStatModifier(CombatStatType.CriticalChance, 3f))),
+            P("Miner's Helmet", Head, Iron, "-25% fracture chance.",
+                Stats(TraitModifier.Percent(TraitStat.FractureChance, -25f))),
+            P("Wizard's Hat", Head, Cloth, "+15% max mana, +10% ability damage.",
+                Stats(TraitModifier.Percent(TraitStat.MaxMana, 15f), TraitModifier.Percent(TraitStat.AbilityDamage, 10f))),
+            P("Horned Helm", Head, Iron, "+3 Strength, +10% knockback.",
+                Combat(new CombatStatModifier(CombatStatType.Strength, 3f), new CombatStatModifier(CombatStatType.Knockback, 10f))),
+            P("Crown Of Thorns", Head, Iron, "Attackers take damage back; +5% damage taken.",
+                Behaviour(new ThornsTrait()), Stats(TraitModifier.Percent(TraitStat.DamageTaken, 5f))),
+            P("Plague Mask", Head, Leather, "-50% infection chance, +20% poison resistance.",
+                Stats(TraitModifier.Percent(TraitStat.InfectionChance, -50f)), Ward(ElementType.Poison, 20f)),
+            P("Firewalker's Coat", Chest, Leather, "+30% fire resistance, -40% burn chance.",
+                Ward(ElementType.Fire, 30f), Stats(TraitModifier.Percent(TraitStat.BurnChance, -40f))),
+            P("Fur-Lined Parka", Chest, Leather, "+30% ice resistance.", Ward(ElementType.Ice, 30f)),
+            P("Brigand's Vest", Chest, Leather, "+15 carry weight, +5% critical chance.",
+                Stats(TraitModifier.Flat(TraitStat.CarryWeight, 15f)), Combat(new CombatStatModifier(CombatStatType.CriticalChance, 5f))),
+            P("Cleric's Vestment", Chest, Cloth, "+20% ability healing, +15% holy resistance.",
+                Stats(TraitModifier.Percent(TraitStat.AbilityHealing, 20f)), Ward(ElementType.Holy, 15f)),
+            P("Juggernaut Plate", Chest, Steel, "-25% damage taken, -15% move speed.",
+                Stats(TraitModifier.Percent(TraitStat.DamageTaken, -25f), TraitModifier.Percent(TraitStat.MoveSpeed, -15f))),
+            P("Vampiric Cuirass", Chest, Chain, "Heal for 8% of the damage you deal.", Behaviour(new LifeStealTrait())),
+            P("Acrobat's Leggings", Legs, Cloth, "+15% jump force, +5% move speed.",
+                Stats(TraitModifier.Percent(TraitStat.JumpForce, 15f), TraitModifier.Percent(TraitStat.MoveSpeed, 5f))),
+            P("Armored Tassets", Legs, Steel, "-50% limb loss chance.",
+                Stats(TraitModifier.Percent(TraitStat.LimbLossChance, -50f))),
+            P("Boots Of Leaping", Feet, Leather, "Double jump.", Behaviour(new DoubleJumpTrait())),
+            P("Boots Of Speed", Feet, Leather, "+15% move speed, +10% sprint speed.",
+                Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 15f), TraitModifier.Percent(TraitStat.SprintSpeed, 10f))),
+            P("Silent Slippers", Feet, Cloth, "+20% crouch speed.", Stats(TraitModifier.Percent(TraitStat.CrouchSpeed, 20f))),
+            P("Climber's Boots", Feet, Leather, "Climb walls.", Behaviour(new WallClimbTrait())),
+            P("Gauntlets Of Power", Hands, Steel, "+5 Strength, +10% weapon damage.",
+                Combat(new CombatStatModifier(CombatStatType.Strength, 5f)), Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 10f))),
+            P("Archer's Gloves", Hands, Leather, "+10% bow and crossbow damage, +10% charge speed.",
+                Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 10f, WeaponCategory.Bow), new CombatStatModifier(CombatStatType.WeaponDamage, 10f, WeaponCategory.Crossbow),
+                       new CombatStatModifier(CombatStatType.ChargeSpeed, 10f))),
+            P("Spellweaver Gloves", Hands, Cloth, "+15% casting speed, -10% ability cost.",
+                Combat(new CombatStatModifier(CombatStatType.CastingSpeed, 15f)), Stats(TraitModifier.Percent(TraitStat.AbilityCost, -10f))),
+            P("Surgeon's Gloves", Hands, Cloth, "+30% injury healing.", Stats(TraitModifier.Percent(TraitStat.InjuryHealing, 30f))),
+            P("Spiked Pauldrons", Shoulders, Iron, "Attackers take damage back.", Behaviour(new ThornsTrait())),
+            P("Mantle Of The Sage", Shoulders, Cloth, "+1 mana regeneration, -10% ability cooldowns.",
+                Stats(TraitModifier.Flat(TraitStat.ManaRegen, 1f), TraitModifier.Percent(TraitStat.AbilityCooldown, -10f))),
+            P("Wristblades", Bracers, Steel, "+10% dagger and fist damage, +5% attack speed.",
+                Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 10f, WeaponCategory.Dagger), new CombatStatModifier(CombatStatType.WeaponDamage, 10f, WeaponCategory.Fist),
+                       new CombatStatModifier(CombatStatType.AttackSpeed, 5f))),
+            P("Bracers Of Deflection", Bracers, Iron, "-20% pierce damage.", Stats(TraitModifier.Percent(TraitStat.PierceDamageTaken, -20f))),
+            P("Feather Cloak", Cloak, Cloth, "Glide while holding Jump.", Behaviour(new GlideTrait())),
+            P("Cloak Of The Phoenix", Cloak, Mythril, "Survive a deadly blow once in a while.", Behaviour(new CheatDeathTrait())),
+            P("Bandolier", Belt, Leather, "+20 carry weight.", Stats(TraitModifier.Flat(TraitStat.CarryWeight, 20f))),
+            P("Belt Of Second Wind", Belt, Leather, "Below 25% health: heal 30% (every 90 s).", Behaviour(new SecondWindTrait())),
+            P("Bloodstone Amulet", Amulet, Mythril, "-30% bleeding.", Stats(TraitModifier.Percent(TraitStat.BleedingRate, -30f))),
+            P("Ring Of Recovery", Ring, Steel, "Regenerate 2% health per second after 6 s out of combat.", Behaviour(new OutOfCombatRegenTrait())),
+
+            // ---- more plain pieces
+            P("Quilted Hood", Head, Cloth, "A warm quilted hood."),
+            P("Monk's Robe", Chest, Cloth, "Simple and comfortable."),
+            P("Silk Gloves", Hands, Cloth, "Fine silk gloves."),
+            P("Linen Sash", Belt, Cloth, "A wide linen sash."),
+            P("Hunter's Cap", Head, Leather, "A cap with a feather."),
+            P("Hide Armor", Chest, Leather, "Thick tanned hide."),
+            P("Hide Leggings", Legs, Leather, "Thick tanned hide."),
+            P("Hide Boots", Feet, Leather, "Thick tanned hide."),
+            P("Leather Bracers", Bracers, Leather, "Laced leather bracers."),
+            P("Leather Cape", Cloak, Leather, "A short leather cape."),
+            P("Mail Coif", Head, Chain, "A hood of mail."),
+            P("Mail Leggings", Legs, Chain, "Mail chausses."),
+            P("Mail Boots", Feet, Chain, "Mail-covered boots."),
+            P("Mail Bracers", Bracers, Chain, "Mail sleeves."),
+            P("Iron Sallet", Head, Iron, "A sweeping iron helmet."),
+            P("Iron Pauldron Set", Shoulders, Iron, "Matched iron pauldrons."),
+            P("Iron Vambraces", Bracers, Iron, "Iron forearm guards."),
+            P("Steel Armet", Head, Steel, "A close steel helm."),
+            P("Steel Gauntlets", Hands, Steel, "Articulated steel gauntlets."),
+            P("Steel Spaulders", Shoulders, Steel, "Layered steel spaulders."),
+            P("Steel War Belt", Belt, Steel, "A belt of steel plates."),
+            P("Mythril Cowl", Head, Mythril, "A hood of mythril links."),
+            P("Mythril Pauldrons", Shoulders, Mythril, "Light mythril pauldrons."),
+            P("Mythril Cloak", Cloak, Mythril, "Woven mythril thread."),
+
+            // ---- more unique pieces
+            P("Berserker's Mask", Head, Leather, "+15% weapon damage, -10% max health.",
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 15f), TraitModifier.Percent(TraitStat.MaxHealth, -10f))),
+            P("Sage's Circlet", Head, Mythril, "+20% max mana, +1 mana regeneration.",
+                Stats(TraitModifier.Percent(TraitStat.MaxMana, 20f), TraitModifier.Flat(TraitStat.ManaRegen, 1f))),
+            P("Watcher's Helm", Head, Steel, "-30% control taken.", Stats(TraitModifier.Percent(TraitStat.ControlTaken, -30f))),
+            P("Gladiator's Breastplate", Chest, Steel, "+10% weapon damage, +10% attack speed in combat.",
+                Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 10f)),
+                While(WhileConditionEffect.Condition.InCombat, 0f, Combat(new CombatStatModifier(CombatStatType.AttackSpeed, 10f)))),
+            P("Stormweave Robe", Chest, Cloth, "+25% lightning resistance; 15% of ability hits stun for 0.4 s.",
+                Ward(ElementType.Lightning, 25f),
+                new OnHitEffect { trigger = ProcTrigger.AbilityHits, chance = 0.15f, cooldown = 2f, effects = new List<AbilityEffect> { new StunEffect { duration = 0.4f } } }),
+            P("Bramble Mail", Chest, Chain, "Attackers in melee are slowed.", WhenHit(1f, 1f, new SlowEffect { slowAmount = 0.3f, duration = 1.5f })),
+            P("Last Stand Plate", Chest, Iron, "Below 30% health: -35% damage taken.",
+                While(WhileConditionEffect.Condition.HealthBelow, 0.3f, Stats(TraitModifier.Percent(TraitStat.DamageTaken, -35f)))),
+            P("Runner's Leggings", Legs, Leather, "+10% sprint speed, -15% stamina cost.",
+                Stats(TraitModifier.Percent(TraitStat.SprintSpeed, 10f), TraitModifier.Percent(TraitStat.StaminaCost, -15f))),
+            P("Frostbound Greaves", Legs, Iron, "+20% ice resistance; attackers are chilled (slowed).",
+                Ward(ElementType.Ice, 20f), WhenHit(0.5f, 1f, new SlowEffect { slowAmount = 0.25f, duration = 2f })),
+            P("Venomous Gloves", Hands, Leather, "25% of weapon hits poison.", OnHit(0.25f, 0f, Dot(ElementType.Poison, 2f, 4f))),
+            P("Exhausting Gauntlets", Hands, Iron, "Weapon hits drain 8 stamina.", OnHit(1f, 0f, Exhaust(8f))),
+            P("Fencer's Bracers", Bracers, Leather, "+6% critical chance, +10% critical damage.",
+                Combat(new CombatStatModifier(CombatStatType.CriticalChance, 6f), new CombatStatModifier(CombatStatType.CriticalDamage, 10f))),
+            P("Battlemage Bracers", Bracers, Chain, "+10% casting speed, +10% ability damage.",
+                Combat(new CombatStatModifier(CombatStatType.CastingSpeed, 10f)), Stats(TraitModifier.Percent(TraitStat.AbilityDamage, 10f))),
+            P("Warlord's Pauldrons", Shoulders, Steel, "+5 Strength, +10% knockback.",
+                Combat(new CombatStatModifier(CombatStatType.Strength, 5f), new CombatStatModifier(CombatStatType.Knockback, 10f))),
+            P("Healer's Mantle", Shoulders, Cloth, "+25% ability healing.", Stats(TraitModifier.Percent(TraitStat.AbilityHealing, 25f))),
+            P("Burning Aura Cloak", Cloak, Leather, "In combat, enemies within 3 m burn for 4 every 2 s.",
+                Pulse(2f, 3f, TargetFilter.Enemies, true, new DamageEffect { amount = 4f, element = ElementType.Fire })),
+            P("Cloak Of Mending", Cloak, Cloth, "Heals you and allies within 5 m for 3 every 4 s.",
+                Pulse(4f, 5f, TargetFilter.Allies | TargetFilter.Self, false, new HealEffect { amount = 3f })),
+            P("Assassin's Belt", Belt, Leather, "+20% dagger damage.", Combat(new CombatStatModifier(CombatStatType.WeaponDamage, 20f, WeaponCategory.Dagger))),
+            P("Ring Of Fury", Ring, Iron, "Below 50% health: +15% attack speed.",
+                While(WhileConditionEffect.Condition.HealthBelow, 0.5f, Combat(new CombatStatModifier(CombatStatType.AttackSpeed, 15f)))),
+            P("Ring Of Sparks", Ring, Steel, "10% of weapon hits deal 8 lightning damage.", OnHit(0.1f, 0f, new DamageEffect { amount = 8f, element = ElementType.Lightning })),
+            P("Amulet Of Thorns", Amulet, Iron, "Attackers take damage back.", Behaviour(new ThornsTrait())),
+            P("Hourglass Pendant", Amulet, Mythril, "-15% ability cooldowns.", Stats(TraitModifier.Percent(TraitStat.AbilityCooldown, -15f))),
+            P("Rabbit's Foot", Trinket, Leather, "+4% critical chance, +5% move speed.",
+                Crit(4f), Stats(TraitModifier.Percent(TraitStat.MoveSpeed, 5f))),
+            P("War Drum", Trinket, Leather, "In combat: +10% weapon damage.",
+                While(WhileConditionEffect.Condition.InCombat, 0f, Stats(TraitModifier.Percent(TraitStat.WeaponDamage, 10f)))),
+
+            // ---- items with powers while worn
+            P("Belt Of The Titan", Belt, Steel, "You are 15% bigger: more health, strength and knockback.",
+                new PowerWhileWornEffect("Titan's Belt", new SizeChangePower { sizePercent = 15f, growSeconds = 0.5f })),
+            P("Giant's Gauntlets", Hands, Iron, "You are 10% bigger and hit harder.",
+                new PowerWhileWornEffect("Giant's Gauntlets", new SizeChangePower { sizePercent = 10f, weaponDamagePerSize = 1f })),
+            P("Pixie Ring", Ring, Mythril, "You are 20% smaller and 15% faster, but take 10% more damage.",
+                new PowerWhileWornEffect("Pixie Ring", new SizeChangePower { sizePercent = -20f, healthPerSize = 0f, weaponDamagePerSize = 0f, knockbackPerSize = 0f,
+                    strengthPerSize = 0f, jumpPerSize = 0f, moveSpeedPercent = 15f, damageTakenPercent = 10f })),
+            P("Boots Of The Sky", Feet, Mythril, "Walk on air: 10 stamina per second in the air.",
+                new PowerWhileWornEffect("Boots Of The Sky", new MovementPower { behaviour = new SkyWalkTrait { cost = SkyWalkCost.Stamina, costPerSecond = 10f, endWhenEmpty = false } })),
+            P("Anchor Pendant", Amulet, Iron, "Immune to knockback and pulls.",
+                new PowerWhileWornEffect("Anchor", new ControlImmunityPower { immuneTo = ControlImmunity.AllDisplacement, cleanseOnStart = false })),
+            P("Ring Of The Unbound", Ring, Mythril, "Immune to roots and slows.",
+                new PowerWhileWornEffect("Unbound", new ControlImmunityPower { immuneTo = ControlImmunity.Root | ControlImmunity.Slow, cleanseOnStart = false })),
+            P("Helm Of The Unyielding", Head, Steel, "Immune to stuns; -10% move speed.",
+                new PowerWhileWornEffect("Unyielding", new ControlImmunityPower { immuneTo = ControlImmunity.Stun, cleanseOnStart = false }),
+                Stats(TraitModifier.Percent(TraitStat.MoveSpeed, -10f))),
+
+            // ---- items with abilities (cast with the item's key) and fate/trick passives
+            P("Corpse Golem Essence", Trinket, Leather, "Acid Blood: melee attackers are splashed (poison, corroded gear; yours too). Acid Blood Burst on its key.",
+                Key("Acid Blood Burst"), Behaviour(new AcidBloodTrait()), Ward(ElementType.Poison, 20f)),
+            P("Gambler's Coin", Trinket, Steel, "Lucky Coin on its key: a random stat goes up or down for 20 s.", Key("Lucky Coin")),
+            P("Philosopher's Stone", Amulet, Mythril, "Equivalent Exchange on its key: one stat up, another down.", Key("Equivalent Exchange")),
+            P("Pickpocket's Gloves", Hands, Leather, "Heist on its key: steal a random item from a player; +3% critical chance.", Key("Heist"), Crit(3f)),
+            P("Gate Stone", Trinket, Mythril, "Twin Gates on its key: two linked portals anyone can use.", Key("Twin Gates")),
+            P("Fang Of The Leech", Ring, Iron, "Leech Life on its key: drain a target's health into yours.", Key("Leech Life")),
+            P("Debt Collector's Ledger", Trinket, Leather, "Incoming Debt on its key: the target's next ability costs double or recharges twice as slow.", Key("Incoming Debt")),
+            P("Soulbinder Chain", Amulet, Iron, "Soul Link on its key: share the damage with a target, both ways.", Key("Soul Link")),
+            P("Hourglass Of Return", Trinket, Mythril, "Chronal Recall on its key: return to where you were 4 s ago.", Key("Chronal Recall")),
+            P("Fate's Promise", Amulet, Mythril, "Once per fight or duel, a killing blow is ignored (fate collects: -20% damage for 15 s).", Behaviour(new FatesDebtTrait())),
+            P("Phantom Cloak", Cloak, Cloth, "Phantom Exchange on its key: leave a phantom and swap places with it.", Key("Phantom Exchange")),
+            P("Gravity Gauntlets", Hands, Iron, "Gravital Pull on its key: drag every enemy within 10 m to you.", Key("Gravital Pull")),
+            P("Giant's Heart", Amulet, Steel, "Gigantification on its key: 80% bigger for 15 s.", Key("Gigantification")),
+            P("Shrinking Charm", Trinket, Cloth, "Minimization on its key: half size, faster, more fragile.", Key("Minimization")),
+            P("Mirage Pendant", Amulet, Mythril, "Greater Mirage on its key: walking copies of you.", Key("Greater Mirage")),
+            P("Vanishing Cloak", Cloak, Cloth, "Vanish on its key: invisible until you attack or are hit.", Key("Vanish")),
+            P("Anchor Boots", Feet, Iron, "Immovable Force on its key: immune to every crowd control for 8 s.", Key("Immovable Force")),
+            P("Mana Burner's Ring", Ring, Steel, "Mana Burn on its key.", Key("Mana Burn")),
+            P("Blood Pact Dagger Charm", Trinket, Iron, "Blood Pact on its key: trade your health for your allies'.", Key("Blood Pact")),
+            new A { name = "Mirror Shield", slot = ArmorSlotType.Shield, material = ItemPresets.ArmorMaterial.Steel, shield = ShieldDefense.Kite,
+                    description = "Mirror Ward on its key: for 5 s, half of every hit goes back to the attacker.", effects = new EquipmentEffect[] { Key("Mirror Ward") } },
+            new A { name = "Gravity Well Orb", slot = ArmorSlotType.Trinket, material = ItemPresets.ArmorMaterial.Mythril,
+                    description = "Gravity Well on its key.", effects = new EquipmentEffect[] { Key("Gravity Well") } },
+            new A { name = "Twin Mirror", slot = ArmorSlotType.Trinket, material = ItemPresets.ArmorMaterial.Mythril,
+                    description = "Mutual Exchange on its key: swap a stat with the target.", effects = new EquipmentEffect[] { Key("Mutual Exchange") } },
+            new A { name = "Displacer Ring", slot = ArmorSlotType.Ring, material = ItemPresets.ArmorMaterial.Mythril,
+                    description = "Transposition on its key: swap places with the target.", effects = new EquipmentEffect[] { Key("Transposition") } },
+        };
+        return list.ToArray();
+    }
+
     private static void Accessories(Report r)
     {
-        string folder = SMAssetsEditor.Folder($"{SMAssets.Armor}/{Sub}/Shields and Accessories");
-        foreach (A a in AccessoryList())
+        MakeArmor(r, $"{SMAssets.Armor}/{Sub}/Shields and Accessories", AccessoryList());
+        MakeArmor(r, $"{SMAssets.Armor}/{Sub}/Armor Pieces", PieceList());
+    }
+
+    private static void MakeArmor(Report r, string path0, A[] items)
+    {
+        string folder = SMAssetsEditor.Folder(path0);
+        foreach (A a in items)
         {
             string path = $"{folder}/{SMAssetsEditor.CleanFileName(a.name)}.asset";
             if (Exists<ArmorSO>(path, r))

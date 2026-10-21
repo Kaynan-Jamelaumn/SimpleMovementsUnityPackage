@@ -143,11 +143,43 @@ and by itself when a set is completed (closing again after *Auto Hide Delay*).
     and poison, mana-cost magic projectiles, and blowgun darts that poison. Ranged weapons get the right draw,
     magazine or throw mechanic and ammo type. *Inventory ▸ Rebuild Starter Weapon Movesets* re-applies the movesets
     to existing starter weapons.
-  * **19 armour sets** of five pieces with 2- and 4-piece bonuses: the six material sets, plus Assassin's Shroud,
+  * **19 standard armour sets** of five pieces with 2- and 4-piece bonuses: the six material sets, plus Assassin's Shroud,
     Berserker's Hide, Paladin's Aegis, Shadow Weave, Dragonscale, Frostguard, Battlemage, Plague Doctor's,
     Gladiator's, Druid's, Samurai, Sentinel's Bulwark and Wanderer's.
+  * **15 more sets built from the other slots**, or mixing them in: Windwalker's (cloak, boots, sash, wristwraps;
+    the full set gives double jump and glide), Duelist's, Archmage's Jewels (ring, pendant, focus crystal),
+    Legion (shield, pauldrons, vambraces, belt), Ranger's Kit, Vampire Lord's (life steal), Thornguard (thorns),
+    Elementalist's Charms, Pilgrim's (second wind), Executioner's, Monk's, Miner's, Storm Caller's and Warlord's
+    (six pieces).
+  * **22 sets with their own bonus steps**, 2 to 9 pieces each:
+    * **Full set only**: Regalia Of The Fallen King (7 pieces: one big bonus with cheat death), Dreadnought Plate (6),
+      Nomad's Wraps (3).
+    * **One bonus at 2, 3 or 4 pieces**: Twin Fangs and Titan's Grip (2-piece sets), Stoneskin Totems (any 2 of 3),
+      Hunter's Camouflage (3 of 5), Bloodbound Pact (4).
+    * **3 and 5, no 2-piece bonus**: Stormforged Plate, Inferno Regalia (burning aura at 5).
+    * **Three steps**: Frost Warden's Aegis (2/3/4), Whisperwind Gear (speed, then double jump, then glide), Necromancer's
+      Shroud (2/4/5).
+    * **Four or five steps**: Shadow Stalker (2/3/4/6), Sanctified Templar (2/3/5/7, healing aura), Warborn Fury
+      (2/3/4/5/6: combat speed, rage below half health, stamina drain, second wind, undying rage).
+    * **A bonus that grows with every piece** (an *Upgrade Group*: each step replaces the previous one): Gambler's Luck
+      (+2/4/7/10% crit, then a jackpot at 5), Ascendant Seraph (8 pieces), Iron Fortress (3/5/6), Sunforged Panoply
+      (9 pieces: 3/5/7 and 9).
+    * **Mixed**: Trinity Of Elements (a bonus at 1, 2 and 3 pieces), Tidecaller's Raiment, Juggernaut's Harness.
+
+    Their bonuses use on-hit and when-hit procs (poison, burn, slow, stun, freeze, stamina drain), auras (damage to
+    enemies, healing for allies), bonuses that apply only below some health or in combat, and trait behaviours.
+  * **4 sets with powers**: Colossus Plate, Featherlight Regalia, Sprite's Trinkets, Juggernaut Titan (see
+    [Player 15](../Player/15-Powers-Size-Invisibility-Mirage.md)).
+  * **57 more pieces**: plain pieces for every slot, unique ones with procs and auras, and items with powers: Belt Of
+    The Titan, Pixie Ring, Boots Of The Sky, Anchor Pendant...
+  * **23 items with abilities on their key**: Corpse Golem Essence (Acid Blood Burst and the acid blood passive),
+    Gambler's Coin, Pickpocket's Gloves (Heist), Gate Stone (Twin Gates), Soulbinder Chain, Mirror Shield, Fate's
+    Promise...
   * **About 50 shields and accessories**: ward rings, crit, haste and regeneration rings, amulets, talismans,
     trinkets, cloaks, belts, bracers and pauldrons, all with their effects.
+  * **64 armour pieces that belong to no set** (in *Armor Pieces*): plain pieces of every material for every slot,
+    and unique pieces such as Boots Of Leaping (double jump), Climber's Boots (wall climb), Feather Cloak (glide),
+    Cloak Of The Phoenix (cheat death), Juggernaut Plate, Wizard's Hat and Surgeon's Gloves.
   * **About 45 potions, foods and drinks**, and **17 kinds of ammo**: fire, frost, blunt and barbed arrows,
     armour-piercing bolts, poison and sleep darts, iron shot for the hand cannon, silver bullets and pebbles. Each
     ammo has its own element, damage form and on-hit effects.

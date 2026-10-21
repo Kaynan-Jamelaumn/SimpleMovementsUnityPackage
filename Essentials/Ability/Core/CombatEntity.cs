@@ -1312,25 +1312,25 @@ public class CombatEntity : MonoBehaviour
         switch (type)
         {
             case ControlType.Stun:
-                if ((immunities & ControlImmunity.Stun) != 0) return false;
+                if ((ActiveImmunities & ControlImmunity.Stun) != 0) return false;
                 stunUntil = Mathf.Max(stunUntil, until);
                 if (Kind == EntityKind.Player && Availability != null)
                     Availability.ApplyStun(duration);
                 if (Caster != null) Caster.Interrupt(CastInterruptReason.Stun);
                 break;
             case ControlType.Silence:
-                if ((immunities & ControlImmunity.Silence) != 0) return false;
+                if ((ActiveImmunities & ControlImmunity.Silence) != 0) return false;
                 silenceUntil = Mathf.Max(silenceUntil, until);
                 if (Kind == EntityKind.Player && Availability != null)
                     Availability.ApplySilence(duration);
                 if (Caster != null) Caster.Interrupt(CastInterruptReason.Silence);
                 break;
             case ControlType.Root:
-                if ((immunities & ControlImmunity.Root) != 0) return false;
+                if ((ActiveImmunities & ControlImmunity.Root) != 0) return false;
                 rootUntil = Mathf.Max(rootUntil, until);
                 break;
             case ControlType.Slow:
-                if ((immunities & ControlImmunity.Slow) != 0) return false;
+                if ((ActiveImmunities & ControlImmunity.Slow) != 0) return false;
                 magnitude = Mathf.Clamp(magnitude, 0f, 0.95f);
                 if (!IsSlowed || magnitude >= slowFraction)
                 {
@@ -1343,7 +1343,7 @@ public class CombatEntity : MonoBehaviour
                 }
                 break;
             case ControlType.Taunt:
-                if ((immunities & ControlImmunity.Taunt) != 0 || source == null) return false;
+                if ((ActiveImmunities & ControlImmunity.Taunt) != 0 || source == null) return false;
                 tauntSource = source;
                 tauntUntil = Mathf.Max(tauntUntil, until);
                 break;
@@ -1359,6 +1359,66 @@ public class CombatEntity : MonoBehaviour
         }
         ControlApplied?.Invoke(type, duration, source);
         return true;
+    }
+
+    // ------------------------------------------------------------------ temporary immunities and invisibility
+    private readonly int[] immunityCounts = new int[7];
+    private int invisibleCount;
+
+    /// <summary>The immunities set in the inspector plus the ones granted for a while (<see cref="AddImmunity"/>).</summary>
+    public ControlImmunity ActiveImmunities
+    {
+        get
+        {
+            ControlImmunity m = immunities;
+            for (int i = 0; i < immunityCounts.Length; i++)
+                if (immunityCounts[i] > 0)
+                    m |= (ControlImmunity)(1 << i);
+            return m;
+        }
+    }
+
+    /// <summary>
+    /// Grants immunity to <paramref name="kinds"/> until the matching <see cref="RemoveImmunity"/> (powers, buffs).
+    /// Several sources can grant the same kind; it lasts until the last one removes it.
+    /// </summary>
+    public void AddImmunity(ControlImmunity kinds)
+    {
+        for (int i = 0; i < immunityCounts.Length; i++)
+            if (((int)kinds & (1 << i)) != 0)
+                immunityCounts[i]++;
+    }
+
+    /// <summary>Removes an immunity granted with <see cref="AddImmunity"/>.</summary>
+    public void RemoveImmunity(ControlImmunity kinds)
+    {
+        for (int i = 0; i < immunityCounts.Length; i++)
+            if (((int)kinds & (1 << i)) != 0 && immunityCounts[i] > 0)
+                immunityCounts[i]--;
+    }
+
+    /// <summary>Hidden from sight: mobs cannot see the character (they search where it was last seen).</summary>
+    public bool IsInvisible => invisibleCount > 0;
+
+    /// <summary>Raised when <see cref="IsInvisible"/> changes.</summary>
+    public event Action<bool> InvisibilityChanged;
+
+    /// <summary>Makes the character invisible until the matching <see cref="RemoveInvisibility"/> (several sources stack).</summary>
+    public void AddInvisibility()
+    {
+        invisibleCount++;
+        if (invisibleCount == 1)
+            InvisibilityChanged?.Invoke(true);
+    }
+
+    /// <summary>Ends an invisibility granted with <see cref="AddInvisibility"/>.</summary>
+    public void RemoveInvisibility()
+    {
+        if (invisibleCount <= 0)
+            return;
+        invisibleCount--;
+        if (invisibleCount == 0)
+            InvisibilityChanged?.Invoke(false);
     }
 
     /// <summary>Removes crowd control (cleanse).</summary>
@@ -1384,7 +1444,7 @@ public class CombatEntity : MonoBehaviour
     {
         if (IsDead || IsReplica)
             return false; // knockbacks of a networked character are applied on the server
-        if ((immunities & (isPull ? ControlImmunity.Pull : ControlImmunity.Knockback)) != 0)
+        if ((ActiveImmunities & (isPull ? ControlImmunity.Pull : ControlImmunity.Knockback)) != 0)
             return false;
         if (source != null && !CombatRules.MayHarm(source, this))
             return false;

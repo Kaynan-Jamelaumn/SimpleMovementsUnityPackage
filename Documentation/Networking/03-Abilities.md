@@ -188,3 +188,11 @@ carry `visualOnly`, so observers (limited by the realm observer condition) play 
 - Cosmetic hits are judged against what the client sees, so a client can show a hit flash where the server missed
   (or the reverse); damage numbers and health always come from the server.
 - `BaseAbilityController` (legacy, unused) is not networked.
+
+## Powers (size, invisibility, mirage, links, gates)
+
+`NetCombatStatus` also carries the character's powers (see [Player 15](../Player/15-Powers-Size-Invisibility-Mirage.md)).
+The server runs them and sends their state whenever it changes, buffered for late joiners. Every client's copy shows
+them: the same size (body, CharacterController, hitboxes), hidden meshes and name plates, mirage copies at the same
+spots with the same seeded wandering, gates, link lines, and movement powers in the owner's prediction. Nothing has to
+be added to the prefabs.

@@ -210,6 +210,22 @@ public class AbilityDefinition : ScriptableObject
     [Header("Absorption")]
     public AbsorptionRules absorption = new AbsorptionRules();
 
+    [Header("While Owned (runs while one of the character's slots holds this ability)")]
+    [Tooltip("Behaviours that run for as long as the character has this ability in a slot, cast or not: your own script (Custom ▸ Attach Script), double jump, glide, life steal... They stop when the ability leaves the slot (replaced, cleared, forgotten, expired). Players only (they need a Trait Manager).")]
+    [SerializeReference, SubclassSelector] public List<TraitBehaviour> whileOwned = new List<TraitBehaviour>();
+
+    /// <summary>Does this ability run anything while owned?</summary>
+    public bool HasWhileOwned
+    {
+        get
+        {
+            if (whileOwned == null) return false;
+            for (int i = 0; i < whileOwned.Count; i++)
+                if (whileOwned[i] != null) return true;
+            return false;
+        }
+    }
+
     [SerializeField, HideInInspector] private AbilityEffectSO legacySource;
     [NonSerialized] private bool runtimeCreated;
 
@@ -270,6 +286,16 @@ public class AbilityDefinition : ScriptableObject
         hideFlags = HideFlags.DontSave;
         // Findable by id on every machine (network sessions send ids, never definitions).
         AbilityDatabase.RegisterRuntime(this);
+    }
+
+    /// <summary>
+    /// Turns a definition made in code (a preset, <see cref="InitializeRuntime"/>) into one that can be saved as an asset:
+    /// clears its "don't save" flag and its runtime mark. Editor tools call it before AssetDatabase.CreateAsset.
+    /// </summary>
+    public void MakeSaveable()
+    {
+        runtimeCreated = false;
+        hideFlags = HideFlags.None;
     }
 
     /// <summary>Sets the display name (editor tools and presets).</summary>
@@ -414,7 +440,25 @@ public class AbilityDefinition : ScriptableObject
     public void Validate(List<string> errors, List<string> warnings)
     {
         string owner = DisplayName;
-        if (actions == null || actions.Count == 0)
+        if (whileOwned != null)
+        {
+            for (int i = 0; i < whileOwned.Count; i++)
+            {
+                if (whileOwned[i] == null)
+                {
+                    warnings.Add($"{owner}: While Owned #{i + 1} is empty. Pick a type from its dropdown or remove it.");
+                    continue;
+                }
+                var e = new List<string>();
+                var w = new List<string>();
+                whileOwned[i].Validate(e, w);
+                foreach (string m in e) errors.Add($"{owner} › While Owned #{i + 1}: {m}");
+                foreach (string m in w) warnings.Add($"{owner} › While Owned #{i + 1}: {m}");
+            }
+        }
+        if ((actions == null || actions.Count == 0) && HasWhileOwned)
+            warnings.Add($"{owner}: has no actions, so casting it does nothing; only its While Owned behaviours work (a passive ability).");
+        else if (actions == null || actions.Count == 0)
             errors.Add($"{owner}: has no actions, it will do nothing. Add at least one action (Area Hit, Projectile...).");
         else
         {

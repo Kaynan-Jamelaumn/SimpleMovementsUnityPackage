@@ -83,6 +83,7 @@ public sealed class TraitContext
 
     public bool JumpPressed => SimInput.HasValue ? SimInput.Value.JumpPressed : Input != null && ReadsLocalDevices && Input.Player.Jump.triggered;
     public bool JumpHeld => SimInput.HasValue ? SimInput.Value.JumpHeld : Input != null && ReadsLocalDevices && Input.Player.Jump.IsPressed();
+    public bool CrouchHeld => SimInput.HasValue ? SimInput.Value.Crouch : Input != null && ReadsLocalDevices && Input.Player.Crouch.IsPressed();
 
     /// <summary>
     /// The move stick / keys: the simulated step's input while movement traits run, else the input of the movement's

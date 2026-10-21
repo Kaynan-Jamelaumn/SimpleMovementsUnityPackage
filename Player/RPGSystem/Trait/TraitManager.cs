@@ -258,6 +258,48 @@ public class TraitManager : MonoBehaviour
                 catch (Exception e) { Debug.LogException(e, this); }
             }
         }
+        TickExternal(dt, false);
+    }
+
+    // ------------------------------------------------------------------ behaviours from outside a trait
+    private readonly List<TraitBehaviour> externalBehaviours = new List<TraitBehaviour>();
+
+    /// <summary>
+    /// Runs a behaviour that does not come from a trait (an ability's While Owned list) exactly like a trait's:
+    /// ticked in Update, or by the movement simulation for movement behaviours. Pass a runtime copy
+    /// (<see cref="TraitBehaviour.CreateRuntimeCopy"/>); <see cref="RemoveExternalBehaviour"/> stops it.
+    /// </summary>
+    public void AddExternalBehaviour(TraitBehaviour runtime, float strength = 1f)
+    {
+        if (runtime == null || externalBehaviours.Contains(runtime))
+            return;
+        runtime.multiplier = strength;
+        externalBehaviours.Add(runtime);
+        SafeCall(() => runtime.OnAdded(Context), runtime);
+    }
+
+    /// <summary>Stops a behaviour started with <see cref="AddExternalBehaviour"/>.</summary>
+    public void RemoveExternalBehaviour(TraitBehaviour runtime)
+    {
+        if (runtime != null && externalBehaviours.Remove(runtime))
+            SafeCall(() => runtime.OnRemoved(Context), runtime);
+    }
+
+    /// <summary>The behaviours started with <see cref="AddExternalBehaviour"/>.</summary>
+    public IReadOnlyList<TraitBehaviour> ExternalBehaviours => externalBehaviours;
+
+    private void TickExternal(float dt, bool movement)
+    {
+        for (int i = externalBehaviours.Count - 1; i >= 0; i--)
+        {
+            if (i >= externalBehaviours.Count) continue;
+            TraitBehaviour beh = externalBehaviours[i];
+            // Update skips the movement behaviours the movement simulation steps; the simulation steps only those.
+            if (movement ? !beh.IsMovementSimulation : MovementTraitsDriven && beh.IsMovementSimulation)
+                continue;
+            try { beh.Tick(Context, dt); }
+            catch (Exception e) { Debug.LogException(e, this); }
+        }
     }
 
     // ------------------------------------------------------------------ movement simulation
@@ -287,6 +329,7 @@ public class TraitManager : MonoBehaviour
                     catch (Exception e) { Debug.LogException(e, this); }
                 }
             }
+            TickExternal(dt, true);
         }
         finally
         {
@@ -319,6 +362,21 @@ public class TraitManager : MonoBehaviour
                 }
             }
         }
+        // Behaviours from abilities (While Owned), when no trait has them
+        foreach (TraitBehaviour b in externalBehaviours)
+        {
+            if (!jumpFound && b is DoubleJumpTrait jump)
+            {
+                snapshot.AirJumpsUsed = (byte)Mathf.Clamp(jump.AirJumpsUsed, 0, byte.MaxValue);
+                jumpFound = true;
+            }
+            else if (!climbFound && b is WallClimbTrait climb)
+            {
+                snapshot.Climbing = climb.Climbing;
+                snapshot.ClimbTime = climb.ClimbTime;
+                climbFound = true;
+            }
+        }
     }
 
     /// <summary>Puts back the movement traits' runtime state saved by <see cref="CaptureMovementTraits"/>.</summary>
@@ -335,6 +393,16 @@ public class TraitManager : MonoBehaviour
                     climb.Climbing = snapshot.Climbing;
                     climb.ClimbTime = snapshot.ClimbTime;
                 }
+            }
+        }
+        foreach (TraitBehaviour b in externalBehaviours)
+        {
+            if (b is DoubleJumpTrait jump)
+                jump.AirJumpsUsed = snapshot.AirJumpsUsed;
+            else if (b is WallClimbTrait climb)
+            {
+                climb.Climbing = snapshot.Climbing;
+                climb.ClimbTime = snapshot.ClimbTime;
             }
         }
     }

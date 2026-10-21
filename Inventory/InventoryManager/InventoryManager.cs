@@ -2660,6 +2660,29 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         return n;
     }
 
+    /// <summary>Every item stack in the bag (then the hotbar), in slot order (Heist picks from these).</summary>
+    public List<InventoryItem> GetBagItems(List<InventoryItem> into = null, bool includeHotbar = true)
+    {
+        into = into ?? new List<InventoryItem>();
+        into.Clear();
+        Collect(slotManager?.InventorySlots);
+        if (includeHotbar)
+            Collect(HotbarSlots);
+        return into;
+
+        void Collect(GameObject[] slots)
+        {
+            if (slots == null) return;
+            foreach (GameObject go in slots)
+            {
+                InventorySlot s = go != null ? go.GetComponent<InventorySlot>() : null;
+                InventoryItem it = s != null && s.heldItem != null ? s.heldItem.GetComponent<InventoryItem>() : null;
+                if (it != null && it.itemScriptableObject != null && it.stackCurrent > 0)
+                    into.Add(it);
+            }
+        }
+    }
+
     /// <summary>The stacks of <paramref name="item"/> in the bag (then the hotbar), in slot order.</summary>
     public List<InventoryItem> FindStacks(ItemSO item, bool includeHotbar = true, List<InventoryItem> into = null)
     {

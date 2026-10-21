@@ -36,6 +36,8 @@ public class MovementAction : CastAction
     [Tooltip("Area hit when the movement ends. Set the shape radius to 0 for none.")]
     public HitShape landingShape = new HitShape { type = HitShapeType.Circle, radius = 0f };
     public HitSettings landingHit = new HitSettings(TargetFilter.Enemies);
+    [Tooltip("The landing area grows with the caster's size (Character Body / Height stat): 1 = a character twice as big hits twice as wide, 0.5 = half as much more, 0 = always the same.")]
+    [Range(0f, 2f)] public float landingGrowsWithSize = 0f;
 
     [Header("Feedback")]
     public GameObject startVfx;
@@ -181,7 +183,8 @@ public class MovementAction : CastAction
         return dest;
     }
 
-    private static void Teleport(CombatEntity self, Vector3 dest)
+    /// <summary>Moves a character instantly (players, mobs on a NavMesh, physics bodies), telling the network layer.</summary>
+    public static void Teleport(CombatEntity self, Vector3 dest)
     {
         ForcedMovement.RaiseTeleported(self, dest);
         NavMeshAgent agent = self.Agent;
@@ -211,14 +214,24 @@ public class MovementAction : CastAction
         Vector3 at = self.BasePosition;
         if (HasLandingHit)
         {
-            ResolvedShape r = ResolvedShape.Resolve(landingShape, at, cast.AimRotation, cast.Stats.area);
+            ResolvedShape r = ResolvedShape.Resolve(landingShape, at, cast.AimRotation, cast.Stats.area * SizeFactor(self));
             cast.HitArea(r, landingHit, cast.AimDirection);
         }
         if (landVfx != null)
-            AbilityPool.PlayVfx(landVfx, at, cast.AimRotation, 0f, cast.Stats.area);
+            AbilityPool.PlayVfx(landVfx, at, cast.AimRotation, 0f, cast.Stats.area * SizeFactor(self));
         if (landSound != null)
             AbilityPool.PlaySound(landSound, at, cast.Definition.presentation.volume);
         cast.EmitNoise(at, HasLandingHit ? 0.9f : 0.4f);
+    }
+
+    /// <summary>How much the landing area grows for <paramref name="who"/>'s size (1 for a normal-sized character).</summary>
+    private float SizeFactor(CombatEntity who)
+    {
+        if (landingGrowsWithSize <= 0f || who == null)
+            return 1f;
+        CharacterBody body = who.GetComponentInChildren<CharacterBody>();
+        float size = body != null ? body.Scale : who.Stats != null ? who.Stats.HeightScale : 1f;
+        return Mathf.Max(0.1f, 1f + (size - 1f) * landingGrowsWithSize);
     }
 
     // ------------------------------------------------------------------ AI / telegraph
@@ -237,7 +250,7 @@ public class MovementAction : CastAction
         if (HasLandingHit)
         {
             Vector3 land = mode == MovementActionMode.Leap || mode == MovementActionMode.Blink ? cast.AimPoint : Destination(cast, from, out _);
-            shapes.Add(ResolvedShape.Resolve(landingShape, land, cast.AimRotation, s.area));
+            shapes.Add(ResolvedShape.Resolve(landingShape, land, cast.AimRotation, s.area * SizeFactor(cast.CasterEntity)));
             any = true;
         }
         return any;

@@ -34,7 +34,7 @@ namespace GameNet
     /// <see cref="respawnHealthFraction"/> of their health (duels never kill, so they never respawn from a duel).</para>
     /// </remarks>
     [DisallowMultipleComponent]
-    public class NetCombatStatus : TickNetworkBehaviour
+    public partial class NetCombatStatus : TickNetworkBehaviour
     {
         // ------------------------------------------------------------------ wire types
 
@@ -418,6 +418,7 @@ namespace GameNet
             dead.Value = entity.IsDead;
             PollControl();
             PollDowned();
+            PollPowers();
 
             if (speedManager != null && playerStatus != null)
             {

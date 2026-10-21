@@ -250,6 +250,8 @@ public sealed class MobPerception
         Vector3 to = target.AimPosition - eye;
         distance = new Vector2(to.x, to.z).magnitude;
         inCloseRange = distance <= p.closeSenseRadius + target.Radius;
+        if (target.IsInvisible)
+            return false; // invisible: searched for where it was last seen
         float range = p.sightRange * (target.IsSneaking ? p.sneakDetectionMultiplier : 1f);
         if (!inCloseRange)
         {

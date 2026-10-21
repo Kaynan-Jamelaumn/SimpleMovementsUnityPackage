@@ -15,8 +15,12 @@ public static class AbilityPresets
         public Func<AbilityDefinition> create;
     }
 
-    /// <summary>Every preset, for editor menus.</summary>
-    public static readonly Preset[] All =
+    /// <summary>Every preset, for editor menus: the basic ones, then the powers (<see cref="PowerAbilityPresets"/>).</summary>
+    public static Preset[] All => all ?? (all = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Concat(System.Linq.Enumerable.Concat(Basic, PowerAbilityPresets.All), TricksterAbilityPresets.All)));
+    private static Preset[] all;
+
+    /// <summary>The attack, movement and support presets.</summary>
+    public static readonly Preset[] Basic =
     {
         new Preset { name = "Melee Cleave (Cone)", description = "Wind-up and a frontal cone swing.", create = () => MeleeCleave(12f, 3f, 110f) },
         new Preset { name = "Bite (Direct)", description = "Short bite on the target.", create = () => BasicMelee(8f, 2f, 1.2f) },

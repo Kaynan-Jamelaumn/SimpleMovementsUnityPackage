@@ -159,6 +159,30 @@ public static class TraitPresets
             TraitModifier.Percent(TraitStat.WoundChance, 40f))),
         P("Injuries", "Sickly", "+60% infection chance. Gives 2 points.", () => New("Sickly", "Every dirty wound turns bad.", -2, TraitType.Survival, Bad,
             TraitModifier.Percent(TraitStat.InfectionChance, 60f))),
+
+        // Fate, tricks and powers
+        P("Fate & Tricks", "Fate's Debt", "Once per fight or duel, a killing blow is ignored; fate collects (-20% damage for 15 s).", () => New("Fate's Debt", "Death has been postponed. Not cancelled.", 4, TraitType.Survival, Triggered,
+            new FatesDebtTrait())),
+        P("Fate & Tricks", "Acid Blood", "Melee attackers are splashed: poisoned, their equipment corrodes (yours a little too); -50% infection chance.", () => New("Acid Blood", "The Corpse Golem's essence: your blood burns everything it touches.", 3, TraitType.Physical, Triggered,
+            new AcidBloodTrait(), TraitModifier.Percent(TraitStat.InfectionChance, -50f))),
+        P("Fate & Tricks", "Born Gambler", "In combat, every 20 s a coin flip raises (60%) or lowers a random stat for 12 s.", () => New("Born Gambler", "Lives on luck, and luck mostly agrees.", 2, TraitType.Mental, Triggered,
+            new GamblerTrait())),
+        P("Fate & Tricks", "Coin Flipper", "Lucky Coin on the trait key: a random stat goes up or down for 20 s.", () => New("Coin Flipper", "Heads or tails?", 3, TraitType.Mental, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(TricksterAbilityPresets.LuckyCoin(), "preset:lucky_coin") })),
+        P("Fate & Tricks", "Light Fingers", "Heist on the trait key: steal a random item from a player's bag.", () => New("Light Fingers", "What is yours is about to be mine.", 3, TraitType.Mental, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(TricksterAbilityPresets.Heist(), "preset:heist") })),
+        P("Fate & Tricks", "Phase Walker", "Phantom Exchange on the trait key: leave a phantom and swap places with it.", () => New("Phase Walker", "Never quite where you think.", 4, TraitType.Magic, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(TricksterAbilityPresets.PhantomExchange(), "preset:phantom_exchange") })),
+        P("Fate & Tricks", "Soulbinder", "Soul Link on the trait key: share the damage with a target, both ways.", () => New("Soulbinder", "Two souls, one pain.", 4, TraitType.Magic, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(TricksterAbilityPresets.SoulLink(), "preset:soul_link") })),
+        P("Fate & Tricks", "Gatekeeper", "Twin Gates on the trait key: two linked portals anyone can use.", () => New("Gatekeeper", "Doors open wherever you look.", 4, TraitType.Magic, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(TricksterAbilityPresets.TwinGates(), "preset:twin_gates") })),
+        P("Fate & Tricks", "Giant's Blood", "Gigantification on the trait key: grow 80% bigger for 15 s.", () => New("Giant's Blood", "Somewhere back in the family, there was a giant.", 4, TraitType.Physical, ActiveColor,
+            new ActiveAbilityTrait { ability = AbilityPresets.AsRuntime(PowerAbilityPresets.Gigantification(), "preset:gigantification") })),
+        P("Fate & Tricks", "Skywalker", "Walk on air while you have mana (8 per second).", () => New("Skywalker", "The air holds you up.", 4, TraitType.Movement, Triggered,
+            new SkyWalkTrait { cost = SkyWalkCost.Mana, costPerSecond = 8f, endWhenEmpty = false })),
+        P("Fate & Tricks", "Unshakable", "Immune to knockback and pulls; -10% move speed.", () => New("Unshakable", "A mountain does not move.", 3, TraitType.Physical, Good,
+            TraitModifier.Percent(TraitStat.MoveSpeed, -10f), new ControlImmunityTrait { immuneTo = ControlImmunity.AllDisplacement })),
     };
 
     private static Preset P(string category, string name, string description, Func<Trait> create) =>
@@ -205,6 +229,8 @@ public static class TraitPresets
             if (!(b is ActiveAbilityTrait a) || a.ability == null || UnityEditor.EditorUtility.IsPersistent(a.ability))
                 continue;
             string path = UnityEditor.AssetDatabase.GenerateUniqueAssetPath($"{folder}/{a.ability.DisplayName} (Trait Ability).asset");
+            // Presets mark their abilities "don't save" (runtime definitions): an asset cannot be made of those.
+            a.ability.MakeSaveable();
             UnityEditor.AssetDatabase.CreateAsset(a.ability, path);
             a.ability.SetId(UnityEditor.AssetDatabase.AssetPathToGUID(path));
             UnityEditor.EditorUtility.SetDirty(a.ability);

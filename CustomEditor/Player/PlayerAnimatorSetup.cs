@@ -149,6 +149,10 @@ public static class PlayerAnimatorSetup
         var existing = controller.parameters.ToDictionary(p => p.name, p => p.type);
         if (fix)
             Undo.RecordObject(controller, "Complete Player Animator Controller");
+        int broken = RemoveBrokenTransitions(controller, fix);
+        if (broken > 0)
+            sb.AppendLine(fix ? $"Removed {broken} transition(s) that pointed to a deleted state (the 'Broken text PPtr' warning)."
+                              : $"{broken} transition(s) point to a deleted state ('Broken text PPtr' warnings); Complete removes them.");
 
         foreach (var (name, type, use) in Parameters)
         {
@@ -322,6 +326,55 @@ public static class PlayerAnimatorSetup
         AnimatorStateTransition die = state.AddExitTransition();
         Configure(die, 0.1f);
         die.AddCondition(AnimatorConditionMode.If, 0f, "IsDead");
+    }
+
+    /// <summary>
+    /// Transitions whose destination state or machine was deleted (Unity reports them as "Broken text PPtr ... doesn't
+    /// exist"), and empty entries in the state lists. Removed when <paramref name="fix"/>; returns how many.
+    /// </summary>
+    private static int RemoveBrokenTransitions(AnimatorController controller, bool fix)
+    {
+        int count = 0;
+        foreach (AnimatorControllerLayer layer in controller.layers)
+            if (layer.stateMachine != null)
+                count += Clean(layer.stateMachine, fix);
+        return count;
+    }
+
+    private static bool Broken(AnimatorTransitionBase t) =>
+        t == null || (!t.isExit && t.destinationState == null && t.destinationStateMachine == null);
+
+    private static int Clean(AnimatorStateMachine sm, bool fix)
+    {
+        int count = 0;
+        foreach (AnimatorStateTransition t in sm.anyStateTransitions)
+            if (Broken(t)) { count++; if (fix && t != null) sm.RemoveAnyStateTransition(t); }
+        foreach (AnimatorTransition t in sm.entryTransitions)
+            if (Broken(t)) { count++; if (fix && t != null) sm.RemoveEntryTransition(t); }
+        if (fix)
+        {
+            sm.anyStateTransitions = sm.anyStateTransitions.Where(t => t != null).ToArray();
+            sm.entryTransitions = sm.entryTransitions.Where(t => t != null).ToArray();
+        }
+        foreach (ChildAnimatorState child in sm.states)
+        {
+            AnimatorState state = child.state;
+            if (state == null)
+            {
+                count++;
+                continue;
+            }
+            foreach (AnimatorStateTransition t in state.transitions)
+                if (Broken(t)) { count++; if (fix && t != null) state.RemoveTransition(t); }
+            if (fix && state.transitions.Any(t => t == null))
+                state.transitions = state.transitions.Where(t => t != null).ToArray();
+        }
+        if (fix && sm.states.Any(c => c.state == null))
+            sm.states = sm.states.Where(c => c.state != null).ToArray();
+        foreach (ChildAnimatorStateMachine child in sm.stateMachines)
+            if (child.stateMachine != null)
+                count += Clean(child.stateMachine, fix);
+        return count;
     }
 
     private static void Configure(AnimatorStateTransition t, float duration)

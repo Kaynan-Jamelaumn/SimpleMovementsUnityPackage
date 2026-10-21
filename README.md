@@ -13,6 +13,9 @@ weapons, mobs and abilities need no code.
 | System | What you get | Documentation |
 |---|---|---|
 | **Player** | Movement state machine (walk, sprint, crouch, jump with buffering, dash, roll), stun/death, camera, 11 status managers (health, stamina, mana, hunger, thirst, sleep, sanity, body heat, oxygen, weight, speed), classes, traits, experience, ability keys | [Player guide](Documentation/Player/README.md) |
+| **Injuries** (optional) | Project-Zomboid-like body: per-part condition, wounds that bleed, fractures, burns, infections, severities, effects on movement / weapons / hands / survival, limb loss (armour and held items drop, the limb can be picked up) and reattachment within a time limit, medical items and healing abilities, a Health tab in the inventory, all configured in one Injury Settings asset | [Injuries guide](Documentation/Player/13-Injuries-and-Treatment.md) |
+| **Damage forms & resistances** | Every hit is a slash, pierce, blunt, bite, claw or crush (from the weapon category, attack, ammo, ability or mob attack): slashes bleed and sever, blunt blows bruise, break bones and concuss, bites tear and infect; races, classes, traits, items and buffs resist forms and injuries (Tough Skin, Strong Bones, Thick Blood...), creature presets | [Damage forms guide](Documentation/Player/14-Damage-Forms-and-Injury-Resistances.md) |
+| **Table minigames** | Tables with benches where players sit (cards in their hands) and bet money, items or a limb: **Truco** (vira and manilhas, Truco / Six / Nine / Twelve, first to 12), **blackjack** against the dealer, **Texas Hold'em** (blinds, side pots), **arm wrestling** (strength from body and injuries) and **drinking contests** (tolerance, look-alike buttons, drunk afterwards); bots in empty seats, a table window, networked views (each player sees only their own cards) | [Card tables & Truco](Documentation/Minigames/01-Card-Games-and-Truco.md) · [Blackjack, poker & contests](Documentation/Minigames/02-Blackjack-Poker-and-Contests.md) |
 | **Mobs** | Mob AI: perception (sight, hearing, memory), temperament, territories, patrols, packs that call for help, combat styles (melee, ranged, kiting, brute), dodging, fleeing, abilities, animation, spawning | [Mob guide](Documentation/Mobs/README.md) |
 | **Inventory & Items** | Inventory, hotbar, equipment slots, storage, drag and drop, stack splitting, hover info panel, auto-built UI, consumables, armor and armor sets with tiered bonuses, weapons with attacks, chains, charge, combos, blade and ground-impact hit detection | [Inventory guide](Documentation/Inventory/README.md) · [Setup guide](Documentation/Inventory/08-Setup-Guide.md) |
 | **Combat & Abilities** | Shared damage, defense and resistances, status effects, abilities for the player and mobs, teams, factions, parties and friendly fire | [Teams, factions & targeting](Documentation/Inventory/09-Teams-Factions-and-Targeting.md) |
@@ -37,7 +40,8 @@ Start at the **[documentation index](Documentation/README.md)**.
 1. Copy (or clone) this repository into your project as `Assets/Scripts/`.
 2. Install the packages listed above (*Window ▸ Package Manager*).
 3. Create the shared settings assets: *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Combat Settings (Resources)* and
-   *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Trait Database (Resources)*.
+   *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Trait Database (Resources)*. Optional: *Create Injury Settings
+   (Resources)* turns on injuries, limb loss and the Health tab.
 4. Follow the setup guides:
    * [Set up the player](Documentation/Player/01-Player-Setup.md)
    * [Set up a mob](Documentation/Mobs/01-Mob-Setup.md)
