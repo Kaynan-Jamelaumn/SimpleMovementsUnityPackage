@@ -162,6 +162,12 @@ public class ConsumableSO : ItemSO
 
     public List<ConsumableEffect> Effects => effects;
 
+    /// <summary>Replaces the effects (items generated from code: brewed potions).</summary>
+    public void SetEffects(IEnumerable<ConsumableEffect> newEffects)
+    {
+        effects = newEffects != null ? new List<ConsumableEffect>(newEffects) : new List<ConsumableEffect>();
+    }
+
     /// <summary>Potions, food and buffs can be used from quickslots.</summary>
     public override bool CanUseFromQuickSlot => true;
 

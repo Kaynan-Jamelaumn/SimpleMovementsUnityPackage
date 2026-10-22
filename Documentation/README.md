@@ -13,6 +13,7 @@ step-by-step, the others explain how the system works and what every setting doe
 | **Dungeons** — multi-floor procedural dungeons entered through world portals: planning, layouts (rooms, BSP, caves, hybrid, maze), connectivity and corridors, roles, heights, validation, population, meshing and build, runtime | [`Dungeon/`](Dungeon/README.md) | [Dungeon 01 — Architecture](Dungeon/01-Architecture.md) |
 | **Hub World** — the permanent hub city, the open world regenerated every dimensional cycle (warnings, the jump, loot loss, Dimensional Disorientation, modifiers), dungeons in scenes of their own with their own physics, safe and dangerous zones (PvP, difficulty), visual-only abilities in the city, duels | [`HubWorld/`](HubWorld/README.md) | [Hub World 05 — Setup](HubWorld/05-Setup-and-Configuration.md) |
 | **Networking** — Fish-Net multiplayer run locally (host, headless dedicated server, clients on 127.0.0.1): movement prediction, authoritative combat with lag compensation, mobs, inventory, trading, world cycles, stacked dungeon scenes, interest management | [`Networking/`](Networking/README.md) | [Networking 01 — Architecture and local setup](Networking/01-Architecture-and-Local-Setup.md) |
+| **Alchemy** — experimentation-based potion crafting: ingredients are made of substances (extraction by grind level, evenness and pH, solubility and saturation per solvent, density and layers, volatility, thermal and pH stability, compatibility, contamination), reactions transform them over time by temperature, concentration, catalysts, stirring, layers, acidity, vessel and surroundings, and the mixture's state decides what is bottled; grinding, fire and stirring minigames, filtering, decanting, skimming, evaporation, crystallisation, fermentation and distillation, mid-process additions, failures, a per-player journal of discoveries, the Alchemy Lab | [`Alchemy/`](Alchemy/README.md) | [Alchemy 01 — Overview and Setup](Alchemy/01-Overview-and-Setup.md) |
 | **Minigames** — tables with benches where players sit and bet money, items or a limb: Truco, blackjack, Texas Hold'em poker, arm wrestling and drinking contests, with bots in empty seats, a table window, cards in the players' hands and networked views | [`Minigames/`](Minigames/01-Card-Games-and-Truco.md) | [Minigames 01 — Card Tables and Truco](Minigames/01-Card-Games-and-Truco.md) · [02 — Blackjack, Poker and Contests](Minigames/02-Blackjack-Poker-and-Contests.md) |
 | **Project organisation** — where every generated asset goes (`Assets/Resources/SimpleMovements/...`), moving older ones there, and the recommended layout of the scripts | [`Project-Organisation.md`](Project-Organisation.md) | [Project Organisation](Project-Organisation.md) |
 | **Validation & auto-assign** — the Project Validator window (missing scripts, broken and required references, network prefabs, project assets, one-click fixes), automatic filling of empty references, `[AutoAssign]` / `[RequiredReference]`, the Edit Mode tests | [`Validation/`](Validation/README.md) | [Validation — overview](Validation/README.md) |
@@ -99,8 +100,9 @@ Everything is under one **SimpleMovements** entry in each menu.
 | *… ▸ Combat* | Combat Settings, Faction, Body Part Profile, Elemental Reactions |
 | *… ▸ Mobs* / *World* / *Dungeon* | Mob Profile (+ presets) / Biome / dungeon profiles, themes, tables, room templates |
 | *… ▸ Hub World* | Hub World Settings, Dimensional Modifier |
+| *… ▸ Alchemy* | Alchemy Database, Ingredient, Equipment, Brewed Potion |
 | *… ▸ Legacy* | Old ability assets (AbilityEffectSO, PlayerAbilitySO) and the old Player Class template, kept for existing assets — use the entries above for new ones |
-| *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database / Item Category Database / Default Currency (Resources) |
+| *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database / Item Category Database / Default Currency / Alchemy Database (Resources) |
 | *… ▸ Player* | Add Player Setup Validator To Selection, Auto-Setup All Players In Scene |
 | *… ▸ Social* | Create Player Targeting And Party System, Add Player Social (selected player prefab) |
 | *… ▸ Scene UI* | Build Character Creation Screen, Build Pause & Settings Menu |
@@ -110,6 +112,7 @@ Everything is under one **SimpleMovements** entry in each menu.
 | *… ▸ Validate* | Validate All Abilities / Players / Traits |
 | *… ▸ Dungeon* / *Legacy* | Dungeon tools / Convert Selected Legacy Abilities |
 | *… ▸ Minigames* | Create Truco / Blackjack / Poker / Arm Wrestling / Drinking Contest Table, Create Truco Game Asset, Make Selected Card Table Networked |
+| *… ▸ Alchemy* | Create Alchemy Station / Test Bench, Create Equipment Presets / Ingredient Items / Potion Items, Open Alchemy Lab, Validate Alchemy Database, Help |
 | *… ▸ Hub World* | Create Settings Asset, Build City Scene, Make Open Scene The World Scene, Add City / Return Gate, Validate Setup, Help |
 | *GameObject ▸ SimpleMovements* | Quick Setup Mob (right-click a model), NPC ▸ Merchant NPC / Talking NPC |
 

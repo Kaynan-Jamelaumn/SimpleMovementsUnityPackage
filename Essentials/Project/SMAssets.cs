@@ -7,16 +7,18 @@ using UnityEngine;
 /// <para>Everything generated goes under <c>Assets/Resources/SimpleMovements/</c>, one folder per kind of asset:</para>
 /// <code>
 /// Resources/SimpleMovements/
-///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings
+///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings, Alchemy Database
 ///   Databases/     Ability, Trait, Item and Item Category databases, Character Catalog
 ///   Economy/       Default currency
 ///   Characters/    Races/, Classes/, Traits/
 ///   Abilities/     ability definitions made from presets and conversions
 ///   Mobs/          one folder per mob type (profile, basic attack, abilities)
 ///   Combat/        Body Parts/
-///   Items/         Weapons/, Armor/, Consumables/, Ammo/, Medical/, Limbs/, Drops/ (Item Drop Manager + Tables/)
+///   Items/         Weapons/, Armor/, Consumables/, Ammo/, Medical/, Limbs/, Drops/ (Item Drop Manager + Tables/),
+///                  Alchemy/ (Ingredients/, Potions/, Icons/, Models/)
 ///   UI/            HUD/, Inventory/
 ///   World/         Weather/, Hub World/, Biome Backups/
+///   Alchemy/       Equipment/ (vessels)
 ///   Dungeons/      one folder per dungeon setup
 ///   Networking/    NetWorldItem prefab, observer conditions
 ///   Generated/     anything else
@@ -52,6 +54,13 @@ public static class SMAssets
     public const string Limbs = "Items/Limbs";
     public const string ItemDrops = "Items/Drops";
     public const string DropTables = "Items/Drops/Tables";
+    public const string AlchemyItems = "Items/Alchemy";
+    public const string AlchemyIngredients = "Items/Alchemy/Ingredients";
+    public const string AlchemyPotions = "Items/Alchemy/Potions";
+    public const string AlchemyIcons = "Items/Alchemy/Icons";
+    public const string AlchemyModels = "Items/Alchemy/Models";
+    public const string Alchemy = "Alchemy";
+    public const string AlchemyEquipment = "Alchemy/Equipment";
     public const string UI = "UI";
     public const string HUD = "UI/HUD";
     public const string InventoryUI = "UI/Inventory";
@@ -106,7 +115,8 @@ public static class SMAssets
     {
         switch (name)
         {
-            case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": case "InjurySettings": return Settings;
+            case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": case "InjurySettings":
+            case "AlchemyDatabase": return Settings;
             case "AbilityDatabase": case "TraitDatabase": case "ItemDatabase": case "ItemCategoryDatabase": case "CharacterCatalog": return Databases;
             case "DefaultCurrency": return Economy;
             case "ItemDropManager": return ItemDrops;

@@ -34,6 +34,13 @@ public class MaterialSO : ItemSO
     public MaterialKind Kind => materialKind;
     public int Tier => tier;
 
+    /// <summary>Sets the kind and tier (subclasses that build items from code: alchemy ingredients).</summary>
+    protected void SetMaterial(MaterialKind kind, int materialTier = 1)
+    {
+        materialKind = kind;
+        tier = Mathf.Max(1, materialTier);
+    }
+
     public MaterialSO()
     {
         itemType = ItemType.Material;

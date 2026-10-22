@@ -293,6 +293,7 @@ namespace SimpleMovements.Validation
             CheckResource<CurrencyDefinition>(issues, SMAssets.Economy, CurrencyDefinition.ResourcesName, "Default Currency", setup + "Create Default Currency (Resources)");
             CheckResource<HubWorld.HubWorldSettings>(issues, SMAssets.Settings, "HubWorldSettings", "Hub World Settings", setup + "Create Hub World Settings (Resources)");
             CheckInjurySettings(issues);
+            CheckAlchemyDatabase(issues);
             if (SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName) == null)
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Project",
                     $"No {SMAssets.ResourcePath(SMAssets.Databases, ItemDatabase.ResourcesName)}: items have no stable ids (needed for network sessions and saves)")
@@ -338,6 +339,27 @@ namespace SimpleMovements.Validation
             if (InjuryEditorTools.FindMedicalItems().Count == 0)
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Injuries", "The injury system is on but the project has no medical items (bandages, splints...)", s)
                     .WithFix("Create Presets", () => InjuryEditorTools.CreateMedicalItems(false).Count > 0));
+        }
+
+        /// <summary>The alchemy rules (optional: without a database the built-in alchemy is used).</summary>
+        private static void CheckAlchemyDatabase(List<ValidationIssue> issues)
+        {
+            AlchemyDatabase db = SMAssets.Load<AlchemyDatabase>(SMAssets.Settings, AlchemyDatabase.ResourcesName);
+            if (db == null)
+                return;
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            db.MarkChanged();
+            db.Validate(errors, warnings);
+            foreach (string e in errors)
+                issues.Add(new ValidationIssue(IssueSeverity.Error, "Alchemy", e, db));
+            foreach (string w in warnings)
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, "Alchemy", w, db));
+            bool missingItems = db.outcomes.Any(o => o != null && o.producesItems && o.tiers != null && o.tiers.Any(t => t != null && t.item == null));
+            if (missingItems)
+                issues.Add(new ValidationIssue(IssueSeverity.Info, "Alchemy",
+                        "Some outcome tiers have no item: bottles are made at runtime offline, but a network session or a save cannot carry them", db)
+                    .WithFix("Create Potion Items", () => AlchemyEditorTools.CreatePotionItems(db, false) > 0));
         }
 
         private static void CheckScenesInBuild(List<ValidationIssue> issues)
