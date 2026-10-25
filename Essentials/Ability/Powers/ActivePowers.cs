@@ -433,13 +433,8 @@ public class ActivePowers : MonoBehaviour
             return null;
         if (types.TryGetValue(fullName, out Type t))
             return t;
-        t = typeof(CharacterPower).Assembly.GetType(fullName);
-        if (t == null)
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                t = asm.GetType(fullName);
-                if (t != null) break;
-            }
+        // Powers and traits live in the game's assembly; an assembly-qualified name finds one in another assembly.
+        t = typeof(CharacterPower).Assembly.GetType(fullName) ?? Type.GetType(fullName, false);
         if (t != null && !typeof(CharacterPower).IsAssignableFrom(t) && !typeof(TraitBehaviour).IsAssignableFrom(t))
             t = null;
         types[fullName] = t;

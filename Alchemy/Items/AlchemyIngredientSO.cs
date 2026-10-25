@@ -9,8 +9,13 @@ using UnityEngine;
 /// Create ▸ SimpleMovements ▸ Alchemy ▸ Ingredient.
 /// </summary>
 [CreateAssetMenu(fileName = "Ingredient", menuName = "SimpleMovements/Alchemy/Ingredient", order = 1)]
-public class AlchemyIngredientSO : MaterialSO, IAlchemyIngredient
+public class AlchemyIngredientSO : MaterialSO, IAlchemyIngredient, IRuntimeItem
 {
+    [System.NonSerialized] private string runtimeId;
+
+    /// <summary>The id of an ingredient made at runtime from a built-in preset ("ingredient:sunpetal"); null for an asset.</summary>
+    public string RuntimeId => runtimeId;
+
     [Header("Alchemy")]
     [Tooltip("What it releases into a mixture, how long it takes to dissolve, its temperature.")]
     [SerializeField] private AlchemyIngredientProfile alchemy = new AlchemyIngredientProfile();
@@ -92,6 +97,7 @@ public class AlchemyIngredientSO : MaterialSO, IAlchemyIngredient
         s.hideFlags = HideFlags.DontSave;
         s.Setup(preset.name, preset.description, preset.kind, preset.price, preset.weight, preset.profile,
             AlchemyArt.Icon(AlchemyArt.ShapeOf(preset.kind), preset.color), AlchemyArt.Template(AlchemyArt.ShapeOf(preset.kind), preset.color));
+        s.runtimeId = AlchemyItems.IngredientPrefix + preset.id;
         return s;
     }
 }

@@ -9,12 +9,17 @@ using UnityEngine;
 /// <para>Every bottle also keeps the strength and purity it was bottled at (in its copy's durability list, one value
 /// per bottle, so it survives stacking, dropping, storage and saves): its effects follow them smoothly
 /// (<see cref="AlchemyOutcome.EffectMultiplierAt"/>) - a 84 % Potent heals more than a 68 % one. Create the assets with
-/// Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Potion Items (needed for network sessions and saves); offline, a bottle
-/// without an asset gets an item made at runtime.
+/// Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Potion Items (needed for saves); a bottle without an asset gets an item
+/// made at runtime, whose id names its outcome, tier and colour so that every machine makes the same item from it.
 /// </summary>
 [CreateAssetMenu(fileName = "Brewed Potion", menuName = "SimpleMovements/Alchemy/Brewed Potion", order = 3)]
-public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient, IItemInstanceTooltip
+public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient, IItemInstanceTooltip, IRuntimeItem
 {
+    [System.NonSerialized] private string runtimeId;
+
+    /// <summary>The id of a bottle made at runtime ("potion:healing_draught#2#C0405A"); null for an asset.</summary>
+    public string RuntimeId => runtimeId;
+
     /// <summary>Durability lost per sip: more than any bottle code, so each sip empties one bottle (the codes are not uses).</summary>
     public const int CodeLimit = 10_000_000;
 
@@ -305,6 +310,7 @@ public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient, IItemInstanceToo
         ((Object)s).name = $"{outcome.id}_{tierIndex}";
         s.hideFlags = HideFlags.DontSave;
         s.Setup(outcome, tierIndex, rules, color, AlchemyArt.Icon(AlchemyArt.Shape.Vial, color), AlchemyArt.Template(AlchemyArt.Shape.Vial, color));
+        s.runtimeId = AlchemyItems.PotionId(outcome.id, tierIndex, color);
         return s;
     }
 }

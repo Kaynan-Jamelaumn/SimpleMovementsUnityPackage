@@ -84,6 +84,17 @@ public class ArmorSO : EquippableSO
 
     /// <summary>Replaces the shield settings (presets, editor tools).</summary>
     public void SetShieldDefense(ShieldDefense defense) => shieldDefense = defense;
+
+    /// <summary>Sets the slot and the protection (crafted armour: the numbers come from how it was made).</summary>
+    public void SetArmorStats(ArmorSlotType slot, float defense, float magicDefense, IEnumerable<ElementalResistance> resistances, float durabilityMultiplier = 1f)
+    {
+        armorSlotType = slot;
+        defenseValue = Mathf.Max(0f, defense);
+        magicDefenseValue = Mathf.Max(0f, magicDefense);
+        durabilityModifier = Mathf.Max(0f, durabilityMultiplier);
+        elementalResistances = resistances != null ? new List<ElementalResistance>(resistances) : new List<ElementalResistance>();
+        itemType = ItemType.Armor;
+    }
     public AudioClip EquipArmorSound => equipArmorSound;
     public AudioClip UnequipArmorSound => unequipArmorSound;
 

@@ -95,6 +95,11 @@ public sealed class AlchemyBrew
     public IReadOnlyList<AlchemyEvent> RecentEvents => recent;
     /// <summary>Raised for every event (ingredients dissolving, reactions starting, boiling, eruptions, bottling...).</summary>
     public event Action<AlchemyEvent> EventRaised;
+    /// <summary>Raised after every operation is recorded (a server sends it to the copies of this preparation on the clients).</summary>
+    public event Action<AlchemyOperation> OperationRecorded;
+
+    /// <summary>The simulation step the preparation is at.</summary>
+    public long Step => Mixture.Step;
 
     public double Elapsed => Mixture.Elapsed;
     public bool IsEmpty => Mixture.IsEmpty;
@@ -170,8 +175,7 @@ public sealed class AlchemyBrew
             form = string.Equals(form, profile.form, StringComparison.OrdinalIgnoreCase) ? "" : form ?? "", profile = profile.Clone(),
             evenness = Mathf.Clamp01(evenness),
         };
-        Apply(op);
-        history.Add(op);
+        Record(op);
         return true;
     }
 
@@ -203,8 +207,7 @@ public sealed class AlchemyBrew
             step = Mixture.Step, kind = AlchemyOpKind.AddSubstance, id = substanceId, label = Rules.SubstanceName(substanceId),
             value = (float)amount, profile = new AlchemyIngredientProfile { temperature = (float)temperature }, form = note ?? "",
         };
-        Apply(op);
-        history.Add(op);
+        Record(op);
         return true;
     }
 
@@ -333,6 +336,7 @@ public sealed class AlchemyBrew
     {
         Apply(op);
         history.Add(op);
+        OperationRecorded?.Invoke(op);
     }
 
     /// <summary>Applies an operation to the mixture (live and in replays).</summary>
@@ -593,8 +597,7 @@ public sealed class AlchemyBrew
         r.Bottles = bottles;
         r.UnitsTaken = units;
         var op = new AlchemyOperation { step = Mixture.Step, kind = AlchemyOpKind.Bottle, value = (float)units, count = bottles, label = r.DisplayName };
-        Apply(op);
-        history.Add(op);
+        Record(op);
         Raise(new AlchemyEvent(AlchemyEventKind.Bottled, Elapsed, r.OutcomeId, r.DisplayName, bottles));
         return r;
     }
@@ -829,9 +832,84 @@ public sealed class AlchemyBrew
         return h;
     }
 
+    // ------------------------------------------------------------------ following a preparation that runs elsewhere
+    /// <summary>
+    /// A copy following a preparation that runs elsewhere (a network client following the server): simulates up to the
+    /// step <paramref name="op"/> was recorded at, then applies it. False (nothing done) when the copy is already past
+    /// that step, or more than <paramref name="maxCatchUp"/> steps behind: restore it from a snapshot instead.
+    /// </summary>
+    public bool ApplyRemote(AlchemyOperation op, int maxCatchUp = 3000)
+    {
+        if (op == null)
+            return true;
+        if (op.step < Mixture.Step || op.step - Mixture.Step > maxCatchUp)
+            return false;
+        RunSteps((int)(op.step - Mixture.Step));
+        AlchemyOperation copy = op.Clone();
+        Apply(copy);
+        history.Add(copy);
+        if (copy.kind == AlchemyOpKind.Bottle)
+            Raise(new AlchemyEvent(AlchemyEventKind.Bottled, Elapsed, "", copy.label, copy.count));
+        return true;
+    }
+
+    /// <summary>Simulates up to <paramref name="step"/> (a copy following the server's clock). False when it is in the past or too far.</summary>
+    public bool RunTo(long step, int maxCatchUp = 3000)
+    {
+        if (step < Mixture.Step || step - Mixture.Step > maxCatchUp)
+            return false;
+        RunSteps((int)(step - Mixture.Step));
+        return true;
+    }
+
+    /// <summary>
+    /// A fingerprint of what can be seen of the preparation (the clock, temperature, fire, every substance's amount,
+    /// the ingredients still dissolving, the distillate), rounded so that the last digits do not count. A copy giving the
+    /// same number at the same step shows the same preparation.
+    /// </summary>
+    public uint Checksum()
+    {
+        AlchemyMixture m = Mixture;
+        unchecked
+        {
+            uint h = 2166136261u;
+            void Add(long v)
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    h ^= (byte)(v >> (i * 8));
+                    h *= 16777619u;
+                }
+            }
+            void AddD(double v, double q) => Add(double.IsNaN(v) || double.IsInfinity(v) ? long.MinValue : (long)Math.Round(Math.Max(-9e15, Math.Min(9e15, v / q))));
+            Add(m.Step);
+            Add(IsSuspended ? 1 : 0);
+            AddD(m.Temperature, 0.5);
+            AddD(m.Fuel, 0.05);
+            AddD(m.Heat, 0.01);
+            Add(m.pending.Count);
+            for (int i = 0; i < m.amounts.Length; i++)
+            {
+                AddD(m.amounts[i], 0.05);
+                AddD(m.undissolved[i], 0.05);
+                AddD(m.distillate[i], 0.05);
+            }
+            return h;
+        }
+    }
+
     // ------------------------------------------------------------------ saving and replaying
     /// <summary>Everything about the preparation, ready for JsonUtility (saves, the network, the editor).</summary>
     public AlchemyBrewState Capture() => AlchemyBrewState.From(this);
+
+    /// <summary>Everything about the preparation; without the history when <paramref name="withHistory"/> is false (network snapshots).</summary>
+    public AlchemyBrewState Capture(bool withHistory)
+    {
+        AlchemyBrewState s = AlchemyBrewState.From(this);
+        if (!withHistory)
+            s.history.Clear();
+        return s;
+    }
 
     /// <summary>A preparation exactly as captured (missing substances of older rules are dropped).</summary>
     public static AlchemyBrew Restore(AlchemyRules rules, AlchemyBrewState state)

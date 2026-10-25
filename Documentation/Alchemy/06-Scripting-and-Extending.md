@@ -182,9 +182,22 @@ breaks down (heat, acid, alkali), how it crystallises and what it cannot coexist
 
 ## 8. Networking
 
-The station runs its rules where `GameNet.NetAuthority.RunsRules` is true (offline, the host, a server) and every
-player action goes through `AlchemyStation.Request` as an `AlchemyRequest` (items by Item Database id) — the hook a
-network component plugs into by setting `AlchemyStation.Net` (`IAlchemyStationNet`: `RunsStationRules`, `SendRequest`,
-`Tell`). No Fish-Net component ships for it yet: in a network session, only the host can brew (clients are told so),
-and potions need item assets (*Create Potion Items*) to be carried. A future `NetAlchemyStation` would forward client
-requests, run them on the server and send `AlchemyBrewState` snapshots (plain data, already serializable) to clients.
+The station runs its rules offline and on the server (`AlchemyStation.RulesHere`); a client of a session never does.
+Every player action goes through `AlchemyStation.Request` as an `AlchemyRequest` (items by Item Database id), and
+`AlchemyStation.Net` (`IAlchemyStationNet`: `RunsStationRules`, `SendRequest`, `SendTending`, `Tell`, `Open`) is the
+network side. **`GameNet.NetAlchemyStation`** (put it next to a NetworkObject: the station inspector's *Make Networked*)
+is that side for Fish-Net:
+
+* the server runs the preparation; using the station is an interaction relayed by the player's `NetInteractor`, and the
+  server opens the window on that player's screen and sends their journal (`AlchemyKnowledge.ReceiveFromServer`; a
+  client never reads or writes its own);
+* every client keeps a copy of the preparation that follows the server's (`IsMirror`): the brew is deterministic, so
+  the server sends its operations, numbered (`AlchemyBrew.OperationRecorded`), and its clock, and each copy simulates
+  the rest (`ApplyRemote`, `RunTo`); a checksum (`Checksum`) catches a copy out of step, which then gets the whole
+  preparation again (`AlchemyBrewFeed`, `AlchemyBrewFollower`, `AlchemyMirrorSnapshot` in `Networking/Core/Stations`);
+* requests travel as `AlchemyNetRequest` and are bounded by an `AlchemyRequestGuard` (stirring, the bellows, filters
+  and grinding take real time; values in range) before the station runs them.
+
+Bottles and harvests without an asset are runtime items whose id says what they are (`potion:<outcome>#<tier>#<colour>`,
+`ingredient:<preset>`, see `AlchemyItems`): every machine makes the same item from the id, so they can be carried,
+dropped and traded in a session. See also [Crafting ▸ Multiplayer](../Crafting/08-Multiplayer.md).

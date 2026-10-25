@@ -61,6 +61,10 @@ public static class SMAssets
     public const string AlchemyModels = "Items/Alchemy/Models";
     public const string Alchemy = "Alchemy";
     public const string AlchemyEquipment = "Alchemy/Equipment";
+    public const string CraftingItems = "Items/Crafting";
+    public const string CraftingStock = "Items/Crafting/Stock";
+    public const string CraftingTemplates = "Items/Crafting/Templates";
+    public const string CraftingIcons = "Items/Crafting/Icons";
     public const string UI = "UI";
     public const string HUD = "UI/HUD";
     public const string InventoryUI = "UI/Inventory";

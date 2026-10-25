@@ -11,7 +11,7 @@ public class AlchemyOutcomeTier
     [Tooltip("Least quality (0-1) for this tier. Tiers are checked from the last one down.")]
     [Range(0f, 1f)] public float minQuality;
     [Tooltip("The item a bottle of this tier becomes. Empty = an item is made at runtime from the outcome's effects " +
-             "(single player only: network sessions and saves need assets, see Alchemy ▸ Create Potion Items).")]
+             "(its id names the outcome and tier, so network sessions make the same item everywhere; saves are safer with assets, see Alchemy ▸ Create Potion Items).")]
     public ItemSO item;
     [Tooltip("The outcome's effects × this (generated items, the Create Potion Items tool).")]
     [Min(0f)] public float effectMultiplier = 1f;

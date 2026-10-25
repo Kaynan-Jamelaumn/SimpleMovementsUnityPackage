@@ -139,6 +139,7 @@ namespace GameNet
         {
             base.OnStartClient();
             state.OnChange += OnStateChanged;
+            ItemDatabase.RuntimeItemDefined += OnRuntimeItemDefined;
             if (!IsServerInitialized)
             {
                 // The server simulates it; this copy follows (a synced transform moves it).
@@ -152,6 +153,16 @@ namespace GameNet
         {
             base.OnStopClient();
             state.OnChange -= OnStateChanged;
+            ItemDatabase.RuntimeItemDefined -= OnRuntimeItemDefined;
+        }
+
+        private void OnDestroy() => ItemDatabase.RuntimeItemDefined -= OnRuntimeItemDefined;
+
+        /// <summary>The definition of the item this copy holds (made at runtime on the server) arrived: it is shown now.</summary>
+        private void OnRuntimeItemDefined(string id)
+        {
+            if (!IsServerInitialized && id == state.Value.itemId)
+                Apply(state.Value);
         }
 
         private void OnStateChanged(WorldItemState previous, WorldItemState next, bool asServer)
@@ -171,7 +182,7 @@ namespace GameNet
                 pickable.itemScriptableObject = item;
                 pickable.InteractionTime = item.PickUpTime;
             }
-            else if (!string.IsNullOrEmpty(s.itemId))
+            else if (!string.IsNullOrEmpty(s.itemId) && !ItemDatabase.IsRuntimeId(s.itemId))
             {
                 Debug.LogWarning($"[Network] World item '{s.itemId}' is not in this build's Item Database.", this);
             }

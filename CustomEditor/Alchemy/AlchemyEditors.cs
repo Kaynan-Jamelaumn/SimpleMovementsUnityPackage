@@ -10,6 +10,23 @@ using UnityEngine;
 /// </summary>
 public static class AlchemyEditorTools
 {
+    /// <summary>
+    /// Adds a NetworkObject and a NetAlchemyStation (Fish-Net), so the station works in a network session with the
+    /// server deciding everything. False when Fish-Net is not in the project.
+    /// </summary>
+    public static bool MakeNetworked(GameObject root)
+    {
+        System.Type nob = SimpleMovements.Setup.SetupUtil.TypeByName("FishNet.Object.NetworkObject");
+        System.Type net = SimpleMovements.Setup.SetupUtil.TypeByName("GameNet.NetAlchemyStation");
+        if (root == null || nob == null || net == null)
+            return false;
+        if (root.GetComponent(nob) == null)
+            Undo.AddComponent(root, nob);
+        if (root.GetComponent(net) == null)
+            Undo.AddComponent(root, net);
+        return true;
+    }
+
     private const string Menu = SMMenu.Root + "Alchemy/";
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Alchemy Database (Resources)", false, SMMenu.ProjectSetup + 8)]
@@ -141,6 +158,7 @@ public static class AlchemyEditorTools
         vso.FindProperty("fullHeight").floatValue = full;
         vso.FindProperty("fireBed").objectReferenceValue = bed.transform;
         vso.ApplyModifiedPropertiesWithoutUndo();
+        MakeNetworked(root); // with Fish-Net in the project: the server runs it, every client follows
 
         Selection.activeGameObject = root;
         EditorGUIUtility.PingObject(root);
@@ -476,7 +494,7 @@ public class AlchemyDatabaseEditor : Editor
         {
             if (GUILayout.Button(new GUIContent("Open Alchemy Lab", "Simulate preparations and map outcomes over heat and time.")))
                 AlchemyLabWindow.Open(db);
-            if (GUILayout.Button(new GUIContent("Create Potion Items", "An item asset for every tier of every outcome (needed for network sessions and saves).")))
+            if (GUILayout.Button(new GUIContent("Create Potion Items", "An item asset for every tier of every outcome (recommended for saves; network sessions also work with the runtime items).")))
                 AlchemyEditorTools.CreatePotionItems(db, true);
             if (GUILayout.Button(new GUIContent("Reset To Built-in", "Replace the content with the built-in alchemy.")) &&
                 EditorUtility.DisplayDialog("Alchemy", "Replace every property, substance, reaction and outcome with the built-in alchemy?", "Replace", "Cancel"))
@@ -508,6 +526,12 @@ public class AlchemyStationEditor : Editor
         s.Validate(errors, warnings);
         foreach (string e in errors) EditorGUILayout.HelpBox(e, MessageType.Error);
         foreach (string w in warnings) EditorGUILayout.HelpBox(w, MessageType.Warning);
+        if (SimpleMovements.Setup.SetupUtil.TypeByName("GameNet.NetAlchemyStation") is System.Type net && s.GetComponent(net) == null)
+        {
+            EditorGUILayout.HelpBox("Multiplayer: the station has no NetAlchemyStation (and NetworkObject); in a network session only the host's player could brew here.", MessageType.Info);
+            if (GUILayout.Button("Make Networked"))
+                AlchemyEditorTools.MakeNetworked(s.gameObject);
+        }
         DrawDefaultInspector();
         if (!Application.isPlaying)
             return;

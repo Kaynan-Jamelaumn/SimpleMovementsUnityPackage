@@ -58,6 +58,8 @@ namespace GameNet.EditorTools
             ["Ability Pickup"] = new string[0],
             ["World Portal"] = new string[0],
             ["Interactable"] = new[] { "GameNet.NetInteractable" },
+            ["Crafting Station"] = new[] { "GameNet.NetCraftStation" },
+            ["Alchemy Station"] = new[] { "GameNet.NetAlchemyStation" },
         };
 
         // ------------------------------------------------------------------ scenes
@@ -420,6 +422,12 @@ namespace GameNet.EditorTools
 
         [MenuItem(SMMenu.Root + "Network/Make Selected Prefab Networked/Interactable (merchant, chest, door, gate)", false, SMMenu.Network + 23)]
         private static void MakeInteractable() => MakeSelected("Interactable");
+
+        [MenuItem(SMMenu.Root + "Network/Make Selected Prefab Networked/Crafting Station", false, SMMenu.Network + 27)]
+        private static void MakeCraftingStation() => MakeSelected("Crafting Station");
+
+        [MenuItem(SMMenu.Root + "Network/Make Selected Prefab Networked/Alchemy Station", false, SMMenu.Network + 28)]
+        private static void MakeAlchemyStation() => MakeSelected("Alchemy Station");
 
         [MenuItem(SMMenu.Root + "Network/Make All Mob Prefabs Networked", false, SMMenu.Network + 30)]
         private static void MakeAllMobs()

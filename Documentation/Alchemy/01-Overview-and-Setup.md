@@ -23,8 +23,10 @@
    * *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Alchemy Database (Resources)* — a copy of the built-in rules you
      can edit (without it the built-in alchemy is used).
    * *Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Potion Items* — an item asset for every quality band of every result.
-     Without them, bottles are items made at runtime: fine in single player, but **network sessions and saves need
-     assets** (then rebuild the Item Database).
+     Without them, bottles are items made at runtime, whose ids say what they are (network sessions make the same item
+     everywhere); assets are still the safer choice for saves (then rebuild the Item Database).
+   * In a network session, put a NetworkObject and a `NetAlchemyStation` on each station (its inspector's *Make
+     Networked*): the server runs the brew and every client follows it (Scripting ▸ Networking).
    * *Create Equipment Presets* — the Iron Cauldron, Copper Alembic, Glass Retort, Frost Basin, Fractionating Still and
      Evaporating Dish as assets; put one in the station's *Equipment*.
    * Put **Firewood**, **Filter Paper** and **Charcoal** items where players find them when your stations have no woodpile

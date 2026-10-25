@@ -361,6 +361,19 @@ public class WeaponSO : ItemSO
         itemType = ItemType.Weapon;
     }
 
+    /// <summary>
+    /// Sets the numbers that come from how the weapon was made (crafted weapons: the form of its damage, how quickly it
+    /// swings, how well it cuts wood or ore, the element its material carries).
+    /// </summary>
+    public void SetMadeStats(DamageForm form, float attackSpeedMultiplier, float toolDamageValue, ElementType element, float elementalBuildup)
+    {
+        damageForm = form;
+        attackSpeed = Mathf.Max(0f, attackSpeedMultiplier);
+        toolDamage = Mathf.Max(0f, toolDamageValue);
+        elementType = element;
+        elementalBuildupRate = Mathf.Max(0f, elementalBuildup);
+    }
+
     /// <summary>True when the Attack Cast can detect anything (it has target layers).</summary>
     public bool HasUsableAttackCast => attackCast != null && attackCast.targetLayers.value != 0;
 

@@ -14,7 +14,8 @@ Code:
 - `Inventory/InventoryManager/InventoryManager.Network.cs` (always compiled): `NetRole`, `IInventoryNetBridge`,
   snapshot capture / apply, appearance, `ApplyRequest` (the server repeating a request).
 - `Inventory/WorldItems.cs` (always compiled): creating, publishing and removing world items.
-- `Networking/Runtime/Inventory/NetInventory.cs` and `NetWorldItem.cs` (`#if FISHNET`).
+- `Networking/Runtime/Inventory/NetInventory.cs`, `NetInventory.Definitions.cs` and `NetWorldItem.cs` (`#if FISHNET`).
+- `Inventory/Items/ItemDatabase.cs` (always compiled): item ids, and `IRuntimeItemSource` for items made at runtime.
 - Tests: `CustomEditor/Networking/Tests/InventoryNetTests.cs`.
 
 ## Roles
@@ -121,6 +122,27 @@ run everywhere. Damage, healing, item use and every number that matters are deci
   (or updates) its own copy.
 - `CollectableItem` takes tool damage only where rules run and is despawned when harvested (give it a NetworkObject).
 
+## Items made at runtime
+
+Items that have no asset - a sword forged at a crafting station, a half-worked blade, a tanned hide, a bottle brewed
+without a potion asset - have **ids of their own** (`IRuntimeItem`) and travel like any other id: in snapshots, in what a
+player holds and wears, on world items and in trades.
+
+- **Made on the server**, which keeps them (`persistentDataPath/Crafting/Items` there). A client that meets an id it
+  does not know (`ItemDatabase.Item` raises `RuntimeItemMissing`) asks the server through its own player's
+  `NetInventory`; the server answers with the item's **definition** (`IRuntimeItemSource.Export`: a crafted item's
+  record with its numbers and parts, a piece's saved state), in parts if it is large. The client builds the item
+  (`Import`; never saved on the client) and `RuntimeItemDefined` makes its inventory, the other players' equipment,
+  world items and the trade window show it. When the item changes on the server (it was tried), the clients that have
+  it get the new definition (`RuntimeItemChanged`).
+- **Made from the id** on every machine: runtime crafting stock (`craftstock:…`) and alchemy items without an asset
+  (`potion:…`, `ingredient:…`) are rebuilt from the rules, so nothing needs to be asked.
+- Their **models** are built from what they are (crafting: `CraftModels`), so they show on the ground (the carrier
+  builds them) and, for crafted weapons whose template has no model, in the hand.
+
+A system of your own that makes items at runtime registers an `IRuntimeItemSource` (`ItemDatabase.AddSource`) with
+`Owns`, `Find`, `Export` and `Import`. See [Crafting ▸ Multiplayer](../Crafting/08-Multiplayer.md).
+
 ## Storage
 
 A `Storage` (chest) is used by **one player at a time** (`Storage.User`): two windows on the same contents could both
@@ -174,6 +196,8 @@ items keep their uses left and rounds loaded, and random contents are rolled onl
 - Quickslot cooldown circles on the owner are a local estimate; the server's stack cooldown decides.
 - Pulse and proc equipment effects show their visuals only on the server's machine (the host); their results (damage,
   healing) are replicated by the status module.
+- A runtime item shows a moment after its id arrives on a client that did not know it (one round trip for its
+  definition); until then the slot, the hand or the ground shows nothing.
 - Runtime layout changes (grid on/off, size, slot counts) are decided by the server and arrive with the snapshot; the
   client's inspector cannot change them during a session.
 - Networked world items do not turn in place on the server or the host when a NetworkTransform syncs them (clients turn

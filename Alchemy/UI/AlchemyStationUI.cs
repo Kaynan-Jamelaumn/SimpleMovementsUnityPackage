@@ -112,6 +112,13 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
     /// <summary>Is the window open (for any station)?</summary>
     public static bool IsOpen => instance != null && instance.station != null && instance.canvas.gameObject.activeSelf;
 
+    /// <summary>Closes the window if it shows <paramref name="s"/> (the server ended the visit).</summary>
+    public static void Close(AlchemyStation s)
+    {
+        if (instance != null && instance.station == s && s != null)
+            instance.Hide();
+    }
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => instance = null;
 

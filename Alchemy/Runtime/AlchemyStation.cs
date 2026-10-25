@@ -53,14 +53,22 @@ public struct AlchemyRequest
 }
 
 /// <summary>
-/// The network side of a station (a future <c>GameNet</c> component): null offline, where the station runs
-/// everything itself. On a client, requests go to the server, which runs the rules and answers.
+/// The network side of a station (<c>GameNet.NetAlchemyStation</c>): null offline, where the station runs everything
+/// itself. The server runs the preparation; a client keeps a copy that follows it and sends what its player does as
+/// requests, which the server checks and answers.
 /// </summary>
 public interface IAlchemyStationNet
 {
+    /// <summary>True where the station's rules run (the server).</summary>
     bool RunsStationRules { get; }
+    /// <summary>Client: sends what the player did to the server.</summary>
     void SendRequest(AlchemyRequest request);
+    /// <summary>Client: the player starts (true) or stops using the station (the window opened or closed).</summary>
+    void SendTending(bool tending);
+    /// <summary>Server: a message for a remote player.</summary>
     void Tell(CombatEntity player, string text);
+    /// <summary>Server: opens the station's window on a remote player's screen; false when the player cannot be reached.</summary>
+    bool Open(CombatEntity player);
 }
 
 /// <summary>
@@ -77,6 +85,10 @@ public interface IAlchemyStationNet
 /// continue where they were after a restart (Persist Preparation).</item>
 /// <item><b>Presentation</b> stays out of here: <see cref="AlchemyStationUI"/> (the window) and
 /// <see cref="AlchemyStationVisuals"/> (liquid, bubbles, steam, sounds) read the state and listen to <see cref="BrewEvent"/>.</item>
+/// <item><b>Network sessions</b>: with a NetworkObject and a <c>NetAlchemyStation</c>, the server runs the preparation
+/// and decides everything (ingredients taken, bottles given, what is learnt); every client keeps a copy that follows the
+/// server's (<see cref="IsMirror"/>), so the liquid, the steam and the window show the same everywhere. Without one, only
+/// the server's (the host's) player can brew here.</item>
 /// </list>
 /// </summary>
 [DisallowMultipleComponent]
@@ -174,6 +186,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     private float conditionsTimer, observeTimer;
     private int version;
     private readonly List<SubstanceAmount> residue = new List<SubstanceAmount>();
+    private int metaVersion;
 
     /// <summary>Every station in the loaded scenes.</summary>
     public static IReadOnlyList<AlchemyStation> All => all;
@@ -183,11 +196,23 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     /// <summary>Something the player did changed the station (the window redraws).</summary>
     public event Action Changed;
 
+    /// <summary>The preparation was replaced (started, emptied, restored): a network server sends it whole.</summary>
+    public event Action BrewReplaced;
+    /// <summary>A message for this machine's player at the station (a refusal from the server): the window can show it.</summary>
+    public event Action<string> LocalMessage;
+
     /// <summary>Set by the network layer (null offline).</summary>
     public IAlchemyStationNet Net { get; set; }
 
-    /// <summary>True where the rules run (offline, the server).</summary>
-    public bool RulesHere => Net != null ? Net.RunsStationRules : GameNet.NetAuthority.RunsRules(gameObject);
+    /// <summary>
+    /// True where the rules run: offline, or on the server. A client of a network session never runs them: with a
+    /// network side it follows the server's preparation, without one it cannot be used from there.
+    /// </summary>
+    public bool RulesHere => Net != null ? Net.RunsStationRules : !GameNet.NetAuthority.IsNetworked || GameNet.NetAuthority.IsServer;
+    /// <summary>A network client: the preparation is a copy following the server's.</summary>
+    public bool IsMirror { get; private set; }
+    /// <summary>Changes when the player brewing here or the residue in the vessel change (the network sends them).</summary>
+    public int MetaVersion => metaVersion;
 
     public AlchemyDatabase Database => database != null ? database : AlchemyDatabase.Instance;
     public AlchemyRules Rules => rules ??= Database.Rules;
@@ -257,15 +282,15 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     private void OnDisable()
     {
         all.Remove(this);
-        if (persistPreparation && RulesHere)
+        if (persistPreparation && RulesHere && !IsMirror)
             SavePreparation();
-        if (tender != null)
+        if (tender != null && RulesHere)
             EndTending(tender);
     }
 
     private void OnApplicationQuit()
     {
-        if (persistPreparation && RulesHere)
+        if (persistPreparation && RulesHere && !IsMirror)
             SavePreparation();
     }
 
@@ -309,6 +334,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             foreach (SubstanceAmount r in residue)
                 brew.AddSubstance(r.substance, r.amount, brew.Mixture.Ambient, out _, "left in the vessel by the last preparation");
             residue.Clear();
+            metaVersion++;
             SaveResidue();
         }
         return brew;
@@ -322,6 +348,57 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         if (brew != null)
             brew.EventRaised += OnBrewEvent;
         Touch();
+        BrewReplaced?.Invoke();
+    }
+
+    // ------------------------------------------------------------------ network clients
+    /// <summary>Client: the copy of the server's preparation to show (a snapshot arrived; null = the vessel is empty).</summary>
+    public void SetMirror(AlchemyBrew copy)
+    {
+        IsMirror = true;
+        SetBrew(copy);
+    }
+
+    /// <summary>Client: who brews here and the residue in the vessel, as the server says.</summary>
+    public void SetMirrorMeta(CombatEntity using_, IEnumerable<SubstanceAmount> film)
+    {
+        if (!IsMirror)
+            return;
+        tender = using_;
+        residue.Clear();
+        if (film != null)
+            foreach (SubstanceAmount r in film)
+                if (r != null && Rules.IndexOf(r.substance) >= 0) residue.Add(r);
+        Touch();
+    }
+
+    /// <summary>Client: the copy moved on (the window redraws).</summary>
+    public void MirrorChanged() => Touch();
+
+    /// <summary>Client: the session ended - the copy is dropped (an offline game loads the station's own save again).</summary>
+    public void ClearMirror()
+    {
+        if (!IsMirror)
+            return;
+        SetBrew(null);
+        IsMirror = false;
+        tender = null;
+        residue.Clear();
+    }
+
+    /// <summary>A message for this machine's player (from the server): in the inventory's message line and the window.</summary>
+    public void ShowLocalMessage(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        IReadOnlyList<CombatEntity> players = CombatEntity.Players;
+        for (int i = 0; i < players.Count; i++)
+            if (players[i] != null && CardTable.IsLocalPlayer(players[i]))
+            {
+                InventoryManager.For(players[i])?.ShowMessage(text, InventoryFeedback.Kind.Info);
+                break;
+            }
+        LocalMessage?.Invoke(text);
     }
 
     private void OnBrewEvent(AlchemyEvent e)
@@ -363,22 +440,41 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     }
 
     // ------------------------------------------------------------------ tending
+    /// <summary>The player uses the station now (the window opened). On a network client the server is told.</summary>
     public void BeginTending(CombatEntity player)
     {
         if (player == null)
             return;
-        tender = player;
-        observeTimer = 0f;
+        if (!RulesHere)
+        {
+            Net?.SendTending(true);
+            return;
+        }
+        if (tender != player)
+        {
+            tender = player;
+            observeTimer = 0f;
+            metaVersion++;
+        }
         Touch();
     }
 
+    /// <summary>The player stops using the station (the window closed, they walked away, they left the session).</summary>
     public void EndTending(CombatEntity player)
     {
-        if (player == null || player != tender)
+        if (player == null)
+            return;
+        if (!RulesHere)
+        {
+            Net?.SendTending(false);
+            return;
+        }
+        if (player != tender)
             return;
         if (brew != null)
             AlchemyKnowledge.For(player)?.Observe(brew);
         tender = null;
+        metaVersion++;
         Touch();
     }
 
@@ -394,7 +490,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
                 Net.SendRequest(request);
                 return true;
             }
-            reason = "Alchemy stations are not networked yet: only the host can brew here.";
+            reason = "This station is not set up for multiplayer (it needs a NetAlchemyStation): only the host can brew here.";
             return false;
         }
         switch (request.kind)
@@ -770,6 +866,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             return false;
         }
         residue.Clear();
+        metaVersion++;
         SaveResidue();
         Tell(player, "You scrub the vessel clean.");
         Touch();
@@ -916,6 +1013,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         {
             residue.Clear();
             residue.AddRange(h.Leftovers);
+            metaVersion++;
             SaveResidue();
         }
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
@@ -948,8 +1046,11 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         r?.Outcome != null && r.Outcome.HasPotency && !r.IsFailure
             ? $" - quality {r.Quality * 100:0}% (strength {r.Potency * 100:0}%, purity {r.Purity * 100:0}%)" : "";
 
-    /// <summary>Items made at runtime are fine offline; a network session needs assets.</summary>
-    public bool AllowsRuntimeItems => !GameNet.NetAuthority.IsNetworked;
+    /// <summary>
+    /// Bottles and harvests without an asset get items made at runtime. Their ids say what they are, so every machine of
+    /// a network session makes the same item (see <see cref="AlchemyItems"/>).
+    /// </summary>
+    public bool AllowsRuntimeItems => true;
 
     /// <summary>
     /// Gives <paramref name="count"/> × <paramref name="item"/> (what does not fit drops at the station). Bottles of
@@ -983,9 +1084,14 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         if (player == null || string.IsNullOrEmpty(text))
             return;
         if (CardTable.IsLocalPlayer(player))
+        {
             InventoryManager.For(player)?.ShowMessage(text, InventoryFeedback.Kind.Info);
+            LocalMessage?.Invoke(text);
+        }
+        else if (Net != null)
+            Net.Tell(player, text);
         else
-            Net?.Tell(player, text);
+            InventoryManager.For(player)?.ShowMessage(text, InventoryFeedback.Kind.Info); // a session's inventory forwards it to its owner
     }
 
     // ------------------------------------------------------------------ saving
@@ -1003,7 +1109,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     /// <summary>Writes the preparation in progress to disk (nothing when the vessel is empty).</summary>
     public void SavePreparation()
     {
-        if (!Application.isPlaying)
+        if (!Application.isPlaying || IsMirror)
             return;
         try
         {
@@ -1024,7 +1130,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
 
     private void LoadPreparation()
     {
-        if (!Application.isPlaying)
+        if (!Application.isPlaying || IsMirror)
             return;
         try
         {
@@ -1062,7 +1168,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
 
     private void SaveResidue()
     {
-        if (!Application.isPlaying || !persistPreparation)
+        if (!Application.isPlaying || !persistPreparation || IsMirror)
             return;
         try
         {
@@ -1083,7 +1189,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
 
     private void LoadResidue()
     {
-        if (!Application.isPlaying)
+        if (!Application.isPlaying || IsMirror)
             return;
         try
         {
@@ -1095,6 +1201,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             if (save?.residue != null)
                 foreach (SubstanceAmount r in save.residue)
                     if (r != null && Rules.IndexOf(r.substance) >= 0) residue.Add(r);
+            metaVersion++;
         }
         catch (Exception) { }
     }
@@ -1136,7 +1243,17 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         if (player == null)
             return;
         if (CardTable.IsLocalPlayer(player))
+        {
             AlchemyStationUI.Show(this, player);
+            return;
+        }
+        // A remote player (the server got the interaction from their client): the window opens on their screen.
+        if (!RulesHere)
+            return;
+        if (Net != null && Net.Open(player))
+            BeginTending(player);
+        else
+            Tell(player, "This station is not set up for multiplayer: only the host can brew here.");
     }
 
     public void OnFocusChanged(PlayerInteractor interactor, bool focused) { }

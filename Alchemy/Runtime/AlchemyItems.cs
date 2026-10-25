@@ -5,11 +5,58 @@ using UnityEngine;
 /// <summary>
 /// The items alchemy gives and takes: the bottle item of an outcome tier (its asset, else one made at runtime), the
 /// item a harvested substance becomes, and runtime ingredient items from the built-in presets (free supplies).
-/// Runtime items exist only on this machine: network sessions and saves need assets (Tools ▸ SimpleMovements ▸
-/// Alchemy ▸ Create Potion Items / Create Ingredient Items).
+/// Runtime items have ids that say what they are ("potion:healing_draught#2#C0405A", "ingredient:sunpetal"), so every
+/// machine of a network session makes the same item from the id and the rules (an <see cref="IRuntimeItemSource"/>
+/// that never needs the server). Saves that must survive changes to the rules are better served by assets
+/// (Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Potion Items / Create Ingredient Items).
 /// </summary>
 public static class AlchemyItems
 {
+    public const string PotionPrefix = "potion:";
+    public const string IngredientPrefix = "ingredient:";
+
+    private static readonly Source source = new Source();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void RegisterSource() => ItemDatabase.AddSource(source);
+
+    /// <summary>Alchemy's runtime items for the item database (made from the id on every machine).</summary>
+    private sealed class Source : IRuntimeItemSource
+    {
+        public bool Owns(string id) => id != null && (id.StartsWith(PotionPrefix, StringComparison.Ordinal) || id.StartsWith(IngredientPrefix, StringComparison.Ordinal));
+        public ItemSO Find(string id) => Resolve(id);
+        public string Export(string id) => null;
+        public ItemSO Import(string id, string definition) => Resolve(id);
+    }
+
+    /// <summary>The id of a runtime bottle: its outcome, tier and liquid colour.</summary>
+    public static string PotionId(string outcomeId, int tier, Color color) => $"{PotionPrefix}{outcomeId}#{tier}#{ColorUtility.ToHtmlStringRGB(color)}";
+
+    /// <summary>The runtime item of an id ("potion:…", "ingredient:…") made from the project's Alchemy Database; null when it names nothing.</summary>
+    public static ItemSO Resolve(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            return null;
+        if (id.StartsWith(IngredientPrefix, StringComparison.Ordinal))
+            return RuntimeIngredient(id.Substring(IngredientPrefix.Length));
+        if (!id.StartsWith(PotionPrefix, StringComparison.Ordinal))
+            return null;
+        if (byId.TryGetValue(id, out BrewedPotionSO known) && known != null)
+            return known;
+        string[] parts = id.Substring(PotionPrefix.Length).Split('#');
+        if (parts.Length != 3 || !int.TryParse(parts[1], out int tier) || !ColorUtility.TryParseHtmlString("#" + parts[2], out Color color))
+            return null;
+        AlchemyRules rules = AlchemyDatabase.Instance.Rules;
+        AlchemyOutcome outcome = rules.Outcome(parts[0]);
+        if (outcome == null || !outcome.producesItems || tier < 0 || tier >= Math.Max(1, outcome.tiers.Count))
+            return null;
+        BrewedPotionSO item = BrewedPotionSO.CreateRuntime(outcome, tier, rules, color);
+        byId[id] = item;
+        return item;
+    }
+
+    private static readonly Dictionary<string, BrewedPotionSO> byId = new Dictionary<string, BrewedPotionSO>(StringComparer.Ordinal);
+
     private static readonly Dictionary<string, BrewedPotionSO> runtimePotions = new Dictionary<string, BrewedPotionSO>(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, AlchemyIngredientSO> runtimeIngredients = new Dictionary<string, AlchemyIngredientSO>(StringComparer.OrdinalIgnoreCase);
 
@@ -18,6 +65,7 @@ public static class AlchemyItems
     {
         runtimePotions.Clear();
         runtimeIngredients.Clear();
+        byId.Clear();
     }
 
     /// <summary>
@@ -40,6 +88,7 @@ public static class AlchemyItems
         Color color = result.LiquidColor.a > 0f ? result.LiquidColor : new Color(0.6f, 0.6f, 0.65f);
         BrewedPotionSO item = BrewedPotionSO.CreateRuntime(result.Outcome, t, rules, Typical(rules, result.Outcome, color));
         runtimePotions[key] = item;
+        byId[item.RuntimeId] = item;
         return item;
     }
 
@@ -103,6 +152,6 @@ public static class AlchemyItems
         return list;
     }
 
-    /// <summary>Was <paramref name="item"/> made at runtime (no asset: only this machine knows it)?</summary>
+    /// <summary>Was <paramref name="item"/> made at runtime (no asset: it is made again from its id)?</summary>
     public static bool IsRuntime(ItemSO item) => item != null && (item.hideFlags & HideFlags.DontSave) != 0;
 }

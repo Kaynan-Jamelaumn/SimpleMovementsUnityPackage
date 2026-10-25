@@ -47,6 +47,8 @@ namespace GameNet
                 trading.Message -= OnMessage;
             }
             trading = relay;
+            ItemDatabase.RuntimeItemDefined -= OnItemDefined;
+            ItemDatabase.RuntimeItemDefined += OnItemDefined; // a crafted item offered: shown once the server described it
             if (canvas == null)
                 Build();
             if (trading != null)
@@ -69,6 +71,7 @@ namespace GameNet
 
         private void OnDestroy()
         {
+            ItemDatabase.RuntimeItemDefined -= OnItemDefined;
             if (trading != null)
             {
                 trading.ViewChanged -= OnViewChanged;
@@ -151,6 +154,8 @@ namespace GameNet
         }
 
         private void MarkDirty() => dirty = true;
+
+        private void OnItemDefined(string id) => dirty = true;
 
         private void Register()
         {

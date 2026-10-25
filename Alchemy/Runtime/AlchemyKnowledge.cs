@@ -129,9 +129,25 @@ public class AlchemyKnowledge : MonoBehaviour
     public string Export() => Data.ToJson();
 
     // ------------------------------------------------------------------ saving
+    /// <summary>
+    /// A client of a network session: the journal is the server's (it is kept with the character there and sent while a
+    /// station is worked), never read from or written to this machine's disk - a client cannot teach itself.
+    /// </summary>
+    public static bool FollowsServer => GameNet.NetAuthority.IsNetworked && !GameNet.NetAuthority.IsServer;
+
+    /// <summary>A network client: the journal as the server has it.</summary>
+    public void ReceiveFromServer(string json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return;
+        data = AlchemyJournalData.FromJson(json) ?? new AlchemyJournalData();
+        dirty = false;
+        Changed?.Invoke();
+    }
+
     private void Update()
     {
-        if (!dirty || !saveToDisk)
+        if (!dirty || !saveToDisk || FollowsServer)
             return;
         saveTimer += Time.unscaledDeltaTime;
         if (saveTimer >= 3f)
@@ -173,7 +189,7 @@ public class AlchemyKnowledge : MonoBehaviour
     {
         dirty = false;
         saveTimer = 0f;
-        if (data == null || !saveToDisk)
+        if (data == null || !saveToDisk || FollowsServer)
             return;
         try
         {
@@ -190,7 +206,7 @@ public class AlchemyKnowledge : MonoBehaviour
     private void Load()
     {
         data = new AlchemyJournalData();
-        if (!saveToDisk)
+        if (!saveToDisk || FollowsServer)
             return;
         try
         {

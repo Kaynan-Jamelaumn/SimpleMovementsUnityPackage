@@ -54,6 +54,8 @@ Added by **Make Selected Prefab Networked ▸ Player**, next to a `NetworkObject
 | `NetInventory` | The server's inventory is the truth. Every action is a request; the owner receives the whole inventory after changes. See page 07. |
 | `NetWallet` | Money. Balances go to the owner only. |
 | `NetCardTable` | Card tables (on the table, with a NetworkObject): the server runs the table and the game; each seated player gets their own view (their hand), everyone else the onlookers' view; seated players' actions go to the server. See [Minigames 01](../Minigames/01-Card-Games-and-Truco.md#5-multiplayer). |
+| `NetCraftStation` | Crafting stations (on the station, with a NetworkObject): the server runs the workshop, takes materials, gives items and keeps the journal; every client follows a copy of the workshop; the working player's actions go to the server, bounded by a `CraftRequestGuard`. See [Crafting 08](../Crafting/08-Multiplayer.md). |
+| `NetAlchemyStation` | Alchemy stations, the same way (`AlchemyRequestGuard`). See [Alchemy 06](../Alchemy/06-Scripting-and-Extending.md#8-networking). |
 | `NetInjuries` | Injuries (when the injury system is on): the server's body-part condition, injuries, missing limbs and the treatment being applied, to everyone who sees the player; the owner's treatments go to the server as requests. See [Player 13](../Player/13-Injuries-and-Treatment.md#9-multiplayer). |
 | `NetPlayerRealm` | The player's realm (City, World, Dungeon, travelling), zone and PvP flag. |
 | `NetInteractor` | Interactions (talk, open, pick up, use) are sent to the server, which checks range and timing and runs them. See page 08. |
@@ -68,6 +70,8 @@ Added by **Make Selected Prefab Networked ▸ Player**, next to a `NetworkObject
 | Ability pickup | *▸ Ability Pickup* | `NetworkObject`. |
 | World portal | *▸ World Portal* | `NetworkObject`. The `Portal` reacts only on the server. |
 | Interactable (merchant, chest, door, gate) | *▸ Interactable* | `NetworkObject`, `NetInteractable` (replicates its open/locked state). |
+| Crafting station | *▸ Crafting Station* (or the station inspector's *Make Networked*) | `NetworkObject`, `NetCraftStation`. |
+| Alchemy station | *▸ Alchemy Station* (or the station inspector's *Make Networked*) | `NetworkObject`, `NetAlchemyStation`. |
 | `Resources/SimpleMovements/Networking/NetWorldItem.prefab` | *Create World Item Prefab* (also made by Create Bootstrap Scene) | The generic carrier used when an item has no networked world prefab of its own. |
 
 ## 5. In the DungeonInstance scene
@@ -94,6 +98,7 @@ Added by **Create Dungeon Instance Scene**.
 | `WorldChunkMath`, `WeatherSyncState` | Pure helpers for terrain streaming and weather sync. |
 | `StatusReplication` | Rounding, tick conversions and request validation for `NetCombatStatus`. |
 | `InventorySnapshot`, `WorldItemState`, `SceneObjectPath` | Inventory messages, world item data, naming scene objects without a network identity. |
+| `NetPayload`, `StationMirror` (`CraftWorkshopFeed`/`Follower`, `AlchemyBrewFeed`/`Follower`, snapshots, packets), `CraftNetRequest`, `AlchemyNetRequest`, `AlchemyRequestGuard` | Crafting and alchemy stations: compressed payloads in parts, clients' copies following the server's simulation, requests and their bounds. |
 | `InteractionPath`, `TradeBook`, `TradeExchange`, `TradeView` | Interaction targets and the trading rules. |
 | `DungeonLayoutCodec`, `DungeonBuildSeed` | Dungeon headers and floors sent to clients, and the per-floor build seeds (the dungeon seed stays secret). |
 | `NetInput` | Keyboard checks for the network tools (F9). |

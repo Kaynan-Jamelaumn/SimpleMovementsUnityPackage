@@ -20,12 +20,15 @@ namespace GameNet
     /// at once; the snapshot confirms or corrects it.</item>
     /// <item>Server to everyone watching: what the player holds and wears (<see cref="InventoryAppearance"/>), shown with the
     /// normal equipment visuals on their copies.</item>
+    /// <item>Items made at runtime (a forged sword, a worked piece): a client that meets an id it does not know asks the
+    /// server for its definition through its own player's inventory, so they show in inventories, on other players, on
+    /// the ground and in trades (see NetInventory.Definitions.cs).</item>
     /// </list>
     /// Put it on the player prefab root next to the NetworkObject (the inventory UI must be part of the player prefab).
     /// Offline it does nothing and the inventory works exactly as before.
     /// </summary>
     [DisallowMultipleComponent]
-    public class NetInventory : NetworkBehaviour, IInventoryNetBridge
+    public partial class NetInventory : NetworkBehaviour, IInventoryNetBridge
     {
         /// <summary>Seconds a pickup's hold may be shorter than its Pick Up Time (network jitter).</summary>
         public const float HoldTolerance = 0.25f;
@@ -91,6 +94,7 @@ namespace GameNet
             Resolve();
             schedule = new InventorySendSchedule(minSendInterval, pollInterval);
             HookServer(true);
+            HookServerDefinitions(true);
             UpdateAppearance();
         }
 
@@ -98,6 +102,7 @@ namespace GameNet
         {
             base.OnStopServer();
             HookServer(false); // nothing is replicated any more
+            HookServerDefinitions(false);
             // The player leaves: the storage it had open is saved (while its items still exist) and freed for the others.
             if (inventory != null)
                 inventory.CloseStorageIf(null);
@@ -113,6 +118,7 @@ namespace GameNet
             {
                 SetBridge(true);
                 remoteDirty = true;
+                HookClientDefinitions(true);
                 if (IsOwner)
                     AskForSnapshot();
             }
@@ -123,6 +129,7 @@ namespace GameNet
             base.OnStopClient();
             appearance.OnChange -= OnAppearanceChanged;
             HookOwnerVisuals(false);
+            HookClientDefinitions(false);
             SetBridge(false);
         }
 
@@ -132,6 +139,8 @@ namespace GameNet
             if (IsServerInitialized)
                 return;
             remoteDirty = true;
+            HookClientDefinitions(false);
+            HookClientDefinitions(true); // the owner asks the server for unknown runtime items
             if (IsOwner)
                 AskForSnapshot();
             else
@@ -177,6 +186,8 @@ namespace GameNet
         private void OnDestroy()
         {
             HookServer(false);
+            HookServerDefinitions(false);
+            HookClientDefinitions(false);
             HookOwnerVisuals(false);
             SetBridge(false);
         }
@@ -485,6 +496,7 @@ namespace GameNet
             // Sent before the server had our latest request: a newer one is on its way (this one would undo what is shown).
             if (!InventoryNetRules.ShouldApply(snapshot.ack, sentSeq))
                 return;
+            lastSnapshot = snapshot; // shown again when the definition of a runtime item in it arrives
             inventory.ApplySnapshot(snapshot);
         }
 

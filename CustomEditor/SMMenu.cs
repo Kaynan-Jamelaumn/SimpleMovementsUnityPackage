@@ -12,7 +12,7 @@
 /// Project Setup ▸               ┐ project assets and input
 /// Input ▸                       ┘
 /// ─────────────
-/// Player ▸ Inventory ▸ Mobs ▸ NPC ▸ Social ▸ Alchemy ▸ characters and items
+/// Player ▸ Inventory ▸ Mobs ▸ NPC ▸ Social ▸ Alchemy ▸ Crafting ▸ characters and items
 /// ─────────────
 /// Hub World ▸ Weather ▸ Dungeon ▸ Scene ▸              the world and scenes
 /// ─────────────
@@ -47,6 +47,7 @@ public static class SMMenu
     public const int NPC = 203;
     public const int Social = 204;
     public const int Alchemy = 205;
+    public const int Crafting = 206;
 
     // ---------------------------------------------------------------- world
     public const int HubWorld = 300;
