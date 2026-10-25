@@ -29,6 +29,16 @@ public static class AlchemyDefaults
         Albumen = "albumen", EggCurds = "egg_curds", Lees = "lees", Casein = "casein", BoundToxin = "bound_toxin", Serpentine = "serpentine",
         Antitoxin = "antitoxin", Somnine = "somnine", Salicin = "salicin", WillowEssence = "willow_essence", PlantFibre = "plant_fibre",
         Sanctity = "sanctity", Charcoal = "charcoal", BlastingPowder = "blasting_powder", Soap = "soap";
+    public const string SanguineSap = "sanguine_sap", SanguineEssence = "sanguine_essence", StormSalt = "storm_salt", StormEssence = "storm_essence",
+        LichenAcid = "lichen_acid", StarfrostEssence = "starfrost_essence", ShadowSpores = "shadow_spores", UmbralEssence = "umbral_essence",
+        DraconicIchor = "draconic_ichor", WyrmbloodEssence = "wyrmblood_essence", Gingerol = "gingerol", GingerEssence = "ginger_essence",
+        RoseOil = "rose_oil", Brimstone = "brimstone", Vitriol = "vitriol", Vigorine = "vigorine", Mandragorin = "mandragorin",
+        RestorativeEssence = "restorative_essence", PhoenixAsh = "phoenix_ash", PhoenixEssence = "phoenix_essence",
+        AetherDown = "aether_down", ZephyrEssence = "zephyr_essence";
+    public const string EmberSalt = "ember_salt", SomnineSalt = "somnine_salt", AlchemicalGold = "alchemical_gold",
+        BerserkerEssence = "berserker_essence", Panacea = "panacea";
+    public const string SilverSap = "silver_sap", HolyEssence = "holy_essence", KelpGel = "kelp_gel", GillEssence = "gill_essence",
+        AshPollen = "ash_pollen", FirewardEssence = "fireward_essence";
 
     /// <summary>Replaces the database's content with the built-in alchemy.</summary>
     public static void Fill(AlchemyDatabase db)
@@ -279,6 +289,118 @@ public static class AlchemyDefaults
             .Solid().With("fire", 1f).With("volatility", 0.9f).WithDensity(1.7f).PerItem(2f),
         S(Soap, "Soft Soap", SubstanceRole.Byproduct, new Color(0.9f, 0.88f, 0.75f), 900f, "Oil cooked with lye: it holds oil and water together and washes anything clean.", "a slippery lather")
             .With("emulsifier", 0.8f).With("alkali", 0.2f).WithDensity(1.02f),
+
+        // ---- Bloodmoss: iron quickens its sap.
+        S(SanguineSap, "Sanguine Sap", SubstanceRole.Raw, new Color(0.6f, 0.1f, 0.15f), 900f, "The dark red sap of bloodmoss. Warmth quickens it - and iron far more.", "a dark red, iron-smelling sap")
+            .With("vitality", 0.4f).With("organic", 0.4f).With("oxidizable", 0.3f).WithDensity(1.1f),
+        S(SanguineEssence, "Sanguine Essence", SubstanceRole.Active, new Color(0.8f, 0.05f, 0.1f), 210f, "Quickened blood-sap: it makes the body mend itself.", "a vivid crimson liquid")
+            .With("vitality", 0.7f).With("fire", 0.1f).WithDensity(1.06f).StableUpTo(95f, 0.03f, "the crimson browns", (Sludge, 0.6f)),
+
+        // ---- Thunder agate: stirred hard (and kept cool), its salt charges mana.
+        S(StormSalt, "Storm Salt", SubstanceRole.Reagent, new Color(0.55f, 0.6f, 0.85f), 900f, "Ground thunder agate: it crackles when stirred against magic.", "blue grit that crackles")
+            .With("mineral", 0.6f).With("arcane", 0.4f).With("volatility", 0.1f).WithDensity(2.4f)
+            .Dissolves(Water, 0.2f).Dissolves(Spirit, 0.02f).SolubilityDoubling(30f),
+        S(StormEssence, "Storm Essence", SubstanceRole.Active, new Color(0.6f, 0.75f, 1f), 120f, "Mana charged by friction: quick and restless. Heat discharges it.", "a flickering, sparking blue")
+            .With("arcane", 0.5f).With("fire", 0.3f).With("volatility", 0.25f).WithDensity(1f)
+            .StableUpTo(60f, 0.05f, "the sparks die away", (Water, 1f)),
+
+        // ---- Glacier lichen and starfrost: mana and rime bound in an ice bath.
+        S(LichenAcid, "Lichen Acid", SubstanceRole.Reagent, new Color(0.75f, 0.85f, 0.75f), 900f, "The sharp acid of glacier lichen.", "a cold, sour tang")
+            .With("acid", 0.6f).With("organic", 0.1f).WithDensity(1.1f).Dissolves(Water, 0.4f).Dissolves(Spirit, 0.5f),
+        S(StarfrostEssence, "Starfrost Essence", SubstanceRole.Active, new Color(0.75f, 0.85f, 1f), 130f, "Mana and rime bound together in deep cold: it glitters like a winter sky - and only keeps cold.", "a glittering, star-flecked liquid")
+            .With("frost", 0.6f).With("arcane", 0.6f).WithDensity(1f)
+            .StableUpTo(12f, 0.02f, "the starlight in it fades", (ManaEssence, 0.5f), (Water, 0.5f)),
+
+        // ---- Nightcap: its spores only wake in the dark.
+        S(ShadowSpores, "Shadow Spores", SubstanceRole.Raw, new Color(0.2f, 0.18f, 0.28f), 900f, "Spores of the nightcap mushroom: they only stir at night.", "a dusky, drifting cloud")
+            .With("organic", 0.3f).With("arcane", 0.3f).WithDensity(1.05f).Dissolves(Water, 0.3f).Dissolves(Spirit, 1f).Dissolves(Oil, 0.2f),
+        S(UmbralEssence, "Umbral Essence", SubstanceRole.Active, new Color(0.15f, 0.1f, 0.25f), 190f, "The calm of the dark: whoever drinks it no longer fears it. Light and sanctity undo it.", "an inky liquid that swallows the light")
+            .With("mind", 0.5f).With("arcane", 0.4f).WithDensity(1.02f)
+            .StableUpTo(50f, 0.04f, "the darkness thins", (Sludge, 0.5f))
+            .Interacts(InteractionKind.Clashes, SubstanceSelector.Of(Sanctity), 0.6f, "light and shadow cancel with a soft hiss"),
+
+        // ---- Wyrmscale: its ichor wakes only in fire far hotter than water allows.
+        S(DraconicIchor, "Draconic Ichor", SubstanceRole.Raw, new Color(0.55f, 0.2f, 0.05f), 900f, "The ichor locked in a wyrm's scales. Only oil draws it out, and only great heat wakes it.", "a smoky, ember-flecked ichor")
+            .With("fire", 0.6f).With("vitality", 0.3f).WithDensity(1.3f)
+            .Dissolves(Water, 0.05f).Dissolves(Spirit, 0.3f).Dissolves(Oil, 1f).Dissolves(Turpentine, 0.6f),
+        S(WyrmbloodEssence, "Wyrmblood Essence", SubstanceRole.Active, new Color(0.75f, 0.25f, 0.05f), 320f, "Ichor woken by ardent essence: the hide of a dragon in a bottle.", "a molten, glowing orange")
+            .With("fire", 0.7f).With("stability", 0.6f).WithDensity(1.2f)
+            .StableUpTo(230f, 0.03f, "the ichor cracks into black flakes", (FireAsh, 1f)),
+
+        // ---- Ginger: warmth, and a spice for mead.
+        S(Gingerol, "Gingerol", SubstanceRole.Raw, new Color(0.9f, 0.75f, 0.35f), 900f, "The heat of ginger root. Hot water turns it into a warming essence.", "a sharp, spicy warmth")
+            .With("fire", 0.4f).With("organic", 0.3f).WithDensity(1.05f).Dissolves(Water, 0.3f).Dissolves(Spirit, 1f).Dissolves(Oil, 0.8f),
+        S(GingerEssence, "Ginger Essence", SubstanceRole.Active, new Color(0.95f, 0.7f, 0.25f), 230f, "Warming ginger: it drives off the cold and tiredness.", "a golden, spicy liquid")
+            .With("fire", 0.5f).With("vitality", 0.2f).WithDensity(1.03f).StableUpTo(130f, 0.03f, "the spice turns harsh", (Sludge, 0.5f)),
+
+        // ---- Rose: an oil to distil, like lavender's.
+        S(RoseOil, "Rose Oil", SubstanceRole.Active, new Color(1f, 0.6f, 0.7f), 88f, "Attar of roses: it gladdens the heart. Water barely holds it; it distils over with steam.", "a sweet, heady scent of roses")
+            .With("mind", 0.5f).With("vitality", 0.2f).With("organic", 0.2f).With("oxidizable", 0.3f).WithDensity(0.87f)
+            .Dissolves(Water, 0.01f).Dissolves(Spirit, 1f).Dissolves(Oil, 1f).Dissolves(Turpentine, 1f).Volatile(2.5f)
+            .StableUpTo(150f, 0.03f, "the sweet scent sours", (Sludge, 0.5f)),
+
+        // ---- Sulphur and vitriol: the strongest acid, and it eats everything organic.
+        S(Brimstone, "Brimstone", SubstanceRole.Reagent, new Color(0.95f, 0.85f, 0.2f), 900f, "Yellow sulphur. Boiled in water with air beaten in, it slowly becomes oil of vitriol.", "yellow grains that smell of rotten eggs")
+            .Solid().With("fire", 0.5f).With("mineral", 0.6f).With("toxicity", 0.1f).WithDensity(2f).PerItem(2f),
+        S(Vitriol, "Oil of Vitriol", SubstanceRole.Reagent, new Color(0.9f, 0.9f, 0.7f), 330f, "A fuming, oily acid that chars anything organic it touches.", "an oily liquid that fumes")
+            .With("acid", 2f).With("toxicity", 0.45f).With("mineral", 0.3f).WithDensity(1.8f),
+
+        // ---- Wakeberry: an alkaloid that comes out in alkali (the mirror of dreamshade).
+        S(Vigorine, "Vigorine", SubstanceRole.Active, new Color(0.55f, 0.3f, 0.15f), 220f, "The waking alkaloid of wakeberries. Alkali draws it out; acid flattens it.", "a bitter, roasted smell")
+            .With("fire", 0.2f).With("mind", 0.3f).WithDensity(1.05f).ExtractsBestAtPh(11f, 0.5f)
+            .StableUpTo(100f, 0.03f, "the bitterness turns flat", (Sludge, 0.5f)).StableBetweenPh(5f, 14f, 0.04f, "the bitterness turns sour and flat"),
+
+        // ---- Mandrake: it binds to healing essence into something greater.
+        S(Mandragorin, "Mandragorin", SubstanceRole.Raw, new Color(0.7f, 0.6f, 0.4f), 900f, "The heavy alkaloid of mandrake root: a little poisonous alone, restorative bound to healing essence. Acid draws it out.", "an earthy, numbing bitterness")
+            .With("mind", 0.4f).With("vitality", 0.2f).With("toxicity", 0.15f).WithDensity(1.15f).ExtractsBestAtPh(4f, 0.6f),
+        S(RestorativeEssence, "Restorative Essence", SubstanceRole.Active, new Color(1f, 0.85f, 0.45f), 230f, "Healing essence bound to mandragorin: it mends body and mind together.", "a soft, golden, glowing liquid")
+            .With("vitality", 0.9f).With("mind", 0.4f).With("stability", 0.3f).WithDensity(1.05f)
+            .StableUpTo(80f, 0.03f, "the gold dulls", (Sludge, 0.6f)),
+
+        // ---- Phoenix: born in fire - and it only lives while it is hot.
+        S(PhoenixAsh, "Phoenix Ash", SubstanceRole.Reagent, new Color(1f, 0.55f, 0.2f), 900f, "Glowing ash from a phoenix feather.", "glowing orange ash that floats")
+            .Solid().With("fire", 1f).With("vitality", 0.5f).WithDensity(0.5f).PerItem(1f),
+        S(PhoenixEssence, "Phoenix Essence", SubstanceRole.Active, new Color(1f, 0.45f, 0.1f), 400f, "Ardent essence reborn in phoenix fire. It lives only while hot: bottle it hot, or it gutters out.", "a liquid flame")
+            .With("vitality", 1f).With("fire", 0.6f).WithDensity(1f)
+            .StableDownTo(90f, 0.03f, "the flame inside it gutters out", (FireAsh, 0.5f), (VitalEssence, 0.5f))
+            .Interacts(InteractionKind.Clashes, SubstanceSelector.Of(RimeEssence), 0.5f, "fire and frost cancel in a burst of steam", (Water, 1f)),
+
+        // ---- Griffin down: it floats on water; spirit draws it out.
+        S(AetherDown, "Aether Down", SubstanceRole.Raw, new Color(0.95f, 0.95f, 1f), 900f, "The down of a griffin, lighter than air. Water will not wet it; spirit takes it in.", "fine white down floating on top")
+            .With("arcane", 0.4f).With("organic", 0.2f).WithDensity(0.15f).Dissolves(Water, 0.02f).Dissolves(Spirit, 0.6f).Dissolves(Oil, 0.1f),
+        S(ZephyrEssence, "Zephyr Essence", SubstanceRole.Active, new Color(0.85f, 0.95f, 1f), 140f, "Lightness itself: the load seems to lift from your shoulders.", "an almost weightless, shimmering liquid")
+            .With("arcane", 0.4f).With("mind", 0.2f).WithDensity(0.8f).StableUpTo(70f, 0.04f, "the shimmer settles and is gone", (Water, 1f)),
+
+
+        // ---- Chains, branches and reversible reactions.
+        S(EmberSalt, "Ember Salt", SubstanceRole.Reagent, new Color(0.9f, 0.45f, 0.3f), 900f, "Ember dust bound by brine in the cold: safe to carry. Heat it past 65 °C and the dust comes free again.", "warm orange grains")
+            .Solid().With("fire", 0.3f).With("mineral", 0.6f).With("stability", 0.5f).WithDensity(1.6f).PerItem(2f),
+        S(SomnineSalt, "Somnine Salt", SubstanceRole.Intermediate, new Color(0.45f, 0.4f, 0.65f), 900f, "Somnine bound by acid: heat no longer destroys it. Neutralise the acid and the somnine comes back.", "a pale lilac tint")
+            .With("mind", 0.3f).WithDensity(1.1f),
+        S(AlchemicalGold, "Alchemical Gold", SubstanceRole.Byproduct, new Color(1f, 0.82f, 0.3f), 900f, "Lead transmuted in the presence of unstable aether. It settles at the bottom of the vessel.", "glittering golden flecks sinking")
+            .Solid().With("mineral", 1f).WithDensity(19f).PerItem(1f),
+        S(BerserkerEssence, "Berserker Essence", SubstanceRole.Active, new Color(0.7f, 0.1f, 0.05f), 230f, "Quickened blood fired by ardent essence: fury in a bottle.", "a dark, seething red")
+            .With("fire", 0.6f).With("vitality", 0.4f).With("toxicity", 0.03f).WithDensity(1.05f)
+            .StableUpTo(110f, 0.03f, "the seething stops and it clots", (Sludge, 0.6f)),
+        S(Panacea, "Panacea", SubstanceRole.Active, new Color(1f, 0.95f, 0.8f), 260f, "Restorative essence joined with mana: the cure for nearly everything. Too much heat and it falls apart.", "a pearly, softly shining liquid")
+            .With("vitality", 1f).With("mind", 0.6f).With("arcane", 0.4f).With("stability", 0.4f).WithDensity(1.03f)
+            .StableUpTo(75f, 0.03f, "the pearl-light dims", (RestorativeEssence, 0.5f), (Water, 0.5f)),
+
+        S(SilverSap, "Silver Sap", SubstanceRole.Raw, new Color(0.85f, 0.88f, 0.92f), 900f, "The bright sap of silverleaf. Alone it does little; blessed water wakes it.", "a bright, silvery sap")
+            .With("vitality", 0.3f).With("arcane", 0.3f).With("organic", 0.3f).WithDensity(1.04f),
+        S(HolyEssence, "Holy Essence", SubstanceRole.Active, new Color(1f, 0.97f, 0.85f), 220f, "Silver sap blessed by sanctity: it steadies the mind and mends the body. Shadow cannot abide it.", "a warm, golden-white light")
+            .With("vitality", 0.5f).With("mind", 0.5f).With("stability", 0.4f).WithDensity(1.02f)
+            .StableUpTo(90f, 0.03f, "the light flickers out", (Water, 1f))
+            .Interacts(InteractionKind.Clashes, SubstanceSelector.Of(UmbralEssence), 0.8f, "light and shadow annihilate each other"),
+        S(KelpGel, "Kelp Gel", SubstanceRole.Raw, new Color(0.35f, 0.5f, 0.3f), 900f, "The slippery gel of deepsea kelp. It only gives up its gift in strong salt water.", "a slippery green gel")
+            .With("organic", 0.5f).With("vitality", 0.1f).WithDensity(1.03f),
+        S(GillEssence, "Gill Essence", SubstanceRole.Active, new Color(0.3f, 0.65f, 0.6f), 210f, "Kelp gel bound in brine: whoever drinks it breathes long under water.", "a cool sea-green liquid")
+            .With("vitality", 0.2f).With("stability", 0.4f).WithDensity(1.04f)
+            .StableUpTo(95f, 0.03f, "the sea-green clouds and smells of rot", (Sludge, 0.6f)),
+        S(AshPollen, "Ash Pollen", SubstanceRole.Raw, new Color(0.55f, 0.5f, 0.45f), 900f, "Grey pollen of the ashbloom, which flowers on burnt ground. Only near-boiling heat wakes it; old ash hurries it.", "a fine grey pollen")
+            .With("fire", 0.3f).With("organic", 0.3f).WithDensity(1.1f),
+        S(FirewardEssence, "Fireward Essence", SubstanceRole.Active, new Color(0.8f, 0.5f, 0.35f), 240f, "Ash pollen woken by heat: the body shrugs off heat and flame.", "a smoky, copper-coloured liquid")
+            .With("fire", 0.2f).With("stability", 0.6f).WithDensity(1.05f),
     };
 
     private static AlchemySubstance S(string id, string name, SubstanceRole role, Color color, float boilingPoint, string description, string observation) =>
@@ -516,6 +638,142 @@ public static class AlchemyDefaults
             .Consumes(BlastingPowder).Makes(FireAsh, 0.5f)
             .Speed(0.5f, 200f, 0f).Between(190f, 2000f)
             .Heat(400f).Erupts(0.05f, 0.6f).Looks(ReactionVisual.Flash, "BOOM! the powder goes off"),
+
+        // Bloodmoss: warmth quickens the sap, a pinch of iron far more.
+        R("blood_quickening", "Blood Quickening", "Warmth quickens sanguine sap into an essence that makes the body mend itself; iron hurries it.")
+            .Consumes(SanguineSap).Makes(SanguineEssence, 0.9f)
+            .Speed(0.012f, 60f, 20f).Between(35f, 90f).ModifiedBy(Iron, 4f, 0.005f)
+            .Looks(ReactionVisual.Glow, "the red deepens to a vivid crimson"),
+
+        // Thunder agate: friction charges mana - stir hard, and keep it cool.
+        R("storm_charging", "Storm Charging", "Storm salt stirred hard against mana essence charges it with lightning. Only friction does it; heat discharges it.")
+            .Consumes(StormSalt).Consumes(ManaEssence).Makes(StormEssence, 1.8f)
+            .Speed(0.25f, 30f, 0f).Between(-10f, 60f)
+            .Needs(new VariableCondition(AlchemyVariables.Agitation, 0.5f, 2f))
+            .Looks(ReactionVisual.Sparks, "sparks crackle round the spoon"),
+
+        // Starfrost: mana and rime bound in deep cold.
+        R("starfrost_binding", "Starfrost Binding", "In the deep cold of an ice bath, rime essence and mana essence bind into starfrost.")
+            .Consumes(RimeEssence).Consumes(ManaEssence).Makes(StarfrostEssence, 1.8f)
+            .Speed(0.25f, 0f, 0f).Between(-30f, 6f)
+            .Needs(new VariableCondition(AlchemyVariables.Bath, 1.5f, 3f))
+            .Looks(ReactionVisual.Glow, "tiny stars glitter in the liquid"),
+
+        // Nightcap: the spores only wake at night.
+        R("shadow_steeping", "Shadow Steeping", "Shadow spores steeped at night, gently warm, give up the calm of the dark.")
+            .Consumes(ShadowSpores).Makes(UmbralEssence, 0.9f)
+            .Speed(0.02f, 30f, 20f).Between(10f, 50f)
+            .Needs(new VariableCondition(AlchemyVariables.Night, 0.5f, 2f))
+            .Looks(ReactionVisual.None, "the liquid darkens until it swallows the light"),
+
+        // Wyrmscale: ichor woken by ardent essence, far hotter than water allows.
+        R("ichor_awakening", "Ichor Awakening", "Above 120 °C - in oil - draconic ichor drinks ardent essence and wakes.")
+            .Consumes(DraconicIchor).Consumes(ArdentEssence).Makes(WyrmbloodEssence, 1.6f)
+            .Speed(0.6f, 140f, 25f).Between(120f, 240f)
+            .Heat(3f).Looks(ReactionVisual.Glow, "the oil glows like molten metal"),
+
+        // Ginger: hot water warms the root's heat into an essence.
+        R("ginger_warming", "Ginger Warming", "Hot, gingerol mellows into a warming essence.")
+            .Consumes(Gingerol).Makes(GingerEssence, 0.9f)
+            .Speed(0.03f, 80f, 20f).Between(60f, 110f)
+            .Looks(ReactionVisual.Bubbles, "a spicy steam rises"),
+
+        // Sulphur and vitriol.
+        R("vitriol_making", "Vitriol Making", "Brimstone boiled in water slowly becomes oil of vitriol - far faster with air beaten in.")
+            .Consumes(Brimstone).Consumes(Water, 0.5f, 0f).Makes(Vitriol, 1.2f)
+            .Speed(0.01f, 100f, 20f).Between(90f, 300f)
+            .FasterWhen(new VariableCondition(AlchemyVariables.Aeration, 0.2f, 2f), 4f)
+            .Looks(ReactionVisual.Smoke, "choking yellow fumes rise"),
+        R("vitriol_charring", "Vitriol Charring", "Oil of vitriol chars anything organic it touches.")
+            .Consumes(SubstanceSelector.WithProperty("organic", 0.3f, $"{Oil},{Spirit},{Turpentine}")).Consumes(Vitriol, 0.3f)
+            .Makes(Char, 0.7f).Makes(Water, 0.3f)
+            .Speed(0.4f, 20f, 25f).Between(0f, 400f)
+            .Heat(4f).Looks(ReactionVisual.Smoke, "it blackens and smokes where the acid touches"),
+
+        // Mandrake and healing essence: restoration.
+        R("restoration", "Restoration", "Mandragorin binds to vital essence into a restorative essence, gently warm; moon dew guides it.")
+            .Consumes(Mandragorin).Consumes(VitalEssence).Makes(RestorativeEssence, 2.2f)
+            .Speed(0.15f, 60f, 20f).Between(40f, 78f).ModifiedBy(MoonDew, 3f, 0.01f)
+            .Looks(ReactionVisual.Glow, "a soft golden light fills the vessel"),
+
+        // Phoenix: reborn in fire.
+        R("rebirth", "Rebirth", "In fire above 140 °C, phoenix ash rekindles ardent essence into phoenix essence.")
+            .Consumes(PhoenixAsh, 1f, 0.5f).Consumes(ArdentEssence, 1.5f).Makes(PhoenixEssence, 3f)
+            .Speed(1.5f, 160f, 30f).Between(140f, 260f)
+            .Heat(6f).Erupts(0.4f, 0.2f).Looks(ReactionVisual.Flash, "a bird of flame rises from the vessel and sinks back in"),
+
+        // Griffin down: spirit draws its lightness out.
+        R("lightening", "Lightening", "Aether down taken in by spirit, gently warm, gives up its lightness.")
+            .Consumes(AetherDown).Makes(ZephyrEssence, 0.9f)
+            .Speed(0.03f, 40f, 20f).Between(20f, 65f)
+            .Looks(ReactionVisual.Glow, "the liquid seems to float in the vessel"),
+
+        // ---- Reversible: temperature decides the way. Cold brine binds ember dust; past 65 °C it lets it go.
+        R("ember_binding", "Ember Binding", "In the cold, brine binds ember dust into a stable salt - and lets it go again when heated past 65 °C.")
+            .Consumes(EmberDust).Consumes(Brine).Makes(EmberSalt, 2f)
+            .Speed(0.15f, 20f, 0f).Between(-20f, 55f)
+            .Looks(ReactionVisual.None, "the red specks dull and gather into warm orange grains")
+            .Reversible(0.06f, 80f, 15f, 65f, 400f, "orange grains crackle and release glowing specks"),
+
+        // ---- Reversible: the pH decides the way. Acid binds somnine into a salt heat cannot hurt; neutralising frees it.
+        R("somnine_salting", "Somnine Salting", "Acid binds somnine into a salt that heat cannot destroy; neutralise the acid and the somnine comes back.")
+            .Consumes(Somnine).Makes(SomnineSalt, 1f)
+            .Speed(0.08f, 20f, 0f).Between(-20f, 200f)
+            .Needs(new VariableCondition(AlchemyVariables.Ph, -1f, 5f))
+            .Looks(ReactionVisual.None, "the violet pales to lilac")
+            .Reversible(0.1f, 20f, 0f, -20f, 200f, "the lilac deepens back to violet")
+            .ReverseNeeds(new VariableCondition(AlchemyVariables.Ph, 6f, 15f)),
+
+        // ---- Reversible: concentration decides the way. Much water pushes the esters back; another way to the esters.
+        R("esterification", "Esterification", "Warm spirit and acetic acid slowly make fruity esters (and water); much water turns them back.")
+            .Consumes(Spirit, 1f, 1f).Consumes(AceticAcid).Makes(Esters, 1f).Makes(Water, 0.3f)
+            .Speed(0.03f, 60f, 25f).Between(20f, 120f)
+            .Looks(ReactionVisual.None, "a fruity smell rises")
+            .Reversible(0.003f, 60f, 25f, 20f, 120f, "the fruity smell fades"),
+
+        // ---- An alternative pathway (moonlit blood is a second way to healing essence) - competing with moon infusion for the dew.
+        R("moonlit_blood", "Moonlit Blood", "Moon dew calms sanguine essence into healing essence - a second way to it. The dew is also what moon infusion wants.")
+            .Consumes(SanguineEssence).Consumes(MoonDew).Makes(VitalEssence, 1.5f)
+            .Speed(0.2f, 50f, 20f).Between(30f, 70f)
+            .FasterWhen(new VariableCondition(AlchemyVariables.Night, 0.5f, 2f), 2f)
+            .Looks(ReactionVisual.Glow, "the crimson softens to rose"),
+
+        // ---- Branching: the same sanguine essence turns to fury in the heat with ardent essence (with sludge as by-product).
+        R("fury_binding", "Fury Binding", "Hot, sanguine essence takes ardent essence into a seething fury - and leaves a little sludge.")
+            .Consumes(SanguineEssence).Consumes(ArdentEssence).Makes(BerserkerEssence, 1.6f).Makes(Sludge, 0.2f)
+            .Speed(0.15f, 85f, 20f).Between(70f, 110f)
+            .Heat(2f).Looks(ReactionVisual.Bubbles, "the red darkens and seethes"),
+
+        // ---- A dependent reaction: possible only while unstable aether - which only overcharging mana makes - is in the vessel.
+        R("transmutation", "Transmutation", "While unstable aether crackles in the vessel, quicksilver turns lead into gold. Without the aether nothing happens.")
+            .Consumes(LeadDust).Consumes(Quicksilver, 0.5f).Makes(AlchemicalGold, 1f)
+            .Speed(0.4f, 80f, 0f).Between(60f, 200f)
+            .Needs(new SubstanceCondition(SubstanceSelector.Of(UnstableAether), 0.002f))
+            .Looks(ReactionVisual.Sparks, "golden sparks drift down through the liquid"),
+
+        // ---- The end of a chain: sap → healing essence → restorative essence (mandrake), and moon dew → mana; joined, the panacea.
+        R("panacea_union", "Panacea", "Restorative essence and mana essence joined gently warm: the panacea. Copper helps.")
+            .Consumes(RestorativeEssence).Consumes(ManaEssence).Makes(Panacea, 1.8f)
+            .Speed(0.15f, 55f, 20f).Between(40f, 72f)
+            .FasterWhen(new EquipmentTagCondition("copper"), 2f)
+            .Looks(ReactionVisual.Glow, "a pearly light spreads from the centre"),
+
+        // Silverleaf: a dependent reaction - blessed water must be in the vessel.
+        R("blessing", "Blessing", "Sanctity wakes silver sap into holy essence (gently warm).")
+            .Consumes(SilverSap).Consumes(Sanctity, 0.4f).Makes(HolyEssence, 1.2f)
+            .Speed(0.2f, 40f, 20f).Between(15f, 70f)
+            .Looks(ReactionVisual.Glow, "a warm golden-white light rises"),
+        // Deepsea kelp: only in strong salt water.
+        R("gill_binding", "Gill Binding", "Kelp gel binds into gill essence - but only in strong brine (seawater, or salted water).")
+            .Consumes(KelpGel).Makes(GillEssence, 0.9f)
+            .Speed(0.03f, 60f, 20f).Between(30f, 90f)
+            .Needs(new SubstanceCondition(SubstanceSelector.Of(Brine), 0.08f))
+            .Looks(ReactionVisual.None, "the gel dissolves into a cool sea-green"),
+        // Ashbloom: near-boiling heat, old ash as catalyst.
+        R("fireward_waking", "Fireward Waking", "Near-boiling heat wakes ash pollen into fireward essence; fire ash hurries it.")
+            .Consumes(AshPollen).Makes(FirewardEssence, 0.9f)
+            .Speed(0.0025f, 95f, 15f).Between(85f, 130f).ModifiedBy(FireAsh, 6f, 0.01f)
+            .Looks(ReactionVisual.Smoke, "a smoky copper colour spreads"),
     };
 
     private static AlchemyReaction R(string id, string name, string description) =>
@@ -588,6 +846,67 @@ public static class AlchemyDefaults
             .Requires(new SubstanceCondition(SubstanceSelector.Of(Esters), 0.004f)).Requires(new SubstanceCondition(SubstanceSelector.Of(Spirit), 0.3f))
             .Requires(new RoleShareCondition(SubstanceRole.Active, 0f, 0.1f))
             .Fx(ConsumableEffectType.Stamina, 25f).Fx(ConsumableEffectType.BodyHeat, 10f).Fx(ConsumableEffectType.Sanity, 5f).Fx(ConsumableEffectType.SpeedFactor, -10f, 30f, 1f));
+
+        // ---- Pack 4.
+        list.Add(Potion("bloodmoss_tonic", "Bloodmoss Tonic", "The body mends itself for a full minute.", 60, SanguineEssence, 0.25f, 35f)
+            .Requires(new DominantCondition(SanguineEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(SanguineEssence), 0.03f))
+            .Fx(ConsumableEffectType.Hp, 10f).Fx(ConsumableEffectType.HpRegeneration, 3f, 60f, 1f).Fx(ConsumableEffectType.Stamina, 10f));
+        list.Add(Potion("stormcall_elixir", "Stormcall Elixir", "Lightning in the legs: much faster for twenty seconds, and breathless after.", 61, StormEssence, 0.2f, 55f)
+            .Requires(new DominantCondition(StormEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(StormEssence), 0.03f))
+            .Fx(ConsumableEffectType.SpeedFactor, 30f, 20f, 1f).Fx(ConsumableEffectType.Stamina, 40f).Fx(ConsumableEffectType.Oxygen, -10f));
+        list.Add(Potion("starfrost_draught", "Starfrost Draught", "Mana like a winter night: restores it, keeps restoring it, and cools the body.", 60, StarfrostEssence, 0.25f, 60f)
+            .Requires(new DominantCondition(StarfrostEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(StarfrostEssence), 0.03f))
+            .Fx(ConsumableEffectType.Mana, 40f).Fx(ConsumableEffectType.ManaRegeneration, 3f, 30f, 1f).Fx(ConsumableEffectType.BodyHeat, -15f));
+        list.Add(Potion("shadow_draught", "Draught of Shadows", "The dark no longer frightens you: the mind holds steady for a while.", 60, UmbralEssence, 0.15f, 40f)
+            .Requires(new DominantCondition(UmbralEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(UmbralEssence), 0.03f))
+            .Fx(ConsumableEffectType.Sanity, 20f).Fx(ConsumableEffectType.SanityDamageFactor, -40f, 90f, 1f));
+        list.Add(Potion("dragonheart_elixir", "Dragonheart Elixir", "A dragon's hide and heart: far less damage taken, and warm in any cold.", 62, WyrmbloodEssence, 0.25f, 90f)
+            .Requires(new DominantCondition(WyrmbloodEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(WyrmbloodEssence), 0.03f))
+            .Fx(ConsumableEffectType.HpDamageFactor, -40f, 90f, 1f).Fx(ConsumableEffectType.BodyHeat, 20f).Fx(ConsumableEffectType.MaxHp, 20f, 90f, 1f));
+        list.Add(Potion("spiced_mead", "Spiced Mead", "Mead with ginger: it warms you through and chases off tiredness.", 62, Spirit, 0.12f, 20f)
+            .Requires(new SubstanceCondition(SubstanceSelector.Of(Esters), 0.001f)).Requires(new SubstanceCondition(SubstanceSelector.Of(Spirit), 0.03f, 0.3f))
+            .Requires(new SubstanceCondition(SubstanceSelector.Of(GingerEssence), 0.008f))
+            .Fx(ConsumableEffectType.Drink, 15f).Fx(ConsumableEffectType.Stamina, 30f).Fx(ConsumableEffectType.BodyHeat, 12f).Fx(ConsumableEffectType.Sanity, 8f));
+        list.Add(Potion("ginger_tonic", "Ginger Tonic", "Warms the body and restores stamina.", 60, GingerEssence, 0.2f, 15f)
+            .Requires(new DominantCondition(GingerEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(GingerEssence), 0.03f))
+            .Fx(ConsumableEffectType.Stamina, 30f).Fx(ConsumableEffectType.BodyHeat, 12f).Fx(ConsumableEffectType.StaminaRegeneration, 1.5f, 30f, 1f));
+        list.Add(Potion("rosewater", "Rosewater", "Gladdens the heart and soothes the mind.", 60, RoseOil, 0.15f, 30f)
+            .Requires(new DominantCondition(RoseOil)).Requires(new SubstanceCondition(SubstanceSelector.Of(RoseOil), 0.015f))
+            .Fx(ConsumableEffectType.Sanity, 30f).Fx(ConsumableEffectType.SanityRegeneration, 1.5f, 30f, 1f));
+        list.Add(Potion("wakeful_brew", "Wakeful Brew", "Bitter and bracing: tiredness falls away, and the hands shake a little.", 60, Vigorine, 0.08f, 20f)
+            .Requires(new DominantCondition(Vigorine)).Requires(new SubstanceCondition(SubstanceSelector.Of(Vigorine), 0.02f))
+            .Fx(ConsumableEffectType.Sleep, 25f).Fx(ConsumableEffectType.StaminaRegeneration, 2f, 60f, 1f).Fx(ConsumableEffectType.Sanity, -5f));
+        list.Add(Potion("restoration_elixir", "Restoration Elixir", "Mends body and mind together: a great healing, and a clear head.", 64, RestorativeEssence, 0.3f, 80f)
+            .Requires(new DominantCondition(RestorativeEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(RestorativeEssence), 0.03f))
+            .Fx(ConsumableEffectType.Hp, 60f).Fx(ConsumableEffectType.Sanity, 20f).Fx(ConsumableEffectType.HpRegeneration, 2f, 30f, 1f));
+        list.Add(Potion("phoenix_draught", "Phoenix Draught", "Fire that heals: a huge healing that keeps burning on. Bottle it hot.", 65, PhoenixEssence, 0.25f, 150f)
+            .Requires(new DominantCondition(PhoenixEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(PhoenixEssence), 0.03f))
+            .Fx(ConsumableEffectType.Hp, 80f).Fx(ConsumableEffectType.HpRegeneration, 4f, 30f, 1f).Fx(ConsumableEffectType.BodyHeat, 15f));
+        list.Add(Potion("featherfall_draught", "Featherfall Draught", "Your load feels light: carry more and move lighter for two minutes.", 60, ZephyrEssence, 0.2f, 45f)
+            .Requires(new DominantCondition(ZephyrEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(ZephyrEssence), 0.03f))
+            .Fx(ConsumableEffectType.MaxWeight, 20f, 120f, 1f).Fx(ConsumableEffectType.SpeedFactor, 8f, 120f, 1f));
+        list.Add(Potion("berserker_draught", "Berserker Draught", "Fury: faster and tireless for a while - but every blow lands harder on you.", 60, BerserkerEssence, 0.25f, 45f)
+            .Requires(new DominantCondition(BerserkerEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(BerserkerEssence), 0.03f))
+            .Fx(ConsumableEffectType.SpeedFactor, 15f, 45f, 1f).Fx(ConsumableEffectType.StaminaRegeneration, 4f, 45f, 1f)
+            .Fx(ConsumableEffectType.HpDamageFactor, 20f, 45f, 1f).Fx(ConsumableEffectType.Sanity, -10f));
+        list.Add(Potion("panacea", "Panacea", "The cure for nearly everything: body and mind restored, and stronger for a while.", 67, Panacea, 0.25f, 250f)
+            .Requires(new DominantCondition(Panacea)).Requires(new SubstanceCondition(SubstanceSelector.Of(Panacea), 0.03f))
+            .Fx(ConsumableEffectType.Hp, 100f).Fx(ConsumableEffectType.Sanity, 30f).Fx(ConsumableEffectType.HpRegeneration, 3f, 60f, 1f)
+            .Fx(ConsumableEffectType.MaxHp, 20f, 120f, 1f));
+        list.Add(Potion("blessed_elixir", "Blessed Elixir", "Mends the body and shields the mind from dread for two minutes.", 60, HolyEssence, 0.2f, 60f)
+            .Requires(new DominantCondition(HolyEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(HolyEssence), 0.03f))
+            .Fx(ConsumableEffectType.Hp, 30f).Fx(ConsumableEffectType.Sanity, 25f).Fx(ConsumableEffectType.SanityDamageFactor, -25f, 120f, 1f));
+        list.Add(Potion("gillweed_draught", "Gillweed Draught", "Breathe long under water: breath restored, and lost far slower for two minutes.", 60, GillEssence, 0.15f, 45f)
+            .Requires(new DominantCondition(GillEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(GillEssence), 0.03f))
+            .Fx(ConsumableEffectType.Oxygen, 60f).Fx(ConsumableEffectType.OxygenFactor, -40f, 120f, 1f));
+        list.Add(Potion("fireward_tonic", "Fireward Tonic", "Heat and flame trouble you far less for two minutes.", 60, FirewardEssence, 0.15f, 40f)
+            .Requires(new DominantCondition(FirewardEssence)).Requires(new SubstanceCondition(SubstanceSelector.Of(FirewardEssence), 0.03f))
+            .Fx(ConsumableEffectType.BodyHeatFactor, -50f, 120f, 1f).Fx(ConsumableEffectType.HpDamageFactor, -10f, 120f, 1f));
+        AlchemyOutcome vitriol = Potion("oil_of_vitriol", "Oil of Vitriol", "A fuming acid for etching, dissolving and darker work. Never drink it.", 58, Vitriol, 0.3f, 40f)
+            .Requires(new SubstanceCondition(SubstanceSelector.Of(Vitriol), 0.06f))
+            .Fx(ConsumableEffectType.Hp, -40f);
+        vitriol.kind = AlchemyOutcomeKind.Material;
+        list.Add(vitriol);
 
         // Materials and dangerous compounds.
         AlchemyOutcome ink = Potion("iron_gall_ink", "Iron Gall Ink", "A deep black ink for scribes and mapmakers. Not for drinking.", 60, IronGallInk, 0.3f, 30f)
@@ -780,6 +1099,43 @@ public static class AlchemyDefaults
             "a bready smell", Ground, (Yeast, 0.5f, 1f)),
         I("Blasting Powder", "Saltpetre, ember dust and charcoal. It goes off above 190 °C.", MaterialKind.Essence, 25f, 0.1f, new Color(0.25f, 0.22f, 0.2f), 1f, 20f,
             "the powder sinks - careful", Ground, (BlastingPowder, 2f, 1f)),
+
+        // ---- Pack 4.
+        I("Bloodmoss", "A dark red moss that grows on old battlefields. Warm it gently - a pinch of iron quickens it.", MaterialKind.Herb, 4f, 0.05f, new Color(0.55f, 0.1f, 0.12f), 20f, 18f,
+            "the moss bleeds red into the liquid", Whole, (SanguineSap, 3f, 0.85f), (PlantFibre, 0.4f, 0.3f), (Tannin, 0.2f, 0.3f)).Hard(0.2f),
+        I("Thunder Agate", "A banded blue stone that crackles in a storm. Grind it fine and stir it hard into mana - but keep it cool.", MaterialKind.Gem, 18f, 0.2f, new Color(0.45f, 0.55f, 0.85f), 30f, 20f,
+            "blue grit sinks and crackles", Whole, (StormSalt, 2f, 0.5f)).Hard(0.9f),
+        I("Glacier Lichen", "A pale lichen from the ice fields: frost oil and a sharp acid.", MaterialKind.Herb, 5f, 0.05f, new Color(0.75f, 0.85f, 0.8f), 20f, -2f,
+            "a chill spreads from the lichen", Whole, (FrostOil, 1.5f, 0.6f), (LichenAcid, 0.4f, 0.7f), (PlantFibre, 0.5f, 0.3f)).Hard(0.25f),
+        I("Nightcap", "A black mushroom whose spores stir only at night.", MaterialKind.Herb, 6f, 0.05f, new Color(0.18f, 0.15f, 0.25f), 25f, 15f,
+            "a dark cloud of spores drifts down", Whole, (ShadowSpores, 2f, 0.6f), (FungalPulp, 1f, 0.5f)),
+        I("Wyrmscale", "A scale shed by a young wyrm. Its ichor wants hot oil and ardent essence.", MaterialKind.MonsterPart, 40f, 0.2f, new Color(0.6f, 0.25f, 0.1f), 45f, 25f,
+            "the scale smokes as it sinks", Whole, (DraconicIchor, 1.5f, 0.4f)).Hard(0.85f),
+        I("Ginger Root", "A knobbly root full of heat. In hot water it makes a warming tonic; in mead, spiced mead.", MaterialKind.Herb, 2f, 0.05f, new Color(0.85f, 0.7f, 0.4f), 25f, 20f,
+            "a spicy smell rises", Whole, (Gingerol, 1.4f, 0.5f), (PlantFibre, 0.8f, 0.3f), (Water, 0.4f, 1f)).Hard(0.5f),
+        I("Rose Petals", "Red petals with a sweet, heady oil. Distil it, or draw it out in spirit.", MaterialKind.Herb, 4f, 0.02f, new Color(0.85f, 0.2f, 0.3f), 15f, 20f,
+            "the petals scent the air", Whole, (RoseOil, 0.5f, 0.55f), (Sugars, 0.3f, 0.9f), (PlantFibre, 0.3f, 0.3f), (Water, 0.3f, 1f)).Hard(0.1f),
+        I("Cave Sulphur", "Yellow brimstone. Boil it in water with air beaten in for oil of vitriol - which chars every herb it touches.", MaterialKind.Stone, 3f, 0.2f, new Color(0.95f, 0.85f, 0.25f), 10f, 20f,
+            "yellow grains sink with a reek of rotten eggs", Ground, (Brimstone, 2f, 1f)),
+        I("Wakeberries", "Bitter brown berries that chase off sleep. Their alkaloid comes out in alkali - a little potash.", MaterialKind.Herb, 3f, 0.05f, new Color(0.45f, 0.25f, 0.12f), 40f, 20f,
+            "a bitter, roasted smell", Whole, (Vigorine, 0.6f, 0.2f), (Sugars, 0.6f, 0.9f), (Water, 0.8f, 1f)).Hard(0.3f),
+        I("Mandrake Root", "A forked root that screams when pulled. Its alkaloid comes out in acid - and turns a healing brew into something greater.", MaterialKind.Herb, 15f, 0.1f, new Color(0.65f, 0.55f, 0.35f), 40f, 18f,
+            "a faint shriek as it goes under", Whole, (Mandragorin, 1.2f, 0.35f), (Tannin, 0.3f, 0.5f), (PlantFibre, 1f, 0.3f)).Hard(0.6f),
+        I("Phoenix Feather", "A feather that never stops glowing. Its ash reborn in fire, with ardent essence, makes the rarest healing of all.", MaterialKind.MonsterPart, 80f, 0.02f, new Color(1f, 0.5f, 0.15f), 20f, 60f,
+            "the feather flares and crumbles into glowing ash", Whole, (PhoenixAsh, 1f, 1f)).Hard(0.2f),
+        I("Griffin Down", "Down lighter than air: it floats on water. Spirit draws its lightness out.", MaterialKind.MonsterPart, 20f, 0.01f, new Color(0.96f, 0.95f, 0.92f), 15f, 20f,
+            "the down floats on the surface", Whole, (AetherDown, 1.5f, 0.7f)).Hard(0.1f),
+
+        I("Silverleaf", "A pale leaf that shines in moonlight. Steep it with holy water.", MaterialKind.Herb, 8f, 0.02f, new Color(0.8f, 0.85f, 0.9f), 20f, 18f,
+            "the leaf glints as it sinks", Whole, (SilverSap, 2.5f, 0.8f), (PlantFibre, 0.4f, 0.3f)).Hard(0.2f),
+        I("Deepsea Kelp", "A dark, slippery kelp from the deep. Its gift comes out only in strong salt water.", MaterialKind.Herb, 4f, 0.1f, new Color(0.25f, 0.4f, 0.25f), 30f, 10f,
+            "the kelp slithers in", Whole, (KelpGel, 2.5f, 0.6f), (Brine, 0.4f, 1f), (PlantFibre, 0.5f, 0.3f)).Hard(0.3f),
+        I("Ashbloom", "A grey flower that grows on burnt ground. Boil it; a pinch of fire ash hurries it.", MaterialKind.Herb, 5f, 0.02f, new Color(0.55f, 0.5f, 0.45f), 25f, 20f,
+            "grey pollen drifts down", Whole, (AshPollen, 2f, 0.7f), (PlantFibre, 0.4f, 0.3f)).Hard(0.2f),
+        I("Ember Salt", "Ember dust bound in brine: safe to carry and store. Heat it past 65 °C and the fire comes free.", MaterialKind.Essence, 6f, 0.1f, new Color(0.9f, 0.45f, 0.3f), 5f, 20f,
+            "warm orange grains sink", Ground, (EmberSalt, 2f, 1f)),
+        I("Alchemical Gold", "Gold made from lead. Worth a fortune - if anyone believes where it came from.", MaterialKind.Gem, 150f, 0.1f, new Color(1f, 0.82f, 0.3f), 5f, 20f,
+            "golden flecks sink to the bottom", Ground, (AlchemicalGold, 1f, 1f)),
 
         // ---- Supplies (they go into no vessel): filter media and fuel.
         I("Filter Paper", "A sheet of fine paper: filters out every particle. Used up each time.", MaterialKind.Cloth, 1f, 0.01f, new Color(0.95f, 0.95f, 0.9f), 0f, 20f,

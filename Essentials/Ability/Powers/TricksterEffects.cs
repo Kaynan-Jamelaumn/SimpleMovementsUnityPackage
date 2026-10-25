@@ -408,7 +408,15 @@ public class TwinGatesAction : CastAction
         if (fwd.sqrMagnitude < 1e-4f) fwd = caster.transform.forward;
         fwd.Normalize();
         Vector3 a = MirageCopy.Ground(caster.BasePosition + fwd * nearDistance, caster.transform);
-        Vector3 b = MirageCopy.Ground(cast.AimPoint, caster.transform);
+        // The far gate at the aimed point - but never behind the caster or on top of the near gate (an aim that hit the
+        // ground at the caster's feet, a first-person ray): then straight ahead, as far as the ability reaches.
+        Vector3 aim = cast.AimPoint;
+        Vector3 toAim = aim - caster.BasePosition;
+        toAim.y = 0f;
+        float ahead = Vector3.Dot(toAim, fwd), minApart = nearDistance + gateRadius * 3f;
+        if (ahead < minApart)
+            aim = caster.BasePosition + fwd * Mathf.Max(minApart, cast.Definition != null ? cast.Definition.Range(cast.Stats) : minApart);
+        Vector3 b = MirageCopy.Ground(aim, caster.transform);
         var p = new TwinGatesPower { gateRadius = gateRadius, reuseDelay = reuseDelay, gatePrefab = gatePrefab, gateColor = gateColor };
         p.SetGates(a, b);
         ActivePowers.For(caster).Run("twin gates", "Twin Gates", new CharacterPower[] { p }, duration * Mathf.Max(0.1f, cast.Stats.duration), 1f, caster);

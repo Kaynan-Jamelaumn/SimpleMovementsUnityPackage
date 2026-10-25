@@ -89,6 +89,35 @@ public class ConditionalRate
 }
 
 /// <summary>
+/// The way back of a reversible reaction: its products turn into its reactants again, at their own rate, in their own
+/// temperature window and conditions. Both ways run at once; the mixture settles where they balance - and moves when
+/// the temperature, the pH or the amounts change (more product pushes it back, more reactant forward).
+/// </summary>
+[Serializable]
+public class ReactionReverse
+{
+    [Tooltip("The reaction also runs backwards (the rules add it as a reaction of its own: \"<name> (reverse)\").")]
+    public bool enabled;
+    [Tooltip("Rate constant of the way back at its reference temperature (per second).")]
+    [Min(0f)] public float rate = 0.02f;
+    [Tooltip("Below this temperature (°C) it does not go back.")]
+    public float minTemperature = -100f;
+    [Tooltip("Above this temperature (°C) it does not go back.")]
+    public float maxTemperature = 2000f;
+    public float referenceTemperature = 20f;
+    [Tooltip("The way back doubles every this many degrees (negative = faster when colder). A way back that speeds up " +
+             "more with heat than the way forward moves the balance back as it gets hot.")]
+    public float doublingDegrees = 20f;
+    [Tooltip("Conditions that must ALL be met for it to go back (a pH range: the salt forms in acid and gives the " +
+             "alkaloid back when neutralised).")]
+    [SerializeReference, SubclassSelector] public List<AlchemyCondition> conditions = new List<AlchemyCondition>();
+    [Tooltip("Heat per unit of the way back (usually the opposite of the way forward).")]
+    public float heatPerUnit;
+    [Tooltip("What the player sees while it goes back.")]
+    public string observation = "";
+}
+
+/// <summary>
 /// One transformation rule: what it consumes, what it makes, how fast (by concentration and temperature), what speeds
 /// it up or stops it, what else it needs, and the heat it gives off or takes. Reactions are general - they name
 /// substances, properties or roles, never ingredients or recipes - so a new ingredient takes part in every reaction its
@@ -146,6 +175,15 @@ public class AlchemyReaction
     [Range(0f, 1f)] public float spillFraction = 0.3f;
     [Tooltip("Presentation only: what the station shows while it runs.")]
     public ReactionVisual visual = ReactionVisual.Bubbles;
+
+    [Header("Reversible")]
+    [Tooltip("The products can turn back into the reactants (temperature, pH, concentration decide which way it goes).")]
+    public ReactionReverse reverse = new ReactionReverse();
+
+    /// <summary>Made by the rules as the way back of the reaction with this id (null for the others).</summary>
+    [NonSerialized] public string reverseOf;
+    public bool IsReverse => !string.IsNullOrEmpty(reverseOf);
+    public bool IsReversible => reverse != null && reverse.enabled;
 
     /// <summary>Made by the rules from a substance's thermal stability (not in the database's list).</summary>
     [NonSerialized] public string generatedFrom;
@@ -254,7 +292,7 @@ public class AlchemyReaction
         foreach (ReactionProduct p in products)
             if (p != null && !string.IsNullOrEmpty(p.substance))
                 rhs.Add(rules != null ? rules.SubstanceName(p.substance) : p.substance);
-        return (lhs.Count > 0 ? string.Join(" + ", lhs) : "?") + " → " + (rhs.Count > 0 ? string.Join(" + ", rhs) : "nothing");
+        return (lhs.Count > 0 ? string.Join(" + ", lhs) : "?") + (IsReversible ? " ⇌ " : " → ") + (rhs.Count > 0 ? string.Join(" + ", rhs) : "nothing");
     }
 
     /// <summary>
@@ -292,6 +330,8 @@ public class AlchemyReaction
         if (heatPerUnit > 0.5f) parts.Add("gives off heat");
         else if (heatPerUnit < -0.5f) parts.Add("cools the mixture");
         if (eruptionRate > 0f) parts.Add("violent");
+        if (IsReversible) parts.Add("reversible");
+        if (IsReverse) parts.Add("the way back");
         return string.Join(" · ", parts);
     }
 
@@ -319,5 +359,70 @@ public class AlchemyReaction
                 c?.Validate(rules, where, errors, warnings);
         if (rate <= 0f)
             warnings.Add($"{where}: Rate is 0, it never happens.");
+        if (IsReversible)
+        {
+            if (products == null || products.Count == 0)
+                errors.Add($"{where}: reversible but makes nothing to turn back.");
+            if (reactants != null)
+                foreach (ReactionReactant r in reactants)
+                    if (r?.substance != null && r.substance.mode != SubstanceSelectorMode.Substance)
+                        errors.Add($"{where}: reversible reactions need named reactants (the way back must know what to make), not '{r.substance.Describe(rules)}'.");
+            if (reverse.minTemperature > reverse.maxTemperature)
+                errors.Add($"{where}: the way back's Min Temperature is above its Max Temperature.");
+            if (reverse.conditions != null)
+                foreach (AlchemyCondition c in reverse.conditions)
+                    c?.Validate(rules, where + " (reverse)", errors, warnings);
+        }
+    }
+
+    /// <summary>Makes it reversible: the way back's rate, reference temperature, doubling and window.</summary>
+    public AlchemyReaction Reversible(float k, float reference, float doubling, float min = -100f, float max = 2000f, string seen = "")
+    {
+        reverse = new ReactionReverse
+        {
+            enabled = true, rate = k, referenceTemperature = reference, doublingDegrees = doubling,
+            minTemperature = min, maxTemperature = max, observation = seen, heatPerUnit = -heatPerUnit,
+        };
+        return this;
+    }
+
+    /// <summary>A condition the way back needs (call after <see cref="Reversible"/>).</summary>
+    public AlchemyReaction ReverseNeeds(AlchemyCondition c)
+    {
+        if (reverse != null && c != null)
+            reverse.conditions.Add(c);
+        return this;
+    }
+
+    /// <summary>The way back as a reaction of its own (the rules add it; null when not reversible).</summary>
+    public AlchemyReaction MakeReverse()
+    {
+        if (!IsReversible || products == null || products.Count == 0)
+            return null;
+        var r = new AlchemyReaction
+        {
+            id = "reverse." + id,
+            displayName = Name + " (reverse)",
+            description = $"The way back of {Name}: its products turn into its reactants again.",
+            observation = string.IsNullOrWhiteSpace(reverse.observation) ? "something that had formed comes apart again" : reverse.observation,
+            rate = reverse.rate,
+            minTemperature = reverse.minTemperature,
+            maxTemperature = reverse.maxTemperature,
+            referenceTemperature = reverse.referenceTemperature,
+            doublingDegrees = reverse.doublingDegrees,
+            heatPerUnit = reverse.heatPerUnit,
+            visual = visual,
+            reverseOf = id,
+        };
+        foreach (ReactionProduct p in products)
+            if (p != null && !string.IsNullOrWhiteSpace(p.substance))
+                r.reactants.Add(new ReactionReactant(SubstanceSelector.Of(p.substance), Math.Max(0.01f, p.ratio)));
+        foreach (ReactionReactant re in reactants)
+            if (re?.substance != null && re.substance.mode == SubstanceSelectorMode.Substance && !string.IsNullOrWhiteSpace(re.substance.id))
+                r.products.Add(new ReactionProduct(re.substance.id, re.ratio));
+        if (reverse.conditions != null)
+            foreach (AlchemyCondition c in reverse.conditions)
+                if (c != null) r.conditions.Add(c);
+        return r;
     }
 }

@@ -66,6 +66,10 @@ public class SizeChangePower : CharacterPower
         float f = Factor(ctx);
         float change = f - 1f;
         CharacterBody body = ctx.Body;
+        if (body == null && ctx.Root != null && !ctx.IsPresentation)
+            AbilityDiagnostics.WarnOnce(ctx.Root.gameObject, "no-body",
+                $"[{ctx.Root.name}] has no Character Body: '{ctx.Label}' changes the Height stat (and its health and strength " +
+                "follow), but nothing scales the model. Add a Character Body to the character (the Player Setup Validator lists it).");
         if (body != null)
         {
             // A big race doubled would pass the body's limit; the Height stat itself stays between half and double.

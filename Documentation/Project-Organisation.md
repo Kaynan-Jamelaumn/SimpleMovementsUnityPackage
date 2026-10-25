@@ -13,7 +13,7 @@ once, in `Essentials/Project/SMAssets.cs` (runtime) and `CustomEditor/Project/SM
 
 ```
 Assets/Resources/SimpleMovements/
-├─ Settings/          CombatSettings, AbsorptionSettings, HubWorldSettings, ElementalSystem, InjurySettings
+├─ Settings/          CombatSettings, AbsorptionSettings, HubWorldSettings, ElementalSystem, InjurySettings, AlchemyDatabase
 ├─ Databases/         AbilityDatabase, TraitDatabase, ItemDatabase, ItemCategoryDatabase, CharacterCatalog
 ├─ Economy/           DefaultCurrency
 ├─ Characters/
@@ -32,6 +32,7 @@ Assets/Resources/SimpleMovements/
 │  ├─ Ammo/           ammo presets, ammo made from a weapon
 │  ├─ Medical/        medical item presets (bandage, splint, suture kit...) and their icons / model
 │  ├─ Limbs/          severed limb items (one per body part that can be lost), icons, models
+│  ├─ Alchemy/        Ingredients/, Potions/ (one per outcome tier), Icons/, Models/
 │  └─ Drops/          ItemDropManager; Tables/ (Chest Drops, Breakable Drops, your tables)
 ├─ UI/
 │  ├─ HUD/            HUD prefabs made from the Player HUD inspector
@@ -40,6 +41,8 @@ Assets/Resources/SimpleMovements/
 │  ├─ Weather/        Weather Condition assets
 │  ├─ Hub World/      hub city materials and wall meshes
 │  └─ Biome Backups/  biome backup files (JSON)
+├─ Alchemy/
+│  └─ Equipment/      vessel presets (Iron Cauldron, Copper Alembic, Glass Retort, Frost Basin)
 ├─ Dungeons/          default folder of Dungeon ▸ Create Default Setup / Create Dungeon Type, and portals
 ├─ Networking/        NetWorldItem prefab, RealmObserverCondition
 └─ Generated/         anything else older versions put in Assets/Generated
@@ -53,6 +56,8 @@ Assets/Resources/SimpleMovements/
 | Item Drop Manager, drop tables | Inventory ▸ Item Drops ▸ Create Item Drop Manager / Create New Drop Table | `Items/Drops/`, `Items/Drops/Tables/` |
 | Injury Settings | Project Setup ▸ Create Injury Settings (Resources) | `Settings/` |
 | Medical items, severed limb items | Player ▸ Injuries ▸ Create Medical Items / Create Severed Limb Items | `Items/Medical/`, `Items/Limbs/` |
+| Alchemy Database | Project Setup ▸ Create Alchemy Database (Resources) | `Settings/` |
+| Alchemy ingredients, potions, vessels | Alchemy ▸ Create Ingredient Items / Create Potion Items / Create Equipment Presets | `Items/Alchemy/…`, `Alchemy/Equipment/` |
 | A mob's profile, basic attack, abilities, body parts | Mobs ▸ Create New Mob, Quick Setup Mob, the mob inspectors | `Mobs/<Type>/` |
 | Player abilities | Ability presets on the player, casters, legacy conversion | `Abilities/` |
 | Example races, class archetypes | Project Setup ▸ Create Example Races, Player Class ▸ Create Class Archetype | `Characters/Races/`, `Characters/Classes/` |
@@ -152,7 +157,7 @@ Old systems are spread over five folders. Put them under one `Legacy/` folder (o
 | `Inventory/Items/BackUpWeaponController.cs`, `Procedural/LEGACY/FuncationBackUp.cs` | entirely commented out | delete |
 | `Procedural/LEGACY/NewTerrain.cs`, `Procedural/LEGACY/OldOldTerrain/`, `Procedural/World/LEGACY_VoronoiGeneratior.cs` | not used by any script | `Legacy/Terrain/` (or delete) |
 | `Procedural/LEGACY/SingleTerrain/` | used only among themselves | `Legacy/Terrain/SingleTerrain/` |
-| `Procedural/Dungeon/WallColission.cs` | not used | delete |
+| `Procedural/Dungeon/WallCollision.cs` | not used | delete |
 | `Procedural/Dungeon/DungeonGenerator.cs`, `DungeonMobSpawner.cs`, `RoomBehaviour.cs` | the old 7×7 room dungeon; `RoomBehaviour` is still used by Legacy Room templates | `Procedural/Dungeon/Legacy/` |
 | `Inventory/InventoryManager/SlotManager/OLDSlotValidationManager.cs` | not used | delete |
 | `Essentials/Ability/` root (`AbilityEffectSO`, `AbilityHolder`, `AbilitySO`, `AbilitySpawner`, `BaseAbilityController`, `BaseAbilityHolder`) and `Essentials/Ability/Player Ability/` | the legacy ability system (still read by the converter and old mobs) | `Essentials/Ability/Legacy/` and `Essentials/Ability/Legacy/Player/` (no space in the folder name) |

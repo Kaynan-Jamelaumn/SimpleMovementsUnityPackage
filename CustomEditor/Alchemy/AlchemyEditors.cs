@@ -248,13 +248,18 @@ public static class AlchemyEditorTools
             AlchemyArt.Shape shape = AlchemyArt.ShapeOf(preset.kind);
             AlchemyIngredientSO item = SMAssetsEditor.FindOrCreate<AlchemyIngredientSO>(SMAssets.AlchemyIngredients, preset.name, a =>
                 a.Setup(preset.name, preset.description, preset.kind, preset.price, preset.weight, preset.profile, null, null), false);
-            if (item.Icon == null || item.Prefab == null)
-            {
-                item.SetArt(item.Icon == null ? SaveIcon(preset.name, AlchemyArt.Icon(shape, preset.color)) : null,
-                    item.Prefab == null ? SaveModel(preset.name, shape, preset.color) : null);
-                EditorUtility.SetDirty(item);
-            }
+            EnsureArt(item, preset.name, shape, preset.color);
             made.Add(item);
+        }
+        // Ingredients made by hand (Create ▸ SimpleMovements ▸ Alchemy ▸ Ingredient): an icon and a pickable prefab too,
+        // in the colour of what they are mainly made of.
+        AlchemyRules artRules = AlchemyDatabase.Instance.Rules;
+        foreach (string guid in AssetDatabase.FindAssets("t:AlchemyIngredientSO"))
+        {
+            var own = AssetDatabase.LoadAssetAtPath<AlchemyIngredientSO>(AssetDatabase.GUIDToAssetPath(guid));
+            if (own == null || made.Contains(own))
+                continue;
+            EnsureArt(own, own.Name, AlchemyArt.ShapeOf(own.Kind), MainColor(artRules, own.AlchemyProfile));
         }
         AlchemyDatabase db = SMAssetsEditor.Find<AlchemyDatabase>(SMAssets.Settings, AlchemyDatabase.ResourcesName);
         if (db != null)
@@ -301,8 +306,10 @@ public static class AlchemyEditorTools
             {
                 AlchemyOutcomeTier tier = o.tiers[t];
                 if (tier == null) continue;
-                if (tier.item != null && !(tier.item is BrewedPotionSO bp && bp.OutcomeId == o.id && bp.Tier == t))
+                if (tier.item != null && !(tier.item is BrewedPotionSO))
                     continue; // a hand-made item: leave it
+                if (tier.item is BrewedPotionSO other && (other.OutcomeId != o.id || other.Tier != t))
+                    tier.item = null; // a generated potion of another result (an older tool run shared one): make its own
                 string fileName = SMAssetsEditor.CleanFileName(o.TierName(t));
                 int tierIndex = t;
                 Sprite icon = SaveIcon(fileName, AlchemyArt.Icon(AlchemyArt.Shape.Vial, color));
@@ -310,7 +317,7 @@ public static class AlchemyEditorTools
                 BrewedPotionSO item = tier.item as BrewedPotionSO;
                 if (item == null)
                     item = SMAssetsEditor.FindOrCreate<BrewedPotionSO>(SMAssets.AlchemyPotions, fileName, null, false);
-                item.Setup(o, tierIndex, rules, color, icon, model);
+                item.Setup(o, tierIndex, rules, color, icon, SavePickable(item, model));
                 EditorUtility.SetDirty(item);
                 tier.item = item;
                 made.Add(item);
@@ -329,6 +336,87 @@ public static class AlchemyEditorTools
     }
 
     // ------------------------------------------------------------------ generated art as assets
+    /// <summary>
+    /// Gives <paramref name="item"/> a generated icon when it has none, and a pickable prefab (its model with a collider
+    /// and an Item Pickable) when it has no prefab or only a generated model: placed in a scene, it can be picked up.
+    /// </summary>
+    private static void EnsureArt(AlchemyIngredientSO item, string fileName, AlchemyArt.Shape shape, Color color)
+    {
+        Sprite icon = item.Icon == null ? SaveIcon(fileName, AlchemyArt.Icon(shape, color)) : null;
+        GameObject prefab = null;
+        if (item.Prefab == null)
+            prefab = SavePickable(item, SaveModel(fileName, shape, color));
+        else if (item.Prefab.GetComponent<ItemPickable>() == null && IsGeneratedModel(item.Prefab))
+            prefab = SavePickable(item, item.Prefab);
+        if (icon == null && prefab == null)
+            return;
+        item.SetArt(icon, prefab);
+        EditorUtility.SetDirty(item);
+    }
+
+    private static bool IsGeneratedModel(GameObject go) =>
+        AssetDatabase.GetAssetPath(go).StartsWith(SMAssetsEditor.Folder(SMAssets.AlchemyModels) + "/", System.StringComparison.Ordinal);
+
+    /// <summary>The colour of what an ingredient is mostly made of (grey when unknown).</summary>
+    private static Color MainColor(AlchemyRules rules, AlchemyIngredientProfile profile)
+    {
+        IngredientRelease main = null;
+        if (profile != null && profile.releases != null)
+            foreach (IngredientRelease r in profile.releases)
+                if (r != null && (main == null || r.amount > main.amount)) main = r;
+        AlchemySubstance s = main != null && rules != null ? rules.Substance(main.substance) : null;
+        return s != null ? s.color : new Color(0.6f, 0.6f, 0.6f);
+    }
+
+    /// <summary>
+    /// A prefab for one item (Items/Alchemy/Pickables): <paramref name="model"/> with a collider and an Item Pickable
+    /// giving that item - what Item ▸ Prefab should be so a copy placed in a scene can be picked up (dropped items get
+    /// the same at runtime). Kept and re-pointed when it exists.
+    /// </summary>
+    public static GameObject SavePickable(ItemSO item, GameObject model)
+    {
+        if (item == null || model == null)
+            return model;
+        string folder = SMAssetsEditor.Folder(SMAssets.AlchemyItems + "/Pickables");
+        string path = $"{folder}/{SMAssetsEditor.CleanFileName(item.name)}.prefab";
+        GameObject existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (existing != null)
+        {
+            ItemPickable p = existing.GetComponent<ItemPickable>();
+            if (p != null && p.itemScriptableObject != item)
+            {
+                p.itemScriptableObject = item;
+                EditorUtility.SetDirty(existing);
+            }
+            return existing;
+        }
+        GameObject copy = Object.Instantiate(model);
+        copy.name = item.name;
+        copy.SetActive(true);
+        copy.hideFlags = HideFlags.None;
+        if (copy.GetComponentInChildren<Collider>(true) == null)
+        {
+            var box = copy.AddComponent<BoxCollider>();
+            Renderer[] renderers = copy.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length > 0)
+            {
+                Bounds b = renderers[0].bounds;
+                foreach (Renderer r in renderers) b.Encapsulate(r.bounds);
+                box.center = copy.transform.InverseTransformPoint(b.center);
+                Vector3 scale = copy.transform.lossyScale;
+                box.size = new Vector3(b.size.x / Mathf.Max(1e-4f, scale.x), b.size.y / Mathf.Max(1e-4f, scale.y), b.size.z / Mathf.Max(1e-4f, scale.z));
+            }
+        }
+        ItemPickable pick = copy.GetComponent<ItemPickable>();
+        if (pick == null)
+            pick = copy.AddComponent<ItemPickable>();
+        pick.itemScriptableObject = item;
+        pick.quantity = 1;
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(copy, path);
+        Object.DestroyImmediate(copy);
+        return prefab;
+    }
+
     /// <summary>Saves a generated sprite as a PNG sprite asset (Items/Alchemy/Icons) and returns it.</summary>
     public static Sprite SaveIcon(string name, Sprite generated)
     {

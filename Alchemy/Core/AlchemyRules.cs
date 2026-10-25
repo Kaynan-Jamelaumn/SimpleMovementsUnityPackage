@@ -221,6 +221,14 @@ public sealed class AlchemyRules
             }
         }
 
+        // Reversible reactions get their way back as a reaction of its own (interferences apply to it too).
+        for (int i = 0, n = reactions.Count; i < n; i++)
+        {
+            AlchemyReaction back = reactions[i].MakeReverse();
+            if (back != null)
+                reactions.Add(back);
+        }
+
         // Breakdown outside the stable temperature and pH ranges, and compatibility, become rules of their own.
         reactions = WithInterferences(reactions);
         for (int i = 0; i < count; i++)

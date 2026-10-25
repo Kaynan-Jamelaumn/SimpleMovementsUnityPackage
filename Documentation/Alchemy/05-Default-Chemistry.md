@@ -1,8 +1,8 @@
 # Alchemy 05 — The Default Chemistry
 
 **Spoilers.** This is the built-in content (`Alchemy/Core/AlchemyDefaults.cs`), what *Create Alchemy Database* copies into
-your project: **48 ingredients, 66 substances, 33 authored reactions (58 once the rules add the breakdowns and clashes),
-26 outcomes, 3 filters, 4 fuels and 6 vessels**. Players are meant to discover it; designers can read it here, change it,
+your project: **65 ingredients, 99 substances, 54 authored reactions (101 once the rules add the breakdowns, clashes and ways back),
+44 outcomes, 3 filters, 4 fuels and 6 vessels**. Players are meant to discover it; designers can read it here, change it,
 or replace it.
 
 All numbers below were measured with the simulation (iron cauldron unless said, 20 °C indoors, seed 1) — run them
@@ -68,6 +68,23 @@ goes in (default 20 °C).
 | Beeswax | 3 u Beeswax | whole | 30 s | Wax from the comb: it melts into hot oil and sets as it cools. Hardness 0.3. |
 | Brewer's Yeast | 0.5 u Live Yeast | ground | 5 s | Live yeast: with sugar and warmth it brews spirit. Heat above 42 °C kills it. 18 °C. |
 | Blasting Powder | 2 u Blasting Powder | ground | 1 s | Saltpetre, ember dust and charcoal. It goes off above 190 °C. |
+| Bloodmoss | 3 u Sanguine Sap (0.85), 0.4 u Plant Fibre (0.3), 0.2 u Tannin (0.3) | whole | 20 s | A dark red moss that grows on old battlefields. Warm it gently - a pinch of iron quickens it. 18 °C. Hardness 0.2. |
+| Thunder Agate | 2 u Storm Salt (0.5) | whole | 30 s | A banded blue stone that crackles in a storm. Grind it fine and stir it hard into mana - but keep it cool. Hardness 0.9. |
+| Glacier Lichen | 1.5 u Frost Oil (0.6), 0.4 u Lichen Acid (0.7), 0.5 u Plant Fibre (0.3) | whole | 20 s | A pale lichen from the ice fields: frost oil and a sharp acid. -2 °C. Hardness 0.25. |
+| Nightcap | 2 u Shadow Spores (0.6), 1 u Fungal Pulp (0.5) | whole | 25 s | A black mushroom whose spores stir only at night. 15 °C. |
+| Wyrmscale | 1.5 u Draconic Ichor (0.4) | whole | 45 s | A scale shed by a young wyrm. Its ichor wants hot oil and ardent essence. 25 °C. Hardness 0.85. |
+| Ginger Root | 1.4 u Gingerol (0.5), 0.8 u Plant Fibre (0.3), 0.4 u Water | whole | 25 s | A knobbly root full of heat. In hot water it makes a warming tonic; in mead, spiced mead. Hardness 0.5. |
+| Rose Petals | 0.5 u Rose Oil (0.55), 0.3 u Sugars (0.9), 0.3 u Plant Fibre (0.3), 0.3 u Water | whole | 15 s | Red petals with a sweet, heady oil. Distil it, or draw it out in spirit. Hardness 0.1. |
+| Cave Sulphur | 2 u Brimstone | ground | 10 s | Yellow brimstone. Boil it in water with air beaten in for oil of vitriol - which chars every herb it touches. |
+| Wakeberries | 0.6 u Vigorine (0.2), 0.6 u Sugars (0.9), 0.8 u Water | whole | 40 s | Bitter brown berries that chase off sleep. Their alkaloid comes out in alkali - a little potash. Hardness 0.3. |
+| Mandrake Root | 1.2 u Mandragorin (0.35), 0.3 u Tannin (0.5), 1 u Plant Fibre (0.3) | whole | 40 s | A forked root that screams when pulled. Its alkaloid comes out in acid - and turns a healing brew into something greater. 18 °C. Hardness 0.6. |
+| Phoenix Feather | 1 u Phoenix Ash | whole | 20 s | A feather that never stops glowing. Its ash reborn in fire, with ardent essence, makes the rarest healing of all. 60 °C. Hardness 0.2. |
+| Griffin Down | 1.5 u Aether Down (0.7) | whole | 15 s | Down lighter than air: it floats on water. Spirit draws its lightness out. Hardness 0.1. |
+| Silverleaf | 2.5 u Silver Sap (0.8), 0.4 u Plant Fibre (0.3) | whole | 20 s | A pale leaf that shines in moonlight. Steep it with holy water. 18 °C. Hardness 0.2. |
+| Deepsea Kelp | 2.5 u Kelp Gel (0.6), 0.4 u Brine, 0.5 u Plant Fibre (0.3) | whole | 30 s | A dark, slippery kelp from the deep. Its gift comes out only in strong salt water. 10 °C. Hardness 0.3. |
+| Ashbloom | 2 u Ash Pollen (0.7), 0.4 u Plant Fibre (0.3) | whole | 25 s | A grey flower that grows on burnt ground. Boil it; a pinch of fire ash hurries it. Hardness 0.2. |
+| Ember Salt | 2 u Ember Salt | ground | 5 s | Ember dust bound in brine: safe to carry and store. Heat it past 65 °C and the fire comes free. |
+| Alchemical Gold | 1 u Alchemical Gold | ground | 5 s | Gold made from lead. Worth a fortune - if anyone believes where it came from. |
 
 Two more presets are **supplies**, not ingredients: *Filter Paper* (used up by the Filter Paper filter) and *Firewood*
 (burned by a manual fire). *Charcoal*, *Pine Resin* and *Lamp Oil* are ingredients **and** fuels; *Charcoal* also makes a
@@ -159,6 +176,39 @@ it reacts — how easily something evaporates is its boiling point. Liquids mark
 | Charcoal | Reagent | solid | 0.45 | mineral 0.3 |  |
 | Blasting Powder | Byproduct | solid | 1.7 | fire 1, reactivity 0.9 |  |
 | Soft Soap | Byproduct | liquid · — | 1.02 | emulsifier 0.8, alkali 0.2 |  |
+| Sanguine Sap | Raw | liquid · — | 1.1 | vitality 0.4, organic 0.4, oxidisable 0.3 |  |
+| Sanguine Essence | Active | liquid · 210 °C | 1.06 | vitality 0.7, fire 0.1 |  |
+| Storm Salt | Reagent | liquid · — | 2.4 | mineral 0.6, arcane 0.4, reactivity 0.1 |  |
+| Storm Essence | Active | liquid · 120 °C | 1 | arcane 0.5, fire 0.3, reactivity 0.25 |  |
+| Lichen Acid | Reagent | liquid · — | 1.1 | acid 0.6, organic 0.1 |  |
+| Starfrost Essence | Active | liquid · 130 °C | 1 | frost 0.6, arcane 0.6 |  |
+| Shadow Spores | Raw | liquid · — | 1.05 | organic 0.3, arcane 0.3 |  |
+| Umbral Essence | Active | liquid · 190 °C | 1.02 | mind 0.5, arcane 0.4 |  |
+| Draconic Ichor | Raw | liquid · — | 1.3 | fire 0.6, vitality 0.3 |  |
+| Wyrmblood Essence | Active | liquid · 320 °C | 1.2 | fire 0.7, stability 0.6 |  |
+| Gingerol | Raw | liquid · — | 1.05 | fire 0.4, organic 0.3 |  |
+| Ginger Essence | Active | liquid · 230 °C | 1.03 | fire 0.5, vitality 0.2 |  |
+| Rose Oil | Active | liquid · 88 °C | 0.87 | mind 0.5, vitality 0.2, organic 0.2, oxidisable 0.3 | evaporates ×2.5 |
+| Brimstone | Reagent | solid | 2 | fire 0.5, mineral 0.6, toxicity 0.1 |  |
+| Oil of Vitriol | Reagent | liquid · 330 °C | 1.8 | acid 2, toxicity 0.45, mineral 0.3 |  |
+| Vigorine | Active | liquid · 220 °C | 1.05 | fire 0.2, mind 0.3 |  |
+| Mandragorin | Raw | liquid · — | 1.15 | mind 0.4, vitality 0.2, toxicity 0.15 |  |
+| Restorative Essence | Active | liquid · 230 °C | 1.05 | vitality 0.9, mind 0.4, stability 0.3 |  |
+| Phoenix Ash | Reagent | solid | 0.5 | fire 1, vitality 0.5 |  |
+| Phoenix Essence | Active | liquid · 400 °C | 1 | vitality 1, fire 0.6 |  |
+| Aether Down | Raw | liquid · — | 0.15 | arcane 0.4, organic 0.2 |  |
+| Zephyr Essence | Active | liquid · 140 °C | 0.8 | arcane 0.4, mind 0.2 |  |
+| Ember Salt | Reagent | solid | 1.6 | fire 0.3, mineral 0.6, stability 0.5 |  |
+| Somnine Salt | Intermediate | liquid · — | 1.1 | mind 0.3 |  |
+| Alchemical Gold | Byproduct | solid | 19 | mineral 1 |  |
+| Berserker Essence | Active | liquid · 230 °C | 1.05 | fire 0.6, vitality 0.4, toxicity 0.03 |  |
+| Panacea | Active | liquid · 260 °C | 1.03 | vitality 1, mind 0.6, arcane 0.4, stability 0.4 |  |
+| Silver Sap | Raw | liquid · — | 1.04 | vitality 0.3, arcane 0.3, organic 0.3 |  |
+| Holy Essence | Active | liquid · 220 °C | 1.02 | vitality 0.5, mind 0.5, stability 0.4 |  |
+| Kelp Gel | Raw | liquid · — | 1.03 | organic 0.5, vitality 0.1 |  |
+| Gill Essence | Active | liquid · 210 °C | 1.04 | vitality 0.2, stability 0.4 |  |
+| Ash Pollen | Raw | liquid · — | 1.1 | fire 0.3, organic 0.3 |  |
+| Fireward Essence | Active | liquid · 240 °C | 1.05 | fire 0.2, stability 0.6 |  |
 
 ### Solubility
 
@@ -187,6 +237,13 @@ not listed here have no limit. ×2 per: how much hotter the liquid must be to ho
 | Pepperfire Oil | 0.01 | 0.5 | 1 | 0.8 | 40 °C |  |
 | Milk Curd | 0.2 | 0.01 | 0.01 | 0.005 | 40 °C |  |
 | Plant Fibre | 0.001 | 0.001 | 0.001 | 0.001 | — |  |
+| Storm Salt | 0.2 | 0.02 | (0.05) | (0.05) | 30 °C |  |
+| Lichen Acid | 0.4 | 0.5 | (0.05) | (0.05) | 40 °C |  |
+| Shadow Spores | 0.3 | 1 | 0.2 | (0.05) | 40 °C |  |
+| Draconic Ichor | 0.05 | 0.3 | 1 | 0.6 | 40 °C |  |
+| Gingerol | 0.3 | 1 | 0.8 | (0.05) | 40 °C |  |
+| Rose Oil | 0.01 | 1 | 1 | 1 | 40 °C |  |
+| Aether Down | 0.02 | 0.6 | 0.1 | (0.05) | 40 °C |  |
 
 ### Stability
 
@@ -211,6 +268,21 @@ the share lost per second 10 °C past the limit, the pH rate at 20 °C (×2 per 
 | Antitoxin | up to 85 °C, pH ≥ 2.5 | 0.03/s (×2 / 10 °C) · pH 0.02/s | Bitter Sludge | the pale glow fades / the green turns a dull grey |
 | Somnine | up to 75 °C, pH ≤ 9 | 0.04/s (×2 / 10 °C) · pH 0.05/s | Bitter Sludge | the violet fades to grey / the violet turns a murky green |
 | Willow Essence | up to 110 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the amber clouds |
+| Sanguine Essence | up to 95 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the crimson browns |
+| Storm Essence | up to 60 °C | 0.05/s (×2 / 10 °C) | Water | the sparks die away |
+| Starfrost Essence | up to 12 °C | 0.02/s (×2 / 10 °C) | Mana Essence, Water | the starlight in it fades |
+| Umbral Essence | up to 50 °C | 0.04/s (×2 / 10 °C) | Bitter Sludge | the darkness thins |
+| Wyrmblood Essence | up to 230 °C | 0.03/s (×2 / 10 °C) | Fire Ash | the ichor cracks into black flakes |
+| Ginger Essence | up to 130 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the spice turns harsh |
+| Rose Oil | up to 150 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the sweet scent sours |
+| Vigorine | up to 100 °C, pH ≥ 5 | 0.03/s (×2 / 10 °C) · pH 0.04/s | Bitter Sludge | the bitterness turns flat / the bitterness turns sour and flat |
+| Restorative Essence | up to 80 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the gold dulls |
+| Phoenix Essence | down to 90 °C | 0.03/s (×2 / 10 °C) | Fire Ash, Vital Essence | the flame inside it gutters out |
+| Zephyr Essence | up to 70 °C | 0.04/s (×2 / 10 °C) | Water | the shimmer settles and is gone |
+| Berserker Essence | up to 110 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the seething stops and it clots |
+| Panacea | up to 75 °C | 0.03/s (×2 / 10 °C) | Restorative Essence, Water | the pearl-light dims |
+| Holy Essence | up to 90 °C | 0.03/s (×2 / 10 °C) | Water | the light flickers out |
+| Gill Essence | up to 95 °C | 0.03/s (×2 / 10 °C) | Bitter Sludge | the sea-green clouds and smells of rot |
 
 ### pH and extraction
 
@@ -223,6 +295,8 @@ neutral is): vinegar (pH ~4.4 with two waters) roughly doubles the alkaloids.
 | Serpentine | pH 3.5 | 0.8 |
 | Somnine | pH 4 | 0.7 |
 | Salicin | pH 5 | 0.3 |
+| Vigorine | pH 11 | 0.5 |
+| Mandragorin | pH 4 | 0.6 |
 
 ### Compatibility
 
@@ -234,12 +308,15 @@ neutral is): vinegar (pH ~4.4 with two waters) roughly doubles the alkaloids.
 | Sanctity | Clashes | Venom | 0.5 | Water | the green film hisses away |
 | Sanctity | Clashes | Bitter Sludge | 0.3 | Water | the murk clears |
 | Sanctity | Clashes | Unstable Aether | 0.8 | Null Essence | the crackling dies with a sigh |
+| Umbral Essence | Clashes | Sanctity | 0.6 | — | light and shadow cancel with a soft hiss |
+| Phoenix Essence | Clashes | Rime Essence | 0.5 | Water | fire and frost cancel in a burst of steam |
+| Holy Essence | Clashes | Umbral Essence | 0.8 | — | light and shadow annihilate each other |
 
 ## 3. Reactions
 
 The authored reactions; "faster with / slowed by / stopped by" are modifiers (not used up), "needs" are conditions, "×"
 are conditional rates. The rules add one reaction per stability limit above ("Vital Essence breaks down", "Acid destroys
-Vital Essence"...) and one per *Clashes* interaction, for 58 in all.
+Vital Essence"...), one per *Clashes* interaction and the way back of each reversible reaction (⇌), for 101 in all.
 
 | Reaction | Consumes → makes | Window and speed |
 |---|---|---|
@@ -276,6 +353,27 @@ Vital Essence"...) and one per *Clashes* interaction, for 58 in all.
 | Charcoal Clearing | Bitter Sludge → Bound Toxins | -10–200 °C · faster when hotter · faster with Charcoal · needs: ≥ 0.5 u of Charcoal |
 | Powder Mixing | Saltpetre Crystals + Ember Dust + Charcoal → Blasting Powder | 10–150 °C · needs: (almost) no liquid in the vessel (≤ 0.5 u), stirred ≥ 0.2 |
 | Detonation | Blasting Powder → Fire Ash | above 190 °C · gives off heat · violent |
+| Blood Quickening | Sanguine Sap → Sanguine Essence | 35–90 °C · faster when hotter · faster with Iron Filings |
+| Storm Charging | Storm Salt + Mana Essence → Storm Essence | -10–60 °C · needs: stirred ≥ 0.5 |
+| Starfrost Binding | Rime Essence + Mana Essence → Starfrost Essence | -30–6 °C · needs: in an ice bath |
+| Shadow Steeping | Shadow Spores → Umbral Essence | 10–50 °C · faster when hotter · needs: at night |
+| Ichor Awakening | Draconic Ichor + Ardent Essence → Wyrmblood Essence | 120–240 °C · faster when hotter · gives off heat |
+| Ginger Warming | Gingerol → Ginger Essence | 60–110 °C · faster when hotter |
+| Vitriol Making | Brimstone + Water → Oil of Vitriol | 90–300 °C · faster when hotter · ×4 stirred hard enough to beat in air (aeration ≥ 0.2) |
+| Vitriol Charring | anything with Organic ≥ 0.3 except Lamp Oil, Grain Spirit, Turpentine + Oil of Vitriol → Char + Water | 0–400 °C · faster when hotter · gives off heat |
+| Restoration | Mandragorin + Vital Essence → Restorative Essence | 40–78 °C · faster when hotter · faster with Moon Dew |
+| Rebirth | Phoenix Ash + Ardent Essence → Phoenix Essence | 140–260 °C · faster when hotter · gives off heat · violent |
+| Lightening | Aether Down → Zephyr Essence | 20–65 °C · faster when hotter |
+| Ember Binding | Ember Dust + Brine ⇌ Ember Salt | -20–55 °C · reversible |
+| Somnine Salting | Somnine ⇌ Somnine Salt | -20–200 °C · needs: in acid (pH ≤ 5) · reversible |
+| Esterification | Grain Spirit + Acetic Acid ⇌ Esters + Water | 20–120 °C · faster when hotter · reversible |
+| Moonlit Blood | Sanguine Essence + Moon Dew → Vital Essence | 30–70 °C · faster when hotter · ×2 at night |
+| Fury Binding | Sanguine Essence + Ardent Essence → Berserker Essence + Bitter Sludge | 70–110 °C · faster when hotter · gives off heat |
+| Transmutation | Lead Dust + Quicksilver → Alchemical Gold | 60–200 °C · needs: Unstable Aether at least 0.2% of the liquid |
+| Panacea | Restorative Essence + Mana Essence → Panacea | 40–72 °C · faster when hotter · ×2 in a copper vessel |
+| Blessing | Silver Sap + Sanctity → Holy Essence | 15–70 °C · faster when hotter |
+| Gill Binding | Kelp Gel → Gill Essence | 30–90 °C · faster when hotter · needs: Brine at least 8% of the liquid |
+| Fireward Waking | Ash Pollen → Fireward Essence | 85–130 °C · faster when hotter · faster with Fire Ash |
 
 ## 4. Outcomes (highest priority first)
 
@@ -288,7 +386,13 @@ strength.
 | 80 | Unstable Concoction | Unstable | (Reactivity ≥ 0.35 or Unstable Aether at least 5% of the liquid) | — | −15 health, +10% speed 10 s |
 | 70 | Tainted Healing Draught | Potion | Vital Essence is the main active compound, Vital Essence at least 3% of the liquid, Toxicity ≥ 0.04 | Vital Essence (full at 30 %) | +25 health, −10 sanity |
 | 68 | Murky Healing Draught | Potion | Vital Essence is the main active compound, Vital Essence at least 3% of the liquid, Contaminant ≥ 0.01 | Vital Essence (full at 35 %) | +25 health, −15 stamina |
+| 67 | Panacea | Potion | Panacea is the main active compound, Panacea at least 3% of the liquid | Panacea (full at 25 %) | +100 health, +30 sanity, +3 health regen 60 s, +20 MaxHp 120 s |
 | 66 | Healing Salve | Potion | Vital Essence is the main active compound, Vital Essence at least 3% of the liquid, Lamp Oil at least 30% of the liquid, Beeswax at least 2% of the liquid | Vital Essence (full at 30 %) | +20 health, +3 health regen 40 s |
+| 65 | Phoenix Draught | Potion | Phoenix Essence is the main active compound, Phoenix Essence at least 3% of the liquid | Phoenix Essence (full at 25 %) | +80 health, +4 health regen 30 s, +15 body heat |
+| 64 | Restoration Elixir | Potion | Restorative Essence is the main active compound, Restorative Essence at least 3% of the liquid | Restorative Essence (full at 30 %) | +60 health, +20 sanity, +2 health regen 30 s |
+| 62 | Dragonheart Elixir | Potion | Wyrmblood Essence is the main active compound, Wyrmblood Essence at least 3% of the liquid | Wyrmblood Essence (full at 25 %) | −40% damage taken 90 s, +20 body heat, +20 MaxHp 90 s |
+| 62 | Spiced Mead | Potion | Esters at least 0.1% of the liquid, Grain Spirit 3–30% of the liquid, Ginger Essence at least 0.8% of the liquid | Grain Spirit (full at 12 %) | +15 drink, +30 stamina, +12 body heat, +8 sanity |
+| 61 | Stormcall Elixir | Potion | Storm Essence is the main active compound, Storm Essence at least 3% of the liquid | Storm Essence (full at 20 %) | +30% speed 20 s, +40 stamina, −10 breath |
 | 60 | Healing Draught | Potion | Vital Essence is the main active compound, Vital Essence at least 3% of the liquid | Vital Essence (full at 35 %) | +35 health, +2 health regen 12 s |
 | 60 | Draught of Vigour | Potion | Ardent Essence is the main active compound, Ardent Essence at least 3% of the liquid | Ardent Essence (full at 30 %) | +60 stamina, +3 stamina regen 20 s, +8 body heat |
 | 60 | Calming Tonic | Potion | Serene Essence is the main active compound, Serene Essence at least 3% of the liquid | Serene Essence (full at 30 %) | +25 sanity, +2 mana regen 15 s |
@@ -302,8 +406,20 @@ strength.
 | 60 | Dreamless Sleep Draught | Potion | Somnine is the main active compound, Somnine at least 2% of the liquid | Somnine (full at 8 %) | +35 rest, +15 sanity, −15% speed 30 s |
 | 60 | Willowbark Draught | Potion | Willow Essence is the main active compound, Willow Essence at least 3% of the liquid | Willow Essence (full at 8 %) | +10 health, −15% damage taken 90 s, +1 sanity regen 30 s |
 | 60 | Lavender Tincture | Potion | Lavender Oil is the main active compound, Lavender Oil at least 1.5% of the liquid | Lavender Oil (full at 15 %) | +20 sanity, +10 rest, +1 sanity regen 30 s |
+| 60 | Bloodmoss Tonic | Potion | Sanguine Essence is the main active compound, Sanguine Essence at least 3% of the liquid | Sanguine Essence (full at 25 %) | +10 health, +3 health regen 60 s, +10 stamina |
+| 60 | Starfrost Draught | Potion | Starfrost Essence is the main active compound, Starfrost Essence at least 3% of the liquid | Starfrost Essence (full at 25 %) | +40 mana, +3 mana regen 30 s, −15 body heat |
+| 60 | Draught of Shadows | Potion | Umbral Essence is the main active compound, Umbral Essence at least 3% of the liquid | Umbral Essence (full at 15 %) | +20 sanity, −40 SanityDamageFactor 90 s |
+| 60 | Ginger Tonic | Potion | Ginger Essence is the main active compound, Ginger Essence at least 3% of the liquid | Ginger Essence (full at 20 %) | +30 stamina, +12 body heat, +1.5 stamina regen 30 s |
+| 60 | Rosewater | Potion | Rose Oil is the main active compound, Rose Oil at least 1.5% of the liquid | Rose Oil (full at 15 %) | +30 sanity, +1.5 sanity regen 30 s |
+| 60 | Wakeful Brew | Potion | Vigorine is the main active compound, Vigorine at least 2% of the liquid | Vigorine (full at 8 %) | +25 rest, +2 stamina regen 60 s, −5 sanity |
+| 60 | Featherfall Draught | Potion | Zephyr Essence is the main active compound, Zephyr Essence at least 3% of the liquid | Zephyr Essence (full at 20 %) | +20 MaxWeight 120 s, +8% speed 120 s |
+| 60 | Berserker Draught | Potion | Berserker Essence is the main active compound, Berserker Essence at least 3% of the liquid | Berserker Essence (full at 25 %) | +15% speed 45 s, +4 stamina regen 45 s, +20% damage taken 45 s, −10 sanity |
+| 60 | Blessed Elixir | Potion | Holy Essence is the main active compound, Holy Essence at least 3% of the liquid | Holy Essence (full at 20 %) | +30 health, +25 sanity, −25 SanityDamageFactor 120 s |
+| 60 | Gillweed Draught | Potion | Gill Essence is the main active compound, Gill Essence at least 3% of the liquid | Gill Essence (full at 15 %) | +60 breath, −40 OxygenFactor 120 s |
+| 60 | Fireward Tonic | Potion | Fireward Essence is the main active compound, Fireward Essence at least 3% of the liquid | Fireward Essence (full at 15 %) | −50 BodyHeatFactor 120 s, −10% damage taken 120 s |
 | 60 | Iron Gall Ink | Material | Iron Gall Ink is the main active compound, Iron Gall Ink at least 3% of the liquid | Iron Gall Ink (full at 30 %) | −3 sanity |
 | 60 | Venom Extract | Material | Venom is the main active compound, Venom at least 3% of the liquid | Venom (full at 30 %) | −30 health, −20 health 10 s |
+| 58 | Oil of Vitriol | Material | Oil of Vitriol at least 6% of the liquid | Oil of Vitriol (full at 30 %) | −40 health |
 | 53 | Honey Brandy | Potion | Esters at least 0.4% of the liquid, Grain Spirit at least 30% of the liquid, Active matter ≤ 10% of the dissolved matter | Grain Spirit (full at 60 %) | +25 stamina, +10 body heat, +5 sanity, −10% speed 30 s |
 | 52 | Honey Mead | Potion | Esters at least 0.1% of the liquid, Grain Spirit 3–30% of the liquid, Active matter ≤ 10% of the dissolved matter | Grain Spirit (full at 12 %) | +15 drink, +15 stamina, +8 sanity, −5% speed 30 s |
 | 50 | Soft Soap | Material | Soft Soap at least 20% of the liquid | Soft Soap (full at 50 %) | −5 health |
@@ -464,15 +580,16 @@ and the brew keeps: Healing Draught 48 %. Two more logs: 96 °C within a minute;
 ### Fermentation and distillation
 
 * **Mead**: 2 Spring Water + 2 Honey + 1 Brewer's Yeast, kept warm (fire 5 % → 31 °C): Cloudy Infusion at 1:00,
-  **Honey Mead** 59 % at 5:00, Potent 79 % at 10:00, 86 % at 30:00 (2.9 u of spirit, 0.23 u of esters). Too warm
+  **Honey Mead** 60 % at 5:00, Potent 80 % at 10:00, 89 % at 30:00 (3 u of spirit; the esters settle near 0.14 u: in so
+  much water, esterification runs back and gives a trace of acetic acid). Too warm
   (fire 15 % → 53 °C): the yeast dies above 42 °C — still a Cloudy Infusion of honey at 15:00.
-* **Distilling it** (1 Spring Water + 1 Honey + 1 Yeast, fermented 25 minutes → Honey Mead (Potent) 84 %, then fire 45 %):
+* **Distilling it** (1 Spring Water + 1 Honey + 1 Yeast, fermented 25 minutes → Honey Mead (Potent) 87 %, then fire 45 %):
 
   | Flask after | 0:30 | 1:00 | 1:30 | 2:00 | 4:00 | 6:00 |
   |---|---|---|---|---|---|---|
-  | **Copper Alembic** | 0.8 u, 74 % spirit | 1.7 u, 84 % | 2 u | 2.4 u | 4 u | 5.6 u — mostly water |
-  | **Fractionating Still** | 0.6 u, 84 % spirit | 1.55 u, **91 %** | 1.8 u | 2.2 u | 3.8 u | 5.4 u |
-  | Result | **Honey Brandy (Superior)** | Honey Brandy (Superior) | Superior | Superior | Honey Brandy | Honey Mead again |
+  | **Copper Alembic** | 0.8 u, 78 % spirit | 1.7 u, 87 % | 2 u | 2.4 u | 4 u — Honey Brandy | 5.6 u — mostly water |
+  | **Fractionating Still** | 0.6 u, 89 % spirit | 1.55 u, **94 %** | 1.8 u | 2.2 u | 3.8 u — Honey Brandy (Potent) | 5.4 u |
+  | Result | **Honey Brandy (Superior)** | Honey Brandy (Superior) | Superior | Superior | | Honey Mead again |
 
   The spirit (78 °C) and esters (77 °C) come over first; once they are gone the flask fills with water. **Collect the
   flask in time** — the fraction is the product. The still's column sends the water back: almost none reaches the flask
@@ -485,8 +602,9 @@ and the brew keeps: Healing Draught 48 %. Two more logs: 96 °C within a minute;
 ### Acidity
 
 * **Dreamshade** (2 Spring Water + 3 Berries, fire 14 % → 51 °C, 5:00): plain (pH 7) → Dreamless Sleep Draught (Weak) 25 %,
-  1.05 u of somnine; **+1 Vinegar** (pH 4.7) → 1.8 u, 34 %; **+1 Potash** (pH 13.3) → the alkaloid does not survive (0.01 u):
-  Cloudy Infusion.
+  1.05 u of somnine; **+1 Vinegar** (pH 4.7) → all 1.8 u come out — but the acid holds it as *somnine salt* (Cloudy
+  Infusion) until it is neutralised (below: reaction networks); **+1 Potash** (pH 13.3) → the alkaloid does not survive
+  (0.01 u): Cloudy Infusion.
 * **Willow Bark** needs warm acid: 2 Spring Water + 1 Vinegar + 2 ground Willow Bark, fire 25 % (→ 74 °C, pH 4.4) →
   **Willowbark Draught** 40 % at 10:00, purity 31 % (its tannin); without vinegar, no willow essence at all (Cloudy
   Infusion). **Fining**: let it cool, add an Egg Yolk — its white binds 64 % of the tannin into lees → 46 %, purity 43 %.
@@ -553,6 +671,72 @@ when the unsalted brew is already spoiled.
   the air and leave a Spoiled Mixture.
 * **Glass Retort** at full fire with 1 water + 1 Sunpetal: the vapour builds pressure and the retort **bursts** at 1:19
   (water alone fills it with 1.5 pressure of steam and holds).
+
+### Reaction networks
+
+* **Reversible by temperature — Ember Binding**: 2 Spring Water + 2 Rock Salt + 2 ground Embercaps, no fire (20 °C): the
+  brine binds the ember dust — 7.9 u of ember salt at 1:00, 11 u at 5:00. Fire 40 % (→ 100 °C): past 65 °C the salt lets the
+  dust go — none left a minute later (and the free dust slowly kindles: a weak Draught of Vigour). Put to use: Embercap
+  dropped into warm Grain Spirit catches fire six times; **Ember Salt** in the same spirit, never.
+* **Reversible by pH — Somnine Salting**: 2 Spring Water + 1 Vinegar + 3 ground Dreamshade Berries, fire 14 % (51 °C): all
+  1.8 u of the alkaloid is held as somnine salt (pH 4.7). Heat it to 85 °C — free somnine would be destroyed above 75 °C;
+  the salt keeps all 1.8 u. Cool it, add 2 Chalk (pH 6.3): 1.76 u of somnine comes back → **Dreamless Sleep Draught** 34 %.
+  Without the vinegar the same heat destroys it all.
+* **Reversible by concentration — Esterification**: 1 Grain Spirit + 1 Vinegar, fire 15 % (53 °C): 0.6 u of esters at 2:00,
+  0.83 u at 10:00 (it balances). Add 4 Spring Water: by 40:00 it has gone back to 0.45 u, and the acetic acid rises again
+  (0.13 → 0.43 u).
+* **Alternative pathway and competing reactions — Moonlit Blood**: 2 Spring Water + 2 Moonbloom, fire 16 % (55 °C), 6:40:
+  alone → Mana Potion (Potent) 89 % (7.2 u of mana). With 2 Bloodmoss the dew is shared: 6.2 u of mana and 1.7 u of
+  *healing essence* (a second way to it); with 4 Bloodmoss, 5.7 u of mana, 2.6 u of healing essence → a Bloodmoss Tonic.
+* **Branching — Fury Binding**: a Draught of Vigour (2 Spring Water + 3 Sunpetal, fire 35 %, 3:00), then 3 Bloodmoss at fire
+  30 % (85 °C): the sanguine essence takes the ardent essence → **Berserker Draught (Potent)** 72 % at 7:00, with 2.3 u of
+  sludge as by-product. The same bloodmoss, cool with moon dew, gives healing essence instead (above).
+* **Dependent reaction — Transmutation**: a Mana Potion (2 Spring Water + 3 Moonbloom, fire 15 %, 3:20) + 2 Quicksilver Drops
+  + 3 Lead Dust. Kept at 53 °C nothing happens: no gold. At fire 27 % (→ 79 °C) the quicksilver overcharges the mana into
+  unstable aether — and while it crackles, lead turns into gold: 1.95 u by 7:00 → **1 Alchemical Gold** when emptied. The
+  transmutation uses up the quicksilver the aether needs, and above 95 °C the aether erupts: hold it between 70 and 95 °C.
+* **A chain of four — Panacea**: a Healing Draught (2 Spring Water + 3 Sunpetal, fire 22 %, 3:00) + 3 ground Mandrake Roots
+  + 3 Moonbloom: sap → healing essence → restorative essence (mandrake), moon dew → mana, and both → **Panacea (Potent)**
+  71 % at 6:00 (13.5 u). Above 75 °C it falls apart.
+
+### Rare ingredients and new potions
+
+* **Bloodmoss Tonic**: 2 Spring Water + 3 Bloodmoss, fire 20 % (→ 64 °C): 60 % at 2:00, **Superior 91 %** at 5:00. A pinch
+  of **Iron Filings** quickens the sap: Superior 96 % already at 2:00.
+* **Stormcall Elixir**: a Mana Potion (2 Spring Water + 3 Moonbloom, fire 15 %, 3:20), fire off, **ice bath**, 3 Thunder
+  Agate pulverised. Left still nothing happens (it stays a Mana Potion, the salt half undissolved); **stirred hard** (0.7)
+  the storm salt charges the mana: **Stormcall Elixir (Potent)** 80 % within a minute. Heat discharges it (stable up to 60 °C).
+* **Starfrost Draught**: the same Mana Potion in an **ice bath** + 3 Frostmint: the frost oil settles into rime essence in
+  the cold and binds with the mana — Potent 75 % at 5:00, **Superior 93 %** at 10:00. It keeps only below 12 °C. (The Frost
+  Basin cannot make the mana in the first place: the moon infusion needs 30 °C.)
+* **Draught of Shadows**: 2 Grain Spirit + 3 Nightcap, kept just warm (fire 5 %): by day nothing happens (Cloudy
+  Infusion); **at night** → Potent 77 % at 3:00. Holy Water undoes it (79 → 72 %).
+* **Dragonheart Elixir**: 2 Lamp Oil + 3 Sunpetal at fire 40 % → a Draught of Vigour at 4:00 (5 u of ardent essence);
+  fire 55 % (→ 140 °C) and 2 ground Wyrmscales → **Dragonheart Elixir** 50 % at 7:00. Only oil gets that hot — in water
+  the ichor never wakes.
+* **Ginger Tonic**: 2 Spring Water + 3 partially ground Ginger Root, fire 35 % → **Potent 74 %** in 2:00.
+  **Spiced Mead**: a Honey Mead (Potent 86 % at 25:00) + 1 ground Ginger Root, warmed (fire 25 %) → **Spiced Mead (Potent)**
+  80 % at 30:00.
+* **Rosewater**: steam-distilled in the Copper Alembic (1 Spring Water + 3 Rose Petals, fire 50 %) → **Superior 100 %** in
+  the flask at 2:00; in 2 Grain Spirit, 50 % (the sugars come out too).
+* **Oil of Vitriol**: 2 Spring Water + 3 Cave Sulphur, fire 50 % → Potent 84 % at 2:00 left still; **stirred** (air beaten
+  in) all the brimstone is gone by 2:00 (Superior). Two Sunpetals dropped in are charred black at once (5.7 u of char).
+* **Wakeful Brew**: 2 Spring Water + 3 whole Wakeberries, fire 20 %, 5:00 → 46 % (1.4 u of vigorine); with a Potash
+  (pH 13.4) all 1.8 u come out — but the lye costs purity; with Vinegar the alkaloid is destroyed (Cloudy Infusion).
+* **Restoration Elixir**: a Healing Draught (2 Spring Water + 3 Sunpetal, fire 24 %, 3:00) + 3 ground Mandrake Roots →
+  **Restoration Elixir** 43 % at 5:00 (7.8 u of restorative essence beside 5.3 u of healing essence: more mandrake, purer).
+* **Phoenix Draught**: 2 Lamp Oil + 3 Sunpetal at fire 40 % for 4:00, then fire 60 % (→ 150 °C) and 2 Phoenix Feathers →
+  **Phoenix Draught (Potent)** 76 % at 6:00. **Bottle it hot**: left to cool, the phoenix essence gutters out below 90 °C
+  into ash and healing essence (a Tainted Healing Draught by 15:00).
+* **Blessed Elixir**: 2 Spring Water + 3 Silverleaf, fire 10 % → nothing but a Cloudy Infusion; 1 Spring Water + **1 Holy
+  Water** + 3 Silverleaf → **Blessed Elixir** 58 % at 5:00 (it needs the sanctity: a dependent reaction). It destroys shadow
+  essence on contact.
+* **Gillweed Draught**: 2 Spring Water + 2 Deepsea Kelp, fire 20 % (64 °C) → nothing (the kelp's own salt is too weak);
+  in **2 Seawater** → **Potent 70 %** at 5:00; in water with 2 Rock Salt → 59 % (the extra salt lowers the purity).
+* **Fireward Tonic**: 2 Spring Water + 3 Ashbloom, fire 40 % (boiling): Weak 33 % at 3:00, Potent 81 % at 7:00; with a pinch
+  of **Fire Ash** (catalyst) → Superior 94 % already at 3:00.
+* **Featherfall Draught**: 2 Grain Spirit + 3 Griffin Down, fire 10 % → **Superior 100 %** at 3:00. In water the down
+  floats undissolved: 49 % at 3:00, Potent 84 % only at 6:40.
 
 **Unexpected reactions:** Embercap into warm Grain Spirit catches fire (*whoomp!*) and erupts; Quicksilver into hot mana
 essence makes Unstable Aether, which above 95 °C erupts out of the vessel; **Blasting Powder** (mixed dry in the

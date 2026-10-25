@@ -47,6 +47,7 @@ public class MirageCopy : MonoBehaviour
         var holder = new GameObject("Mirage Holder");
         holder.SetActive(false);
         GameObject copy = Instantiate(model.gameObject, holder.transform);
+        CopyColours(model.gameObject, copy);
         Strip(copy);
         copy.transform.SetParent(root.transform, false);
         // Same pose relative to the root as the original model.
@@ -119,28 +120,86 @@ public class MirageCopy : MonoBehaviour
         return c;
     }
 
+    /// <summary>
+    /// The colours a character's scripts put on its renderers (skin, hair and clothing tints are MaterialPropertyBlocks,
+    /// which Instantiate does not copy): without this the copies come out in the materials' plain colours.
+    /// </summary>
+    private static void CopyColours(GameObject from, GameObject to)
+    {
+        Renderer[] src = from.GetComponentsInChildren<Renderer>(true);
+        Renderer[] dst = to.GetComponentsInChildren<Renderer>(true);
+        if (src.Length != dst.Length)
+            return; // same hierarchy, same order: anything else is not a copy of it
+        var block = new MaterialPropertyBlock();
+        for (int i = 0; i < src.Length; i++)
+        {
+            Renderer a = src[i], b = dst[i];
+            if (a == null || b == null || !a.HasPropertyBlock())
+                continue;
+            a.GetPropertyBlock(block);
+            if (!block.isEmpty) b.SetPropertyBlock(block);
+            int n = a.sharedMaterials.Length;
+            for (int m = 0; m < n; m++)
+            {
+                block.Clear();
+                a.GetPropertyBlock(block, m);
+                if (!block.isEmpty) b.SetPropertyBlock(block, m);
+            }
+            // A body drawn only as a shadow for its own first-person camera is a full body on its copy.
+            if (b.shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly)
+                b.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        }
+    }
+
     /// <summary>Removes every script, collider and physics part of a copied model, keeping meshes and the Animator.</summary>
     private static void Strip(GameObject go)
     {
-        // Several passes: a component another one requires can only go after it.
-        for (int pass = 0; pass < 4; pass++)
+        // A component can only go once nothing left on its object requires it (a Body Part Hitbox requires its collider):
+        // Unity refuses otherwise - with an error, not an exception. So each pass removes what nothing requires any more.
+        var doomed = new List<Component>();
+        foreach (Component c in go.GetComponentsInChildren<Component>(true))
+            if (c is MonoBehaviour || c is Collider || c is Rigidbody || c is Joint || c is CharacterController || c is AudioSource ||
+                c is UnityEngine.AI.NavMeshAgent || c is Cloth)
+                doomed.Add(c);
+        for (int pass = 0; pass < 8 && doomed.Count > 0; pass++)
         {
-            bool left = false;
-            foreach (Component c in go.GetComponentsInChildren<Component>(true))
+            bool removed = false;
+            for (int i = doomed.Count - 1; i >= 0; i--)
             {
-                if (c == null || c is Transform || c is Animator || c is Renderer || c is MeshFilter || c is LODGroup || c is ParticleSystem)
-                    continue;
-                if (c is MonoBehaviour || c is Collider || c is Rigidbody || c is Joint || c is CharacterController || c is AudioSource ||
-                    c is UnityEngine.AI.NavMeshAgent || c is Cloth)
-                {
-                    try { DestroyImmediate(c); }
-                    catch (Exception) { left = true; }
-                }
+                Component c = doomed[i];
+                if (c == null) { doomed.RemoveAt(i); continue; }
+                if (RequiredByAnother(c)) continue;
+                DestroyImmediate(c);
+                doomed.RemoveAt(i);
+                removed = true;
             }
-            if (!left)
-                break;
+            if (!removed)
+                break; // circular requirements: leave the rest (the copy stays inactive-safe: its scripts never ran)
+        }
+        foreach (Component c in doomed)
+        {
+            // What could not be removed is at least switched off.
+            if (c is Behaviour b) b.enabled = false;
+            else if (c is Collider col) col.enabled = false;
+            else if (c is Rigidbody rb) rb.isKinematic = true;
         }
     }
+
+    /// <summary>Does another component on the same object require <paramref name="c"/>'s type ([RequireComponent])?</summary>
+    private static bool RequiredByAnother(Component c)
+    {
+        Type type = c.GetType();
+        foreach (Component other in c.GetComponents<Component>())
+        {
+            if (other == null || other == c) continue;
+            foreach (RequireComponent rc in other.GetType().GetCustomAttributes(typeof(RequireComponent), true))
+                if (Requires(rc.m_Type0, type) || Requires(rc.m_Type1, type) || Requires(rc.m_Type2, type))
+                    return true;
+        }
+        return false;
+    }
+
+    private static bool Requires(Type required, Type actual) => required != null && required.IsAssignableFrom(actual);
 
     /// <summary>The ground below <paramref name="p"/> (ignoring <paramref name="ignore"/>'s own colliders).</summary>
     public static Vector3 Ground(Vector3 p, Transform ignore)

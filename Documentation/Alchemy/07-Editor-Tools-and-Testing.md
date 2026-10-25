@@ -12,8 +12,8 @@
 | *Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Alchemy Station* | A cauldron on a fire with the station, surroundings and visuals |
 | *… ▸ Create Test Bench (free ingredients)* | The same with every built-in ingredient free |
 | *… ▸ Create Equipment Presets* | Iron Cauldron, Copper Alembic, Glass Retort, Frost Basin, Fractionating Still, Evaporating Dish (`Resources/SimpleMovements/Alchemy/Equipment`) |
-| *… ▸ Create Ingredient Items* | The built-in ingredients — and the supplies Firewood and Filter Paper — with generated icons and models (`Items/Alchemy/Ingredients`); assigns harvest items (by name, or the ingredient a substance mainly comes from: brine → Rock Salt, alum → Alum Powder) |
-| *… ▸ Create Potion Items* | A potion item per tier of every outcome (`Items/Alchemy/Potions`), assigned in the database |
+| *… ▸ Create Ingredient Items* | The built-in ingredients — and the supplies Firewood and Filter Paper — with generated icons and pickable prefabs (`Items/Alchemy/Ingredients`, `Items/Alchemy/Pickables`); also gives an icon and a pickable prefab to every ingredient you made yourself that has none; assigns harvest items (by name, or the ingredient a substance mainly comes from: brine → Rock Salt, alum → Alum Powder) |
+| *… ▸ Create Potion Items* | A potion item per tier of every outcome (`Items/Alchemy/Potions`) with a pickable prefab, assigned in the database — run it again after adding outcomes |
 | *… ▸ Open Alchemy Lab* | Below |
 | *… ▸ Validate Alchemy Database* | Errors and warnings in the Console (also in the **Project Validator**, with a *Create Potion Items* fix) |
 | *Assets ▸ Create ▸ SimpleMovements ▸ Alchemy* | Alchemy Database, Ingredient, Equipment, Brewed Potion |
@@ -70,6 +70,8 @@ They run the built-in rules and check:
 | **Saturation and solubility**: the solvent and its amount matter | `Solubility_TheWrongSolventLeavesItUndissolved`, `Solubility_TooLittleWaterThenMoreWater`, `Solubility_BoilingDownOrAnotherSolventPrecipitates`, `Solubility_TooMuchWaterPrecipitatesAVenomDrawnInSpirit` |
 | **Thermal stability**: hotter is not always better | `ThermalStability_AShortBoilDestroysTheToxin_ThenTheBrewCools`, `ThermalStability_HotterIsNotAlwaysBetter` |
 | **Volatility** | `Evaporation_BelowBoiling_ConcentratesFasterInAWideDish`, `FractionatingStill_CollectsAPurerSpirit`, `Grinding_LevelsAndEvenness_ChangeWhatComesOut` (pulverising loses volatile oils) |
+| **Reaction networks**: reversible (temperature, pH, concentration), alternative pathways, competing, branching, dependent, chains | `Reversible_TemperatureAndPhAndConcentrationDecideTheWay`, `Pathways_Alternative_Competing_Branching_Dependent` |
+| Rare ingredients need their own process | `Stormcall_NeedsHardStirring_Starfrost_NeedsAnIceBath`, `Nightcap_OnlyStirsAtNight`, `Phoenix_IsBornInFire_AndGuttersOutWhenCold`, `Mandrake_TurnsAHealingBrewIntoRestoration_GingerSpicesMead`, `Vitriol_IsMadeFasterWithAir_AndCharsHerbs` |
 | Conditions change the result | `Temperature_ChangesWhatTheSameIngredientsBecome`, `Quantity_DilutionLowersTheQuality`, `Surroundings_NightAndStillnessGrowCrystals`, `SealedVessel_BurstsWhenOverheated` |
 | Adding during the process depends on the state | `SameIngredient_RedirectsByTheMixturesState`, `VoidSalt_GivesTheSameResultWhateverTheMixtureWasBecoming`, `Bitterroot_TaintsAHealingPreparation`, `Order_OfAdditionMatters` |
 | Modify, accelerate, slow, stabilise, interrupt | `Catalysts_Inhibitors_AndStabilisers`, `Order_OfAdditionMatters`, `ViolentReaction_Erupts`, `BlastingPowder_MixedDry_GoesOffWhenHot` |
@@ -78,4 +80,4 @@ They run the built-in rules and check:
 | Players learn from experiments | `Journal_LearnsFromRepeatedExperiments`, `Procedure_ReadsLikeTheStepsTaken` |
 | Extensible without rewriting the core | `Extensions_AddAndReplaceRules`, `CustomConditions_PlugIntoReactions`, `BrewedPotion_PouredBack_ReleasesWhatItIs` |
 
-56 tests. They need no scene and no assets; each runs a few simulated minutes in milliseconds.
+63 tests. They need no scene and no assets; each runs a few simulated minutes in milliseconds.

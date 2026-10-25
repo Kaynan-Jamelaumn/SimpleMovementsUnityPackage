@@ -90,7 +90,7 @@ public class PlayerSetupValidator : MonoBehaviour
         // Optional
         C(typeof(AbilitiesStateMachine), Importance.Optional, "Ability keys."),
         C(typeof(PlayerAbilityController), Importance.Optional, "Ability slots (also receives abilities absorbed from mobs)."),
-        C(typeof(CharacterBody), Importance.Optional, "Height: scales the model and the CharacterController."),
+        C(typeof(CharacterBody), Importance.Optional, "Height: scales the model and the CharacterController. Needed by size powers (Giant, Shrink): without it they change the Height stat but nothing scales."),
         C(typeof(BodyPartController), Importance.Optional, "Head / torso / arm / leg damage (then add hitboxes)."),
         C(typeof(PlayerStartItemController), Importance.Optional, "Starting items per class."),
         C(typeof(AudioSource), Importance.Optional, "Item, weapon and interaction sounds."),

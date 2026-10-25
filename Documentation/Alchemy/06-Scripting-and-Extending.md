@@ -1,8 +1,8 @@
 # Alchemy 06 — Scripting and Extending
 
 **Scripts:** `Alchemy/Core/AlchemyBrew.cs`, `AlchemyMixture.cs`, `AlchemyRules.cs`, `AlchemyConditions.cs`, `AlchemyJournal.cs`,
-`AlchemyProcessing.cs`, `Alchemy/Runtime/AlchemyStation.cs`, `AlchemyConditionSources.cs`, `AlchemyKnowledge.cs`,
-`Alchemy/UI/AlchemyMinigames.cs`.
+`AlchemyProcessing.cs`, `Alchemy/Runtime/AlchemyStation.cs`, `AlchemyConditionSources.cs`, `AlchemySurroundings.cs`, `AlchemyKnowledge.cs`,
+`Alchemy/UI/AlchemyCirclePad.cs`, `AlchemyTrace.cs`.
 
 ---
 
@@ -76,7 +76,7 @@ first); fuels and filters use up their items from the player's inventory (or the
 `SavePreparation()`, `LoadState(state)`; `HasManualFire`. `Changed` fires after each operation; `AlchemyStation.All`
 lists the stations.
 
-**The minigames** are presentation over these operations: `AlchemyCirclePad` (`Alchemy/UI/AlchemyMinigames.cs`) is a round
+**The minigames** are presentation over these operations: `AlchemyCirclePad` (`Alchemy/UI/AlchemyCirclePad.cs`) is a round
 pad that follows the pointer and reports `TurnsPerSecond`, `Turns`, `Rhythm` (0 erratic … 1 steady) and a `Turned` event;
 the window turns the mortar's turns into a grind level and evenness (one `AddItem`), and the stir pad's speed into
 `SetStirring` a few times a second. `AlchemyTrace` draws the last minute of the temperature. Use them in your own UI, or
@@ -130,6 +130,9 @@ Any `ItemSO` that implements `IAlchemyIngredient` (`AlchemyId`, `AlchemyName`, `
   rules expose `Forms`, `Form(id)`, `GroundForm(profile)`, `GrindLevels(profile)`, `CoarserForm(id)`, `FinerForm(id)`,
   `Filters`, `Filter(id)`, `Fuels`, `Fuel(id)`, `Solvents`, and each substance's breakdowns and clashes as ordinary
   reactions (`IsGenerated`, `generatedFrom`).
+* **Reversible reactions in code**: `reaction.Reversible(rate, reference, doubling, min, max, observation)` and
+  `.ReverseNeeds(condition)`; `AlchemyReaction.reverse` (`ReactionReverse`), `IsReversible`, `MakeReverse()`; the
+  compiled way back has `IsReverse` and `reverseOf`.
 * **Substances in code**: `AlchemySubstance` has fluent helpers — `Dissolves(solvent, units)`, `StableUpTo(max, rate,
   observation, (product, ratio)...)`, `StableDownTo(...)`, `StableBetweenPh(min, max, rate, observation)`,
   `ExtractsBestAtPh(ph, sensitivity)`, `WithDensity(relative)`, `InLayer(layer)`, `CrystallisesAs(crystal, startsAt,

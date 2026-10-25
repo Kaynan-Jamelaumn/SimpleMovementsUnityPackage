@@ -969,6 +969,11 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         // Only shown: the presentation (and the network layer's copies) show it to nearby players; no action runs.
         if (c.VisualOnly)
         {
+            if (!c.Cosmetic)
+                AbilityDiagnostics.WarnOnce(this, "visual-only",
+                    $"[{name}] '{def.DisplayName}' was only shown: abilities used here are visual only (the hub world's city or " +
+                    "travel - Hub World Settings ▸ City ▸ City Abilities Visual Only). It goes on cooldown and nothing is hit, " +
+                    "not even the caster. Use it in the world or a dungeon, or turn that setting off.");
             if (pres.visualOnlyEffect != null)
                 AbilityPool.PlayVfx(pres.visualOnlyEffect, c.AimPoint, c.AimRotation);
             if (!c.Cosmetic)
@@ -977,6 +982,9 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
         }
 
         List<CastAction> actions = def.actions;
+        if (actions.Count == 0 && !c.Cosmetic)
+            AbilityDiagnostics.WarnOnce(def, "no-actions",
+                $"'{def.DisplayName}' has no actions: it goes on cooldown and does nothing. Add an action (Direct Effect on the caster, an area, a projectile...).");
         for (int i = 0; i < actions.Count; i++)
         {
             CastAction a = actions[i];

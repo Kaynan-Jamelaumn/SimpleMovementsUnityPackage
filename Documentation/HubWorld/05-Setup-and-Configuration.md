@@ -131,7 +131,7 @@ priority, levelled areas, physics routing.
 | The city's walls float / sink in the world | *City Ground Height* differs from where the World's walls stand | set it to the walls' base height (and keep *Flatten City Ground* on) |
 | Trees / mobs inside the city exterior | *Keep Clear Radius* smaller than the walls | raise it |
 | No PvP in a dangerous zone | the other player is in a safe ring (both must be in a PvP ring), same party, or in a duel with someone else | 03 §2 |
-| Abilities do nothing in the city | by design (visual only) | *City Abilities Visual Only* off, or duel |
+| Abilities do nothing in the city (they go on cooldown) | by design (visual only); the Console says so once per player | *City Abilities Visual Only* off, or duel |
 | Camera passes through dungeon walls | the camera's collision uses Unity's default physics scene, the dungeon has its own | *Dungeon Scenes ▸ Own Physics* off (the slots still keep dungeons apart) |
 | A dungeon is dark | its theme has *Apply Atmosphere* off (a fresh dungeon scene has default lighting) | turn it on |
 | The world is the same every cycle | the World scene's TerrainGenerator is created after the load (not in the scene) | keep the TerrainGenerator in the World scene (it reads `SeedOverride` on Awake) |

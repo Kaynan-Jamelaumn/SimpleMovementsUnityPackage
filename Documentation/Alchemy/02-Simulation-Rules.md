@@ -171,6 +171,33 @@ rate = k × T(temperature) × Π (cᵢ ^ orderᵢ) × V × Π modifiers × Π co
 Because reactions name substances, properties and roles — never ingredients — **the same ingredient does different
 things depending on what is already in the vessel**, and each substance of the same herb follows its own reactions.
 
+### Reaction networks: chains, competition, pathways, branches, reversible reactions
+
+Reactions are not isolated recipes: they all act on the same mixture at once, so they combine into networks.
+
+* **Chains**: what one reaction makes, the next consumes — solar sap → healing essence → ardent essence → ash and sludge.
+  Each step has its own window and speed, so *when* the brew is taken off decides where in the chain it is.
+* **Dependent reactions**: a reaction whose reactant (or whose condition — a *Substance Amount* condition) only exists
+  once another reaction has made it. Transmutation turns lead into gold only while *unstable aether* is in the vessel, and
+  only overcharging mana with quicksilver makes that.
+* **Competing reactions**: reactions that consume the same substance share it by how fast each would go ([§5](#5-reactions):
+  none takes more than there is). Moon dew goes to moon infusion (mana) *and* to moonlit blood (healing essence): more
+  bloodmoss, less mana. Transmutation uses up the quicksilver the aether needs.
+* **Alternative pathways**: the same substance from different ingredients and sequences — healing essence from sunpetals
+  (vital extraction) or from bloodmoss and moon dew (moonlit blood); esters from fermentation or from spirit and vinegar
+  (esterification); mana essence from moonblooms or by dissolving moon crystals.
+* **Branching**: one substance, several fates, by the conditions — sanguine essence becomes healing essence with moon dew
+  (cool), berserker essence with ardent essence (hot, with sludge as a by-product), or browns when stirred too hard; mana
+  becomes storm essence (stirred hard, cold), starfrost (ice bath, rime) or unstable aether (hot, quicksilver).
+* **Reversible reactions**: a reaction with *Reverse* on also runs backwards — the rules add its way back
+  (`reverse.<id>`, "Ember Binding (reverse)": the products consumed, the reactants made) with its own rate, temperature
+  window and conditions. Both ways run at once and the mixture settles where they balance:
+  * by **temperature** — brine binds ember dust into ember salt in the cold; past 65 °C the salt lets the dust go;
+  * by **pH** — acid binds somnine into a salt that heat cannot destroy; neutralised (pH ≥ 6), the somnine comes back;
+  * by **concentration** — spirit and acetic acid make esters and water, and much water pushes them back.
+
+  The journal writes it with ⇌ once understood.
+
 ### Thermal and pH stability
 
 Each substance can have a **stable temperature range** (*Stable Max*, *Stable Min*) and a **stable pH range** (*Stable

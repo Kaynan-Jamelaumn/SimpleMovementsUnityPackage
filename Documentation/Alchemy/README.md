@@ -16,8 +16,11 @@ temperature, after more time, in another order, in another vessel, whole or fine
 another solvent, filtered or not — and players discover all of it by experimenting, with a journal that records what
 they have seen and how they made it.
 
-The built-in content: 48 ingredients, 66 substances, 58 reactions, 26 outcomes (healing, vigour, calming, fortitude,
-frost, mana, speed, breath, salamander, antidote, sleep, pain relief, lavender, mead, brandy, salve, soap, ink, venom...),
+The built-in content: 65 ingredients, 99 substances, 101 reactions, 44 outcomes (healing, vigour, calming, fortitude,
+frost, mana, speed, breath, salamander, antidote, sleep, pain relief, lavender, mead, brandy, salve, soap, ink, venom,
+bloodmoss, stormcall, starfrost, shadows, dragonheart, ginger, spiced mead, rosewater, wakefulness, restoration, phoenix,
+featherfall, vitriol, berserker, panacea, blessed, gillweed, fireward...), with reversible reactions, competing and dependent reactions, alternative
+pathways and branches,
 3 filters, 4 fuels, 6 vessels.
 
 | Chapter | What it covers |

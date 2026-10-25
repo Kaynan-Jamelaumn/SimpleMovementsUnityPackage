@@ -1562,6 +1562,3 @@ public class CharacterAppearance : MonoBehaviour
     }
 }
 
-/// <summary>Marks the placeholder shapes of a <see cref="CharacterAppearance"/> (left out when the model is measured).</summary>
-[AddComponentMenu("")]
-public class CharacterAppearancePartsMarker : MonoBehaviour { }

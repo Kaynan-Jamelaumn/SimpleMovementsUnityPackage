@@ -1,7 +1,7 @@
 # Minigames 02 — Blackjack, Poker, Arm Wrestling and Drinking Contests
 
-**Scripts:** `Minigames/CardGames/Core/ChipGameSession.cs` (chip games), `Minigames/CardGames/Blackjack/BlackjackGame.cs`,
-`Minigames/CardGames/Poker/PokerHands.cs` and `PokerGame.cs`, `Minigames/CardGames/Contests/ArmWrestlingGame.cs` /
+**Scripts:** `Minigames/CardGames/Core/ChipGameSession.cs` (chip games), `Minigames/CardGames/Blackjack/BlackjackGame.cs`
+and `BlackjackDefinition.cs` (the asset), `Minigames/CardGames/Poker/PokerHands.cs`, `PokerGame.cs` and `PokerDefinition.cs`, `Minigames/CardGames/Contests/ArmWrestlingGame.cs` /
 `ArmWrestlingDefinition.cs`, `DrinkingContestGame.cs` / `DrinkingContestDefinition.cs`, tests in
 `CustomEditor/Minigames/MinigameTests.cs`.
 
@@ -156,6 +156,11 @@ and a session:
 
 Real-time games (arm wrestling) are ticked every frame on the server and limit their own action rate; the table sends
 views at most every *Send Interval* (0.1 s) over the network.
+
+**Put the definition in a file named after it** (`MyGameDefinition.cs` for `class MyGameDefinition`): Unity binds a
+ScriptableObject's script to the class named like its file. A definition sharing a file with its session class
+(`MyGame.cs`) can still be created from the menu, but the asset loses its script ("'MyGame' is missing the class attribute
+'ExtensionOfNativeClass'"), the table's *Game* field reads empty and the table falls back to Truco.
 
 ## 8. Tests
 

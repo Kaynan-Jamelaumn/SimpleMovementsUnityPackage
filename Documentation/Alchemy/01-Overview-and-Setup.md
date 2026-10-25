@@ -1,6 +1,6 @@
 # Alchemy 01 — Overview and Setup
 
-**Scripts:** `Alchemy/Runtime/AlchemyStation.cs`, `Alchemy/UI/AlchemyStationUI.cs`, `Alchemy/UI/AlchemyMinigames.cs`,
+**Scripts:** `Alchemy/Runtime/AlchemyStation.cs`, `Alchemy/UI/AlchemyStationUI.cs`, `Alchemy/UI/AlchemyCirclePad.cs`, `AlchemyTrace.cs`,
 `Alchemy/Runtime/AlchemyKnowledge.cs`, `Alchemy/Items/AlchemyIngredientSO.cs`, `Alchemy/Items/BrewedPotionSO.cs`,
 `CustomEditor/Alchemy/AlchemyEditors.cs`.
 

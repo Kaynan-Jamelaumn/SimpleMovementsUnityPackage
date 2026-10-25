@@ -951,7 +951,8 @@ namespace AlchemySystem.Tests
                 b.RunUntil(120);
                 return b;
             }
-            Assert.Greater(Units(Berries("Vinegar"), AlchemyDefaults.Somnine), Units(Berries(null), AlchemyDefaults.Somnine) * 1.4, "acid draws the alkaloid out");
+            double Drawn(AlchemyBrew b) => Units(b, AlchemyDefaults.Somnine) + Units(b, AlchemyDefaults.SomnineSalt); // in acid it is held as a salt
+            Assert.Greater(Drawn(Berries("Vinegar")), Drawn(Berries(null)) * 1.4, "acid draws the alkaloid out");
             Assert.Less(Units(Berries("Potash"), AlchemyDefaults.Somnine), 0.05, "alkali destroys it");
 
             AlchemyBrew Willow(bool acid)
@@ -1034,6 +1035,185 @@ namespace AlchemySystem.Tests
             AlchemyBrew stirred = Run(0.5);
             Assert.Greater(Units(stirred, AlchemyDefaults.Soap), 5.0);
             Assert.AreEqual("soft_soap", Outcome(stirred));
+        }
+
+        [Test]
+        public void Reversible_TemperatureAndPhAndConcentrationDecideTheWay()
+        {
+            // Temperature: cold brine binds ember dust into a salt; past 65 °C it lets it go.
+            var ember = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(ember, "Spring Water", 2); Add(ember, "Rock Salt", 2); Add(ember, "Embercap", 2, "ground");
+            ember.RunUntil(300);
+            Assert.Greater(Units(ember, AlchemyDefaults.EmberSalt), 8.0, "bound in the cold");
+            ember.SetHeat(0.4);
+            ember.RunUntil(360);
+            Assert.Less(Units(ember, AlchemyDefaults.EmberSalt), 0.5, "freed by heat");
+
+            // pH: acid binds somnine into a salt heat cannot destroy; neutralising gives it back.
+            var sleep = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(sleep, "Spring Water", 2); Add(sleep, "Vinegar"); Add(sleep, "Dreamshade Berries", 3, "ground"); sleep.SetHeat(0.14);
+            sleep.RunUntil(300);
+            sleep.SetHeat(0.3);
+            sleep.RunUntil(480);
+            Assert.Greater(Units(sleep, AlchemyDefaults.SomnineSalt), 1.5, "the salt survives 85 °C (free somnine would not)");
+            sleep.SetHeat(0.1);
+            sleep.RunUntil(700);
+            Add(sleep, "Chalk", 2);
+            sleep.RunUntil(1000);
+            Assert.Greater(Units(sleep, AlchemyDefaults.Somnine), 1.5, "neutralised, the somnine comes back");
+            Assert.AreEqual("sleep_draught", Outcome(sleep));
+
+            // Concentration: much water pushes the esters back.
+            var ester = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(ester, "Grain Spirit"); Add(ester, "Vinegar"); ester.SetHeat(0.15);
+            ester.RunUntil(1200);
+            double before = Units(ester, AlchemyDefaults.Esters);
+            Assert.Greater(before, 0.5);
+            Add(ester, "Spring Water", 4);
+            ester.RunUntil(2400);
+            Assert.Less(Units(ester, AlchemyDefaults.Esters), before * 0.75, "the way back wins in much water");
+        }
+
+        [Test]
+        public void Pathways_Alternative_Competing_Branching_Dependent()
+        {
+            // Alternative pathway to healing essence, competing with moon infusion for the dew.
+            double Mana(int bloodmoss, out double vital)
+            {
+                var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+                Add(b, "Spring Water", 2); if (bloodmoss > 0) Add(b, "Bloodmoss", bloodmoss); Add(b, "Moonbloom", 2); b.SetHeat(0.16);
+                b.RunUntil(400);
+                vital = Units(b, AlchemyDefaults.VitalEssence);
+                return Units(b, AlchemyDefaults.ManaEssence);
+            }
+            double alone = Mana(0, out double noVital), shared = Mana(4, out double vital);
+            Assert.Less(noVital, 0.01);
+            Assert.Greater(vital, 1.0, "moon dew and sanguine essence make healing essence: another way to it");
+            Assert.Less(shared, alone - 1.0, "the two reactions compete for the dew");
+
+            // Branching: the same sanguine essence turns to fury with ardent essence in the heat (and leaves sludge).
+            var fury = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(fury, "Spring Water", 2); Add(fury, "Sunpetal", 3); fury.SetHeat(0.35);
+            fury.RunUntil(180);
+            Add(fury, "Bloodmoss", 3); fury.SetHeat(0.3);
+            fury.RunUntil(420);
+            Assert.AreEqual("berserker_draught", Outcome(fury));
+
+            // Dependent: lead turns to gold only while unstable aether (made by overcharging mana) is in the vessel.
+            double Gold(double heat)
+            {
+                var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+                Add(b, "Spring Water", 2); Add(b, "Moonbloom", 3); b.SetHeat(0.15);
+                b.RunUntil(200);
+                Add(b, "Quicksilver Drop", 2); b.SetHeat(heat);
+                b.RunUntil(260);
+                Add(b, "Lead Dust", 3);
+                b.RunUntil(420);
+                return Units(b, AlchemyDefaults.AlchemicalGold);
+            }
+            Assert.Less(Gold(0.15), 0.01, "no aether, no gold");
+            Assert.Greater(Gold(0.27), 1.0);
+
+            // A chain of four: sap → healing essence → restorative (mandrake); moon dew → mana; joined, the panacea.
+            var chain = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(chain, "Spring Water", 2); Add(chain, "Sunpetal", 3); chain.SetHeat(0.22);
+            chain.RunUntil(180);
+            Add(chain, "Mandrake Root", 3, "ground"); Add(chain, "Moonbloom", 3);
+            chain.RunUntil(600);
+            Assert.AreEqual("panacea", Outcome(chain));
+        }
+
+        private static AlchemyBrew ManaBrew()
+        {
+            var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(b, "Spring Water", 2); Add(b, "Moonbloom", 3); b.SetHeat(0.15);
+            b.RunUntil(200);
+            b.SetHeat(0); b.SetBath(AlchemyBath.Ice);
+            return b;
+        }
+
+        [Test]
+        public void Stormcall_NeedsHardStirring_Starfrost_NeedsAnIceBath()
+        {
+            AlchemyBrew still = ManaBrew(), stirred = ManaBrew();
+            Add(still, "Thunder Agate", 3, "powder"); Add(stirred, "Thunder Agate", 3, "powder");
+            stirred.SetStirring(0.7);
+            still.RunUntil(400); stirred.RunUntil(400);
+            Assert.AreEqual("mana_potion", Outcome(still), "storm salt only charges mana by friction");
+            Assert.AreEqual("stormcall_elixir", Outcome(stirred));
+
+            AlchemyBrew frost = ManaBrew();
+            Add(frost, "Frostmint", 3);
+            frost.RunUntil(500);
+            Assert.AreEqual("starfrost_draught", Outcome(frost));
+        }
+
+        [Test]
+        public void Nightcap_OnlyStirsAtNight()
+        {
+            string Steep(bool night)
+            {
+                var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+                b.SetVariable("night", night ? 1 : 0);
+                Add(b, "Grain Spirit", 2); Add(b, "Nightcap", 3); b.SetHeat(0.05);
+                b.RunUntil(400);
+                return Outcome(b);
+            }
+            Assert.AreNotEqual("shadow_draught", Steep(false));
+            Assert.AreEqual("shadow_draught", Steep(true));
+        }
+
+        [Test]
+        public void Phoenix_IsBornInFire_AndGuttersOutWhenCold()
+        {
+            var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(b, "Lamp Oil", 2); Add(b, "Sunpetal", 3); b.SetHeat(0.4);
+            b.RunUntil(240);
+            b.SetHeat(0.6); Add(b, "Phoenix Feather", 2);
+            b.RunUntil(360);
+            Assert.AreEqual("phoenix_draught", Outcome(b), "bottled hot");
+            b.SetHeat(0);
+            b.RunUntil(900);
+            Assert.Less(Units(b, AlchemyDefaults.PhoenixEssence), 0.1, "it does not survive the cold");
+        }
+
+        [Test]
+        public void Mandrake_TurnsAHealingBrewIntoRestoration_GingerSpicesMead()
+        {
+            var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(b, "Spring Water", 2); Add(b, "Sunpetal", 3); b.SetHeat(0.24);
+            b.RunUntil(180);
+            Add(b, "Mandrake Root", 3, "ground");
+            b.RunUntil(400);
+            Assert.AreEqual("restoration_elixir", Outcome(b));
+
+            var mead = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(mead, "Spring Water", 2); Add(mead, "Honey", 2); Add(mead, "Brewer's Yeast"); mead.SetHeat(0.05);
+            mead.RunUntil(1500);
+            Assert.AreEqual("honey_mead", Outcome(mead));
+            Add(mead, "Ginger Root", 1, "ground"); mead.SetHeat(0.25);
+            mead.RunUntil(1800);
+            Assert.AreEqual("spiced_mead", Outcome(mead));
+        }
+
+        [Test]
+        public void Vitriol_IsMadeFasterWithAir_AndCharsHerbs()
+        {
+            double Made(double stir)
+            {
+                var b = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+                Add(b, "Spring Water", 2); Add(b, "Cave Sulphur", 3); b.SetHeat(0.5); b.SetStirring(stir);
+                b.RunUntil(60);
+                return Units(b, AlchemyDefaults.Vitriol);
+            }
+            Assert.Greater(Made(0.8), Made(0) * 1.5, "air beaten in hurries it");
+            var v = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(v, "Spring Water", 2); Add(v, "Cave Sulphur", 3); v.SetHeat(0.5);
+            v.RunUntil(300);
+            Assert.AreEqual("oil_of_vitriol", Outcome(v));
+            Add(v, "Sunpetal", 2);
+            v.RunUntil(360);
+            Assert.Greater(Units(v, AlchemyDefaults.Char), 2.0, "the acid chars the petals");
         }
 
         [Test]

@@ -76,7 +76,47 @@ public class PlayerAbilityController : AbilityCaster
     /// </summary>
     public AimProvider RemoteAim { get; set; }
 
-    public Camera AimCamera => aimCamera != null ? aimCamera : Camera.main;
+    /// <summary>
+    /// The camera the player is looking through: the assigned one while it is active, else the MainCamera while it is
+    /// active, else whichever of the player's cameras is on (switching to first person turns another camera on - aiming
+    /// from the one left behind the player would aim behind it).
+    /// </summary>
+    public Camera AimCamera
+    {
+        get
+        {
+            if (aimCamera != null && aimCamera.isActiveAndEnabled) return aimCamera;
+            Camera main = Camera.main;
+            if (main != null && main.isActiveAndEnabled) return main;
+            if (cameraModel == null) cameraModel = GetComponentInParent<PlayerCameraModel>();
+            if (cameraModel != null)
+                foreach (GameObject go in cameraModel.CameraDictionary.Keys)
+                {
+                    Camera c = go != null ? go.GetComponentInChildren<Camera>() : null;
+                    if (c != null && c.isActiveAndEnabled) return c;
+                }
+            return aimCamera != null ? aimCamera : main;
+        }
+    }
+
+    private PlayerCameraModel cameraModel;
+
+    /// <summary>In first person the camera turns the character: turning it toward the aim would turn the camera too.</summary>
+    private bool InFirstPerson
+    {
+        get
+        {
+            if (cameraModel == null) cameraModel = GetComponentInParent<PlayerCameraModel>();
+            return cameraModel != null && cameraModel.IsFirstPerson;
+        }
+    }
+
+    protected override void FaceDirection(Vector3 direction, float dt)
+    {
+        if (LocalInputEnabled && InFirstPerson)
+            return; // the camera already points the character where the player looks
+        base.FaceDirection(direction, dt);
+    }
 
     /// <summary>
     /// True while a click-to-confirm preview is open, and during the frame a click confirmed or cancelled it: that
@@ -377,6 +417,8 @@ public class PlayerAbilityController : AbilityCaster
             return; // copies leave the rotation to the network (the server turns its copy)
         if (!snapTurnToAim || cast.Definition.targeting.mode == AbilityTargetingMode.Self && !cast.Definition.targeting.faceAim)
             return;
+        if (LocalInputEnabled && InFirstPerson)
+            return; // turning the body would turn the first-person camera with it (and spin the aim)
         Vector3 d = cast.AimDirection;
         if (d.sqrMagnitude > 1e-4f && cast.Definition.targeting.faceAim)
             transform.rotation = Quaternion.LookRotation(d, Vector3.up);

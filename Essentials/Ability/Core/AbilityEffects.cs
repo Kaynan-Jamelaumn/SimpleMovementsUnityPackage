@@ -430,7 +430,12 @@ public class StatEffect : AbilityEffect
 
         BaseStatusController status = target.Status;
         if (status == null)
+        {
+            AbilityDiagnostics.WarnOnce(target, "no-status",
+                $"[{target.name}] has no status controller (Player Status Controller / Mob Status Controller): the ability " +
+                $"'{(ctx.Ability != null ? ctx.Ability.DisplayName : "?")}' cannot change its {effectType}.");
             return;
+        }
         if (IsHealthDamage)
             target.RegisterPeriodicSource(ctx.caster, time);
 

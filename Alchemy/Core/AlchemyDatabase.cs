@@ -164,8 +164,11 @@ public class AlchemyDatabase : ScriptableObject
     [TextArea(1, 3)] public string notes = "";
     public AlchemySimulationSettings settings = new AlchemySimulationSettings();
 
-    [Header("Rules")]
+    [Header("Rules (the chemistry - no items here)")]
     public List<AlchemyPropertyDefinition> properties = new List<AlchemyPropertyDefinition>();
+    [Tooltip("The chemicals inside the vessel (Solar Sap, Vital Essence, Water...): what ingredients are made of and what " +
+             "reactions make. They are not items: players carry Ingredient items (which release substances) and Potion items " +
+             "(Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Ingredient Items / Create Potion Items).")]
     public List<AlchemySubstance> substances = new List<AlchemySubstance>();
     public List<AlchemyReaction> reactions = new List<AlchemyReaction>();
     public List<AlchemyOutcome> outcomes = new List<AlchemyOutcome>();
@@ -176,8 +179,9 @@ public class AlchemyDatabase : ScriptableObject
     [Tooltip("What a manual fire burns (firewood, charcoal, resin...). Empty = the built-in ones.")]
     public List<AlchemyFuel> fuels = new List<AlchemyFuel>();
 
-    [Header("Items")]
-    [Tooltip("Items that are not Alchemy Ingredients but can go into a vessel anyway (foods, monster parts...).")]
+    [Header("Other items usable as ingredients")]
+    [Tooltip("Optional: items of other kinds (a food, a monster part) that can go into a vessel too, with what they release. " +
+             "Alchemy Ingredient items do not need to be listed here, and nothing here creates item assets.")]
     public List<AlchemyItemIngredient> itemIngredients = new List<AlchemyItemIngredient>();
     [Tooltip("More databases whose content is added to this one (content packs). Same ids replace this one's entries.")]
     public List<AlchemyDatabase> extensions = new List<AlchemyDatabase>();

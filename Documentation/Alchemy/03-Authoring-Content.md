@@ -2,7 +2,7 @@
 
 **Scripts:** `Alchemy/Core/AlchemyDatabase.cs`, `AlchemyTypes.cs`, `AlchemyReaction.cs`, `AlchemyOutcome.cs`,
 `AlchemyIngredient.cs`, `AlchemyEquipment.cs`, `AlchemyProcessing.cs`, `Alchemy/Items/AlchemyIngredientSO.cs`, `BrewedPotionSO.cs`,
-`Alchemy/Runtime/AlchemyConditionSources.cs`.
+`Alchemy/Runtime/AlchemyConditionSources.cs`, `AlchemySurroundings.cs`, `AlchemyFixedConditions.cs`.
 
 Everything is data. New ingredients, substances, reactions, potions, vessels, filters, fuels and conditions need no code — and a new
 ingredient joins every reaction its substances fit, so the possibilities grow without writing recipes.
@@ -30,6 +30,18 @@ Built-in*.
 
 Ids are stable strings (lower case, no spaces): saves, histories and journals refer to them — rename the display names
 freely, not the ids.
+
+**The database holds the chemistry, not the items.** Substances, reactions and outcomes are rules; what players carry
+are item assets of their own (with an icon and a prefab), made by the editor tools — adding an outcome or a substance to
+the database makes no item by itself:
+
+* *Tools ▸ … ▸ Alchemy ▸ Create Potion Items*: a potion item per tier of every outcome, assigned to the tiers. Run it
+  again after adding or renaming outcomes.
+* *Create Ingredient Items*: the built-in ingredients, and an icon and a pickable prefab for every ingredient item you
+  made yourself (*Create ▸ SimpleMovements ▸ Alchemy ▸ Ingredient*) that has none.
+
+Each generated prefab (`Items/Alchemy/Pickables`) is the item's model with a collider and an **Item Pickable** set to
+that item, so a copy placed in a scene can be picked up; dropped items get the same automatically.
 
 ---
 
@@ -89,6 +101,7 @@ in), **organic** (rots, scorches), **toxicity** (tainted outcomes, the charcoal 
 | *Heat Per Unit* | Exothermic (+) / endothermic (−) |
 | *Eruption Rate*, *Spill Fraction* | Violent reactions |
 | *Observation*, *Visual* | What the player sees before understanding it; a presentation hint (bubbles, smoke, sparks, flash, glow, hiss) |
+| *Reverse* | **Enabled**: the products also turn back into the reactants (named reactants only); its own *Rate*, *Min / Max / Reference Temperature*, *Doubling Degrees*, *Conditions* (a pH range...), *Heat Per Unit* and *Observation*. The rules add it as `reverse.<id>` |
 
 Design patterns:
 
@@ -108,6 +121,11 @@ Design patterns:
   temperature), `liquid` (mixed dry), `turbulence` (stirred evenly) — the minigames' precision becomes chemistry.
 * **Purify by crystals**: a salt with a *Crystal*, a strong *Solubility Doubling* and some dirt (*contaminant*) in its
   crude ingredient: dissolve hot, filter, cool slowly and still — or seed it.
+* **Reversible**: turn *Reverse* on — a salt that forms in acid and comes apart when neutralised, a binding that holds
+  cold and lets go hot, an equilibrium that much water pushes back. Give the way back a steeper *Doubling Degrees* than
+  the way forward and heat moves the balance back.
+* **Chains and dependencies**: make one reaction's product another's reactant, or a *Substance Amount* condition of
+  another (transmutation needs unstable aether present); several reactions consuming the same substance compete for it.
 * **Incompatible**: a *Clashes* interaction for things that destroy each other, *Curdles* for one that comes out of
   solution beside another, *Interferes* for one that only gets in the way.
 * **One herb, several uses**: give an ingredient several substances with different extractabilities and reactions — its

@@ -8,7 +8,9 @@
 
 ## 1. Abilities in the city are only shown
 
-With *City Abilities Visual Only* (default), a player in the city (or travelling) can cast, but nothing is hit:
+With *City Abilities Visual Only* (default), a player in the city (or travelling) can cast, but nothing is hit - not even
+the caster's own buffs (size, stats): the ability goes on cooldown and only its presentation plays. The Console warns once
+per player ("... was only shown: abilities used here are visual only") so it is not mistaken for a broken ability:
 
 ```mermaid
 sequenceDiagram

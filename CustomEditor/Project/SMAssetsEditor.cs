@@ -81,7 +81,9 @@ public static class SMAssetsEditor
             T a = AssetDatabase.LoadAssetAtPath<T>(path);
             if (a != null) return a;
         }
-        return found;
+        // SMAssets.Load falls back to any asset of the type - right for the project-wide ones (a renamed Combat Settings),
+        // wrong for kinds with many assets (items, potions, games): there it would hand back another item of the type.
+        return found != null && SMAssets.FolderOf(name) != null ? found : null;
     }
 
     /// <summary>
