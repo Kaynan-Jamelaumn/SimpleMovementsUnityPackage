@@ -85,9 +85,11 @@ public static class AlchemyEditorTools
 
     // ------------------------------------------------------------------ the station
     /// <summary>
-    /// A cauldron on a fire in the open scene at the Scene view's pivot: the station, a liquid surface, a fire light,
-    /// bubbles, steam, smoke and sparks wired to <see cref="AlchemyStationVisuals"/>. <paramref name="bench"/> makes it a
-    /// test bench with every built-in ingredient free.
+    /// A cauldron on a fire in the open scene at the Scene view's pivot: the station, an open cauldron (its mesh saved
+    /// in Items/Alchemy/Models) on three legs over a fire pit, and <see cref="AlchemyStationVisuals"/> set to its inner
+    /// size - the liquid, layers, froth, sediment, chunks, bubbles, steam, smoke, the fuel on the fire, the spoon, the
+    /// bellows and the filter stand are built from the preparation's state when playing. <paramref name="bench"/> makes
+    /// it a test bench with every built-in ingredient free (and its window shows the numbers).
     /// </summary>
     public static AlchemyStation CreateStation(bool bench)
     {
@@ -97,41 +99,31 @@ public static class AlchemyEditorTools
         root.transform.position = at;
 
         Color iron = new Color(0.18f, 0.18f, 0.2f), stone = new Color(0.4f, 0.38f, 0.36f);
-        GameObject body = Shape(PrimitiveType.Cylinder, "Cauldron", root.transform, new Vector3(0f, 0.55f, 0f), new Vector3(1f, 0.4f, 1f), iron);
-        Shape(PrimitiveType.Cylinder, "Fire Pit", root.transform, new Vector3(0f, 0.06f, 0f), new Vector3(1.3f, 0.06f, 1.3f), stone);
+        // The cauldron: open at the top (so what is in it shows), its foot 0.22 above the ground.
+        const float foot = 0.22f, height = 0.72f, wall = 0.04f, rim = 0.5f, belly = 0.56f, bottom = 0.36f;
+        var body = new GameObject("Cauldron");
+        body.transform.SetParent(root.transform, false);
+        body.transform.localPosition = new Vector3(0f, foot, 0f);
+        body.AddComponent<MeshFilter>().sharedMesh = CauldronMesh(rim, belly, bottom, height, wall);
+        body.AddComponent<MeshRenderer>().sharedMaterial = NewMaterial(iron);
+        var hit = body.AddComponent<BoxCollider>();
+        hit.center = new Vector3(0f, height * 0.5f, 0f);
+        hit.size = new Vector3((belly + wall) * 2f, height, (belly + wall) * 2f);
+        Shape(PrimitiveType.Cylinder, "Fire Pit", root.transform, new Vector3(0f, 0.03f, 0f), new Vector3(1.3f, 0.03f, 1.3f), stone);
         for (int i = 0; i < 3; i++)
         {
             float a = i * 120f * Mathf.Deg2Rad;
-            GameObject leg = Shape(PrimitiveType.Cube, "Leg", root.transform, new Vector3(Mathf.Cos(a) * 0.42f, 0.2f, Mathf.Sin(a) * 0.42f), new Vector3(0.06f, 0.4f, 0.06f), iron);
+            GameObject leg = Shape(PrimitiveType.Cube, "Leg", root.transform, new Vector3(Mathf.Cos(a) * 0.42f, 0.16f, Mathf.Sin(a) * 0.42f), new Vector3(0.06f, 0.32f, 0.06f), iron);
             Object.DestroyImmediate(leg.GetComponent<Collider>());
         }
-        GameObject liquid = Shape(PrimitiveType.Cylinder, "Liquid", body.transform, new Vector3(0f, 0.2f, 0f), new Vector3(0.9f, 0.02f, 0.9f), new Color(0.5f, 0.6f, 0.7f));
-        Object.DestroyImmediate(liquid.GetComponent<Collider>());
-
-        var fire = new GameObject("Fire Light");
-        fire.transform.SetParent(root.transform, false);
-        fire.transform.localPosition = new Vector3(0f, 0.2f, 0f);
-        Light fl = fire.AddComponent<Light>();
-        fl.type = LightType.Point;
-        fl.color = new Color(1f, 0.55f, 0.2f);
-        fl.range = 4f;
-        fl.intensity = 0f;
-        var glow = new GameObject("Glow Light");
-        glow.transform.SetParent(root.transform, false);
-        glow.transform.localPosition = new Vector3(0f, 1.2f, 0f);
-        Light gl = glow.AddComponent<Light>();
-        gl.type = LightType.Point;
-        gl.range = 3f;
-        gl.intensity = 0f;
-
-        ParticleSystem bubbles = Particles("Bubbles", root.transform, new Vector3(0f, 0.75f, 0f), 0.35f, 0.4f, 0.06f, new Color(1f, 1f, 1f, 0.6f), 0.4f, false);
-        ParticleSystem steam = Particles("Steam", root.transform, new Vector3(0f, 0.8f, 0f), 0.3f, 3f, 0.35f, new Color(1f, 1f, 1f, 0.25f), 0.7f, false);
-        ParticleSystem smoke = Particles("Smoke", root.transform, new Vector3(0f, 0.85f, 0f), 0.35f, 3f, 0.5f, new Color(0.2f, 0.2f, 0.2f, 0.6f), 1f, true);
-        ParticleSystem sparks = Particles("Sparks", root.transform, new Vector3(0f, 0.8f, 0f), 0.2f, 0.8f, 0.04f, new Color(1f, 0.8f, 0.3f, 1f), 3f, true);
+        var bed = new GameObject("Fire Bed");
+        bed.transform.SetParent(root.transform, false);
+        bed.transform.localPosition = new Vector3(0f, 0.07f, 0f);
 
         var station = root.AddComponent<AlchemyStation>();
         var so = new SerializedObject(station);
         so.FindProperty("freeDefaultIngredients").boolValue = bench;
+        so.FindProperty("testBench").boolValue = bench;
         so.FindProperty("stationName").stringValue = bench ? "Alchemy Test Bench" : "";
         so.ApplyModifiedPropertiesWithoutUndo();
         root.AddComponent<AlchemySurroundings>();
@@ -139,23 +131,36 @@ public static class AlchemyEditorTools
         var visuals = root.AddComponent<AlchemyStationVisuals>();
         var vso = new SerializedObject(visuals);
         vso.FindProperty("station").objectReferenceValue = station;
-        vso.FindProperty("liquid").objectReferenceValue = liquid.GetComponent<Renderer>();
-        vso.FindProperty("emptyHeight").floatValue = -0.8f;
-        vso.FindProperty("fullHeight").floatValue = 0.85f;
-        vso.FindProperty("bubbles").objectReferenceValue = bubbles;
-        vso.FindProperty("steam").objectReferenceValue = steam;
-        vso.FindProperty("smoke").objectReferenceValue = smoke;
-        vso.FindProperty("sparks").objectReferenceValue = sparks;
-        vso.FindProperty("fireLight").objectReferenceValue = fl;
-        vso.FindProperty("glowLight").objectReferenceValue = gl;
+        vso.FindProperty("vesselSpace").objectReferenceValue = root.transform;
+        vso.FindProperty("innerRadius").floatValue = rim - wall;
+        float empty = foot + wall + height * 0.02f + 0.005f, full = foot + height * 0.9f;
+        vso.FindProperty("bottomRadiusScale").floatValue = (bottom - wall) / (rim - wall);
+        vso.FindProperty("bellyRadiusScale").floatValue = (belly - wall) / (rim - wall);
+        vso.FindProperty("bellyAt").floatValue = (foot + height * 0.42f - empty) / (full - empty);
+        vso.FindProperty("emptyHeight").floatValue = empty;
+        vso.FindProperty("fullHeight").floatValue = full;
+        vso.FindProperty("fireBed").objectReferenceValue = bed.transform;
         vso.ApplyModifiedPropertiesWithoutUndo();
 
         Selection.activeGameObject = root;
         EditorGUIUtility.PingObject(root);
         Debug.Log(bench
-            ? "[Alchemy] Created a test bench: every built-in ingredient is free there. Walk up to it and press Interact."
+            ? "[Alchemy] Created a test bench: every built-in ingredient is free there, and its window shows quality and amounts. Walk up to it and press Interact."
             : "[Alchemy] Created an alchemy station. Give the player ingredients (Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Ingredient Items) and press Interact at it.", root);
         return station;
+    }
+
+    /// <summary>The open cauldron's mesh (saved once in Items/Alchemy/Models, so scenes and prefabs keep it).</summary>
+    private static Mesh CauldronMesh(float rim, float belly, float bottom, float height, float wall)
+    {
+        string path = SMAssetsEditor.Folder(SMAssets.AlchemyModels) + "/Cauldron Mesh.asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null)
+            return mesh;
+        mesh = AlchemyVesselParts.OpenVessel(rim, belly, bottom, height, wall, 40);
+        AssetDatabase.CreateAsset(mesh, path);
+        AssetDatabase.SaveAssets();
+        return mesh;
     }
 
     private static GameObject Shape(PrimitiveType type, string n, Transform parent, Vector3 localPos, Vector3 size, Color color)
@@ -182,34 +187,6 @@ public static class AlchemyEditorTools
         var m = new Material(shader) { color = color };
         if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);
         return m;
-    }
-
-    private static ParticleSystem Particles(string n, Transform parent, Vector3 localPos, float radius, float lifetime, float size, Color color, float speed, bool burstsOnly)
-    {
-        var go = new GameObject(n);
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-        var ps = go.AddComponent<ParticleSystem>();
-        ParticleSystem.MainModule main = ps.main;
-        main.startLifetime = lifetime;
-        main.startSize = size;
-        main.startSpeed = speed;
-        main.startColor = color;
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.playOnAwake = !burstsOnly;
-        ParticleSystem.EmissionModule e = ps.emission;
-        e.rateOverTime = 0f;
-        ParticleSystem.ShapeModule shape = ps.shape;
-        shape.shapeType = ParticleSystemShapeType.Circle;
-        shape.radius = radius;
-        var r = go.GetComponent<ParticleSystemRenderer>();
-        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-        if (shader == null) shader = Shader.Find("Particles/Standard Unlit");
-        if (shader == null) shader = Shader.Find("Sprites/Default");
-        if (r != null && shader != null)
-            r.sharedMaterial = new Material(shader) { color = Color.white };
-        return ps;
     }
 
     // ------------------------------------------------------------------ equipment

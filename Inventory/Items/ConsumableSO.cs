@@ -192,6 +192,22 @@ public class ConsumableSO : ItemSO
         durabilityReductionPerUse = 1;
     }
 
+    // The strength of the copy being used (set by the InventoryItem overload for the call it makes).
+    [NonSerialized] private float useScale = 1f;
+
+    /// <summary>
+    /// How strong <paramref name="instance"/>'s effects are compared to the asset's (1 = as written). Items whose copies
+    /// differ override it: a brewed potion's bottles each keep their own strength and purity.
+    /// </summary>
+    protected virtual float EffectScale(InventoryItem instance) => 1f;
+
+    public override void UseItem(GameObject player, PlayerStatusController statusController, InventoryItem instance)
+    {
+        useScale = Mathf.Max(0f, EffectScale(instance));
+        try { UseItem(player, statusController); }
+        finally { useScale = 1f; }
+    }
+
     public override void UseItem(GameObject playerObject, PlayerStatusController statusController = null)
     {
         base.UseItem(playerObject, statusController);
@@ -202,23 +218,24 @@ public class ConsumableSO : ItemSO
             return;
         }
 
+        float scale = useScale;
         if (effectDelay > 0f)
         {
-            statusController.StartCoroutine(ApplyEffectsWithDelay(statusController, effectDelay));
+            statusController.StartCoroutine(ApplyEffectsWithDelay(statusController, effectDelay, scale));
         }
         else
         {
-            ApplyAllEffects(statusController);
+            ApplyAllEffects(statusController, scale);
         }
     }
 
-    private System.Collections.IEnumerator ApplyEffectsWithDelay(PlayerStatusController statusController, float delay)
+    private System.Collections.IEnumerator ApplyEffectsWithDelay(PlayerStatusController statusController, float delay, float scale)
     {
         yield return new UnityEngine.WaitForSeconds(delay);
-        ApplyAllEffects(statusController);
+        ApplyAllEffects(statusController, scale);
     }
 
-    private void ApplyAllEffects(PlayerStatusController statusController)
+    private void ApplyAllEffects(PlayerStatusController statusController, float scale = 1f)
     {
         int playerLevel = statusController.XPManager?.CurrentLevel ?? 1;
 
@@ -233,7 +250,7 @@ public class ConsumableSO : ItemSO
                 continue;
             }
 
-            ApplyEffect(effect, statusController);
+            ApplyEffect(effect, statusController, scale);
         }
     }
 
@@ -242,9 +259,9 @@ public class ConsumableSO : ItemSO
         return !StatusManagerChecks.TryGetValue(effectType, out var check) || check(statusController);
     }
 
-    private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController)
+    private void ApplyEffect(ConsumableEffect effect, PlayerStatusController statusController, float scale = 1f)
     {
-        float amount = effect.GetRandomizedAmount();
+        float amount = effect.GetRandomizedAmount() * scale;
         float duration = effect.GetRandomizedDuration();
         float cooldown = effect.GetRandomizedTickCooldown();
 

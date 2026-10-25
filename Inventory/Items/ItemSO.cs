@@ -238,6 +238,15 @@ public abstract class ItemSO : ScriptableObject
         }
     }
 
+    /// <summary>
+    /// Uses one copy of the item from <paramref name="instance"/> (the stack in hand or in a quick slot): for items
+    /// whose copies differ (a brewed potion keeps each bottle's strength). By default the same as the overload without it.
+    /// </summary>
+    public virtual void UseItem(GameObject player, PlayerStatusController statusController, InventoryItem instance)
+    {
+        UseItem(player, statusController);
+    }
+
     // Weapon-specific UseItem method (will be overridden by WeaponSO)
     public virtual void UseItem(GameObject player, PlayerStatusController statusController, WeaponController weaponController, AttackType attackType = AttackType.Normal)
     {

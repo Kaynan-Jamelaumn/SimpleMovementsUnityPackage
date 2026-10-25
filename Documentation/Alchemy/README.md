@@ -1,12 +1,15 @@
 # Alchemy
 
 **Scripts:** `Alchemy/Core/*` (the rules: no MonoBehaviour), `Alchemy/Items/*` (ingredient and potion items),
-`Alchemy/Runtime/*` (the station, the player's journal, surroundings, visuals, generated art), `Alchemy/UI/*` (the
-station window and its minigames), `CustomEditor/Alchemy/*` (menus, inspectors, the Alchemy Lab, Edit Mode tests).
+`Alchemy/Runtime/*` (the station, the player's journal, surroundings, the 3D vessel and its props, the hands-on tools,
+generated art), `Alchemy/UI/*` (the station window and its minigames), `CustomEditor/Alchemy/*` (menus, inspectors, the Alchemy Lab, Edit Mode tests).
 
 An experimentation-based alchemy system. Players grind ingredients in a mortar, put them into a vessel, tend a real fire
-(fuel, bellows, air vent, water and ice baths), stir by hand, wait, add more while it works, filter, decant, skim, let it
-cool and crystallise, distil — and take out whatever the mixture **has become**. There is no recipe list: ingredients
+(fuel, working the bellows by hand, air vent, water and ice baths), stir with a wooden spoon in the cauldron, wait, add
+more while it works, pour it through a filter, decant, skim, let it cool and crystallise, distil — and take out whatever
+the mixture **has become**. The cauldron shows its real state in 3D, and outside a test bench the window says only what
+is seen: the result and its quality are known once it is bottled, and every bottle's effects follow its own strength
+and purity. There is no recipe list: ingredients
 are made of *substances* (each extracted at its own pace — faster when ground, at the right pH —, dissolving only as far
 as the liquid can hold it, floating, sinking or forming layers by density, evaporating by volatility, stable only in its
 own temperature and pH range, clashing with what it is incompatible with), general *reactions* transform substances over
@@ -25,7 +28,7 @@ pathways and branches,
 
 | Chapter | What it covers |
 |---|---|
-| [01 — Overview and Setup](01-Overview-and-Setup.md) | Two-minute setup, how a player brews (the grinding, fire and stirring minigames), what the window shows, station settings |
+| [01 — Overview and Setup](01-Overview-and-Setup.md) | Two-minute setup, how a player brews (the grinding, fire and stirring minigames), what the window shows (test bench or workshop), station settings, the 3D vessel, the spoon, bellows and filter by hand (and the stats behind them), each bottle's strength |
 | [02 — Simulation Rules](02-Simulation-Rules.md) | The mixture's state, the step, extraction (grind levels, evenness, pH), solubility, saturation and crystals, reactions and thermal / pH stability, the fire, baths, boiling, evaporation and distillation, stirring, layers and density, acidity, compatibility and contamination, filtering / decanting / skimming, vessels, conditions, reproducibility, saving |
 | [03 — Authoring Content](03-Authoring-Content.md) | Properties, substances, reactions, outcomes, ingredients, forms, filters, fuels, vessels, condition sources, content packs — all without code |
 | [04 — Discovery and the Journal](04-Discovery-and-Journal.md) | What players know and how they learn it; failed experiments; reproducing a discovery |
@@ -45,11 +48,13 @@ flowchart LR
         SIM["AlchemySimulator<br/>fixed steps"] --> MIX
         EVAL["AlchemyEvaluator<br/>state → outcome, quality"]
         JOURNAL["AlchemyJournal<br/>what the player knows"]
+        LOOK["AlchemyLook<br/>state → what is seen"]
     end
     subgraph Scene["Scene side (Alchemy/Runtime, UI)"]
         ST["AlchemyStation<br/>(interactable, inventory)"]
         UI["AlchemyStationUI<br/>(mortar, fire, stir pad)"]
-        VIS["AlchemyStationVisuals"]
+        VIS["AlchemyStationVisuals<br/>(3D liquid, fire bed, props)"]
+        HANDS["AlchemyHandsOn<br/>(spoon, bellows, filter)"]
         KN["AlchemyKnowledge<br/>(on the player, saved)"]
         SUR["Condition sources<br/>(weather, clock, your own)"]
     end
@@ -61,8 +66,14 @@ flowchart LR
     BREW --> EVAL
     ST -- "bottle / empty" --> EVAL
     EVAL -- "items" --> ST
+    BREW --> LOOK
+    LOOK --> VIS
+    LOOK -- "words" --> UI
     BREW -- "events" --> VIS
     BREW -- "events, state" --> UI
+    UI -- "take up a tool" --> HANDS
+    HANDS -- "requests" --> ST
+    HANDS --> VIS
     ST --> KN --> JOURNAL
     UI -- "requests" --> ST
 ```

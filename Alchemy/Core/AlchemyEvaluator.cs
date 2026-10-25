@@ -145,11 +145,11 @@ public static class AlchemyEvaluator
             bool releasing = false;
             foreach (PendingIngredient p in vessel.Pending)
                 releasing |= p.Progress < 0.85;
-            r.Notes.Add(releasing ? "Some ingredients have not given up all they hold yet."
-                                  : "The ingredients still hold a little that only comes out slowly.");
+            r.Notes.Add(releasing ? "Some of the ingredients do not look spent yet."
+                                  : "The ingredients look nearly spent.");
         }
         if (vessel != null && vessel.UndissolvedVolume > 0.25)
-            r.Notes.Add("Part of it will not dissolve (too little liquid, the wrong one, or too cold): it stays in the vessel.");
+            r.Notes.Add("Part of it does not seem to dissolve.");
         if (vessel != null)
         {
             double suspended = 0;
@@ -157,12 +157,12 @@ public static class AlchemyEvaluator
                 if (vessel.UndissolvedAmount(i) > 0)
                     suspended += vessel.UndissolvedAmount(i) * vessel.SuspendedShare(i);
             if (suspended > 0.2)
-                r.Notes.Add("Cloudy: particles float in it and would go into the bottles (filter it, or let it settle).");
+                r.Notes.Add("It looks cloudy: something seems to drift in it.");
             if (vessel.IsLayered)
-                r.Notes.Add(vessel.Emulsion > 0.5 ? "Emulsified: oil and water are stirred into one for now." : "It is in two layers: the bottles get both (pour off the top layer first).");
+                r.Notes.Add(vessel.Emulsion > 0.5 ? "Its two parts seem blended into one, for now." : "It appears to sit in two layers.");
             double dirt = sample.PropertyValue(rules.Settings.contaminantProperty);
             if (dirt >= 0.01)
-                r.Notes.Add("Contaminated: dirt in it spoils it and slows every reaction.");
+                r.Notes.Add("It looks gritty, as if dirt got into it.");
         }
         double raw = sample.RoleShare(SubstanceRole.Raw, true);
         if (raw > 0.3 && r.Kind != AlchemyOutcomeKind.Incomplete)

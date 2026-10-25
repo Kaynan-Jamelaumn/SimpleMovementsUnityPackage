@@ -387,7 +387,7 @@ public static class AlchemyJournal
                     lines.Add($"{AlchemyText.Clock(t)}  {((AlchemyBath)(int)op.value) switch { AlchemyBath.Water => "Stood it in a water bath", AlchemyBath.Ice => "Stood it in an ice bath", _ => "Took it out of the bath" }}");
                     break;
                 case AlchemyOpKind.Filter:
-                    lines.Add($"{AlchemyText.Clock(t)}  Filtered through the {op.label.ToLowerInvariant()}");
+                    lines.Add($"{AlchemyText.Clock(t)}  Filtered through the {op.label.ToLowerInvariant()}{(op.value > 0f && op.value < 0.5f ? ", spilling over the edge" : op.value > 0f && op.value < 0.8f ? ", a little hastily" : "")}");
                     break;
                 case AlchemyOpKind.Decant:
                     lines.Add($"{AlchemyText.Clock(t)}  Poured off the top layer");

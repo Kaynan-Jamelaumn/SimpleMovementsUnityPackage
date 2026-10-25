@@ -394,7 +394,7 @@ public sealed class AlchemyBrew
                 m.Bath = (AlchemyBath)Math.Max(0, Math.Min(2, (int)Math.Round(op.value)));
                 break;
             case AlchemyOpKind.Filter:
-                lastTaken = ApplyFilter(Rules.Filter(op.id));
+                lastTaken = ApplyFilter(Rules.Filter(op.id), op.value > 0f ? op.value : 1.0); // 0 = a careful pour (older histories)
                 break;
             case AlchemyOpKind.Decant:
                 lastTaken = ApplyDecant();
@@ -623,7 +623,13 @@ public sealed class AlchemyBrew
     /// still in the vessel, catches undissolved matter and solids (returned as what can be collected: crystals, salts...),
     /// holds back what it adsorbs and soaks up a little liquid. Null when there is nothing to filter.
     /// </summary>
-    public AlchemyHarvest Filter(string filterId, out string reason)
+    public AlchemyHarvest Filter(string filterId, out string reason) => Filter(filterId, 1.0, out reason);
+
+    /// <summary>
+    /// <see cref="Filter(string, out string)"/> poured with <paramref name="care"/> (0-1, the filtering minigame): a
+    /// hasty pour over the filter's edge lets part of what it would catch through and spills some liquid.
+    /// </summary>
+    public AlchemyHarvest Filter(string filterId, double care, out string reason)
     {
         reason = "";
         AlchemyFilter f = Rules.Filter(filterId);
@@ -637,7 +643,8 @@ public sealed class AlchemyBrew
             reason = "There is no liquid to filter.";
             return null;
         }
-        Record(new AlchemyOperation { step = Mixture.Step, kind = AlchemyOpKind.Filter, id = f.id, label = f.Name });
+        care = AlchemySimulator.Clamp(care, 0.05, 1);
+        Record(new AlchemyOperation { step = Mixture.Step, kind = AlchemyOpKind.Filter, id = f.id, label = f.Name, value = care >= 0.999 ? 0f : (float)care });
         var h = new AlchemyHarvest { Liquid = Evaluate() };
         AlchemyEvaluator.Harvest(Rules, lastTaken, SubstancePhase.Solid, h.Items);
         AlchemyEvaluator.Harvest(Rules, lastTaken, SubstancePhase.Liquid, h.Items);
@@ -690,7 +697,7 @@ public sealed class AlchemyBrew
         return h;
     }
 
-    private double[] ApplyFilter(AlchemyFilter f)
+    private double[] ApplyFilter(AlchemyFilter f, double care)
     {
         AlchemyMixture m = Mixture;
         var caught = new double[m.amounts.Length];
@@ -702,13 +709,13 @@ public sealed class AlchemyBrew
         {
             if (Rules.Substances[i].phase == SubstancePhase.Solid)
             {
-                double x = m.amounts[i] * f.catchesSolids;
+                double x = m.amounts[i] * f.catchesSolids * care;
                 m.amounts[i] -= x;
                 caught[i] += x;
             }
             else if (m.undissolved[i] > 0)
             {
-                double x = m.undissolved[i] * f.catchesUndissolved;
+                double x = m.undissolved[i] * f.catchesUndissolved * care;
                 m.undissolved[i] -= x;
                 caught[i] += x;
             }
@@ -719,9 +726,9 @@ public sealed class AlchemyBrew
                 if (ad?.substance == null) continue;
                 foreach (int i in Rules.Match(ad.substance))
                     if (Rules.Substances[i].phase == SubstancePhase.Liquid && Rules.Substances[i].role != SubstanceRole.Solvent)
-                        m.amounts[i] *= 1.0 - ad.share;
+                        m.amounts[i] *= 1.0 - ad.share * care;
             }
-        double keep = 1.0 - f.liquidLoss;
+        double keep = 1.0 - Math.Min(0.5, f.liquidLoss + 0.12 * (1.0 - care)); // a hasty pour spills over the edge
         for (int i = 0; i < caught.Length; i++)
             if (Rules.Substances[i].phase == SubstancePhase.Liquid)
                 m.amounts[i] *= keep;

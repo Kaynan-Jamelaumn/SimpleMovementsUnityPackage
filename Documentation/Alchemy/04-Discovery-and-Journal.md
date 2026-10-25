@@ -26,6 +26,13 @@ file).
 
 ## 2. What the window shows
 
+**Outside a test bench nothing is computed for the player**: the window describes what can be seen, smelt and measured
+— colour and clarity, layers, what floats or has settled, pieces still soaking, streaks of a poor mix, froth, bubbling,
+steam and smoke, crystals, smells, a colour that shifts — and the fire and the thermometer; the result, its quality,
+strength and purity are revealed **when it is bottled** ([01 §3](01-Overview-and-Setup.md#3-the-window)). Too hot shows
+as a darkening colour, a burnt smell and smoke; poorly mixed as streaks; undissolved as something afloat or at the
+bottom. The bottle then tells the truth, and the journal keeps it. The rest of this section is what a **test bench** shows.
+
 Everything goes through that knowledge:
 
 * An unidentified substance is shown by **what it looks like** ("a deep rose liquid that smells of summer"); identified,
@@ -35,13 +42,14 @@ Everything goes through that knowledge:
   ("Kindling: Vital Essence → Ardent Essence · 75–400 °C · faster when hotter · faster with Ember Dust · slowed by Brine ·
   stopped by Lead Dust").
 * **If bottled now** names the result only if the player has made it before; otherwise *Unknown result — bottle it to find
-  out*. The notes (diluted, impure, ingredients still giving up their substances, part of it undissolved, residues) are
-  always shown: they describe the mixture, not a recipe.
+  out*. The notes (diluted, impure, the ingredients do not look spent yet, part of it does not seem to dissolve, it looks
+  cloudy, it appears to sit in two layers, it looks gritty, residues) describe the mixture as it looks — never what to do
+  about it, never a recipe.
 * Undissolved matter is shown as what it looks like until identified; *Something will not stay dissolved: a silvery,
   shimmering dew* in the log tells the player the solvent or the amount is wrong.
 * The log speaks the player's language: *Something new appears: a calm teal liquid* until the substance is identified.
-* What the minigames do is shown as it happens, never as a recipe: the mortar names the fineness reached and what it does
-  ("gives up its substances ×3 as fast, brings out the locked-in parts too"); the fire's trace says whether the
+* What the minigames do is shown as it happens, never as a recipe: the mortar shows the pieces in the bowl and names the
+  fineness reached, how evenly, and what it does ("Finely ground, with a few lumps - the locked-in parts come out too"); the fire's trace says whether the
   temperature is *held steady*, *wavering* or *swinging*; the stirring is *steady*, *uneven* or *erratic*; the status
   shows the pH and the layers; the log says when crystals start forming, the brew slops over, the fire goes out, the
   filter catches something.

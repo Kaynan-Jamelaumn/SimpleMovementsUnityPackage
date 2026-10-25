@@ -5,13 +5,19 @@ using UnityEngine;
 /// <summary>
 /// A bottle from an alchemy station: one quality band (tier) of one outcome of the Alchemy Database (Healing Draught,
 /// Potent). Drinking it applies its effects (it is a <see cref="ConsumableSO"/>); poured into another vessel it
-/// releases what it is made of, so brews can be ingredients of further brews. Create the assets with
+/// releases what it is made of, so brews can be ingredients of further brews.
+/// <para>Every bottle also keeps the strength and purity it was bottled at (in its copy's durability list, one value
+/// per bottle, so it survives stacking, dropping, storage and saves): its effects follow them smoothly
+/// (<see cref="AlchemyOutcome.EffectMultiplierAt"/>) - a 84 % Potent heals more than a 68 % one. Create the assets with
 /// Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Potion Items (needed for network sessions and saves); offline, a bottle
 /// without an asset gets an item made at runtime.
 /// </summary>
 [CreateAssetMenu(fileName = "Brewed Potion", menuName = "SimpleMovements/Alchemy/Brewed Potion", order = 3)]
-public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient
+public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient, IItemInstanceTooltip
 {
+    /// <summary>Durability lost per sip: more than any bottle code, so each sip empties one bottle (the codes are not uses).</summary>
+    public const int CodeLimit = 10_000_000;
+
     [Header("Alchemy")]
     [Tooltip("The Alchemy Database outcome this bottle is.")]
     [SerializeField] private string outcomeId = "";
@@ -33,12 +39,110 @@ public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient
     public string AlchemyName => string.IsNullOrWhiteSpace(Name) ? ((Object)this).name : Name;
     public AlchemyIngredientProfile AlchemyProfile => composition ?? (composition = new AlchemyIngredientProfile { dissolveSeconds = 0f, canBeGround = false });
 
+    public override bool ShowsDurability => false;
+
     public BrewedPotionSO()
     {
         itemType = ItemType.Potion;
         stackMax = 10;
         weight = 0.3f;
         cooldown = 1f;
+        UsesUpBottles();
+    }
+
+    // Assets made before bottles kept their strength still spend one durability per sip.
+    private void OnEnable() => UsesUpBottles();
+
+    private void UsesUpBottles()
+    {
+        maxDurability = 1;
+        durability = 1;
+        durabilityReductionPerUse = CodeLimit;
+        shouldBeDestroyedOn0UsesLeft = true;
+    }
+
+    // ------------------------------------------------------------------ each bottle's strength
+    /// <summary>The value a bottle of <paramref name="potency"/> and <paramref name="purity"/> keeps (1 + purity ‰ + 1001 × strength ‰).</summary>
+    public static int Encode(double potency, double purity)
+    {
+        int s = Mathf.Clamp((int)System.Math.Round(potency * 1000.0), 0, 4000);
+        int p = Mathf.Clamp((int)System.Math.Round(purity * 1000.0), 0, 1000);
+        return 1 + p + 1001 * s;
+    }
+
+    /// <summary>Reads a bottle's value (false = a bottle from before bottles kept their strength).</summary>
+    public static bool TryDecode(int code, out double potency, out double purity)
+    {
+        potency = purity = 0;
+        if (code <= 0 || code >= CodeLimit)
+            return false;
+        int v = code - 1;
+        potency = v / 1001 / 1000.0;
+        purity = v % 1001 / 1000.0;
+        return true;
+    }
+
+    /// <summary>The value of the bottle of <paramref name="instance"/> drunk next (0 = none kept).</summary>
+    public static int CodeOf(InventoryItem instance)
+    {
+        if (instance == null)
+            return 0;
+        List<int> d = instance.DurabilityList;
+        if (d != null && d.Count > 0)
+            return d[d.Count - 1];
+        float f = instance.durability;
+        return f > 1.5f && f < CodeLimit ? Mathf.RoundToInt(f) : 0;
+    }
+
+    /// <summary>The quality of a bottle of <paramref name="potency"/> and <paramref name="purity"/> (as the evaluator grades it).</summary>
+    public static double QualityOf(double potency, double purity)
+    {
+        double influence = AlchemyDatabase.Instance.Rules.Settings.purityInfluence;
+        return System.Math.Max(0, System.Math.Min(1, System.Math.Min(1.0, potency) * (1.0 - influence * (1.0 - purity))));
+    }
+
+    /// <summary>
+    /// How much stronger (or weaker) a bottle of <paramref name="code"/> is than this asset's effects (which are written
+    /// at its tier's multiplier): 1 for a bottle without a value.
+    /// </summary>
+    public float ScaleOf(int code)
+    {
+        if (!TryDecode(code, out double potency, out double purity))
+            return 1f;
+        AlchemyOutcome o = AlchemyDatabase.Instance.Rules.Outcome(outcomeId);
+        if (o == null || !o.HasPotency)
+            return 1f;
+        AlchemyOutcomeTier t = o.tiers != null && tier >= 0 && tier < o.tiers.Count ? o.tiers[tier] : null;
+        double written = t != null ? t.effectMultiplier : 1.0;
+        if (written <= 1e-4)
+            return 1f;
+        return Mathf.Clamp((float)(o.EffectMultiplierAt(QualityOf(potency, purity), potency) / written), 0f, 10f);
+    }
+
+    protected override float EffectScale(InventoryItem instance) => ScaleOf(CodeOf(instance));
+
+    /// <summary>"This bottle · quality 74 % (strength 80 %, purity 92 %)" and its effects at that strength.</summary>
+    public void AppendInstanceTooltip(InventoryItem item, List<string> lines)
+    {
+        int code = CodeOf(item);
+        if (!TryDecode(code, out double potency, out double purity))
+            return;
+        AlchemyOutcome o = AlchemyDatabase.Instance.Rules.Outcome(outcomeId);
+        if (o == null || !o.HasPotency)
+            return;
+        lines.Add($"<b>This bottle</b> · quality {QualityOf(potency, purity) * 100:0}% <color=#9aa0a6>(strength {potency * 100:0}%, purity {purity * 100:0}%)</color>");
+        float scale = ScaleOf(code);
+        if (Effects != null)
+            foreach (ConsumableEffect e in Effects)
+            {
+                if (e == null) continue;
+                var c = new ConsumableEffect();
+                Copy(e, c);
+                c.amount = e.amount * scale;
+                lines.Add("  " + DescribeEffect(c));
+            }
+        if (item != null && item.stackCurrent > 1)
+            lines.Add("<color=#9aa0a6>Bottles of a stack keep their own strength: the next one drunk is shown.</color>");
     }
 
     /// <summary>
@@ -135,6 +239,8 @@ public class BrewedPotionSO : ConsumableSO, IAlchemyIngredient
             _ => "<color=#9aa0a6>Failed preparation</color>",
         };
         lines.Add(string.IsNullOrWhiteSpace(tierLabel) ? kind : $"{kind} · {tierLabel}");
+        if (Effects != null && Effects.Count > 0 && o != null && o.HasPotency)
+            lines.Add("<color=#9aa0a6>Typically:</color>");
         if (Effects != null)
             foreach (ConsumableEffect e in Effects)
                 if (e != null)

@@ -9,6 +9,11 @@ using UnityEngine.UI;
 /// goes through the player's <see cref="AlchemyKnowledge"/>: unidentified substances are described by what they look
 /// like, reactions by what is seen until they are understood, and the "if bottled now" verdict names only outcomes the
 /// player has made before.
+/// <para>Only a test bench (<see cref="AlchemyStation.RevealsResults"/>) shows amounts, reactions, the verdict and its
+/// quality while brewing. Anywhere else the window says what can be seen, smelt and measured (<see cref="AlchemyLook"/>):
+/// colour, clarity, layers, what floats or has settled, bubbles, steam, smoke, streaks - and the result and its quality
+/// are known once it is bottled. The spoon, the bellows and the filter are worked with the hands at the vessel
+/// (<see cref="AlchemyHandsOn"/>): the window steps aside and comes back when they are put down.</para>
 /// <list type="bullet">
 /// <item>Left: the alchemy ingredients in the inventory (and the station's free supplies, its water) with +1 / +5.</item>
 /// <item>Middle: temperature and its trend, time, fill, pressure; the fire slider; Stir and Pause; the contents and
@@ -36,25 +41,21 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
     private string ingredientSignature, journalSignature, fuelSignature, filterSignature;
 
     // Fire, stirring and processing.
-    private RectTransform regulatedRow, manualPanel, fuelRow, bathRow;
+    private RectTransform regulatedRow, manualPanel, fuelRow, bathRow, traceRow;
+    private TextMeshProUGUI contentsHeader, happeningHeader, verdictHeader;
+    private readonly AlchemyLook look = new AlchemyLook();
+    private readonly Queue<Color> colorHistory = new Queue<Color>();
+    private AlchemyHandsOn handsOn;
     private TextMeshProUGUI heatLabel, fireText, traceText, stirText, processText, fireOffLabel;
     private Image fireFill;
     private Slider damper;
-    private Button bellows, fireOff, filterButton, decant, skim, clean;
+    private Button bellows, fireOff, filterButton, decant, skim, clean, spoon3D;
     private TMP_Dropdown filterDropdown;
     private AlchemyCirclePad stirPad;
     private AlchemyTrace trace;
     private readonly List<Button> bathButtons = new List<Button>();
     private readonly List<AlchemyFilter> shownFilters = new List<AlchemyFilter>();
 
-    // The mortar (grinding minigame).
-    private RectTransform mortarBox, mortarMarks;
-    private TextMeshProUGUI mortarTitle, mortarLevel, mortarCount;
-    private Image mortarFill, mortarEven;
-    private AlchemyCirclePad mortarPad;
-    private ItemSO grindItem;
-    private int grindCount = 1;
-    private float grindProgress;
 
     private Canvas canvas;
     private TextMeshProUGUI title, subtitle, temperature, status, heatValue, contents, happening, verdict, verdictBody, bottleInfo, log, journalText, confirmText;
@@ -93,9 +94,9 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
             s.BeginTending(p);
             instance.ingredientSignature = instance.journalSignature = instance.fuelSignature = instance.filterSignature = null;
             instance.confirmEmpty = false;
-            instance.grindItem = null;
             instance.sentStir = 0f;
             instance.trace?.Clear();
+            instance.colorHistory.Clear();
             AlchemyKnowledge k = AlchemyKnowledge.For(p);
             if (k != null)
             {
@@ -130,6 +131,8 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
             Hide();
             return;
         }
+        if (handsOn != null && handsOn.Active)
+            return; // the spoon, the bellows or the filter: the hands-on mode has the mouse and the view
         if (Cursor.lockState != CursorLockMode.None)
         {
             Cursor.lockState = CursorLockMode.None;
@@ -169,6 +172,13 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
 
     private void Hide()
     {
+        if (handsOn != null && handsOn.Active)
+        {
+            AlchemyHandsOn h = handsOn;
+            handsOn = null;
+            h.End(false, false);
+        }
+        handsOn = null;
         Detach();
         SetHudFocus(false);
         Unregister();
@@ -181,7 +191,6 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         if (station != null && player != null && sentStir > 0f)
             station.Request(player, new AlchemyRequest(AlchemyRequestKind.SetStirring, 0f), out _); // nobody stirs a closed window
         sentStir = 0f;
-        grindItem = null;
         if (station != null && player != null)
             station.EndTending(player);
         if (player != null)
@@ -240,11 +249,15 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
     /// <summary>Escape or the pause menu: closes the journal or the confirmation first, then the window.</summary>
     public void ClosePanel()
     {
-        if (confirmEmpty || journalOpen || grindItem != null)
+        if (handsOn != null && handsOn.Active)
+        {
+            handsOn.End(false); // Escape at the vessel: back to the game (the preparation goes on as it is)
+            return;
+        }
+        if (confirmEmpty || journalOpen)
         {
             confirmEmpty = false;
             journalOpen = false;
-            grindItem = null;
             Refresh(true);
             return;
         }
@@ -276,7 +289,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         UITheme.Header(left, "Ingredients");
         water = UITheme.Button("Water", left, "Pour water", () => Send(new AlchemyRequest(AlchemyRequestKind.AddWater)), UITheme.ButtonStyle.Normal, 0f, 40f);
         ingredientList = UITheme.ScrollList("Ingredient List", left, 0f, out _);
-        TextMeshProUGUI tip = UITheme.Label(left, "Each ingredient holds several substances that come out at their own pace. Grind… opens the mortar: the finer, the faster - and the less selective. What happens next depends on what is already in the vessel, the heat, stirring and time.", 13f, UITheme.Muted);
+        TextMeshProUGUI tip = UITheme.Label(left, "Each ingredient holds several substances that come out at their own pace. Grind… takes them to the mortar: the finer, the faster - and the less selective. What happens next depends on what is already in the vessel, the heat, stirring and time.", 13f, UITheme.Muted);
         InventoryUIFactory.Size(tip, -1f, 72f);
 
         // Middle: state, the fire, stirring, the contents.
@@ -312,12 +325,12 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         InventoryUIFactory.Size(fireText, 220f, 24f, 0f);
         fuelRow = UITheme.Row("Fuel", manualPanel, 32f, 8f);
         RectTransform air = UITheme.Row("Air", manualPanel, 32f, 10f);
-        bellows = UITheme.Button("Bellows", air, "Pump the bellows", () => Send(new AlchemyRequest(AlchemyRequestKind.Bellows, 1f), false), UITheme.ButtonStyle.Normal, 180f, 32f);
+        bellows = Fit(UITheme.Button("Bellows", air, "Work the bellows…", () => EnterMode(AlchemyHandsOnMode.Bellows), UITheme.ButtonStyle.Normal, 180f, 32f));
         TextMeshProUGUI ventLabel = UITheme.Label(air, "Air vent", 14f, UITheme.Muted);
         InventoryUIFactory.Size(ventLabel, 64f, 30f, 0f);
         damper = UITheme.BareSlider("Air Vent", air, 0f, 1f, 1f, false);
         damper.onValueChanged.AddListener(OnDamperChanged);
-        RectTransform traceRow = UITheme.Row("Trace", fire, 28f, 10f);
+        traceRow = UITheme.Row("Trace", fire, 28f, 10f);
         Image traceBack = UITheme.Panel("Temperature Trace", traceRow, new Color(1f, 1f, 1f, 0.03f), UITheme.RadiusSmall);
         InventoryUIFactory.Size(traceBack, -1f, 28f, 1f);
         trace = traceBack.gameObject.AddComponent<AlchemyTrace>();
@@ -337,7 +350,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         }
 
         // Stirring: drag circles on the pad; how fast and how steadily is what counts.
-        RectTransform stirring = UITheme.Row("Stirring", mid, 108f, 10f);
+        RectTransform stirring = UITheme.Row("Stirring", mid, 118f, 10f);
         Image padBack = UITheme.Panel("Stir Pad", stirring, new Color(1f, 1f, 1f, 0.05f), 54);
         InventoryUIFactory.Size(padBack, 108f, 108f, 0f);
         Image ring = UITheme.Panel("Ring", padBack.transform, new Color(0.45f, 0.6f, 0.8f, 0.12f), 44);
@@ -353,24 +366,25 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         stirPad.SetMarker(spoon.rectTransform);
         stirText = UITheme.Label(stirring, "", 14f, UITheme.Text);
         InventoryUIFactory.Size(stirText, -1f, 104f, 1f);
-        RectTransform stirButtons = UITheme.Column("Buttons", stirring, 0, 6f);
-        InventoryUIFactory.Size(stirButtons, 130f, 104f, 0f);
-        stir = UITheme.Button("Stir", stirButtons, "Stir once", () => Send(new AlchemyRequest(AlchemyRequestKind.Stir, 1f)), UITheme.ButtonStyle.Normal, 0f, 30f);
-        pause = UITheme.Button("Pause", stirButtons, "Pause", TogglePause, UITheme.ButtonStyle.Normal, 0f, 30f);
+        RectTransform stirButtons = UITheme.Column("Buttons", stirring, 0, 4f);
+        InventoryUIFactory.Size(stirButtons, 150f, 116f, 0f);
+        spoon3D = Fit(UITheme.Button("Spoon", stirButtons, "Take the spoon…", () => EnterMode(AlchemyHandsOnMode.Stir), UITheme.ButtonStyle.Primary, 0f, 26f));
+        stir = Fit(UITheme.Button("Stir", stirButtons, "Stir once", () => Send(new AlchemyRequest(AlchemyRequestKind.Stir, 1f)), UITheme.ButtonStyle.Normal, 0f, 26f));
+        pause = Fit(UITheme.Button("Pause", stirButtons, "Pause", TogglePause, UITheme.ButtonStyle.Normal, 0f, 26f));
         pauseLabel = pause.GetComponentInChildren<TextMeshProUGUI>(true);
-        fireOff = UITheme.Button("Fire Off", stirButtons, "Fire off", FireOff, UITheme.ButtonStyle.Ghost, 0f, 30f);
+        fireOff = Fit(UITheme.Button("Fire Off", stirButtons, "Fire off", FireOff, UITheme.ButtonStyle.Ghost, 0f, 26f));
         fireOffLabel = fireOff.GetComponentInChildren<TextMeshProUGUI>(true);
 
-        UITheme.Header(mid, "In the vessel");
+        contentsHeader = UITheme.Header(mid, "In the vessel");
         RectTransform contentsArea = UITheme.ScrollList("Contents", mid, 170f, out _);
         contents = UITheme.Label(contentsArea, "", 15f, UITheme.Text);
-        UITheme.Header(mid, "What is happening");
+        happeningHeader = UITheme.Header(mid, "What is happening");
         RectTransform happeningArea = UITheme.ScrollList("Happening", mid, 0f, out _);
         happening = UITheme.Label(happeningArea, "", 15f, UITheme.Text);
 
         // Right: verdict, taking out, log.
         RectTransform right = Column(w, "Result", 1090f, 1536f);
-        UITheme.Header(right, "If bottled now");
+        verdictHeader = UITheme.Header(right, "If bottled now");
         RectTransform vcard = UITheme.CardColumn("Verdict", right, 14, 4f);
         verdict = UITheme.Label(vcard, "", 21f, UITheme.Gold, TextAlignmentOptions.Left, FontStyles.Bold, "Verdict");
         InventoryUIFactory.Size(verdict, -1f, 30f);
@@ -398,7 +412,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         RectTransform filterRow = UITheme.Row("Filter", right, 38f, 8f);
         filterDropdown = UITheme.BareDropdown("Filters", filterRow);
         InventoryUIFactory.Size(filterDropdown, -1f, 38f, 1f);
-        filterButton = UITheme.Button("Filter", filterRow, "Filter", DoFilter, UITheme.ButtonStyle.Normal, 110f, 38f);
+        filterButton = Fit(UITheme.Button("Filter", filterRow, "Filter…", DoFilter, UITheme.ButtonStyle.Normal, 110f, 38f));
         RectTransform separate = UITheme.Row("Separate", right, 38f, 8f);
         separate.GetComponent<HorizontalLayoutGroup>().childForceExpandWidth = true;
         decant = UITheme.Button("Decant", separate, "Pour off top layer", () => Send(new AlchemyRequest(AlchemyRequestKind.Decant)), UITheme.ButtonStyle.Normal, 0f, 38f);
@@ -426,7 +440,6 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         RectTransform jlist = UITheme.ScrollList("Pages", jcol, 0f, out journalScroll);
         journalText = UITheme.Label(jlist, "", 15f, UITheme.Text);
 
-        BuildMortar(w);
 
         // Pour-away confirmation.
         Image confirm = UITheme.Window("Confirm", w, new Vector2(560f, 200f));
@@ -441,64 +454,21 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
 
         journalPanel.gameObject.SetActive(false);
         confirmBox.gameObject.SetActive(false);
-        mortarBox.gameObject.SetActive(false);
         canvas.gameObject.SetActive(false);
     }
 
-    /// <summary>The mortar: drag the pestle round (or press Pound); stop at the fineness wanted; a steady rhythm grinds evenly.</summary>
-    private void BuildMortar(Transform w)
+    /// <summary>A button whose label shrinks to fit it on one line (small buttons, long labels).</summary>
+    private static Button Fit(Button b)
     {
-        Image box = UITheme.Window("Mortar", w, new Vector2(640f, 650f));
-        mortarBox = box.rectTransform;
-        RectTransform mc = UITheme.Column("Column", box.transform, 22, 10f);
-        InventoryUIFactory.Stretch(mc);
-        mortarTitle = UITheme.Label(mc, "", 24f, UITheme.Gold, TextAlignmentOptions.Left, FontStyles.Bold, "Title");
-        InventoryUIFactory.Size(mortarTitle, -1f, 32f);
-        TextMeshProUGUI hint = UITheme.Label(mc, "Drag the pestle round the mortar in circles (or press Pound). Stop at the fineness you want: finer gives everything up faster - the bitter, locked-in parts too. A steady rhythm grinds evenly.", 14f, UITheme.Muted);
-        InventoryUIFactory.Size(hint, -1f, 58f);
-        RectTransform padRow = UITheme.Row("Pad", mc, 270f, 0f);
-        UITheme.Spacer(padRow);
-        Image bowl = UITheme.Panel("Mortar", padRow, new Color(0.32f, 0.29f, 0.26f, 0.95f), 135);
-        InventoryUIFactory.Size(bowl, 270f, 270f, 0f);
-        Image inner = UITheme.Panel("Bowl", bowl.transform, new Color(0.2f, 0.18f, 0.16f, 1f), 112);
-        UITheme.Place(inner.rectTransform, Vector2.zero, Vector2.one, new Vector2(24f, 24f), new Vector2(-24f, -24f));
-        inner.raycastTarget = false;
-        Image pestle = UITheme.Panel("Pestle", bowl.transform, new Color(0.78f, 0.72f, 0.62f), 16);
-        pestle.rectTransform.sizeDelta = new Vector2(32f, 32f);
-        pestle.raycastTarget = false;
-        mortarPad = bowl.gameObject.AddComponent<AlchemyCirclePad>();
-        mortarPad.SetMarker(pestle.rectTransform);
-        mortarPad.Turned += OnGrindTurn;
-        UITheme.Spacer(padRow);
-        Image barBack = UITheme.Panel("Progress", mc, new Color(0f, 0f, 0f, 0.4f), 6);
-        InventoryUIFactory.Size(barBack, -1f, 22f);
-        mortarFill = UITheme.Panel("Fill", barBack.transform, UITheme.Gold, 6);
-        mortarFill.rectTransform.anchorMin = Vector2.zero;
-        mortarFill.rectTransform.anchorMax = new Vector2(0f, 1f);
-        mortarFill.rectTransform.offsetMin = mortarFill.rectTransform.offsetMax = Vector2.zero;
-        mortarMarks = UITheme.Area("Marks", barBack.transform, Vector2.zero, Vector2.one);
-        mortarLevel = UITheme.Label(mc, "", 16f, UITheme.Text, TextAlignmentOptions.Center, FontStyles.Bold, "Level");
-        InventoryUIFactory.Size(mortarLevel, -1f, 44f);
-        RectTransform evenRow = UITheme.Row("Evenness", mc, 16f, 8f);
-        TextMeshProUGUI evenLabel = UITheme.Label(evenRow, "Evenness", 13f, UITheme.Muted);
-        InventoryUIFactory.Size(evenLabel, 80f, 16f, 0f);
-        Image evenBack = UITheme.Panel("Even Bar", evenRow, new Color(0f, 0f, 0f, 0.4f), 4);
-        InventoryUIFactory.Size(evenBack, -1f, 10f, 1f);
-        mortarEven = UITheme.Panel("Fill", evenBack.transform, UITheme.Good, 4);
-        mortarEven.rectTransform.anchorMin = Vector2.zero;
-        mortarEven.rectTransform.anchorMax = new Vector2(0f, 1f);
-        mortarEven.rectTransform.offsetMin = mortarEven.rectTransform.offsetMax = Vector2.zero;
-        RectTransform countRow = UITheme.Row("Count", mc, 36f, 8f);
-        UITheme.Button("Less", countRow, "−", () => { grindCount = Mathf.Max(1, grindCount - 1); Refresh(true); }, UITheme.ButtonStyle.Normal, 40f, 36f);
-        mortarCount = UITheme.Label(countRow, "", 16f, UITheme.Text, TextAlignmentOptions.Center);
-        InventoryUIFactory.Size(mortarCount, 70f, 36f, 0f);
-        UITheme.Button("More", countRow, "+", () => { grindCount = Mathf.Min(5, grindCount + 1); Refresh(true); }, UITheme.ButtonStyle.Normal, 40f, 36f);
-        UITheme.Spacer(countRow);
-        UITheme.Button("Pound", countRow, "Pound", () => mortarPad.Nudge(), UITheme.ButtonStyle.Normal, 140f, 36f);
-        RectTransform buttons = UITheme.Row("Buttons", mc, 46f, 10f);
-        buttons.GetComponent<HorizontalLayoutGroup>().childForceExpandWidth = true;
-        UITheme.Button("Add", buttons, "Add to the vessel", AddGround, UITheme.ButtonStyle.Primary, 0f, 46f);
-        UITheme.Button("Cancel", buttons, "Put it back", () => { grindItem = null; Refresh(true); }, UITheme.ButtonStyle.Normal, 0f, 46f);
+        TMP_Text t = b != null ? b.GetComponentInChildren<TMP_Text>(true) : null;
+        if (t != null)
+        {
+            t.enableAutoSizing = true;
+            t.fontSizeMin = 10f;
+            t.fontSizeMax = 15f;
+            t.margin = new Vector4(6f, 0f, 6f, 0f);
+        }
+        return b;
     }
 
     private static RectTransform Column(Transform window, string name, float x0, float x1)
@@ -569,89 +539,47 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         }
     }
 
+    /// <summary>Filter…: the filtering minigame (pour the vessel through the filter at the table).</summary>
     private void DoFilter()
     {
         int i = filterDropdown.value;
         if (i >= 0 && i < shownFilters.Count)
-            Send(AlchemyRequest.For(AlchemyRequestKind.Filter, shownFilters[i].id));
+            EnterMode(AlchemyHandsOnMode.Filter, shownFilters[i].id);
     }
 
-    // ------------------------------------------------------------------ the mortar
-    private void OpenMortar(ItemSO item)
+    // ------------------------------------------------------------------ hands on: the spoon, the bellows, the filter
+    /// <summary>The window steps aside and the player works <paramref name="mode"/> at the vessel; it comes back when they put it down.</summary>
+    private void EnterMode(AlchemyHandsOnMode mode, string filterId = null, ItemSO item = null)
     {
-        grindItem = item;
-        grindCount = 1;
-        grindProgress = 0f;
-        mortarPad.ResetTurns();
-        for (int i = mortarMarks.childCount - 1; i >= 0; i--)
-            Destroy(mortarMarks.GetChild(i).gameObject);
-        int levels = station.GrindLevels(item).Count;
-        for (int i = 1; i <= levels; i++)
+        if (station == null || player == null)
+            return;
+        if (sentStir > 0f)
         {
-            Image mark = UITheme.Panel("Mark", mortarMarks, new Color(1f, 1f, 1f, 0.5f), 0);
-            float x = (float)i / (levels + 1);
-            mark.rectTransform.anchorMin = new Vector2(x, 0f);
-            mark.rectTransform.anchorMax = new Vector2(x, 1f);
-            mark.rectTransform.offsetMin = new Vector2(-1f, 0f);
-            mark.rectTransform.offsetMax = new Vector2(1f, 0f);
-            mark.raycastTarget = false;
+            sentStir = 0f; // the pad stops: the spoon (or nobody) stirs now
+            station.Request(player, new AlchemyRequest(AlchemyRequestKind.SetStirring, 0f), out _);
         }
-        Refresh(true);
+        handsOn = AlchemyHandsOn.For(station);
+        canvas.gameObject.SetActive(false);
+        SetHudFocus(false);
+        if (!handsOn.Begin(mode, player, OnModeEnded, out string reason, filterId, item))
+        {
+            canvas.gameObject.SetActive(true);
+            if (!string.IsNullOrEmpty(reason)) station.Tell(player, reason);
+            Refresh(true);
+        }
     }
 
-    /// <summary>Each full turn of the pestle grinds a little - less for hard ingredients and for several at once.</summary>
-    private void OnGrindTurn()
+    private void OnModeEnded(bool backToWindow)
     {
-        if (grindItem == null)
+        if (station == null)
             return;
-        float hardness = station.IngredientOf(grindItem)?.AlchemyProfile?.hardness ?? 0.4f;
-        grindProgress = Mathf.Min(1f, grindProgress + 0.1f * (1.15f - hardness) / (1f + 0.25f * (grindCount - 1)));
-        Refresh(true);
-    }
-
-    /// <summary>The grind level reached (0 = still whole) and its form.</summary>
-    private int GrindLevel(out AlchemyIngredientForm form)
-    {
-        List<AlchemyIngredientForm> levels = station.GrindLevels(grindItem);
-        int level = Mathf.Clamp(Mathf.FloorToInt(grindProgress * (levels.Count + 1) + 1e-4f), 0, levels.Count);
-        form = level > 0 ? levels[level - 1] : null;
-        return level;
-    }
-
-    /// <summary>A steady rhythm and enough turns grind evenly; a few erratic turns leave lumps and dust.</summary>
-    private float GrindEvenness => Mathf.Clamp01((0.3f + 0.7f * mortarPad.Rhythm) * (0.6f + 0.4f * Mathf.Min(1f, mortarPad.Turns / 8f)));
-
-    private void AddGround()
-    {
-        if (grindItem == null)
-            return;
-        GrindLevel(out AlchemyIngredientForm form);
-        ItemSO item = grindItem;
-        grindItem = null;
-        Send(new AlchemyRequest(AlchemyRequestKind.AddItem, 0f, grindCount, item, form?.id, form != null ? GrindEvenness : 1f));
-    }
-
-    private void RefreshMortar(AlchemyRules rules)
-    {
-        mortarBox.gameObject.SetActive(grindItem != null);
-        if (grindItem == null)
-            return;
-        mortarBox.SetAsLastSibling();
-        mortarTitle.text = $"Mortar · {grindItem.Name}";
-        mortarCount.text = $"× {grindCount}";
-        mortarFill.rectTransform.anchorMax = new Vector2(grindProgress, 1f);
-        float even = GrindEvenness;
-        mortarEven.rectTransform.anchorMax = new Vector2(mortarPad.Turns > 0 ? even : 0f, 1f);
-        mortarEven.color = even >= 0.7f ? UITheme.Good : even >= 0.45f ? UITheme.Gold : UITheme.Bad;
-        int level = GrindLevel(out AlchemyIngredientForm form);
-        if (level == 0)
-            mortarLevel.text = $"Whole<size=13><color=#9aa0a6>\nbarely bruised yet ({mortarPad.Turns} turn{(mortarPad.Turns == 1 ? "" : "s")})</color></size>";
+        if (backToWindow)
+        {
+            canvas.gameObject.SetActive(true);
+            Refresh(true);
+        }
         else
-        {
-            string how = form.selectivity >= 1f ? "still holds back what is locked in" : form.selectivity >= 0.3f ? "brings out the locked-in parts too" : "everything comes out almost at once";
-            mortarLevel.text = $"{form.Name}<size=13><color=#9aa0a6>\ngives up its substances ×{form.releaseSpeed:0.#} as fast, {how}" +
-                               $"{(form.volatileLoss > 0f ? " - and its scent escapes into the air" : "")}</color></size>";
-        }
+            Hide();
     }
 
     private void OnHeatChanged(float v)
@@ -715,28 +643,46 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         title.text = station.DisplayName;
         subtitle.text = $"{eq.displayName} · holds {eq.capacity:0} u · {VaporText(eq)}{(eq.canCool ? " · can cool" : "")}{(eq.revealsSubstances ? " · transparent" : "")}";
 
+        // What it looks like (a test bench also shows the numbers).
+        bool reveal = station.RevealsResults, thermo = station.HasThermometer;
+        look.Read(brew);
+        if (!force || colorHistory.Count == 0)
+        {
+            colorHistory.Enqueue(look.Color);
+            while (colorHistory.Count > 30) colorHistory.Dequeue(); // about six seconds of refreshes
+        }
+
         // Temperature and status.
         double t = m != null ? m.Temperature : station.Rules.Settings.defaultAmbient;
         float delta = (float)(t - lastTemperature);
         trend = Mathf.Lerp(trend, delta / 0.2f, 0.3f);
         lastTemperature = t;
         string arrow = trend > 0.15f ? " <color=#ffb070>▲</color>" : trend < -0.15f ? " <color=#9fd8ff>▼</color>" : "";
-        temperature.text = AlchemyText.Celsius(t) + arrow;
+        temperature.text = thermo || m == null || brew.IsEmpty ? AlchemyText.Celsius(t) + arrow : Capital(look.HeatWords(), "cold") + arrow;
         var sb = new StringBuilder();
         if (m == null || brew.IsEmpty)
             sb.Append("The vessel is empty. Pour a liquid in and add ingredients to start.");
         else
         {
-            sb.Append($"Time {AlchemyText.Clock(m.Elapsed)} · {AlchemyText.Units(m.FilledVolume)} of {eq.capacity:0} u");
+            sb.Append(reveal ? $"Time {AlchemyText.Clock(m.Elapsed)} · {AlchemyText.Units(m.FilledVolume)} of {eq.capacity:0} u"
+                             : $"Time {AlchemyText.Clock(m.Elapsed)} · {AlchemyLook.FillWords(look.Fill)}");
             if (brew.IsBoiling) sb.Append(" · <color=#ffd166>boiling</color>");
             if (m.VaporMode == VaporHandling.Sealed) sb.Append($" · pressure {m.Pressure:0.00} / {eq.maxPressure:0.0}");
             if (m.Ruptured) sb.Append(" · <color=#f0a090>cracked</color>");
             if (m.Bath == AlchemyBath.Water) sb.Append(" · in a water bath");
             else if (m.Bath == AlchemyBath.Ice) sb.Append(" · <color=#9fd8ff>in an ice bath</color>");
             if (brew.IsSuspended) sb.Append("\n<color=#ffd166>PAUSED: time has stopped for this preparation.</color>");
-            double ph = m.Ph;
-            string acidity = ph < 6.5 ? $"pH {ph:0.0}, acid" : ph > 7.5 ? $"pH {ph:0.0}, alkaline" : "pH neutral";
-            sb.Append($"\nAround it: {AlchemyText.Celsius(m.Ambient)}{(m.Variable(AlchemyVariables.Night) >= 0.5 ? ", night" : "")} · {acidity}");
+            bool night = m.Variable(AlchemyVariables.Night) >= 0.5;
+            if (reveal)
+            {
+                double ph = m.Ph;
+                string acidity = ph < 6.5 ? $"pH {ph:0.0}, acid" : ph > 7.5 ? $"pH {ph:0.0}, alkaline" : "pH neutral";
+                sb.Append($"\nAround it: {AlchemyText.Celsius(m.Ambient)}{(night ? ", night" : "")} · {acidity}");
+            }
+            else if (thermo)
+                sb.Append($"\nAround it: {AlchemyText.Celsius(m.Ambient)}{(night ? ", night" : "")}");
+            else if (night)
+                sb.Append("\nIt is night.");
         }
         status.text = sb.ToString();
         Color liquidColor = m != null && m.LiquidVolume > 0.05 ? m.LiquidColor : new Color(0.5f, 0.55f, 0.6f, 0.25f);
@@ -757,8 +703,9 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         settingSlider = false;
         double h = m != null ? m.EffectiveHeat : heat.value;
         double ambient = m != null ? m.Ambient : rules.Settings.defaultAmbient;
-        heatValue.text = manual ? $"→ {AlchemyText.Celsius(eq.TargetTemperature(System.Math.Min(0.0, m != null ? m.Heat : heat.value), ambient))}"
-                                : $"{AlchemyJournal.HeatText(h)} → {AlchemyText.Celsius(eq.TargetTemperature(h, ambient))}";
+        heatValue.text = !reveal ? (manual ? "" : AlchemyJournal.HeatText(h))
+            : manual ? $"→ {AlchemyText.Celsius(eq.TargetTemperature(System.Math.Min(0.0, m != null ? m.Heat : heat.value), ambient))}"
+                     : $"{AlchemyJournal.HeatText(h)} → {AlchemyText.Celsius(eq.TargetTemperature(h, ambient))}";
         if (manual)
         {
             float flames = m != null ? (float)m.FireLevel : 0f;
@@ -766,14 +713,18 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
             fireFill.color = Color.Lerp(new Color(0.55f, 0.15f, 0.08f), new Color(1f, 0.85f, 0.3f), flames);
             double fuel = m != null ? m.Fuel : 0;
             double lasts = fuel / System.Math.Max(1e-4, rules.Settings.fuelBurnRate * System.Math.Max(0.1, flames));
+            string flameWords = flames < 0.05f ? "embers" : flames < 0.3f ? "low flames" : flames < 0.65f ? "a steady fire" : flames < 0.9f ? "a strong fire" : "roaring";
+            string fuelWords = lasts > 120 ? "plenty of fuel" : lasts > 40 ? "the fuel is burning down" : "the fuel is nearly gone";
             fireText.text = m == null || !m.FireManual && fuel <= 0 ? "unlit - add fuel"
                 : flames < 0.01f && fuel <= 0 ? "<color=#f0a090>out</color>"
-                : $"{flames * 100f:0}% → {AlchemyText.Celsius(eq.TargetTemperature(flames, ambient))} · fuel ~{AlchemyText.Clock(lasts)}";
+                : reveal ? $"{flames * 100f:0}% → {AlchemyText.Celsius(eq.TargetTemperature(flames, ambient))} · fuel ~{AlchemyText.Clock(lasts)}"
+                : $"{flameWords} · {(fuel <= 0 ? "no fuel left" : fuelWords)}";
             Fuels(rules);
         }
         bellows.interactable = manual;
         fireOffLabel.text = manual ? "Choke fire" : "Fire off";
-        RefreshTrace(m);
+        traceRow.gameObject.SetActive(thermo);
+        if (thermo) RefreshTrace(m);
         bathRow.gameObject.SetActive(station.HasWaterBath || station.HasIceBath);
         for (int i = 0; i < bathButtons.Count; i++)
         {
@@ -782,20 +733,23 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         }
 
         // Stirring.
-        stirText.text = StirText(m);
+        stirText.text = StirText(m, reveal, look);
         bool hasContents = m != null && !brew.IsEmpty;
         stir.interactable = hasContents;
+        spoon3D.interactable = hasContents;
         pause.interactable = hasContents;
         pauseLabel.text = brew != null && brew.IsSuspended ? "Resume" : "Pause";
         water.gameObject.SetActive(station.HasWater);
         water.GetComponentInChildren<TextMeshProUGUI>(true).text = $"Pour water ({station.WaterPerPour:0} u)";
         Process(rules, brew);
-        RefreshMortar(rules);
 
         Ingredients(rules, data);
-        contents.text = Contents(rules, data, brew);
-        happening.text = Happening(rules, data, brew);
-        Verdict(rules, data, brew);
+        contentsHeader.text = reveal ? "IN THE VESSEL" : "WHAT YOU SEE";
+        happeningHeader.text = reveal ? "WHAT IS HAPPENING" : "WHAT IT IS DOING";
+        verdictHeader.text = reveal ? "IF BOTTLED NOW" : "THE BREW";
+        contents.text = reveal ? Contents(rules, data, brew) : Observed(brew, eq);
+        happening.text = reveal ? Happening(rules, data, brew) : ObservedActivity(brew, thermo);
+        Verdict(rules, data, brew, reveal);
         log.text = Log(rules, data, brew);
 
         journalPanel.gameObject.SetActive(journalOpen);
@@ -882,7 +836,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
             TextMeshProUGUI label = UITheme.Label(rowBg.transform, $"{item.Name}\n<size=12><color=#9aa0a6>{count}{FormText(rules, item)}{Hint(rules, data, item)}</color></size>", 15f, UITheme.Text);
             InventoryUIFactory.Size(label, -1f, 38f, 1f);
             if (station.GrindLevels(item).Count > 0)
-                UITheme.Button("Grind", rowBg.transform, "Grind…", () => OpenMortar(item), UITheme.ButtonStyle.Ghost, 64f, 34f);
+                Fit(UITheme.Button("Grind", rowBg.transform, "Grind…", () => EnterMode(AlchemyHandsOnMode.Grind, null, item), UITheme.ButtonStyle.Ghost, 64f, 34f));
             UITheme.Button("Add", rowBg.transform, "+1", () => Send(new AlchemyRequest(AlchemyRequestKind.AddItem, 0f, 1, item)), UITheme.ButtonStyle.Normal, 44f, 34f);
             Button five = UITheme.Button("Add 5", rowBg.transform, "+5", () => Send(new AlchemyRequest(AlchemyRequestKind.AddItem, 0f, 5, item)), UITheme.ButtonStyle.Normal, 44f, 34f);
             five.interactable = n < 0 || n > 1;
@@ -937,10 +891,27 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         traceText.text = $"{steady} (±{m.Swing:0.#} °C){(m.CoolingRate > 0.3 ? "\n<color=#9fd8ff>cooling fast</color>" : "")}";
     }
 
-    private static string StirText(AlchemyMixture m)
+    private static string StirText(AlchemyMixture m, bool reveal, AlchemyLook look)
     {
         if (m == null)
-            return "<color=#9aa0a6>Hold and drag circles on the pad to stir: faster stirs harder. Steady circles stir evenly.</color>";
+            return "<color=#9aa0a6>Take the spoon to stir in the vessel, or drag circles on the pad: faster stirs harder, steady circles stir evenly.</color>";
+        if (!reveal)
+        {
+            var o = new StringBuilder();
+            if (m.StirSpeed > 0.01)
+            {
+                string how = m.StirSpeed < 0.25 ? "gently" : m.StirSpeed < 0.6 ? "steadily" : m.StirSpeed < 0.85 ? "briskly" : "hard";
+                string even = m.Turbulence < 0.15 ? "in even circles" : m.Turbulence < 0.5 ? "a little unevenly" : "erratically";
+                o.Append($"Stirring {how}, {even}");
+            }
+            else
+                o.Append(m.Agitation > 0.1 ? "<color=#9aa0a6>Still swirling from the last stirring</color>" : "<color=#9aa0a6>Not stirring</color>");
+            if (look.Thickness > 0.45f) o.Append("\nIt drags on the spoon");
+            if (m.Aeration > 0.3) o.Append("\n<color=#e8b86b>It froths as it is stirred</color>");
+            if (look.Layered) o.Append(look.Emulsion > 0.5f ? "\nThe two layers swirl into one" : "\nTwo layers lie apart");
+            if (look.Slopping) o.Append("\n<color=#f0a090>It slops over the rim!</color>");
+            return o.ToString();
+        }
         var sb = new StringBuilder();
         if (m.StirSpeed > 0.01)
         {
@@ -992,9 +963,9 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         skim.interactable = floats;
         bool empty = brew == null || brew.IsEmpty;
         clean.interactable = empty && station.IsDirty;
-        processText.text = empty && station.IsDirty ? "<color=#e8b86b>The vessel is dirty: the next preparation starts with its residue.</color>"
-            : m != null && m.IsLayered ? "Two layers: pour the top one off to separate them."
-            : floats ? "Something floats on top: skim it off." : "";
+        processText.text = empty && station.IsDirty ? "<color=#e8b86b>A film of residue clings to the vessel.</color>"
+            : m != null && m.IsLayered ? "It appears to sit in two layers."
+            : floats ? "It appears there is something afloat." : "";
     }
 
     /// <summary>" · extract" for ingredients that are not whole.</summary>
@@ -1107,10 +1078,19 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         return sb.ToString().TrimEnd('\n');
     }
 
-    private void Verdict(AlchemyRules rules, AlchemyJournalData data, AlchemyBrew brew)
+    private void Verdict(AlchemyRules rules, AlchemyJournalData data, AlchemyBrew brew, bool reveal)
     {
         AlchemyResult r = brew != null && !brew.IsEmpty ? brew.Evaluate() : null;
-        if (r == null || r.LiquidUnits < rules.Settings.traceAmount)
+        qualityBack.gameObject.SetActive(reveal);
+        if (!reveal)
+        {
+            // Outside a test bench nobody knows what it is until it is bottled: only how it looks.
+            verdict.text = look.HasLiquid ? Capital(AlchemyLook.ColorName(look.Color), "—") : "—";
+            verdictBody.text = look.HasLiquid
+                ? $"{Capital(look.LiquidWords(), "")}.\n<color=#9aa0a6>What it has become - and how good it is - shows once it is bottled.</color>"
+                : brew != null && !brew.IsEmpty ? "There is no liquid to bottle." : "Nothing in the vessel.";
+        }
+        else if (r == null || r.LiquidUnits < rules.Settings.traceAmount)
         {
             verdict.text = "—";
             verdictBody.text = brew != null && !brew.IsEmpty ? "There is no liquid to bottle (only solids or vapour)." : "Nothing in the vessel.";
@@ -1153,6 +1133,45 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         distill.interactable = m != null && m.DistillateVolume > rules.Settings.traceAmount;
         distillLabel.text = m != null && m.DistillateVolume > 0.05 ? $"Collect distillate ({AlchemyText.Units(m.DistillateVolume)})" : "Collect distillate";
         empty.interactable = brew != null;
+    }
+
+    /// <summary>What can be seen in the vessel (outside a test bench): the look in sentences, a shifting colour, the flask.</summary>
+    private string Observed(AlchemyBrew brew, AlchemyEquipmentProfile eq)
+    {
+        if (brew == null || brew.IsEmpty)
+            return "<color=#9aa0a6>Empty.</color>";
+        var lines = new List<string>();
+        look.Describe(lines, string.IsNullOrWhiteSpace(eq.displayName) ? "vessel" : eq.displayName.ToLowerInvariant(), station.HasThermometer);
+        Color then = colorHistory.Count > 0 ? colorHistory.Peek() : look.Color;
+        float shift = Mathf.Abs(then.r - look.Color.r) + Mathf.Abs(then.g - look.Color.g) + Mathf.Abs(then.b - look.Color.b);
+        if (look.HasLiquid && then.a > 0f && shift > 0.06f)
+            lines.Add(shift > 0.25f ? $"Its colour is changing fast, toward {AlchemyLook.ColorName(look.Color)}." : $"Its colour is slowly turning {AlchemyLook.ColorName(look.Color)}.");
+        AlchemyMixture m = brew.Mixture;
+        if (m.DistillateVolume > 0.05)
+            lines.Add(m.DistillateVolume > 8 ? "The flask of the still is filling up." : "Drops have gathered in the flask of the still.");
+        if (m.VaporMode == VaporHandling.Sealed && m.Pressure > m.Equipment.maxPressure * 0.75)
+            lines.Add("<color=#f0a090>The lid strains and creaks.</color>");
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>What it is doing (outside a test bench): the heat's and the reactions' signs, the fire.</summary>
+    private string ObservedActivity(AlchemyBrew brew, bool thermo)
+    {
+        if (brew == null || brew.IsEmpty)
+            return "<color=#9aa0a6>Nothing.</color>";
+        var lines = new List<string>();
+        look.DescribeActivity(lines, thermo);
+        AlchemyMixture m = brew.Mixture;
+        if (m.FireManual)
+        {
+            if (m.FireLevel < 0.01 && m.Fuel <= 0) lines.Add("The fire is out.");
+            else if (m.Fuel < 0.25) lines.Add("<color=#e8b86b>The fire is burning low.</color>");
+            if (m.Air > 0.1) lines.Add("The flames roar under the bellows' breath.");
+            if (m.Damper < 0.2 && m.FireLevel > 0.05) lines.Add("Choked of air, the fire smoulders and smokes.");
+        }
+        if (lines.Count == 0)
+            lines.Add("<color=#9aa0a6>Nothing seems to be happening right now.</color>");
+        return string.Join("\n", lines);
     }
 
     // ------------------------------------------------------------------ log

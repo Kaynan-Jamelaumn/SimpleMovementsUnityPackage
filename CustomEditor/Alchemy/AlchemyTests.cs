@@ -413,7 +413,7 @@ namespace AlchemySystem.Tests
             Assert.Greater(oil.Mixture.UndissolvedAmount(dew) + oil.Mixture.UndissolvedAmount(rules.IndexOf(AlchemyDefaults.ManaEssence)), 5.0,
                 "oil holds neither moon dew nor mana essence");
             Assert.Less(oil.Evaluate().Quality, water.Evaluate().Quality - 0.5, "what little the oil holds makes a feeble potion");
-            Assert.IsTrue(oil.Evaluate().Notes.Exists(n => n.Contains("will not dissolve")));
+            Assert.IsTrue(oil.Evaluate().Notes.Exists(n => n.Contains("does not seem to dissolve")));
 
             AlchemyBrew petals = Sunpetals(rules, 0.24);
             petals.RunUntil(120);
@@ -1240,6 +1240,143 @@ namespace AlchemySystem.Tests
             Assert.AreEqual(b.Mixture.Temperature, replayed.Mixture.Temperature, 1e-9);
             StringAssert.Contains("Stirred at about", string.Join("|", AlchemyJournal.Procedure(b)));
             StringAssert.Contains("Worked the bellows", string.Join("|", AlchemyJournal.Procedure(b)));
+        }
+
+        // ------------------------------------------------------------------ bottles, looks, hands-on
+        [Test]
+        public void EffectStrength_FollowsQualitySmoothly_AndEachBottleKeepsItsOwn()
+        {
+            AlchemyRules rules = Rules();
+            AlchemyOutcome healing = rules.Outcome("healing_draught");
+            double prev = -1;
+            for (int i = 0; i <= 100; i++)
+            {
+                double m = healing.EffectMultiplierAt(i / 100.0);
+                if (prev >= 0)
+                {
+                    Assert.GreaterOrEqual(m, prev - 1e-9, "a better brew is never weaker");
+                    Assert.Less(m - prev, 0.05, "no jumps at the tiers");
+                }
+                prev = m;
+            }
+            Assert.AreEqual(healing.tiers[2].effectMultiplier, healing.EffectMultiplierAt(healing.tiers[2].minQuality), 1e-6, "a tier's own strength at its threshold");
+            Assert.Greater(healing.EffectMultiplierAt(0.84), healing.EffectMultiplierAt(0.68) + 0.2, "two Potent bottles are not the same");
+            Assert.Greater(healing.EffectMultiplierAt(1, 1.4), healing.EffectMultiplierAt(1, 1.0), "a concentrated brew is stronger still");
+
+            int code = BrewedPotionSO.Encode(0.873, 0.912);
+            Assert.IsTrue(BrewedPotionSO.TryDecode(code, out double strength, out double purity));
+            Assert.AreEqual(0.873, strength, 1e-9);
+            Assert.AreEqual(0.912, purity, 1e-9);
+            Assert.Less(code, BrewedPotionSO.CodeLimit);
+            Assert.IsFalse(BrewedPotionSO.TryDecode(0, out _, out _), "a bottle from before keeps its asset's effects");
+
+            BrewedPotionSO potent = ScriptableObject.CreateInstance<BrewedPotionSO>();
+            potent.Setup(healing, 2, rules, Color.white);
+            float low = potent.ScaleOf(BrewedPotionSO.Encode(0.7, 0.95)), high = potent.ScaleOf(BrewedPotionSO.Encode(0.9, 0.98));
+            Assert.Greater(high, low + 0.1f, "the better bottle of the same tier heals more");
+            Assert.AreEqual(1f, potent.ScaleOf(0), 1e-6);
+        }
+
+        [Test]
+        public void Look_ShowsLayers_WhatFloats_WhatSinks_AndTheBoil()
+        {
+            var oily = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(oily, "Spring Water", 2); Add(oily, "Lamp Oil");
+            oily.RunUntil(5);
+            AlchemyLook a = AlchemyLook.Of(oily);
+            Assert.IsTrue(a.Layered);
+            Assert.Greater(a.Fill, 0.05f);
+            StringAssert.Contains("layers", a.Text("cauldron", true));
+
+            var dirty = new AlchemyBrew(Rules(), Cauldron(), 20, 1);
+            Add(dirty, "Spring Water", 2); Add(dirty, "Charcoal", 2); Add(dirty, "Iron Filings", 2);
+            dirty.RunUntil(20);
+            AlchemyLook d = AlchemyLook.Of(dirty);
+            Assert.Greater(d.Floating, 0f, "charcoal floats");
+            Assert.Greater(d.Sediment, 0f, "iron filings sink");
+            string words = d.Text("cauldron", true);
+            StringAssert.Contains("afloat", words.Replace("float on the surface", "afloat").Replace("crust", "afloat"));
+            StringAssert.Contains("bottom", words);
+            StringAssert.DoesNotContain("filter", words.ToLowerInvariant(), "it says what is seen, not what to do");
+
+            AlchemyBrew boil = Sunpetals(Rules(), 1.0);
+            AlchemyLook cold = AlchemyLook.Of(boil);
+            for (int t = 5; t <= 400 && !boil.IsBoiling; t += 5)
+                boil.RunUntil(t);
+            boil.RunUntil(boil.Elapsed + 5);
+            AlchemyLook hot = AlchemyLook.Of(boil);
+            Assert.Greater(hot.Bubbling, cold.Bubbling + 0.3f, "it bubbles harder on a strong fire");
+            Assert.Greater(hot.Steam, 0.2f);
+            Assert.IsTrue(hot.Boiling);
+            Assert.AreEqual("colourless", AlchemyLook.ColorName(new Color(0.95f, 0.95f, 0.95f)));
+            Assert.AreEqual("vivid red", AlchemyLook.ColorName(new Color(0.95f, 0.1f, 0.1f)));
+        }
+
+        [Test]
+        public void Filter_AHastyPourCatchesLess_AndReplaysTheSame()
+        {
+            AlchemyRules rules = Rules();
+            AlchemyBrew Muddy()
+            {
+                var b = new AlchemyBrew(rules, Cauldron(), 20, 1);
+                Add(b, "Muddy Water", 2); Add(b, "Sunpetal", 3); b.SetHeat(0.24);
+                b.RunUntil(180);
+                return b;
+            }
+            AlchemyBrew careful = Muddy(), hasty = Muddy();
+            Assert.IsNotNull(careful.Filter("paper", 1.0, out string why), why);
+            Assert.IsNotNull(hasty.Filter("paper", 0.3, out why), why);
+            double silt = Units(careful, AlchemyDefaults.Silt) + Undissolved(careful, AlchemyDefaults.Silt);
+            double siltHasty = Units(hasty, AlchemyDefaults.Silt) + Undissolved(hasty, AlchemyDefaults.Silt);
+            Assert.Greater(siltHasty, silt + 0.05, "what ran over the edge was not filtered");
+            Assert.Less(hasty.Mixture.LiquidVolume, careful.Mixture.LiquidVolume, "and some spilled");
+            StringAssert.Contains("hastily", string.Join("|", AlchemyJournal.Procedure(hasty)).Replace("spilling over the edge", "hastily"));
+            AlchemyBrew replayed = AlchemyBrew.Replay(rules, Cauldron(), 20, 1, hasty.History, hasty.Mixture.Step);
+            for (int i = 0; i < rules.SubstanceCount; i++)
+                Assert.AreEqual(hasty.Mixture.Amount(i), replayed.Mixture.Amount(i), 1e-9);
+        }
+
+        private static void Circles(AlchemyMortar m, double seconds, bool sweep, double radius = 0.4)
+        {
+            double dt = 1 / 60.0, a = 0, x = radius, y = 0;
+            for (double t = 0; t < seconds; t += dt)
+            {
+                a += 2 * Math.PI * dt;
+                double r = sweep ? 0.35 + 0.28 * Math.Sin(t * 1.3) : radius;
+                double nx = Math.Cos(a) * r, ny = Math.Sin(a) * r;
+                m.Grind(x, y, nx, ny, 1.0);
+                x = nx; y = ny;
+                m.Settle(dt);
+            }
+        }
+
+        [Test]
+        public void Mortar_PoundingBreaks_GrindingMakesDust_MissedPiecesStayLumps()
+        {
+            var petals = new AlchemyMortar(1, 0.1, 3, 1);
+            Circles(petals, 10, true);
+            petals.Result(out int level, out double even);
+            Assert.GreaterOrEqual(level, 2, "soft petals grind fine in ten seconds of sweeping circles");
+            Assert.Greater(even, 0.6, "working the whole bowl grinds evenly");
+            Circles(petals, 10, true);
+            petals.Result(out level, out _);
+            Assert.AreEqual(3, level, "and on to a powder");
+
+            var pounded = new AlchemyMortar(1, 0.8, 3, 1);
+            for (int i = 0; i < 30; i++) { pounded.Pound(0, 0, 1); pounded.Settle(0.3); }
+            foreach (AlchemyMortar.Piece p in pounded.Pieces)
+                Assert.GreaterOrEqual(p.Size, AlchemyMortar.PoundFloor - 1e-9, "pounding never makes dust");
+            pounded.Result(out level, out _);
+            Assert.LessOrEqual(level, 2);
+            var groundRoot = new AlchemyMortar(1, 0.8, 3, 1);
+            Circles(groundRoot, 6, true);
+            Assert.Greater(pounded.Fineness, groundRoot.Fineness, "a hard root breaks faster under blows than under grinding");
+
+            var lazy = new AlchemyMortar(3, 0.1, 3, 1);
+            Circles(lazy, 20, false);
+            var thorough = new AlchemyMortar(3, 0.1, 3, 1);
+            Circles(thorough, 20, true);
+            Assert.Less(lazy.Evenness, thorough.Evenness - 0.2, "one ring misses the pieces in the middle: lumps among the dust");
         }
     }
 }

@@ -95,6 +95,15 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     [Tooltip("How close the player must be to use it (metres).")]
     [SerializeField, Min(0.5f)] private float range = 2.5f;
 
+    [Header("What the window shows")]
+    [Tooltip("A test bench: the window shows what the brew would become if bottled now with its quality, strength and " +
+             "purity, the amounts of what is in the vessel and the reactions by name. Off (a real workshop): only what can be " +
+             "seen and smelt - colour, clarity, layers, what floats or has settled, bubbles, steam, smoke - and the result and " +
+             "its quality are only known once it is bottled. Free Default Ingredients makes a station a test bench.")]
+    [SerializeField] private bool testBench;
+    [Tooltip("A thermometer in the vessel: the window shows the temperature in degrees (off = only how hot it looks and feels).")]
+    [SerializeField] private bool thermometer = true;
+
     [Header("Fire")]
     [Tooltip("Manual: a real fire - players feed it fuel, work the bellows and open or choke the air vent, and must keep " +
              "the temperature where they want it. Regulated: a burner with a valve (a heat slider).")]
@@ -186,6 +195,10 @@ public class AlchemyStation : MonoBehaviour, IInteractable
     public string DisplayName => !string.IsNullOrWhiteSpace(stationName) ? stationName : EquipmentProfile.displayName;
     public bool HasWater => waterSource && Rules.IndexOf(AlchemyDefaults.Water) >= 0;
     public bool HasMortar => hasMortar;
+    /// <summary>Does the window show results, quality and amounts while brewing (a test bench), or only what is seen?</summary>
+    public bool RevealsResults => testBench || freeDefaultIngredients;
+    /// <summary>Does the window show the temperature in degrees?</summary>
+    public bool HasThermometer => thermometer || RevealsResults;
     public AlchemyFireControl FireControl => fireControl;
     public bool HasManualFire => fireControl == AlchemyFireControl.Manual;
     public bool HasWaterBath => hasWaterBath;
@@ -436,7 +449,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
                 return true;
             }
             case AlchemyRequestKind.Filter:
-                return Filter(player, request.id, out reason);
+                return Filter(player, request.id, out reason, request.value > 0f ? request.value : 1f);
             case AlchemyRequestKind.Decant:
                 return Decant(player, out reason);
             case AlchemyRequestKind.Skim:
@@ -651,8 +664,11 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         return count;
     }
 
-    /// <summary>Pours the liquid through a filter: what it catches (crystals, salts...) is collected; its medium is used up.</summary>
-    public bool Filter(CombatEntity player, string filterId, out string reason)
+    /// <summary>
+    /// Pours the liquid through a filter: what it catches (crystals, salts...) is collected; its medium is used up.
+    /// <paramref name="care"/> is how well it was poured (the filtering minigame; 1 = carefully).
+    /// </summary>
+    public bool Filter(CombatEntity player, string filterId, out string reason, float care = 1f)
     {
         reason = "";
         AlchemyFilter f = Rules.Filter(filterId);
@@ -672,7 +688,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             reason = $"The {f.Name.ToLowerInvariant()} needs {f.medium}.";
             return false;
         }
-        AlchemyHarvest h = brew.Filter(f.id, out reason);
+        AlchemyHarvest h = brew.Filter(f.id, care, out reason);
         if (h == null)
             return false;
         if (uses > 0)
@@ -707,7 +723,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             if (item != null)
             {
                 if (bottleItem != null && inv != null) inv.RemoveItems(bottleItem, bottles);
-                Give(inv, item, bottles);
+                Give(inv, item, bottles, h.Liquid);
             }
             else
                 bottles = 0;
@@ -715,7 +731,7 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         int got = GiveHarvest(inv, h);
         if (player != null && bottles > 0)
             AlchemyKnowledge.For(player)?.RecordResult(brew, h.Liquid, bottles);
-        Tell(player, bottles > 0 ? $"Poured off the top layer: {bottles} × {h.Liquid.DisplayName}." :
+        Tell(player, bottles > 0 ? $"Poured off the top layer: {bottles} × {h.Liquid.DisplayName}{QualityText(h.Liquid)}." :
             got > 0 ? $"Poured off the top layer and collected {got} item(s) from it." : "Poured off the top layer.");
         Touch();
         return true;
@@ -842,10 +858,10 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
         if (bottleItem != null && inv != null)
             inv.RemoveItems(bottleItem, r.Bottles);
-        Give(inv, item, r.Bottles);
+        Give(inv, item, r.Bottles, r);
         if (player != null)
             AlchemyKnowledge.For(player)?.RecordResult(brew, r, r.Bottles);
-        Tell(player, $"Bottled {r.Bottles} × {r.DisplayName}.");
+        Tell(player, $"Bottled {r.Bottles} × {r.DisplayName}{QualityText(r)}.");
         if (brew.IsEmpty)
             SetBrew(null);
         Touch();
@@ -870,12 +886,12 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         if (item != null)
         {
             if (bottleItem != null && inv != null) inv.RemoveItems(bottleItem, bottles);
-            Give(inv, item, bottles);
+            Give(inv, item, bottles, preview);
         }
         int harvested = GiveHarvest(inv, h);
         if (player != null)
             AlchemyKnowledge.For(player)?.RecordResult(brew, h.Liquid, item != null ? bottles : 0);
-        Tell(player, item != null ? $"Collected {bottles} × {h.Liquid.DisplayName} from the distillate." :
+        Tell(player, item != null ? $"Collected {bottles} × {h.Liquid.DisplayName}{QualityText(h.Liquid)} from the distillate." :
             harvested > 0 ? "Collected the distillate." : $"The distillate was {h.Liquid.DisplayName.ToLowerInvariant()}: poured away.");
         Touch();
         return true;
@@ -927,18 +943,37 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         return total;
     }
 
+    /// <summary>" - quality 72 % (strength 80 %, purity 91 %)": what bottling reveals.</summary>
+    public static string QualityText(AlchemyResult r) =>
+        r?.Outcome != null && r.Outcome.HasPotency && !r.IsFailure
+            ? $" - quality {r.Quality * 100:0}% (strength {r.Potency * 100:0}%, purity {r.Purity * 100:0}%)" : "";
+
     /// <summary>Items made at runtime are fine offline; a network session needs assets.</summary>
     public bool AllowsRuntimeItems => !GameNet.NetAuthority.IsNetworked;
 
-    private void Give(InventoryManager inv, ItemSO item, int count)
+    /// <summary>
+    /// Gives <paramref name="count"/> × <paramref name="item"/> (what does not fit drops at the station). Bottles of
+    /// <paramref name="bottled"/> keep its strength and purity (<see cref="BrewedPotionSO.Encode"/>), one value per bottle.
+    /// </summary>
+    private void Give(InventoryManager inv, ItemSO item, int count, AlchemyResult bottled = null)
     {
         if (item == null || count <= 0)
             return;
-        int left = inv != null ? inv.AddItem(item, count) : count;
+        List<int> codes = null;
+        if (bottled != null && item is BrewedPotionSO && bottled.Outcome != null && bottled.Outcome.HasPotency)
+        {
+            codes = new List<int>(count);
+            int code = BrewedPotionSO.Encode(bottled.Potency, bottled.Purity);
+            for (int i = 0; i < count; i++) codes.Add(code);
+        }
+        int left = inv != null ? inv.AddItem(item, count, codes) : count;
         if (left > 0)
         {
             Vector3 at = dropPoint != null ? dropPoint.position : transform.position + transform.forward * 1f + Vector3.up * 0.5f;
-            ItemDropManager.Spawn(null, new List<ItemStack> { new ItemStack(item, left) }, at, gameObject);
+            if (codes != null && item.Prefab != null)
+                ItemHandler.SpawnWorldItem(item, left, codes.GetRange(0, left), at, gameObject);
+            else
+                ItemDropManager.Spawn(null, new List<ItemStack> { new ItemStack(item, left) }, at, gameObject);
         }
     }
 

@@ -85,9 +85,11 @@ share of its total per second = Release Speed(form) × extractability_k ^ Select
 So grinding a Sunpetal releases its sap faster — and its latex far faster (~200× finely ground): **grinding speeds
 extraction, but it also makes the unwanted components easy to extract.**
 
-* **Grinding** happens at a station with a mortar, in the **mortar minigame** ([01](01-Overview-and-Setup.md)): each turn
-  of the pestle grinds a little (less for hard ingredients, *Hardness*, and for several at once); the player stops at the
-  level wanted. **Evenness** matters: an uneven grind (`evenness` below 1) goes in as 0.4 + 0.6 × evenness of it at the
+* **Grinding** happens at a station with a mortar, in the **mortar** ([01 §6](01-Overview-and-Setup.md#6-hands-on-the-spoon-the-bellows-the-filter-alchemy-hands-on),
+  `AlchemyMortar`): the ingredient lies in the bowl as pieces; blows break the big ones (better the harder it is,
+  *Hardness*; never finer than *Finely ground*), grinding wears down what the pestle passes over (better the softer it is)
+  down to dust, and pieces that were missed stay lumps. The level is the fineness of the whole, the evenness how alike
+  the pieces are; the player stops at the level wanted. **Evenness** matters: an uneven grind (`evenness` below 1) goes in as 0.4 + 0.6 × evenness of it at the
   chosen level and the rest split between the next coarser and the next finer level — lumps and dust.
 * Ingredients whose profile has *Can Be Ground* off (liquids, powders, extracts, crystals) go in as they are. The form and
   evenness are recorded in the history, so replays grind the same way.
@@ -340,6 +342,9 @@ as "left in the vessel by the last preparation" — unless the player cleans the
   up a little liquid. Built-in: **Cloth Strainer** (reusable; 60 % of the particles, 80 % of the solids), **Filter Paper**
   (every particle; uses a sheet), **Charcoal Bed** (every particle, and 75 % of the toxins, 80 % of residues, 90 % of
   contaminants, 50 % of tannins — and 10 % of the active compounds; uses a charcoal).
+  `Filter(id, care, out reason)` pours it with a *care* (0–1, the filtering minigame): what runs over the filter's edge
+  goes through, so everything it catches and adsorbs is × care, and up to 12 % more liquid is spilled (× 1 − care). The
+  care is part of the operation (the history, replays and saves); older histories, without it, are careful pours.
 * **Decant** (`Decant`): pours off the top layer. It is evaluated like any liquid: bottled when it is a potion (a lavender
   oil decanted from water), else what it holds is collected (oil back as Lamp Oil).
 * **Skim** (`Skim`): takes everything that floats — undissolved matter and solids lighter than the liquid — and collects it.

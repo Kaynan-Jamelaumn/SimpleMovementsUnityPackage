@@ -76,10 +76,38 @@ first); fuels and filters use up their items from the player's inventory (or the
 `SavePreparation()`, `LoadState(state)`; `HasManualFire`. `Changed` fires after each operation; `AlchemyStation.All`
 lists the stations.
 
-**The minigames** are presentation over these operations: `AlchemyCirclePad` (`Alchemy/UI/AlchemyCirclePad.cs`) is a round
-pad that follows the pointer and reports `TurnsPerSecond`, `Turns`, `Rhythm` (0 erratic … 1 steady) and a `Turned` event;
-the window turns the mortar's turns into a grind level and evenness (one `AddItem`), and the stir pad's speed into
-`SetStirring` a few times a second. `AlchemyTrace` draws the last minute of the temperature. Use them in your own UI, or
+`RevealsResults` (a test bench) and `HasThermometer` say what the window may show; `AlchemyStation.QualityText(result)`
+is the " - quality 74 % (strength 80 %, purity 92 %)" bottling reveals. `Filter(player, id, out reason, care)` takes the
+filtering minigame's care (`AlchemyRequest` *Filter* carries it as its value; 0 = careful).
+
+**What it looks like**: `AlchemyLook.Of(brew)` (or `look.Read(brew)` every frame) reads the state into what is seen —
+`Fill`, `Color`, `Cloudiness`, `Floating` / `FloatingColor`, `Sediment` / `SedimentColor`, `Layered`, `TopColor`,
+`BottomColor`, `TopShare`, `Emulsion`, `Foam`, `Simmer`, `Bubbling`, `ReactionBubbles`, `Steam`, `Smoke`, `Scorching`,
+`Glow`, `Streaks`, `Thickness`, `Grime`, `Crystals`, `Precipitating`, `Boiling`, `Slopping`, the reactions' `Signs`,
+`Smells`, `Pieces` (ingredients still in the vessel: colour, progress, floating) and what breaks down from heat — and
+`Describe` / `DescribeActivity` / `Text` put it in sentences (`ColorName`, `FillWords`, `HeatWords`). It changes nothing:
+use it for your own vessel art, sounds or an NPC alchemist's remarks.
+
+**The 3D vessel and the hands**: `AlchemyStationVisuals` draws the look (`Build()`, `EnsureProps()`; `SurfaceCenter`,
+`WorldRadius`, `FireBedPoint`, `HoldSpoon`, `SetBellows`, `PuffBellows`, `SetFiltering` for your own tools);
+`AlchemyVesselParts` builds the primitives, materials, particle systems, the funnel and the open cauldron
+(`OpenVessel`). `AlchemyHandsOn.For(station).Begin(AlchemyHandsOnMode.Stir | Bellows | Filter | Grind, player,
+backToWindow => …, out reason, filterId, item)` takes a tool up (`End(backToWindow)` puts it down; `Power(stat)` is what a stat makes
+of the hands, `Fatigue` how tired they are).
+
+**Each bottle's strength**: bottles get `BrewedPotionSO.Encode(potency, purity)` in their durability list (one value per
+bottle; `CodeOf(inventoryItem)` reads the next one, `TryDecode`); drinking calls `ItemSO.UseItem(player, status,
+inventoryItem)`, and `ConsumableSO.EffectScale(instance)` (`BrewedPotionSO.ScaleOf(code)`: the outcome's
+`EffectMultiplierAt(quality, potency)` over the tier's written multiplier) multiplies every effect's amount. Any
+consumable whose copies differ can override `EffectScale`.
+
+**The minigames** are presentation over these operations. `AlchemyMortar` (`Alchemy/Core`, pure C#) is the work in a
+mortar: the ingredient as pieces (`Pieces`: position, size, share), `Pound(x, y, force)`, `Grind(x0, y0, x1, y1, force)`,
+`Settle(seconds)`, `Fineness`, `Evenness`, `Shares()` and `Result(out level, out evenness)` — the grind level and
+evenness the 3D mortar sends as one `AddItem` (use it for a VR pestle or a touch screen). `AlchemyCirclePad`
+(`Alchemy/UI/AlchemyCirclePad.cs`) is a round pad that follows the pointer and reports `TurnsPerSecond`, `Turns`, `Rhythm`
+(0 erratic … 1 steady) and a `Turned` event; the window turns the stir pad's speed into `SetStirring` a few times a
+second. `AlchemyTrace` draws the last minute of the temperature. Use them in your own UI, or
 drive the operations from anything else (a rhythm game, a VR pestle).
 
 ## 3. A new kind of condition

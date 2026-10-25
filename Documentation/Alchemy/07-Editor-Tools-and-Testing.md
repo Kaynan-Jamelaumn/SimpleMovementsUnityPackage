@@ -9,8 +9,8 @@
 | Menu | |
 |---|---|
 | *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Alchemy Database (Resources)* | The project's rules, from the built-in alchemy |
-| *Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Alchemy Station* | A cauldron on a fire with the station, surroundings and visuals |
-| *… ▸ Create Test Bench (free ingredients)* | The same with every built-in ingredient free |
+| *Tools ▸ SimpleMovements ▸ Alchemy ▸ Create Alchemy Station* | An open cauldron (mesh saved as `Items/Alchemy/Models/Cauldron Mesh.asset`) on a fire with the station, surroundings and visuals set to its inner size |
+| *… ▸ Create Test Bench (free ingredients)* | The same with every built-in ingredient free and the window showing the numbers (*Test Bench*) |
 | *… ▸ Create Equipment Presets* | Iron Cauldron, Copper Alembic, Glass Retort, Frost Basin, Fractionating Still, Evaporating Dish (`Resources/SimpleMovements/Alchemy/Equipment`) |
 | *… ▸ Create Ingredient Items* | The built-in ingredients — and the supplies Firewood and Filter Paper — with generated icons and pickable prefabs (`Items/Alchemy/Ingredients`, `Items/Alchemy/Pickables`); also gives an icon and a pickable prefab to every ingredient you made yourself that has none; assigns harvest items (by name, or the ingredient a substance mainly comes from: brine → Rock Salt, alum → Alum Powder) |
 | *… ▸ Create Potion Items* | A potion item per tier of every outcome (`Items/Alchemy/Potions`) with a pickable prefab, assigned in the database — run it again after adding outcomes |
@@ -79,5 +79,9 @@ They run the built-in rules and check:
 | Failed experiments are results | `FailedExperiments_AreResultsToo`, `Capacity_IsRespected` |
 | Players learn from experiments | `Journal_LearnsFromRepeatedExperiments`, `Procedure_ReadsLikeTheStepsTaken` |
 | Extensible without rewriting the core | `Extensions_AddAndReplaceRules`, `CustomConditions_PlugIntoReactions`, `BrewedPotion_PouredBack_ReleasesWhatItIs` |
+| **Effects follow strength and purity** (smoothly, per bottle) | `EffectStrength_FollowsQualitySmoothly_AndEachBottleKeepsItsOwn` |
+| **What is seen** follows the state (layers, afloat, settled, the boil), in words that never advise | `Look_ShowsLayers_WhatFloats_WhatSinks_AndTheBoil` |
+| **The filtering minigame** drives the rules | `Filter_AHastyPourCatchesLess_AndReplaysTheSame` |
+| **The mortar**: blows break, grinding makes dust, missed pieces stay lumps | `Mortar_PoundingBreaks_GrindingMakesDust_MissedPiecesStayLumps` |
 
-63 tests. They need no scene and no assets; each runs a few simulated minutes in milliseconds.
+67 tests. They need no scene and no assets; each runs a few simulated minutes in milliseconds.

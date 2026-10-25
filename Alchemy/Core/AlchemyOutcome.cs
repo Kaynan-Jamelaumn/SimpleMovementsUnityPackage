@@ -77,6 +77,41 @@ public class AlchemyOutcome
         return 0;
     }
 
+    /// <summary>
+    /// How strong a bottle of <paramref name="quality"/> is (× the outcome's effects) - smoothly, not in steps: each
+    /// tier's Effect Multiplier holds at its Min Quality and the strength runs on toward the next tier's (past the best
+    /// tier, on at the same pace up to quality 1). A brew stronger than full strength (potency over 1, which quality does
+    /// not count) gets up to a quarter more. So two "Potent" bottles of 68 % and 84 % are not the same.
+    /// </summary>
+    public double EffectMultiplierAt(double quality, double potency = 1)
+    {
+        if (tiers == null || tiers.Count == 0)
+            return 1;
+        var anchors = new List<AlchemyOutcomeTier>();
+        foreach (AlchemyOutcomeTier t in tiers)
+            if (t != null) anchors.Add(t);
+        if (anchors.Count == 0)
+            return 1;
+        anchors.Sort((a, b) => a.minQuality.CompareTo(b.minQuality));
+        double q = Math.Max(0, Math.Min(1, quality));
+        double m;
+        if (anchors.Count == 1 || q <= anchors[0].minQuality)
+            m = anchors[0].effectMultiplier;
+        else
+        {
+            int i = anchors.Count - 1;
+            while (i > 0 && q < anchors[i].minQuality) i--;
+            // From anchor i toward i + 1 (past the last one, at the pace of the last step).
+            int a = i < anchors.Count - 1 ? i : i - 1;
+            double span = Math.Max(1e-4, anchors[a + 1].minQuality - anchors[a].minQuality);
+            double slope = (anchors[a + 1].effectMultiplier - anchors[a].effectMultiplier) / span;
+            m = anchors[i].effectMultiplier + slope * (q - anchors[i].minQuality);
+        }
+        if (HasPotency && potency > 1)
+            m *= 1 + 0.25 * Math.Min(1, potency - 1);
+        return Math.Max(0, m);
+    }
+
     /// <summary>"Healing Draught (Potent)".</summary>
     public string TierName(int tier)
     {

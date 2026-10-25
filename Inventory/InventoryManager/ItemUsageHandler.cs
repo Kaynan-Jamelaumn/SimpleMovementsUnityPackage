@@ -69,7 +69,7 @@ public static class ItemUsageHandler
             else
             {
                 // For non-weapon items, use the standard method
-                heldItem.itemScriptableObject.UseItem(player, statusController);
+                heldItem.itemScriptableObject.UseItem(player, statusController, heldItem);
             }
 
             return true;
