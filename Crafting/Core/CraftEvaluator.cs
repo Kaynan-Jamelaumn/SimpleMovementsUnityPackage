@@ -379,11 +379,14 @@ public static class CraftEvaluator
         Geometry(p, r);
         CraftWoodDefinition w = rules.Wood(p.wood.wood);
         r.MaterialName = w?.Name ?? p.wood.wood;
-        r.WoodToughness = (w?.toughness ?? 0.5) * (1 - p.wood.split) * (1 - 0.6 * p.wood.charred);
+        // Fibres that run out of the piece break along themselves; drying checks are cracks waiting to open.
+        r.WoodToughness = (w?.toughness ?? 0.5) * (1 - p.wood.split) * (1 - 0.6 * p.wood.charred) * (1 - 0.55 * CraftMath.Clamp01(p.wood.runout)) * (1 - 0.7 * CraftMath.Clamp01(p.wood.checks));
         r.WoodHardness = w?.hardness ?? 0.5;
         r.Split = p.wood.split;
         r.Charred = p.wood.charred;
-        r.Integrity = CraftMath.Clamp01((1 - p.wood.split) * (1 - 0.7 * p.wood.charred));
+        r.Integrity = CraftMath.Clamp01((1 - p.wood.split) * (1 - 0.7 * p.wood.charred) * (1 - 0.6 * CraftMath.Clamp01(p.wood.checks)));
+        r.WaterResistance = CraftWoodwork.FinishProtection(p.wood);
+        r.Moisture = p.wood.moisture;
         double rough = 0, l = 0;
         foreach (MetalSegment s in p.segments) { rough += s.rough * s.length; l += s.length; }
         r.Roughness = l > 0 ? rough / l : 0;
@@ -397,7 +400,8 @@ public static class CraftEvaluator
         HideState h = p.hide;
         CraftHideDefinition def = rules.Hide(h.hide);
         CraftTanningAgent agent = rules.Agent(h.agent);
-        r.MaterialName = (def?.Name ?? "Hide") + (agent != null && agent.kind != CraftAgentKind.Water && agent.kind != CraftAgentKind.Lime ? $", {agent.Name.ToLowerInvariant()}" : ", raw");
+        bool cloth = def != null && def.textile;
+        r.MaterialName = cloth ? def.Name : (def?.Name ?? "Hide") + (agent != null && agent.kind != CraftAgentKind.Water && agent.kind != CraftAgentKind.Lime ? $", {agent.Name.ToLowerInvariant()}" : ", raw");
         double n = 0, thick = 0, tan = 0, core = double.MaxValue, stiff = 0, dmg = 0, oil = 0, wax = 0, shrink = 0, moist = 0, hard = 0, grain = 0, flesh = 0, rot = 0;
         double dyeMean = 0, dyeSq = 0;
         foreach (HideCell c in h.cells)
@@ -435,7 +439,17 @@ public static class CraftEvaluator
         r.Suppleness = CraftMath.Clamp01(supple);
         double fiber = def?.fiberStrength ?? 1;
         double tanned = CraftMath.Clamp01(r.Tannage * 1.15);
-        r.Strength = fiber * (0.3 + 0.7 * tanned) * (1 - 0.7 * r.Damage) * (0.6 + 0.4 * grain / n) * (1 - 0.6 * rot / n) * (agent?.durability ?? 0.6) * (1 - 0.5 * flesh / n);
+        r.Strength = fiber * (0.3 + 0.7 * tanned) * (1 - 0.7 * r.Damage) * (0.6 + 0.4 * grain / n) * (1 - 0.6 * rot / n) * (cloth ? 1 : agent?.durability ?? 0.6) * (1 - 0.5 * flesh / n);
+        if (cloth)
+        {
+            // Cloth cut across its grain stretches out of shape and frays; a ragged cut frays too.
+            if (!string.IsNullOrEmpty(h.pattern) && !CraftTextiles.OnGrain(h))
+            {
+                r.Strength *= 0.85;
+                r.Defects.Add("cut across the grain");
+            }
+            r.Strength *= 0.75 + 0.25 * CraftMath.Clamp01(h.cutQuality);
+        }
         r.WaterResistance = CraftMath.Clamp01((agent?.waterResistance ?? 0) * (agent?.fixation ?? 1) * tanned + 0.3 * oil / n + 0.5 * wax / n);
         r.Fire = h.fireResistance;
         double variance = dyeSq / n - (dyeMean / n) * (dyeMean / n);
@@ -546,6 +560,26 @@ public static class CraftEvaluator
             Weapon(rules, d, reports, m, mass, r);
         else
             Armor(rules, d, reports, joints, mass, r);
+        // Wooden parts: a finish keeps the weather out (it lasts longer); green wood shrinks loose as it dries.
+        double woodFinish = 0, woodParts = 0, green = 0;
+        foreach (KeyValuePair<string, List<CraftPieceReport>> kv in reports)
+            foreach (CraftPieceReport pr in kv.Value)
+                if (pr.Kind == CraftPieceKind.Wood)
+                {
+                    woodFinish += pr.WaterResistance;
+                    green = Math.Max(green, pr.Moisture);
+                    woodParts++;
+                }
+        if (woodParts > 0)
+        {
+            woodFinish /= woodParts;
+            r.Durability = Math.Max(5, (int)Math.Round(r.Durability * (0.92 + 0.16 * woodFinish)));
+            if (green > 0.2)
+            {
+                r.Integrity *= 0.85;
+                r.Notes.Add("green wood: it will shrink loose as it dries");
+            }
+        }
 
         // Notes on what shows.
         if (m != null)
@@ -693,7 +727,7 @@ public static class CraftEvaluator
     }
 
     // ------------------------------------------------------------------ joints
-    public static double JointQuality(CraftRules rules, CraftJointSpec spec, JointState j, CraftDesign d, Dictionary<string, List<CraftPiece>> parts)
+    public static double JointQuality(CraftRules rules, CraftJointSpec spec, JointState j, CraftDesign d, Dictionary<string, List<CraftPiece>> parts, AssemblyState a = null)
     {
         if (j == null)
             return 0;
@@ -713,7 +747,12 @@ public static class CraftEvaluator
             {
                 double thread = 1;
                 foreach (CraftComponentSpec c in d.components)
-                    if (c.supply && c.supplyKind == CraftSupplyKind.Thread) thread = 0.9;
+                    if (c.supply && c.supplyKind == CraftSupplyKind.Thread)
+                    {
+                        // The thread it was sewn with: spun fine or coarse, linen, wool or silk (unrecorded: ordinary thread).
+                        double strength = a != null ? a.Supply(c.role + CraftWorkshop.StrengthSuffix) : 0;
+                        thread = 0.9 * (strength > 0 ? CraftMath.Clamp(0.75 + 0.25 * strength, 0.8, 1.15) : 1);
+                    }
                 q = Math.Min(1, j.stitches / (double)Math.Max(1, spec.count)) * thread * (1 - Math.Min(0.8, j.tensionSpread)) * (1 - Math.Min(0.6, Math.Abs(j.tension - 0.6)))
                     * (1 - 0.5 * Math.Min(1, j.spacingError)) * (1 - 0.5 * Math.Min(1, j.alignError));
                 break;
@@ -754,7 +793,7 @@ public static class CraftEvaluator
             JointState j = a?.Joint(spec.id);
             bool optional = d.Component(spec.roleB)?.optional == true && (j == null || !parts.ContainsKey(spec.roleB));
             if (optional) continue;
-            double q = JointQuality(rules, spec, j, d, parts);
+            double q = JointQuality(rules, spec, j, d, parts, a);
             if (q < 0.5) notes.Add($"{spec.Name}: weak ({q * 100:0}%)");
             sum += q * spec.importance;
             w += spec.importance;

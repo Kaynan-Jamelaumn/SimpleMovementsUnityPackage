@@ -23,7 +23,7 @@ using UnityEngine.UI;
 /// </list>
 /// It is an open panel of the player's inventory while shown (free cursor, clicks never attack); Escape closes it.
 /// </summary>
-public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
+public class AlchemyStationUI : MonoBehaviour, IExclusivePanel
 {
     private static AlchemyStationUI instance;
 
@@ -221,6 +221,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
     // ------------------------------------------------------------------ panel registration
     private void Register()
     {
+        InputBindingStore.BlockGameplayInput(this); // the station's keys only: no jumping, dashing or casting from the bench
         if (registeredWith != null || managesCursor)
             return;
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
@@ -239,6 +240,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
 
     private void Unregister()
     {
+        InputBindingStore.UnblockGameplayInput(this);
         if (registeredWith != null)
         {
             InventoryManager inv = registeredWith;
@@ -567,7 +569,7 @@ public class AlchemyStationUI : MonoBehaviour, IGameplayPanel
         }
         handsOn = AlchemyHandsOn.For(station);
         canvas.gameObject.SetActive(false);
-        SetHudFocus(false);
+        SetHudFocus(true); // the hotbar, quick slots and ability bar stay hidden while the hands work
         if (!handsOn.Begin(mode, player, OnModeEnded, out string reason, filterId, item))
         {
             canvas.gameObject.SetActive(true);

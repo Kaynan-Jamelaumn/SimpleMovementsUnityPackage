@@ -279,6 +279,20 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
 
     /// <summary>The inventory, a storage or a registered window is open: the mouse belongs to the UI.</summary>
     public bool IsAnyPanelOpen => IsInventoryOpened || IsStorageOpened || IsExternalPanelOpen;
+
+    /// <summary>A window that takes the whole screen (<see cref="IExclusivePanel"/>: a crafting or alchemy station) is open.</summary>
+    public bool IsExclusivePanelOpen
+    {
+        get
+        {
+            if (!IsExternalPanelOpen)
+                return false;
+            foreach (IGameplayPanel p in openPanels)
+                if (p is IExclusivePanel)
+                    return true;
+            return false;
+        }
+    }
     public SlotManager.LayoutData CurrentLayout => slotManager?.LegacyCurrentLayout;
     public UILayoutManager LayoutManager => uiLayoutManager;
     public ArmorSetManager ArmorSetManager => armorSetManager;
@@ -646,6 +660,8 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     {
         if (lastToggleFrame == Time.frameCount)
             return;
+        if (IsExclusivePanelOpen && !IsInventoryOpened)
+            return; // a station's window stands in for the inventory: it does not open over it
         lastToggleFrame = Time.frameCount;
         ToggleInventory();
     }
@@ -1190,8 +1206,8 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
 
     private void HandleHotbarInput()
     {
-        if (InputBindingStore.GameplayInputPaused)
-            return; // paused, or typing in a text field (digits must not switch the item in hand)
+        if (InputBindingStore.GameplayInputPaused || InputBindingStore.GameplayInputBlocked || IsExclusivePanelOpen)
+            return; // paused, typing in a text field, or at a station (its number keys choose tools, not the item in hand)
         if (HotbarHandler.CheckForHotbarInput(hotbar, slotManager?.HotbarSlots, handParent))
             OnHotbarSelectionChanged();
     }

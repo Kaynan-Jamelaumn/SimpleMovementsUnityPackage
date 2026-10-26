@@ -113,7 +113,7 @@ The bars a merchant sells (and a test station gives), 20 cm × 3 cm × 6 mm unle
 | Charcoal | `charcoal` | 1350 |
 | Coal | `coal` | 1450 |
 | Coke | `coke` | 1550 |
-| Firewood | `firewood` | 950 |
+| Firewood | `firewood` | 950 (any wood in the bag burns as it: planks, logs, offcuts, wooden blanks) |
 
 | Quenchant | Id | Severity | Vapour blanket |
 |---|---|---|---|
@@ -146,6 +146,13 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Bear hide | `bear` | 16x12 | Very thick, very fatty. |
 | Rabbit pelt | `rabbit` | 4x3 | Small and soft: linings. |
 | Drake hide | `drake` | 14x10 | Scaled and fire-proof by nature. |
+| Linen cloth (textile) | `linen_cloth` | 14x20 | Smooth, cool linen: shirts, linings, the layers of a gambeson. |
+| Wool cloth (textile) | `wool_cloth` | 14x20 | Warm, springy wool: cloaks, hoods, padding. |
+| Canvas (textile) | `canvas` | 12x18 | Heavy hemp canvas: the outer shell of a gambeson, bags, sails. |
+| Silk cloth (textile) | `silk_cloth` | 12x18 | Light, smooth and strong: robes, fine shirts, linings. |
+| Cotton cloth (textile) | `cotton_cloth` | 14x20 | Soft and cool: shirts, tunics, quilting. |
+| Felt (textile) | `felt` | 12x14 | Thick, fulled wool that does not fray: hats, padding, boot liners. |
+| Velvet (textile) | `velvet` | 12x16 | A rich, napped cloth: surcoats and capes. |
 
 | Wood | Id | Density | |
 |---|---|---|---|
@@ -155,6 +162,11 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Maple | `maple` | 0.7 | Fine and hard: grips. |
 | Linden plank | `linden` | 0.5 | Light boards for shields. |
 | Ironwood | `ironwood` | 1.1 | So dense it sinks; a legend among haft-makers. |
+| Yew | `yew` | 0.67 | Heartwood that resists, sapwood that pulls: the bow wood. |
+| Elm | `elm` | 0.6 | Interlocked grain that will not split: shield boards, mallets, clubs. |
+| Walnut | `walnut` | 0.64 | Dark and fine: grips and stocks. |
+| Birch | `birch` | 0.65 | Cheap and even: handles and staves. |
+| Pine plank | `pine` | 0.48 | Light and soft: cheap boards; it dents. |
 
 ## Supplies
 
@@ -179,6 +191,20 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Madder dye | `dye_red` | Dye | A deep red. |
 | Woad dye | `dye_blue` | Dye | A dark blue. |
 | Refractory clay | `refractory_clay` | Clay | Coat the spine before the quench: it stays soft and tough, the edge hardens. |
+| Raw wool | `wool_fibre` | Fibre | Spins into coarse wool yarn (0.6), wool yarn (0.85), fine worsted (1.05). |
+| Flax tow | `flax_fibre` | Fibre | Spins into tow yarn (0.7), linen thread (1), fine linen thread (1.25). |
+| Coarse wool yarn, Wool yarn, Fine worsted | `coarse_wool_yarn`, `wool_yarn`, `fine_wool_yarn` | Thread | Hand-spun wool. |
+| Tow yarn, Fine linen thread | `coarse_linen_yarn`, `fine_linen_thread` | Thread | Hand-spun linen. |
+| Hemp fibre | `hemp_fibre` | Fibre | Spins into rough hemp cord (0.9), hemp cord (1.2), hemp twine (1.35): bowstrings, lacing. |
+| Cotton boll | `cotton_fibre` | Fibre | Spins into slubby cotton yarn (0.5), cotton thread (0.8), fine cotton thread (0.95). |
+| Silk floss | `silk_floss` | Fibre | Spins into raw silk yarn (1.2), silk yarn (1.4), silk thread (1.5). |
+| Rough hemp cord, Hemp cord, Hemp twine | `coarse_hemp_cord`, `hemp_cord`, `hemp_twine` | Thread | Hand-spun hemp. |
+| Slubby cotton yarn, Cotton thread, Fine cotton thread | `coarse_cotton_yarn`, `cotton_thread`, `fine_cotton_thread` | Thread | Hand-spun cotton. |
+| Raw silk yarn, Silk yarn | `raw_silk_yarn`, `silk_yarn` | Thread | Hand-spun silk. |
+| Horsehair | `horsehair` | Thread | Plaited: bowstrings and stiff stitching (1.1). |
+| Felt padding | `felt_padding` | Padding | The best padding under a helm (1.15). |
+| Spirit varnish | `spirit_varnish` | Varnish | Dries fast to a bright, thin film. |
+| Oil varnish | `oil_varnish` | Varnish | Slow to dry, tough and weatherproof (strength 1.25). |
 
 ## Abrasives
 
@@ -233,6 +259,27 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Sole | `sole` | 3 |
 | Helm liner | `liner` | 9 |
 | Grip wrap | `grip_wrap` | 3 |
+| Gambeson panel (cloth) | `gambeson_panel` | 38 |
+| Cloak half (cloth) | `cloak_half` | 43 |
+| Hood side (cloth) | `hood` | 17 |
+| Trouser leg (cloth) | `trouser_leg` | 31 |
+| Cuirass panel | `cuirass_panel` | 38 |
+| Leg panel | `chaps_leg` | 20 |
+| Shoulder cop | `pauldron` | 13 |
+| Tall boot upper | `tall_boot` | 20 |
+| Sandal strap | `sandal_strap` | 5 |
+| Shield facing | `facing` | 21 |
+| Tunic body (cloth) | `tunic_body` | 34 |
+| Sleeve (cloth) | `sleeve` | 13 |
+| Shirt body (cloth) | `shirt_body` | 23 |
+| Coif side (cloth) | `coif` | 12 |
+| Mitten (cloth) | `mitten` | 5 |
+| Tabard panel (cloth) | `tabard_panel` | 32 |
+| Sash (cloth) | `sash` | 12 |
+| Foot wrap (cloth) | `foot_wrap` | 12 |
+| Robe panel (cloth) | `robe_panel` | 58 |
+| Hat brim (cloth) | `hat_brim` | 12 |
+| Cape (cloth) | `cape` | 33 |
 
 ## Designs
 
@@ -256,6 +303,80 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Breastplate | `breastplate` | Armor | Breastplate, Strap ×2, Buckles, Rivets, Padding | Straps riveted on (Rivet), Buckles (Buckle) |
 | Belt | `belt` | Armor | Strap, Buckle | Buckle (Buckle) |
 | Round shield | `round_shield` | Shield | Board, Boss, Grip strap, Rivets | Boss riveted on (Rivet), Grip riveted on (Rivet) |
+| Padded gambeson | `padded_gambeson` | Armor | Outer shell ×2 (cloth), Lining ×2 (cloth), Batting, Thread | Quilting through the batting (Stitch), Side and shoulder seams (Stitch) |
+| Wool cloak | `wool_cloak` | Armor (Cloak) | Cloak half ×2 (cloth), Clasp, Thread | Back seam (Stitch), Clasp sewn on (Buckle) |
+| Hood | `cloth_hood` | Armor (Helmet) | Hood side ×2 (cloth), Thread | Crown seam (Stitch) |
+| Quilted trousers | `quilted_trousers` | Armor (Leggings) | Trouser leg ×2 (cloth), Batting, Thread | Inseams and quilting (Stitch) |
+| Shortsword | `shortsword` | Weapon (Sword) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Longsword | `longsword` | Weapon (Sword) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Sabre | `sabre` | Weapon (Sword) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Falchion | `falchion` | Weapon (Sword) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Rapier | `rapier` | Weapon (Sword) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Seax | `seax` | Weapon (Dagger) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| Stiletto | `stiletto` | Weapon (Dagger) | Blade, Guard, Grip, Pommel, Grip wrap (optional) | Guard on the tang (Fit), Grip on the tang (Fit), Pommel peened on (Peen), Grip wrap (Wrap) |
+| War hammer | `war_hammer` | Weapon (Hammer) | Hammer head, Haft | Head on the haft (Wedge) |
+| Maul | `maul` | Weapon (Hammer) | Maul head, Haft | Head on the haft (Wedge) |
+| Flanged mace | `flanged_mace` | Weapon (Mace) | Flanged head, Haft | Head on the haft (Wedge) |
+| Morning star | `morning_star` | Weapon (Mace) | Ball head, Haft, Spikes | Head on the haft (Wedge), Spikes set (Rivet) |
+| Dane axe | `dane_axe` | Weapon (Axe) | Broad axe head, Long haft | Head on the haft (Wedge) |
+| Throwing axe | `throwing_axe` | Weapon (Thrown) | Axe head, Short haft | Head on the haft (Wedge) |
+| Halberd | `halberd` | Weapon (Spear) | Halberd head, Pole, Langets' rivets (optional) | Head on the haft (Socket) |
+| Glaive | `glaive` | Weapon (Spear) | Glaive blade, Pole, Socket rivets (optional) | Head on the haft (Socket) |
+| Boar spear | `boar_spear` | Weapon (Spear) | Broad spear head, Shaft, Socket pin (optional) | Head on the haft (Socket) |
+| Javelin | `javelin` | Weapon (Thrown) | Javelin head, Light shaft | Head on the haft (Socket) |
+| Throwing knives | `throwing_knives` | Weapon (Thrown) | Throwing knife ×3, Grip wrap ×3 (optional) | Grip wraps (Wrap) |
+| Hunting bow | `hunting_bow` | Weapon (Bow) | Bow stave, Bowstring, Grip wrap (optional) | Strung (Wrap), Grip wrap (Wrap) |
+| Longbow | `longbow` | Weapon (Bow) | Long stave, Bowstring, Grip wrap (optional) | Strung (Wrap), Grip wrap (Wrap) |
+| Quarterstaff | `quarterstaff` | Weapon (Staff) | Staff, Grip wrap (optional) | Grip wrap (Wrap) |
+| Studded club | `club` | Weapon (Mace) | Club, Iron studs (optional) | Studs driven in (Rivet) |
+| Cestus | `cestus` | Weapon (Fist) | Knuckle plate ×2, Hand wrap ×2, Rivets | Plates riveted on (Rivet) |
+| Sickle | `sickle` | Tool (Tool, Scythe) | Sickle blade, Handle | Head on the haft (Wedge) |
+| Scythe | `scythe` | Tool (Tool, Scythe) | Scythe blade, Snath | Head on the haft (Wedge) |
+| Felling axe | `felling_axe` | Tool (Tool, Axe) | Felling head, Long haft | Head on the haft (Wedge) |
+| Buckler | `buckler` | Shield (Shield) | Buckler plate, Grip, Rivets | Grip riveted on (Rivet) |
+| Kite shield | `kite_shield` | Shield (Shield) | Boards, Leather facing, Enarmes ×2, Rivets | Facing riveted on (Rivet), Enarmes riveted on (Rivet) |
+| Heater shield | `heater_shield` | Shield (Shield) | Boards, Leather facing, Enarmes ×2, Rivets | Facing riveted on (Rivet), Enarmes riveted on (Rivet) |
+| Kettle hat | `kettle_hat` | Armor (Helmet) | Brimmed shell, Liner, Padding, Rivets | Liner riveted in (Rivet) |
+| Nasal helm | `nasal_helm` | Armor (Helmet) | Conical shell, Liner, Padding, Rivets | Liner riveted in (Rivet) |
+| Great helm | `great_helm` | Armor (Helmet) | Helm barrel, Liner, Padding, Rivets | Liner riveted in (Rivet) |
+| Pauldrons | `pauldrons` | Armor (Shoulders) | Shoulder plate ×2, Strap ×2, Buckles, Rivets | Straps riveted on (Rivet), Buckles (Buckle) |
+| Greaves | `greaves` | Armor (Leggings) | Greave ×2, Strap ×4, Buckles, Rivets | Straps riveted on (Rivet), Buckles (Buckle) |
+| Sabatons | `sabatons` | Armor (Boots) | Foot lame ×2, Upper ×2, Sole ×2, Rivets, Thread | Soles sewn on (Stitch), Lames riveted on (Rivet) |
+| Vambraces | `vambraces` | Armor (Bracers) | Vambrace ×2, Strap ×4, Buckles, Rivets | Straps riveted on (Rivet), Buckles (Buckle) |
+| Brigandine | `brigandine` | Armor (Chestplate) | Canvas cover (cloth), Small plate ×8, Rivets, Thread | Plates riveted in (Rivet), Seams (Stitch) |
+| Scale armour | `scale_armour` | Armor (Chestplate) | Backing, Scale ×10, Thread | Scales laced on (Stitch) |
+| Cuir bouilli cuirass | `cuir_bouilli` | Armor (Chestplate) | Cuirass panel ×2, Strap ×2, Buckles, Rivets | Straps riveted on (Rivet), Buckles (Buckle) |
+| Leather pauldrons | `leather_pauldrons` | Armor (Shoulders) | Shoulder cop ×2, Strap ×2, Buckles, Thread | Straps sewn on (Stitch), Buckles (Buckle) |
+| Leather gloves | `leather_gloves` | Armor (Gloves) | Glove ×2, Thread | Seams (Stitch) |
+| Leather bracers | `leather_bracers` | Armor (Bracers) | Bracer ×2, Buckles | Buckles (Buckle) |
+| Leather leggings | `leather_leggings` | Armor (Leggings) | Leg panel ×2, Buckle, Thread | Leg seams (Stitch), Buckle (Buckle) |
+| Riding boots | `riding_boots` | Armor (Boots) | Tall upper ×2, Sole ×2, Thread | Soles sewn on (Stitch) |
+| Sandals | `sandals` | Armor (Boots) | Sole ×2, Sandal strap ×4, Thread | Straps sewn on (Stitch) |
+| Sword belt | `sword_belt` | Armor (Belt) | Belt strap, Hanger ×2, Buckles, Rivets | Hangers riveted on (Rivet), Buckles (Buckle) |
+| Linen shirt | `linen_shirt` | Armor (Chestplate) | Shirt body ×2 (cloth), Sleeve ×2 (cloth), Thread | Sleeves set in (Stitch), Side seams (Stitch) |
+| Wool tunic | `wool_tunic` | Armor (Chestplate) | Tunic body ×2 (cloth), Sleeve ×2 (cloth), Thread | Sleeves set in (Stitch), Side seams (Stitch) |
+| Padded jack | `padded_jack` | Armor (Chestplate) | Outer shell ×2 (cloth), Sleeve ×2 (cloth), Batting, Thread | Quilting (Stitch), Sleeves set in (Stitch) |
+| Robe | `robe` | Armor (Chestplate) | Robe panel ×2 (cloth), Sleeve ×2 (cloth), Thread | Side seams (Stitch), Sleeves set in (Stitch) |
+| Wool trousers | `wool_trousers` | Armor (Leggings) | Trouser leg ×2 (cloth), Thread | Inseams (Stitch) |
+| Linen coif | `linen_coif` | Armor (Helmet) | Coif side ×2 (cloth), Thread | Crown seam (Stitch) |
+| Arming cap | `arming_cap` | Armor (Helmet) | Coif side ×2 (cloth), Padding, Thread | Quilting (Stitch) |
+| Wool hat | `wool_hat` | Armor (Helmet) | Cap crown (cloth), Hat brim (cloth), Thread | Brim sewn on (Stitch) |
+| Wool mittens | `wool_mittens` | Armor (Gloves) | Mitten ×2 (cloth), Thread | Seams (Stitch) |
+| Tabard | `tabard` | Armor (Cloak) | Tabard panel ×2 (cloth), Thread | Shoulder seams (Stitch) |
+| Cape | `cape` | Armor (Cloak) | Cape (cloth), Clasp, Thread | Hem (Stitch), Clasp sewn on (Buckle) |
+| Sash | `sash` | Armor (Belt) | Sash (cloth), Thread | Hem (Stitch) |
+| Foot wraps | `foot_wraps` | Armor (Boots) | Foot wrap ×2 (cloth), Thread | Hem (Stitch) |
+
+Where each is made (the station presets; a station lists only these in its Assembly area):
+
+* **Smithy**: the blades, axes, hammers, maces, polearms, thrown weapons, tools - and the bows, quarterstaff and club
+  (its files shape wood).
+* **Woodshop**: the hunting bow, longbow, quarterstaff and studded club.
+* **Leatherworks**: all leather and cloth armour and clothes (a leather bench cuts cloth too).
+* **Tailor's**: the cloth armour and clothes.
+* **Armourer** (smithy + leather bench + tailor's table) or a complete workshop: everything with metal on leather or
+  cloth - plate helms, breastplate, pauldrons, greaves, sabatons, vambraces, plated gloves and bracers, brigandine,
+  scale armour, cestus, shields with leather.
 
 ## Insights
 

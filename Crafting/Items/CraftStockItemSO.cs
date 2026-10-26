@@ -206,7 +206,7 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
         {
             case CraftStockKind.Metal: lines.Add(cast ? "Metal stock · cast" : "Metal stock"); break;
             case CraftStockKind.Ore: lines.Add("Ore: clean it, smelt it"); break;
-            case CraftStockKind.Hide: lines.Add("Raw hide: flesh it, tan it"); break;
+            case CraftStockKind.Hide: lines.Add(CraftDatabase.Instance != null && (CraftDatabase.Instance.Rules?.Hide(craftId)?.textile ?? false) ? "Cloth: cut it and sew it at the tailor's" : "Raw hide: flesh it, tan it"); break;
             case CraftStockKind.Wood: lines.Add("Wooden blank"); break;
             case CraftStockKind.Fasteners: lines.Add($"{fastenerCount} {fastenerKind.ToString().ToLowerInvariant()}{(fastenerCount == 1 ? "" : "s")}"); break;
             case CraftStockKind.Fuel: lines.Add("Fuel for the forge or the furnace"); break;

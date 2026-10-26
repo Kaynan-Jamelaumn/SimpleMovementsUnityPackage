@@ -742,3 +742,81 @@ when the unsalted brew is already spoiled.
 essence makes Unstable Aether, which above 95 °C erupts out of the vessel; **Blasting Powder** (mixed dry in the
 Evaporating Dish: 1 Saltpetre Crystals + 2 Fire Ash + 1 Charcoal, stirred, makes 2.4 u in a minute → 1 Blasting Powder)
 goes off twice in hot oil.
+
+### Herbal pack: more ingredients, new potions, and several recipes for the same potion
+
+Eighteen more ingredients (`AlchemyDefaultsHerbal`). Many potions now have two or three recipes, each with its own
+conditions - and the alternative routes of `AlchemyChains` (latex venom, mycelial healing, lavender calm, ember
+binding) are part of the built-in reactions.
+
+| Ingredient | Releases | What it is for |
+|---|---|---|
+| Dragontongue | blaze nectar | simmered hot (about 80 °C): **vigour** directly; warm with Fire Pepper: **salamander essence** directly |
+| Stinging Nettle | nettle sap | steeped hot: **healing** (a weaker, cheaper sunpetal) |
+| Starlight Lotus | lotus nectar | gently warm: **mana**, by day as well as by night |
+| Troll Moss | troll sap | with Iron Filings: **stoneskin** |
+| Granite Dust | granite dust | taken up by tempered essence: **stoneskin** (sap → vital → ardent → tempered → stoneskin) |
+| Harefoot Clover | clover nectar | gently warm: **swiftness** |
+| Windchime Seeds | gust pollen | in *cool* spirit: **swiftness** (water barely wets it, heat drives it off) |
+| Sage Leaves | sage oil | warm, in spirit: **clarity** |
+| Bear Tallow | bear tallow | in hot oil with Fire Pepper: **hearthward** |
+| Emberroot | ember resin | far above boiling, in oil: **hearthward** |
+| Giantcap | giant spores | warm spirit: **titan's strength** |
+| Wild Barley | barley starch | boiled long: **broth** |
+| Wormwood | absinthin | in acid, gently warm: **antitoxin** (an antidote without snakeweed) |
+| Poppy Pod | poppy latex | gently warm (under 75 °C): **somnine** (a sleep draught without dreamshade) |
+| Chamomile | chamomile oil | hot, not boiling: **serene essence** (calm without frost oil or mana) |
+| Salamander Scale | salamander slime | steeped *cold*: **fireward** (heat ruins the slime) |
+| Nightshade | nightshade juice | warm spirit: **venom** (a third road to it) |
+
+New potions: **Stoneskin Elixir** (much less damage taken for a minute, a little slower), **Swiftness Draught**,
+**Elixir of Clarity** (mana, mana regeneration, a clear head), **Hearthward Tonic** (warmth against the cold for two
+minutes), **Titan's Draught** (carry far more, more stamina), **Traveller's Broth** (food and drink).
+
+| Potion | Recipes (one of each per line) |
+|---|---|
+| Healing Draught | Sunpetal (simmer) · Stinging Nettle · sugars + fungi · sanguine essence + moon dew |
+| Draught of Vigour | Sunpetal kept above 75 °C · Dragontongue at about 80 °C |
+| Salamander Draught | vital essence + Fire Pepper · ardent essence + Fire Pepper (hot) · Dragontongue + Fire Pepper (warm) |
+| Mana Potion | Moonbloom · Starlight Lotus · Moon Crystal |
+| Calming Tonic | Sunpetal + Frostmint (cool) · Moonbloom + Lavender · Chamomile |
+| Antidote | Snakeweed Root in acid · Wormwood in acid |
+| Dreamless Sleep Draught | Dreamshade Berries in acid · Poppy Pod |
+| Fireward Tonic | Ashbloom boiled · Salamander Scale cold |
+| Venom Extract | Bitterroot in spirit · Sunpetal latex in spirit · Nightshade in spirit |
+| Stoneskin Elixir | Troll Moss + Iron Filings · Granite Dust into tempered essence |
+| Swiftness Draught | Harefoot Clover warm · Windchime Seeds in cool spirit |
+| Elixir of Clarity | Sage Leaves in spirit · Moonbloom + Rose Petals |
+| Hearthward Tonic | Bear Tallow + Fire Pepper in hot oil · Emberroot in very hot oil |
+| Titan's Draught | Giantcap in spirit · stoneskin essence + ardent essence (hot) |
+| Traveller's Broth | Wild Barley boiled · Goat Milk + Honey kept hot |
+
+Measured (Iron Cauldron, 20 °C):
+
+* **Healing from nettles**: 2 Spring Water + 3 ground Stinging Nettle, fire 20 % (64 °C), 4:00 → Healing Draught 47 %. At
+  fire 30 % (85 °C) the essence goes on to ardent: a Draught of Vigour.
+* **Vigour from dragontongue**: 2 Spring Water + 3 ground Dragontongue, fire 28 % (81 °C), 4:00 → **Potent 77 %**; boiling
+  (fire 45 %) it burns out into ash and sludge: 39 %.
+* **Salamander, directly**: 2 Grain Spirit + 2 Dragontongue + 2 Fire Pepper (ground), fire 20 %, stirred → **Potent 69 %**
+  at 4:00.
+* **Mana by day**: 2 Spring Water + 2 Starlight Lotus, fire 15 % → **Potent 74 %** at 4:00.
+* **Antidote from wormwood**: 1 Vinegar + 2 Spring Water + 3 ground Wormwood, fire 20 % → 56 % at 5:00. In 2 Vinegar, or
+  with Sourfruit, the brew is too sour (pH ~1): the antitoxin turns grey (Murky Mixture).
+* **Sleep from poppies**: 2 Spring Water + 3 ground Poppy Pods, fire 15 % → **Superior 96 %** at 5:00.
+* **Calm from chamomile**: 2 Spring Water + 3 ground Chamomile, fire 22 % (68 °C) → 36 % at 5:00.
+* **Fireward, cold**: 2 Spring Water + 2 ground Salamander Scales, no fire → **Superior 92 %** at 5:00; at fire 30 % the
+  slime spoils (Spoiled Mixture).
+* **Venom from nightshade**: 2 Grain Spirit + 3 ground Nightshade, fire 18 % → 54 % at 4:00.
+* **Stoneskin**: 2 Spring Water + 3 ground Troll Moss + 1 Iron Filings, fire 20 % → 50 % at 4:00; with 2 Iron Filings
+  **Potent 89 %**; without iron nothing happens (Cloudy Infusion).
+* **Swiftness**: 2 Spring Water + 3 ground Harefoot Clover, fire 20 % → **Superior 97 %**; or 2 Grain Spirit + 3 ground
+  Windchime Seeds, no fire → **Superior 100 %** (in water: nothing - Cloudy Infusion).
+* **Clarity**: 2 Grain Spirit + 3 ground Sage Leaves, fire 15 % → 45 % (in water 29 %); 1 Grain Spirit + 1 Spring Water +
+  1 Moonbloom + 4 ground Rose Petals, fire 15 %, 5:00 → **Potent 63 %** (with more moonbloom than rose oil, it stays a
+  Mana Potion).
+* **Hearthward**: 2 Lamp Oil + 2 Bear Tallow + 2 ground Fire Pepper, fire 35 % (97 °C), stirred → **Potent 71 %**; in
+  water the tallow never melts in (Cloudy Infusion). 2 Lamp Oil + 3 ground Emberroot, fire 45 % (119 °C), 5:00 →
+  **Superior 99 %**.
+* **Titan**: 2 Grain Spirit + 3 ground Giantcap, fire 15 % → **Potent 79 %** at 4:00.
+* **Broth**: 2 Spring Water + 3 ground Wild Barley, boiling (fire 40 %), 5:00 → **Superior 99 %**; 2 Goat Milk + 1 Honey,
+  fire 25 % (74 °C), stirred → 35 %.

@@ -4,8 +4,8 @@ using UnityEngine;
 
 /// <summary>
 /// Lets the <see cref="PlayerInteractor"/> use the older interaction objects - Interactable (doors, dungeon shrines,
-/// chests), ItemPickable (items on the ground) and <see cref="Storage"/> - the way <c>Player.OnInteract</c> does. Only
-/// used when the interactor's Handle Legacy Interactables is on.
+/// chests), ItemPickable (items on the ground) and <see cref="Storage"/> - the way <c>Player.OnInteract</c> does, with a
+/// prompt and its key. Used when the interactor's Prompt Older Interactables (or Handle Legacy Interactables) is on.
 /// <para>Interactable and ItemPickable are found by their type names at runtime, so this file compiles whether or not
 /// (and in whatever form) those classes exist in the project.</para>
 /// </summary>
@@ -87,7 +87,7 @@ public sealed class LegacyInteractableTarget : IInteractable
         }
     }
 
-    public string InteractionVerb => pickable ? "Pick up" : storage != null ? "Open" : "Use";
+    public string InteractionVerb => pickable ? "Pick up" : storage != null ? "Open" : "Interact";
     public Transform InteractionPoint => Owner != null ? Owner.transform : null;
     public float InteractionRange => range;
     public int InteractionPriority => pickable ? -2 : -1; // NPCs first

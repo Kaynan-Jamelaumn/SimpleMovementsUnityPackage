@@ -41,6 +41,30 @@ public abstract class CraftMode
     /// <summary>The area is closed (another opened, the window shut): finish what the hands were doing.</summary>
     public virtual void Leave() { }
 
+    // ------------------------------------------------------------------ by hand, in 3D
+    /// <summary>The 3D work place this area can also be worked at with the hands (<see cref="CraftHandsOn"/>); None if it has none.</summary>
+    public virtual CraftHandsOnMode HandsOnMode => CraftHandsOnMode.None;
+    /// <summary>What the 3D work place starts with: the tool, the stone, the mould... chosen here.</summary>
+    protected virtual void FillHandsOn(ref CraftHandsOnSetup setup) { }
+
+    /// <summary>Takes up this area's work place in 3D (the window steps aside until it is put down).</summary>
+    public bool TakeUpByHand()
+    {
+        if (HandsOnMode == CraftHandsOnMode.None || ui == null)
+            return false;
+        var setup = new CraftHandsOnSetup { piece = ui.SelectedId };
+        FillHandsOn(ref setup);
+        Leave(); // what the pointer was doing on the drawing ends here
+        return ui.EnterHandsOn(HandsOnMode, setup);
+    }
+
+    /// <summary>The button that takes up the work place in 3D.</summary>
+    protected Button HandsOnButton(Transform parent, string label, float width = 170f) =>
+        Btn(parent, $"{label}  ({StationControls.Key(StationControl.ByHand)})", () => TakeUpByHand(), width, UITheme.ButtonStyle.Primary);
+
+    /// <summary>The end of an area's hint: the key that takes its work place up in 3D.</summary>
+    protected static string ByHandHint(string what) => $" {StationControls.K(StationControl.ByHand)}: {what}.";
+
     // ------------------------------------------------------------------ controls
     protected static RectTransform Row(Transform parent, float height = 34f, float spacing = 8f) => UITheme.Row("Row", parent, height, spacing);
 
@@ -63,6 +87,9 @@ public abstract class CraftMode
     {
         TextMeshProUGUI t = UITheme.Label(parent, text, size, color ?? UITheme.Muted);
         InventoryUIFactory.Size(t, width, 30f, width < 0f ? 1f : 0f);
+        // A label on a row stays on its row: a long text ends in "..." rather than running out of the window.
+        t.textWrappingMode = TextWrappingModes.NoWrap;
+        t.overflowMode = TextOverflowModes.Ellipsis;
         return t;
     }
 
@@ -86,6 +113,88 @@ public abstract class CraftMode
     }
 
     protected bool Send(CraftRequest r) => ui.Send(r);
+
+    /// <summary>
+    /// A fuel menu: every fuel of the rules with how much of it the player has ("Charcoal (4)", "Firewood (free)",
+    /// "Coal (none)"), set to the first one they have. Firewood counts any wood in the bag.
+    /// </summary>
+    protected TMP_Dropdown FuelDrop(Transform row, List<string> ids, float width)
+    {
+        ids.Clear();
+        foreach (CraftFuel f in Rules.Fuels) ids.Add(f.id);
+        return CountedDrop(row, ids, width, "No fuel");
+    }
+
+    /// <summary>A menu of supplies (fuels, fibres, threads...) by id, each with how much of it the player has, set to the first one they have.</summary>
+    protected TMP_Dropdown CountedDrop(Transform row, List<string> ids, float width, string none = "-")
+    {
+        var names = CountedNames(ids, out int first);
+        return Drop(row, names.Count > 0 ? names : new List<string> { none }, first, width);
+    }
+
+    /// <summary>Brings a counted menu up to date (after using some, or the bag changing).</summary>
+    protected void RefreshCounts(TMP_Dropdown d, List<string> ids)
+    {
+        if (d == null || ids.Count == 0 || d.options.Count != ids.Count) return;
+        var names = CountedNames(ids, out _);
+        bool changed = false;
+        for (int i = 0; i < names.Count; i++)
+            if (d.options[i].text != names[i]) { d.options[i].text = names[i]; changed = true; }
+        if (changed) d.RefreshShownValue();
+    }
+
+    /// <summary>How much of a supply or fuel the player can use here: -1 = free, 0 = none.</summary>
+    protected int Have(string id) => Station != null ? Station.SupplyAvailable(ui.Player, id) : 0;
+
+    /// <summary>The item a supply or fuel is taken from ("Raw Wool"), for telling the player what they lack.</summary>
+    protected string ItemOf(string id)
+    {
+        CraftFuel f = Rules.Fuel(id);
+        if (f != null) return string.IsNullOrEmpty(f.item) ? f.Name : f.item;
+        CraftSupplyDefinition s = Rules.Supply(id);
+        return s != null ? string.IsNullOrEmpty(s.item) ? s.Name : s.item : id;
+    }
+
+    private List<string> CountedNames(List<string> ids, out int first)
+    {
+        first = -1;
+        var names = new List<string>(ids.Count);
+        for (int i = 0; i < ids.Count; i++)
+        {
+            string name = Rules.Fuel(ids[i])?.Name ?? Rules.Supply(ids[i])?.Name ?? ids[i];
+            int have = Have(ids[i]);
+            if (have != 0 && first < 0) first = i;
+            names.Add($"{name} ({(have < 0 ? "free" : have == 0 ? "none" : have.ToString())})");
+        }
+        if (first < 0) first = 0;
+        return names;
+    }
+
+    /// <summary>
+    /// A test station: quick buttons stand in for the work of the hands (an instant flux, fold, clay...). At an
+    /// ordinary station every such action is done with the hands on the work surface.
+    /// </summary>
+    protected bool QuickBench => Station != null && Station.Reveals;
+
+    /// <summary>A line of guidance under the controls (what to do now, what the work shows).</summary>
+    protected static TextMeshProUGUI InfoRow(RectTransform controls, float height = 48f)
+    {
+        RectTransform row = UITheme.Row("Info", controls, height, 8f);
+        TextMeshProUGUI t = UITheme.Label(row, "", 13f, UITheme.Text);
+        InventoryUIFactory.Size(t, -1f, height, 1f);
+        FitInside(t);
+        return t;
+    }
+
+    /// <summary>A text that wraps and shrinks to stay inside its box (and ends in "..." if even that is not enough).</summary>
+    protected static void FitInside(TextMeshProUGUI t)
+    {
+        t.textWrappingMode = TextWrappingModes.Normal;
+        t.enableAutoSizing = true;
+        t.fontSizeMin = 9f;
+        t.fontSizeMax = 13f;
+        t.overflowMode = TextOverflowModes.Ellipsis;
+    }
 
     protected static CraftRequest R(CraftRequestKind kind, string piece = null) => new CraftRequest(kind, piece);
 

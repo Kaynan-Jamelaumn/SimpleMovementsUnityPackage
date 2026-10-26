@@ -141,7 +141,7 @@ public sealed class CombatInputBinding : IDisposable
 
         if (b.action != null)
         {
-            if (!b.action.enabled && !InputBindingStore.GameplayInputPaused)
+            if (!b.action.enabled && !InputBindingStore.GameplayInputPaused && !InputBindingStore.GameplayInputBlocked)
             {
                 b.action.Enable();
                 b.enabledByUs = true;
@@ -158,8 +158,8 @@ public sealed class CombatInputBinding : IDisposable
         return b;
     }
 
-    /// <summary>A standalone fallback is quiet while gameplay input is paused (pause menu), like the actions.</summary>
-    private bool FallbackLive => fallback != null && !InputBindingStore.GameplayInputPaused;
+    /// <summary>A standalone fallback is quiet while gameplay input is paused (pause menu) or held off (a station), like the actions.</summary>
+    private bool FallbackLive => fallback != null && !InputBindingStore.GameplayInputPaused && !InputBindingStore.GameplayInputBlocked;
 
     public bool Pressed => action != null ? action.WasPressedThisFrame() : FallbackLive && fallback.WasPressedThisFrame();
 
@@ -211,7 +211,9 @@ public sealed class CombatInputBinding : IDisposable
         // actionMaps, actions and bindings are ReadOnlyArray structs (never null; empty when there are none).
         foreach (InputActionMap map in asset.actionMaps)
         {
-            if (map == null || string.Equals(map.name, "UI", StringComparison.OrdinalIgnoreCase))
+            // The UI map, and the station map (only read while a station is worked, with the gameplay keys off).
+            if (map == null || string.Equals(map.name, "UI", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(map.name, StationControls.Map, StringComparison.OrdinalIgnoreCase))
                 continue;
             foreach (InputAction a in map.actions)
             {

@@ -28,6 +28,38 @@ public enum CraftJointWork
 /// </summary>
 public static class CraftAssembly
 {
+    /// <summary>
+    /// Can a station with <paramref name="tools"/> make every part of <paramref name="d"/>? Metal parts need an anvil or
+    /// a crucible, leather parts a leather bench, cloth parts a tailor's table (or a leather bench), wooden parts files or
+    /// the woodshop's tools; supplies and fasteners are bought or brought. <paramref name="missing"/> says what is lacking.
+    /// </summary>
+    public static bool MadeAt(CraftRules rules, CraftDesign d, CraftTools tools, out string missing)
+    {
+        missing = "";
+        bool Has(CraftTools t) => (tools & t) != 0;
+        if (d == null) return false;
+        if (!Has(CraftTools.AssemblyBench | CraftTools.LeatherBench)) { missing = "a bench to assemble on"; return false; }
+        foreach (CraftComponentSpec c in d.components)
+        {
+            if (c.optional || c.supply) continue;
+            switch (c.kind)
+            {
+                case CraftPieceKind.Metal:
+                    if (!Has(CraftTools.Anvil | CraftTools.Crucible)) { missing = $"an anvil or a crucible ({c.Name.ToLowerInvariant()})"; return false; }
+                    break;
+                case CraftPieceKind.Hide:
+                    CraftFabric fabric = c.leather?.fabric ?? CraftFabric.Leather;
+                    if (fabric == CraftFabric.Cloth && !Has(CraftTools.TailorTable | CraftTools.LeatherBench)) { missing = $"a tailor's table ({c.Name.ToLowerInvariant()})"; return false; }
+                    if (fabric != CraftFabric.Cloth && !Has(CraftTools.LeatherBench) && !(fabric == CraftFabric.Either && Has(CraftTools.TailorTable))) { missing = $"a leather bench ({c.Name.ToLowerInvariant()})"; return false; }
+                    break;
+                case CraftPieceKind.Wood:
+                    if (!Has(CraftTools.Files | CraftTools.ChoppingBlock | CraftTools.Sawhorse)) { missing = $"woodworking tools ({c.Name.ToLowerInvariant()})"; return false; }
+                    break;
+            }
+        }
+        return true;
+    }
+
     /// <summary>The size (mm) of the tang where a part sits on it (at <paramref name="t"/> along the tang), and the tang's length.</summary>
     public static double TangSize(CraftRules rules, CraftPiece blade, double t, out double tangLength)
     {
@@ -298,6 +330,11 @@ public sealed partial class CraftWorkshop
             Refuse("There is no such design.", out reason);
             return null;
         }
+        if (!CraftAssembly.MadeAt(Rules, d, Tools, out string missing))
+        {
+            Refuse($"{d.Name} is not made here: it needs {missing}.", out reason);
+            return null;
+        }
         var op = new CraftOperation { kind = CraftOpKind.StartAssembly, id = d.id };
         Record(op);
         return op.other;
@@ -319,7 +356,7 @@ public sealed partial class CraftWorkshop
     /// Puts a piece in a role of an assembly (the <paramref name="index"/>th of a role with several). Supplies (padding,
     /// thread) are added with <paramref name="piece"/> empty and <paramref name="supplyCount"/> (the station takes the items).
     /// </summary>
-    public bool Attach(string assembly, string role, int index, string piece, out string reason, int supplyCount = 0)
+    public bool Attach(string assembly, string role, int index, string piece, out string reason, int supplyCount = 0, double supplyStrength = 0)
     {
         reason = "";
         CraftPiece asm = Piece(assembly);
@@ -335,7 +372,7 @@ public sealed partial class CraftWorkshop
         {
             if (supplyCount <= 0)
                 return Refuse("Nothing to add.", out reason, assembly);
-            Record(new CraftOperation { kind = CraftOpKind.Attach, piece = assembly, id = role, i1 = supplyCount });
+            Record(new CraftOperation { kind = CraftOpKind.Attach, piece = assembly, id = role, i1 = supplyCount, a = (float)Math.Max(0, supplyStrength) });
             return true;
         }
         if (index < 0 || index >= spec.count)
@@ -395,6 +432,12 @@ public sealed partial class CraftWorkshop
         switch (p.kind)
         {
             case CraftPieceKind.Hide:
+            {
+                bool cloth = CraftTextiles.IsCloth(Rules, p);
+                CraftFabric fabric = spec.leather?.fabric ?? CraftFabric.Leather;
+                if (fabric == CraftFabric.Leather && cloth) { reason = $"The {spec.Name.ToLowerInvariant()} is leather, not cloth."; return false; }
+                if (fabric == CraftFabric.Cloth && !cloth) { reason = $"The {spec.Name.ToLowerInvariant()} is cut from cloth."; return false; }
+            }
                 if (!string.IsNullOrEmpty(spec.leather?.pattern) && p.hide.pattern != spec.leather.pattern)
                 {
                     reason = $"That was not cut with the {Rules.Pattern(spec.leather.pattern)?.Name.ToLowerInvariant() ?? spec.leather.pattern} pattern.";
@@ -429,6 +472,16 @@ public sealed partial class CraftWorkshop
         _ => k.ToString().ToLowerInvariant(),
     };
 
+    /// <summary>A supply's strength is kept beside its count, under the role's name with this suffix.</summary>
+    public const string StrengthSuffix = "@strength";
+
+    private static void SetVariable(List<CraftVariable> list, string name, double value)
+    {
+        foreach (CraftVariable v in list)
+            if (v.name == name) { v.value = value; return; }
+        list.Add(new CraftVariable(name, value));
+    }
+
     private void ApplyAttach(CraftOperation op)
     {
         CraftPiece asm = Piece(op.piece);
@@ -440,6 +493,12 @@ public sealed partial class CraftWorkshop
             return;
         if (spec.supply)
         {
+            // How strong what went in is (thread: spun fine or coarse, linen or silk), as a running mean by count.
+            if (op.a > 0)
+            {
+                double had = asm.assembly.Supply(spec.role), mean = asm.assembly.Supply(spec.role + StrengthSuffix);
+                SetVariable(asm.assembly.supplies, spec.role + StrengthSuffix, had > 0 && mean > 0 ? (mean * had + op.a * op.i1) / (had + op.i1) : op.a);
+            }
             foreach (CraftVariable v in asm.assembly.supplies)
                 if (v.name == spec.role)
                 {

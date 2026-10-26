@@ -11,7 +11,7 @@ using UnityEngine;
 /// that only an alembic can catch (quickstep). Void Salt neutralises any active compound into Null Essence,
 /// whatever the mixture was becoming. Quicksilver speeds the extraction, Lead Dust stops it, Rock Salt stabilises.</para>
 /// </summary>
-public static class AlchemyDefaults
+public static partial class AlchemyDefaults
 {
     // Substance ids (code and tests use them).
     public const string Water = "water", Spirit = "spirit", Oil = "oil";
@@ -55,6 +55,38 @@ public static class AlchemyDefaults
         db.MarkChanged();
     }
 
+    /// <summary>
+    /// Adds the built-in properties, substances, reactions, outcomes, filters and fuels that <paramref name="db"/> does not
+    /// have yet (by id), leaving everything already there as it is. Returns how many were added.
+    /// </summary>
+    public static int AddMissing(AlchemyDatabase db)
+    {
+        if (db == null)
+            return 0;
+        int n = AddMissing(db.properties, Properties(), e => e.id);
+        n += AddMissing(db.substances, Substances(), e => e.id);
+        n += AddMissing(db.reactions, Reactions(), e => e.id);
+        n += AddMissing(db.outcomes, Outcomes(), e => e.id);
+        n += AddMissing(db.filters, Filters(), e => e.id);
+        n += AddMissing(db.fuels, Fuels(), e => e.id);
+        if (n > 0) db.MarkChanged();
+        return n;
+    }
+
+    private static int AddMissing<T>(List<T> into, List<T> from, System.Func<T, string> id) where T : class
+    {
+        if (into == null || from == null)
+            return 0;
+        int n = 0;
+        foreach (T x in from)
+        {
+            if (x == null || into.Exists(e => e != null && string.Equals(id(e), id(x), System.StringComparison.OrdinalIgnoreCase))) continue;
+            into.Add(x);
+            n++;
+        }
+        return n;
+    }
+
     /// <summary>The built-in rules without a database asset (tests, tools).</summary>
     public static AlchemyRules Rules(AlchemySimulationSettings settings = null) =>
         AlchemyRules.Compile(settings ?? new AlchemySimulationSettings(), Properties(), Substances(), Reactions(), Outcomes(),
@@ -86,7 +118,14 @@ public static class AlchemyDefaults
         new AlchemyPropertyDefinition { id = id, displayName = name, description = description, color = color };
 
     // ------------------------------------------------------------------ substances
-    public static List<AlchemySubstance> Substances() => new List<AlchemySubstance>
+    public static List<AlchemySubstance> Substances()
+    {
+        List<AlchemySubstance> list = BaseSubstances();
+        list.AddRange(HerbalSubstances());
+        return list;
+    }
+
+    private static List<AlchemySubstance> BaseSubstances() => new List<AlchemySubstance>
     {
         // Solvents
         S(Water, "Water", SubstanceRole.Solvent, new Color(0.55f, 0.72f, 0.9f), 100f, "Clear water.", "clear water").Faint(0.15f).Known()
@@ -449,7 +488,15 @@ public static class AlchemyDefaults
     }
 
     // ------------------------------------------------------------------ reactions
-    public static List<AlchemyReaction> Reactions() => new List<AlchemyReaction>
+    /// <summary>The built-in reactions, with the chains' second routes (<see cref="AlchemyChains.ExtraReactions"/>).</summary>
+    public static List<AlchemyReaction> Reactions()
+    {
+        List<AlchemyReaction> list = BaseReactions();
+        list.AddRange(HerbalReactions());
+        return AlchemyChains.WithChains(list);
+    }
+
+    private static List<AlchemyReaction> BaseReactions() => new List<AlchemyReaction>
     {
         // Sunpetal line: A (healing) → B (vigour) → degraded.
         R("vital_extraction", "Vital Extraction", "Heat draws the healing essence out of solar sap.")
@@ -908,6 +955,8 @@ public static class AlchemyDefaults
         vitriol.kind = AlchemyOutcomeKind.Material;
         list.Add(vitriol);
 
+        AddHerbalOutcomes(list);
+
         // Materials and dangerous compounds.
         AlchemyOutcome ink = Potion("iron_gall_ink", "Iron Gall Ink", "A deep black ink for scribes and mapmakers. Not for drinking.", 60, IronGallInk, 0.3f, 30f)
             .Requires(new DominantCondition(IronGallInk)).Requires(new SubstanceCondition(SubstanceSelector.Of(IronGallInk), 0.03f))
@@ -995,7 +1044,14 @@ public static class AlchemyDefaults
     /// holds a healing sap that comes out readily, a fragrant oil that water barely holds, and a bitter latex locked in
     /// its stems that a whole petal gives up slowly - grind it and the latex comes out too (it is destroyed above 85 °C).
     /// </summary>
-    public static List<IngredientPreset> Ingredients() => new List<IngredientPreset>
+    public static List<IngredientPreset> Ingredients()
+    {
+        List<IngredientPreset> list = BaseIngredients();
+        list.AddRange(HerbalIngredients());
+        return list;
+    }
+
+    private static List<IngredientPreset> BaseIngredients() => new List<IngredientPreset>
     {
         I("Spring Water", "A flask of clean water: the base of most brews.", MaterialKind.Other, 1f, 0.5f, new Color(0.55f, 0.75f, 0.95f), 0f, 20f,
             "the water splashes in", Liquid, (Water, 10f, 1f)),

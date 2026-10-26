@@ -119,7 +119,7 @@ namespace GameNet
             if (v.State == TradeState.Proposed)
             {
                 int left = Mathf.CeilToInt(Mathf.Max(0f, requestEndsAt - Time.unscaledTime));
-                string key = trading.TradeKey.ToString();
+                string key = trading.TradeKeyLabel;
                 requestText.text = v.incoming
                     ? $"{v.partnerName} wants to trade with you.  ({left}s)"
                     : $"Waiting for {v.partnerName} to answer...  ({left}s)";

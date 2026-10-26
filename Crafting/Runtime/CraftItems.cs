@@ -198,6 +198,11 @@ public static class CraftItems
             foreach (CraftHideDefinition h in rules.Hides) Add(Stock(rules, CraftStockKind.Hide, h.id));
             foreach (CraftTanningAgent a in rules.Agents) Add(Stock(rules, CraftStockKind.Agent, a.id));
         }
+        if ((tools & CraftTools.TailorTable) != 0)
+            foreach (CraftHideDefinition h in rules.Hides)
+                if (h.textile) Add(Stock(rules, CraftStockKind.Hide, h.id));
+        if ((tools & (CraftTools.ChoppingBlock | CraftTools.Sawhorse | CraftTools.SteamBox | CraftTools.DryingStack | CraftTools.FinishingBench)) != 0)
+            foreach (CraftWoodDefinition w in rules.Woods) Add(Stock(rules, CraftStockKind.Wood, w.id));
         if ((tools & CraftTools.AssemblyBench) != 0)
         {
             foreach (CraftWoodDefinition w in rules.Woods) Add(Stock(rules, CraftStockKind.Wood, w.id));

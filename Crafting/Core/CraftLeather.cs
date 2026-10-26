@@ -30,7 +30,7 @@ public static class CraftLeather
         CraftHideDefinition d = rules.Hide(hideId);
         if (d == null)
             return null;
-        var p = new CraftPiece { kind = CraftPieceKind.Hide, origin = $"hide:{d.id}" };
+        var p = new CraftPiece { kind = CraftPieceKind.Hide, origin = d.textile ? $"cloth:{d.id}" : $"hide:{d.id}" };
         HideState h = p.hide;
         h.hide = d.id;
         h.seed = seed;
@@ -44,7 +44,8 @@ public static class CraftLeather
                 int k = y * d.width + x;
                 double ex = (x - cx) / Math.Max(0.5, cx + 0.5), ey = (y - cy) / Math.Max(0.5, cy + 0.5);
                 double outline = ex * ex + ey * ey;
-                bool present = outline <= 1.05 + 0.2 * (CraftMath.Noise(seed, k, 1) - 0.5) || d.width * d.height <= 6;
+                // A bolt of cloth is a straight-edged rectangle; a hide has the animal's outline.
+                bool present = d.textile || outline <= 1.05 + 0.2 * (CraftMath.Noise(seed, k, 1) - 0.5) || d.width * d.height <= 6;
                 double back = 1 - Math.Abs(y - cy) / Math.Max(0.5, cy + 0.5);
                 double thick = CraftMath.Lerp(d.thicknessBelly, d.thicknessBack, back) * (0.9 + 0.2 * CraftMath.Noise(seed, k, 2));
                 if (outline > 0.75) thick *= 0.85; // legs, neck and flanks are thinner
@@ -53,13 +54,25 @@ public static class CraftLeather
                     present = present, thickness = thick, flesh = CraftMath.Clamp01(d.fat * (0.7 + 0.4 * CraftMath.Noise(seed, k, 3))), hair = d.hair,
                     moisture = 0.75, grain = 1,
                 };
+                if (d.textile)
+                {
+                    // Woven and finished: nothing to flesh or tan, dry and supple; a slub or a pulled thread here and there.
+                    c.thickness = CraftMath.Lerp(d.thicknessBelly, d.thicknessBack, 0.5) * (0.95 + 0.1 * CraftMath.Noise(seed, k, 2));
+                    c.flesh = c.hair = 0;
+                    c.tanS = c.tanC = 1;
+                    c.moisture = 0.08;
+                    c.stiff = 1 - d.suppleness;
+                    c.smooth = 0.6;
+                }
                 if (CraftMath.Noise(seed, k, 4) < d.flaws)
                 {
                     c.flaw = true;
-                    c.damage = 0.25 + 0.55 * CraftMath.Noise(seed, k, 5);
+                    c.damage = (d.textile ? 0.15 : 0.25) + 0.55 * CraftMath.Noise(seed, k, 5);
                 }
                 h.cells.Add(c);
             }
+        if (d.textile)
+            h.dried = true;
         return p;
     }
 
@@ -617,14 +630,16 @@ public sealed partial class CraftWorkshop
     }
 
     // ------------------------------------------------------------------ hide work
-    private bool HideCheck(string id, CraftTools tool, string missing, out CraftPiece p, out string reason, bool allowFrame = false)
+    private bool HideCheck(string id, CraftTools tool, string missing, out CraftPiece p, out string reason, bool allowFrame = false, bool clothToo = false)
     {
         reason = "";
         p = Piece(id);
-        if (!Has(tool))
+        if ((Tools & tool) == 0) // any of the tools named will do
             return Refuse(missing, out reason, id);
         if (p == null || p.kind != CraftPieceKind.Hide)
             return Refuse("That is not a hide.", out reason, id);
+        if (!clothToo && CraftTextiles.IsCloth(Rules, p))
+            return Refuse("It is cloth: it needs no fleshing, staking or tanning.", out reason, id);
         if (p.location != CraftLocation.Air && !(allowFrame && (p.location == CraftLocation.Frame || p.location == CraftLocation.Rack)))
             return Refuse("Take it out first.", out reason, id);
         return true;
@@ -654,9 +669,9 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
-    private bool PathOp(CraftOpKind kind, string id, IList<float> path, float a, string supply, CraftTools tool, string missing, out string reason, bool allowFrame = true)
+    private bool PathOp(CraftOpKind kind, string id, IList<float> path, float a, string supply, CraftTools tool, string missing, out string reason, bool allowFrame = true, bool clothToo = false)
     {
-        if (!HideCheck(id, tool, missing, out CraftPiece p, out reason, allowFrame))
+        if (!HideCheck(id, tool, missing, out CraftPiece p, out reason, allowFrame, clothToo))
             return false;
         var op = new CraftOperation { kind = kind, piece = id, a = a, id = supply ?? "" };
         if (path != null) op.points.AddRange(path);
@@ -665,7 +680,7 @@ public sealed partial class CraftWorkshop
     }
 
     public bool Stake(string id, IList<float> path, double pressure, out string reason) =>
-        PathOp(CraftOpKind.Stake, id, path, (float)pressure, null, CraftTools.LeatherBench, "There is no staking post here.", out reason);
+        PathOp(CraftOpKind.Stake, id, path, (float)pressure, null, FinishingTools, NoFinishing, out reason);
 
     /// <summary>Works oil or wax in (along a path, or all over when <paramref name="path"/> is null).</summary>
     public bool Condition(string id, string supply, IList<float> path, double amount, out string reason)
@@ -673,7 +688,7 @@ public sealed partial class CraftWorkshop
         CraftSupplyDefinition s = Rules.Supply(supply);
         if (s == null || s.kind != CraftSupplyKind.Oil && s.kind != CraftSupplyKind.Wax)
             return Refuse("That does not condition leather.", out reason, id);
-        return PathOp(CraftOpKind.Condition, id, path, (float)amount, s.id, CraftTools.LeatherBench, "There is no leather bench here.", out reason);
+        return PathOp(CraftOpKind.Condition, id, path, (float)amount, s.id, FinishingTools, NoFinishing, out reason, true, true);
     }
 
     public bool Dye(string id, string dye, IList<float> path, double amount, out string reason)
@@ -681,14 +696,21 @@ public sealed partial class CraftWorkshop
         CraftSupplyDefinition s = Rules.Supply(dye);
         if (s == null || s.kind != CraftSupplyKind.Dye)
             return Refuse("That is not a dye.", out reason, id);
-        return PathOp(CraftOpKind.Dye, id, path, (float)amount, s.id, CraftTools.LeatherBench, "There is no leather bench here.", out reason);
+        return PathOp(CraftOpKind.Dye, id, path, (float)amount, s.id, FinishingTools, NoFinishing, out reason, true, true);
     }
 
+    /// <summary>
+    /// The finishing of leather - staking, slicking, skiving, oiling, dyeing - is done at a currier's beam in a tannery
+    /// or at a leather bench: either will do.
+    /// </summary>
+    public const CraftTools FinishingTools = CraftTools.LeatherBench | CraftTools.FleshingBeam;
+    private const string NoFinishing = "There is no leather bench or fleshing beam here to finish leather on.";
+
     public bool Slick(string id, IList<float> path, double pressure, out string reason) =>
-        PathOp(CraftOpKind.Slick, id, path, (float)pressure, null, CraftTools.LeatherBench, "There is no leather bench here.", out reason);
+        PathOp(CraftOpKind.Slick, id, path, (float)pressure, null, FinishingTools, NoFinishing, out reason);
 
     public bool Skive(string id, IList<float> path, double depth, out string reason) =>
-        PathOp(CraftOpKind.Skive, id, path, (float)depth, null, CraftTools.LeatherBench, "There is no leather bench here.", out reason, false);
+        PathOp(CraftOpKind.Skive, id, path, (float)depth, null, FinishingTools, NoFinishing, out reason, false);
 
     /// <summary>
     /// Cuts a pattern from a hide at cell (<paramref name="x"/>, <paramref name="y"/>), rotated by quarter turns, as
@@ -697,7 +719,10 @@ public sealed partial class CraftWorkshop
     public string CutPattern(string id, string pattern, int x, int y, int rotation, double accuracy, out string reason)
     {
         reason = "";
-        if (!HideCheck(id, CraftTools.LeatherBench, "There is no cutting table here.", out CraftPiece p, out reason))
+        // Leather is cut at the leather bench; cloth there or at the tailor's table.
+        CraftPiece src = Piece(id);
+        CraftTools table = CraftTextiles.IsCloth(Rules, src) && Has(CraftTools.TailorTable) ? CraftTools.TailorTable : CraftTools.LeatherBench;
+        if (!HideCheck(id, table, "There is no cutting table here.", out CraftPiece p, out reason, false, true))
             return null;
         CraftPattern pat = Rules.Pattern(pattern);
         if (pat == null)

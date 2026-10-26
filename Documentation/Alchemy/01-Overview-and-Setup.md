@@ -211,6 +211,10 @@ still built when a hands-on tool is taken up). The open cauldron of *Create Alch
 becomes the hand. **Right-click** (or **Q**) puts the tool down and brings the window back; **Escape** goes back to the
 game. The preparation goes on exactly as it is, and the tool can be taken up again whenever you like. A small panel says
 what you feel ("The spoon drags through it", "It runs over the edge of the filter!") and how tired your arms are.
+Every key there is an input action of the **Station** map shared with the forge and the anvil (rebindable in
+*Settings ▸ Key Bindings*, and the panel's hint shows the key actually bound; see
+[Crafting 01 — By hand, in 3D](../Crafting/01-Overview-and-Setup.md)); the keys named below are the defaults. The
+gameplay keys are off while the tool is in hand.
 
 | Tool | How | What it does |
 |---|---|---|

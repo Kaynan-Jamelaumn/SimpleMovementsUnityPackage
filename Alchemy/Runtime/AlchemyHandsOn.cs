@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using TMPro;
 
@@ -10,8 +9,10 @@ public enum AlchemyHandsOnMode { None, Stir, Bellows, Filter, Grind }
 
 /// <summary>
 /// The station worked with the hands, in 3D, instead of buttons. The window steps aside, the view moves to the vessel
-/// and the mouse becomes the hand; right-click (or Q) puts the tool down and brings the window back, Escape goes back to
-/// the game - the preparation goes on exactly as it is, and the tool can be taken up again at any time.
+/// and the mouse becomes the hand; Put Down (right-click or Q) puts the tool down and brings the window back, Escape goes
+/// back to the game - the preparation goes on exactly as it is, and the tool can be taken up again at any time. Every key
+/// is an input action of the station map (<see cref="StationControls"/>): rebindable, and the hints show the key bound;
+/// the keys named below are the defaults.
 /// <list type="bullet">
 /// <item><b>Spoon</b>: hold the left button to dip the spoon and move the mouse in circles. How fast, how wide, how
 /// steadily and which way it turns becomes the stirring (<see cref="AlchemyRequestKind.SetStirring"/>): a reversal or a
@@ -68,7 +69,7 @@ public class AlchemyHandsOn : MonoBehaviour
     private AlchemyHandsOnMode mode;
     private Action<bool> onEnd;
     private readonly AlchemyLook look = new AlchemyLook();
-    private float lookTimer;
+    private float lookTimer, hintTimer;
 
     private Camera cam;
     private Vector3 camPos;
@@ -206,6 +207,7 @@ public class AlchemyHandsOn : MonoBehaviour
         cursorWasLocked = Cursor.lockState;
         Cursor.lockState = CursorLockMode.Confined;
         Cursor.visible = what == AlchemyHandsOnMode.Filter;
+        StationControls.BeginHandsOn(this); // the gameplay keys go off while the hands are at work
         if (what == AlchemyHandsOnMode.Grind)
         {
             grindCount = 1;
@@ -262,6 +264,7 @@ public class AlchemyHandsOn : MonoBehaviour
             visuals.SetBellows(1f);
             visuals.SetFiltering(false, 0f, 0f, 0f, 0f, false, Color.clear, "");
         }
+        StationControls.EndHandsOn(this);
         if (cam != null) Destroy(cam.gameObject);
         cam = null;
         if (hud != null) Destroy(hud.gameObject);
@@ -292,24 +295,28 @@ public class AlchemyHandsOn : MonoBehaviour
             lookTimer = 0f;
             look.Read(station.Brew);
         }
-        Mouse mouse = Mouse.current;
-        Keyboard keyboard = Keyboard.current;
-        if (mouse != null && mouse.rightButton.wasPressedThisFrame || keyboard != null && keyboard.qKey.wasPressedThisFrame)
+        if (StationControls.Pressed(StationControl.PutDown))
         {
             End(true);
             return;
         }
-        Vector2 pointer = mouse != null ? mouse.position.ReadValue() : new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-        bool held = mouse != null && mouse.leftButton.isPressed;
+        Vector2 pointer = StationControls.Pointer;
+        bool held = StationControls.Held(StationControl.Work);
         switch (mode)
         {
             case AlchemyHandsOnMode.Stir: UpdateStir(dt, pointer, held); break;
-            case AlchemyHandsOnMode.Bellows: UpdateBellows(dt, pointer, held, keyboard != null && keyboard.spaceKey.wasPressedThisFrame); break;
+            case AlchemyHandsOnMode.Bellows: UpdateBellows(dt, pointer, held, StationControls.Pressed(StationControl.Quick)); break;
             case AlchemyHandsOnMode.Filter: UpdateFilter(dt, pointer, held); break;
-            case AlchemyHandsOnMode.Grind: UpdateGrind(dt, pointer, held, mouse, keyboard); break;
+            case AlchemyHandsOnMode.Grind: UpdateGrind(dt, pointer, held); break;
         }
         if (!Active)
             return;
+        hintTimer -= dt;
+        if (hintTimer <= 0f && hudHint != null)
+        {
+            hintTimer = 0.5f; // the keys follow a rebind or a switch to the gamepad
+            hudHint.text = Hint();
+        }
         // The view glides to its place (and follows the surface as it rises and falls).
         TargetView(out Vector3 p, out Quaternion r);
         float k = 1f - Mathf.Exp(-dt * 5f);
@@ -510,7 +517,7 @@ public class AlchemyHandsOn : MonoBehaviour
         hudFeel.text = overflowing ? "<color=#f0a090>It runs over the edge of the filter!</color>"
             : full > 0.8f ? "<color=#e8b86b>The funnel is nearly full.</color>"
             : pour > 0.02f ? (full > 0.4f ? "It runs through slowly." : "A steady stream into the funnel.")
-            : poured > 0f ? "<color=#9aa0a6>Tilt the jug to pour more.</color>" : "<color=#9aa0a6>Hold the button and raise the mouse to tilt the jug.</color>";
+            : poured > 0f ? "<color=#9aa0a6>Tilt the jug to pour more.</color>" : $"<color=#9aa0a6>Hold {StationControls.K(StationControl.Work)} and raise the hand to tilt the jug.</color>";
     }
 
     // ------------------------------------------------------------------ the mortar
@@ -525,7 +532,7 @@ public class AlchemyHandsOn : MonoBehaviour
         if (hudTitle != null) hudTitle.text = $"Mortar · {grindItem.Name} × {grindCount}";
     }
 
-    private void UpdateGrind(float dt, Vector2 pointer, bool held, Mouse mouse, Keyboard keyboard)
+    private void UpdateGrind(float dt, Vector2 pointer, bool held)
     {
         if (visuals.Mortar == null)
         {
@@ -533,17 +540,16 @@ public class AlchemyHandsOn : MonoBehaviour
             return;
         }
         // How many, before the work starts.
-        if (keyboard != null && !mortar.Worked)
+        if (!mortar.Worked)
         {
-            int want = keyboard.digit1Key.wasPressedThisFrame ? 1 : keyboard.digit2Key.wasPressedThisFrame ? 2 : keyboard.digit3Key.wasPressedThisFrame ? 3
-                     : keyboard.digit4Key.wasPressedThisFrame ? 4 : keyboard.digit5Key.wasPressedThisFrame ? 5 : 0;
+            int want = StationControls.ChoicePressed(5) + 1;
             if (want > 0 && Mathf.Min(want, grindHave) != grindCount)
             {
                 grindCount = Mathf.Min(want, grindHave);
                 NewMortar();
             }
         }
-        if (keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame))
+        if (StationControls.Pressed(StationControl.Confirm))
         {
             FinishGrinding();
             return;
@@ -570,7 +576,7 @@ public class AlchemyHandsOn : MonoBehaviour
         float now = Time.unscaledTime;
 
         // A quick click pounds; holding and moving grinds.
-        bool pressedNow = mouse != null && mouse.leftButton.wasPressedThisFrame;
+        bool pressedNow = StationControls.Pressed(StationControl.Work);
         if (pressedNow)
         {
             pressing = true;
@@ -588,7 +594,7 @@ public class AlchemyHandsOn : MonoBehaviour
                 fatigue = Mathf.Clamp01(fatigue + moved * 0.012f / endurance);
             }
         }
-        bool blow = keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
+        bool blow = StationControls.Pressed(StationControl.Quick);
         if (pressing && !held)
         {
             if (!grinding) blow = true;
@@ -783,25 +789,33 @@ public class AlchemyHandsOn : MonoBehaviour
         fatigueFill.rectTransform.anchorMax = Vector2.one;
         fatigueFill.rectTransform.offsetMin = fatigueFill.rectTransform.offsetMax = Vector2.zero;
         hudHint = UITheme.Label(col, "", 13f, UITheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal, "Hint");
-        InventoryUIFactory.Size(hudHint, -1f, 36f);
+        InventoryUIFactory.Size(hudHint, -1f, 44f);
+        switch (mode)
+        {
+            case AlchemyHandsOnMode.Stir: hudTitle.text = "The spoon"; break;
+            case AlchemyHandsOnMode.Bellows: hudTitle.text = "The bellows"; break;
+            case AlchemyHandsOnMode.Grind: hudTitle.text = $"Mortar · {grindItem.Name} × {grindCount}"; break;
+            default: hudTitle.text = $"Filtering · {filter.Name}"; break;
+        }
+        hudHint.text = Hint();
+        hintTimer = 0.5f;
+    }
+
+    /// <summary>How the tool is worked, with the keys actually bound (they follow a rebind and the device in use).</summary>
+    private string Hint()
+    {
+        string work = StationControls.K(StationControl.Work), down = StationControls.K(StationControl.PutDown), quick = StationControls.K(StationControl.Quick);
         switch (mode)
         {
             case AlchemyHandsOnMode.Stir:
-                hudTitle.text = "The spoon";
-                hudHint.text = "Hold the left button to dip the spoon and move the mouse in circles · wide, steady circles stir best · right-click or Q: put it down · Esc: leave";
-                break;
+                return $"Hold {work} to dip the spoon and move the hand in circles · wide, steady circles stir best · {down}: put it down · Esc: leave";
             case AlchemyHandsOnMode.Bellows:
-                hudTitle.text = "The bellows";
-                hudHint.text = "Hold the left button: move the mouse down to squeeze, up to let them fill (or tap Space) · a full, quick squeeze blows hardest · right-click or Q: let go";
-                break;
+                return $"Hold {work}: move down to squeeze, up to let them fill (or tap {quick}) · a full, quick squeeze blows hardest · {down}: let go";
             case AlchemyHandsOnMode.Grind:
-                hudTitle.text = $"Mortar · {grindItem.Name} × {grindCount}";
-                hudHint.text = "Click (or Space) to pound: it breaks hard pieces · hold the left button and grind round the whole bowl · 1-5: how many (before you start) · Enter: tip it into the vessel · right-click or Q: put it back";
-                break;
+                return $"Tap {work} (or {quick}) to pound: it breaks hard pieces · hold {work} and grind round the whole bowl · " +
+                       $"{StationControls.Choices(5)}: how many (before you start) · {StationControls.K(StationControl.Confirm)}: tip it into the vessel · {down}: put it back";
             default:
-                hudTitle.text = $"Filtering · {filter.Name}";
-                hudHint.text = "Hold the left button and raise the mouse to tilt the jug · pour steadily: what runs over the edge is not filtered · right-click or Q: stop (it goes back in the vessel)";
-                break;
+                return $"Hold {work} and raise the hand to tilt the jug · pour steadily: what runs over the edge is not filtered · {down}: stop (it goes back in the vessel)";
         }
     }
 }

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 
+/// <summary>The brushes of the ore bench (serialized as numbers: add at the END).</summary>
+public enum CraftOreBrush { Soft, Stiff, Wire }
+
 /// <summary>
 /// Ores: what a lump of a deposit holds (deterministic from the deposit's seed and the lump's index: two deposits of
 /// one ore differ, lumps of one deposit vary a little), and the cleaning that comes before smelting. Crushing breaks a
@@ -173,6 +176,51 @@ public static class CraftOres
             ws.Destroy(p, "It was all washed away.");
     }
 
+    /// <summary>
+    /// Brushes one fragment dry, by hand: <c>a</c> is how much of its surface the brush went over (0-1, scrubbed well).
+    /// A soft brush takes loose dirt (caked clay only slowly); a stiff one takes dirt and clay; a wire brush takes the
+    /// dirt and knocks the weathered rind of rock off the surface too - the more of it the smaller the fragment - but
+    /// scratches away a little of the mineral with it (more of a soft mineral). Nothing is lost with water, as washing
+    /// loses fines: slower than washing, one stone at a time, but clean.
+    /// </summary>
+    public static void Brush(CraftWorkshop ws, CraftPiece p, CraftOperation op)
+    {
+        if (p == null || p.kind != CraftPieceKind.Ore || op.i0 < 0 || op.i0 >= p.ore.fragments.Count)
+            return;
+        CraftOreDefinition o = ws.Rules.Ore(p.ore.ore);
+        var brush = (CraftOreBrush)op.i1;
+        double cover = CraftMath.Clamp01(op.a);
+        OreFragment f = p.ore.fragments[op.i0];
+        double dirt = f.mass * f.dirt, mineral = f.mass * f.mineral, gangue = f.mass * f.gangue;
+        dirt *= 1 - cover * BrushOnDirt(brush, o);
+        gangue -= gangue * Rind(f.size) * cover * BrushOnRind(brush);
+        if (brush == CraftOreBrush.Wire)
+            mineral *= 1 - cover * (o != null && o.hardness < 4 ? 0.06 : 0.02);
+        double m = dirt + mineral + gangue;
+        if (m < 1e-6)
+            return;
+        f.mass = m;
+        f.dirt = dirt / m;
+        f.mineral = mineral / m;
+        f.gangue = gangue / m;
+        p.Record(ws.Elapsed, CraftOpKind.BrushOre, $"Brushed with a {BrushName(brush)}", cover);
+    }
+
+    /// <summary>How much of the dirt a full going-over takes off with this brush.</summary>
+    public static double BrushOnDirt(CraftOreBrush brush, CraftOreDefinition o)
+    {
+        bool clay = o != null && o.gangue == CraftGangue.Clay;
+        return brush == CraftOreBrush.Soft ? (clay ? 0.3 : 0.7) : brush == CraftOreBrush.Stiff ? 0.9 : 0.85;
+    }
+
+    /// <summary>How much of the weathered rind a full going-over knocks off with this brush.</summary>
+    public static double BrushOnRind(CraftOreBrush brush) => brush == CraftOreBrush.Wire ? 0.8 : brush == CraftOreBrush.Stiff ? 0.12 : 0;
+
+    /// <summary>The share of a fragment's loose rock that is a weathered rind on its surface (small stones are mostly surface).</summary>
+    public static double Rind(double sizeCm) => CraftMath.Clamp(2.0 / (sizeCm + 2.0), 0.08, 0.6);
+
+    public static string BrushName(CraftOreBrush brush) => brush == CraftOreBrush.Soft ? "soft brush" : brush == CraftOreBrush.Stiff ? "stiff brush" : "wire brush";
+
     /// <summary>What the ore piece would give per gram if it were all reduced (by element), with its mineral share.</summary>
     public static double MetalContent(CraftRules rules, CraftPiece p, string element)
     {
@@ -216,6 +264,28 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
+    /// <summary>
+    /// Brushes fragment <paramref name="fragment"/> of an ore lump dry: <paramref name="coverage"/> is how much of its
+    /// surface the brush went over (0-1).
+    /// </summary>
+    public bool BrushOre(string id, int fragment, CraftOreBrush brush, double coverage, out string reason)
+    {
+        reason = "";
+        CraftPiece p = Piece(id);
+        if (!Has(CraftTools.OreBench))
+            return Refuse("There are no brushes here.", out reason, id);
+        if (p == null || p.kind != CraftPieceKind.Ore)
+            return Refuse("That is not ore.", out reason, id);
+        if (p.location != CraftLocation.Air)
+            return Refuse("Take it out first.", out reason, id);
+        if (fragment < 0 || fragment >= p.ore.fragments.Count)
+            return Refuse("There is no such stone.", out reason, id);
+        if (!(coverage > 0))
+            return Refuse("The brush did not touch it.", out reason, id);
+        Record(new CraftOperation { kind = CraftOpKind.BrushOre, piece = id, i0 = fragment, i1 = (int)brush, a = (float)CraftMath.Clamp01(coverage) });
+        return true;
+    }
+
     /// <summary>Washes an ore lump in the trough.</summary>
     public bool WashOre(string id, double flow, double seconds, double technique, out string reason)
     {
@@ -232,10 +302,11 @@ public sealed partial class CraftWorkshop
     }
 
     /// <summary>
-    /// Sieves an ore lump's fragments: those smaller than <paramref name="mesh"/> (cm) fall through into a new piece.
+    /// Sieves an ore lump's fragments: those smaller than <paramref name="mesh"/> (cm) fall through into a new piece -
+    /// all of them when it was shaken thoroughly (<paramref name="thoroughness"/> 1), only the smallest when not.
     /// Returns its id (null when nothing, or everything, falls through).
     /// </summary>
-    public string SieveOre(string id, double mesh, out string reason)
+    public string SieveOre(string id, double mesh, out string reason, double thoroughness = 1)
     {
         reason = "";
         CraftPiece p = Piece(id);
@@ -249,18 +320,22 @@ public sealed partial class CraftWorkshop
             Refuse("That is not ore.", out reason, id);
             return null;
         }
+        double through = mesh * SieveReach(CraftMath.Clamp01(thoroughness));
         int small = 0;
         foreach (OreFragment f in p.ore.fragments)
-            if (f.size < mesh) small++;
+            if (f.size < through) small++;
         if (small == 0 || small == p.ore.fragments.Count)
         {
             Refuse(small == 0 ? "Nothing falls through the sieve." : "It all falls through the sieve.", out reason, id);
             return null;
         }
-        var op = new CraftOperation { kind = CraftOpKind.SieveOre, piece = id, a = (float)mesh };
+        var op = new CraftOperation { kind = CraftOpKind.SieveOre, piece = id, a = (float)mesh, b = (float)Math.Max(0.001, CraftMath.Clamp01(thoroughness)) };
         Record(op);
         return op.other;
     }
+
+    /// <summary>The share of the mesh that really lets fragments through after shaking this well (operations recorded before shaking counted: 1).</summary>
+    private static double SieveReach(double thoroughness) => thoroughness > 0 ? 0.55 + 0.45 * thoroughness : 1;
 
     private void ApplySieve(CraftOperation op)
     {
@@ -270,8 +345,9 @@ public sealed partial class CraftWorkshop
         CraftPiece fines = Create(op, CraftPieceKind.Ore, $"sieved from {p.origin}");
         fines.ore = Copy(p.ore);
         fines.ore.fragments.Clear();
+        double through = op.a * SieveReach(op.b);
         for (int i = p.ore.fragments.Count - 1; i >= 0; i--)
-            if (p.ore.fragments[i].size < op.a)
+            if (p.ore.fragments[i].size < through)
             {
                 fines.ore.fragments.Insert(0, p.ore.fragments[i]);
                 p.ore.fragments.RemoveAt(i);

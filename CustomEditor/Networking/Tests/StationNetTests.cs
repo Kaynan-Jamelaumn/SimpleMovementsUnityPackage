@@ -293,6 +293,33 @@ namespace GameNet.Tests
         }
 
         [Test]
+        public void Guard_ASpentArmCannotKeepStrikingFullBlows()
+        {
+            CraftRequestGuard g = Guard();
+            double now = 0, last = 1;
+            for (int i = 0; i < 80; i++)
+            {
+                var r = new CraftRequest(CraftRequestKind.Strike, "p") { a = 0.5f, b = 1.2f, c = 0.2f * (i % 3 - 1) };
+                Assert.IsTrue(g.Check(ref r, now, out _));
+                last = r.b;
+                now += 0.45;
+            }
+            Assert.Less(last, 0.9, "the server's arm tires with the blows it lets through");
+            var rested = new CraftRequest(CraftRequestKind.Strike, "p") { a = 0.5f, b = 1.2f };
+            Assert.IsTrue(g.Check(ref rested, now + 60, out _));
+            Assert.Greater(rested.b, last + 0.1, "and recovers when it rests");
+        }
+
+        [Test]
+        public void Guard_BrushingCoversOnlyWhatTheSecondsAllow()
+        {
+            CraftRequestGuard g = Guard();
+            var r = new CraftRequest(CraftRequestKind.BrushOre, "p") { a = 1f, b = 0.5f };
+            Assert.IsTrue(g.Check(ref r, 10, out _));
+            Assert.LessOrEqual(r.a, 0.2f + 1e-6f, "half a second of brushing does not scrub a whole stone");
+        }
+
+        [Test]
         public void Guard_TheHammerMustBeRaisedToStrikeHard()
         {
             CraftRequestGuard g = Guard();

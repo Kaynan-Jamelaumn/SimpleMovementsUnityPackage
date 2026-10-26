@@ -12,7 +12,8 @@ using System.Collections.Generic;
 /// pours, cuts. A request claiming more gets what is left (grinding 60 s in one request grinds for the seconds that
 /// really passed); one with nothing left is refused.</item>
 /// <item><b>The hammer</b> must be raised to strike hard: a blow's force is held to what the time since the last one
-/// could charge (with room for network jitter).</item>
+/// could charge (with room for network jitter), and to what the arm has left: the server tires and rests its own
+/// model of the arm with every blow, so a client cannot keep striking full blows with a spent arm.</item>
 /// <item><b>The hands</b> are never steadier than the player's practice allows (<see cref="Floor"/>): the wobble of a
 /// whetstone stroke, the steadiness of a pour, the timing of stitches. Blows whose tilt never trembles (a client that
 /// strips the tremble) are noticed over a dozen strikes; from then on the server adds the hands' tremble itself.</item>
@@ -29,6 +30,8 @@ public sealed class CraftRequestGuard
     public const double Jitter = 0.3;
     /// <summary>Strikes looked at to notice a tremble that is too small to be real.</summary>
     public const int TiltWindow = 12;
+    /// <summary>Blows it takes at the least to set a forge weld along a whole seam.</summary>
+    public const int MinWeldBlows = 6;
 
     /// <summary>A refilling allowance: <see cref="rate"/> per second, up to <see cref="cap"/>.</summary>
     public struct Allowance
@@ -80,7 +83,9 @@ public sealed class CraftRequestGuard
     private Allowance path = new Allowance(150, 600);
     private Allowance pours = new Allowance(0.5, 1);
     private Allowance cuts = new Allowance(0.75, 2);
-    private double lastStrike = double.NegativeInfinity;
+    private Allowance setting = new Allowance(2.5, 14);
+    private Allowance spinning = new Allowance(0.25, 1);
+    private double lastStrike = double.NegativeInfinity, lastSeen = double.NaN;
     private readonly Queue<double> tilts = new Queue<double>();
     private double tiltSum;
 
@@ -105,6 +110,9 @@ public sealed class CraftRequestGuard
     /// <summary>The steadiest the player's hands can be: fresh, with their practice (see <see cref="CraftHands.Unsteadiness"/>).</summary>
     public double Floor => Math.Max(0.004, 0.025 * (1 - 0.6 * Hands.skill));
 
+    /// <summary>The share of a full blow the arm has left (lenient: the client's own arm tires on more than blows).</summary>
+    public double ArmLeft => Math.Min(1, Hands.Strength + 0.15);
+
     /// <summary>The strongest blow a hammer raised for <paramref name="seconds"/> can strike (see <see cref="CraftHammer.Charge"/>).</summary>
     public static double MaxForce(double seconds)
     {
@@ -128,6 +136,9 @@ public sealed class CraftRequestGuard
             reason = "Slow down.";
             return false;
         }
+        if (!double.IsNaN(lastSeen) && now > lastSeen)
+            Hands.Rest(now - lastSeen);
+        lastSeen = double.IsNaN(lastSeen) ? now : Math.Max(lastSeen, now);
         switch (r.kind)
         {
             case CraftRequestKind.Strike:
@@ -139,7 +150,7 @@ public sealed class CraftRequestGuard
                 }
                 double since = now - lastStrike + Jitter;
                 lastStrike = now;
-                r.b = (float)Math.Min(r.b, MaxForce(since));
+                r.b = (float)Math.Min(r.b, MaxForce(since) * ArmLeft);
                 NoteTilt(r.c);
                 if (AddsTremble)
                 {
@@ -159,7 +170,8 @@ public sealed class CraftRequestGuard
                 }
                 double since = now - lastStrike + Jitter;
                 lastStrike = now;
-                r.a = (float)Math.Min(r.a, 1.5 * MaxForce(since));
+                r.a = (float)Math.Min(r.a, 1.5 * MaxForce(since) * ArmLeft);
+                Hands.Move(r.a / 1.5);
                 return true;
             }
             case CraftRequestKind.Bellows:
@@ -194,7 +206,7 @@ public sealed class CraftRequestGuard
                     r.b = (float)Math.Max(r.b, 0.4 * Floor); // spread
                 }
                 else
-                    r.a = (float)Math.Min(r.a, 4 * MaxForce(99)); // a hammer's force × 4
+                    r.a = (float)Math.Min(r.a, 4 * MaxForce(99) * ArmLeft); // a hammer's force × 4
                 return true;
             }
             case CraftRequestKind.Scrape:
@@ -220,11 +232,71 @@ public sealed class CraftRequestGuard
                     return false;
                 }
                 r.b = (float)Math.Min(r.b, 1 - 1.6 * Floor);
+                r.c = (float)CraftMath.Clamp(r.c, 0, 2);
+                r.d = (float)CraftMath.Clamp01(r.d);
+                r.i1 = Math.Max(0, Math.Min(1000, r.i1));
                 return true;
             case CraftRequestKind.Cut:
                 if (!cuts.TakeWhole(1, now))
                     return false;
                 r.a = (float)Math.Min(r.a, 0.995);
+                return true;
+            case CraftRequestKind.Fold:
+            case CraftRequestKind.Weld:
+            {
+                // The weld is set with hammer blows: a set it claims is worth only the blows that real time allowed.
+                int claimed = Math.Max(1, Math.Min(MaxCount, r.count));
+                double granted = setting.Take(claimed, now);
+                r.b = (float)(CraftMath.Clamp01(r.b > 0 ? r.b : 1) * Math.Min(1, granted / claimed) * Math.Min(1, granted / MinWeldBlows));
+                if (r.b <= 0) r.b = 0.001f;
+                return true;
+            }
+            case CraftRequestKind.Sieve:
+                r.b = (float)CraftMath.Clamp01(r.b);
+                return true;
+            case CraftRequestKind.Rive:
+            case CraftRequestKind.SawCut:
+            case CraftRequestKind.BendWood:
+                // A split, a cut, a bend: from the cuts allowance; never straighter, squarer or steadier than these hands.
+                if (!cuts.TakeWhole(1, now))
+                    return false;
+                if (r.kind == CraftRequestKind.Rive) { r.a = (float)Math.Max(CraftMath.Clamp01(r.a), 2 * Floor); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); }
+                else if (r.kind == CraftRequestKind.SawCut) { r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Max(CraftMath.Clamp01(r.b), 2 * Floor); r.c = (float)Math.Min(CraftMath.Clamp01(r.c), 1 - 4 * Floor); }
+                else { r.a = (float)CraftMath.Clamp(r.a, 0, 180); r.b = (float)CraftMath.Clamp01(r.b); }
+                return true;
+            case CraftRequestKind.StackWood:
+                r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)CraftMath.Clamp01(r.b); r.c = (float)CraftMath.Clamp01(r.c);
+                return true;
+            case CraftRequestKind.SandWood:
+                if (!Spend(ref work, ref r.b, now))
+                    return false;
+                r.a = (float)CraftMath.Clamp01(r.a); r.c = (float)CraftMath.Clamp01(r.c);
+                return true;
+            case CraftRequestKind.Varnish:
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 3 * Floor); r.b = (float)CraftMath.Clamp01(r.b);
+                return true;
+            case CraftRequestKind.Spin:
+                if (!spinning.TakeWhole(1, now))
+                {
+                    reason = "The wheel is still turning out the last hank.";
+                    return false;
+                }
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 6 * Floor); r.b = (float)CraftMath.Clamp01(r.b);
+                return true;
+            case CraftRequestKind.BrushOre:
+                // Seconds of brushing (from the washing allowance); a brush covers at most about two-fifths of a stone a second.
+                if (!Spend(ref washing, ref r.b, now))
+                    return false;
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), r.b * 0.4);
+                return true;
+            case CraftRequestKind.Carve:
+                // A knife stroke: from the strokes allowance; never deeper than a knife bites, never steadier than these hands.
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a = (float)CraftMath.Clamp(r.a, 0, 3);
+                r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor);
                 return true;
             case CraftRequestKind.PutItem:
             case CraftRequestKind.AddFuel:
@@ -232,6 +304,7 @@ public sealed class CraftRequestGuard
             case CraftRequestKind.FillVat:
             case CraftRequestKind.Attach:
                 r.count = Math.Max(0, Math.Min(MaxCount, r.count));
+                if (r.kind == CraftRequestKind.Flux) r.a = (float)CraftMath.Clamp01(r.a);
                 return true;
             default:
                 return true;

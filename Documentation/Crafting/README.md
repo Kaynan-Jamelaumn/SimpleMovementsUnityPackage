@@ -60,6 +60,7 @@ flowchart LR
     subgraph Scene["Scene side (Runtime, UI)"]
         ST["CraftStation<br/>(interactable, inventory)"]
         UI["CraftStationUI<br/>(work areas, minigames)"]
+        HO["CraftHandsOn<br/>(anvil, bellows, wheel, stone,<br/>tank, crucible in 3D)"]
         VIS["CraftStationVisuals<br/>(glow, sparks, steam, sounds)"]
         KN["CraftKnowledge<br/>(on the player, saved)"]
         DEP["OreDeposit"]
@@ -72,6 +73,7 @@ flowchart LR
     WS --> PIECE
     PIECE --> MET
     UI --> HANDS --> ST
+    UI --> HO --> HANDS
     ST --> EVAL --> ITEMS
     TPL --> ITEMS
     WS --> LOOK --> UI

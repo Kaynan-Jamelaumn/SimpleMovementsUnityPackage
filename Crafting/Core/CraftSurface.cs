@@ -21,13 +21,20 @@ using System.Collections.Generic;
 /// </summary>
 public static class CraftSurface
 {
-    public static void ApplyClay(CraftWorkshop ws, CraftPiece p, int from, int to, double thickness)
+    /// <summary>Clay on segments <paramref name="from"/>-<paramref name="to"/>: one thickness, or one per segment (painted on, from <paramref name="from"/>).</summary>
+    public static void ApplyClay(CraftWorkshop ws, CraftPiece p, int from, int to, double thickness, IList<float> perSegment = null)
     {
         if (p == null)
             return;
+        bool painted = perSegment != null && perSegment.Count > 0;
         for (int i = Math.Max(0, from); i <= Math.Min(p.segments.Count - 1, to); i++)
-            p.segments[i].clay = Math.Max(0, thickness);
-        p.Record(ws.Elapsed, CraftOpKind.ApplyClay, "Coated with clay", thickness);
+        {
+            int k = i - from;
+            double t = painted ? (k < perSegment.Count ? perSegment[k] : 0) : thickness;
+            if (painted && t <= 0.01) continue; // left bare
+            p.segments[i].clay = CraftMath.Clamp(t, 0, 6);
+        }
+        p.Record(ws.Elapsed, CraftOpKind.ApplyClay, painted ? "Clay painted on" : "Coated with clay", thickness);
     }
 
     private static IEnumerable<int> Range(CraftPiece p, int from, int to)
@@ -191,6 +198,44 @@ public static class CraftSurface
             $"{(wheel ? "Ground" : wood ? "Rasped" : "Filed")} ({sideName}{(side == CraftSurfaceSide.LeftBevel || side == CraftSurfaceSide.RightBevel ? $" at {angle:0}°" : "")})", pressure);
         if (wheel && !wood)
             ws.Raise(CraftEventKind.Ground, p.id, "sparks", CraftMetallurgy.Sparks(rules, prof), (float)pressure);
+    }
+
+    // ------------------------------------------------------------------ carving wood
+    /// <summary>What a knife stroke on wood takes off: the width, the thickness, both (rounding it), or a bore into the end (a tang slot).</summary>
+    public enum CarveCut { Width, Thickness, Round, Bore }
+
+    /// <summary>
+    /// A stroke of the carving knife along segments <c>i0</c>-<c>i1</c> (<c>i2</c> the cut, <c>a</c> how deep in mm,
+    /// <c>b</c> how steady the hand). A deep stroke against the grain splits the wood; a steady one leaves it smooth.
+    /// It never goes below 3 mm.
+    /// </summary>
+    public static void Carve(CraftWorkshop ws, CraftPiece p, CraftOperation op)
+    {
+        if (p == null || p.kind != CraftPieceKind.Wood)
+            return;
+        var cut = (CarveCut)op.i2;
+        double depth = CraftMath.Clamp(op.a, 0, 3), steady = CraftMath.Clamp01(op.b);
+        double take = depth * (0.7 + 0.3 * steady);
+        foreach (int i in Range(p, op.i0, op.i1))
+        {
+            MetalSegment s = p.segments[i];
+            switch (cut)
+            {
+                case CarveCut.Width: s.width = Math.Max(3, s.width - take); break;
+                case CarveCut.Thickness: s.thickness = Math.Max(3, s.thickness - take); break;
+                case CarveCut.Round:
+                    // Taking the corners off: both shrink toward the smaller, the section rounds.
+                    s.width = Math.Max(3, s.width - take * (s.width >= s.thickness ? 0.8 : 0.4));
+                    s.thickness = Math.Max(3, s.thickness - take * (s.thickness >= s.width ? 0.8 : 0.4));
+                    break;
+                case CarveCut.Bore: s.hole = Math.Min(Math.Min(s.width, s.thickness) * 0.7, s.hole + take); break;
+            }
+            s.rough += (Math.Max(12, 40 - 25 * steady) - s.rough) * 0.5;
+        }
+        // Forcing a deep cut, or a shaky one, splits it along the grain.
+        if (depth > 1.4 || steady < 0.35)
+            p.wood.split = Math.Min(1, p.wood.split + Math.Max(0, depth - 1.4) * 0.04 + Math.Max(0, 0.35 - steady) * 0.03);
+        p.Record(ws.Elapsed, CraftOpKind.Carve, cut == CarveCut.Bore ? "A slot bored for the tang" : $"Carved ({cut.ToString().ToLowerInvariant()})", depth);
     }
 
     // ------------------------------------------------------------------ polishing and coatings
@@ -365,6 +410,26 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
+    /// <summary>
+    /// A stroke of the carving knife on a wooden piece (on the bench): segments <paramref name="from"/>-<paramref name="to"/>,
+    /// what it cuts, how deep (mm, up to 3) and how steadily.
+    /// </summary>
+    public bool Carve(string id, int from, int to, CraftSurface.CarveCut cut, double depth, double steadiness, out string reason)
+    {
+        reason = "";
+        CraftPiece p = Piece(id);
+        if (!Has(CraftTools.Files))
+            return Refuse("There is no carving knife here.", out reason, id);
+        if (p == null || p.kind != CraftPieceKind.Wood)
+            return Refuse("Only wood is carved.", out reason, id);
+        if (p.location != CraftLocation.Air)
+            return Refuse("Take it onto the bench first.", out reason, id);
+        if (depth <= 0)
+            return Refuse("The knife did not bite.", out reason, id);
+        Record(new CraftOperation { kind = CraftOpKind.Carve, piece = id, i0 = from, i1 = to, i2 = (int)cut, a = (float)CraftMath.Clamp(depth, 0, 3), b = (float)CraftMath.Clamp01(steadiness) });
+        return true;
+    }
+
     /// <summary>Oils or waxes a metal or wooden piece.</summary>
     public bool Coat(string id, string supply, out string reason)
     {
@@ -381,8 +446,11 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
-    /// <summary>Coats segments with clay before hardening (thicker on the spine: a soft spine, a hard edge).</summary>
-    public bool ApplyClay(string id, int from, int to, double thickness, out string reason)
+    /// <summary>
+    /// Coats segments with clay before hardening (thicker on the spine: a soft spine, a hard edge): one thickness, or
+    /// <paramref name="perSegment"/> thicknesses (mm, from <paramref name="from"/>) as it was painted on.
+    /// </summary>
+    public bool ApplyClay(string id, int from, int to, double thickness, out string reason, IList<float> perSegment = null)
     {
         reason = "";
         CraftPiece p = Piece(id);
@@ -390,7 +458,10 @@ public sealed partial class CraftWorkshop
             return Refuse("Clay goes on a blade.", out reason, id);
         if (p.MaxTemperature > 200)
             return Refuse("Clay it while it is cold.", out reason, id);
-        Record(new CraftOperation { kind = CraftOpKind.ApplyClay, piece = id, i0 = from, i1 = to, a = (float)thickness });
+        var op = new CraftOperation { kind = CraftOpKind.ApplyClay, piece = id, i0 = from, i1 = to, a = (float)thickness };
+        if (perSegment != null)
+            for (int i = 0; i < perSegment.Count && i < 512; i++) op.points.Add((float)CraftMath.Clamp(perSegment[i], 0, 6));
+        Record(op);
         return true;
     }
 

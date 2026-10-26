@@ -27,6 +27,9 @@ public sealed class GlobalInputBinding : IDisposable
     private readonly bool createAction;
     private readonly bool quietWhilePaused;
     private readonly UnityEngine.Object context;
+    private readonly string map = InputActionResolver.DefaultMap;
+    private readonly InputActionType type = InputActionType.Button;
+    private readonly string controlType;
     private InputAction action;
     private InputAction fallback;
     private bool loggedCreated;
@@ -38,8 +41,12 @@ public sealed class GlobalInputBinding : IDisposable
     /// <summary>Whatever is read: the action, else the standalone fallback (key prompts).</summary>
     public InputAction ReadAction => action ?? fallback;
 
-    private GlobalInputBinding(string[] names, IList<string> defaultControls, string label, bool createAction, bool quietWhilePaused, UnityEngine.Object context)
+    private GlobalInputBinding(string[] names, IList<string> defaultControls, string label, bool createAction, bool quietWhilePaused, UnityEngine.Object context,
+        string map = InputActionResolver.DefaultMap, InputActionType type = InputActionType.Button, string controlType = null)
     {
+        this.map = string.IsNullOrWhiteSpace(map) ? InputActionResolver.DefaultMap : map;
+        this.type = type;
+        this.controlType = controlType;
         this.names = names;
         if (defaultControls != null)
             foreach (string c in defaultControls)
@@ -58,6 +65,23 @@ public sealed class GlobalInputBinding : IDisposable
         bool quietWhilePaused = false, UnityEngine.Object context = null)
     {
         var b = new GlobalInputBinding(names, defaultControls, label, createAction, quietWhilePaused, context);
+        return Start(b);
+    }
+
+    /// <summary>
+    /// An input of its own action map (<paramref name="map"/>, created in the input actions when they lack it), of any
+    /// type: a button, or a value such as the pointer's position (<paramref name="type"/> Value, control type
+    /// "Vector2"). Its actions are rebindable and saved like the others, and never paused with the gameplay keys.
+    /// </summary>
+    public static GlobalInputBinding CreateIn(string map, string[] names, IList<string> defaultControls, string label,
+        InputActionType type = InputActionType.Button, string controlType = null, bool quietWhilePaused = true, UnityEngine.Object context = null)
+    {
+        var b = new GlobalInputBinding(names, defaultControls, label, true, quietWhilePaused, context, map, type, controlType);
+        return Start(b);
+    }
+
+    private static GlobalInputBinding Start(GlobalInputBinding b)
+    {
         if (live.Count == 0)
             InputBindingStore.Changed += OnStoreChanged;
         live.Add(b);
@@ -73,6 +97,29 @@ public sealed class GlobalInputBinding : IDisposable
 
     public bool Held => Live && ReadAction != null && ReadAction.IsPressed();
 
+    /// <summary>A value input's current value (the pointer's position, the scroll); zero while quiet.</summary>
+    public Vector2 ReadVector2()
+    {
+        if (!Live || ReadAction == null)
+            return Vector2.zero;
+        try { return ReadAction.ReadValue<Vector2>(); }
+        catch (InvalidOperationException) { return Vector2.zero; } // bound to a control of another kind
+    }
+
+    /// <summary>The key or button for the device in use ("R", "Left Button", "Right Shoulder"), else the first one bound.</summary>
+    public string KeyLabel
+    {
+        get
+        {
+            InputAction a = ReadAction;
+            if (a == null)
+                return "";
+            string s = InputDeviceTracker.DisplayString(a);
+            if (string.IsNullOrEmpty(s))
+                s = InputDeviceTracker.DisplayString(a, InputDeviceTracker.Kind.KeyboardMouse);
+            return s;
+        }
+    }
     public void Dispose()
     {
         if (!live.Remove(this))
@@ -129,7 +176,8 @@ public sealed class GlobalInputBinding : IDisposable
         if (action == null && createAction && asset != null && controls.Count > 0 && names != null && names.Length > 0 &&
             !string.IsNullOrWhiteSpace(names[0]))
         {
-            action = InputActionResolver.Create(asset, names[0], controls, out string error, remember: false);
+            action = InputActionResolver.Create(asset, names[0], controls, out string error, map, false, type, controlType,
+                map != InputActionResolver.DefaultMap);
             if (action != null)
                 createdName = names[0];
             else if (error != null)
@@ -143,7 +191,7 @@ public sealed class GlobalInputBinding : IDisposable
         }
         else
         {
-            fallback = InputActionResolver.Standalone(label, controls);
+            fallback = InputActionResolver.Standalone(label, controls, type, controlType);
             Source = fallback != null ? $"{InputActionResolver.Describe(controls)} (fallback)" : "none";
         }
 
@@ -155,7 +203,8 @@ public sealed class GlobalInputBinding : IDisposable
             loggedCreated = true;
             Source += " (created)";
             // Every other copy (the players', the Key Bindings menu) gets it too; this raises Changed (handled below).
-            InputBindingStore.RememberCreatedAction(action.actionMap != null ? action.actionMap.name : "Player", createdName, controls);
+            InputBindingStore.RememberCreatedAction(action.actionMap != null ? action.actionMap.name : "Player", createdName, controls, type, controlType,
+                map != InputActionResolver.DefaultMap);
         }
     }
 

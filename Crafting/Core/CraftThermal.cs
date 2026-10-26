@@ -201,8 +201,13 @@ public static class CraftThermal
                 return;
             case CraftLocation.Ashes:
                 env = ws.AshTemperature;
-                transfer = s.ashTransfer;
+                transfer = s.ashTransfer * (2 - CraftMath.Clamp01(p.depth)); // well buried (1) it cools slowest; half covered faster
                 oxygen = 0.15;
+                return;
+            case CraftLocation.Steam:
+                env = 100;
+                transfer = s.ovenTransfer * 1.5;
+                oxygen = 0;
                 return;
             case CraftLocation.Vat:
             {

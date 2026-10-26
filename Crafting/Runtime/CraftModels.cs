@@ -263,7 +263,7 @@ public static class CraftModels
     /// takes down to the edge - following the bend, joined face by face (hard edges) and capped. Millimetres become
     /// metres; the length runs along +Y, the width along X (the edge toward +X), the thickness along Z.
     /// </summary>
-    private static Mesh BarMesh(CraftPiece p, bool centred)
+    private static Mesh BarMesh(CraftPiece p, bool centred, bool perSegment = false)
     {
         List<MetalSegment> segs = p.segments;
         int n = segs.Count;
@@ -299,9 +299,11 @@ public static class CraftModels
             }
         }
         var v = new List<Vector3>();
-        var tri = new List<int>();
+        var tris = new List<List<int>>();
         for (int k = 0; k < n; k++)
         {
+            if (perSegment || k == 0) tris.Add(new List<int>());
+            List<int> tri = tris[tris.Count - 1];
             Vector3[] r0 = rings[k], r1 = rings[k + 1];
             Vector3 axis = (Center(r0) + Center(r1)) * 0.5f;
             for (int s = 0; s < r0.Length; s++)
@@ -310,15 +312,59 @@ public static class CraftModels
                 Quad(v, tri, r0[s], r1[s], r1[s2], r0[s2], axis);
             }
         }
-        Cap(v, tri, rings[0], Center(rings[Math.Min(1, n)]));
-        Cap(v, tri, rings[n], Center(rings[Math.Max(0, n - 1)]));
+        Cap(v, tris[0], rings[0], Center(rings[Math.Min(1, n)]));
+        Cap(v, tris[tris.Count - 1], rings[n], Center(rings[Math.Max(0, n - 1)]));
         if (centred)
         {
             Vector3 mid = (Center(rings[0]) + Center(rings[n])) * 0.5f;
             for (int i = 0; i < v.Count; i++) v[i] -= mid;
         }
-        return Build("Bar", v, tri);
+        if (tris.Count == 1)
+            return Build("Bar", v, tris[0]);
+        var mesh = new Mesh { name = "Bar (by segment)", hideFlags = HideFlags.DontSave };
+        if (v.Count > 65000)
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.SetVertices(v);
+        mesh.subMeshCount = tris.Count;
+        for (int i = 0; i < tris.Count; i++)
+            mesh.SetTriangles(tris[i], i);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
     }
+
+    // ------------------------------------------------------------------ for the hands-on work places
+    /// <summary>
+    /// A metal or wooden piece as it is now, one sub-mesh per segment (so each can glow at its own heat), along +Y from
+    /// its start (or centred). Null when it has no segments.
+    /// </summary>
+    public static Mesh PieceMesh(CraftPiece p, bool centred) => p != null && p.segments.Count > 0 ? BarMesh(p, centred, true) : null;
+
+    /// <summary>A shared material of <paramref name="c"/> that glows with <paramref name="glow"/> at <paramref name="strength"/> (0-1): hot metal.</summary>
+    public static Material Glowing(Color c, bool metal, float smooth, Color glow, float strength)
+    {
+        strength = Mathf.Clamp01(strength);
+        if (strength < 0.02f)
+            return MaterialFor(c, metal, smooth);
+        int key = Mathf.RoundToInt(c.r * 15) | Mathf.RoundToInt(c.g * 15) << 4 | Mathf.RoundToInt(c.b * 15) << 8 | Mathf.RoundToInt(glow.r * 15) << 12
+                  | Mathf.RoundToInt(glow.g * 15) << 16 | Mathf.RoundToInt(glow.b * 15) << 20 | Mathf.RoundToInt(strength * 15) << 24 | 1 << 30 | (metal ? int.MinValue : 0);
+        if (materials.TryGetValue(key, out Material m) && m != null)
+            return m;
+        m = MaterialFor(c, metal, smooth);
+        if (m == null)
+            return null;
+        m = new Material(m) { name = "Hot Metal", hideFlags = HideFlags.DontSave };
+        Color hot = Color.Lerp(c, glow, strength);
+        m.color = hot;
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", hot);
+        m.EnableKeyword("_EMISSION");
+        if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", glow * (strength * strength * 3f));
+        materials[key] = m;
+        return m;
+    }
+
+    /// <summary>A shared plain material (props of the work places).</summary>
+    public static Material Plain(Color c, bool metal = false, float smooth = 0.3f) => MaterialFor(c, metal, smooth);
 
     /// <summary>A hide or a cut part: its cells as a sheet of its thickness, with sides where a neighbour is missing.</summary>
     private static Mesh HideMesh(CraftRules rules, HideState h, bool centred, out Color color)

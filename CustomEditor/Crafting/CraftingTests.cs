@@ -147,6 +147,61 @@ namespace CraftingSystem.Tests
         }
 
         [Test]
+        public void LeatherFinishing_AtTheBeamOrTheBench()
+        {
+            foreach (CraftTools tools in new[] { CraftTools.Tannery, CraftTools.Leatherworks })
+            {
+                CraftWorkshop w = Workshop(tools);
+                string hide = w.AddPiece(CraftLeather.NewHide(w.Rules, "cow", 2));
+                var path = new List<float> { 2, 2, 6, 2 };
+                Assert.IsTrue(w.Slick(hide, path, 0.5, out string why), $"{tools}: {why}");
+                Assert.IsTrue(w.Skive(hide, path, 0.3, out why), $"{tools}: {why}");
+                Assert.IsTrue(w.Stake(hide, path, 0.5, out why), $"{tools}: {why}");
+            }
+            Assert.IsFalse(Workshop(CraftTools.Smithy).Slick("x", new List<float> { 0, 0 }, 0.5, out string none));
+            StringAssert.Contains("leather bench", none);
+        }
+
+        [Test]
+        public void DesignMenu_GroupsByCategoryAndMaterial()
+        {
+            CraftRules rules = Rules();
+            void Is(string id, string category, string group)
+            {
+                CraftDesignMenu.Of(rules.Design(id), out string c, out string g);
+                Assert.AreEqual(category + "/" + group, c + "/" + g, id);
+            }
+            Is("longsword", CraftDesignMenu.Weapons, "Swords");
+            Is("halberd", CraftDesignMenu.Weapons, "Spears and polearms");
+            Is("breastplate", CraftDesignMenu.Armour, "Plate");
+            Is("leather_jerkin", CraftDesignMenu.Armour, "Leather");
+            Is("padded_gambeson", CraftDesignMenu.Armour, "Padded");
+            Is("linen_shirt", CraftDesignMenu.Clothing, "Body");
+            Is("kite_shield", CraftDesignMenu.Shields, "Wooden");
+            Is("scythe", CraftDesignMenu.Tools, "Blades");
+            CraftDesign custom = rules.Design("dagger");
+            custom.menuGroup = "Heirlooms/Knives";
+            CraftDesignMenu.Of(custom, out string cc, out string gg);
+            Assert.AreEqual("Heirlooms/Knives", cc + "/" + gg, "a design's own menu group wins");
+        }
+
+        [Test]
+        public void Content_AddMissing_CatchesUpWithoutTouchingChanges()
+        {
+            CraftContent old = CraftDefaults.Content();
+            old.designs.RemoveAll(d => d.id != "dagger");
+            old.designs[0].price = 999;
+            int before = old.designs.Count;
+            int added = old.AddMissing(CraftDefaults.Content());
+            Assert.Greater(added, 50);
+            Assert.AreEqual(999, old.designs.Find(d => d.id == "dagger").price, "the project's own change stays");
+            Assert.IsNotNull(old.designs.Find(d => d.id == "longsword"));
+            Assert.AreEqual(0, old.AddMissing(CraftDefaults.Content()), "nothing twice");
+            Assert.IsEmpty(CraftRules.Compile(new CraftSimulationSettings(), old).CompileErrors);
+            Assert.Greater(old.designs.Count, before);
+        }
+
+        [Test]
         public void Content_ExtendsWithoutCodeChanges()
         {
             CraftContent content = CraftDefaults.Content();
@@ -969,6 +1024,42 @@ namespace CraftingSystem.Tests
         }
 
         [Test]
+        public void TiredArm_StrikesWeaker_LessTrue_AndSlips()
+        {
+            List<CraftBlow> Blows(double fatigue)
+            {
+                var list = new List<CraftBlow>();
+                for (int seed = 0; seed < 60; seed++)
+                {
+                    var hands = new CraftHands(seed) { fatigue = fatigue };
+                    var hammer = new CraftHammer();
+                    hammer.Tick(2);
+                    hammer.Raise();
+                    for (double t = 0; t < 0.9; t += 0.02) hammer.Tick(0.02);
+                    list.Add(hammer.Release(0.5, 0, hands));
+                }
+                return list;
+            }
+            List<CraftBlow> fresh = Blows(0), spent = Blows(0.95);
+            Assert.AreEqual(0, fresh.Count(b => b.slipped), "a fresh arm does not slip");
+            Assert.Greater(spent.Count(b => b.slipped), 3, "a spent arm slips now and then");
+            Assert.Greater(fresh.Average(b => b.force), spent.Where(b => !b.slipped).Average(b => b.force) + 0.25, "a tired arm cannot lift it as high");
+            CraftBlow slip = spent.First(b => b.slipped);
+            Assert.Greater(slip.miss, 0.04, "a slipped blow lands off its mark");
+            Assert.Greater(Math.Abs(slip.tilt), 0.3, "and glances off at a tilt");
+            Assert.IsNotEmpty(slip.Words);
+
+            // It rests: slowly while it works, properly once it is still.
+            var arm = new CraftHands(1) { fatigue = 0.8 };
+            arm.Rest(1);
+            double working = arm.fatigue;
+            Assert.Greater(working, 0.79);
+            arm.Rest(20);
+            Assert.Less(arm.fatigue, 0.45, "twenty seconds of rest takes away about half");
+            Assert.Greater(new CraftHands(1).Strength, new CraftHands(1) { fatigue = 0.9 }.Strength + 0.4);
+        }
+
+        [Test]
         public void Stroke_MeasuresWhatTheHandsDid()
         {
             var s = new CraftStroke();
@@ -991,6 +1082,60 @@ namespace CraftingSystem.Tests
             var tired = new CraftHands(2) { fatigue = 1 };
             for (int k = 0; k <= 60; k++) shaky.Add(k * 0.05, k / 60.0, 0.5, 15, 0.5, tired);
             Assert.Greater(shaky.Wobble, s.Wobble);
+        }
+
+        [Test]
+        public void Casting_TakesTheShapeOfTheDesignsPart_AndAPoorPourCosts()
+        {
+            CraftWorkshop Melted(out double melt)
+            {
+                CraftWorkshop w = Workshop(CraftTools.Forge | CraftTools.Crucible);
+                string ingot = w.AddPiece(CraftDefaults.Bar(w.Rules, 300, 60, 30, Metal("Bronze")));
+                Assert.IsTrue(w.MovePiece(ingot, CraftLocation.Melt, out string why), why);
+                LightForge(w, 10);
+                for (int t = 0; t < 5000 && w.Crucible.Mass < 1; t++) { if (t % 5 == 0) w.Bellows(0.8); w.RunSteps(1); }
+                for (int t = 0; t < 200; t++) { if (t % 5 == 0) w.Bellows(0.5); w.RunSteps(1); }
+                melt = w.Crucible.Mass;
+                return w;
+            }
+            CraftWorkshop a = Melted(out double before);
+            string id = CraftRules.PatternMoldId("hatchet", "head");
+            CraftMold mold = a.Rules.Mold(id);
+            Assert.IsNotNull(mold, "every castable metal part has a mould in its shape");
+            Assert.IsTrue(a.Rules.AllMolds().Any(m => m.id == id));
+            string head = a.Pour(id, 0.6, 0.9, 0, out string why);
+            Assert.IsNotNull(head, why);
+            CraftPiece cast = a.Piece(head);
+            Assert.AreEqual("hatchet", cast.intentDesign, "what is cast in the part's mould is meant for that part");
+            Assert.AreEqual("head", cast.intentRole);
+            CraftShapeTarget shape = a.Rules.Design("hatchet").Component("head").shape;
+            Assert.That(cast.Length, Is.InRange(shape.lengthMin * 0.95, shape.lengthMax * 1.05), "it comes out the part's length");
+            shape.At(0.9f, out float w9, out _);
+            Assert.AreEqual(w9, cast.segments[cast.SegmentAt(0.9)].width, w9 * 0.15, "and its outline");
+
+            // A careless pour: metal on the floor, a mould that ran over, a mould left half full.
+            CraftWorkshop b = Melted(out _);
+            string sloppy = b.Pour(id, 0.6, 0.9, 0, out why, 0.5, 0.6);
+            Assert.IsNotNull(sloppy, why);
+            Assert.Less(b.Crucible.Mass, a.Crucible.Mass - b.Piece(sloppy).Mass(b.Rules) * 0.3, "what splashed on the sand is lost");
+            Assert.Greater(b.Piece(sloppy).segments.Average(g => g.rough), cast.segments.Average(g => g.rough), "metal that ran over leaves flash to file off");
+            CraftWorkshop c = Melted(out _);
+            string half = c.Pour(id, 0.6, 0.9, 0, out why, 0, 0, 0.5);
+            Assert.IsNotNull(half, why);
+            Assert.Less(c.Piece(half).Length, cast.Length * 0.7, "a pour stopped halfway is a short casting");
+            Assert.IsTrue(c.Piece(half).defects.Any(d => d.kind == CraftDefectKind.Misrun));
+        }
+
+        [Test]
+        public void PourControl_SpillsOffTheMouth_AndRunsOverWhenFull()
+        {
+            var p = new CraftPourControl();
+            for (int i = 0; i < 100; i++) p.Tick(0.05, 0.9, null, 4, i % 2 == 0);
+            Assert.Greater(p.Spilled, 0.1, "the stream that misses the mouth splashes on the sand");
+            for (int i = 0; i < 200; i++) p.Tick(0.05, 0.9, null);
+            Assert.IsTrue(p.Full);
+            Assert.Greater(p.Overflow, 0.1, "poured on after it is full, it runs over");
+            Assert.Greater(p.SpillShare, 0.1);
         }
 
         [Test]
@@ -1022,6 +1167,269 @@ namespace CraftingSystem.Tests
             Assert.Less(good.MeanError, 0.05);
             Assert.Greater(bad.MeanError, good.MeanError);
             Assert.AreEqual(0.6, good.Pull, 1e-9);
+        }
+
+        // ------------------------------------------------------------------ the work of the hands
+        [Test]
+        public void Carving_ShapesWood_AndForcingItSplits()
+        {
+            CraftWorkshop w = Workshop();
+            string blank = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 140, 40, 40));
+            double w0 = w.Piece(blank).segments[2].width;
+            for (int k = 0; k < 4; k++)
+                Assert.IsTrue(w.Carve(blank, 0, w.Piece(blank).segments.Count - 1, CraftSurface.CarveCut.Width, 1.0, 0.9, out string why), why);
+            CraftPiece p = w.Piece(blank);
+            Assert.Less(p.segments[2].width, w0 - 3, "steady strokes take the width down");
+            Assert.AreEqual(40, p.segments[2].thickness, 1e-9, "a width stroke leaves the thickness");
+            Assert.Less(p.wood.split, 0.01, "steady, moderate strokes do not split it");
+            for (int k = 0; k < 6; k++)
+                Assert.IsTrue(w.Carve(blank, 0, 3, CraftSurface.CarveCut.Round, 3, 0.2, out string why), why);
+            Assert.Greater(w.Piece(blank).wood.split, 0.1, "forcing deep, shaky cuts splits it along the grain");
+            Assert.IsTrue(w.Carve(blank, 0, 0, CraftSurface.CarveCut.Bore, 2, 0.8, out string bw), bw);
+            Assert.Greater(w.Piece(blank).segments[0].hole, 1, "boring opens a slot for the tang");
+            Assert.IsFalse(w.Carve(Bar(w, "Mild steel"), 0, 3, CraftSurface.CarveCut.Width, 1, 1, out _), "metal is not carved");
+            Assert.IsNotNull(w.SplitPiece(blank, 0.8, out string sw), sw); // the saw needs no anvil for wood
+        }
+
+        [Test]
+        public void Crucible_SolidPieceCanBeLiftedOut()
+        {
+            CraftWorkshop w = Workshop(CraftTools.Forge | CraftTools.Crucible);
+            string cu = w.AddPiece(CraftDefaults.Bar(w.Rules, 60, 20, 10, ("copper", 1.0)));
+            Assert.IsTrue(w.MovePiece(cu, CraftLocation.Melt, out string why), why);
+            w.RunSteps(5);
+            Assert.IsFalse(w.MovePiece(cu, CraftLocation.Fire, out _), "from the crucible only back onto the bench");
+            Assert.IsTrue(w.MovePiece(cu, CraftLocation.Air, out why), "a piece that has not melted is lifted out with the tongs: " + why);
+            Assert.AreEqual(CraftLocation.Air, w.Piece(cu).location);
+        }
+
+        [Test]
+        public void ForgeWeld_SetPoorly_Delaminates()
+        {
+            double Delamination(double set)
+            {
+                CraftWorkshop w = Workshop();
+                string bar = Bar(w, "Mild steel", 200, 30, 6);
+                LightForge(w, 12);
+                // To welding heat: deep in a hard-blown fire, fluxed, then folded straight out of it.
+                CraftAlloyProfile prof = w.Piece(bar).Profile(w.Rules);
+                double weld = prof.BurnTemperature - w.Rules.Settings.weldingMargin - 40;
+                Assert.IsTrue(w.MovePiece(bar, CraftLocation.Fire, out string mw, 1), mw);
+                for (int t = 0; t < 8000 && w.Piece(bar).MeanTemperature < weld; t++)
+                {
+                    if (t % 3 == 0) w.Bellows(1);
+                    if (t % 500 == 499) w.AddFuel("charcoal", 3, out _);
+                    w.RunSteps(1);
+                }
+                Assert.IsTrue(w.AddFlux("borax", 2, 2, out string fw, bar, 1), fw);
+                Assert.IsTrue(w.MovePiece(bar, CraftLocation.Air, out mw), mw);
+                Assert.Greater(CraftForging.WeldQuality(w.Rules, w.Piece(bar)), 0.3, "at welding heat");
+                Assert.IsTrue(w.Fold(bar, out string why, set), why);
+                return w.Piece(bar).defects.Where(d => d.kind == CraftDefectKind.Delamination).Sum(d => d.severity);
+            }
+            Assert.Greater(Delamination(0.1), Delamination(1) + 0.1, "a weld the hammer barely set does not take");
+        }
+
+        [Test]
+        public void HandSpreadFlux_AndSieving_CountTheHands()
+        {
+            CraftWorkshop w = Workshop();
+            string a = Bar(w, "Mild steel"), b = Bar(w, "Mild steel");
+            LightForge(w, 10);
+            HeatTo(w, a, 800);
+            Assert.IsTrue(w.AddFlux("borax", 1, 2, out string fa, a, 1), fa);
+            double fluxA = w.Piece(a).flux; // it burns off while the other bar heats
+            HeatTo(w, b, 800);
+            Assert.IsTrue(w.AddFlux("borax", 1, 2, out string fb, b, 0.3), fb);
+            Assert.Greater(fluxA, w.Piece(b).flux + 0.2, "flux sprinkled over a third of it does a third of the work");
+
+            string lazy = w.AddPiece(CraftOres.NewLump(w.Rules, "bog_iron", 9, 0)), thorough = w.AddPiece(CraftOres.NewLump(w.Rules, "bog_iron", 9, 0));
+            foreach (string id in new[] { lazy, thorough })
+                for (int f = w.Piece(id).ore.fragments.Count - 1; f >= 0; f--) w.CrushOre(id, f, 1.2, out _);
+            double mesh = w.Piece(thorough).ore.fragments.Max(f => f.size) * 0.7;
+            string fl = w.SieveOre(lazy, mesh, out _, 0.1), ft = w.SieveOre(thorough, mesh, out _, 1);
+            int Count(string id) => id != null ? w.Piece(id).ore.fragments.Count : 0;
+            Assert.GreaterOrEqual(Count(ft), Count(fl), "a thorough shaking lets more of the small fragments through");
+        }
+
+        [Test]
+        public void Brushing_CleansAStone_AndTheWireBrushTakesTheRind()
+        {
+            CraftWorkshop w = Workshop();
+            OreFragment Stone(string ore, CraftOreBrush brush, double cover, out OreFragment before)
+            {
+                string id = w.AddPiece(CraftOres.NewLump(w.Rules, ore, 4, 0));
+                before = w.Piece(id).ore.fragments[0].Clone();
+                Assert.IsTrue(w.BrushOre(id, 0, brush, cover, out string why), why);
+                return w.Piece(id).ore.fragments[0];
+            }
+            double Dirt(OreFragment f) => f.mass * f.dirt;
+            double Rock(OreFragment f) => f.mass * f.gangue;
+            double Mineral(OreFragment f) => f.mass * f.mineral;
+
+            OreFragment soft = Stone("hematite", CraftOreBrush.Soft, 1, out OreFragment s0);
+            Assert.Less(Dirt(soft), Dirt(s0) * 0.5, "a soft brush takes the loose dirt");
+            Assert.AreEqual(Rock(s0), Rock(soft), 1e-9, "but leaves the rock");
+            Assert.AreEqual(Mineral(s0), Mineral(soft), 1e-9, "and loses no ore (nothing washes away)");
+
+            OreFragment wire = Stone("hematite", CraftOreBrush.Wire, 1, out OreFragment w0);
+            Assert.Less(Rock(wire), Rock(w0) * 0.97, "a wire brush knocks the weathered rind off");
+            Assert.Less(Mineral(wire), Mineral(w0), "and scratches a little ore away with it");
+            Assert.Greater(wire.mineral, w0.mineral, "the stone is richer for it");
+
+            OreFragment clayWithSoft = Stone("bog_iron", CraftOreBrush.Soft, 1, out OreFragment c0);
+            OreFragment clayWithStiff = Stone("bog_iron", CraftOreBrush.Stiff, 1, out OreFragment c1);
+            Assert.Greater(Dirt(clayWithSoft) / Dirt(c0), Dirt(clayWithStiff) / Dirt(c1) + 0.3, "caked clay needs a stiff brush");
+
+            OreFragment half = Stone("hematite", CraftOreBrush.Stiff, 0.3, out OreFragment h0);
+            OreFragment full = Stone("hematite", CraftOreBrush.Stiff, 1, out OreFragment h1);
+            Assert.Greater(Dirt(half) / Dirt(h0), Dirt(full) / Dirt(h1), "the brush cleans what it went over");
+            Assert.IsFalse(w.BrushOre("nope", 0, CraftOreBrush.Soft, 1, out _));
+        }
+
+        // ------------------------------------------------------------------ the woodshop
+        [Test]
+        public void Riving_AlongTheGrain_GivesStraightStrongStock()
+        {
+            CraftWorkshop w = Workshop();
+            string good = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 600, 40, 40)), bad = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 600, 40, 40));
+            string goodHalf = w.Rive(good, 0.05, 0.9, out string why);
+            Assert.IsNotNull(goodHalf, why);
+            string badHalf = w.Rive(bad, 0.7, 0.9, out why);
+            Assert.IsNotNull(badHalf, why);
+            Assert.Less(w.Piece(good).wood.runout, 0.2, "following the grain leaves it straighter-grained than sawn stock");
+            Assert.Greater(w.Piece(bad).wood.runout, 0.45, "a split that wandered cuts across the fibres");
+            Assert.Less(w.Piece(badHalf).Length, w.Piece(goodHalf).Length - 50, "a split that ran out leaves a short, tapering half");
+            Assert.AreEqual(19, w.Piece(good).segments[0].width, 0.5, "each half is half as wide");
+            Assert.Greater(CraftEvaluator.Piece(w.Rules, w.Piece(good)).WoodToughness, CraftEvaluator.Piece(w.Rules, w.Piece(bad)).WoodToughness + 0.1);
+            Assert.IsNull(w.Rive(w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 300, 14, 14)), 0, 1, out why), "too narrow to rive again");
+        }
+
+        [Test]
+        public void SteamBending_BendsHotWood_AndCrackesColdOrForcedWood()
+        {
+            CraftWorkshop w = Workshop();
+            string Steamed()
+            {
+                string id = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 500, 30, 12));
+                Assert.IsTrue(w.MovePiece(id, CraftLocation.Steam, out string why), why);
+                for (int t = 0; t < 20000 && w.Piece(id).wood.steamed < 1; t++) w.RunSteps(1);
+                Assert.GreaterOrEqual(w.Piece(id).wood.steamed, 1, "it steams through in time");
+                Assert.IsTrue(w.MovePiece(id, CraftLocation.Air, out why), why);
+                Assert.Greater(CraftWoodwork.Plasticity(w.Piece(id)), 0.6, "out of the steam it is soft");
+                return id;
+            }
+            double Bent(string id) => w.Piece(id).segments.Sum(g => g.bend);
+            bool Cracked(string id) => w.Piece(id).defects.Any(d => d.kind == CraftDefectKind.Crack);
+
+            string cold = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 500, 30, 12));
+            Assert.IsTrue(w.BendWood(cold, 2, 6, 90, 0.3, true, out string why2), why2);
+            Assert.IsTrue(Cracked(cold), "bent cold, the outside of the bend tears");
+
+            string slow = Steamed();
+            Assert.IsTrue(w.BendWood(slow, 2, 6, 90, 0.2, true, out why2), why2);
+            Assert.IsFalse(Cracked(slow), "steamed through and bent steadily over the form with the strap, it takes the bend");
+            Assert.Greater(Bent(slow), 70, "and keeps most of it");
+            Assert.Greater(Bent(slow), Bent(cold) + 15);
+
+            string rushed = Steamed();
+            Assert.IsTrue(w.BendWood(rushed, 2, 6, 120, 1, false, out why2), why2);
+            Assert.IsTrue(Cracked(rushed), "forced round at once without the strap, it tears");
+            w.RunSteps(3000);
+            Assert.Less(CraftWoodwork.Plasticity(w.Piece(slow)), 0.2, "cooled, it sets");
+        }
+
+        [Test]
+        public void Seasoning_TooFastChecksTheWood()
+        {
+            CraftWorkshop w = Workshop();
+            string Green()
+            {
+                string id = w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "oak", 600, 60, 40));
+                w.Piece(id).wood.moisture = 0.35;
+                return id;
+            }
+            string careful = Green(), hasty = Green();
+            Assert.IsTrue(w.StackWood(careful, 1, 1, 1, out string why), why);
+            Assert.IsTrue(w.StackWood(hasty, 0.2, 0, 0, out why), why);
+            Assert.AreEqual(CraftLocation.Stack, w.Piece(careful).location);
+            w.RunSteps(6000);
+            Assert.Less(w.Piece(careful).wood.moisture, 0.25, "it dries in the stack");
+            Assert.Less(w.Piece(hasty).wood.moisture, w.Piece(careful).wood.moisture, "in the open sun, faster");
+            Assert.Greater(w.Piece(hasty).wood.checks, w.Piece(careful).wood.checks + 0.03, "and dried too fast, unsealed, it checks");
+            Assert.Greater(w.Piece(hasty).segments.Sum(g => Math.Abs(g.bend)), w.Piece(careful).segments.Sum(g => Math.Abs(g.bend)), "unevenly stickered, it warps");
+        }
+
+        [Test]
+        public void Varnish_TakesOnDrySandedWood()
+        {
+            CraftWorkshop w = Workshop();
+            string Blank() => w.AddPiece(CraftDefaults.WoodBlank(w.Rules, "ash", 300, 30, 30));
+            string sanded = Blank(), rough = Blank(), damp = Blank();
+            int n = w.Piece(sanded).segments.Count - 1;
+            Assert.IsTrue(w.SandWood(sanded, 0, n, 0.4, 10, 1, out string why), why);
+            Assert.IsTrue(w.SandWood(sanded, 0, n, 0.9, 10, 1, out why), why);
+            Assert.Less(w.Piece(sanded).segments.Average(g => g.rough), 20, "sanded fine along the grain it is smooth");
+            w.Piece(damp).wood.moisture = 0.3;
+            foreach (string id in new[] { sanded, rough, damp })
+                Assert.IsTrue(w.Varnish(id, "spirit_varnish", 0, n, 0.9, 0.5, out why), why);
+            Assert.Greater(w.Piece(sanded).wood.finishEven, w.Piece(rough).wood.finishEven + 0.15, "over a rough surface it is blotchy");
+            Assert.Less(w.Piece(damp).wood.finish, w.Piece(sanded).wood.finish * 0.6, "on damp wood it does not take");
+            Assert.Greater(CraftWoodwork.FinishProtection(w.Piece(sanded).wood), CraftWoodwork.FinishProtection(w.Piece(rough).wood));
+            Assert.IsFalse(w.Varnish(sanded, "borax", 0, n, 1, 0.5, out _), "only a varnish or an oil");
+        }
+
+        // ------------------------------------------------------------------ the tailor's
+        [Test]
+        public void Spinning_EvenDraftGivesFineThread()
+        {
+            CraftRules r = Rules();
+            CraftSupplyDefinition wool = r.Supply("wool_fibre");
+            Assert.IsNotNull(wool);
+            Assert.AreEqual("fine_wool_yarn", CraftTextiles.Spun(r, wool, 0.95, 0.5));
+            Assert.AreEqual("wool_yarn", CraftTextiles.Spun(r, wool, 0.7, 0.45));
+            Assert.AreEqual("coarse_wool_yarn", CraftTextiles.Spun(r, wool, 0.9, 0.05), "under-twisted, it is coarse whatever the draft");
+            Assert.AreEqual("coarse_wool_yarn", CraftTextiles.Spun(r, wool, 0.3, 0.5));
+            Assert.Greater(r.Supply("fine_wool_yarn").strength, r.Supply("coarse_wool_yarn").strength);
+        }
+
+        [Test]
+        public void Cloth_IsCutOnItsGrain_AndSewnIntoAGambeson()
+        {
+            CraftWorkshop w = Workshop();
+            string bolt = w.AddPiece(CraftLeather.NewHide(w.Rules, "canvas", 3));
+            Assert.IsTrue(CraftTextiles.IsCloth(w.Rules, w.Piece(bolt)));
+            Assert.IsTrue(w.Piece(bolt).hide.cells.All(c => c.present), "a bolt is a straight-edged rectangle");
+            Assert.IsFalse(w.Scrape(bolt, new List<float> { 1, 1, 5, 1 }, false, 0.5, 0.5, out _), "cloth needs no fleshing");
+            Assert.IsFalse(w.MovePiece(bolt, CraftLocation.Vat, out _), "nor tanning");
+            string a = w.CutPattern(bolt, "gambeson_panel", 0, 0, 0, 0.95, out string why);
+            Assert.IsNotNull(a, why);
+            string b = w.CutPattern(bolt, "gambeson_panel", 0, 8, 1, 0.95, out why);
+            Assert.IsNotNull(b, why);
+            CraftPieceReport onGrain = CraftEvaluator.Piece(w.Rules, w.Piece(a)), across = CraftEvaluator.Piece(w.Rules, w.Piece(b));
+            Assert.Greater(onGrain.Strength, across.Strength, "cut across the grain it is weaker");
+            Assert.IsTrue(across.Defects.Contains("cut across the grain"));
+
+            string asm = w.StartAssembly("padded_gambeson", out why);
+            Assert.IsNotNull(asm, why);
+            string hide = w.AddPiece(CraftLeather.NewHide(w.Rules, "cow", 4));
+            Assert.IsFalse(w.Attach(asm, "shell", 0, hide, out why), "the shell is cut from cloth, not a hide");
+            Assert.IsTrue(w.Attach(asm, "shell", 0, a, out why), why);
+            Assert.IsTrue(w.Attach(asm, "thread", 0, null, out why, 2, 1.25), why);
+            Assert.AreEqual(1.25, w.Piece(asm).assembly.Supply("thread" + CraftWorkshop.StrengthSuffix), 1e-6, "the thread's strength goes in with it");
+        }
+
+        [Test]
+        public void Clay_IsPaintedPerSegment()
+        {
+            CraftWorkshop w = Workshop();
+            string bar = Bar(w, "Tool steel", 200, 30, 5);
+            int n = w.Piece(bar).segments.Count;
+            var painted = new List<float>();
+            for (int i = 0; i < n; i++) painted.Add(i < n / 2 ? 3f : 0f);
+            Assert.IsTrue(w.ApplyClay(bar, 0, n - 1, 3, out string why, painted), why);
+            Assert.AreEqual(3, w.Piece(bar).segments[0].clay, 1e-6, "where it was painted");
+            Assert.AreEqual(0, w.Piece(bar).segments[n - 1].clay, 1e-6, "bare where it was not");
         }
     }
 }

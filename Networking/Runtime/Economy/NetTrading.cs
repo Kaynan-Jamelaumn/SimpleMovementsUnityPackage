@@ -37,8 +37,9 @@ namespace GameNet
         [SerializeField] private CurrencyDefinition currency;
         [Tooltip("Seconds between two trade requests of the same client (extra requests are dropped).")]
         [SerializeField, Min(0.02f)] private float requestInterval = 0.12f;
-        [Tooltip("Key that asks the player you look at (or the nearest one) to trade.")]
-        [SerializeField] private KeyCode tradeKey = KeyCode.T;
+        [Tooltip("The default key of the Trade input (asks the player you look at, or the nearest one, to trade; accepts a request). " +
+                 "The input actions' \"Trade\" action is used when there is one (with your rebinds); otherwise a Trade action is added on this key, rebindable in Key Bindings.")]
+        [SerializeField] private KeyCode tradeKey = KeyCode.L;
         [Tooltip("Show the built-in trade window on clients (turn off to use your own UI with View / ViewChanged).")]
         [SerializeField] private bool createWindow = true;
 
@@ -58,8 +59,24 @@ namespace GameNet
         public CurrencyDefinition Currency => currency != null ? currency : CurrencyDefinition.Default;
         /// <summary>The trading limits.</summary>
         public TradeRules Rules => rules;
-        /// <summary>The trade key.</summary>
+        /// <summary>The trade key's default (the Trade input action is what is read).</summary>
         public KeyCode TradeKey => tradeKey;
+
+        private GlobalInputBinding tradeInput;
+
+        /// <summary>The Trade input (the input actions' "Trade" action, with the player's rebinds).</summary>
+        public GlobalInputBinding TradeInput => tradeInput ??= GlobalInputBinding.Create(new[] { "Trade", "TradeRequest", "RequestTrade", "InviteTrade" },
+            new[] { "<Keyboard>/" + tradeKey.ToString().ToLowerInvariant() }, "Trade", true, true, this);
+
+        /// <summary>What the trade key is now, for prompts ("L").</summary>
+        public string TradeKeyLabel
+        {
+            get
+            {
+                string k = TradeInput.KeyLabel;
+                return string.IsNullOrEmpty(k) ? tradeKey.ToString() : k;
+            }
+        }
         /// <summary>The server's trades (server only; null on clients).</summary>
         public TradeBook Book => book;
 
@@ -82,6 +99,8 @@ namespace GameNet
 
         private void OnDestroy()
         {
+            tradeInput?.Dispose();
+            tradeInput = null;
             if (Instance == this)
                 Instance = null;
             if (window != null)
@@ -519,7 +538,7 @@ namespace GameNet
 
         private void ClientUpdate()
         {
-            if (!NetAuthority.HasLocalPlayer || !NetInput.KeyPressed(tradeKey) || InputBindingStore.GameplayInputPaused)
+            if (!NetAuthority.HasLocalPlayer || !TradeInput.Pressed || InputBindingStore.GameplayInputPaused)
                 return;
             // The trade key answers a request received; otherwise it asks the player in view.
             if (view.State == TradeState.Proposed && view.incoming)

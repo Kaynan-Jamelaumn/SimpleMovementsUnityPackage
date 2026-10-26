@@ -66,6 +66,12 @@ public class Player : MonoBehaviour
 
     void Update()
     {
+        // The player's interactor finds these objects, shows "[key] Pick up …" and uses them.
+        if (PlayerInteractor.HandlesOlderInteractablesFor(this))
+        {
+            DeactivateInteractionUI();
+            return;
+        }
         if (!IsValidForInteraction()) return;
 
         HandleInteractionDetection();
@@ -158,6 +164,8 @@ public class Player : MonoBehaviour
 
     public void OnInteract(InputAction.CallbackContext value)
     {
+        if (PlayerInteractor.HandlesOlderInteractablesFor(this))
+            return; // the interactor uses doors, items and storage (with its prompt): the key is not handled twice
         try
         {
             if (value.started)

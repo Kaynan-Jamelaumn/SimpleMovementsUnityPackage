@@ -123,7 +123,7 @@ cycle penalties spend currency on the server, which is authoritative there.
   is checked per kind of item, each receives the other's items and money; if any step fails, every step is undone in
   reverse order and items that cannot go back into a bag are dropped at their owner's feet - never duplicated, never lost.
 - **Replication**: each player receives only their own trade (`TradeView` via a target RPC, plus messages).
-- **UI** (`TradeWindow`, built at runtime): a request prompt (Accept with the trade key T or a click, Decline / Cancel) and
+- **UI** (`TradeWindow`, built at runtime): a request prompt (Accept with the trade key or a click, Decline / Cancel) and
   the trade window (your stacks - click to offer the whole stack; your offer - click to take back; money; the other
   side's offer; lock / confirm states; Lock, Confirm, Cancel). It registers as an open panel on the inventory (free
   cursor, Escape cancels). Turn off `createWindow` and use `NetTrading.View`, `ViewChanged`, `RequestTrade`, `Respond`,
@@ -172,3 +172,9 @@ cycle penalties spend currency on the server, which is authoritative there.
 - Trading offers whole stacks from the built-in window (the protocol supports partial quantities).
 - If an undo step of a failed trade cannot remove an item it just gave (extremely unlikely: it was added a moment
   before), an error is logged; counts are restored, but the exact units' durabilities may differ.
+
+**The trade key** is an input action like the others: `NetTrading` reads the input actions' **Trade** action (also
+found as *TradeRequest*, *RequestTrade*, *InviteTrade*), with the player's rebinds; when there is none it adds a Trade
+action on its **Trade Key** (L by default), rebindable in Key Bindings. Pressing it asks the player you look at (or the
+nearest one in front, within range) to trade, and accepts a request you received. Keep it off the Interact key.
+

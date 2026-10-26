@@ -222,6 +222,35 @@ public class CraftStationVisuals : MonoBehaviour
         }
     }
 
+    /// <summary>Where the work place of <paramref name="tool"/> is (the hands-on views stand there).</summary>
+    public Vector3 PointFor(CraftTools tool)
+    {
+        switch (tool)
+        {
+            case CraftTools.Forge: return PointOr(forgePoint, 0);
+            case CraftTools.Anvil: return PointOr(anvilPoint, 1);
+            case CraftTools.QuenchTank: return PointOr(quenchPoint, 2);
+            case CraftTools.Grinder: return PointOr(grinderPoint, 3);
+            case CraftTools.Whetstone: return PointOr(grinderPoint, 3) + transform.right * 0.6f;
+            case CraftTools.OreBench: return PointOr(anvilPoint, 1) - transform.right * 0.7f; // beside the anvil, clear of it
+            case CraftTools.Furnace: return PointOr(furnacePoint, 4);
+            case CraftTools.Crucible: return station != null && station.Has(CraftTools.Furnace) ? PointOr(furnacePoint, 4) : PointOr(forgePoint, 0);
+            default: return PointOr(anvilPoint, 1);
+        }
+    }
+
+    /// <summary>The way the station faces (the side players stand on is behind it).</summary>
+    public Vector3 Front => transform.forward;
+    public Vector3 Right => transform.right;
+
+    /// <summary>A burst of sparks off the wheel where the blade touches it (the hands-on wheel).</summary>
+    public void GrindSparks(Vector3 at, int count)
+    {
+        if (grinderSparks == null) return;
+        grinderSparks.transform.position = at;
+        Burst(grinderSparks, count);
+    }
+
     /// <summary>The bellows were worked (the window calls this for the puff of air).</summary>
     public void Puff() => Play(bellowsPuff);
 

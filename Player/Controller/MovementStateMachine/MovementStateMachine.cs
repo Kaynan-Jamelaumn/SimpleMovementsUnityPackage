@@ -275,14 +275,14 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
     private void OnEnable()
     {
         if (deviceInputEnabled)
-            playerInput?.Player.Enable();
+            InputBindingStore.EnableGameplayMap(playerInput?.asset);
         SetDriving(context != null);
     }
 
     private void OnDisable()
     {
         // Desabilita todas as ações do player input
-        playerInput?.Player.Disable();
+        InputBindingStore.DisableGameplayMap(playerInput?.asset);
         SetDriving(false);
     }
 
@@ -293,7 +293,7 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         // assets on its own).
         if (playerInput != null)
         {
-            playerInput.Player.Disable();
+            InputBindingStore.DisableGameplayMap(playerInput.asset);
             playerInput.Dispose();
             playerInput = null;
         }
@@ -331,12 +331,13 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
     /// Reads this player's devices into a <see cref="MovementInput"/>: the move keys/stick, Sprint, Crouch and Jump
     /// held, this frame's new Jump/Dash/Roll presses, and the active camera's yaw and rotate-with-camera mode. Only
     /// the machine that controls the player calls it (single player every frame; the owning client to build what it
-    /// sends to the server). Returns a neutral input while device input is off.
+    /// sends to the server). Returns a neutral input while device input is off, and while the gameplay keys are held off
+    /// (a crafting or alchemy station is being worked: the player stands at it and does not walk away).
     /// </summary>
     public MovementInput ReadDeviceInput()
     {
         var input = new MovementInput();
-        if (playerInput != null && deviceInputEnabled)
+        if (playerInput != null && deviceInputEnabled && !InputBindingStore.GameplayInputBlocked)
         {
             PlayerInput.PlayerActions p = playerInput.Player;
             input.Move = p.Movement.ReadValue<Vector2>();
@@ -375,9 +376,9 @@ public class MovementStateMachine : StateManager<MovementStateMachine.EMovementS
         if (playerInput == null)
             return;
         if (on && isActiveAndEnabled)
-            playerInput.Player.Enable();
+            InputBindingStore.EnableGameplayMap(playerInput.asset);
         else if (!on)
-            playerInput.Player.Disable();
+            InputBindingStore.DisableGameplayMap(playerInput.asset);
     }
 
     /// <summary>This machine's own Movement action (diagnostics; null before Awake).</summary>

@@ -167,6 +167,8 @@ public class CraftLeatherSpec
 {
     [Tooltip("The pattern it is cut with.")]
     public string pattern = "";
+    [Tooltip("What it is cut from: leather, cloth (linen, wool, canvas from the tailor's), or either.")]
+    public CraftFabric fabric = CraftFabric.Leather;
     [Tooltip("Thickness range (mm).")]
     public float thicknessMin = 2f;
     public float thicknessMax = 5f;
@@ -175,6 +177,9 @@ public class CraftLeatherSpec
     [Tooltip("At most this supple (hardened leather armour wants rigidity).")]
     [Range(0f, 1f)] public float suppleMax = 1f;
 }
+
+/// <summary>What a sheet part is cut from (serialized as numbers: add at the END).</summary>
+public enum CraftFabric { Leather, Cloth, Either }
 
 /// <summary>What a wooden component should be like.</summary>
 [Serializable]
@@ -319,6 +324,8 @@ public class CraftDesign
     public float price = 50f;
     [Tooltip("Cells in the grid inventory.")]
     public Vector2Int gridSize = new Vector2Int(1, 3);
+    [Tooltip("Where the station's Assembly menu lists it: \"Category/Group\" (\"Weapons/Swords\", \"Armour/Plate\"). Empty = worked out from its kind and parts.")]
+    public string menuGroup = "";
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 
@@ -358,4 +365,108 @@ public class CraftDesign
     }
 
     public bool IsWeaponLike => kind == CraftDesignKind.Weapon || kind == CraftDesignKind.Tool;
+}
+
+/// <summary>
+/// How designs are grouped in a station's Assembly menu: a category (Weapons, Tools, Shields, Armour, Clothing) and a
+/// group within it - weapons by family (swords, axes, polearms, bows...), armour by what it is made of (plate, leather,
+/// padded cloth), clothing by where it is worn. A design's <see cref="CraftDesign.menuGroup"/> overrides it.
+/// </summary>
+public static class CraftDesignMenu
+{
+    public const string Weapons = "Weapons", Tools = "Tools", Shields = "Shields", Armour = "Armour", Clothing = "Clothing";
+
+    /// <summary>The categories in menu order (custom ones from menuGroup come after these).</summary>
+    public static readonly string[] Order = { Weapons, Tools, Shields, Armour, Clothing };
+
+    public static void Of(CraftDesign d, out string category, out string group)
+    {
+        category = group = "";
+        if (d == null)
+            return;
+        if (!string.IsNullOrWhiteSpace(d.menuGroup))
+        {
+            string[] parts = d.menuGroup.Split('/');
+            category = parts[0].Trim();
+            group = parts.Length > 1 ? parts[1].Trim() : "Other";
+            return;
+        }
+        switch (d.kind)
+        {
+            case CraftDesignKind.Weapon:
+                category = Weapons;
+                group = WeaponGroup(d.weaponCategory);
+                return;
+            case CraftDesignKind.Tool:
+                category = Tools;
+                group = d.toolType == ToolType.Axe ? "Axes" : d.toolType == ToolType.PickAxe ? "Picks" : d.toolType == ToolType.Scythe ? "Blades" : "Other";
+                return;
+            case CraftDesignKind.Shield:
+                category = Shields;
+                group = Material(d);
+                return;
+        }
+        string material = Material(d);
+        if (material == "Cloth" && d.defense < 4f)
+        {
+            category = Clothing;
+            group = Slot(d.armorSlot);
+            return;
+        }
+        category = Armour;
+        group = material == "Cloth" ? "Padded" : material;
+    }
+
+    /// <summary>What it is mostly made of: Plate (metal parts that protect), Leather, Cloth, Wood.</summary>
+    public static string Material(CraftDesign d)
+    {
+        bool metal = false, leather = false, cloth = false, wood = false;
+        foreach (CraftComponentSpec c in d.components)
+        {
+            if (c == null || c.supply || c.optional) continue;
+            switch (c.kind)
+            {
+                case CraftPieceKind.Metal: if (c.function == CraftComponentFunction.Protection || c.function == CraftComponentFunction.Striking) metal = true; break;
+                case CraftPieceKind.Hide: if (c.leather != null && c.leather.fabric == CraftFabric.Cloth) cloth = true; else leather = true; break;
+                case CraftPieceKind.Wood: wood = true; break;
+            }
+        }
+        if (d.kind == CraftDesignKind.Shield)
+            return wood ? "Wooden" : metal ? "Metal" : "Leather";
+        return metal ? "Plate" : leather ? "Leather" : cloth ? "Cloth" : wood ? "Wood" : "Other";
+    }
+
+    private static string WeaponGroup(WeaponCategory c)
+    {
+        switch (c)
+        {
+            case WeaponCategory.Sword: case WeaponCategory.Greatsword: return "Swords";
+            case WeaponCategory.Dagger: return "Daggers";
+            case WeaponCategory.Axe: return "Axes";
+            case WeaponCategory.Mace: case WeaponCategory.Hammer: return "Maces and hammers";
+            case WeaponCategory.Spear: return "Spears and polearms";
+            case WeaponCategory.Bow: case WeaponCategory.Crossbow: return "Bows";
+            case WeaponCategory.Thrown: return "Thrown";
+            case WeaponCategory.Staff: case WeaponCategory.Wand: return "Staffs";
+            case WeaponCategory.Fist: return "Fist";
+            default: return "Other";
+        }
+    }
+
+    /// <summary>Where a piece is worn, as a menu group.</summary>
+    public static string Slot(ArmorSlotType s)
+    {
+        switch (s)
+        {
+            case ArmorSlotType.Helmet: return "Head";
+            case ArmorSlotType.Chestplate: return "Body";
+            case ArmorSlotType.Leggings: return "Legs";
+            case ArmorSlotType.Boots: return "Feet";
+            case ArmorSlotType.Gloves: case ArmorSlotType.Bracers: return "Hands and arms";
+            case ArmorSlotType.Shoulders: return "Shoulders";
+            case ArmorSlotType.Cloak: return "Cloaks";
+            case ArmorSlotType.Belt: return "Belts";
+            default: return "Other";
+        }
+    }
 }

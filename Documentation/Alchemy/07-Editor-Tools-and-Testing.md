@@ -20,7 +20,7 @@
 
 ## 2. Inspectors
 
-* **Alchemy Database**: content counts, errors, warnings, *Open Alchemy Lab*, *Create Potion Items*, *Reset To Built-in*.
+* **Alchemy Database**: content counts, errors, warnings, *Open Alchemy Lab*, *Create Potion Items*, *Add Missing Built-in* (adds the built-in substances, reactions and potions the database lacks, by id - an older database catches up without losing your changes), *Reset To Built-in*.
   Condition lists have a type dropdown.
 * **Alchemy Station**: problems; in Play Mode the live preparation (time, temperature, heat, volume, agitation,
   pressure, the fire — flames, fuel, bellows air, vent —, the stirring — speed, turbulence, aeration, emulsion —, pH,

@@ -32,7 +32,9 @@ body (`zoneConduction`): a thin edge heats and cools faster than a thick spine.
 
 **The fire** burns fuel (`fuelBurnRate`); its level rises and falls with a lag; its draft is a base draft plus the air
 from the bellows, which decays (`bellowsDecaySeconds`); the vent chokes it. Each fuel has a maximum temperature
-(charcoal 1350 °C, coal 1450 °C with sulfur, coke 1550 °C, firewood 950 °C), a reducing character and an ash. The middle
+(charcoal 1350 °C, coal 1450 °C with sulfur, coke 1550 °C, firewood 950 °C), a reducing character and an ash. A fuel with
+`burnsAnyWood` (firewood) is fed from any wood in the bag when its own item is missing: wooden blanks, and plain materials
+named as wood or after a wood (Oak Plank, Ash Log, Timber, Branch). The middle
 of the fire is hotter than its edge (`fireMiddle`, `fireEdge`). Leaving a piece unturned heats one face more.
 
 **Scale** grows in an oxidising fire, parabolically, doubling every `scaleDoublingDegrees` and eating metal
@@ -113,7 +115,7 @@ An ore lump comes from a **deposit**: its richness, rock and impurities follow f
 (hashed, so the same deposit always gives the same ore, and no two lumps are quite alike). **Crushing** breaks fragments
 smaller (liberating ore from rock — and powdering it when struck too hard); throwing out barren fragments removes rock;
 **washing** carries dirt and light rock away by density (cassiterite and gold stay in the pan) — a jerky hand loses ore
-with the mud; **sieving** separates the fines. What is bound in the mineral (phosphorus in bog iron, sulfur in sulfides)
+with the mud; **sieving** separates the fines; **brushing** (`CraftOres.Brush`, one stone at a time, dry) takes the dirt off what the brush went over — a soft brush loose dirt (a third of caked clay), a stiff one dirt and clay, a wire brush the dirt and the weathered rind of rock (the rind is the larger share of a small stone's rock, `Rind(size)`) at the cost of a little mineral (more of a soft one, hardness under 4). Nothing is lost to the water. What is bound in the mineral (phosphorus in bog iron, sulfur in sulfides)
 does not wash out.
 
 In the **furnace** (`CraftSmelting`): sulfide ores roast first; above their reduction temperature, with charcoal (a
@@ -135,6 +137,15 @@ zinc to the copper (cementation: brass). What the alloy is follows from the prop
 **Pouring** (rate, steadiness, interruptions) makes the casting: poured below the liquidus it will not run; too slowly
 or too cold it freezes short (misrun); too hot (`porositySuperheat`) or too fast it traps gas (porosity); a broken
 stream leaves a cold shut; dross poured in leaves inclusions. A casting is coarse-grained and rough from the mould.
+How much of the mould the pour brought (`filled`) sets its length: a pour stopped early is short (misrun, *the pour
+stopped before the mould was full*). Metal that missed the mould's mouth (`spilled`, per gram cast) is lost from the
+crucible; metal poured on after it was full (`overflow`) runs over the top — also lost, and it leaves flash (a rough
+surface to file off).
+
+Besides the stock moulds (`Molds`), every design's metal part with a shape profile has a **pattern mould**
+(`CraftRules.PatternMold("cast:design/role")`, all of them in `AllMolds()`): the part's profile at the middle of its
+length range, with its eye. What is cast in it is meant for that part (`intentDesign`/`intentRole`), so its target
+shows at the anvil and the wheel. It comes out blunt and rough: grind the edge, file the flash.
 
 ## Leather
 
@@ -153,6 +164,58 @@ hide left wet rots. **Oil and wax** make it supple and water-resistant; **dye** 
 **slicking** smooths the grain; **skiving** thins it. **Cutting** a pattern takes its cells out of the hide (a careless
 cut leaves ragged edges; flaws under the pattern go into the part).
 
+**Finishing** - staking, slicking, skiving, oiling and dyeing - is done at the tannery's fleshing beam or at a leather
+bench (`CraftWorkshop.FinishingTools`): a tannery finishes its own hides; a leatherworks shows the same tools under
+**Finish leather**.
+## Carving wood
+
+Wood (a grip, a haft, scales) is shaped with a knife on the bench (`CraftSurface.Carve`, needs the Files tool): a cut
+takes off its depth (scaled by the steadiness of the stroke: 70 % for a shaky hand, all of it for a steady one) across
+the stretch drawn — off the **width**, the **thickness**, the corners (**round**: an oval section), or a **bore** for the
+tang (at most 70 % of the smaller side). Wood is never cut below 3 mm. Forcing it (a cut deeper than 1.4 mm in one
+stroke) or a wavering stroke (steadiness under 35 %) splits it (a crack along the grain, which counts against the
+part). A long piece is sawn in two with the saw (`SplitPiece` on wood). The design's part says what shape it should
+end up — the window and the 3D bench both show it.
+
+## The woodshop
+
+Wood is fibres (`CraftWoodwork`). **Runout** (`WoodState.runout`, 0 straight-grained - 1 cross-grained) is how far
+they run out of the piece: sawn stock has some (0.2); **riving** splits a piece in two along its length and the halves
+keep the grain the split followed - a clean split straightens it, one that strays cuts across the fibres, and a split
+that runs out leaves one half short and tapered. Runout costs toughness (×(1 - 0.55·runout)) and makes bends tear.
+**Sawing** across a piece cuts it in two where the saw went; a wandering, ragged cut leaves rough, torn ends.
+
+**Steaming** (the Steam location): the piece heats to 100 °C and takes up water; it is steamed through after about an
+hour of process time for every 25 mm of thickness. Out of the steam it is plastic while it is hot (`Plasticity` =
+steamed × warmth) and sets again as it cools. **Bending** over a form: the bend's tightness is its thickness over its
+radius (the form's); dry wood takes about 1:80, steamed through about 1:25, with a strap holding the outside 1:10 -
+less for rushed bends, cross-grained or checked wood (`BendTear`). Past it the outside tears (a crack, `split` grows).
+It springs back part of the way (it keeps 45-95% of the bend: more when it was soft).
+
+**Seasoning** (the Stack location, or the rack): moisture falls toward 12% at a rate set by the stickers' evenness,
+the shade and the warmth; when it dries faster than the wood can shrink evenly the surface and the ends **check**
+(`checks`; sealed ends check far less), and unevenly stickered it warps. Checks cost toughness and integrity; wood
+still green (moisture over 20%) in an item shrinks loose (a note, less integrity).
+
+**Sanding** smooths the surface toward a floor set by the grit and the direction (across the grain leaves scratches).
+**Varnish or oil** builds a finish (`finish`, `finishEven`): it takes on dry wood (on damp wood it clouds and lifts),
+evenly on a smooth surface (blotchy on a rough one), runs when laid thick, wrinkles over a wet coat. The finish keeps
+water out (`FinishProtection`): items with finished wooden parts last longer.
+
+## The tailor's
+
+**Cloth** is a hide-like sheet of cells from a hide definition marked **textile** (`CraftTextiles`): it comes woven
+and finished (no fleshing, liming or tanning; the tannery's tools and vats refuse it) as a straight-edged bolt, and is
+cut with the patterns at the tailor's table (or a leather bench). Its grain runs along the bolt: a part cut across it
+(a pattern turned a quarter) is weaker (×0.85, *cut across the grain*); a ragged cut frays (strength ×0.75-1 by the cut's
+cleanness). A design's sheet part says what it is cut from (`CraftLeatherSpec.fabric`: Leather, Cloth, Either).
+
+**Spinning** (at the station: fibre from the inventory - one per bobbin, checked before the drafting starts - thread
+back into it; threading the needle needs the thread in the inventory too): the quality is the draft's evenness
+times how near the twist was to right (`SpinQuality`); a fibre lists what it spins into (`spinsInto`: coarse, even,
+fine). **Thread** added to an item carries its strength (`Attach`'s supply strength, kept as `<role>@strength`): the
+seams are as strong as the thread (×0.8-1.15 of ordinary thread).
+
 ## Assembly
 
 A **design** lists its parts (role, kind, count, the shape or leather or wood it should have, how important it is) and
@@ -163,6 +226,11 @@ hand: holes punched (their spacing and alignment), stitches pulled (tension and 
 leather), rivets peened (too light: loose; too hard: crushed leather, a cracked hard rivet), a tang peened over the
 pommel (it must be long enough), a wrap wound, a wedge driven (too far splits the haft). An item finishes when every
 required part is in place and every joint made.
+
+**Where it is made** (`CraftAssembly.MadeAt`): a design is started only at a station with an assembly or leather bench
+that has the tools for each required part - metal: an anvil or a crucible; leather: a leather bench; cloth: a tailor's
+table or a leather bench; wood: files, a chopping block or a sawhorse. A station can narrow it further to a list of
+designs (`CraftStation.designs`). The Assembly area lists only what can be made there, and the station refuses the rest.
 
 ## Evaluation
 

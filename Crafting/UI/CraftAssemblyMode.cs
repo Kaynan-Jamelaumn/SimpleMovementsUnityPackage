@@ -14,7 +14,10 @@ using UnityEngine.UI;
 /// </summary>
 public sealed class CraftAssemblyMode : CraftMode
 {
-    private TMP_Dropdown design, part, joint, work, slot;
+    private TMP_Dropdown category, group, design, part, joint, work, slot;
+    // The designs this station makes, by category and group (the menu narrows down to the designs of one group).
+    private readonly List<CraftDesign> makeable = new List<CraftDesign>();
+    private readonly List<string> categories = new List<string>(), groups = new List<string>();
     private readonly List<string> designs = new List<string>(), parts = new List<string>(), joints = new List<string>(), slots = new List<string>();
     private readonly List<int> slotIndex = new List<int>();
     private readonly List<CraftJointWork> works = new List<CraftJointWork>();
@@ -45,12 +48,27 @@ public sealed class CraftAssemblyMode : CraftMode
 
     public override void Build(RectTransform controls)
     {
-        designs.Clear();
-        var dn = new List<string>();
-        foreach (CraftDesign d in Rules.Designs) { designs.Add(d.id); dn.Add(d.Name); }
+        // Only what this station can make (its tools, and its list of designs when it has one), sorted into categories.
+        makeable.Clear();
+        categories.Clear();
+        foreach (CraftDesign d in Rules.Designs)
+            if (Station.Makes(d))
+            {
+                makeable.Add(d);
+                CraftDesignMenu.Of(d, out string c, out _);
+                if (!categories.Contains(c)) categories.Add(c);
+            }
+        categories.Sort((a, b) => Rank(a).CompareTo(Rank(b)));
+        RectTransform r0 = Row(controls);
+        Text(r0, "Make", 13f, 44f);
+        category = Drop(r0, categories.Count > 0 ? categories : new List<string> { "Nothing is made here" }, 0, 150f);
+        group = Drop(r0, new List<string> { "All" }, 0, 190f);
+        category.onValueChanged.AddListener(_ => { group.SetValueWithoutNotify(0); FillGroups(); });
+        group.onValueChanged.AddListener(_ => { design.SetValueWithoutNotify(0); FillDesigns(); });
         RectTransform r1 = Row(controls);
-        design = Drop(r1, dn, 0, 220f);
-        Btn(r1, "Start", () => { if (designs.Count > 0) Send(new CraftRequest(CraftRequestKind.StartAssembly) { id = designs[design.value] }); shownFor = null; }, 80f, UITheme.ButtonStyle.Primary);
+        design = Drop(r1, new List<string> { "-" }, 0, 220f);
+        FillGroups();
+        Btn(r1, "Start", () => { if (designs.Count > 0) Send(new CraftRequest(CraftRequestKind.StartAssembly) { id = designs[Mathf.Clamp(design.value, 0, designs.Count - 1)] }); shownFor = null; }, 80f, UITheme.ButtonStyle.Primary);
         Btn(r1, "Finish", () => Send(new CraftRequest(CraftRequestKind.Finish, Assembly?.id)), 90f);
         Btn(r1, "Try it (inspect)", () => Send(new CraftRequest(CraftRequestKind.Inspect, Assembly?.id)), 150f);
         RectTransform r2 = Row(controls);
@@ -68,9 +86,50 @@ public sealed class CraftAssemblyMode : CraftMode
         work = Drop(r3, new List<string> { "-" }, 0, 120f);
         pull = Slide(r3, "Pull", 0f, 1f, 0.6f, false, 40f);
         supplyCount = Slide(r3, "Supplies", 1f, 6f, 1f, true, 60f);
-        RectTransform r4 = Row(controls);
-        info = Text(r4, "", 13f);
+        info = InfoRow(controls, 48f);
         shownFor = null;
+    }
+
+    private static int Rank(string c)
+    {
+        int i = Array.IndexOf(CraftDesignMenu.Order, c);
+        return i >= 0 ? i : 100;
+    }
+
+    private string CategoryShown => categories.Count > 0 ? categories[Mathf.Clamp(category.value, 0, categories.Count - 1)] : null;
+
+    /// <summary>The groups of the category picked ("All" first), then its designs.</summary>
+    private void FillGroups()
+    {
+        groups.Clear();
+        groups.Add("All");
+        string cat = CategoryShown;
+        foreach (CraftDesign d in makeable)
+        {
+            CraftDesignMenu.Of(d, out string c, out string g);
+            if (c == cat && !groups.Contains(g)) groups.Add(g);
+        }
+        Reset(group, groups);
+        FillDesigns();
+    }
+
+    /// <summary>The designs of the group picked, with what they are where that helps ("Kettle hat · Head").</summary>
+    private void FillDesigns()
+    {
+        designs.Clear();
+        var names = new List<string>();
+        string cat = CategoryShown;
+        string grp = groups.Count > 0 ? groups[Mathf.Clamp(group.value, 0, groups.Count - 1)] : "All";
+        foreach (CraftDesign d in makeable)
+        {
+            CraftDesignMenu.Of(d, out string c, out string g);
+            if (c != cat || grp != "All" && g != grp) continue;
+            designs.Add(d.id);
+            names.Add(d.kind == CraftDesignKind.Armor && cat == CraftDesignMenu.Armour ? $"{d.Name} · {CraftDesignMenu.Slot(d.armorSlot)}"
+                : grp == "All" ? $"{d.Name} · {g}" : d.Name);
+        }
+        if (designs.Count == 0) names.Add("Nothing is made here");
+        Reset(design, names);
     }
 
     private void FitPart()

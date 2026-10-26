@@ -50,10 +50,11 @@ public static class CraftArt
     /// <summary>
     /// A metal piece seen from above in <paramref name="area"/> (pixels): length along x, width along y, each segment
     /// at its own width, the bevels shaded, heat glowing per segment, holes and cracks drawn. Returns the pixel x of
-    /// each segment's start (for hit tests).
+    /// each segment's start (for hit tests). <paramref name="flipped"/>: turned over (the edge on the other side).
     /// </summary>
-    public static float[] DrawTop(CraftPixels c, CraftRules rules, CraftPiece p, Rect area, float mmPerPixel, Color? tint = null)
+    public static float[] DrawTop(CraftPixels c, CraftRules rules, CraftPiece p, Rect area, float mmPerPixel, Color? tint = null, bool flipped = false)
     {
+        float sg = flipped ? -1f : 1f;
         int n = p.segments.Count;
         var starts = new float[n + 1];
         if (n == 0)
@@ -66,7 +67,7 @@ public static class CraftArt
             float len = (float)s.length / mmPerPixel, w = (float)s.width / mmPerPixel;
             starts[i] = x;
             float bend = (float)(SumBend(p, i) / mmPerPixel);
-            float top = cy + w * 0.5f + bend, bottom = cy - w * 0.5f + bend;
+            float top = cy + sg * (w * 0.5f + bend), bottom = cy + sg * (-w * 0.5f + bend);
             Color surface = MetalSurface(metal, s);
             if (p.kind == CraftPieceKind.Wood)
             {
@@ -80,28 +81,28 @@ public static class CraftArt
             {
                 float bw = (float)Math.Max(s.bevelWidthL, s.bevelWidthR) / mmPerPixel;
                 Color bevel = Color.Lerp(surface, Color.white, 0.25f + 0.25f * (float)Math.Min(1, s.polish + 0.3));
-                c.Rect(x, top - bw, x + len + 0.6f, top, bevel);
+                c.Rect(x, top - sg * bw, x + len + 0.6f, top, bevel);
                 if (p.edges >= 2)
-                    c.Rect(x, bottom, x + len + 0.6f, bottom + bw, bevel);
+                    c.Rect(x, bottom, x + len + 0.6f, bottom + sg * bw, bevel);
                 // A keen edge is a thin bright line; a blunt one shows a flat.
                 float keen = (float)CraftEvaluator.Sharpness(s);
-                c.Rect(x, top - 1.2f, x + len + 0.6f, top, Color.Lerp(new Color(0.35f, 0.35f, 0.38f), Color.white, keen));
+                c.Rect(x, top - sg * 1.2f, x + len + 0.6f, top, Color.Lerp(new Color(0.35f, 0.35f, 0.38f), Color.white, keen));
             }
             if (s.fuller > 0.05)
-                c.Rect(x, cy - w * 0.12f + bend, x + len + 0.6f, cy + w * 0.12f + bend, Color.Lerp(surface, Color.black, 0.25f));
+                c.Rect(x, cy + sg * (-w * 0.12f + bend), x + len + 0.6f, cy + sg * (w * 0.12f + bend), Color.Lerp(surface, Color.black, 0.25f));
             // Heat: edge and body glow on their own.
             Color hb = Heat(s.body.temp, out float gb), he = Heat(s.edge.temp, out float ge);
             if (gb > 0f)
-                for (int yy = Mathf.FloorToInt(bottom); yy <= Mathf.CeilToInt(top); yy++)
+                for (int yy = Mathf.FloorToInt(Mathf.Min(bottom, top)); yy <= Mathf.CeilToInt(Mathf.Max(bottom, top)); yy++)
                     for (int xx = Mathf.FloorToInt(x); xx <= Mathf.CeilToInt(x + len); xx++)
                         c.Blend(xx, yy, hb, gb);
             if (ge > gb + 0.05f)
-                c.Rect(x, top - Mathf.Max(1.5f, w * 0.2f), x + len + 0.6f, top, new Color(he.r, he.g, he.b, ge));
+                c.Rect(x, top - sg * Mathf.Max(1.5f, w * 0.2f), x + len + 0.6f, top, new Color(he.r, he.g, he.b, ge));
             if (s.hole > 0.5)
-                c.Disc(x + len * 0.5f, cy + bend, (float)s.hole * 0.5f / mmPerPixel, new Color(0.04f, 0.04f, 0.05f, 1f));
+                c.Disc(x + len * 0.5f, cy + sg * bend, (float)s.hole * 0.5f / mmPerPixel, new Color(0.04f, 0.04f, 0.05f, 1f));
             if (s.pit > 0.15)
                 for (int k = 0; k < 3; k++)
-                    c.Disc(x + len * (0.2f + 0.3f * k), cy + bend + w * (0.25f - 0.2f * k), 1f, Scale);
+                    c.Disc(x + len * (0.2f + 0.3f * k), cy + sg * (bend + w * (0.25f - 0.2f * k)), 1f, Scale);
             x += len;
         }
         starts[n] = x;
@@ -114,10 +115,10 @@ public static class CraftArt
             MetalSegment s = p.segments[d.at];
             float w = (float)s.width / mmPerPixel, bend = (float)(SumBend(p, d.at) / mmPerPixel);
             float depth = Mathf.Clamp01((float)d.severity * 0.5f) * w;
-            c.Line(mx, cy + w * 0.5f + bend, mx + 2f, cy + w * 0.5f - depth + bend, Crack, d.severity > 0.6 ? 1.6f : 1f);
+            c.Line(mx, cy + sg * (w * 0.5f + bend), mx + 2f, cy + sg * (w * 0.5f - depth + bend), Crack, d.severity > 0.6 ? 1.6f : 1f);
         }
         // Outline.
-        var outline = OutlineTop(p, area, mmPerPixel);
+        var outline = OutlineTop(p, area, mmPerPixel, sg);
         c.Outline(outline, Outline, 1f);
         return starts;
     }
@@ -134,7 +135,7 @@ public static class CraftArt
         return offset;
     }
 
-    private static List<Vector2> OutlineTop(CraftPiece p, Rect area, float mmPerPixel)
+    private static List<Vector2> OutlineTop(CraftPiece p, Rect area, float mmPerPixel, float sg = 1f)
     {
         var top = new List<Vector2>();
         var bottom = new List<Vector2>();
@@ -143,10 +144,10 @@ public static class CraftArt
         {
             MetalSegment s = p.segments[i];
             float len = (float)s.length / mmPerPixel, w = (float)s.width / mmPerPixel, bend = (float)(SumBend(p, i) / mmPerPixel);
-            top.Add(new Vector2(x, cy + w * 0.5f + bend));
-            top.Add(new Vector2(x + len, cy + w * 0.5f + bend));
-            bottom.Add(new Vector2(x, cy - w * 0.5f + bend));
-            bottom.Add(new Vector2(x + len, cy - w * 0.5f + bend));
+            top.Add(new Vector2(x, cy + sg * (w * 0.5f + bend)));
+            top.Add(new Vector2(x + len, cy + sg * (w * 0.5f + bend)));
+            bottom.Add(new Vector2(x, cy + sg * (-w * 0.5f + bend)));
+            bottom.Add(new Vector2(x + len, cy + sg * (-w * 0.5f + bend)));
             x += len;
         }
         bottom.Reverse();
@@ -171,6 +172,168 @@ public static class CraftArt
         }
     }
 
+    // ------------------------------------------------------------------ the cross-section
+    /// <summary>
+    /// The scale (pixels per mm) that fits the section of <paramref name="s"/> - and the target section, when given -
+    /// in <paramref name="r"/>.
+    /// </summary>
+    public static float SectionScale(MetalSegment s, Rect r, float targetWidth = 0f, float targetThickness = 0f)
+    {
+        float w = Mathf.Max((float)s.width, targetWidth, 4f), t = Mathf.Max((float)s.thickness, targetThickness, 1f);
+        return Mathf.Max(0.5f, Mathf.Min((r.width - 24f) / w, (r.height - 24f) / t));
+    }
+
+    /// <summary>
+    /// The cross-section of one segment, magnified into <paramref name="r"/> (y up): the width across (the spine on the
+    /// left, the edge on the right), the thickness up, the left bevel on the top face and the right bevel underneath.
+    /// <paramref name="flip"/> (-1..1, the cosine of a half turn) turns it over about its length - the anvil shows which
+    /// face is up. The bevels, the edge's sharpness, a burr, clay and scale are drawn. Returns the centre point.
+    /// </summary>
+    public static Vector2 DrawSection(CraftPixels c, MetalSegment s, Rect r, Color metal, float scale, float flip = 1f, bool wood = false)
+    {
+        c.Rect(r.xMin, r.yMin, r.xMax, r.yMax, new Color(0f, 0f, 0f, 0.45f));
+        c.Frame(r.xMin, r.yMin, r.xMax, r.yMax, new Color(1f, 1f, 1f, 0.12f), 1f);
+        Vector2 o = r.center;
+        float hw = (float)s.width * 0.5f * scale, ht = (float)s.thickness * 0.5f * scale;
+        float bl = Mathf.Min((float)s.bevelWidthL * scale, hw * 1.9f), br = Mathf.Min((float)s.bevelWidthR * scale, hw * 1.9f);
+        float top = ht - (float)s.bevelDepthL * scale, bottom = -ht + (float)s.bevelDepthR * scale;
+        if (top < bottom + 0.5f) { float m = (top + bottom) * 0.5f; top = m + 0.25f; bottom = m - 0.25f; }
+        // A half turn about the length: x and y both change sign as flip goes from 1 to -1 (the width foreshortens on the way).
+        float fy = flip, fx = flip;
+        Vector2 P(float x, float y) => new Vector2(o.x + x * fx, o.y + y * fy);
+        var pts = new List<Vector2> { P(-hw, ht), P(hw - bl, ht), P(hw, top), P(hw, bottom), P(hw - br, -ht), P(-hw, -ht) };
+        c.Polygon(pts, wood ? metal : Color.Lerp(metal, Color.white, 0.12f));
+        if (!wood)
+        {
+            // The bevels catch the light.
+            if (bl > 0.5f) c.Polygon(new List<Vector2> { P(hw - bl, ht), P(hw, top), P(hw - bl * 0.5f, (ht + top) * 0.5f) }, Color.Lerp(metal, Color.white, 0.45f));
+            if (br > 0.5f) c.Polygon(new List<Vector2> { P(hw - br, -ht), P(hw, bottom), P(hw - br * 0.5f, (-ht + bottom) * 0.5f) }, Color.Lerp(metal, Color.white, 0.35f));
+            if (s.scale > 0.05) c.Outline(pts, new Color(0.18f, 0.16f, 0.15f, Mathf.Clamp01((float)s.scale * 6f)), 2f);
+            if (s.clay > 0.05)
+            {
+                float k = (float)s.clay * scale;
+                c.Rect(P(-hw, ht).x - 1, Mathf.Min(P(-hw, ht).y, P(-hw, ht + k).y), P(hw - bl, ht).x + 1, Mathf.Max(P(-hw, ht).y, P(-hw, ht + k).y), new Color(0.62f, 0.52f, 0.4f, 0.9f));
+            }
+            // The apex: a keen edge is a fine bright point, a blunt one a flat; a burr curls over.
+            float keen = (float)CraftEvaluator.Sharpness(s);
+            Vector2 tip = P(hw, (top + bottom) * 0.5f);
+            c.Disc(tip.x, tip.y, Mathf.Lerp(3f, 1f, keen), Color.Lerp(new Color(0.4f, 0.4f, 0.42f), Color.white, keen));
+            if (s.burr > 0.2) c.Line(tip.x, tip.y, tip.x + 5f * fx, tip.y + 4f * fy * (s.honeL >= s.honeR ? -1f : 1f), new Color(0.92f, 0.92f, 0.98f), 1.5f);
+        }
+        c.Outline(pts, Outline, 1f);
+        return o;
+    }
+
+    /// <summary>
+    /// The target of segment <paramref name="i"/> from the part the piece is meant to be (its intent): the width,
+    /// thickness and edge angle the design asks for there. False when the piece has no intent with a shape.
+    /// </summary>
+    public static bool TargetAt(CraftRules rules, CraftPiece p, int i, out float width, out float thickness, out float edgeAngle, out bool edged)
+    {
+        width = thickness = edgeAngle = 0f;
+        edged = false;
+        if (p == null || string.IsNullOrEmpty(p.intentDesign) || i < 0 || i >= p.segments.Count)
+            return false;
+        CraftComponentSpec spec = rules.Design(p.intentDesign)?.Component(p.intentRole);
+        CraftShapeTarget shape = spec?.shape;
+        if (shape == null || shape.profile == null || shape.profile.Count < 2)
+            return false;
+        float t = (float)p.PositionOf(i);
+        shape.At(t, out width, out thickness);
+        edged = shape.edge != CraftEdgeKind.None && t >= shape.edgeFrom && t <= shape.edgeTo;
+        edgeAngle = shape.edgeAngle;
+        return width > 0f && thickness > 0f;
+    }
+
+    /// <summary>The target section drawn as a dashed outline over the real one (same centre and scale).</summary>
+    public static void DrawTargetSection(CraftPixels c, Vector2 o, float scale, float width, float thickness, float edgeAngle, bool edged, bool doubleEdged, float flip = 1f)
+    {
+        float hw = width * 0.5f * scale, ht = thickness * 0.5f * scale;
+        float bevel = edged ? Mathf.Min(hw * 1.8f, ht / Mathf.Tan(Mathf.Max(3f, edgeAngle * 0.5f) * Mathf.Deg2Rad)) : 0f;
+        Vector2 P(float x, float y) => new Vector2(o.x + x * flip, o.y + y * flip);
+        var pts = new List<Vector2>();
+        if (edged)
+        {
+            pts.Add(P(doubleEdged ? -hw + bevel : -hw, ht));
+            pts.Add(P(hw - bevel, ht));
+            pts.Add(P(hw, 0f));
+            pts.Add(P(hw - bevel, -ht));
+            pts.Add(P(doubleEdged ? -hw + bevel : -hw, -ht));
+            if (doubleEdged) pts.Add(P(-hw, 0f));
+        }
+        else
+        {
+            pts.Add(P(-hw, ht)); pts.Add(P(hw, ht)); pts.Add(P(hw, -ht)); pts.Add(P(-hw, -ht));
+        }
+        for (int k = 0; k < pts.Count; k++)
+            Dashed(c, pts[k], pts[(k + 1) % pts.Count], TargetColor);
+    }
+
+    /// <summary>A dashed line (the target shapes are drawn with it).</summary>
+    public static void Dashed(CraftPixels c, Vector2 a, Vector2 b, Color col, float t = 1.5f, float dash = 6f)
+    {
+        int dashes = Mathf.Max(1, Mathf.RoundToInt(Vector2.Distance(a, b) / dash));
+        for (int d = 0; d < dashes; d += 2)
+            c.Line(Mathf.Lerp(a.x, b.x, d / (float)dashes), Mathf.Lerp(a.y, b.y, d / (float)dashes),
+                Mathf.Lerp(a.x, b.x, Mathf.Min(1f, (d + 1) / (float)dashes)), Mathf.Lerp(a.y, b.y, Mathf.Min(1f, (d + 1) / (float)dashes)), col, t);
+    }
+
+    public static readonly Color TargetColor = new Color(0.45f, 1f, 0.55f, 0.9f);
+
+    /// <summary>The design's shape for the piece (null without one), and how long it should be: the piece's own length
+    /// when that is in the design's range, else the nearest end of the range.</summary>
+    public static CraftShapeTarget TargetShape(CraftRules rules, CraftPiece p, out float length)
+    {
+        length = 0f;
+        if (p == null || string.IsNullOrEmpty(p.intentDesign))
+            return null;
+        CraftShapeTarget shape = rules.Design(p.intentDesign)?.Component(p.intentRole)?.shape;
+        if (shape == null || shape.profile == null || shape.profile.Count < 2)
+            return null;
+        length = Mathf.Clamp((float)p.Length, shape.lengthMin, Mathf.Max(shape.lengthMin, shape.lengthMax));
+        return shape;
+    }
+
+    /// <summary>
+    /// The design's shape dashed over the piece, from <paramref name="x0"/>: seen from above (its width, about
+    /// <paramref name="centreY"/>) or from the side (its thickness, up from <paramref name="centreY"/>, scaled by
+    /// <paramref name="thicknessScale"/>). Ticks under it mark the shortest and longest the design allows.
+    /// </summary>
+    public static void DrawTargetProfile(CraftPixels c, CraftRules rules, CraftPiece p, float x0, float centreY, float mmPerPixel, bool side, float thicknessScale = 1f)
+    {
+        CraftShapeTarget shape = TargetShape(rules, p, out float length);
+        if (shape == null)
+            return;
+        const int n = 32;
+        Vector2? lastA = null, lastB = null;
+        float extent = 0f;
+        for (int i = 0; i <= n; i++)
+        {
+            float t = i / (float)n;
+            shape.At(t, out float w, out float th);
+            float x = x0 + t * length / mmPerPixel;
+            Vector2 a, b;
+            if (side) { a = new Vector2(x, centreY + th / mmPerPixel * thicknessScale); b = new Vector2(x, centreY); }
+            else { a = new Vector2(x, centreY + w * 0.5f / mmPerPixel); b = new Vector2(x, centreY - w * 0.5f / mmPerPixel); }
+            extent = Mathf.Max(extent, Mathf.Abs(a.y - centreY));
+            if (lastA.HasValue)
+            {
+                Dashed(c, lastA.Value, a, TargetColor, 1.2f, 5f);
+                if (!side) Dashed(c, lastB.Value, b, TargetColor, 1.2f, 5f);
+            }
+            if (i == n) Dashed(c, a, b, TargetColor, 1.2f, 4f);
+            lastA = a;
+            lastB = b;
+        }
+        float under = side ? centreY - 4f : centreY - extent - 6f;
+        foreach (float l in new[] { shape.lengthMin, shape.lengthMax })
+        {
+            float x = x0 + l / mmPerPixel;
+            c.Line(x, under, x, under - 6f, new Color(TargetColor.r, TargetColor.g, TargetColor.b, 0.6f), 1f);
+        }
+        c.Line(x0 + shape.lengthMin / mmPerPixel, under - 3f, x0 + shape.lengthMax / mmPerPixel, under - 3f, new Color(TargetColor.r, TargetColor.g, TargetColor.b, 0.35f), 1f);
+    }
+
     public static Color MetalColor(CraftRules rules, CraftPiece p)
     {
         if (p.kind == CraftPieceKind.Wood)
@@ -186,7 +349,7 @@ public static class CraftArt
 
     // ------------------------------------------------------------------ hide
     /// <summary>The colour of one hide cell (flesh, hair, tanning, dye, moisture, damage).</summary>
-    public static Color HideCell(CraftRules rules, HideState h, HideCell cell)
+    public static Color HideCell(CraftRules rules, HideState h, HideCell cell, bool fleshSide = false)
     {
         if (cell == null || !cell.present)
             return Color.clear;
@@ -194,6 +357,27 @@ public static class CraftArt
         Color skin = d != null ? d.color : new Color(0.62f, 0.5f, 0.42f);
         CraftTanningAgent a = rules.Agent(h.agent);
         Color tan = a != null ? a.color : new Color(0.55f, 0.36f, 0.22f);
+        if (d != null && d.textile)
+        {
+            // Cloth: its own colour, dyed, darker wet, frayed and holed where damaged.
+            Color cloth = skin;
+            if (cell.dye > 0.01) cloth = Color.Lerp(cloth, new Color((float)cell.dyeR, (float)cell.dyeG, (float)cell.dyeB), Mathf.Clamp01((float)cell.dye));
+            cloth *= 1f - 0.25f * Mathf.Clamp01((float)cell.moisture - 0.1f);
+            cloth = Color.Lerp(cloth, new Color(0.15f, 0.12f, 0.1f), Mathf.Clamp01((float)cell.damage * 0.8f));
+            cloth.a = 1f;
+            return cloth;
+        }
+        if (fleshSide)
+        {
+            // The underside: pale, suede-like skin, pink and glistening where flesh and fat are still on it.
+            Color under = Color.Lerp(Color.Lerp(skin, Color.white, 0.3f), tan, Mathf.Clamp01((float)cell.Tannage));
+            under = Color.Lerp(under, Flesh, Mathf.Clamp01((float)cell.flesh * 1.3f));
+            under *= 1f - 0.25f * Mathf.Clamp01((float)cell.moisture);
+            under = Color.Lerp(under, new Color(0.18f, 0.12f, 0.1f), Mathf.Clamp01((float)cell.damage * 0.8f));
+            if (cell.rot > 0.1) under = Color.Lerp(under, new Color(0.35f, 0.4f, 0.25f), Mathf.Clamp01((float)cell.rot));
+            under.a = 1f;
+            return under;
+        }
         Color c = Color.Lerp(skin, tan, Mathf.Clamp01((float)cell.Tannage * 1.2f));
         c = Color.Lerp(c, Flesh, Mathf.Clamp01((float)cell.flesh * 0.8f));
         if (cell.dye > 0.01)
@@ -207,9 +391,10 @@ public static class CraftArt
         return c;
     }
 
-    /// <summary>A hide cell by cell in <paramref name="area"/>; returns the cell size in pixels.</summary>
-    public static float DrawHide(CraftPixels c, CraftRules rules, HideState h, Rect area)
+    /// <summary>A hide cell by cell in <paramref name="area"/> (grain side up, or <paramref name="fleshSide"/> up); returns the cell size in pixels.</summary>
+    public static float DrawHide(CraftPixels c, CraftRules rules, HideState h, Rect area, bool fleshSide = false)
     {
+        bool textile = rules.Hide(h.hide)?.textile ?? false;
         if (h.width <= 0 || h.height <= 0)
             return 0f;
         float cell = Mathf.Min(area.width / h.width, area.height / h.height);
@@ -219,10 +404,25 @@ public static class CraftArt
             {
                 HideCell hc = h.Cell(x, y);
                 if (hc == null || !hc.present) continue;
-                c.Rect(x0 + x * cell, y0 + y * cell, x0 + (x + 1) * cell + 0.5f, y0 + (y + 1) * cell + 0.5f, HideCell(rules, h, hc));
+                c.Rect(x0 + x * cell, y0 + y * cell, x0 + (x + 1) * cell + 0.5f, y0 + (y + 1) * cell + 0.5f, HideCell(rules, h, hc, fleshSide));
                 if (hc.damage > 0.35)
                     c.Line(x0 + x * cell + 1, y0 + y * cell + 1, x0 + (x + 1) * cell - 1, y0 + (y + 1) * cell - 1, new Color(0.1f, 0.06f, 0.05f, 0.8f), 1f);
-                if (hc.hair > 0.3)
+                if (textile)
+                {
+                    // The weave: the warp runs along the bolt's length (up the drawing), the weft across it.
+                    Color thread = new Color(1f, 1f, 1f, 0.12f), weft = new Color(0f, 0f, 0f, 0.1f);
+                    for (float k = 0.25f; k < 1f; k += 0.5f)
+                    {
+                        c.Line(x0 + (x + k) * cell, y0 + y * cell, x0 + (x + k) * cell, y0 + (y + 1) * cell, thread, 1f);
+                        c.Line(x0 + x * cell, y0 + (y + k) * cell, x0 + (x + 1) * cell, y0 + (y + k) * cell, weft, 1f);
+                    }
+                }
+                else if (fleshSide)
+                {
+                    // Fat left on it glistens.
+                    if (hc.flesh > 0.35) c.Disc(x0 + (x + 0.35f) * cell, y0 + (y + 0.6f) * cell, Mathf.Max(1f, cell * 0.12f), new Color(1f, 0.92f, 0.85f, 0.7f));
+                }
+                else if (hc.hair > 0.3)
                     for (int k = 0; k < 3; k++)
                         c.Line(x0 + (x + 0.2f + 0.3f * k) * cell, y0 + y * cell + 1, x0 + (x + 0.3f + 0.3f * k) * cell, y0 + (y + 0.7f) * cell, new Color(0.15f, 0.1f, 0.07f, (float)hc.hair * 0.6f), 1f);
             }

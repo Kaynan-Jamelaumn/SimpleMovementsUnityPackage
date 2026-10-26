@@ -476,17 +476,26 @@ public static class CraftSmelting
             if (mold.eyeAt >= 0 && mold.eyeDiameter > 0)
                 segs[Math.Min(n - 1, (int)(mold.eyeAt * n))].hole = mold.eyeDiameter;
             double moldMass = vol * prof.Density / 1000;
-            double mass = Math.Min(total, moldMass);
+            // How much of the mould the pour brought (op.i1 in thousandths; 0 = all of it).
+            double brought = op.i1 > 0 ? Math.Min(1, op.i1 / 1000.0) : 1;
+            double mass = Math.Min(total, moldMass * brought);
             // Too little metal, or it froze: the far end does not fill.
             double filled = Math.Min(mass / moldMass, fill < 0.85 ? 0.5 + 0.5 * fill / 0.85 : 1);
             int keep = Math.Max(1, (int)Math.Round(n * filled));
             if (keep < n)
             {
                 segs.RemoveRange(keep, n - keep);
-                p.AddDefect(CraftDefectKind.Misrun, keep - 1, 1 - filled, true, filled < mass / moldMass - 1e-6 ? "the mould did not fill: the melt froze" : "too little metal to fill the mould");
+                p.AddDefect(CraftDefectKind.Misrun, keep - 1, 1 - filled, true, filled < mass / moldMass - 1e-6 ? "the mould did not fill: the melt froze"
+                    : brought < 1 && total > moldMass * brought ? "the pour stopped before the mould was full" : "too little metal to fill the mould");
             }
             p.segments = segs;
             p.edges = 0;
+            // Cast in the shape of a design's part: it is meant for that part (the target shows at the anvil and the wheel).
+            if (!string.IsNullOrEmpty(mold.designId))
+            {
+                p.intentDesign = mold.designId;
+                p.intentRole = mold.designRole ?? "";
+            }
             double poro = gas + Math.Max(0, superheat - s.porositySuperheat) / 300 + turbulence * 0.08;
             double inclusion = total > 0 ? Math.Min(0.2, dross / total * (0.3 + turbulence)) : 0;
             for (int i = 0; i < segs.Count; i++)
@@ -494,6 +503,12 @@ public static class CraftSmelting
                 double t = (i + 0.5) / n;
                 segs[i].porosity = CraftMath.Clamp(poro * (0.6 + 0.8 * t), 0, 0.5);
                 segs[i].rough = 60;
+            }
+            // Metal that ran over the top of the mould: thin fins of flash along the parting line, to be filed off.
+            if (op.d > 0.02f)
+            {
+                foreach (MetalSegment seg in segs) seg.rough = Math.Max(seg.rough, 60 + 80 * Math.Min(1, op.d));
+                p.Record(ws.Elapsed, CraftOpKind.Pour, "It ran over the mould: fins of flash along the edges", op.d);
             }
             if (poro > 0.06)
                 p.AddDefect(CraftDefectKind.Porosity, -1, poro, poro > 0.25, superheat > s.porositySuperheat ? "gas from a melt held too hot" : "gas and a turbulent pour");
@@ -568,8 +583,9 @@ public sealed partial class CraftWorkshop
     /// <summary>
     /// Adds a flux: into the furnace (<paramref name="where"/> 0: limestone, an arcane flux; a cupel), over the crucible's
     /// melt (1: borax, charcoal), or onto a piece in the fire (2: sand or borax for welding - it also keeps scale off).
+    /// <paramref name="coverage"/> (0-1): how evenly it was spread over the melt or the piece (sprinkled by hand).
     /// </summary>
-    public bool AddFlux(string supplyId, int count, int where, out string reason, string piece = null)
+    public bool AddFlux(string supplyId, int count, int where, out string reason, string piece = null, double coverage = 1)
     {
         reason = "";
         CraftSupplyDefinition s = Rules.Supply(supplyId);
@@ -591,9 +607,12 @@ public sealed partial class CraftWorkshop
                 if (p.MaxTemperature < 600) return Refuse("Flux only sticks to hot metal.", out reason, piece);
                 break;
         }
-        Record(new CraftOperation { kind = CraftOpKind.AddFlux, id = s.id, i0 = where, i1 = count, piece = piece ?? "", label = s.Name });
+        Record(new CraftOperation { kind = CraftOpKind.AddFlux, id = s.id, i0 = where, i1 = count, piece = piece ?? "", label = s.Name, a = (float)CraftMath.Clamp01(coverage) });
         return true;
     }
+
+    /// <summary>The share of a hand-spread amount that did its work (operations recorded before the hands counted: all of it).</summary>
+    internal static double Spread(float coverage) => coverage > 0f ? CraftMath.Clamp01(coverage) : 1;
 
     private void ApplyFlux(CraftOperation op)
     {
@@ -609,13 +628,13 @@ public sealed partial class CraftWorkshop
                 else CraftSmelting.AddTo(Furnace.pool, "#flux:" + s.id, grams);
                 break;
             case 1:
-                Crucible.cover = Math.Min(1, Crucible.cover + 0.5 * op.i1 * s.strength);
-                Crucible.dross *= 0.6;
+                Crucible.cover = Math.Min(1, Crucible.cover + 0.5 * op.i1 * s.strength * Spread(op.a));
+                Crucible.dross *= 1 - 0.4 * Spread(op.a);
                 break;
             default:
                 CraftPiece p = Piece(op.piece);
                 if (p == null) break;
-                p.flux = Math.Min(1, p.flux + 0.6 * op.i1 * s.strength);
+                p.flux = Math.Min(1, p.flux + 0.6 * op.i1 * s.strength * Spread(op.a));
                 p.Record(Elapsed, op.kind, $"Fluxed with {s.Name.ToLowerInvariant()}");
                 break;
         }
@@ -723,7 +742,7 @@ public sealed partial class CraftWorkshop
     /// Pours the crucible into a mould: <paramref name="rate"/> (0-1, how fast), <paramref name="steadiness"/> (0-1),
     /// <paramref name="interruptions"/> (times the stream stopped). Returns the casting's piece id.
     /// </summary>
-    public string Pour(string moldId, double rate, double steadiness, int interruptions, out string reason)
+    public string Pour(string moldId, double rate, double steadiness, int interruptions, out string reason, double spilled = 0, double overflow = 0, double filled = 1)
     {
         reason = "";
         CraftMold mold = Rules.Mold(moldId);
@@ -754,10 +773,17 @@ public sealed partial class CraftWorkshop
             Refuse("It is not fully melted: it will not pour.", out reason);
             return null;
         }
-        var op = new CraftOperation { kind = CraftOpKind.Pour, id = mold.id, a = (float)CraftMath.Clamp01(rate), b = (float)CraftMath.Clamp01(steadiness), i0 = Math.Max(0, interruptions) };
+        var op = new CraftOperation
+        {
+            kind = CraftOpKind.Pour, id = mold.id, a = (float)CraftMath.Clamp01(rate), b = (float)CraftMath.Clamp01(steadiness), i0 = Math.Max(0, interruptions),
+            c = (float)CraftMath.Clamp(spilled, 0, 2), d = (float)CraftMath.Clamp01(overflow), i1 = FilledShare(filled),
+        };
         Record(op);
         return op.other;
     }
+
+    /// <summary>How much of the mould the pour brought, in thousandths (0 = all of it, as before it was measured).</summary>
+    private static int FilledShare(double filled) => filled >= 0.9995 ? 0 : Math.Max(1, (int)Math.Round(CraftMath.Clamp01(filled) * 1000));
 
     private void ApplyPour(CraftOperation op)
     {
@@ -766,15 +792,17 @@ public sealed partial class CraftWorkshop
         if (p == null)
             return;
         double m = c.Mass;
+        // What missed the mould (or ran over it) is lost on the floor: op.c is that metal for each gram cast.
+        double lost = Math.Min(Math.Max(0, m - used), used * Math.Max(0, op.c + op.d * 0.3));
         if (m > 0)
-            foreach (CraftAmount a in c.melt) a.grams = Math.Max(0, a.grams - used * a.grams / m);
+            foreach (CraftAmount a in c.melt) a.grams = Math.Max(0, a.grams - (used + lost) * a.grams / m);
         c.melt.RemoveAll(a => a.grams < 1e-6);
         c.dross *= 0.7;
         Raise(CraftEventKind.Poured, p.id, op.id, "");
     }
 
     /// <summary>Runs the furnace's liquid metal out into a mould (copper, tin, lead, silver, cast iron). Returns the casting's id.</summary>
-    public string TakeMelt(string moldId, double rate, double steadiness, out string reason)
+    public string TakeMelt(string moldId, double rate, double steadiness, out string reason, double spilled = 0, double overflow = 0, double filled = 1)
     {
         reason = "";
         if (!Has(CraftTools.Furnace))
@@ -796,7 +824,11 @@ public sealed partial class CraftWorkshop
             Refuse("There is no such mould.", out reason);
             return null;
         }
-        var op = new CraftOperation { kind = CraftOpKind.TakeMelt, id = mold.id, a = (float)CraftMath.Clamp01(rate), b = (float)CraftMath.Clamp01(steadiness) };
+        var op = new CraftOperation
+        {
+            kind = CraftOpKind.TakeMelt, id = mold.id, a = (float)CraftMath.Clamp01(rate), b = (float)CraftMath.Clamp01(steadiness),
+            c = (float)CraftMath.Clamp(spilled, 0, 2), d = (float)CraftMath.Clamp01(overflow), i1 = FilledShare(filled),
+        };
         Record(op);
         return op.other;
     }
@@ -817,6 +849,7 @@ public sealed partial class CraftWorkshop
         if (p == null)
             return;
         double all = total + f.matte;
+        used += Math.Min(Math.Max(0, all - used), used * Math.Max(0, op.c + op.d * 0.3)); // spilled on the floor
         foreach (CraftAmount a in f.pool)
             if (!a.element.StartsWith("#", StringComparison.Ordinal)) a.grams = Math.Max(0, a.grams - used * a.grams / all);
         f.matte = Math.Max(0, f.matte - used * f.matte / all);

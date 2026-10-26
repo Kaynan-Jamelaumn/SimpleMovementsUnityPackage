@@ -349,6 +349,16 @@ public class WoodState
     public double split;
     [Tooltip("Oiled (0-1).")]
     public double oil;
+    [Tooltip("How far the fibres run out of the piece (0 straight-grained - 1 cross-grained): rived wood follows its grain, sawn stock cuts across it.")]
+    public double runout = 0.2;
+    [Tooltip("Checks: cracks from drying too fast (0-1).")]
+    public double checks;
+    [Tooltip("How long it has steamed, for its thickness (0-1: through).")]
+    public double steamed;
+    [Tooltip("Finish (varnish or oil) built up (0-1), how even it is (0-1), and how wet the last coat still is (0-1).")]
+    public double finish, finishEven = 1, finishWet;
+    [Tooltip("In the drying stack: how evenly it is stickered (0-1), its ends sealed (0-1), the cover over it (0 open sun - 1 shade).")]
+    public double stackEven = 0.5, endsSealed, shade = 0.5;
 }
 
 /// <summary>A set of fasteners: kind, count, size and what they are like.</summary>

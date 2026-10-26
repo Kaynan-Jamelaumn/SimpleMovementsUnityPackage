@@ -5,6 +5,9 @@ using System.Collections.Generic;
 /// The player's hands: a seeded, repeatable unsteadiness that grows as they tire and shrinks with practice. Every
 /// minigame passes its input through the hands, so the same input from the same state always gives the same result
 /// (replays and tests stay exact) while still never being perfect.
+/// <para>A tired arm is weaker (<see cref="Strength"/>: blows land lighter, the bellows puff less, the wheel is pressed
+/// less), less precise (<see cref="Unsteadiness"/>) and now and then slips (<see cref="Slips"/>: a glancing blow, a
+/// knife that skids). It rests while it is not working.</para>
 /// </summary>
 [Serializable]
 public sealed class CraftHands
@@ -16,6 +19,8 @@ public sealed class CraftHands
     public double fatigue;
     /// <summary>0 novice .. 1 master (from practice; the station sets it from the journal).</summary>
     public double skill;
+    /// <summary>Seconds since the last movement (resting starts in earnest after a moment).</summary>
+    public double idle;
 
     public CraftHands() { }
     public CraftHands(int seed, double skill = 0) { this.seed = seed; this.skill = CraftMath.Clamp01(skill); }
@@ -30,14 +35,43 @@ public sealed class CraftHands
         return n * Unsteadiness;
     }
 
+    /// <summary>How much of a fresh arm's strength is left: 1 fresh .. 0.45 spent.</summary>
+    public double Strength => 1 - 0.55 * fatigue * fatigue;
+
+    /// <summary>How tired the arm feels, in words (empty while it is fresh).</summary>
+    public string Feeling => fatigue < 0.35 ? "" : fatigue < 0.6 ? "Your arm is tiring: the blows land lighter and less true."
+        : fatigue < 0.85 ? "Your arm is heavy: weak, wandering blows, and the hammer may slip. Rest a moment."
+        : "Your arm is spent: it trembles, the tools slip. Put it down and rest.";
+
+    /// <summary>
+    /// Whether this movement slips (seeded, so repeatable): never while the arm is fresh, more and more as it tires,
+    /// less with practice, more when rushed.
+    /// </summary>
+    public bool Slips(int salt, double rushed = 0)
+    {
+        double chance = Math.Max(0, fatigue - 0.4) * 0.6 * (1 - 0.6 * skill) + CraftMath.Clamp01(rushed) * 0.15 * fatigue;
+        return chance > 0 && CraftMath.Noise(seed, count, salt + 97) < chance;
+    }
+
     /// <summary>One movement made with <paramref name="effort"/> (0-1).</summary>
     public void Move(double effort)
     {
         count++;
+        idle = 0;
         fatigue = Math.Min(1, fatigue + 0.004 + 0.02 * effort * effort);
     }
 
-    public void Rest(double seconds) => fatigue = Math.Max(0, fatigue * Math.Exp(-seconds / 25));
+    /// <summary>
+    /// Time passing: the arm recovers slowly while it works between movements and properly once it has been still for a
+    /// couple of seconds (about half the tiredness goes in twenty seconds of rest).
+    /// </summary>
+    public void Rest(double seconds)
+    {
+        if (seconds <= 0) return;
+        idle += seconds;
+        double rate = idle > 2 ? 1 : 0.2;
+        fatigue = Math.Max(0, fatigue * Math.Exp(-seconds * rate / 28));
+    }
 }
 
 /// <summary>A hammer blow as the minigame produced it, ready for <see cref="CraftWorkshop.Strike"/>.</summary>
@@ -50,6 +84,12 @@ public struct CraftBlow
     public double miss;
     /// <summary>0 smooth swing .. 1 snatched (struck too soon after the last blow, or overcharged).</summary>
     public double rushed;
+    /// <summary>The hammer slipped (a tired arm): a glancing blow, off its mark, weak and tilted.</summary>
+    public bool slipped;
+
+    /// <summary>How the blow felt, in words.</summary>
+    public string Words => slipped ? "The hammer slipped: a glancing blow, off its mark."
+        : $"{(force > 0.9 ? "A heavy" : force > 0.5 ? "A firm" : "A light")} blow{(rushed > 0.3 ? ", rushed" : "")}{(miss > 0.03 ? ", off its mark" : "")}.";
 }
 
 /// <summary>
@@ -106,13 +146,25 @@ public sealed class CraftHammer
         double dAim = (CraftMath.Noise(hands.seed, hands.count, 11) * 2 - 1) * shake * 0.6;
         double dTilt = (CraftMath.Noise(hands.seed, hands.count, 12) * 2 - 1) * shake * 2.5;
         double dForce = (CraftMath.Noise(hands.seed, hands.count, 13) * 2 - 1) * shake * 1.5;
+        // A tired arm cannot lift the hammer as high: the blow lands lighter. A heavier hammer tires it more.
+        double strength = Math.Max(0.2, hands.Strength - 0.1 * (weight - 1));
+        bool slipped = hands.Slips(14, rushed);
+        if (slipped)
+        {
+            // The hammer glances off: it lands off the mark, tilted, with little of its force.
+            double side = CraftMath.Noise(hands.seed, hands.count, 15) * 2 - 1;
+            dAim += Math.Sign(side == 0 ? 1 : side) * (0.05 + 0.08 * Math.Abs(side));
+            dTilt += (CraftMath.Noise(hands.seed, hands.count, 16) < 0.5 ? -1 : 1) * (0.5 + 0.4 * hands.fatigue);
+            strength *= 0.35 + 0.25 * CraftMath.Noise(hands.seed, hands.count, 17);
+        }
         var blow = new CraftBlow
         {
             position = CraftMath.Clamp01(aim + dAim),
             tilt = CraftMath.Clamp(tilt + dTilt, -1, 1),
-            force = CraftMath.Clamp(charge * (1 - 0.6 * rushed) * (1 + dForce), 0.02, 1.2),
+            force = CraftMath.Clamp(charge * strength * (1 - 0.6 * rushed) * (1 + dForce), 0.02, 1.2),
             miss = Math.Abs(dAim),
             rushed = rushed,
+            slipped = slipped,
         };
         hands.Move(blow.force * weight);
         Raised = false;
@@ -146,7 +198,8 @@ public sealed class CraftStroke
         ys.Add(CraftMath.Clamp01(y));
         ts.Add(time);
         angles.Add(angle + jitter * 40);
-        pressures.Add(CraftMath.Clamp01(pressure + jitter * 0.5));
+        // A tired arm cannot press as hard, however high the hand is held.
+        pressures.Add(CraftMath.Clamp01((pressure + jitter * 0.5) * (hands == null ? 1 : 0.55 + 0.45 * hands.Strength)));
         if (hands != null && xs.Count % 6 == 0) hands.Move(pressure * 0.5);
     }
 
@@ -234,19 +287,31 @@ public sealed class CraftStroke
 /// <summary>
 /// Pouring: the player tilts the crucible (0 upright .. 1 tipped over). The rate follows the tilt with a lag; the
 /// steadiness is how little the hands moved the tilt while the metal ran; an interruption is the stream stopping and
-/// starting again, which leaves a cold shut in the casting.
+/// starting again, which leaves a cold shut in the casting. Metal that misses the mould's mouth is
+/// <see cref="Spilled"/>; metal still poured once the mould is full runs over it (<see cref="Overflow"/>).
 /// </summary>
 public sealed class CraftPourControl
 {
     public double Rate { get; private set; }
     public double Poured { get; private set; }
     public int Interruptions { get; private set; }
+    /// <summary>Metal that missed the mould (in mould-fulls).</summary>
+    public double Spilled { get; private set; }
+    /// <summary>Metal poured after the mould was full (in mould-fulls): it runs over the top.</summary>
+    public double Overflow { get; private set; }
     public bool Started => Poured > 0;
+    public bool Full => Poured >= 1;
     private double sum, time, waver, lastTarget = -1;
     private bool flowing;
 
-    /// <summary>One frame of pouring; returns the fraction of the mould filled this frame (rate × dt / fill time).</summary>
-    public double Tick(double dt, double tilt, CraftHands hands, double fillSeconds = 4)
+    /// <summary>Spilled metal for each mould-full cast (what the workshop's pour takes as lost).</summary>
+    public double SpillShare => Poured > 0.05 ? Math.Min(2, Spilled / Poured) : 0;
+
+    /// <summary>
+    /// One frame of pouring; returns the fraction of the mould filled this frame (rate × dt / fill time).
+    /// <paramref name="onTarget"/>: the stream lands in the mould's mouth (else it spills on the floor).
+    /// </summary>
+    public double Tick(double dt, double tilt, CraftHands hands, double fillSeconds = 4, bool onTarget = true)
     {
         double target = CraftMath.Clamp01((tilt - 0.25) / 0.6);
         // The hands drift slowly (a new waver every quarter second), not frame by frame.
@@ -263,8 +328,11 @@ public sealed class CraftPourControl
         }
         lastTarget = target;
         double add = now ? Rate * dt / Math.Max(0.5, fillSeconds) : 0;
+        if (!onTarget) { Spilled += add; return 0; }
+        double room = Math.Max(0, 1 - Poured);
+        if (add > room) Overflow += add - room;
         Poured = Math.Min(1, Poured + add);
-        return add;
+        return Math.Min(add, room);
     }
 
     /// <summary>The mean rate while the metal ran (0-1).</summary>
@@ -302,7 +370,7 @@ public sealed class CraftRhythm
         if (err >= 1) Misses++; else Hits++;
         errSum += err;
         errSq += err * err;
-        pullSum += CraftMath.Clamp01(pull + (hands?.Tremble(Hits + Misses + 42) ?? 0));
+        pullSum += CraftMath.Clamp01((pull + (hands?.Tremble(Hits + Misses + 42) ?? 0)) * (hands == null ? 1 : 0.6 + 0.4 * hands.Strength));
         hands?.Move(0.3);
         return err;
     }
@@ -340,7 +408,7 @@ public sealed class CraftBellowsPump
         double gap = clock - lastPump;
         lastPump = clock;
         double steady = gap < 0.25 ? 0.35 : gap < 0.5 ? 0.75 : gap < 1.5 ? 1 : 0.8;
-        Strength = Math.Min(1, Strength * 0.6 + 0.45 * steady);
+        Strength = Math.Min(1, Strength * 0.6 + 0.45 * steady * (hands == null ? 1 : 0.5 + 0.5 * hands.Strength));
         hands?.Move(0.4);
         return Strength;
     }

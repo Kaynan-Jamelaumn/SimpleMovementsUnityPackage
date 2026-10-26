@@ -32,10 +32,13 @@ public static class InputActionResolver
     }
 
     /// <summary>
-    /// Creates a button action <paramref name="name"/> in <paramref name="mapName"/> (else the first non-UI map) with
-    /// <paramref name="paths"/> as its bindings. Returns null (and why in <paramref name="error"/>) when it cannot.
+    /// Creates an action <paramref name="name"/> (a button unless <paramref name="type"/> says otherwise) in
+    /// <paramref name="mapName"/> with <paramref name="paths"/> as its bindings. A missing map is created when
+    /// <paramref name="createMap"/> is set, else the action goes to the first non-UI map. Returns null (and why in
+    /// <paramref name="error"/>) when it cannot.
     /// </summary>
-    public static InputAction Create(InputActionAsset asset, string name, IList<string> paths, out string error, string mapName = DefaultMap, bool remember = true)
+    public static InputAction Create(InputActionAsset asset, string name, IList<string> paths, out string error, string mapName = DefaultMap, bool remember = true,
+        InputActionType type = InputActionType.Button, string expectedControlType = null, bool createMap = false)
     {
         error = null;
         if (asset == null) { error = "no input actions"; return null; }
@@ -45,10 +48,11 @@ public static class InputActionResolver
             return existing;
 
         InputActionMap map = asset.FindActionMap(mapName, false);
-        if (map == null)
+        bool newMap = map == null && createMap && !string.IsNullOrWhiteSpace(mapName);
+        if (map == null && !newMap)
             foreach (InputActionMap m in asset.actionMaps)
                 if (m != null && !string.Equals(m.name, "UI", StringComparison.OrdinalIgnoreCase)) { map = m; break; }
-        if (map == null) { error = "the input actions have no gameplay map"; return null; }
+        if (map == null && !newMap) { error = "the input actions have no gameplay map"; return null; }
 
         // Actions can only be added while their asset is disabled, and adding one throws away the asset's shared state:
         // until the asset resolves its bindings again, asking ANY of its actions whether it is enabled (FindAction does)
@@ -70,7 +74,9 @@ public static class InputActionResolver
         {
             try { asset.Disable(); }
             catch (Exception) { }
-            created = map.AddAction(name, InputActionType.Button);
+            if (newMap)
+                map = asset.AddActionMap(mapName);
+            created = map.AddAction(name, type, expectedControlLayout: expectedControlType);
             if (paths != null)
                 foreach (string p in paths)
                     if (!string.IsNullOrWhiteSpace(p))
@@ -86,7 +92,7 @@ public static class InputActionResolver
             Restore(asset, wasEnabled);
         }
         if (created != null && remember)
-            InputBindingStore.RememberCreatedAction(map.name, name, paths);
+            InputBindingStore.RememberCreatedAction(map.name, name, paths, type, expectedControlType, createMap);
         return created;
     }
 
@@ -117,7 +123,7 @@ public static class InputActionResolver
     /// The third step: a standalone action on <paramref name="paths"/> (any device) owned by the caller, used when the
     /// action can neither be found nor created. Dispose it when done. Null when there is no path.
     /// </summary>
-    public static InputAction Standalone(string name, IList<string> paths)
+    public static InputAction Standalone(string name, IList<string> paths, InputActionType type = InputActionType.Button, string expectedControlType = null)
     {
         if (paths == null)
             return null;
@@ -125,7 +131,7 @@ public static class InputActionResolver
         foreach (string p in paths)
         {
             if (string.IsNullOrWhiteSpace(p)) continue;
-            if (a == null) a = new InputAction(name, InputActionType.Button);
+            if (a == null) a = new InputAction(name, type, expectedControlType: expectedControlType);
             a.AddBinding(p.Trim());
         }
         a?.Enable();

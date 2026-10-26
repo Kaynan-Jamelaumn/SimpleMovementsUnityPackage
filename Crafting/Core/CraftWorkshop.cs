@@ -43,12 +43,30 @@ public enum CraftTools
     AssemblyBench = 1 << 16,
     /// <summary>A box of warm ashes (slow cooling).</summary>
     Ashes = 1 << 17,
+    /// <summary>A chopping block with a froe, a mallet and wedges: riving wood along its grain.</summary>
+    ChoppingBlock = 1 << 18,
+    /// <summary>A sawhorse with rip and crosscut saws.</summary>
+    Sawhorse = 1 << 19,
+    /// <summary>A steam box and bending forms with a strap.</summary>
+    SteamBox = 1 << 20,
+    /// <summary>A drying stack under a roof: stickers, end sealer, a cover (seasoning wood).</summary>
+    DryingStack = 1 << 21,
+    /// <summary>A finishing bench: sandpaper and pumice, brushes, oil and varnish.</summary>
+    FinishingBench = 1 << 22,
+    /// <summary>A spinning wheel (and a drop spindle): fibre into thread.</summary>
+    SpinningWheel = 1 << 23,
+    /// <summary>A tailor's table: shears, chalk, pins, needles and thimbles.</summary>
+    TailorTable = 1 << 24,
 
     Smithy = Forge | Anvil | QuenchTank | Grinder | Files | Polishing | Whetstone | Ashes | Oven | AssemblyBench,
     Smeltery = OreBench | Furnace | Crucible,
     Tannery = FleshingBeam | Vats | Frame | Rack,
-    Leatherworks = LeatherBench | AssemblyBench | Files,
-    Everything = Smithy | Smeltery | Tannery | Leatherworks,
+    Leatherworks = LeatherBench | AssemblyBench,
+    Woodshop = ChoppingBlock | Sawhorse | SteamBox | DryingStack | FinishingBench | Files | AssemblyBench,
+    Tailor = SpinningWheel | TailorTable | AssemblyBench,
+    /// <summary>A smithy with a leather bench and a tailor's table: plate and mixed armour (metal on leather and cloth) is assembled here.</summary>
+    Armourer = Smithy | LeatherBench | TailorTable,
+    Everything = Smithy | Smeltery | Tannery | Leatherworks | Woodshop | Tailor,
 }
 
 /// <summary>
@@ -359,12 +377,12 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.Pour: ApplyPour(op); break;
             case CraftOpKind.TakeMelt: ApplyTakeMelt(op); break;
             case CraftOpKind.Strike: CraftForging.Strike(this, Piece(op.piece), op); break;
-            case CraftOpKind.Fold: CraftForging.Fold(this, Piece(op.piece), op.a); break;
+            case CraftOpKind.Fold: CraftForging.Fold(this, Piece(op.piece), op.a, op.b); break;
             case CraftOpKind.Weld: ApplyWeld(op); break;
             case CraftOpKind.FormFastener: ApplyFormFastener(op); break;
             case CraftOpKind.SplitPiece: ApplySplit(op); break;
             case CraftOpKind.Agitate: ApplyAgitate(op); break;
-            case CraftOpKind.ApplyClay: CraftSurface.ApplyClay(this, Piece(op.piece), op.i0, op.i1, op.a); break;
+            case CraftOpKind.ApplyClay: CraftSurface.ApplyClay(this, Piece(op.piece), op.i0, op.i1, op.a, op.points); break;
             case CraftOpKind.Descale: CraftSurface.Descale(this, Piece(op.piece), op); break;
             case CraftOpKind.Grind: CraftSurface.Grind(this, Piece(op.piece), op); break;
             case CraftOpKind.File: CraftSurface.File(this, Piece(op.piece), op); break;
@@ -389,6 +407,14 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.JointWork: CraftAssembly.Work(this, Piece(op.piece), op); break;
             case CraftOpKind.Finish: ApplyFinish(op); break;
             case CraftOpKind.SetIntent: ApplyIntent(op); break;
+            case CraftOpKind.Carve: CraftSurface.Carve(this, Piece(op.piece), op); break;
+            case CraftOpKind.BrushOre: CraftOres.Brush(this, Piece(op.piece), op); break;
+            case CraftOpKind.Rive: CraftWoodwork.Rive(this, Piece(op.piece), op); break;
+            case CraftOpKind.SawCut: CraftWoodwork.SawCut(this, Piece(op.piece), op); break;
+            case CraftOpKind.BendWood: CraftWoodwork.Bend(this, Piece(op.piece), op); break;
+            case CraftOpKind.StackWood: CraftWoodwork.Stack(this, Piece(op.piece), op); break;
+            case CraftOpKind.SandWood: CraftWoodwork.Sand(this, Piece(op.piece), op); break;
+            case CraftOpKind.Varnish: CraftWoodwork.Varnish(this, Piece(op.piece), op); break;
         }
     }
 
@@ -471,7 +497,7 @@ public sealed partial class CraftWorkshop
         }
         if (p.location == CraftLocation.Melt)
         {
-            Refuse("It is in the crucible.", out reason, id);
+            Refuse("It is in the crucible: lift it out with the tongs first.", out reason, id);
             return null;
         }
         var result = new List<CraftPiece> { p.Clone() };
@@ -540,8 +566,12 @@ public sealed partial class CraftWorkshop
         CraftPiece p = Piece(id);
         if (p == null)
             return Refuse("There is no such piece here.", out reason);
-        if (p.location == CraftLocation.Assembled || p.location == CraftLocation.Melt)
+        if (p.location == CraftLocation.Assembled)
             return Refuse("It cannot be moved now.", out reason, id);
+        // A piece in the crucible that has not melted yet can be lifted out with the tongs (onto the bench only):
+        // once it melts it is part of the melt.
+        if (p.location == CraftLocation.Melt && to != CraftLocation.Air && to != CraftLocation.Melt)
+            return Refuse("Lift it out of the crucible first.", out reason, id);
         if (!CanGo(p, to, vat, out reason))
             return Refuse(reason, out reason, id);
         Record(new CraftOperation
@@ -586,7 +616,7 @@ public sealed partial class CraftWorkshop
             case CraftLocation.Vat:
                 if (!Has(CraftTools.Vats) || vat < 0 || vat >= Vats.Count) { reason = "There is no such vat here."; return false; }
                 if (Vats[vat].volume <= 0.01) { reason = "That vat is empty: fill it first."; return false; }
-                if (p.kind != CraftPieceKind.Hide && !(metal && Rules.Agent(Vats[vat].agent)?.kind == CraftAgentKind.Acid))
+                if (p.kind != CraftPieceKind.Hide && !(metal && Rules.Agent(Vats[vat].agent)?.kind == CraftAgentKind.Acid) || CraftTextiles.IsCloth(Rules, p))
                 {
                     reason = "Only hides soak in the vats (and metal in a pickle).";
                     return false;
@@ -600,11 +630,19 @@ public sealed partial class CraftWorkshop
                 return true;
             case CraftLocation.Frame:
                 if (!Has(CraftTools.Frame)) { reason = "There is no stretching frame here."; return false; }
-                if (p.kind != CraftPieceKind.Hide) { reason = "Only hides are laced in the frame."; return false; }
+                if (p.kind != CraftPieceKind.Hide || CraftTextiles.IsCloth(Rules, p)) { reason = "Only hides are laced in the frame."; return false; }
                 return true;
             case CraftLocation.Rack:
                 if (!Has(CraftTools.Rack)) { reason = "There is no drying rack here."; return false; }
                 if (p.kind != CraftPieceKind.Hide && p.kind != CraftPieceKind.Wood) { reason = "The rack is for hides."; return false; }
+                return true;
+            case CraftLocation.Steam:
+                if (!Has(CraftTools.SteamBox)) { reason = "There is no steam box here."; return false; }
+                if (p.kind != CraftPieceKind.Wood) { reason = "Only wood goes in the steam box."; return false; }
+                return true;
+            case CraftLocation.Stack:
+                if (!Has(CraftTools.DryingStack)) { reason = "There is no drying stack here."; return false; }
+                if (p.kind != CraftPieceKind.Wood) { reason = "Only wood seasons in the stack."; return false; }
                 return true;
         }
         reason = "It cannot go there.";
@@ -828,6 +866,7 @@ public sealed partial class CraftWorkshop
                 case CraftPieceKind.Wood:
                 case CraftPieceKind.Fasteners:
                     CraftThermal.StepPiece(this, p, dt);
+                    if (p.kind == CraftPieceKind.Wood) CraftWoodwork.Step(this, p, dt);
                     break;
                 case CraftPieceKind.Ore:
                     if (p.location == CraftLocation.Furnace) CraftSmelting.StepOre(this, p, dt);

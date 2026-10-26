@@ -48,9 +48,9 @@ public static class SharedPlayerInput
         if (!changed || !byRoot.TryGetValue(root, out Entry e) || e.input == null)
             return;
         if (block)
-            e.input.Player.Disable();
+            InputBindingStore.DisableGameplayMap(e.input.asset);
         else if (e.enables > 0)
-            e.input.Player.Enable();
+            InputBindingStore.EnableGameplayMap(e.input.asset);
     }
 
     /// <summary>Is the input of this player blocked (see <see cref="SetBlocked"/>)?</summary>
@@ -91,7 +91,7 @@ public static class SharedPlayerInput
         byRoot.Remove(e.root);
         blocked.Remove(e.root);
         if (e.enables > 0)
-            input.Player.Disable();
+            InputBindingStore.DisableGameplayMap(input.asset);
         input.Dispose();
     }
 
@@ -102,11 +102,11 @@ public static class SharedPlayerInput
             return;
         if (!byInput.TryGetValue(input, out Entry e))
         {
-            input.Player.Enable();
+            InputBindingStore.EnableGameplayMap(input.asset);
             return;
         }
         if (e.enables++ == 0 && !blocked.Contains(e.root))
-            input.Player.Enable();
+            InputBindingStore.EnableGameplayMap(input.asset);
     }
 
     /// <summary>Turns the Player map off when no holder needs it any more. An input that is not shared is simply disabled.</summary>
@@ -116,11 +116,11 @@ public static class SharedPlayerInput
             return;
         if (!byInput.TryGetValue(input, out Entry e))
         {
-            input.Player.Disable();
+            InputBindingStore.DisableGameplayMap(input.asset);
             return;
         }
         if (e.enables > 0 && --e.enables == 0)
-            input.Player.Disable();
+            InputBindingStore.DisableGameplayMap(input.asset);
     }
 
     /// <summary>True if <paramref name="input"/> is a shared copy (the owner must Release it, not Dispose it).</summary>

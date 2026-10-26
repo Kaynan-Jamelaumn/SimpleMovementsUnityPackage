@@ -41,9 +41,10 @@ public enum InteractionPromptPlacement
 /// a target aimed at but out of reach shows why ("Too far").</item>
 /// <item>While an interaction is open (a shop, a dialogue) targeting pauses and the Interact input closes it.</item>
 /// </list>
-/// Put it on the player (added by Tools ▸ SimpleMovements ▸ Player ▸ Add Player Interactor To Players In Scene). The older
-/// <c>Player.OnInteract</c> keeps working for doors, items and chests; turn on Handle Legacy Interactables to use this
-/// component for them too (and then unwire Player.OnInteract so a key is not handled twice).
+/// Put it on the player (added by Tools ▸ SimpleMovements ▸ Player ▸ Add Player Interactor To Players In Scene). Doors,
+/// items on the ground and chests (the older Interactable / ItemPickable / Storage) get the same prompt with the
+/// Interact key as soon as they are in reach (Prompt Older Interactables, on by default), and this component uses them:
+/// a wired <c>Player.OnInteract</c> then steps aside, so a key is never handled twice.
 /// <para>Network sessions: only the copy of the player controlled from this machine targets and reads input. On a
 /// client that copy hands each interaction to its <see cref="Relay"/> (the server checks range, hold time and
 /// <see cref="IInteractable.CanInteract"/> with its own positions and interacts on its copy, see
@@ -76,8 +77,12 @@ public class PlayerInteractor : MonoBehaviour
     [Tooltip("A target already in focus is kept unless another one is better by this much (metres) - stops flicker between two NPCs.")]
     [SerializeField, Min(0f)] private float focusStickiness = 0.5f;
     [Tooltip("Also use doors, dungeon objects, items on the ground and storage (Interactable / ItemPickable / Storage) like Player.OnInteract " +
-             "does. Unwire Player.OnInteract when turning this on, or the key is handled twice.")]
+             "does (Prompt Older Interactables below does the same and is on by default; Player.OnInteract steps aside either way).")]
     [SerializeField] private bool handleLegacyInteractables;
+    [Tooltip("Doors, items on the ground and storage show the prompt too (\"[E] Pick up Iron Bar\") as soon as they are in reach, and " +
+             "this component uses them: a Player whose OnInteract is wired then leaves them to it (no key is handled twice, its own " +
+             "interaction text hides). Off = only when Handle Legacy Interactables is on.")]
+    [SerializeField] private bool promptOlderInteractables = true;
     [Tooltip("Reach of those older objects (Player.OnInteract uses 3.2 m).")]
     [SerializeField, Min(0.5f)] private float legacyRange = 3.2f;
 
@@ -163,6 +168,18 @@ public class PlayerInteractor : MonoBehaviour
     public string ClickSource => clickInput != null ? clickInput.Source : clickToInteract ? "not bound yet" : "off";
     /// <summary>Reach of the older interaction objects (doors, items, storage) handled through <see cref="LegacyInteractableTarget"/>.</summary>
     public float LegacyRange => legacyRange;
+    /// <summary>Does this interactor find, prompt for and use the older objects (doors, items on the ground, storage)?</summary>
+    public bool HandlesOlderInteractables => handleLegacyInteractables || promptOlderInteractables;
+
+    /// <summary>
+    /// Is there an enabled interactor on <paramref name="anyOnPlayer"/>'s player that handles the older objects itself?
+    /// <c>Player.OnInteract</c> then leaves them to it, so the key is never handled twice.
+    /// </summary>
+    public static bool HandlesOlderInteractablesFor(Component anyOnPlayer)
+    {
+        PlayerInteractor i = For(anyOnPlayer);
+        return i != null && i.isActiveAndEnabled && i.HandlesOlderInteractables;
+    }
 
     /// <summary>
     /// Network: sends this player's interactions to the server. Set on a client's own player by the network layer; null
@@ -574,7 +591,7 @@ public class PlayerInteractor : MonoBehaviour
         IInteractable t = col.GetComponentInParent<IInteractable>();
         if (t != null)
             return t is Behaviour b && !b.isActiveAndEnabled ? null : t;
-        if (!handleLegacyInteractables)
+        if (!HandlesOlderInteractables)
             return null;
         Component legacy = LegacyInteractableTarget.FindOwner(col);
         if (legacy == null || (legacy is Behaviour lb && !lb.isActiveAndEnabled))

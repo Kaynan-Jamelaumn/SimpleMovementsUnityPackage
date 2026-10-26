@@ -496,6 +496,13 @@ public class AlchemyDatabaseEditor : Editor
                 AlchemyLabWindow.Open(db);
             if (GUILayout.Button(new GUIContent("Create Potion Items", "An item asset for every tier of every outcome (recommended for saves; network sessions also work with the runtime items).")))
                 AlchemyEditorTools.CreatePotionItems(db, true);
+            if (GUILayout.Button(new GUIContent("Add Missing Built-in", "Add the built-in substances, reactions and potions this database does not have yet (by id). Nothing already here changes.")))
+            {
+                Undo.RecordObject(db, "Add Missing Built-in Alchemy");
+                int added = AlchemyDefaults.AddMissing(db);
+                EditorUtility.SetDirty(db);
+                EditorUtility.DisplayDialog("Alchemy", added > 0 ? $"Added {added} built-in entries. Run Create Ingredient Items and Create Potion Items for the new ones." : "Nothing was missing.", "OK");
+            }
             if (GUILayout.Button(new GUIContent("Reset To Built-in", "Replace the content with the built-in alchemy.")) &&
                 EditorUtility.DisplayDialog("Alchemy", "Replace every property, substance, reaction and outcome with the built-in alchemy?", "Replace", "Cancel"))
             {

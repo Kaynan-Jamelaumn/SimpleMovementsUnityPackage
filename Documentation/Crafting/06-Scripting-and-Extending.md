@@ -45,18 +45,38 @@ seen or heard, never a hidden number.
 `CraftEvaluator.Item(rules, ws, assembly)` is what a finished item is (`CraftItemReport`). `CraftJournal` holds the
 learning rules over a `CraftJournalData`.
 
+### The woodshop and the tailor's
+
+`CraftWorkshop.Rive(id, stray, steadiness)` (returns the other half), `SawCut(id, position, wander, square)`,
+`BendWood(id, from, to, degrees, speed, strap)`, `StackWood(id, stickers, sealedEnds, shade)`,
+`SandWood(id, from, to, grit, strokes, alongGrain)`, `Varnish(id, supply, from, to, evenness, thickness)`; moving a
+wooden piece to `CraftLocation.Steam` steams it, to `CraftLocation.Stack` seasons it. `CraftWoodwork.Plasticity`,
+`BendTear` (the same strain the window's gauge shows) and `FinishProtection` read a piece. `CraftTextiles.IsCloth`,
+`OnGrain`, `SpinQuality` and `Spun(rules, fibre, evenness, twist)` (the thread a hank becomes); spinning itself is a
+station request (`CraftRequestKind.Spin`: fibre from the inventory, thread into it). `Attach(..., supplyCount,
+supplyStrength)` records how strong a supply was.
+
 ## The hand-skill models (`CraftMinigames`)
 
 The station window turns the pointer into operations through these — use them for your own input (a gamepad, VR hands):
 
 | Model | Input → output |
 |---|---|
-| `CraftHands` | a seeded tremble that grows with fatigue and shrinks with skill |
-| `CraftHammer` | `Raise`, `Tick`, `Release(aim, tilt, hands)` → a `CraftBlow` (position, force, tilt, miss, rushed) |
+| `CraftHands` | a seeded tremble that grows with fatigue and shrinks with skill; `Strength` (what a tired arm has left), `Slips(salt, rushed)` (a seeded slip once it is past half tired), `Feeling` (in words), `Rest(seconds)` (slow while working, faster when still) |
+| `CraftHammer` | `Raise`, `Tick`, `Release(aim, tilt, hands)` → a `CraftBlow` (position, force, tilt, miss, rushed, slipped; `Words`) |
 | `CraftStroke` | samples (time, x, y, angle, pressure) → span, mean angle, wobble, pressure, passes, edge leading, a hide path |
-| `CraftPourControl` | `Tick(dt, tilt, hands)` → rate, steadiness, interruptions, how full |
+| `CraftPourControl` | `Tick(dt, tilt, hands, fillSeconds, onTarget)` → rate, steadiness, interruptions, how full, `Spilled` (missed the mouth), `Overflow` (poured on after it was full), `SpillShare` |
 | `CraftRhythm` | `Answer(pull, hands)` on a beat → mean timing error, spread, pull |
 | `CraftBellowsPump` | `Pump(hands)` → the strength of the puff (a steady rhythm builds the draft) |
+
+`CraftOreRock` builds one stone of a lump as a seeded vertex-coloured mesh (ore veins, rind, dirt as much as the fragment holds) and scrubs it along a ray (`Brush`), saying how much of it each brush went over — the coverage `CraftWorkshop.BrushOre` takes.
+
+`CraftHandsOn` (on the station, added on demand) is the 3D way of working the anvil, the bellows, the wheel, the
+whetstone, the quench tank, the crucible, the carving bench and the ore bench with these models: `CraftHandsOn.For(station).Begin(mode, player, hands,
+setup, ended, out reason)` takes the work place up (its own camera at `CraftStationVisuals.PointFor(tool)`, the piece
+built by `CraftModels.PieceMesh` with one glowing material per segment), `End(backToWindow)` puts it down. The window's
+areas declare theirs with `CraftMode.HandsOnMode` and fill a `CraftHandsOnSetup` (tool, face, abrasive, side, angle,
+mould...). It sends only requests, so a mode of your own can call it too.
 
 ## The station (`Crafting/Runtime`)
 

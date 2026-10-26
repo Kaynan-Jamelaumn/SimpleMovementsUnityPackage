@@ -66,6 +66,8 @@ public static class CraftLook
             {
                 CraftHideDefinition h = rules.Hide(p.hide.hide);
                 CraftPattern pat = rules.Pattern(p.hide.pattern);
+                if (h != null && h.textile)
+                    return pat != null ? $"{pat.Name} ({h.Name.ToLowerInvariant()}{(CraftTextiles.OnGrain(p.hide) ? "" : ", across the grain")})" : $"A length of {h.Name.ToLowerInvariant()}";
                 string animal = h != null ? h.Name.Replace(" hide", "").Replace(" pelt", "").ToLowerInvariant() : "";
                 double tan = CraftLeather.MeanTannage(p.hide);
                 string what = tan > 0.6 ? $"{animal} leather" : tan > 0.2 ? $"half-tanned {animal} hide" : $"raw {animal} hide";
@@ -440,6 +442,17 @@ public static class CraftLook
     private static void Hide(CraftRules rules, CraftPiece p, CraftJournalData d, List<string> lines)
     {
         HideState h = p.hide;
+        CraftHideDefinition def = rules.Hide(h.hide);
+        if (def != null && def.textile)
+        {
+            if (!string.IsNullOrEmpty(def.description)) lines.Add(CraftText.Capital(def.description));
+            if (!string.IsNullOrEmpty(h.pattern))
+            {
+                lines.Add(CraftTextiles.OnGrain(h) ? "It was cut along the grain: it hangs straight." : "It was cut across the grain: it will stretch and pucker.");
+                lines.Add(h.cutQuality > 0.85 ? "Its edges are cut clean." : h.cutQuality > 0.6 ? "Its edges are a little ragged." : "Its edges are ragged and fraying.");
+            }
+            return;
+        }
         CraftPieceReport r = CraftEvaluator.Piece(rules, p);
         double flesh = 0, hair = 0, n = 0, hairLoose = 0;
         foreach (HideCell c in h.cells)
@@ -480,6 +493,20 @@ public static class CraftLook
     {
         CraftWoodDefinition w = rules.Wood(p.wood.wood);
         if (w != null) lines.Add(CraftText.Capital(w.description));
+        WoodState ws = p.wood;
+        lines.Add(ws.runout < 0.12 ? "The grain runs straight along it, end to end." : ws.runout < 0.35 ? "The grain runs a little off its length." : "The grain runs out of its sides: it will break along it.");
+        if (ws.moisture > 0.25) lines.Add("It is green and heavy with water.");
+        else if (ws.moisture > 0.17) lines.Add("It is still damp.");
+        double t = CraftWoodwork.MeanTemperature(p);
+        if (p.location == CraftLocation.Steam) lines.Add(ws.steamed >= 1 ? "It has steamed through: it should bend now." : ws.steamed > 0.4 ? "It is softening in the steam." : "It is heating in the steam.");
+        else if (CraftWoodwork.Plasticity(p) > 0.3) lines.Add(t > 80 ? "It is hot and limp from the steam: bend it now." : "It is cooling and stiffening.");
+        double bend = 0;
+        foreach (MetalSegment s in p.segments) bend += s.bend;
+        if (Math.Abs(bend) > 8) lines.Add($"It is bent through about {Math.Abs(bend):0}°.");
+        if (ws.checks > 0.3) lines.Add("Deep checks have opened in it.");
+        else if (ws.checks > 0.08) lines.Add("Fine checks run along its surface and ends.");
+        if (ws.finish > 0.5) lines.Add(ws.finishEven > 0.7 ? "A deep, even finish glows on it." : "The finish on it is blotchy.");
+        else if (ws.finish > 0.1) lines.Add(ws.finishWet > 0.3 ? "The coat is still tacky." : "It has a thin coat of finish.");
         if (p.wood.split > 0.1) lines.Add("It has split along the grain.");
         if (p.wood.charred > 0.1) lines.Add("It is scorched black.");
         double hole = 0;

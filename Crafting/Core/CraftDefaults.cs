@@ -9,7 +9,7 @@ using UnityEngine;
 /// abrasive tools, moulds, leather patterns and item designs. <see cref="Fill"/> puts it in a database (which can
 /// then be edited); <see cref="Rules"/> compiles it (tests, tools, a project without a database).
 /// </summary>
-public static class CraftDefaults
+public static partial class CraftDefaults
 {
     public const string Iron = "iron", Carbon = "carbon", Copper = "copper", Tin = "tin", Zinc = "zinc", Lead = "lead", Silver = "silver", Gold = "gold";
     public const string Nickel = "nickel", Manganese = "manganese", Sulfur = "sulfur", Phosphorus = "phosphorus", Silica = "silica";
@@ -38,11 +38,15 @@ public static class CraftDefaults
         c.quenchants.AddRange(Quenchants());
         c.agents.AddRange(Agents());
         c.hides.AddRange(Hides());
+        c.hides.AddRange(ArmouryCloths());
         c.woods.AddRange(Woods());
+        c.woods.AddRange(ArmouryWoods());
         c.supplies.AddRange(Supplies());
+        c.supplies.AddRange(ArmourySupplies());
         c.abrasives.AddRange(Abrasives());
         c.molds.AddRange(Molds());
         c.patterns.AddRange(Patterns());
+        c.patterns.AddRange(ArmouryPatterns());
         c.designs.AddRange(Designs());
         return c;
     }
@@ -354,7 +358,7 @@ public static class CraftDefaults
             new CraftFuel { id = "charcoal", displayName = "Charcoal", item = "Charcoal", energy = 3, maxTemperature = 1350, burnRate = 1, reducing = 0.65f, carburizing = 0.6f, smoke = 0.15f },
             new CraftFuel { id = "coal", displayName = "Coal", item = "Coal", energy = 4, maxTemperature = 1450, burnRate = 0.8f, reducing = 0.5f, carburizing = 0.3f, sulfur = 0.4f, smoke = 0.6f },
             new CraftFuel { id = "coke", displayName = "Coke", item = "Coke", energy = 4.5f, maxTemperature = 1550, burnRate = 0.7f, reducing = 0.55f, carburizing = 0.35f, sulfur = 0.05f, smoke = 0.1f },
-            new CraftFuel { id = "firewood", displayName = "Firewood", item = "Firewood", energy = 2, maxTemperature = 950, burnRate = 1.8f, reducing = 0.3f, carburizing = 0.1f, smoke = 0.5f },
+            new CraftFuel { id = "firewood", displayName = "Firewood", item = "Firewood", energy = 2, maxTemperature = 950, burnRate = 1.8f, reducing = 0.3f, carburizing = 0.1f, smoke = 0.5f, burnsAnyWood = true },
         };
     }
 
@@ -399,9 +403,18 @@ public static class CraftDefaults
             Hide("bear", "Bear hide", 16, 12, 6f, 4f, 1.2f, 0.3f, 1f, 0.9f, 0.05f, 15, "Very thick, very fatty."),
             Hide("rabbit", "Rabbit pelt", 4, 3, 1f, 0.7f, 0.5f, 0.9f, 0.9f, 0.2f, 0.03f, 1, "Small and soft: linings."),
             Hide("drake", "Drake hide", 14, 10, 7f, 5f, 1.6f, 0.2f, 0f, 0.4f, 0.03f, 60, "Scaled and fire-proof by nature."),
+            // Cloth, by the bolt (cut and sewn at the tailor's table).
+            Hide("linen_cloth", "Linen cloth", 14, 20, 0.7f, 0.7f, 0.55f, 0.8f, 0f, 0f, 0.01f, 6, "Smooth, cool linen: shirts, linings, the layers of a gambeson."),
+            Hide("wool_cloth", "Wool cloth", 14, 20, 1.6f, 1.6f, 0.45f, 0.85f, 0f, 0f, 0.015f, 8, "Warm, springy wool: cloaks, hoods, padding."),
+            Hide("canvas", "Canvas", 12, 18, 1.2f, 1.2f, 0.8f, 0.55f, 0f, 0f, 0.01f, 7, "Heavy hemp canvas: the outer shell of a gambeson, bags, sails."),
         };
+        foreach (CraftHideDefinition c in list)
+            if (c.id == "linen_cloth" || c.id == "wool_cloth" || c.id == "canvas") c.textile = true;
         list[0].color = new Color(0.62f, 0.5f, 0.42f);
         list[6].color = new Color(0.35f, 0.42f, 0.3f);
+        list[7].color = new Color(0.86f, 0.83f, 0.74f);
+        list[8].color = new Color(0.5f, 0.42f, 0.36f);
+        list[9].color = new Color(0.68f, 0.62f, 0.48f);
         list[6].affinity = ElementType.Fire;
         list[6].affinityStrength = 0.5f;
         return list;
@@ -454,7 +467,24 @@ public static class CraftDefaults
             Supply("dye_red", "Madder dye", CraftSupplyKind.Dye, "Madder Dye", 1, 3, "A deep red.", new Color(0.6f, 0.12f, 0.1f)),
             Supply("dye_blue", "Woad dye", CraftSupplyKind.Dye, "Woad Dye", 1, 3, "A dark blue.", new Color(0.12f, 0.2f, 0.45f)),
             Supply("refractory_clay", "Refractory clay", CraftSupplyKind.Clay, "Refractory Clay", 1, 1, "Coat the spine before the quench: it stays soft and tough, the edge hardens."),
+            // The tailor's: fibre to spin, and what it spins into (coarse, even, fine).
+            Spinnable(Supply("wool_fibre", "Raw wool", CraftSupplyKind.Fibre, "Raw Wool", 1, 0.5f, "Washed, carded wool, ready to spin."), "coarse_wool_yarn", "wool_yarn", "fine_wool_yarn"),
+            Spinnable(Supply("flax_fibre", "Flax tow", CraftSupplyKind.Fibre, "Flax Tow", 1, 0.5f, "Hackled flax, ready to spin into linen."), "coarse_linen_yarn", "linen_thread", "fine_linen_thread"),
+            Supply("coarse_wool_yarn", "Coarse wool yarn", CraftSupplyKind.Thread, "Coarse Wool Yarn", 0.6f, 0.4f, "Lumpy, hand-spun yarn: it holds, roughly."),
+            Supply("wool_yarn", "Wool yarn", CraftSupplyKind.Thread, "Wool Yarn", 0.85f, 0.8f, "Even wool yarn."),
+            Supply("fine_wool_yarn", "Fine worsted", CraftSupplyKind.Thread, "Fine Worsted", 1.05f, 1.5f, "Fine, smooth, strong wool thread."),
+            Supply("coarse_linen_yarn", "Tow yarn", CraftSupplyKind.Thread, "Tow Yarn", 0.7f, 0.4f, "Coarse linen from the short fibres."),
+            Supply("fine_linen_thread", "Fine linen thread", CraftSupplyKind.Thread, "Fine Linen Thread", 1.25f, 2, "Fine, even and very strong."),
+            // The woodshop's finishes.
+            Supply("spirit_varnish", "Spirit varnish", CraftSupplyKind.Varnish, "Spirit Varnish", 1, 2, "Dries fast to a bright, thin film."),
+            Supply("oil_varnish", "Oil varnish", CraftSupplyKind.Varnish, "Oil Varnish", 1.25f, 3, "Slow to dry, tough and weatherproof."),
         };
+    }
+
+    private static CraftSupplyDefinition Spinnable(CraftSupplyDefinition s, params string[] into)
+    {
+        s.spinsInto = new List<string>(into);
+        return s;
     }
 
     private static CraftAbrasive Tool(string id, string name, CraftAbrasiveKind kind, float cut, float scale, float finish, float heat = 0, float maxHardness = 2000, float apex = 10, bool wood = false, bool leather = false) =>
@@ -543,6 +573,11 @@ public static class CraftDefaults
             Pattern("sole", "Sole", 24, "X", "X", "X"),
             Pattern("liner", "Helm liner", 12, "XXX", "XXX", "XXX"),
             Pattern("grip_wrap", "Grip wrap", 0, "XXX"),
+            // Cloth (the bolt's length - its grain - runs down the rows).
+            Pattern("gambeson_panel", "Gambeson panel", 36, ".XXXX.", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", ".XXXX."),
+            Pattern("cloak_half", "Cloak half", 30, "..XXX", ".XXXX", "XXXXX", "XXXXX", "XXXXXX", "XXXXXX", "XXXXXXX", "XXXXXXX"),
+            Pattern("hood", "Hood side", 16, ".XX.", "XXXX", "XXXX", "XXXX", "XXX."),
+            Pattern("trouser_leg", "Trouser leg", 26, "XXXX", "XXXX", "XXXX", "XXX.", "XXX.", "XXX.", "XXX.", "XXX.", "XX..", "XX.."),
         };
     }
 
@@ -858,7 +893,76 @@ public static class CraftDefaults
             defense = 10, durability = 350, price = 70, gridSize = new Vector2Int(3, 3),
         };
         list.Add(d);
+
+        // The tailor's: sewn cloth.
+        d = new CraftDesign
+        {
+            id = "padded_gambeson", displayName = "Padded gambeson", kind = CraftDesignKind.Armor, armorSlot = ArmorSlotType.Chestplate,
+            description = "Layers of cloth quilted over wool batting: worn alone, or under mail and plate.",
+            components =
+            {
+                Cloth("shell", "Outer shell", CraftComponentFunction.Protection, "gambeson_panel", 0.8f, 2, 2, 1.5f),
+                Cloth("lining", "Lining", CraftComponentFunction.Backing, "gambeson_panel", 0.5f, 1.2f, 2, 0.8f),
+                SupplyPart("padding", "Batting", CraftSupplyKind.Padding, 3, CraftComponentFunction.Padding),
+                SupplyPart("thread", "Thread", CraftSupplyKind.Thread, 2, CraftComponentFunction.Thread),
+            },
+            joints = { Joint("quilting", "Quilting through the batting", CraftJointKind.Stitch, "shell", "padding", 40, 1.2f), Joint("seams", "Side and shoulder seams", CraftJointKind.Stitch, "shell", "lining", 30) },
+            defense = 11, durability = 260, price = 55, gridSize = new Vector2Int(2, 3),
+        };
+        list.Add(d);
+
+        d = new CraftDesign
+        {
+            id = "wool_cloak", displayName = "Wool cloak", kind = CraftDesignKind.Armor, armorSlot = ArmorSlotType.Cloak,
+            description = "Two halves of heavy wool sewn down the back, closed with a clasp.",
+            components =
+            {
+                Cloth("halves", "Cloak half", CraftComponentFunction.Protection, "cloak_half", 1.2f, 2.5f, 2, 1f),
+                Fasteners("clasp", "Clasp", CraftFastenerKind.Buckle, 1),
+                SupplyPart("thread", "Thread", CraftSupplyKind.Thread, 1, CraftComponentFunction.Thread),
+            },
+            joints = { Joint("back_seam", "Back seam", CraftJointKind.Stitch, "halves", "thread", 30), Joint("clasp", "Clasp sewn on", CraftJointKind.Buckle, "halves", "clasp", 1) },
+            defense = 2, durability = 200, price = 25, gridSize = new Vector2Int(2, 3),
+        };
+        list.Add(d);
+
+        d = new CraftDesign
+        {
+            id = "cloth_hood", displayName = "Hood", kind = CraftDesignKind.Armor, armorSlot = ArmorSlotType.Helmet,
+            description = "A simple hood of two sides sewn together.",
+            components =
+            {
+                Cloth("sides", "Hood side", CraftComponentFunction.Protection, "hood", 0.6f, 2.5f, 2, 1f),
+                SupplyPart("thread", "Thread", CraftSupplyKind.Thread, 1, CraftComponentFunction.Thread),
+            },
+            joints = { Joint("crown_seam", "Crown seam", CraftJointKind.Stitch, "sides", "thread", 18) },
+            defense = 1, durability = 120, price = 8, gridSize = new Vector2Int(2, 2),
+        };
+        list.Add(d);
+
+        d = new CraftDesign
+        {
+            id = "quilted_trousers", displayName = "Quilted trousers", kind = CraftDesignKind.Armor, armorSlot = ArmorSlotType.Leggings,
+            description = "Canvas legs quilted over a layer of batting.",
+            components =
+            {
+                Cloth("legs", "Trouser leg", CraftComponentFunction.Protection, "trouser_leg", 0.8f, 2, 2, 1.2f),
+                SupplyPart("padding", "Batting", CraftSupplyKind.Padding, 1, CraftComponentFunction.Padding),
+                SupplyPart("thread", "Thread", CraftSupplyKind.Thread, 1, CraftComponentFunction.Thread),
+            },
+            joints = { Joint("inseam", "Inseams and quilting", CraftJointKind.Stitch, "legs", "padding", 36) },
+            defense = 5, durability = 200, price = 30, gridSize = new Vector2Int(2, 3),
+        };
+        list.Add(d);
+        AddArmoury(list);
         return list;
+    }
+
+    private static CraftComponentSpec Cloth(string role, string name, CraftComponentFunction f, string pattern, float tmin, float tmax, int count, float importance)
+    {
+        CraftComponentSpec c = Leather(role, name, f, pattern, tmin, tmax, 0, 1, count, importance);
+        c.leather.fabric = CraftFabric.Cloth;
+        return c;
     }
 
     // ------------------------------------------------------------------ starting pieces (test stations, scripts)

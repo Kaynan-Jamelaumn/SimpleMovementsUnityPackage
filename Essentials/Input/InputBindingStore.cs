@@ -24,8 +24,10 @@ public static class InputBindingStore
     /// <summary>An action created at runtime because the input actions did not have it (added to every copy).</summary>
     private struct CreatedAction
     {
-        public string map, name;
+        public string map, name, controlType;
         public string[] paths;
+        public InputActionType type;
+        public bool createMap;
     }
 
     private static readonly List<CreatedAction> createdActions = new List<CreatedAction>();
@@ -37,12 +39,23 @@ public static class InputBindingStore
     /// <summary>True while gameplay input is paused (pause menu open).</summary>
     public static bool GameplayInputPaused { get; private set; }
 
+    private static readonly HashSet<object> blockers = new HashSet<object>(ReferenceComparer<object>.Instance);
+
+    /// <summary>
+    /// True while something holds the gameplay keys off without pausing the game (a crafting or alchemy station worked
+    /// with the hands): the Player maps are off as when paused, but inputs that stay quiet while paused keep working.
+    /// </summary>
+    public static bool GameplayInputBlocked => blockers.Count > 0;
+
+    private static bool GameplayMapsOff => GameplayInputPaused || blockers.Count > 0;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
     {
         assets.Clear();
         pausedMaps.Clear();
         createdActions.Clear();
+        blockers.Clear();
         GameplayInputPaused = false;
         Changed = null;
         if (hooked)
@@ -83,7 +96,7 @@ public static class InputBindingStore
         if (!assets.Contains(asset))
             assets.Add(asset);
         Apply(asset);
-        if (GameplayInputPaused)
+        if (GameplayMapsOff)
             PauseMap(asset);
         ApplyToPlayerInputComponents();
     }
@@ -92,12 +105,20 @@ public static class InputBindingStore
     /// Records an action created at runtime (<see cref="InputActionResolver.Create"/>) and adds it to every other copy of
     /// the input actions, so all the player's components, the Player Input component and the Key Bindings menu see it.
     /// </summary>
-    public static void RememberCreatedAction(string map, string name, IList<string> paths)
+    public static void RememberCreatedAction(string map, string name, IList<string> paths) =>
+        RememberCreatedAction(map, name, paths, InputActionType.Button, null, false);
+
+    /// <summary>The same for an action of any type, in a map of its own (created in the copies that lack it).</summary>
+    public static void RememberCreatedAction(string map, string name, IList<string> paths, InputActionType type, string expectedControlType, bool createMap)
     {
         foreach (CreatedAction c in createdActions)
             if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))
                 return;
-        createdActions.Add(new CreatedAction { map = map, name = name, paths = paths != null ? new List<string>(paths).ToArray() : new string[0] });
+        createdActions.Add(new CreatedAction
+        {
+            map = map, name = name, paths = paths != null ? new List<string>(paths).ToArray() : new string[0],
+            type = type, controlType = expectedControlType, createMap = createMap,
+        });
         assets.RemoveAll(a => a == null);
         foreach (InputActionAsset a in assets)
             AddCreatedActions(a);
@@ -112,7 +133,7 @@ public static class InputBindingStore
             return;
         foreach (CreatedAction c in createdActions)
             if (asset.FindAction(c.name, false) == null)
-                InputActionResolver.Create(asset, c.name, c.paths, out _, c.map, remember: false);
+                InputActionResolver.Create(asset, c.name, c.paths, out _, c.map, false, c.type, c.controlType, c.createMap);
     }
 
     /// <summary>Applies the saved bindings (and the actions created at runtime) to one copy of the input actions.</summary>
@@ -190,7 +211,29 @@ public static class InputBindingStore
         if (enabled == !GameplayInputPaused)
             return;
         GameplayInputPaused = !enabled;
-        if (!enabled)
+        RefreshGameplayMaps();
+    }
+
+    /// <summary>
+    /// <paramref name="owner"/> holds the gameplay keys off (counted with every other holder and the pause menu) until
+    /// <see cref="UnblockGameplayInput"/>: a station worked with the hands, so its keys never also jump, dash or open
+    /// the inventory.
+    /// </summary>
+    public static void BlockGameplayInput(object owner)
+    {
+        if (owner != null && blockers.Add(owner))
+            RefreshGameplayMaps();
+    }
+
+    public static void UnblockGameplayInput(object owner)
+    {
+        if (owner != null && blockers.Remove(owner))
+            RefreshGameplayMaps();
+    }
+
+    private static void RefreshGameplayMaps()
+    {
+        if (GameplayMapsOff)
         {
             assets.RemoveAll(a => a == null);
             foreach (InputActionAsset a in assets)
@@ -205,6 +248,36 @@ public static class InputBindingStore
                 if (m != null) m.Enable();
             pausedMaps.Clear();
         }
+    }
+
+    /// <summary>
+    /// Turns a copy's Player map on - unless the gameplay keys are held off right now (the pause menu, a station worked
+    /// with the hands): then it stays off and comes on with the others when they are given back. Use it instead of
+    /// enabling the map directly, so a component enabled at the wrong moment never lets the player walk off a station.
+    /// </summary>
+    public static void EnableGameplayMap(InputActionAsset asset)
+    {
+        InputActionMap map = asset != null ? asset.FindActionMap(GameplayMap, false) : null;
+        if (map == null)
+            return;
+        if (!GameplayMapsOff)
+        {
+            map.Enable();
+            return;
+        }
+        map.Disable();
+        if (!pausedMaps.Contains(map))
+            pausedMaps.Add(map);
+    }
+
+    /// <summary>Turns a copy's Player map off for good (it does not come back on when the gameplay keys are given back).</summary>
+    public static void DisableGameplayMap(InputActionAsset asset)
+    {
+        InputActionMap map = asset != null ? asset.FindActionMap(GameplayMap, false) : null;
+        if (map == null)
+            return;
+        pausedMaps.Remove(map);
+        map.Disable();
     }
 
     private static void PauseMap(InputActionAsset asset)

@@ -435,6 +435,8 @@ public static class UITheme
         {
             d.captionText.color = Text;
             d.captionText.fontSize = 16f;
+            d.captionText.textWrappingMode = TextWrappingModes.NoWrap;
+            d.captionText.overflowMode = TextOverflowModes.Ellipsis;
         }
         Transform arrow = go.transform.Find("Arrow");
         if (arrow != null && arrow.TryGetComponent(out Image a))
@@ -482,6 +484,22 @@ public static class UITheme
             {
                 t.color = Text;
                 t.fontSize = 16f;
+                // One line per option: a long name ends in "...", it never wraps onto the next option.
+                t.textWrappingMode = TextWrappingModes.NoWrap;
+                t.overflowMode = TextOverflowModes.Ellipsis;
+                t.alignment = TextAlignmentOptions.MidlineLeft;
+            }
+            // Options tall enough for the font, a list tall enough to show a good few, and a wheel that scrolls it.
+            const float itemHeight = 30f;
+            if (d.template.Find("Viewport/Content/Item") is RectTransform itemRect)
+                itemRect.sizeDelta = new Vector2(itemRect.sizeDelta.x, itemHeight);
+            if (d.template.Find("Viewport/Content") is RectTransform contentRect)
+                contentRect.sizeDelta = new Vector2(contentRect.sizeDelta.x, itemHeight + 4f);
+            d.template.sizeDelta = new Vector2(d.template.sizeDelta.x, Mathf.Max(d.template.sizeDelta.y, 300f));
+            if (d.template.TryGetComponent(out ScrollRect templateScroll))
+            {
+                templateScroll.scrollSensitivity = 30f;
+                templateScroll.movementType = ScrollRect.MovementType.Clamped;
             }
         }
         return d;

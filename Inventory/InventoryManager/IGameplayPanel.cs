@@ -12,3 +12,12 @@ public interface IGameplayPanel
     /// <summary>Closes the window (Escape, the pause menu, the inventory going away). Must unregister it.</summary>
     void ClosePanel();
 }
+
+/// <summary>
+/// A window that takes the whole screen for one activity (a crafting or alchemy station): while it is open the
+/// inventory cannot be opened (its own lists stand in for it), the hotbar keys and wheel do not change the item in
+/// hand, and the gameplay HUD (hotbar, quick slots, ability bar) stays hidden.
+/// </summary>
+public interface IExclusivePanel : IGameplayPanel
+{
+}

@@ -36,6 +36,11 @@ public class KeyRebindingMenu : MonoBehaviour
     [SerializeField] private string actionMap = "Player";
     [Tooltip("Actions not listed (pointer and look input cannot be rebound to a key).")]
     [SerializeField] private string[] hiddenActions = { "Look", "Point", "Click", "ScrollWheel", "MiddleClick", "RightClick", "TrackedDevicePosition", "TrackedDeviceOrientation" };
+    [Tooltip("More action maps listed after it, each under its own heading (the keys of the crafting and alchemy stations).")]
+    [SerializeField] private string[] extraMaps = { StationControls.Map };
+
+    /// <summary>Pointer and stick values of the station map: not keys.</summary>
+    private static readonly string[] AlwaysHidden = { "StationPoint", "StationScroll", "StationMoveHand" };
 
     private PlayerInput input;
     private InputActionAsset asset;
@@ -148,10 +153,25 @@ public class KeyRebindingMenu : MonoBehaviour
         SetTab(keyboardTab, shownDevice == InputDeviceTracker.Kind.KeyboardMouse);
         SetTab(gamepadTab, shownDevice == InputDeviceTracker.Kind.Gamepad);
 
+        AddRows(map, false);
+        if (extraMaps != null)
+            foreach (string extra in extraMaps)
+            {
+                InputActionMap m = !string.IsNullOrWhiteSpace(extra) && extra != actionMap ? asset.FindActionMap(extra, false) : null;
+                if (m == null || m.actions.Count == 0)
+                    continue;
+                AddHeading(extra == StationControls.Map ? "Crafting & alchemy stations" : Nice(extra));
+                AddRows(m, true);
+            }
+    }
+
+    private void AddRows(InputActionMap map, bool extra)
+    {
         foreach (InputAction action in map.actions)
         {
             if (IsHidden(action.name))
                 continue;
+            string name = extra && action.name.StartsWith(map.name) && action.name.Length > map.name.Length ? action.name.Substring(map.name.Length) : action.name;
             var bindings = action.bindings;
             for (int i = 0; i < bindings.Count; i++)
             {
@@ -160,9 +180,23 @@ public class KeyRebindingMenu : MonoBehaviour
                     continue;
                 if (!InputDeviceTracker.IsFor(b.path, shownDevice))
                     continue;
-                AddRow(action, i, b.isPartOfComposite ? $"{Nice(action.name)} ({Nice(b.name)})" : Nice(action.name));
+                AddRow(action, i, b.isPartOfComposite ? $"{Nice(name)} ({Nice(b.name)})" : Nice(name));
             }
         }
+    }
+
+    /// <summary>A row with only a title: the start of another map's keys.</summary>
+    private void AddHeading(string title)
+    {
+        GameObject row = Instantiate(rowTemplate, rowContainer);
+        row.name = "Heading " + title;
+        row.SetActive(true);
+        rows.Add(row);
+        SetText(row.transform, "Action", $"<b>{title}</b>");
+        Transform b = row.transform.Find("Binding");
+        if (b != null) b.gameObject.SetActive(false);
+        Transform r = row.transform.Find("Reset");
+        if (r != null) r.gameObject.SetActive(false);
     }
 
     private void AddRow(InputAction action, int bindingIndex, string label)
@@ -247,7 +281,7 @@ public class KeyRebindingMenu : MonoBehaviour
         string path = changed.bindings[bindingIndex].effectivePath;
         if (string.IsNullOrEmpty(path))
             return null;
-        InputActionMap map = asset.FindActionMap(actionMap, false);
+        InputActionMap map = changed.actionMap; // conflicts within the map: the station keys only work with the gameplay keys off
         if (map == null)
             return null;
         var names = new StringBuilder();
@@ -303,6 +337,8 @@ public class KeyRebindingMenu : MonoBehaviour
 
     private bool IsHidden(string actionName)
     {
+        foreach (string h in AlwaysHidden)
+            if (string.Equals(h, actionName, System.StringComparison.OrdinalIgnoreCase)) return true;
         if (hiddenActions == null)
             return false;
         foreach (string h in hiddenActions)

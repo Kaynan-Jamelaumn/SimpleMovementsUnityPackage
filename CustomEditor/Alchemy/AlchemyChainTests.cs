@@ -70,6 +70,64 @@ namespace AlchemySystem.Tests
             List<string> lines = AlchemyChains.KnownRoutes(d, rules, venom);
             Assert.IsTrue(lines.Exists(l => l.Contains("2 known routes")));
         }
+
+        // ------------------------------------------------------------------ the herbal pack: several recipes per potion
+        private static string Brew(double heat, double seconds, double stirring, params (string ingredient, int count, string form)[] adds)
+        {
+            AlchemyRules rules = Rules();
+            var b = new AlchemyBrew(rules, AlchemyEquipmentProfile.DefaultCauldron(), 20, 1);
+            foreach (var a in adds) Add(b, a.ingredient, a.count, a.form);
+            b.SetHeat(heat);
+            if (stirring > 0) b.SetStirring(stirring);
+            b.RunUntil(seconds);
+            return b.Evaluate().OutcomeId;
+        }
+
+        [Test]
+        public void HerbalPack_EveryPotionHasSeveralRecipes()
+        {
+            AlchemyRules rules = Rules();
+            Assert.IsEmpty(rules.CompileErrors, string.Join("\n", rules.CompileErrors));
+            foreach (string s in new[]
+            {
+                AlchemyDefaults.StoneskinEssence, AlchemyDefaults.SwiftEssence, AlchemyDefaults.ClarityEssence, AlchemyDefaults.HearthwardEssence,
+                AlchemyDefaults.TitanEssence, AlchemyDefaults.NourishingBroth, AlchemyDefaults.ManaEssence, AlchemyDefaults.Antitoxin,
+                AlchemyDefaults.Somnine, AlchemyDefaults.FirewardEssence,
+            })
+                Assert.GreaterOrEqual(AlchemyChains.Producers(rules, s).Count, 2, s);
+            Assert.GreaterOrEqual(AlchemyChains.Producers(rules, AlchemyDefaults.VitalEssence).Count, 4, "sunpetal, fungi, moonlit blood, nettles");
+            Assert.GreaterOrEqual(AlchemyChains.Producers(rules, AlchemyDefaults.SereneEssence).Count, 3, "frost oil, lavender, chamomile");
+            Assert.GreaterOrEqual(AlchemyChains.Producers(rules, AlchemyDefaults.Venom).Count, 3, "resin, latex, nightshade");
+        }
+
+        [Test]
+        public void HerbalPack_SecondRecipesForOldPotions()
+        {
+            Assert.AreEqual("healing_draught", Brew(0.2, 240, 0, ("Spring Water", 2, null), ("Stinging Nettle", 3, "ground")), "nettles");
+            Assert.AreEqual("vigor_draught", Brew(0.28, 240, 0, ("Spring Water", 2, null), ("Dragontongue", 3, "ground")), "dragontongue");
+            Assert.AreEqual("salamander_draught", Brew(0.2, 240, 0.5, ("Grain Spirit", 2, null), ("Dragontongue", 2, "ground"), ("Fire Pepper", 2, "ground")), "no healing essence needed");
+            Assert.AreEqual("mana_potion", Brew(0.15, 240, 0, ("Spring Water", 2, null), ("Starlight Lotus", 2, null)), "by day");
+            Assert.AreEqual("antidote", Brew(0.2, 300, 0, ("Vinegar", 1, null), ("Spring Water", 2, null), ("Wormwood", 3, "ground")), "wormwood");
+            Assert.AreEqual("sleep_draught", Brew(0.15, 300, 0, ("Spring Water", 2, null), ("Poppy Pod", 3, "ground")), "poppies");
+            Assert.AreEqual("calming_tonic", Brew(0.22, 300, 0, ("Spring Water", 2, null), ("Chamomile", 3, "ground")), "chamomile");
+            Assert.AreEqual("fireward_tonic", Brew(0, 300, 0, ("Spring Water", 2, null), ("Salamander Scale", 2, "ground")), "cold steeped");
+            Assert.AreEqual("venom_extract", Brew(0.18, 240, 0, ("Grain Spirit", 2, null), ("Nightshade", 3, "ground")), "nightshade");
+        }
+
+        [Test]
+        public void HerbalPack_NewPotions_TwoWaysEach()
+        {
+            Assert.AreEqual("stoneskin_elixir", Brew(0.2, 240, 0, ("Spring Water", 2, null), ("Troll Moss", 3, "ground"), ("Iron Filings", 1, null)));
+            Assert.AreEqual("swiftness_draught", Brew(0.2, 240, 0, ("Spring Water", 2, null), ("Harefoot Clover", 3, "ground")), "clover, warm");
+            Assert.AreEqual("swiftness_draught", Brew(0, 240, 0, ("Grain Spirit", 2, null), ("Windchime Seeds", 3, "ground")), "windchime, cool spirit");
+            Assert.AreEqual("clarity_elixir", Brew(0.15, 240, 0, ("Grain Spirit", 2, null), ("Sage Leaves", 3, "ground")), "sage");
+            Assert.AreEqual("clarity_elixir", Brew(0.15, 300, 0, ("Grain Spirit", 1, null), ("Spring Water", 1, null), ("Moonbloom", 1, null), ("Rose Petals", 4, "ground")), "moon dew -> mana -> clarity");
+            Assert.AreEqual("hearthward_tonic", Brew(0.35, 240, 0.5, ("Lamp Oil", 2, null), ("Bear Tallow", 2, null), ("Fire Pepper", 2, "ground")), "tallow and pepper");
+            Assert.AreEqual("hearthward_tonic", Brew(0.45, 300, 0, ("Lamp Oil", 2, null), ("Emberroot", 3, "ground")), "emberroot in hot oil");
+            Assert.AreEqual("titan_draught", Brew(0.15, 240, 0, ("Grain Spirit", 2, null), ("Giantcap", 3, "ground")));
+            Assert.AreEqual("travellers_broth", Brew(0.4, 300, 0, ("Spring Water", 2, null), ("Wild Barley", 3, "ground")), "barley");
+            Assert.AreEqual("travellers_broth", Brew(0.25, 300, 0.3, ("Goat Milk", 2, null), ("Honey", 1, null)), "milk and honey");
+        }
     }
 }
 #endif

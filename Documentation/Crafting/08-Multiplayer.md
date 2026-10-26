@@ -55,7 +55,9 @@ sequenceDiagram
     seconds of rinsing, whetstone strokes, stitches and punches, the samples of a drawn path, pours and cuts all come
     from allowances that refill in real time (a client claiming a minute of grinding at once grinds for the seconds
     that really passed);
-  * **the hammer** must be raised to strike hard: a blow's force is held to what the time since the last one charges;
+  * **the hammer** must be raised to strike hard: a blow's force is held to what the time since the last one charges,
+    and to what the arm has left - the server tires and rests its own model of the player's arm with the blows it lets
+    through, so a client cannot keep striking full blows with a spent arm;
   * **the hands** are never steadier than the player's practice (their journal on the server) allows: whetstone
     wobble, pour steadiness, the timing of stitches have a floor; blows whose tilt never trembles are noticed over a
     dozen strikes, and from then on the server adds the hands' tremble itself;

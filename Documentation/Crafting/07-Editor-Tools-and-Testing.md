@@ -5,7 +5,7 @@
 | Menu | What it does |
 |---|---|
 | *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Crafting Database (Resources)* | the project's database (`Settings/CraftingDatabase`), filled with the built-in content |
-| *Tools ▸ SimpleMovements ▸ Crafting ▸ Create Smithy / Smeltery / Tannery / Leatherworks / Complete Workshop* | a station with those tools in the open scene: primitive work places in a row, a collider, the station, its visuals, its surroundings (and, with Fish-Net, a NetworkObject and a `NetCraftStation`) |
+| *Tools ▸ SimpleMovements ▸ Crafting ▸ Create Smithy / Smeltery / Tannery / Leatherworks / Woodshop / Tailor's / Armourer / Complete Workshop* | a station with those tools in the open scene: primitive work places in a row, a collider, the station, its visuals, its surroundings (and, with Fish-Net, a NetworkObject and a `NetCraftStation`) |
 | *… ▸ Create Test Station* | a station with every tool and instrument, free materials and the numbers shown |
 | *… ▸ Create Ore Deposit* | a seam of hematite (change its ore in the inspector) |
 | *… ▸ Create Stock Items* | item assets (`Items/Crafting/Stock`, icons in `Items/Crafting/Icons`) for the stock metals, every ore, hide, wood, fuel, supply and agent, and fasteners |
@@ -16,8 +16,10 @@
 
 ## Inspectors
 
-* **Crafting Database** — counts, errors and warnings, buttons to create the templates and stock items or reset to the
-  built-in content.
+* **Crafting Database** — counts, errors and warnings, buttons to create the templates and stock items, **Add Missing
+  Built-in** (adds the built-in metals, ores, hides, woods, supplies, patterns and designs the database lacks, by id: an
+  older database catches up with new built-in designs without losing your changes; then run Create Design Templates and
+  Create Stock Items for the new ones) or reset to the built-in content.
 * **Craft Station** — configuration problems, *Make Networked* (Fish-Net); in play mode the live workshop: time, the fires, the furnace, the
   crucible, every piece (class, temperature, hardness, mass; tannage and moisture; fragments), Pause/Resume, Copy State
   JSON (bug reports, tests), Clear.

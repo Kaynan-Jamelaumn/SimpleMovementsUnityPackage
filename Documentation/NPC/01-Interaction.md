@@ -35,6 +35,7 @@ flowchart TB
 | Require Line Of Sight | on | Ignores targets behind walls. |
 | Focus Stickiness | 0.5 m | Keeps the current target unless another one is clearly better — no flicker between two NPCs side by side. |
 | Handle Legacy Interactables | off | See §5. |
+| Prompt Older Interactables | on | Doors, items on the ground and chests get the prompt and the Interact key too (§5). |
 
 **Several NPCs nearby:** aiming wins (the pointer, then the crosshair). Otherwise the highest **Interaction Priority**
 wins (NPCs default to 10, items on the ground to −2), then the nearest and most in front. Only one NPC is ever the
@@ -102,14 +103,16 @@ close, call `who.BeginInteraction(this, close)` and `who.EndInteraction(this)` w
 
 ## 5. The older `Player.OnInteract`
 
-The `Player` component's ray (wired through a Player Input event) keeps working for doors, items on the ground and
-chests. NPCs are opened by the Player Interactor (an `NPC` does not depend on the older `Interactable` class, so the
+Doors, dungeon objects, items on the ground (`ItemPickable`) and chests (`Storage`) are found, prompted for and used by
+the Player Interactor as soon as they are in reach — "[E] Pick up Iron Bar", "[E] Open Chest", "[E] Interact Door", with
+the key actually bound to Interact and a fill while a timed pickup is held (*Prompt Older Interactables*, on by
+default). A wired `Player.OnInteract` then steps aside (and hides its own interaction text), so the key is never handled
+twice and nothing needs unwiring. Turn the option off to go back to `Player`'s own mouse ray for them. NPCs are opened by the Player Interactor (an `NPC` does not depend on the older `Interactable` class, so the
 NPC system compiles whatever that class looks like). Scripts and UnityEvents can call `NPC.Interact()` directly; the
 NPC handles only the first request of a frame, so two inputs never open and close it at once.
 
-To use the interactor for **everything**, turn on *Handle Legacy Interactables* (doors, dungeon objects, `ItemPickable`,
-`Storage` get prompts, proximity and clicks — they are recognised by their class names at runtime) and **unwire
-`Player.OnInteract`** from the Player Input events, or doors would toggle twice.
+The older objects are recognised by their class names at runtime; *Handle Legacy Interactables* does the same as the
+option above (kept for scenes that already turn it on).
 
 | Script | API |
 |---|---|

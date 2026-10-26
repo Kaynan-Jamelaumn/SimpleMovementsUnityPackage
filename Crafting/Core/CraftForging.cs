@@ -408,13 +408,19 @@ public static class CraftForging
         return CraftMath.Smooth(weldT - 150, weldT, t) * (0.5 + 0.5 * CraftMath.Clamp01(p.flux)) * (1 - Math.Min(1, scale * 4));
     }
 
+    /// <summary>
+    /// How well a forge weld was set with the hammer (0-1: the blows covered the whole seam, hard enough, while it was
+    /// at welding heat) as a factor on the weld. Operations recorded before the blows counted (0) set it fully.
+    /// </summary>
+    public static double SetFactor(float set) => set > 0f ? 0.35 + 0.65 * CraftMath.Clamp01(set) : 1;
+
     /// <summary>Folds the bar over on itself and welds it (at welding heat, fluxed): twice the layers, the slag spread thinner, a little carbon lost.</summary>
-    public static void Fold(CraftWorkshop ws, CraftPiece p, double position)
+    public static void Fold(CraftWorkshop ws, CraftPiece p, double position, float set = 0f)
     {
         if (p == null || p.segments.Count < 2)
             return;
         CraftRules rules = ws.Rules;
-        double q = WeldQuality(rules, p);
+        double q = WeldQuality(rules, p) * SetFactor(set);
         int n = p.segments.Count;
         p.Resample(n * 2);
         var folded = new List<MetalSegment>(n);
@@ -457,12 +463,12 @@ public static class CraftForging
     }
 
     /// <summary>Welds <paramref name="b"/> onto <paramref name="a"/> (stacked): the result is <paramref name="a"/>; their steels mix by mass and their layers add up.</summary>
-    public static void Weld(CraftWorkshop ws, CraftPiece a, CraftPiece b)
+    public static void Weld(CraftWorkshop ws, CraftPiece a, CraftPiece b, float set = 0f)
     {
         if (a == null || b == null || a == b)
             return;
         CraftRules rules = ws.Rules;
-        double q = Math.Min(WeldQuality(rules, a), WeldQuality(rules, b));
+        double q = Math.Min(WeldQuality(rules, a), WeldQuality(rules, b)) * SetFactor(set);
         int n = a.segments.Count;
         CraftPiece bb = b.Clone();
         bb.Resample(n);
@@ -544,8 +550,11 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
-    /// <summary>Folds a bar on itself and welds it (at welding heat, fluxed).</summary>
-    public bool Fold(string id, out string reason)
+    /// <summary>
+    /// Folds a bar on itself and welds it (at welding heat, fluxed). <paramref name="set"/> (0-1): how well the hammer
+    /// set the weld along the seam.
+    /// </summary>
+    public bool Fold(string id, out string reason, double set = 1)
     {
         reason = "";
         CraftPiece p = Piece(id);
@@ -560,12 +569,15 @@ public sealed partial class CraftWorkshop
                 return Refuse("It has an eye punched in it: it cannot be folded.", out reason, id);
         if (p.MaxTemperature < p.Profile(Rules).HotWorkMin)
             return Refuse("It is far too cold to fold.", out reason, id);
-        Record(new CraftOperation { kind = CraftOpKind.Fold, piece = id, a = 0.5f });
+        Record(new CraftOperation { kind = CraftOpKind.Fold, piece = id, a = 0.5f, b = (float)Math.Max(0.001, CraftMath.Clamp01(set)) });
         return true;
     }
 
-    /// <summary>Forge-welds <paramref name="other"/> onto <paramref name="id"/> (stacked; both hot and fluxed).</summary>
-    public bool Weld(string id, string other, out string reason)
+    /// <summary>
+    /// Forge-welds <paramref name="other"/> onto <paramref name="id"/> (stacked; both hot and fluxed).
+    /// <paramref name="set"/> (0-1): how well the hammer set the weld along the seam.
+    /// </summary>
+    public bool Weld(string id, string other, out string reason, double set = 1)
     {
         reason = "";
         CraftPiece a = Piece(id), b = Piece(other);
@@ -577,20 +589,22 @@ public sealed partial class CraftWorkshop
             return Refuse("Take both out onto the anvil first.", out reason, id);
         if (a.MaxTemperature < a.Profile(Rules).HotWorkMin || b.MaxTemperature < b.Profile(Rules).HotWorkMin)
             return Refuse("They are far too cold to weld.", out reason, id);
-        Record(new CraftOperation { kind = CraftOpKind.Weld, piece = id, other = other });
+        Record(new CraftOperation { kind = CraftOpKind.Weld, piece = id, other = other, b = (float)Math.Max(0.001, CraftMath.Clamp01(set)) });
         return true;
     }
 
-    private void ApplyWeld(CraftOperation op) => CraftForging.Weld(this, Piece(op.piece), Piece(op.other));
+    private void ApplyWeld(CraftOperation op) => CraftForging.Weld(this, Piece(op.piece), Piece(op.other), op.b);
 
     /// <summary>Cuts a piece in two at <paramref name="position"/> (0-1) with a hot chisel (hot, or soft metal). Returns the new piece's id.</summary>
     public string SplitPiece(string id, double position, out string reason)
     {
         reason = "";
         CraftPiece p = Piece(id);
-        if (!Has(CraftTools.Anvil))
+        // Metal is cut with a hot chisel on the anvil; wood with a saw at the bench.
+        bool wood = p != null && p.kind == CraftPieceKind.Wood;
+        if (!Has(CraftTools.Anvil) && !(wood && Has(CraftTools.Files)))
         {
-            Refuse("There is no anvil here.", out reason, id);
+            Refuse(wood ? "There is no saw here." : "There is no anvil here.", out reason, id);
             return null;
         }
         if (p == null || p.kind != CraftPieceKind.Metal && p.kind != CraftPieceKind.Wood || p.segments.Count < 2)

@@ -18,8 +18,11 @@ using UnityEngine.UI;
 /// </list>
 /// Everything goes through the player's <see cref="CraftKnowledge"/>: metals are named only once known, heat is a
 /// colour until a thermometer has taught what it means. It is an open panel of the player's inventory while shown.
+/// <para>The forge's bellows, the anvil, the quench tank, the wheel, the whetstone and the crucible can also be worked
+/// with the hands in 3D (<see cref="CraftHandsOn"/>, the area's "by hand" button or the By Hand key, H by default): the window steps aside and
+/// comes back when the tool is put down.</para>
 /// </summary>
-public class CraftStationUI : MonoBehaviour, IGameplayPanel
+public class CraftStationUI : MonoBehaviour, IExclusivePanel
 {
     private static CraftStationUI instance;
 
@@ -42,6 +45,7 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
     private readonly List<Button> tabButtons = new List<Button>();
     private readonly List<Button> journalTabs = new List<Button>();
     private CraftMode mode;
+    private CraftHandsOn handsOn;
     private readonly List<string> log = new List<string>();
     private float messageTime;
 
@@ -102,7 +106,7 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
             instance.Hide();
     }
 
-    public static bool IsOpen => instance != null && instance.station != null && instance.canvas.gameObject.activeSelf;
+    public static bool IsOpen => instance != null && instance.station != null && (instance.canvas.gameObject.activeSelf || instance.HandsOnActive);
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => instance = null;
@@ -121,13 +125,21 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
             Hide();
             return;
         }
+        if (HandsOnActive)
+            return; // the hammer, the bellows, the wheel...: the 3D work place has the mouse and the view
         if (Cursor.lockState != CursorLockMode.None)
         {
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
-        SetHudFocus(!InventoryManager.IsInventoryOpenFor(player));
-        Hands.Rest(Time.unscaledDeltaTime * 0.2f);
+        bool inventoryOpen = InventoryManager.IsInventoryOpenFor(player);
+        SetHudFocus(!inventoryOpen);
+        if (!inventoryOpen && !journalOpen && mode != null && mode.HandsOnMode != CraftHandsOnMode.None && StationControls.Pressed(StationControl.ByHand))
+        {
+            mode.TakeUpByHand();
+            return;
+        }
+        Hands.Rest(Time.unscaledDeltaTime);
         mode?.Tick(Time.unscaledDeltaTime);
         drawTimer += Time.unscaledDeltaTime;
         if (drawTimer >= 1f / 20f)
@@ -140,6 +152,8 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
         {
             refreshTimer = 0f;
             Refresh(false);
+            string arm = Hands.Feeling;
+            if (hint != null && mode != null) hint.text = arm.Length > 0 ? $"<color=#ffb070>{arm}</color>" : mode.Hint;
         }
         if (message != null && message.text.Length > 0 && Time.unscaledTime - messageTime > 6f)
             message.text = "";
@@ -156,6 +170,13 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
 
     private void Hide()
     {
+        if (HandsOnActive)
+        {
+            CraftHandsOn h = handsOn;
+            handsOn = null;
+            h.End(false, false);
+        }
+        handsOn = null;
         SetMode(null);
         Detach();
         SetHudFocus(false);
@@ -186,6 +207,7 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
 
     private void Register()
     {
+        InputBindingStore.BlockGameplayInput(this); // the station's keys only: no jumping, dashing or casting from the bench
         if (registeredWith != null || managesCursor)
             return;
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
@@ -204,6 +226,7 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
 
     private void Unregister()
     {
+        InputBindingStore.UnblockGameplayInput(this);
         if (registeredWith != null)
         {
             InventoryManager inv = registeredWith;
@@ -220,6 +243,11 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
 
     public void ClosePanel()
     {
+        if (HandsOnActive)
+        {
+            handsOn.End(false); // Escape at the anvil: back to the game (the work stays as it is)
+            return;
+        }
         if (journalOpen)
         {
             journalOpen = false;
@@ -237,11 +265,14 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
         modes.Add(new CraftQuenchMode());
         modes.Add(new CraftGrindMode());
         modes.Add(new CraftSharpenMode());
+        modes.Add(new CraftCarveMode());
+        modes.Add(new CraftWoodshopMode());
         modes.Add(new CraftOreMode());
         modes.Add(new CraftFurnaceMode());
         modes.Add(new CraftCrucibleMode());
         modes.Add(new CraftTanneryMode());
         modes.Add(new CraftCuttingMode());
+        modes.Add(new CraftTailorMode());
         modes.Add(new CraftAssemblyMode());
         foreach (CraftMode m in modes) m.Attach(this);
 
@@ -369,8 +400,23 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
         CraftPixels c = view.Pixels;
         c.Clear(new Color(0.05f, 0.05f, 0.07f, 1f));
         if (mode != null && station?.Workshop != null)
+        {
             mode.Draw(c);
+            DrawArm(c);
+        }
         view.Present();
+    }
+
+    /// <summary>The arm, top right: a bar that empties as it tires (green, gold, red), and trembles when it is spent.</summary>
+    private void DrawArm(CraftPixels c)
+    {
+        float f = (float)Hands.fatigue, x = c.Width - 96f, y = c.Height - 14f;
+        if (f > 0.85f) x += Mathf.Sin(Time.unscaledTime * 40f) * 1.5f;
+        Color col = f < 0.5f ? new Color(0.45f, 0.85f, 0.5f) : f < 0.8f ? new Color(1f, 0.8f, 0.35f) : new Color(1f, 0.4f, 0.3f);
+        // A little fist, then the bar.
+        c.Disc(x - 8f, y + 3f, 5f, new Color(0.86f, 0.66f, 0.52f, 0.9f));
+        c.Rect(x, y, x + 86f, y + 7f, new Color(0f, 0f, 0f, 0.6f));
+        c.Rect(x + 1f, y + 1f, x + 1f + 84f * Mathf.Clamp01(1f - f), y + 6f, col);
     }
 
     /// <summary>Where the pointer is on the work surface (pixels; (-1, -1) when it is not on it).</summary>
@@ -390,6 +436,38 @@ public class CraftStationUI : MonoBehaviour, IGameplayPanel
             selected = null;
         Refresh(true);
         return ok;
+    }
+
+    // ------------------------------------------------------------------ by hand, in 3D
+    private bool HandsOnActive => handsOn != null && handsOn.Active;
+
+    /// <summary>The window steps aside and the player works <paramref name="what"/> in 3D; it comes back when they put the tool down.</summary>
+    public bool EnterHandsOn(CraftHandsOnMode what, CraftHandsOnSetup setup)
+    {
+        if (station == null || player == null || what == CraftHandsOnMode.None)
+            return false;
+        handsOn = CraftHandsOn.For(station);
+        canvas.gameObject.SetActive(false);
+        SetHudFocus(true); // the hotbar, quick slots and ability bar stay hidden while the hands work
+        if (handsOn.Begin(what, player, Hands, setup, OnHandsOnEnded, out string reason))
+            return true;
+        canvas.gameObject.SetActive(true);
+        if (!string.IsNullOrEmpty(reason)) Message(reason);
+        Refresh(true);
+        return false;
+    }
+
+    private void OnHandsOnEnded(bool backToWindow)
+    {
+        if (station == null)
+            return;
+        if (backToWindow)
+        {
+            canvas.gameObject.SetActive(true);
+            Refresh(true);
+        }
+        else
+            Hide();
     }
 
     /// <summary>A line under the work surface for a few seconds.</summary>

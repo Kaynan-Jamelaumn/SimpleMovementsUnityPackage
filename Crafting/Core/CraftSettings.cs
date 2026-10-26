@@ -114,6 +114,16 @@ public class CraftSimulationSettings
     [Tooltip("Whetstone strokes: share of the way to the stone's apex per stroke at full pressure.")]
     [Range(0.001f, 0.5f)] public float sharpenRate = 0.08f;
 
+    [Header("Hand work in play")]
+    [Tooltip("At a station, a real second at the wheel, the file, the brush, the polish or the carving knife does this many " +
+             "seconds of work (the rules count seconds of life: grinding a sword's bevels takes a smith an afternoon). " +
+             "Scripts and tests that call the workshop directly count real seconds.")]
+    [Min(0.1f)] public float handWorkPace = 4f;
+    [Tooltip("Working from the station's window (the drawings) is careful work: this share of the pace for a novice...")]
+    [Range(0.1f, 1f)] public float windowPaceNovice = 0.6f;
+    [Tooltip("...and this share for a master (practice from the journal). By hand, in 3D, the pace is always full.")]
+    [Range(0.1f, 1f)] public float windowPaceMaster = 0.9f;
+
     [Header("Smelting and casting")]
     [Tooltip("Mineral (g) reduced per second at full rate in a hot, reducing furnace (× the ore's rate).")]
     [Min(0f)] public float reductionRate = 4f;

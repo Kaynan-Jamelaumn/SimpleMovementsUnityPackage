@@ -356,6 +356,8 @@ public class CraftFuel
     [Range(0f, 1f)] public float sulfur;
     [Tooltip("Smoke and soot (visual).")]
     [Range(0f, 1f)] public float smoke = 0.2f;
+    [Tooltip("Any wood burns as this fuel too: wooden blanks, and plain materials named after a wood or as wood (Oak Plank, Ash Log, Timber, Branch...). Never a finished item.")]
+    public bool burnsAnyWood;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }
@@ -459,6 +461,8 @@ public class CraftHideDefinition
     public ElementType affinity = ElementType.None;
     [Range(0f, 1f)] public float affinityStrength;
     [Min(0f)] public float price = 6f;
+    [Tooltip("Woven cloth (linen, wool, canvas) rather than a hide: it comes finished - no fleshing or tanning - and is cut and sewn at the tailor's table.")]
+    public bool textile;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }
@@ -506,6 +510,9 @@ public class CraftSupplyDefinition
     [Tooltip("Dye colour; colour of the supply.")]
     public Color color = Color.white;
     [Min(0f)] public float price = 1f;
+
+    [Tooltip("Fibre: the thread it spins into - coarse, even, fine (supply ids).")]
+    public List<string> spinsInto = new List<string>();
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }
@@ -579,6 +586,8 @@ public class CraftMold
     [Tooltip("A hole (eye) is cast in at this position (0-1; -1 = none) of this diameter (mm).")]
     public float eyeAt = -1f;
     public float eyeDiameter;
+    /// <summary>A mould made from a design's part (see <see cref="CraftRules.PatternMold"/>): what is cast in it is meant for that part.</summary>
+    [NonSerialized] public string designId, designRole;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }

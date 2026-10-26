@@ -270,7 +270,8 @@ player is created). On the `CharacterCreationUI`: **Rebuild Screen** (keeps the 
   limit, FPS counter, render distance, motion blur, anti-aliasing, shadows), *Controls* (look sensitivity, invert Y),
   *Key Bindings*.
 * **Key Bindings** (`KeyRebindingMenu`): every action of the Player map for keyboard and mouse or gamepad (movement
-  keys one by one). Click a key and press the new one (Escape cancels); conflicts are reported; **Reset** per key and
+  keys one by one), then the keys of the crafting and alchemy stations worked by hand (the Station map, see
+  [Crafting 01](../Crafting/01-Overview-and-Setup.md)) under their own heading. Click a key and press the new one (Escape cancels); conflicts are reported; **Reset** per key and
   **Reset All Keys**. Bindings are saved (PlayerPrefs) and applied to every copy of the player's input at once.
 * Settings are saved in PlayerPrefs and loaded at start. Look sensitivity and inversion are read by the player camera
   (`LookSettings`).

@@ -18,7 +18,7 @@ public static class CraftingEditorTools
     private const string Menu = SMMenu.Root + "Crafting/";
 
     /// <summary>What a station preset has.</summary>
-    public enum StationPreset { Smithy, Smeltery, Tannery, Leatherworks, Complete, Test }
+    public enum StationPreset { Smithy, Smeltery, Tannery, Leatherworks, Complete, Test, Woodshop, Tailor, Armourer }
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Crafting Database (Resources)", false, SMMenu.ProjectSetup + 9)]
     public static CraftDatabase CreateDatabaseMenu() => ProjectDatabase(true);
@@ -34,6 +34,15 @@ public static class CraftingEditorTools
 
     [MenuItem(Menu + "Create Leatherworks (cutting and assembly)", false, SMMenu.Crafting + 3)]
     private static void LeatherworksMenu() => CreateStation(StationPreset.Leatherworks);
+
+    [MenuItem(Menu + "Create Woodshop (froe, saws, steam box, drying stack, finishing)", false, SMMenu.Crafting + 3)]
+    private static void WoodshopMenu() => CreateStation(StationPreset.Woodshop);
+
+    [MenuItem(Menu + "Create Tailor's (spinning wheel, tailor's table)", false, SMMenu.Crafting + 3)]
+    private static void TailorMenu() => CreateStation(StationPreset.Tailor);
+
+    [MenuItem(Menu + "Create Armourer (smithy with a leather bench and tailor's table: plate and mixed armour)", false, SMMenu.Crafting + 3)]
+    private static void ArmourerMenu() => CreateStation(StationPreset.Armourer);
 
     [MenuItem(Menu + "Create Complete Workshop", false, SMMenu.Crafting + 4)]
     private static void CompleteMenu() => CreateStation(StationPreset.Complete);
@@ -107,6 +116,9 @@ public static class CraftingEditorTools
             case StationPreset.Smeltery: return CraftTools.Smeltery;
             case StationPreset.Tannery: return CraftTools.Tannery;
             case StationPreset.Leatherworks: return CraftTools.Leatherworks;
+            case StationPreset.Woodshop: return CraftTools.Woodshop;
+            case StationPreset.Tailor: return CraftTools.Tailor;
+            case StationPreset.Armourer: return CraftTools.Armourer;
             default: return CraftTools.Everything;
         }
     }
@@ -203,6 +215,49 @@ public static class CraftingEditorTools
             vats = Place("Vats", 2f);
             for (int i = 0; i < 3; i++)
                 Shape(PrimitiveType.Cylinder, $"Vat {i + 1}", vats, new Vector3(-0.65f + i * 0.65f, 0.35f, 0f), new Vector3(0.55f, 0.35f, 0.55f), new Color(0.35f, 0.25f, 0.15f));
+        }
+        if ((tools & CraftTools.ChoppingBlock) != 0)
+        {
+            Transform block = Place("Chopping Block", 0.7f);
+            Shape(PrimitiveType.Cylinder, "Block", block, new Vector3(0f, 0.25f, 0f), new Vector3(0.6f, 0.25f, 0.6f), wood);
+        }
+        if ((tools & CraftTools.Sawhorse) != 0)
+        {
+            Transform horses = Place("Sawhorses", 1.2f);
+            Shape(PrimitiveType.Cube, "Horse A", horses, new Vector3(-0.4f, 0.35f, 0f), new Vector3(0.08f, 0.7f, 0.6f), wood);
+            Shape(PrimitiveType.Cube, "Horse B", horses, new Vector3(0.4f, 0.35f, 0f), new Vector3(0.08f, 0.7f, 0.6f), wood);
+        }
+        if ((tools & CraftTools.SteamBox) != 0)
+        {
+            Transform steam = Place("Steam Box and Forms", 1.4f);
+            Shape(PrimitiveType.Cube, "Steam Box", steam, new Vector3(-0.3f, 0.6f, 0f), new Vector3(0.9f, 0.3f, 0.3f), wood);
+            Shape(PrimitiveType.Cylinder, "Kettle", steam, new Vector3(-0.3f, 0.2f, 0f), new Vector3(0.3f, 0.2f, 0.3f), iron);
+            Shape(PrimitiveType.Cylinder, "Form", steam, new Vector3(0.45f, 0.5f, 0f), new Vector3(0.4f, 0.05f, 0.4f), wood);
+        }
+        if ((tools & CraftTools.DryingStack) != 0)
+        {
+            Transform stack = Place("Drying Stack", 1.4f);
+            for (int i = 0; i < 4; i++)
+                Shape(PrimitiveType.Cube, $"Boards {i + 1}", stack, new Vector3(0f, 0.15f + i * 0.12f, 0f), new Vector3(1.3f, 0.06f, 0.5f), wood);
+            Shape(PrimitiveType.Cube, "Roof", stack, new Vector3(0f, 1.1f, 0f), new Vector3(1.5f, 0.05f, 0.8f), new Color(0.3f, 0.3f, 0.32f));
+        }
+        if ((tools & CraftTools.FinishingBench) != 0)
+        {
+            Transform bench = Place("Finishing Bench (wood)", 1f);
+            Shape(PrimitiveType.Cube, "Bench", bench, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.5f), wood);
+        }
+        if ((tools & CraftTools.SpinningWheel) != 0)
+        {
+            Transform spin = Place("Spinning Wheel", 0.8f);
+            GameObject wheelGo = Shape(PrimitiveType.Cylinder, "Wheel", spin, new Vector3(0f, 0.7f, 0f), new Vector3(0.6f, 0.02f, 0.6f), wood);
+            wheelGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            Shape(PrimitiveType.Cube, "Stand", spin, new Vector3(0f, 0.25f, 0f), new Vector3(0.5f, 0.5f, 0.2f), wood);
+        }
+        if ((tools & CraftTools.TailorTable) != 0)
+        {
+            Transform table = Place("Tailor's Table", 1.4f);
+            Shape(PrimitiveType.Cube, "Table", table, new Vector3(0f, 0.4f, 0f), new Vector3(1.4f, 0.8f, 0.8f), wood);
+            Shape(PrimitiveType.Cube, "Cloth", table, new Vector3(0f, 0.81f, 0f), new Vector3(1f, 0.01f, 0.6f), new Color(0.85f, 0.82f, 0.72f));
         }
         if ((tools & (CraftTools.LeatherBench | CraftTools.AssemblyBench)) != 0)
         {
@@ -399,7 +454,12 @@ public static class CraftingEditorTools
             case WeaponCategory.Axe: return WeaponTemplates.Template.Axe;
             case WeaponCategory.Mace:
             case WeaponCategory.Hammer: return WeaponTemplates.Template.Hammer;
-            case WeaponCategory.Tool: return d.toolType == ToolType.Axe ? WeaponTemplates.Template.Axe : WeaponTemplates.Template.Hammer;
+            case WeaponCategory.Tool: return d.toolType == ToolType.Axe || d.toolType == ToolType.Scythe ? WeaponTemplates.Template.Axe : WeaponTemplates.Template.Hammer;
+            case WeaponCategory.Bow: return WeaponTemplates.Template.Bow;
+            case WeaponCategory.Crossbow: return WeaponTemplates.Template.Crossbow;
+            case WeaponCategory.Staff: return WeaponTemplates.Template.Staff;
+            case WeaponCategory.Thrown: return WeaponTemplates.Template.ThrowingKnife;
+            case WeaponCategory.Fist: return WeaponTemplates.Template.Knuckles;
             default: return WeaponTemplates.Template.Sword;
         }
     }
@@ -480,6 +540,14 @@ public class CraftDatabaseEditor : Editor
                 CraftingEditorTools.CreateDesignTemplates(db, true);
             if (GUILayout.Button(new GUIContent("Create Stock Items", "Item assets for the stock metals, ores, hides, woods, fuels, supplies and agents.")))
                 CraftingEditorTools.CreateStockItems(true);
+            if (GUILayout.Button(new GUIContent("Add Missing Built-in", "Add the built-in metals, ores, hides, woods, supplies, patterns and designs this database does not have yet (by id). Nothing already here changes.")))
+            {
+                Undo.RecordObject(db, "Add Missing Built-in Crafting Content");
+                int added = db.content.AddMissing(CraftDefaults.Content());
+                db.MarkChanged();
+                EditorUtility.SetDirty(db);
+                EditorUtility.DisplayDialog("Crafting", added > 0 ? $"Added {added} built-in entries. Run Create Design Templates and Create Stock Items for the new ones." : "Nothing was missing.", "OK");
+            }
             if (GUILayout.Button(new GUIContent("Reset To Built-in", "Replace the content with the built-in metals, ores, hides and designs.")) &&
                 EditorUtility.DisplayDialog("Crafting", "Replace every element, class, ore, hide, wood, supply and design with the built-in content?", "Replace", "Cancel"))
             {

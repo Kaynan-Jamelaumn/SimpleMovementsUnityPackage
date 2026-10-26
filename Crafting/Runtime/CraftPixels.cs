@@ -66,6 +66,8 @@ public sealed class CraftPixels
     }
 
     /// <summary>Blends <paramref name="c"/> (with its alpha × <paramref name="cover"/>) onto a pixel.</summary>
+    private static Color32 Solid(Color c) => new Color32((byte)(Mathf.Clamp01(c.r) * 255f), (byte)(Mathf.Clamp01(c.g) * 255f), (byte)(Mathf.Clamp01(c.b) * 255f), 255);
+
     public void Blend(int x, int y, Color c, float cover = 1f)
     {
         if (x < 0 || y < 0 || x >= Width || y >= Height)
@@ -74,7 +76,19 @@ public sealed class CraftPixels
         if (a <= 0f)
             return;
         int i = y * Width + x;
+        if (a >= 0.998f)
+        {
+            px[i] = new Color32((byte)(Mathf.Clamp01(c.r) * 255f), (byte)(Mathf.Clamp01(c.g) * 255f), (byte)(Mathf.Clamp01(c.b) * 255f), 255);
+            return;
+        }
         Color32 d = px[i];
+        if (d.a == 255)
+        {
+            // Over an opaque pixel (nearly all of them): a plain mix.
+            float ia = (1f - a) / 255f;
+            px[i] = new Color32((byte)(Mathf.Clamp01(c.r * a + d.r * ia) * 255f), (byte)(Mathf.Clamp01(c.g * a + d.g * ia) * 255f), (byte)(Mathf.Clamp01(c.b * a + d.b * ia) * 255f), 255);
+            return;
+        }
         float da = d.a / 255f;
         float oa = a + da * (1f - a);
         if (oa <= 1e-5f)
@@ -105,13 +119,17 @@ public sealed class CraftPixels
         if (y1 < y0) (y0, y1) = (y1, y0);
         int ix0 = Mathf.Max(0, Mathf.FloorToInt(x0)), ix1 = Mathf.Min(Width - 1, Mathf.CeilToInt(x1) - 1);
         int iy0 = Mathf.Max(0, Mathf.FloorToInt(y0)), iy1 = Mathf.Min(Height - 1, Mathf.CeilToInt(y1) - 1);
+        bool opaque = c.a >= 0.998f;
+        Color32 solid = Solid(c);
         for (int y = iy0; y <= iy1; y++)
         {
             float cy = Mathf.Clamp01(Mathf.Min(y + 1, y1) - Mathf.Max(y, y0));
+            int row = y * Width;
             for (int x = ix0; x <= ix1; x++)
             {
                 float cx = Mathf.Clamp01(Mathf.Min(x + 1, x1) - Mathf.Max(x, x0));
-                Blend(x, y, c, cx * cy);
+                if (opaque && cx * cy >= 0.998f) px[row + x] = solid; // the inside of an opaque rectangle: no blending
+                else Blend(x, y, c, cx * cy);
             }
         }
     }
@@ -168,8 +186,18 @@ public sealed class CraftPixels
         float len = Mathf.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
         int x0 = Mathf.FloorToInt(Mathf.Min(ax, bx) - t), x1 = Mathf.CeilToInt(Mathf.Max(ax, bx) + t);
         int y0 = Mathf.FloorToInt(Mathf.Min(ay, by) - t), y1 = Mathf.CeilToInt(Mathf.Max(ay, by) + t);
+        // Only the pixels near the line on each row (a long diagonal's bounding box is mostly empty).
+        float nx = len > 1e-5f ? -(by - ay) / len : 0f, ny = len > 1e-5f ? (bx - ax) / len : 1f, reach = t * 0.5f + 1f;
         for (int y = Mathf.Max(0, y0); y <= Mathf.Min(Height - 1, y1); y++)
-            for (int x = Mathf.Max(0, x0); x <= Mathf.Min(Width - 1, x1); x++)
+        {
+            int xa = Mathf.Max(0, x0), xb = Mathf.Min(Width - 1, x1);
+            if (Mathf.Abs(nx) > 1e-3f)
+            {
+                float py = y + 0.5f - ay, u0 = (-reach - ny * py) / nx, u1 = (reach - ny * py) / nx;
+                xa = Mathf.Max(xa, Mathf.FloorToInt(Mathf.Min(u0, u1) + ax - 0.5f) - 1);
+                xb = Mathf.Min(xb, Mathf.CeilToInt(Mathf.Max(u0, u1) + ax - 0.5f) + 1);
+            }
+            for (int x = xa; x <= xb; x++)
             {
                 float px0 = x + 0.5f - ax, py0 = y + 0.5f - ay;
                 float u = len > 1e-5f ? Mathf.Clamp01((px0 * (bx - ax) + py0 * (by - ay)) / (len * len)) : 0f;
@@ -178,45 +206,71 @@ public sealed class CraftPixels
                 float cover = Mathf.Clamp01(t * 0.5f - d + 0.5f);
                 if (cover > 0f) Blend(x, y, c, cover);
             }
+        }
     }
 
-    /// <summary>A filled polygon (even-odd, sampled at pixel centres with 2×2 supersampling for soft edges).</summary>
+    /// <summary>
+    /// Fills a polygon (any shape, even-odd), anti-aliased: a scanline fill, two sub-rows per pixel row, the spans' ends
+    /// covering their pixels by the fraction they reach into them. Cost grows with the rows and edges, not with
+    /// rows × columns × edges.
+    /// </summary>
     public void Polygon(IList<Vector2> pts, Color c)
     {
         if (pts == null || pts.Count < 3)
             return;
-        float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
         foreach (Vector2 p in pts)
         {
-            minX = Mathf.Min(minX, p.x); maxX = Mathf.Max(maxX, p.x);
-            minY = Mathf.Min(minY, p.y); maxY = Mathf.Max(maxY, p.y);
+            minY = Mathf.Min(minY, p.y);
+            maxY = Mathf.Max(maxY, p.y);
         }
         int y0 = Mathf.Max(0, Mathf.FloorToInt(minY)), y1 = Mathf.Min(Height - 1, Mathf.CeilToInt(maxY));
-        int x0 = Mathf.Max(0, Mathf.FloorToInt(minX)), x1 = Mathf.Min(Width - 1, Mathf.CeilToInt(maxX));
+        if (y1 < y0)
+            return;
+        if (cover == null || cover.Length < Width) cover = new float[Width];
+        int n = pts.Count;
+        bool opaque = c.a >= 0.998f;
+        Color32 solid = Solid(c);
         for (int y = y0; y <= y1; y++)
-            for (int x = x0; x <= x1; x++)
+        {
+            int lo = Width, hi = -1;
+            for (int sub = 0; sub < 2; sub++)
             {
-                int inside = 0;
-                for (int s = 0; s < 4; s++)
+                float sy = y + 0.25f + 0.5f * sub;
+                crossings.Clear();
+                for (int i = 0, j = n - 1; i < n; j = i++)
                 {
-                    float sx = x + 0.25f + 0.5f * (s & 1), sy = y + 0.25f + 0.5f * (s >> 1);
-                    if (Inside(pts, sx, sy)) inside++;
+                    Vector2 a = pts[i], b = pts[j];
+                    if ((a.y > sy) != (b.y > sy))
+                        crossings.Add(a.x + (b.x - a.x) * (sy - a.y) / (b.y - a.y));
                 }
-                if (inside > 0) Blend(x, y, c, inside / 4f);
+                crossings.Sort();
+                for (int k = 0; k + 1 < crossings.Count; k += 2)
+                {
+                    float xa = Mathf.Max(0f, crossings[k]), xb = Mathf.Min(Width, crossings[k + 1]);
+                    if (xb <= xa) continue;
+                    int ia = (int)xa, ib = Mathf.Min(Width - 1, (int)xb);
+                    lo = Mathf.Min(lo, ia);
+                    hi = Mathf.Max(hi, ib);
+                    if (ia == ib) { cover[ia] += 0.5f * (xb - xa); continue; }
+                    cover[ia] += 0.5f * (ia + 1 - xa);
+                    for (int x = ia + 1; x < ib; x++) cover[x] += 0.5f;
+                    if (ib < Width) cover[ib] += 0.5f * (xb - ib);
+                }
             }
+            int row = y * Width;
+            for (int x = lo; x <= hi; x++)
+            {
+                float k = cover[x];
+                cover[x] = 0f;
+                if (opaque && k >= 0.998f) px[row + x] = solid;
+                else if (k > 0.001f) Blend(x, y, c, Mathf.Min(1f, k));
+            }
+        }
     }
 
-    private static bool Inside(IList<Vector2> pts, float x, float y)
-    {
-        bool inside = false;
-        for (int i = 0, j = pts.Count - 1; i < pts.Count; j = i++)
-        {
-            Vector2 a = pts[i], b = pts[j];
-            if ((a.y > y) != (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y + 1e-9f) + a.x)
-                inside = !inside;
-        }
-        return inside;
-    }
+    private float[] cover;
+    private readonly List<float> crossings = new List<float>();
 
     /// <summary>A polygon's outline.</summary>
     public void Outline(IList<Vector2> pts, Color c, float t = 1f)

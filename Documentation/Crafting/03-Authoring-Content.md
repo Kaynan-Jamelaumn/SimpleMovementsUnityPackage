@@ -38,17 +38,20 @@ arcane flux) and a price. Deposits vary the yields within their ranges.
 
 | Kind | Fields |
 |---|---|
-| Fuel | item used up (empty = free with a woodpile), burn units per item, maximum temperature, reducing and carburising character, sulfur, ash, burn rate |
+| Fuel | item used up (empty = free with a woodpile), burn units per item, maximum temperature, reducing and carburising character, sulfur, ash, burn rate; **Burns Any Wood**: any wood in the bag feeds it too (wooden blanks, materials named as or after a wood) |
 | Quenchant | item, severity, vapour blanket, low-temperature factor, boiling and flash points, heat capacity, element affinity it lends to steel it hardens, observation |
 | Tanning agent | kind (Water, Lime, Vegetable, Mineral, Oil, Alchemical, Acid), item, dose strength, hours to tan through, case-hardening threshold, fixation (washes out?), stiffness and water resistance it gives, shrink temperature, best and maximum temperature, colour, durability, fire resistance, action hours (lime, acid) |
 
 ## Hides, woods and supplies
 
 A **hide** has its size in cells, thickness along the back and at the belly, fibre strength, hair and fat, flaws, colour,
-hair colour, an affinity (drake hide: fire) and a price. A **wood** has density, toughness, stiffness, splitting,
+hair colour, an affinity (drake hide: fire) and a price; tick **Textile** for cloth (a straight-edged bolt, woven and
+finished: cut and sewn at the tailor's, never tanned). A **wood** has density, toughness, stiffness, splitting,
 colour, a blank size and a price. A **supply** is used up as it is worked: kind (Flux, Thread, Padding, Wax, Oil, Dye,
-Clay, Cupel, Other), item, strength (thread strength, padding protection, how much oil or wax gives, how well a flux
-works), colour (dyes) and price.
+Clay, Cupel, Other, Fibre, Varnish), item, strength (thread strength, padding protection, how much oil or wax gives,
+how well a flux works, how tough a varnish is), colour (dyes) and price; a **Fibre** lists **Spins Into** (the thread
+supplies a coarse, an even and a fine hank become). A design's sheet part (kind Hide) says in **Leather ▸ Fabric**
+whether it is cut from leather, cloth or either.
 
 ## Abrasives, moulds and patterns
 
@@ -69,12 +72,20 @@ A **design** is an item that can be made:
   (pattern, thickness, tannage, stiffness), a **wood spec**, a fastener kind and count, a supply kind and count;
 * **joints**: kind (Fit, Peen, Rivet, Stitch, Wrap, Wedge, Socket, Buckle), the two roles, a count (stitches, rivets,
   turns) and an importance;
+* **menu group**: where a station's Assembly menu lists it, as "Category/Group" ("Weapons/Swords", "Armour/Plate",
+  or your own: "Heirlooms/Knives"); empty = worked out from its kind and parts (`CraftDesignMenu`);
 * the numbers a well-made one reaches: damage, critical chance and multiplier, knockback, reference mass, ideal balance,
   tool damage, defence, magic defence, durability, price, inventory grid size.
 
 The **template** of a design is a weapon or armour asset whose attacks, animations, hit volumes, models and sounds every
 crafted one copies (**Create Design Templates** makes one per design from the built-in weapon movesets; replace their art
-freely). Without a template a crafted weapon has numbers but no attacks.
+freely). Without a template a crafted weapon has numbers but no attacks. The movesets follow the weapon category: swords,
+greatswords, daggers, spears and polearms, axes (and scythes), hammers and maces, bows, staffs, thrown weapons (the
+throwing-knife moveset) and fist weapons (knuckles).
+
+Where a design can be made follows from its parts and the station's tools (chapter 02, *Where it is made*); a station's
+**Designs** list narrows it further (a village smith who only makes tools and knives, a royal armourer with a fixed
+catalogue).
 
 ## Simulation settings
 

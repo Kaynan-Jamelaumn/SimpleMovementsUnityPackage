@@ -13,6 +13,10 @@ public enum CraftRequestKind : byte
     Scrape, Stretch, Stake, Condition, Dye, Slick, Skive, Cut,
     StartAssembly, Attach, Detach, JointWork, Finish, Inspect,
     Assay, Suspend, Resume, Wait,
+    Carve,
+    BrushOre,
+    Rive, BendWood, SawCut, StackWood, SandWood, Varnish,
+    Spin,
 }
 
 /// <summary>

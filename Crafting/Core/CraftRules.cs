@@ -47,6 +47,45 @@ public class CraftContent
         MergeById(designs, other.designs, e => e.id);
     }
 
+    /// <summary>
+    /// Adds what <paramref name="other"/> has that this content lacks (by id), leaving everything already here as it is:
+    /// a project's database catches up with new built-in content without losing its own changes. Returns how many were added.
+    /// </summary>
+    public int AddMissing(CraftContent other)
+    {
+        if (other == null)
+            return 0;
+        int n = AddMissingById(elements, other.elements, e => e.id);
+        n += AddMissingById(classes, other.classes, e => e.id);
+        n += AddMissingById(ores, other.ores, e => e.id);
+        n += AddMissingById(fuels, other.fuels, e => e.id);
+        n += AddMissingById(quenchants, other.quenchants, e => e.id);
+        n += AddMissingById(agents, other.agents, e => e.id);
+        n += AddMissingById(hides, other.hides, e => e.id);
+        n += AddMissingById(woods, other.woods, e => e.id);
+        n += AddMissingById(supplies, other.supplies, e => e.id);
+        n += AddMissingById(abrasives, other.abrasives, e => e.id);
+        n += AddMissingById(molds, other.molds, e => e.id);
+        n += AddMissingById(patterns, other.patterns, e => e.id);
+        n += AddMissingById(designs, other.designs, e => e.id);
+        return n;
+    }
+
+    /// <summary>Adds the entries of <paramref name="from"/> whose id <paramref name="into"/> does not have yet.</summary>
+    public static int AddMissingById<T>(List<T> into, List<T> from, Func<T, string> id) where T : class
+    {
+        if (into == null || from == null)
+            return 0;
+        int n = 0;
+        foreach (T x in from)
+        {
+            if (x == null || into.Exists(e => e != null && string.Equals(id(e), id(x), StringComparison.OrdinalIgnoreCase))) continue;
+            into.Add(x);
+            n++;
+        }
+        return n;
+    }
+
     private static void MergeById<T>(List<T> into, List<T> from, Func<T, string> id) where T : class
     {
         if (from == null)
@@ -112,7 +151,63 @@ public sealed class CraftRules
     public CraftWoodDefinition Wood(string id) => Find<CraftWoodDefinition>("wood:", id);
     public CraftSupplyDefinition Supply(string id) => Find<CraftSupplyDefinition>("supply:", id);
     public CraftAbrasive Abrasive(string id) => Find<CraftAbrasive>("abrasive:", id);
-    public CraftMold Mold(string id) => Find<CraftMold>("mold:", id);
+    public CraftMold Mold(string id) => Find<CraftMold>("mold:", id) ?? PatternMold(id);
+
+    /// <summary>The id prefix of a mould rammed up round a pattern of a design's part: <c>cast:design/role</c>.</summary>
+    public const string PatternMoldPrefix = "cast:";
+    private readonly Dictionary<string, CraftMold> patternMolds = new Dictionary<string, CraftMold>(StringComparer.OrdinalIgnoreCase);
+
+    public static string PatternMoldId(string design, string role) => $"{PatternMoldPrefix}{design}/{role}";
+
+    /// <summary>
+    /// A mould in the shape of a design's metal part (sand rammed round a pattern of it): the part's profile at the
+    /// middle of its length range, its eye; what is cast in it is meant for that part. Null when there is no such part.
+    /// </summary>
+    public CraftMold PatternMold(string id)
+    {
+        if (string.IsNullOrEmpty(id) || !id.StartsWith(PatternMoldPrefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (patternMolds.TryGetValue(id, out CraftMold cached))
+            return cached;
+        string rest = id.Substring(PatternMoldPrefix.Length);
+        int slash = rest.IndexOf('/');
+        CraftDesign d = slash > 0 ? Design(rest.Substring(0, slash)) : null;
+        CraftComponentSpec c = d?.Component(rest.Substring(slash + 1));
+        CraftMold m = null;
+        if (c != null && Castable(c))
+        {
+            CraftShapeTarget shape = c.shape;
+            m = new CraftMold
+            {
+                id = PatternMoldId(d.id, c.role), displayName = $"{d.Name}: {c.Name}",
+                length = (shape.lengthMin + Math.Max(shape.lengthMin, shape.lengthMax)) * 0.5f,
+                profile = new List<CraftProfilePoint>(shape.profile),
+                width = shape.profile[0].width, thickness = shape.profile[0].thickness,
+                eyeAt = shape.eye ? shape.eyeAt : -1f, eyeDiameter = shape.eye ? shape.eyeDiameter : 0f,
+                designId = d.id, designRole = c.role,
+            };
+        }
+        patternMolds[id] = m;
+        return m;
+    }
+
+    /// <summary>A metal part with a shape to it can be cast in a mould of its own.</summary>
+    public static bool Castable(CraftComponentSpec c) =>
+        c != null && c.kind == CraftPieceKind.Metal && !c.supply && c.shape != null && c.shape.profile != null && c.shape.profile.Count >= 2;
+
+    /// <summary>Every mould: the stock ones, then one in the shape of each design's castable metal part.</summary>
+    public List<CraftMold> AllMolds()
+    {
+        var list = new List<CraftMold>(Molds);
+        foreach (CraftDesign d in Designs)
+            foreach (CraftComponentSpec c in d.components)
+                if (Castable(c))
+                {
+                    CraftMold m = PatternMold(PatternMoldId(d.id, c.role));
+                    if (m != null) list.Add(m);
+                }
+        return list;
+    }
     public CraftPattern Pattern(string id) => Find<CraftPattern>("pattern:", id);
     public CraftDesign Design(string id) => Find<CraftDesign>("design:", id);
     public CraftMaterialClass Class(string id) => Find<CraftMaterialClass>("class:", id);

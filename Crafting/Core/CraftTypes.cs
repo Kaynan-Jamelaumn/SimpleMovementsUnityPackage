@@ -49,6 +49,10 @@ public enum CraftLocation
     Rack,
     /// <summary>Part of an assembly (a component).</summary>
     Assembled,
+    /// <summary>In the steam box (wood softening for bending).</summary>
+    Steam,
+    /// <summary>Stacked to season in the drying stack.</summary>
+    Stack,
 }
 
 /// <summary>What the player (or a script) did in a workshop. Serialized as numbers: only add new values at the END.</summary>
@@ -108,6 +112,14 @@ public enum CraftOpKind
     SplitPiece,
     TakeMelt,
     SetIntent,
+    Carve,
+    BrushOre,
+    Rive,
+    BendWood,
+    SawCut,
+    StackWood,
+    SandWood,
+    Varnish,
 }
 
 /// <summary>A defect a piece can carry. Visible or hidden, recoverable or not (<see cref="CraftDefect"/>). Serialized as numbers: add at the END.</summary>
@@ -262,6 +274,10 @@ public enum CraftSupplyKind
     Cupel,
     /// <summary>Anything else.</summary>
     Other,
+    /// <summary>Raw fibre for spinning (wool, flax, hemp).</summary>
+    Fibre,
+    /// <summary>A varnish or a finishing oil for wood.</summary>
+    Varnish,
 }
 
 /// <summary>What a joint of a design is. Serialized as numbers: add at the END.</summary>
