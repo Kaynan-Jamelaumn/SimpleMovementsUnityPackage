@@ -55,9 +55,9 @@ public sealed class CraftLapidaryMode : CraftMode
 
     // The stone, from above.
     private static readonly Vector2 Centre = new Vector2(230f, 210f);
-    private const float R = 150f;
-    private Vector2 ToPx(double x, double y) => new Vector2(Centre.x + (float)x * R, Centre.y + (float)y * R);
-    private Vector2 ToPlan(Vector2 p) => (p - Centre) / R;
+    private const float StoneRadius = 150f;
+    private Vector2 ToPx(double x, double y) => new Vector2(Centre.x + (float)x * StoneRadius, Centre.y + (float)y * StoneRadius);
+    private Vector2 ToPlan(Vector2 p) => (p - Centre) / StoneRadius;
 
     // Cleaning: the work put into each sector of the crust, and how controlled it was.
     private readonly float[] scrub = new float[CraftLapidary.CrustSectors];
@@ -374,7 +374,7 @@ public sealed class CraftLapidaryMode : CraftMode
             if (holding && ui.PointerHeld)
             {
                 Vector2 h = ui.Hover;
-                float press = Mathf.Clamp01((Centre.y + R - h.y) / (2f * R));
+                float press = Mathf.Clamp01((Centre.y + StoneRadius - h.y) / (2f * StoneRadius));
                 heat = Mathf.Min(1.2f, heat + dt * press * speed.value * 1.1f);
                 polishHeld += dt;
                 pressSum += press * dt;
@@ -413,7 +413,7 @@ public sealed class CraftLapidaryMode : CraftMode
             for (int i = 0; i < 8; i++)
             {
                 float a = i * Mathf.PI / 4f;
-                c.Line(Centre.x, Centre.y, Centre.x + Mathf.Cos(a) * R * 0.95f, Centre.y + Mathf.Sin(a) * R * 0.95f, new Color(1f, 1f, 1f, 0.15f + 0.3f * (float)g.polish), 1f);
+                c.Line(Centre.x, Centre.y, Centre.x + Mathf.Cos(a) * StoneRadius * 0.95f, Centre.y + Mathf.Sin(a) * StoneRadius * 0.95f, new Color(1f, 1f, 1f, 0.15f + 0.3f * (float)g.polish), 1f);
             }
         // The cleavage's trace, once looked at under the loupe.
         if ((g.looked || showAll) && d != null && d.cleavage >= CraftCleavage.Good)
@@ -422,14 +422,14 @@ public sealed class CraftLapidaryMode : CraftMode
             for (int k = -2; k <= 2; k++)
             {
                 Vector2 n = new Vector2(-Mathf.Sin(a), Mathf.Cos(a)) * k * 22f;
-                c.Line(Centre.x + n.x - Mathf.Cos(a) * R * 0.8f, Centre.y + n.y - Mathf.Sin(a) * R * 0.8f, Centre.x + n.x + Mathf.Cos(a) * R * 0.8f, Centre.y + n.y + Mathf.Sin(a) * R * 0.8f, new Color(1f, 1f, 1f, 0.18f), 1f);
+                c.Line(Centre.x + n.x - Mathf.Cos(a) * StoneRadius * 0.8f, Centre.y + n.y - Mathf.Sin(a) * StoneRadius * 0.8f, Centre.x + n.x + Mathf.Cos(a) * StoneRadius * 0.8f, Centre.y + n.y + Mathf.Sin(a) * StoneRadius * 0.8f, new Color(1f, 1f, 1f, 0.18f), 1f);
             }
         }
         foreach (CraftInclusion i in g.inclusions)
         {
             if (!(showAll || showFound && i.found)) continue;
             Vector2 at = ToPx(i.x, i.y);
-            float r = Mathf.Max(2f, i.size * R);
+            float r = Mathf.Max(2f, i.size * StoneRadius);
             switch (i.kind)
             {
                 case CraftInclusionKind.Feather: c.Line(at.x - r, at.y - r * 0.4f, at.x + r, at.y + r * 0.4f, new Color(1f, 1f, 1f, 0.8f), 1.5f); break;
@@ -475,7 +475,7 @@ public sealed class CraftLapidaryMode : CraftMode
     public override void Draw(CraftPixels c)
     {
         CraftPiece p = Stone;
-        c.Rect(Centre.x - R - 20, Centre.y - R - 20, Centre.x + R + 20, Centre.y + R + 20, new Color(0.14f, 0.13f, 0.12f));
+        c.Rect(Centre.x - StoneRadius - 20, Centre.y - StoneRadius - 20, Centre.x + StoneRadius + 20, Centre.y + StoneRadius + 20, new Color(0.14f, 0.13f, 0.12f));
         if (p == null) return;
         switch (place)
         {
@@ -500,7 +500,7 @@ public sealed class CraftLapidaryMode : CraftMode
         DrawCrust(c, p.gem, scrub);
         // The tool under the hand while scrubbing.
         Vector2 h = ui.Hover;
-        if (h.x >= 0 && Vector2.Distance(h, Centre) < R + 10f)
+        if (h.x >= 0 && Vector2.Distance(h, Centre) < StoneRadius + 10f)
         {
             if (Pick) c.Line(h.x, h.y, h.x + 26, h.y + 40, new Color(0.75f, 0.76f, 0.8f), 2f);
             else { c.Rect(h.x - 14, h.y - 4, h.x + 14, h.y + 4, Wood); for (int k = -12; k <= 12; k += 4) c.Line(h.x + k, h.y - 4, h.x + k, h.y - 10, new Color(0.85f, 0.8f, 0.6f), 1f); }
@@ -521,7 +521,7 @@ public sealed class CraftLapidaryMode : CraftMode
     {
         CraftPiece p = Stone;
         if (p == null) return;
-        if (phase == CraftPointer.Down && Vector2.Distance(pos, Centre) < R + 10f) { scrubbing = true; lastScrub = pos; lastScrubTime = Time.unscaledTime; return; }
+        if (phase == CraftPointer.Down && Vector2.Distance(pos, Centre) < StoneRadius + 10f) { scrubbing = true; lastScrub = pos; lastScrubTime = Time.unscaledTime; return; }
         if (phase == CraftPointer.Up) { FlushScrub(); scrubbing = false; return; }
         if (!scrubbing || phase != CraftPointer.Drag) return;
         float now = Time.unscaledTime, dist = Vector2.Distance(pos, lastScrub);
@@ -531,7 +531,7 @@ public sealed class CraftLapidaryMode : CraftMode
         float a = Mathf.Atan2(plan.y, plan.x);
         if (a < 0) a += Mathf.PI * 2f;
         int k = Mathf.FloorToInt(a / (Mathf.PI * 2f) * scrub.Length) % scrub.Length;
-        float work = dist / (R * (Pick ? 2.2f : 1.4f));
+        float work = dist / (StoneRadius * (Pick ? 2.2f : 1.4f));
         scrub[k] += work;
         scrubTotal += work;
         float speedPx = dist / Mathf.Max(0.016f, now - lastScrubTime);
@@ -635,7 +635,7 @@ public sealed class CraftLapidaryMode : CraftMode
         Vector2 at = pos + new Vector2((float)Hands.Tremble(moved > 0 ? 191 : 192) * 40f, (float)Hands.Tremble(193) * 40f);
         if (phase == CraftPointer.Down)
         {
-            bool onStone = Vector2.Distance(pos, Centre) < R;
+            bool onStone = Vector2.Distance(pos, Centre) < StoneRadius;
             if (t == CraftGemTest.Scratch && !onStone) return;
             if ((t == CraftGemTest.Refractometer || t == CraftGemTest.Dichroscope) && !instrument.Contains(pos) && !onStone) return;
             holding = true;
@@ -685,7 +685,7 @@ public sealed class CraftLapidaryMode : CraftMode
         DrawStone(c, p, true, Station.Reveals);
         Vector2 h = ui.Hover;
         float lr = 34f * Mathf.Min(1.3f, Station.ToolQuality);
-        if (h.x >= 0 && Vector2.Distance(h, Centre) < R + 10f)
+        if (h.x >= 0 && Vector2.Distance(h, Centre) < StoneRadius + 10f)
         {
             // Under the loupe: what lies at the depth in focus shows sharp, near it a blur.
             foreach (CraftInclusion i in p.gem.inclusions)
@@ -693,8 +693,8 @@ public sealed class CraftLapidaryMode : CraftMode
                 Vector2 at = ToPx(i.x, i.y);
                 if (Vector2.Distance(at, h) > lr) continue;
                 float off = Mathf.Abs(i.depth - focus);
-                if (off < 0.12f + i.size) c.Disc(at.x, at.y, Mathf.Max(2f, i.size * R * 0.8f), i.kind == CraftInclusionKind.Feather ? new Color(1f, 1f, 1f, 0.85f) : new Color(0.08f, 0.08f, 0.08f, 0.9f));
-                else if (off < 0.3f) c.Disc(at.x, at.y, Mathf.Max(3f, i.size * R * 1.6f), new Color(1f, 1f, 1f, 0.15f));
+                if (off < 0.12f + i.size) c.Disc(at.x, at.y, Mathf.Max(2f, i.size * StoneRadius * 0.8f), i.kind == CraftInclusionKind.Feather ? new Color(1f, 1f, 1f, 0.85f) : new Color(0.08f, 0.08f, 0.08f, 0.9f));
+                else if (off < 0.3f) c.Disc(at.x, at.y, Mathf.Max(3f, i.size * StoneRadius * 1.6f), new Color(1f, 1f, 1f, 0.15f));
             }
             c.Ring(h.x, h.y, lr, 3f, Iron);
         }
@@ -710,7 +710,7 @@ public sealed class CraftLapidaryMode : CraftMode
         if (p == null) return;
         if (phase == CraftPointer.Up) { FlushLooks(); return; }
         if (phase != CraftPointer.Down && phase != CraftPointer.Drag && phase != CraftPointer.Move) return;
-        if (Vector2.Distance(pos, Centre) > R) return;
+        if (Vector2.Distance(pos, Centre) > StoneRadius) return;
         float now = Time.unscaledTime;
         if (Vector2.Distance(pos, lastLook) < 10f && now - lastLookTime < 0.25f) return;
         // A look: where the loupe was, at the focus, as steady as the hand held it.
@@ -749,7 +749,7 @@ public sealed class CraftLapidaryMode : CraftMode
         }
         DrawStone(c, p, true, Station.Reveals);
         Vector2 w = ToPx(window.x, window.y);
-        c.Ring(w.x, w.y, windowR * R, 2f, Mark);
+        c.Ring(w.x, w.y, windowR * StoneRadius, 2f, Mark);
         // The table's tilt against what the dichroscope showed of the axis (and the cleavage, if it was seen).
         Rect gauge = new Rect(430, 60, 260, 120);
         c.Rect(gauge.xMin, gauge.yMin, gauge.xMax, gauge.yMax, new Color(0.2f, 0.19f, 0.18f));
@@ -787,7 +787,7 @@ public sealed class CraftLapidaryMode : CraftMode
     private void OrientPointer(CraftPointer phase, Vector2 pos, float scroll)
     {
         if (phase == CraftPointer.Scroll) { windowR = Mathf.Clamp(windowR + (scroll > 0 ? 0.03f : -0.03f), 0.15f, 1f); return; }
-        if (phase == CraftPointer.Down && Vector2.Distance(pos, ToPx(window.x, window.y)) < windowR * R) { draggingWindow = true; return; }
+        if (phase == CraftPointer.Down && Vector2.Distance(pos, ToPx(window.x, window.y)) < windowR * StoneRadius) { draggingWindow = true; return; }
         if (phase == CraftPointer.Drag && draggingWindow) { window = ToPlan(pos); if (window.magnitude > 0.9f) window = window.normalized * 0.9f; return; }
         if (phase == CraftPointer.Up) draggingWindow = false;
     }
@@ -836,7 +836,7 @@ public sealed class CraftLapidaryMode : CraftMode
         if (p.gem.oriented)
         {
             Vector2 w = ToPx(p.gem.windowX, p.gem.windowY);
-            c.Ring(w.x, w.y, (float)CraftLapidary.WindowRadius(p.gem) * R, 1.5f, new Color(1f, 0.8f, 0.38f, 0.6f));
+            c.Ring(w.x, w.y, (float)CraftLapidary.WindowRadius(p.gem) * StoneRadius, 1.5f, new Color(1f, 0.8f, 0.38f, 0.6f));
         }
         if (lining || lineSet)
         {
@@ -862,7 +862,7 @@ public sealed class CraftLapidaryMode : CraftMode
                 c.Line(BarRect.xMin, BarRect.yMin - 6, BarRect.xMax, BarRect.yMin - 6, new Color(1f, 1f, 1f, 0.3f), 1f);
             }
         }
-        if (!drip && place == Place.Saw) c.Halo(Centre.x, Centre.y, R * 0.5f, new Color(1f, 0.5f, 0.2f), lineSet ? 0.25f : 0f);
+        if (!drip && place == Place.Saw) c.Halo(Centre.x, Centre.y, StoneRadius * 0.5f, new Color(1f, 0.5f, 0.2f), lineSet ? 0.25f : 0f);
     }
 
     /// <summary>The line in the plan: its direction (°) and its signed distance from the centre.</summary>
@@ -885,7 +885,7 @@ public sealed class CraftLapidaryMode : CraftMode
             if (phase == CraftPointer.Drag) { lineB = pos; return; }
             if (phase != CraftPointer.Up) return;
             lining = false;
-            if (Vector2.Distance(lineA, lineB) < R * 0.8f) { said = "Draw the line right across the stone."; return; }
+            if (Vector2.Distance(lineA, lineB) < StoneRadius * 0.8f) { said = "Draw the line right across the stone."; return; }
             lineSet = true;
             hits.Clear();
             sawStrokes = 0;
@@ -931,7 +931,7 @@ public sealed class CraftLapidaryMode : CraftMode
     private List<float> ProfileOf(GemState g) => g.profile.Count == CraftLapidary.ProfileRadii ? g.profile : CraftLapidary.Outline(g);
 
     /// <summary>A point of the stone at plan angle <paramref name="t"/> (rad) and radius <paramref name="r"/>, turned on the dop and drawn round <paramref name="o"/>.</summary>
-    private Vector2 Turned(Vector2 o, float t, float r) => new Vector2(o.x + Mathf.Cos(t + turn * Mathf.Deg2Rad) * r * R, o.y + Mathf.Sin(t + turn * Mathf.Deg2Rad) * r * R);
+    private Vector2 Turned(Vector2 o, float t, float r) => new Vector2(o.x + Mathf.Cos(t + turn * Mathf.Deg2Rad) * r * StoneRadius, o.y + Mathf.Sin(t + turn * Mathf.Deg2Rad) * r * StoneRadius);
 
     /// <summary>Where the dop holds the stone: its edge at the wheel (against it while pressed, just off it otherwise).</summary>
     private Vector2 DopAt(List<float> prof)
@@ -939,7 +939,7 @@ public sealed class CraftLapidaryMode : CraftMode
         float at = ((0f - turn) % 360f + 360f) % 360f / 360f * prof.Count;
         int k0 = Mathf.FloorToInt(at) % prof.Count;
         float edge = Mathf.Lerp(prof[k0], prof[(k0 + 1) % prof.Count], at - Mathf.Floor(at));
-        return new Vector2(Wheel.x - edge * R - (pressing ? 0f : 10f), Centre.y);
+        return new Vector2(Wheel.x - edge * StoneRadius - (pressing ? 0f : 10f), Centre.y);
     }
 
     private void DrawGrind(CraftPixels c, CraftPiece p)
@@ -1148,9 +1148,9 @@ public sealed class CraftLapidaryMode : CraftMode
     /// <summary>The polish region (3 × 3 over the stone) under a point, or -1 off the stone.</summary>
     private static int RegionAt(Vector2 pos)
     {
-        if (Vector2.Distance(pos, Centre) > R) return -1;
-        int col = Mathf.Clamp(Mathf.FloorToInt((pos.x - (Centre.x - R)) / (2f * R / 3f)), 0, 2);
-        int row = Mathf.Clamp(Mathf.FloorToInt((pos.y - (Centre.y - R)) / (2f * R / 3f)), 0, 2);
+        if (Vector2.Distance(pos, Centre) > StoneRadius) return -1;
+        int col = Mathf.Clamp(Mathf.FloorToInt((pos.x - (Centre.x - StoneRadius)) / (2f * StoneRadius / 3f)), 0, 2);
+        int row = Mathf.Clamp(Mathf.FloorToInt((pos.y - (Centre.y - StoneRadius)) / (2f * StoneRadius / 3f)), 0, 2);
         return row * 3 + col;
     }
 
@@ -1159,12 +1159,12 @@ public sealed class CraftLapidaryMode : CraftMode
         DrawStone(c, p, true, Station.Reveals);
         GemState g = p.gem;
         // How bright each region has come (dull dark, bright white, past it orange: the edges rounding).
-        float cell = 2f * R / 3f;
+        float cell = 2f * StoneRadius / 3f;
         for (int k = 0; k < CraftLapidary.PolishRegions; k++)
         {
             float v = k < g.polishRegions.Count ? g.polishRegions[k] : (float)(-Math.Log(Math.Max(1e-4, 1 - g.polish)) / 1.6);
             float shine = 1f - Mathf.Exp(-1.6f * v);
-            float x0 = Centre.x - R + (k % 3) * cell, y0 = Centre.y - R + (k / 3) * cell;
+            float x0 = Centre.x - StoneRadius + (k % 3) * cell, y0 = Centre.y - StoneRadius + (k / 3) * cell;
             Color tint = v > CraftLapidary.OverPolish ? new Color(1f, 0.55f, 0.2f, 0.35f) : shine < 0.6f ? new Color(0f, 0f, 0f, 0.35f * (1f - shine)) : new Color(1f, 1f, 1f, 0.25f * shine);
             c.Rect(x0 + 2, y0 + 2, x0 + cell - 2, y0 + cell - 2, tint);
         }
@@ -1178,7 +1178,7 @@ public sealed class CraftLapidaryMode : CraftMode
     private void PolishPointer(CraftPointer phase, Vector2 pos)
     {
         if (Stone == null) return;
-        if (phase == CraftPointer.Down && Vector2.Distance(pos, Centre) < R) { holding = true; polishHeld = 0f; return; }
+        if (phase == CraftPointer.Down && Vector2.Distance(pos, Centre) < StoneRadius) { holding = true; polishHeld = 0f; return; }
         if (phase == CraftPointer.Up && holding) { holding = false; FlushPolish(); }
     }
 

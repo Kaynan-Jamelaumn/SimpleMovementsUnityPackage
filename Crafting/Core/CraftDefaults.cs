@@ -43,11 +43,15 @@ public static partial class CraftDefaults
         c.woods.AddRange(ArmouryWoods());
         c.supplies.AddRange(Supplies());
         c.supplies.AddRange(ArmourySupplies());
+        c.supplies.AddRange(WorkshopSupplies());
+        FibreTraits(c.supplies);
         c.abrasives.AddRange(Abrasives());
         c.molds.AddRange(Molds());
         c.patterns.AddRange(Patterns());
         c.patterns.AddRange(ArmouryPatterns());
         c.designs.AddRange(Designs());
+        c.gems.AddRange(Gems());
+        c.cuts.AddRange(Cuts());
         return c;
     }
 
@@ -962,6 +966,7 @@ public static partial class CraftDefaults
         };
         list.Add(d);
         AddArmoury(list);
+        AddJewellery(list);
         return list;
     }
 
@@ -1012,6 +1017,27 @@ public static partial class CraftDefaults
             var s = new MetalSegment { length = length / n, width = width, thickness = thickness, rough = 60 };
             s.edge.temp = s.edge.prevTemp = s.body.temp = s.body.prevTemp = rules.Settings.defaultAmbient;
             p.segments.Add(s);
+        }
+        return p;
+    }
+
+    /// <summary>
+    /// A green log of a species in its bark (length and diameter in mm; 200 mm across unless given): for the shaving horse,
+    /// the wedges and the seasoning stack.
+    /// </summary>
+    public static CraftPiece Log(CraftRules rules, string wood, double length = 900, double diameter = 0)
+    {
+        double d = diameter > 0 ? diameter : 200;
+        CraftPiece p = WoodBlank(rules, wood, length > 0 ? length : 900, d, d);
+        if (p == null)
+            return null;
+        p.wood.log = true;
+        p.wood.moisture = 0.6;
+        p.wood.bark = 1;
+        foreach (MetalSegment s in p.segments)
+        {
+            s.bark = 1;
+            s.rough = 80;
         }
         return p;
     }
