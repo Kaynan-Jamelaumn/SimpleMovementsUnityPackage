@@ -37,6 +37,7 @@ public sealed class CraftCarveMode : CraftMode
     private static readonly string[] CutNames = { "Shave the width", "Shave the thickness", "Round it", "Bore the tang slot", "Saw to length" };
 
     public override string Title => "Carve";
+    public override CraftDiscipline Discipline => CraftDiscipline.Woodwork;
     // Wood is carved at a woodshop, or by a smith fitting grips to blades (files beside an anvil) - not at a leather bench.
     public override bool Available(CraftStation s) =>
         s.Has(CraftTools.ChoppingBlock) || s.Has(CraftTools.Sawhorse) || s.Has(CraftTools.FinishingBench) || s.Has(CraftTools.Files) && s.Has(CraftTools.Anvil);

@@ -24,7 +24,17 @@ public enum CraftInstruments
     Assay = 1 << 6,
     /// <summary>An unglazed streak plate (ores).</summary>
     StreakPlate = 1 << 7,
-    All = Thermometer | Calipers | Scale | Loupe | Magnet | TestFile | Assay | StreakPlate,
+    /// <summary>A refractometer: a gem's refractive index (it tells one stone from another).</summary>
+    Refractometer = 1 << 8,
+    /// <summary>Hardness points (Mohs 5 to 9) and a hydrostatic balance (specific gravity): gem tests.</summary>
+    HardnessPoints = 1 << 9,
+    /// <summary>A pin moisture meter for wood.</summary>
+    MoistureMeter = 1 << 10,
+    /// <summary>A dichroscope: does a gem's colour change with direction (and which way its axis lies)?</summary>
+    Dichroscope = 1 << 11,
+    All = Thermometer | Calipers | Scale | Loupe | Magnet | TestFile | Assay | StreakPlate | Refractometer | HardnessPoints | MoistureMeter | Dichroscope,
+    /// <summary>The gem tester's kit: loupe, balance, refractometer, hardness points, dichroscope.</summary>
+    GemKit = Loupe | Scale | Refractometer | HardnessPoints | Dichroscope,
 }
 
 /// <summary>
@@ -78,7 +88,38 @@ public static class CraftLook
             {
                 CraftWoodDefinition w = rules.Wood(p.wood.wood);
                 CraftComponentSpec spec = rules.Design(p.intentDesign)?.Component(p.intentRole);
+                if (spec == null && p.wood.log) return $"{w?.Name ?? "Wood"} log{(p.wood.bark > 0.3 ? "" : ", debarked")}";
                 return $"{w?.Name ?? "Wood"} {(spec != null ? spec.Name.ToLowerInvariant() : "blank")}";
+            }
+            case CraftPieceKind.Fibre:
+            {
+                string f = rules.Supply(p.fibre.fibre)?.Name ?? "fibre";
+                FibreState s = p.fibre;
+                string state = s.felted > 0.4 ? "felted" : s.combed ? "combed top of" : s.carded ? "carded" : s.scoured ? "scoured" : s.cleaned ? "picked" : "raw";
+                return CraftText.Capital($"{state} {f.ToLowerInvariant()}{(s.wet > 0.4 ? ", wet" : "")}");
+            }
+            case CraftPieceKind.Yarn:
+            {
+                string f = (rules.Supply(p.yarn.fibre)?.Name ?? "fibre").ToLowerInvariant().Replace("raw ", "");
+                YarnState y = p.yarn;
+                string ply = y.plies > 1 ? $"{y.plies}-ply " : "";
+                return CraftText.Capital($"{ply}{(y.worsted ? "worsted" : "yarn")} of {f}{(y.measured ? ", in a skein" : ", on a bobbin")}");
+            }
+            case CraftPieceKind.Gem:
+            {
+                GemState g = p.gem;
+                CraftGemDefinition def = rules.Gem(g.gem);
+                CraftGemDefinition named = rules.Gem(g.identifiedAs);
+                // What the player calls it: what they named it (right or wrong), what they know by sight, or what it looks like.
+                string n = named != null ? named.Name : def != null && CraftJournal.KnowsGem(d, def.id) ? def.Name : def != null ? CraftText.Capital(Unnamed(def.observation)) : "Stone";
+                CraftGemCut cut = rules.Cut(g.cut);
+                switch (g.stage)
+                {
+                    case CraftGemStage.Rough: return $"{n} (rough)";
+                    case CraftGemStage.Preformed: return $"{n} (preform)";
+                    case CraftGemStage.Faceted: return $"{n}, {cut?.Name.ToLowerInvariant() ?? "cut"} (unpolished)";
+                    default: return $"{n}, {cut?.Name.ToLowerInvariant() ?? "cut"}";
+                }
             }
             case CraftPieceKind.Fasteners:
             {
@@ -159,6 +200,9 @@ public static class CraftLook
             case CraftPieceKind.Hide: Hide(rules, p, d, lines); break;
             case CraftPieceKind.Wood: Wood(rules, p, lines); break;
             case CraftPieceKind.Assembly: break;
+            case CraftPieceKind.Fibre: Fibre(rules, p, lines); break;
+            case CraftPieceKind.Yarn: Yarn(rules, p, tools, lines); break;
+            case CraftPieceKind.Gem: Gem(rules, p, d, tools, lines); break;
             default: Metal(rules, p, d, tools, dark, lines); break;
         }
         Measured(rules, p, tools, lines);
@@ -361,7 +405,11 @@ public static class CraftLook
             sb.Append($"Calipers: {CraftText.Length(p.Length)} long, {CraftText.Length(w / l)} wide, {CraftText.Length(t / l)} thick. ");
         }
         if ((tools & CraftInstruments.Scale) != 0)
-            sb.Append($"Balance: {CraftText.Mass(p.Mass(rules))}. ");
+            sb.Append(p.kind == CraftPieceKind.Gem ? $"Balance: {p.gem.carats:0.00} ct. " : $"Balance: {CraftText.Mass(p.Mass(rules))}. ");
+        if ((tools & CraftInstruments.MoistureMeter) != 0 && p.kind == CraftPieceKind.Wood)
+            sb.Append($"Moisture meter: {p.wood.moisture * 100:0} %. ");
+        if ((tools & CraftInstruments.Calipers) != 0 && p.kind == CraftPieceKind.Gem && p.gem.girdle > 0)
+            sb.Append($"Girdle: {p.gem.girdle:0.00} mm. ");
         if (sb.Length > 0)
             lines.Add(sb.ToString().Trim());
         else if (p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Wood)
@@ -405,6 +453,9 @@ public static class CraftLook
             case CraftDefectKind.CrackedRivet: return "A rivet head is split.";
             case CraftDefectKind.Misaligned: return "The holes do not line up.";
             case CraftDefectKind.Gap: return "There is a gap where the parts meet.";
+            case CraftDefectKind.Bark: return "Bark is still on it.";
+            case CraftDefectKind.Chip: return d.severity > 0.4 ? "It is badly chipped." : "A small chip is missing from it.";
+            case CraftDefectKind.Felted: return "The fibres have matted into felt.";
             default: return d.kind.ToString();
         }
     }
@@ -509,9 +560,83 @@ public static class CraftLook
         else if (ws.finish > 0.1) lines.Add(ws.finishWet > 0.3 ? "The coat is still tacky." : "It has a thin coat of finish.");
         if (p.wood.split > 0.1) lines.Add("It has split along the grain.");
         if (p.wood.charred > 0.1) lines.Add("It is scorched black.");
+        if (ws.bark > 0.6) lines.Add("It is still in its bark.");
+        else if (ws.bark > 0.05) lines.Add("Patches of bark are left on it.");
+        if (ws.gouged > 0.1) lines.Add("The drawknife has gouged into it.");
+        if (ws.rot > 0.1) lines.Add("Under the bark the sapwood is soft with rot and beetle.");
+        if (ws.lastGrit >= 0 && ws.finish <= 0.1) lines.Add(ws.lastGrit > 0.8 ? "It is sanded smooth as silk." : ws.lastGrit > 0.45 ? "It is sanded smooth." : "It is sanded with a coarse paper.");
+        if (ws.resin > 0.3) lines.Add("A hard amber film of resin seals it.");
+        if (ws.wax > 0.3) lines.Add("It has a soft wax sheen.");
         double hole = 0;
         foreach (MetalSegment s in p.segments) hole = Math.Max(hole, s.hole);
         if (hole > 0) lines.Add("A slot has been cut into it.");
+    }
+
+    private static void Fibre(CraftRules rules, CraftPiece p, List<string> lines)
+    {
+        FibreState f = p.fibre;
+        CraftSupplyDefinition s = rules.Supply(f.fibre);
+        if (s != null && !string.IsNullOrEmpty(s.description)) lines.Add(s.description);
+        lines.Add(f.dirt > 0.25 ? "Burrs, seeds and bits of straw are caught all through it." : f.dirt > 0.08 ? "A little dirt and chaff is left in it." : "It is clean.");
+        if (f.grease > 0.3) lines.Add("It is greasy and sticky to the touch.");
+        else if (f.grease > 0.12) lines.Add("It still feels a little waxy.");
+        if (f.felted > 0.4) lines.Add("It has matted into a felt: it will hardly tease apart.");
+        else if (f.felted > 0.15) lines.Add("Parts of it have matted.");
+        lines.Add(f.alignment > 0.85 ? "The fibres lie straight and parallel, like a combed top." : f.alignment > 0.5 ? "The fibres lie mostly one way, in an airy roll." : f.tangle > 0.5 ? "The locks are matted and tangled." : "The fibres lie every which way.");
+        if (f.neps > 0.15) lines.Add("Little knots (neps) of fibre are scattered through it.");
+        if (f.shortFibre > 0.3) lines.Add("Much of it is short and broken.");
+        if (f.wet > 0.4) lines.Add("It is soaking wet.");
+        else if (f.wet > 0.1) lines.Add("It is damp.");
+        if (f.soap > 0.2) lines.Add("It feels slippery with soap.");
+        lines.Add($"About {Math.Round(f.grams / 5) * 5:0} g of it.");
+    }
+
+    private static void Yarn(CraftRules rules, CraftPiece p, CraftInstruments tools, List<string> lines)
+    {
+        YarnState y = p.yarn;
+        lines.Add(y.evenness > 0.8 ? "It is fine and even all along." : y.evenness > 0.55 ? "It thickens and thins here and there." : "It is lumpy: thick slubs and thin places.");
+        lines.Add(y.twist < 0.3 ? "It is soft and under-twisted: it drifts apart when pulled." : y.twist > 0.7 ? "It is hard and over-twisted: it kinks on itself." : "It holds its twist well.");
+        if (y.plies > 1) lines.Add(y.balance > 0.75 ? $"{y.plies} strands plied: the skein hangs straight." : $"{y.plies} strands plied: the skein twists on itself.");
+        if (y.worsted) lines.Add("Spun from combed fibre: smooth and lustrous.");
+        lines.Add(y.measured ? $"A counted skein of {y.measuredLength:0} m." : $"Roughly {Math.Round(y.length / 10) * 10:0} m on the bobbin: wind it on the niddy-noddy to count it.");
+    }
+
+    private static void Gem(CraftRules rules, CraftPiece p, CraftJournalData d, CraftInstruments tools, List<string> lines)
+    {
+        GemState g = p.gem;
+        CraftGemDefinition def = rules.Gem(g.gem);
+        if (def == null)
+            return;
+        bool known = g.identified || CraftJournal.KnowsGem(d, def.id);
+        lines.Add(known && !string.IsNullOrEmpty(def.description) ? def.description : CraftText.Capital(def.observation) + ".");
+        if (def.opaque) lines.Add("It lets no light through.");
+        else lines.Add(g.tone > 0.8 ? "Its colour is rich and deep." : g.tone > 0.6 ? "Its colour is good." : "Its colour is pale.");
+        if (g.looked && def.cleavage >= CraftCleavage.Good && g.stage == CraftGemStage.Rough)
+            lines.Add("Under the loupe, flat, mirror-like cracks catch the light along one direction: it cleaves.");
+        if (g.hardLo > 1 || g.hardHi < 10)
+            lines.Add(g.hardHi < 10 ? $"A {g.hardHi:0.#} point scratches it{(g.hardLo > 1 ? $", a {g.hardLo:0.#} does not" : "")}." : $"A {g.hardLo:0.#} point does not scratch it.");
+        if (g.readRI >= 0) lines.Add($"Refractometer: {g.readRI:0.00}{(g.stage < CraftGemStage.Faceted ? " (a spot reading on the rough)" : "")}.");
+        if (g.readSG >= 0) lines.Add($"Hydrostatic balance: specific gravity {g.readSG:0.00}.");
+        if (g.readPleo >= 0) lines.Add(g.readPleo > 0.4 ? $"Dichroscope: its colour changes strongly with direction; the axis lies about {g.readAxis:0}° from the top." : g.readPleo > 0.12 ? $"Dichroscope: its colour shifts a little with direction (axis near {g.readAxis:0}°)." : "Dichroscope: its colour does not change with direction.");
+        if (!string.IsNullOrEmpty(g.identifiedAs)) lines.Add($"You named it {rules.Gem(g.identifiedAs)?.Name.ToLowerInvariant() ?? g.identifiedAs}.");
+        if (g.evaluated)
+        {
+            int found = 0, feathers = 0;
+            foreach (CraftInclusion i in g.inclusions)
+                if (i.found) { found++; if (i.kind == CraftInclusionKind.Feather) feathers++; }
+            lines.Add(found == 0 ? "Under the loupe you found it clean." : $"Under the loupe: {found} inclusion{(found == 1 ? "" : "s")} found{(feathers > 0 ? $", {feathers} of them cracks" : "")}.");
+        }
+        if (g.oriented)
+        {
+            CraftGemCut cut = rules.Cut(g.cut);
+            lines.Add($"Marked out for {CraftText.A(cut?.Name ?? "cut")} {cut?.Name.ToLowerInvariant() ?? "cut"}, its table {g.tableAngle:0}° to the crystal.");
+            if (g.stage == CraftGemStage.Rough && CraftLapidary.Excess(g) > CraftLapidary.PreformExcess) lines.Add("Much rough lies outside the marked stone: saw it off.");
+            if (cut != null && g.stage < CraftGemStage.Faceted) lines.Add($"{g.facets.Count} of {cut.tiers.Count} tiers cut.");
+        }
+        if (g.stage >= CraftGemStage.Faceted)
+            lines.Add(g.polish > 0.85 ? "Its facets are polished bright." : g.polish > 0.5 ? "Its facets shine, a little hazy." : "Its facets are frosted from the lap: polish them.");
+        if (g.scratches > 0.1) lines.Add("Fine scratches show on it.");
+        if (g.heat > 0.2) lines.Add("It has crazed with heat.");
     }
 
     private static bool Did(CraftPiece p, CraftOpKind kind)
@@ -554,6 +679,17 @@ public static class CraftLook
                           $"body {b.temp:0}°C A{b.aust:0.00} M{b.mart:0.00} P{b.pearl:0.00} cold {b.cold:0.00} σ{b.stress:0.00}; scale {g.scale:0.000}, slag {g.slag:0.0} g, pores {g.porosity:0.00}</color>");
             }
         }
+        else if (p.kind == CraftPieceKind.Gem)
+        {
+            CraftGemGrade gg = CraftLapidary.Grade(rules, p);
+            lines.Add($"{grey}{rules.Gem(p.gem.gem)?.Name ?? p.gem.gem}: {p.gem.carats:0.00} ct ({p.gem.stage}); clarity {gg.Clarity:0.00}, colour {gg.Color:0.00}, cut {gg.Cut:0.00}, polish {gg.Polish:0.00}, integrity {gg.Integrity:0.00}, brilliance {gg.Brilliance:0.00}; quality {gg.Quality:0.00}, value {gg.Value:0}{(gg.Yield > 0 ? $", expected yield {gg.Yield:0.00} ct" : "")}</color>");
+        }
+        else if (p.kind == CraftPieceKind.Fibre)
+            lines.Add($"{grey}{p.fibre.grams:0} g; dirt {p.fibre.dirt:0.00}, grease {p.fibre.grease:0.00}, tangle {p.fibre.tangle:0.00}, alignment {p.fibre.alignment:0.00}, short {p.fibre.shortFibre:0.00}, neps {p.fibre.neps:0.00}, felted {p.fibre.felted:0.00}, wet {p.fibre.wet:0.00}; ready to spin {CraftFibre.Prep(p.fibre):0.00}</color>");
+        else if (p.kind == CraftPieceKind.Yarn)
+            lines.Add($"{grey}{p.yarn.length:0} m, {p.yarn.grams:0} g, {p.yarn.plies} ply; evenness {p.yarn.evenness:0.00}, twist {p.yarn.twist:0.00}, balance {p.yarn.balance:0.00}, strength {p.yarn.strength:0.00}, prep {p.yarn.prep:0.00}; quality {CraftFibre.Quality(p.yarn):0.00}</color>");
+        else if (p.kind == CraftPieceKind.Wood)
+            lines.Add($"{grey}Moisture {p.wood.moisture:0.000}, bark {p.wood.bark:0.00}, gouged {p.wood.gouged:0.00}, rot {p.wood.rot:0.00}, runout {p.wood.runout:0.00}, checks {p.wood.checks:0.00}, last grit {p.wood.lastGrit:0.00}, finish {p.wood.finish:0.00} (even {p.wood.finishEven:0.00}), oil {p.wood.oil:0.00}, wax {p.wood.wax:0.00}, resin {p.wood.resin:0.00}; water resistance {CraftWoodwork.FinishProtection(p.wood):0.00}, wear {CraftWoodwork.FinishWear(p.wood):0.00}</color>");
         else if (p.kind == CraftPieceKind.Hide)
             lines.Add($"{grey}Tannage {r.Tannage:0.00} (core {r.CoreTannage:0.00}), moisture {r.Moisture:0.00}, stiffness {r.Stiffness:0.00}, suppleness {r.Suppleness:0.00}, water resistance {r.WaterResistance:0.00}, shrink {r.Shrink:0.00}, damage {r.Damage:0.00}, shrink temperature {p.hide.shrinkTemperature:0} °C</color>");
         else if (p.kind == CraftPieceKind.Ore)

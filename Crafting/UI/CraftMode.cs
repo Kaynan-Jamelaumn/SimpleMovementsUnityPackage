@@ -18,6 +18,12 @@ public abstract class CraftMode
     public abstract string Title { get; }
     /// <summary>Does the station have what this area needs?</summary>
     public abstract bool Available(CraftStation s);
+
+    /// <summary>Goes to a place of this area by its name ("Grind", "Sew"): the guide's Go button.</summary>
+    public virtual void GoTo(string place) { }
+
+    /// <summary>The craft this area's work practises: the player's practice in it steadies the hands here.</summary>
+    public virtual CraftDiscipline Discipline => CraftDiscipline.Smithing;
     /// <summary>One line on how the area is worked.</summary>
     public virtual string Hint => "";
 
@@ -139,7 +145,30 @@ public abstract class CraftMode
         var names = CountedNames(ids, out _);
         bool changed = false;
         for (int i = 0; i < names.Count; i++)
-            if (d.options[i].text != names[i]) { d.options[i].text = names[i]; changed = true; }
+        {
+            // Keep a note added after the count (batches on the bench).
+            string text = d.options[i].text;
+            int cut = text.IndexOf(" + ", System.StringComparison.Ordinal);
+            string note = cut >= 0 ? text.Substring(cut) : "";
+            if (text != names[i] + note) { d.options[i].text = names[i] + note; changed = true; }
+        }
+        if (changed) d.RefreshShownValue();
+    }
+
+    /// <summary>A fibre menu also says how many batches of each fibre already lie on the station ("Raw wool (none) + 2 on the bench").</summary>
+    protected void NoteBatches(TMP_Dropdown d, List<string> ids)
+    {
+        if (d == null || Station == null || d.options.Count != ids.Count) return;
+        bool changed = false;
+        for (int i = 0; i < ids.Count; i++)
+        {
+            int n = Station.FibreBatches(ids[i]).Count;
+            string text = d.options[i].text;
+            int cut = text.IndexOf(" + ", System.StringComparison.Ordinal);
+            if (cut >= 0) text = text.Substring(0, cut);
+            if (n > 0) text += $" + {n} on the bench";
+            if (text != d.options[i].text) { d.options[i].text = text; changed = true; }
+        }
         if (changed) d.RefreshShownValue();
     }
 
@@ -237,4 +266,108 @@ public abstract class CraftMode
     }
 
     protected static bool IsMetal(CraftPiece p) => p != null && (p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Wood);
+
+    // ------------------------------------------------------------------ practice
+    protected CraftMasterySettings MasterySettings => Rules?.Settings?.mastery;
+    /// <summary>The player's practice in a craft (0 novice - 1 complete mastery).</summary>
+    protected double MasteryOf(CraftDiscipline d) => CraftMastery.Of(ui.Known, d, MasterySettings);
+    /// <summary>The player's practice in this area's craft.</summary>
+    protected double Mastery => MasteryOf(Discipline);
+
+    private readonly List<(Button button, CraftDiscipline craft, CraftRank rank, string label)> practisedButtons = new List<(Button, CraftDiscipline, CraftRank, string)>();
+
+    /// <summary>Is the player practised enough in <paramref name="craft"/> for work that needs <paramref name="rank"/>?</summary>
+    protected bool Practised(CraftDiscipline craft, CraftRank rank) => MasteryOf(craft) >= CraftMastery.RankStart(rank, MasterySettings) - 1e-9;
+
+    /// <summary>
+    /// A button for work a practised hand does without thinking: it works for a player of <paramref name="rank"/> in
+    /// <paramref name="craft"/>, and says which rank it needs otherwise.
+    /// </summary>
+    protected Button PractisedButton(Transform row, CraftDiscipline craft, CraftRank rank, string label, UnityAction act, float width = 160f)
+    {
+        Button b = Btn(row, label, () =>
+        {
+            if (!Practised(craft, rank))
+            {
+                ui.Message($"Only {CraftText.A(CraftMastery.RankName(rank))} {CraftMastery.RankName(rank).ToLowerInvariant()} {CraftMastery.Crafter(craft)} does that without thinking: do it by hand.");
+                return;
+            }
+            act();
+        }, width, UITheme.ButtonStyle.Ghost);
+        practisedButtons.Add((b, craft, rank, label));
+        RefreshPractice();
+        return b;
+    }
+
+    /// <summary>
+    /// A button for work done by routine (<see cref="CraftRoutine"/>: one action, as well as the player's practice does it;
+    /// the station checks the rank and works out how well). <paramref name="piece"/> gives the piece it is done to.
+    /// </summary>
+    protected Button RoutineButton(Transform row, CraftRoutine routine, string label, System.Func<string> piece, float width = 160f) =>
+        PractisedButton(row, CraftMastery.RoutineDiscipline(routine), CraftMastery.RoutineRank(routine), label,
+            () => Send(new CraftRequest(CraftRequestKind.Routine, piece?.Invoke()) { i0 = (int)routine }), width);
+
+    /// <summary>The practised-hand buttons as the player's practice now allows (called with every refresh).</summary>
+    public void RefreshPractice()
+    {
+        practisedButtons.RemoveAll(x => x.button == null);
+        foreach ((Button b, CraftDiscipline craft, CraftRank rank, string label) in practisedButtons)
+        {
+            bool can = Practised(craft, rank);
+            TMP_Text t = b.GetComponentInChildren<TMP_Text>(true);
+            if (t != null) t.text = can ? label : $"{label} ({CraftMastery.RankName(rank)})";
+            b.interactable = can;
+        }
+    }
+
+    // ------------------------------------------------------------------ the shared timing bar
+    private static readonly Color ZonePoor = new Color(0.55f, 0.25f, 0.18f, 1f), ZoneGood = new Color(0.75f, 0.6f, 0.2f, 1f),
+        ZoneExcellent = new Color(0.35f, 0.7f, 0.3f, 1f), ZonePerfect = new Color(0.75f, 1f, 0.6f, 1f);
+
+    /// <summary>The colour a timing grade is shown in.</summary>
+    protected static Color GradeColor(CraftTimingGrade g) => g switch
+    {
+        CraftTimingGrade.Perfect => ZonePerfect,
+        CraftTimingGrade.Excellent => ZoneExcellent,
+        CraftTimingGrade.Good => ZoneGood,
+        CraftTimingGrade.Poor => ZonePoor,
+        _ => new Color(0.9f, 0.25f, 0.2f, 1f),
+    };
+
+    /// <summary>
+    /// Draws a <see cref="CraftTimingBar"/>: each target's nested zones (Poor, Good, Excellent, Perfect - a target that
+    /// gives less is drawn dimmer), its ideal point, the moving indicator and, if there was one, the last hit.
+    /// </summary>
+    protected static void DrawTimingBar(CraftPixels c, CraftTimingBar bar, float x, float y, float w, float h, CraftTimingHit? last = null)
+    {
+        if (bar == null) return;
+        c.Rect(x - 2, y - 2, x + w + 2, y + h + 2, new Color(0f, 0f, 0f, 0.75f));
+        c.Rect(x, y, x + w, y + h, new Color(0.16f, 0.15f, 0.15f, 1f));
+        foreach (CraftTimingTarget t in bar.targets)
+        {
+            float dim = 0.45f + 0.55f * Mathf.Clamp01(t.best);
+            for (int z = 0; z < 4; z++)
+            {
+                var grade = (CraftTimingGrade)(1 + z);
+                float half = bar.Zone(grade, t) * w;
+                Color col = GradeColor(grade) * dim;
+                col.a = 1f;
+                float inset = z * h * 0.08f;
+                c.Rect(Mathf.Max(x, x + t.ideal * w - half), y + inset, Mathf.Min(x + w, x + t.ideal * w + half), y + h - inset, col);
+            }
+            c.Rect(x + t.ideal * w - 0.75f, y - 3, x + t.ideal * w + 0.75f, y + h + 3, Color.white);
+        }
+        if (last.HasValue)
+        {
+            float lx = x + Mathf.Clamp01(last.Value.position) * w;
+            c.Rect(lx - 1.5f, y - 6, lx + 1.5f, y + h + 6, GradeColor(last.Value.grade));
+        }
+        float ix = x + Mathf.Clamp01(bar.position) * w;
+        c.Rect(ix - 2f, y - 8, ix + 2f, y + h + 8, new Color(0.95f, 0.95f, 1f, 1f));
+        c.Disc(ix, y + h + 10, 4f, new Color(0.95f, 0.95f, 1f, 1f));
+    }
+
+    /// <summary>A hit in words: its grade and score, and the harm a bad one did.</summary>
+    protected static string HitWords(CraftTimingHit h, string harm = "damage") =>
+        h.damage ? $"{h.Words} - {harm}!" : h.Words;
 }

@@ -63,6 +63,7 @@ public sealed class CraftTanneryMode : CraftMode
     // A leather bench without the tannery's beam, vats and frame: only the finishing (stake, slick, skive, oil, dye).
     private bool BenchOnly => ui != null && ui.Station != null && !ui.Station.Has(CraftTools.FleshingBeam) && !ui.Station.Has(CraftTools.Vats) && !ui.Station.Has(CraftTools.Frame) && !ui.Station.Has(CraftTools.Rack);
     public override string Title => BenchOnly ? "Finish leather" : "Tannery";
+    public override CraftDiscipline Discipline => CraftDiscipline.Leatherwork;
     public override bool Available(CraftStation st) => st.Has(CraftTools.FleshingBeam) || st.Has(CraftTools.Vats) || st.Has(CraftTools.Frame) || st.Has(CraftTools.Rack) || st.Has(CraftTools.LeatherBench);
 
     /// <summary>Is this place at the station (the beam doubles as the bench for finishing)?</summary>
@@ -756,6 +757,7 @@ public sealed class CraftCuttingMode : CraftMode
     private string said = "";
 
     public override string Title => "Cut";
+    public override CraftDiscipline Discipline => CraftDiscipline.Leatherwork;
     public override bool Available(CraftStation s) => s.Has(CraftTools.LeatherBench);
     public override string Hint => "Click to lay the pattern where the leather is good (right-click or the wheel turns it), then drag the knife round its dashed outline.";
 

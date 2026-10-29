@@ -250,9 +250,12 @@ public static class MerchantTransactions
             return MerchantTransactionResult.Fail(MerchantTransactionStatus.MerchantRefuses, r, refusal);
 
         int unit = m.GetSellPrice(stack, r.Player);
-        if (unit <= 0 && m.RefusesWorthlessItems)
-            return MerchantTransactionResult.Fail(MerchantTransactionStatus.MerchantRefuses, r, $"{r.Item.Name} is worthless here.");
-        long total = (long)unit * r.Quantity;
+        long total = SellTotal(m, stack, r.Player, r.Quantity, unit, null, out int worthless);
+        // Every item sold must be worth something (copies that differ are judged each: the next one as the shop shows it).
+        if (worthless >= 0 && m.RefusesWorthlessItems)
+            return MerchantTransactionResult.Fail(MerchantTransactionStatus.MerchantRefuses, r,
+                worthless == 0 ? $"{r.Item.Name} is worthless here." :
+                worthless == 1 ? $"Only the next {r.Item.Name} is worth anything here." : $"Only the next {worthless} {r.Item.Name} are worth anything here.");
         if (total > int.MaxValue)
             return MerchantTransactionResult.Fail(MerchantTransactionStatus.InvalidRequest, r, "That is too many at once.", unit);
         if (r.ExpectedTotal > 0 && r.ExpectedTotal != total)
@@ -276,6 +279,9 @@ public static class MerchantTransactions
 
         // Remember the durabilities, to give the exact items back if the payment cannot be received.
         List<int> durabilities = UnitDurabilities(stack, r.Quantity);
+        // What each copy taken fetches, while they are still in the stack (copies worth different amounts are paid each by its own).
+        var each = new List<int>(r.Quantity);
+        SellTotal(r.Merchant, stack, r.Player, r.Quantity, unit, each, out _);
 
         // 1. The items leave the player's inventory (weight, the hand and an emptied stack follow).
         int removed = inventory.ConsumeItem(stack, r.Quantity);
@@ -283,7 +289,8 @@ public static class MerchantTransactions
             return MerchantTransactionResult.Fail(MerchantTransactionStatus.Failed, r, $"Could not sell {item.Name}.", unit);
 
         // 2. Get paid; if the money cannot be received, the items come back.
-        int pay = unit * removed;
+        int pay = 0;
+        for (int i = 0; i < removed; i++) pay += i < each.Count ? each[i] : unit;
         if (!wallet.TryAdd(currency, pay))
         {
             GiveBack(inventory, r.Player, item, removed, durabilities);
@@ -299,6 +306,28 @@ public static class MerchantTransactions
     }
 
     // ------------------------------------------------------------------ helpers
+    /// <summary>
+    /// What <paramref name="quantity"/> items of <paramref name="stack"/> fetch: <paramref name="unit"/> each, or for items
+    /// whose copies differ (harvested pieces) each copy taken by its own value. <paramref name="each"/> (if given) gets
+    /// every copy's price, the next one first; <paramref name="firstWorthless"/> is the first one priced 0 (-1 = none).
+    /// </summary>
+    private static long SellTotal(Merchant m, InventoryItem stack, GameObject player, int quantity, int unit, List<int> each, out int firstWorthless)
+    {
+        bool byCopy = stack.itemScriptableObject is IItemInstanceValue;
+        firstWorthless = unit <= 0 && quantity > 0 ? 0 : -1;
+        if (!byCopy && each == null)
+            return (long)unit * quantity;
+        long total = 0;
+        for (int i = 0; i < quantity; i++)
+        {
+            int price = byCopy ? (i == 0 ? unit : m.GetSellPrice(stack, player, i)) : unit;
+            if (price <= 0 && firstWorthless < 0) firstWorthless = i;
+            each?.Add(price);
+            total += price;
+        }
+        return total;
+    }
+
     private static bool CheckCommon(in MerchantTransactionRequest r, out MerchantTransactionResult fail)
     {
         fail = default;
@@ -340,8 +369,18 @@ public static class MerchantTransactions
     private static List<int> UnitDurabilities(InventoryItem stack, int count)
     {
         var list = new List<int>(count);
-        if (stack == null || stack.itemScriptableObject == null || stack.itemScriptableObject.MaxDurability <= 1)
+        if (stack == null || stack.itemScriptableObject == null)
             return list;
+        if (stack.itemScriptableObject.MaxDurability <= 1)
+        {
+            // Copies that each keep a value (a brewed potion's strength, a harvested piece's quality): the values of the
+            // copies taken - the last ones of the list.
+            List<int> values = stack.DurabilityList;
+            if (values != null)
+                for (int i = Mathf.Max(0, values.Count - count); i < values.Count; i++)
+                    list.Add(values[i]);
+            return list;
+        }
         list.Add(Mathf.RoundToInt(stack.durability));
         List<int> rest = stack.DurabilityList;
         for (int i = rest.Count - 1; i >= 0 && list.Count < count; i--)

@@ -199,11 +199,22 @@ public sealed class CraftRequestGuard
                 if (n < 1)
                     return false;
                 r.count = n;
+                r.i1 = r.i1 == 1 || r.i1 == 2 ? r.i1 : 0; // the needle, or the pricking iron and awl: the station counts their work
                 var work = (CraftJointWork)r.i0;
                 if (work == CraftJointWork.Punch || work == CraftJointWork.Stitch || work == CraftJointWork.Wrap)
                 {
                     if (work == CraftJointWork.Punch) r.a = (float)Math.Max(r.a, 0.5 * Floor); // spacing error
                     r.b = (float)Math.Max(r.b, 0.4 * Floor); // spread
+                }
+                else if (work == CraftJointWork.Solder)
+                {
+                    r.a = (float)CraftMath.Clamp(r.a, 0, 1.6); // the peak heat, as a share of the solder's flow
+                    r.b = (float)CraftMath.Clamp01(r.b);
+                }
+                else if (work == CraftJointWork.Push)
+                {
+                    r.a = (float)CraftMath.Clamp01(r.a);
+                    r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); // never pushed more evenly than these hands
                 }
                 else
                     r.a = (float)Math.Min(r.a, 4 * MaxForce(99) * ArmLeft); // a hammer's force × 4
@@ -297,6 +308,200 @@ public sealed class CraftRequestGuard
                     return false;
                 r.a = (float)CraftMath.Clamp(r.a, 0, 3);
                 r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor);
+                return true;
+            // ---- the woodshop's logs
+            case CraftRequestKind.DebarkWood:
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); r.c = (float)CraftMath.Clamp01(r.c);
+                return true;
+            case CraftRequestKind.SplitLog:
+                if (!cuts.TakeWhole(1, now))
+                    return false;
+                r.a = (float)Math.Max(CraftMath.Clamp01(r.a), 2 * Floor); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor);
+                r.c = (float)Math.Min(CraftMath.Clamp01(r.c), ArmLeft); r.i0 = Math.Max(1, Math.Min(30, r.i0));
+                Hands.Move(r.c);
+                return true;
+            // ---- fibre
+            case CraftRequestKind.CleanFibre:
+            case CraftRequestKind.OpenFibre:
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Max(CraftMath.Clamp01(r.b), 2 * Floor);
+                return true;
+            case CraftRequestKind.ScourFibre:
+                if (!cuts.TakeWhole(1, now))
+                    return false;
+                r.a = (float)CraftMath.Clamp(r.a, 0, 100); r.b = (float)CraftMath.Clamp(r.b, 0, 240); r.c = (float)CraftMath.Clamp01(r.c); r.d = (float)CraftMath.Clamp(r.d, 0, 100);
+                r.i0 = Math.Max(0, Math.Min(9, r.i0));
+                return true;
+            case CraftRequestKind.CardFibre:
+            case CraftRequestKind.CombFibre:
+            {
+                int n = (int)Math.Floor(strokes.Take(Math.Max(1, r.count), now) + 1e-9);
+                if (n < 1)
+                    return false;
+                r.count = n;
+                if (r.kind == CraftRequestKind.CardFibre) { r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); }
+                else r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor);
+                return true;
+            }
+            case CraftRequestKind.SpinFibre:
+            case CraftRequestKind.PlyYarn:
+                if (!spinning.TakeWhole(1, now))
+                {
+                    reason = "The wheel is still turning out the last bobbin.";
+                    return false;
+                }
+                if (r.kind == CraftRequestKind.SpinFibre) { r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 6 * Floor); r.b = (float)CraftMath.Clamp01(r.b); r.c = (float)CraftMath.Clamp01(r.c); }
+                else { r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); }
+                return true;
+            case CraftRequestKind.MeasureYarn:
+            case CraftRequestKind.ReelYarn:
+                return strokes.Take(1, now) >= 1 - 1e-9;
+            case CraftRequestKind.MeasureFit:
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor);
+                return true;
+            // ---- the lapidary
+            case CraftRequestKind.TestGem:
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor); r.b = (float)CraftMath.Clamp(r.b, 1, 10);
+                return true;
+            case CraftRequestKind.EvaluateGem:
+            {
+                int floats = r.points != null ? r.points.Count : 0;
+                int n = (int)Math.Floor(path.Take(floats / 2, now) + 1e-9);
+                if (n < 1)
+                    return false;
+                if (n * 2 < floats)
+                    r.points = r.points.GetRange(0, n * 2);
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor);
+                return true;
+            }
+            case CraftRequestKind.CleaveGem:
+            {
+                if (!blows.TakeWhole(1, now))
+                {
+                    reason = "Let the mallet come up before the next blow.";
+                    return false;
+                }
+                // Where the chisel sits: never truer than these hands (a degree for a novice, less for a master).
+                r.a += (float)((CraftMath.Noise(Hands.seed, Hands.count, 21) * 2 - 1) * Floor * 40);
+                r.c = (float)Math.Min(CraftMath.Clamp01(r.c), MaxForce(now - lastStrike + Jitter) * ArmLeft);
+                r.i0 = r.i0 == 1 ? 1 : 0; // along the plane, or nicked and snapped
+                lastStrike = now;
+                Hands.Move(r.c * 0.5);
+                return true;
+            }
+            case CraftRequestKind.SawGem:
+                if (!cuts.TakeWhole(1, now))
+                    return false;
+                r.c = (float)Math.Min(CraftMath.Clamp01(r.c), 1 - 4 * Floor); r.d = (float)CraftMath.Clamp01(r.d); r.i0 = Math.Max(0, Math.Min(1000, r.i0));
+                r.i1 = Math.Max(0, Math.Min(50, r.i1)); // the blade's misses
+                return true;
+            case CraftRequestKind.Routine:
+                // done by routine: the station works out how well from the player's practice; one at a time
+                if (!work.TakeWhole(1, now))
+                {
+                    reason = "One thing at a time.";
+                    return false;
+                }
+                return Enum.IsDefined(typeof(CraftRoutine), r.i0);
+            case CraftRequestKind.CleanGem:
+            {
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                // scrubbing takes time: no more work round the stone than the hands could do
+                double total = 0;
+                if (r.points != null)
+                    for (int k = 0; k < r.points.Count; k++) { r.points[k] = (float)CraftMath.Clamp(r.points[k], 0, 3); total += r.points[k]; }
+                if (total > 0)
+                {
+                    double got = washing.Take(total, now);
+                    if (got < total)
+                        for (int k = 0; k < r.points.Count; k++) r.points[k] *= (float)(got / total);
+                }
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor);
+                r.i0 = r.i0 == 1 ? 1 : 0;
+                Hands.Move(0.1);
+                return true;
+            }
+            case CraftRequestKind.GrindGem:
+            {
+                int floats = r.points != null ? r.points.Count : 0;
+                int n = (int)Math.Floor(path.Take(floats / 2, now) + 1e-9);
+                if (n < 1)
+                    return false;
+                if (n * 2 < floats)
+                    r.points = r.points.GetRange(0, n * 2);
+                r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor);
+                Hands.Move(0.05 * n / 20.0);
+                return true;
+            }
+            case CraftRequestKind.WeaveCloth:
+            {
+                int rows = r.points != null ? Math.Min(r.points.Count, Math.Max(0, r.i1)) : 0;
+                // every row is a beat of the reed; a beat is never truer than these hands
+                int n = (int)Math.Floor(beats.Take(Math.Max(1, rows), now) + 1e-9);
+                if (n < Math.Max(1, rows))
+                {
+                    reason = "Each row takes a throw of the shuttle and a beat of the reed.";
+                    return false;
+                }
+                for (int k = 0; k < rows; k++) r.points[k] = (float)Math.Min(CraftMath.Clamp01(r.points[k]), 1 - 4 * Floor);
+                r.i1 = rows;
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 4 * Floor); r.b = (float)CraftMath.Clamp01(r.b);
+                Hands.Move(0.1);
+                return true;
+            }
+            case CraftRequestKind.FacetGem:
+            {
+                // Every facet takes time on the lap; the quill is never set truer than these hands set it.
+                int n = (int)Math.Floor(beats.Take(Math.Max(1, r.count), now) + 1e-9);
+                if (n < Math.Max(1, r.count))
+                {
+                    reason = "Each facet takes time on the lap.";
+                    return false;
+                }
+                r.a += (float)((CraftMath.Noise(Hands.seed, Hands.count, 22) * 2 - 1) * Floor * 30);
+                r.b = (float)Math.Max(CraftMath.Clamp01(r.b), 2 * Floor);
+                r.c = (float)CraftMath.Clamp(r.c, -1, 1);
+                if (Math.Abs(r.c) < 2 * Floor) r.c = (float)(r.c < 0 ? -2 * Floor : 2 * Floor);
+                r.d = (float)CraftMath.Clamp01(r.d);
+                // the botched facets, and how unevenly they came (never perfectly alike from real hands)
+                r.i1 = Math.Max(0, Math.Min(Math.Max(1, r.count), r.i1));
+                r.i2 = Math.Max((int)Math.Ceiling(2 * Floor * 1000), Math.Min(1000, r.i2));
+                Hands.Move(0.1);
+                return true;
+            }
+            case CraftRequestKind.PolishGem:
+            {
+                int n = (int)Math.Floor(strokes.Take(Math.Max(1, r.count), now) + 1e-9);
+                if (n < 1)
+                    return false;
+                r.count = n;
+                r.a = (float)CraftMath.Clamp01(r.a); r.b = (float)CraftMath.Clamp01(r.b);
+                if (r.points != null)
+                    for (int k = 0; k < r.points.Count; k++) r.points[k] = (float)CraftMath.Clamp(r.points[k], 0, 3);
+                return true;
+            }
+            // ---- the jeweller
+            case CraftRequestKind.FormShank:
+                if (!beats.TakeWhole(1, now))
+                    return false;
+                r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); r.c = (float)Math.Max(CraftMath.Clamp(r.c, 0, 5), Floor * 2);
+                return true;
+            case CraftRequestKind.SeatSetting:
+                if (strokes.Take(1, now) < 1 - 1e-9)
+                    return false;
+                r.a += (float)((CraftMath.Noise(Hands.seed, Hands.count, 23) * 2 - 1) * Floor * 0.8); // a burr is never truer than these hands
+                r.b = (float)Math.Min(CraftMath.Clamp01(r.b), 1 - 4 * Floor); r.c = (float)Math.Min(CraftMath.Clamp01(r.c), 1 - 3 * Floor);
+                return true;
+            case CraftRequestKind.FinishJewel:
+                if (!Spend(ref work, ref r.d, now) && r.d > 0)
+                    return false;
+                r.a = (float)Math.Min(CraftMath.Clamp01(r.a), 1 - 3 * Floor); r.b = (float)CraftMath.Clamp01(r.b);
                 return true;
             case CraftRequestKind.PutItem:
             case CraftRequestKind.AddFuel:

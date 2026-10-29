@@ -88,6 +88,9 @@ public class CraftStation : MonoBehaviour, IInteractable
     [SerializeField] private bool freeFuel = true;
     [Tooltip("Water at hand (free water for vats).")]
     [SerializeField] private bool waterSource = true;
+    [Tooltip("How good the station's tools are (1 ordinary; 0.5 worn and blunt; 1.5 a master's): a sharp drawknife and saw " +
+             "cut cleaner, fine cards and combs work faster, a true faceting machine holds its angle, a good lap polishes faster.")]
+    [SerializeField, Range(0.3f, 2f)] private float toolQuality = 1f;
 
     [Header("Supplies")]
     [Tooltip("Items the station gives for free (a teaching smithy).")]
@@ -182,6 +185,8 @@ public class CraftStation : MonoBehaviour, IInteractable
     /// <summary>Was this finished assembly tried (its numbers known)?</summary>
     public bool IsInspected(string assembly) => testStation || inspected.Contains(assembly);
     public IReadOnlyList<string> Quenchants => quenchants.Count > 0 ? quenchants : new List<string> { quenchMedium };
+    /// <summary>How good the station's tools are (see the field).</summary>
+    public float ToolQuality => testStation ? 1f : toolQuality;
 
     // ------------------------------------------------------------------ lifecycle
     private void Reset() => stationId = Guid.NewGuid().ToString("N");
@@ -353,6 +358,8 @@ public class CraftStation : MonoBehaviour, IInteractable
             workshop.SetAmbient(Math.Round(conditions.Ambient.Value));
         foreach (KeyValuePair<string, double> v in conditions.Variables)
             workshop.SetVariable(v.Key, Math.Round(v.Value * 20.0) / 20.0, 0.01);
+        if (Math.Abs(workshop.ToolQuality - ToolQuality) > 0.01)
+            workshop.SetVariable("toolQuality", ToolQuality, 0.001);
     }
 
     /// <summary>A thermometer read while a piece glows teaches what its colour means.</summary>
@@ -436,10 +443,19 @@ public class CraftStation : MonoBehaviour, IInteractable
             return false;
         }
         CraftWorkshop w = EnsureWorkshop();
+        // The craft this is, and how practised the player is at it: a practised hand does more with each action.
+        CraftDiscipline? craft = CraftMastery.OfRequest(Rules, w, r);
+        double practice = craft.HasValue ? Mastery(player, craft.Value) : GeneralSkill(player);
+        ByPractice(ref r, practice);
         bool ok;
         switch (r.kind)
         {
-            case CraftRequestKind.PutItem: ok = PutItem(player, r.item != null ? r.item : ItemDatabase.Item(r.itemId), Math.Max(1, r.count), out reason, r.location, r.a); break;
+            case CraftRequestKind.PutItem:
+                // Fibre by its supply id (any item that is that fibre): laid on the fibre bench as a batch.
+                ok = r.item == null && string.IsNullOrEmpty(r.itemId) && IsFibre(r.id)
+                    ? PutFibre(player, r.id, Math.Max(1, r.count), out reason)
+                    : PutItem(player, r.item != null ? r.item : ItemDatabase.Item(r.itemId), Math.Max(1, r.count), out reason, r.location, r.a);
+                break;
             case CraftRequestKind.TakePiece: ok = TakePiece(player, r.piece, out reason); break;
             case CraftRequestKind.ScrapPiece: ok = ScrapPiece(player, r.piece, out reason); break;
             case CraftRequestKind.Move: ok = Move(player, r, out reason); break;
@@ -514,8 +530,49 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.Varnish:
                 ok = HaveSupply(player, r.id, 1, out reason) && w.Varnish(r.piece, r.id, r.i0, r.i1, r.a, r.b, out reason) && UseSupply(player, r.id, 1, out reason);
                 break;
+            // The woodshop's logs.
+            case CraftRequestKind.DebarkWood: ok = w.DebarkWood(r.piece, r.i0, r.i1, r.a, r.b, r.c, out reason); break;
+            case CraftRequestKind.SplitLog: ok = w.SplitLog(r.piece, r.a, r.b, r.c, Math.Max(1, r.i0), out reason) != null; break;
             // The tailor's: spinning a hank of fibre into thread (fibre from the inventory, thread back into it).
             case CraftRequestKind.Spin: ok = Spin(player, r.id, r.a, r.b, out reason); break;
+            // The fibre bench and the wheel: fibre into yarn, yarn into thread.
+            case CraftRequestKind.CleanFibre: ok = w.CleanFibre(r.piece, r.a, r.b, out reason); break;
+            case CraftRequestKind.ScourFibre:
+                ok = (string.IsNullOrEmpty(r.id) || HaveSupply(player, r.id, 1, out reason))
+                     && w.ScourFibre(r.piece, r.a, r.b, r.c, r.d, r.id, r.i0, out reason)
+                     && (string.IsNullOrEmpty(r.id) || UseSupply(player, r.id, 1, out reason));
+                break;
+            case CraftRequestKind.OpenFibre: ok = w.OpenFibre(r.piece, r.a, r.b, out reason); break;
+            case CraftRequestKind.CardFibre: ok = w.CardFibre(r.piece, Math.Max(1, r.count), r.a, r.b, out reason); break;
+            case CraftRequestKind.CombFibre: ok = w.CombFibre(r.piece, Math.Max(1, r.count), r.a, out reason); break;
+            case CraftRequestKind.SpinFibre: ok = w.SpinFibre(r.piece, r.a, r.b, r.c, Math.Max(1, r.i0), out reason) != null; break;
+            case CraftRequestKind.PlyYarn: ok = w.PlyYarn(r.piece, r.other, r.id, r.a, r.b, out reason); break;
+            case CraftRequestKind.MeasureYarn: ok = w.MeasureYarn(r.piece, r.a, out reason); break;
+            case CraftRequestKind.ReelYarn: ok = ReelYarn(player, r.piece, out reason); break;
+            // The tailor's table: measuring the wearer, laying patterns out.
+            case CraftRequestKind.LayoutPattern: ok = w.LayoutPattern(r.piece, r.id, r.i0, r.i1, r.i2, r.flag, out reason); break;
+            case CraftRequestKind.MeasureFit: ok = w.MeasureFit(r.piece, r.a, r.b, out reason); break;
+            case CraftRequestKind.WeaveCloth:
+                ok = w.WeaveCloth(r.piece, r.i0, r.a, r.b, r.points != null ? r.points.GetRange(0, Math.Min(r.points.Count, Math.Max(0, r.i1))) : null, out reason) != null;
+                break;
+            // The lapidary.
+            case CraftRequestKind.TestGem: ok = TestGem(r, out reason); break;
+            case CraftRequestKind.IdentifyGem: ok = IdentifyGem(player, r.piece, r.id, out reason); break;
+            case CraftRequestKind.EvaluateGem:
+                if (!HasInstrument(CraftInstruments.Loupe)) { reason = "There is no loupe here."; return false; }
+                ok = w.EvaluateGem(r.piece, r.points, r.a, out reason);
+                break;
+            case CraftRequestKind.OrientGem: ok = w.OrientGem(r.piece, r.id, r.a, r.b, r.c, r.d, out reason); break;
+            case CraftRequestKind.CleanGem: ok = w.CleanGem(r.piece, r.i0 == 1, r.points, r.a, out reason); break;
+            case CraftRequestKind.CleaveGem: ok = w.CleaveGem(r.piece, r.a, r.b, r.c, out reason, r.i0 == 1); break;
+            case CraftRequestKind.SawGem: ok = w.SawGem(r.piece, r.a, r.b, r.c, r.d, r.i0 / 1000.0, out reason, r.i1); break;
+            case CraftRequestKind.GrindGem: ok = w.GrindGem(r.piece, r.points, r.a, r.b, out reason); break;
+            case CraftRequestKind.FacetGem: ok = w.FacetGem(r.piece, r.i0, Math.Max(1, r.count), r.a, r.b, r.c, r.d, out reason, r.i2 / 1000.0, r.i1); break;
+            case CraftRequestKind.PolishGem: ok = PolishGem(player, r, out reason); break;
+            // The jeweller's bench.
+            case CraftRequestKind.FormShank: ok = w.FormShank(r.piece, (CraftJewelPart)r.i0, r.a, r.b, r.c, r.i1, out reason); break;
+            case CraftRequestKind.SeatSetting: ok = w.SeatSetting(r.piece, r.other, r.a, r.b, r.c, out reason); break;
+            case CraftRequestKind.FinishJewel: ok = w.FinishJewel(r.piece, r.a, r.b, out reason); break;
             case CraftRequestKind.BrushOre:
                 // Coverage at the window's careful pace (full by hand in 3D).
                 ok = w.BrushOre(r.piece, r.i0, (CraftOreBrush)r.i1, Math.Min(1, r.a * Pace(player, r) / Math.Max(0.1, Rules.Settings.handWorkPace)), out reason);
@@ -545,6 +602,7 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.Detach: ok = w.Detach(r.piece, r.id, r.i0, out reason); break;
             case CraftRequestKind.JointWork: ok = w.JointWork(r.piece, r.id, (CraftJointWork)r.i0, Math.Max(0, r.count), r.a, r.b, out reason); break;
             case CraftRequestKind.Finish: ok = Finish(player, r.piece, out reason); break;
+            case CraftRequestKind.Routine: ok = Routine(player, r, out reason); break;
             case CraftRequestKind.Inspect: ok = Inspect(player, r.piece, out reason); break;
             case CraftRequestKind.Assay: ok = Assay(player, r.piece, out reason); break;
             case CraftRequestKind.Suspend: w.Suspend(); ok = true; break;
@@ -557,8 +615,63 @@ public class CraftStation : MonoBehaviour, IInteractable
             default: ok = false; break;
         }
         if (ok)
+        {
+            Practice(player, craft, r);
             Touch();
+        }
         return ok;
+    }
+
+    // ------------------------------------------------------------------ practice
+    private CraftMasterySettings MasterySettings => Rules?.Settings?.mastery;
+
+    /// <summary>How practised <paramref name="player"/> is at <paramref name="craft"/> (their journal, kept where the rules run).</summary>
+    public double Mastery(CombatEntity player, CraftDiscipline craft) =>
+        player != null ? CraftMastery.Of(CraftKnowledge.For(player)?.Data, craft, MasterySettings) : 0;
+
+    private static double GeneralSkill(CombatEntity player) => player != null ? CraftJournal.HandSkill(CraftKnowledge.For(player)?.Data) : 0;
+
+    /// <summary>How steady the player's hands are for this request (their practice in its craft): for the network guard.</summary>
+    public double SkillFor(CombatEntity player, in CraftRequest r)
+    {
+        CraftDiscipline? craft = CraftMastery.OfRequest(Rules, EnsureWorkshop(), r);
+        return craft.HasValue ? Mastery(player, craft.Value) : GeneralSkill(player);
+    }
+
+    /// <summary>What a practised hand does with one action (see <see cref="CraftMastery.ByPractice"/>).</summary>
+    private void ByPractice(ref CraftRequest r, double m) => CraftMastery.ByPractice(ref r, m, MasterySettings);
+
+    /// <summary>Work done teaches its craft (a little at a time: small work comes only so fast).</summary>
+    private void Practice(CombatEntity player, CraftDiscipline? craft, in CraftRequest r)
+    {
+        if (player == null || !craft.HasValue)
+            return;
+        double xp = CraftMastery.WorkExperience(r);
+        if (r.kind == CraftRequestKind.IdentifyGem && !(workshop.Piece(r.piece)?.gem.identified ?? false))
+            xp *= 0.25; // a wrong name teaches less
+        if (xp > 0)
+            CraftKnowledge.For(player)?.Practised(craft.Value, xp, true, false, MasterySettings);
+    }
+
+    /// <summary>
+    /// Work done by routine (<see cref="CraftRoutine"/>): one action, as well as the player's practice does it - only for a
+    /// player of the rank it needs.
+    /// </summary>
+    private bool Routine(CombatEntity player, CraftRequest r, out string reason)
+    {
+        reason = "";
+        var routine = (CraftRoutine)r.i0;
+        if (!Enum.IsDefined(typeof(CraftRoutine), routine)) { reason = "There is no such work."; return false; }
+        CraftDiscipline craft = CraftMastery.RoutineDiscipline(routine);
+        CraftMasterySettings s = MasterySettings;
+        double m = Mastery(player, craft);
+        if (!CraftMastery.CanRoutine(routine, m, s))
+        {
+            CraftRank need = CraftMastery.RoutineRank(routine);
+            reason = $"Only {CraftText.A(CraftMastery.RankName(need))} {CraftMastery.RankName(need).ToLowerInvariant()} {CraftMastery.Crafter(craft)} can {CraftMastery.RoutineName(routine)} by routine: do it by hand.";
+            return false;
+        }
+        return CraftMastery.DoRoutine(workshop, routine, m, r.piece, player != null ? player.name : "wearer", s, out reason);
     }
 
     /// <summary>
@@ -571,7 +684,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         CraftSimulationSettings s = Rules.Settings;
         if (r.d >= 0.5f)
             return s.handWorkPace;
-        double skill = player != null ? CraftJournal.HandSkill(CraftKnowledge.For(player)?.Data) : 0;
+        double skill = SkillFor(player, r);
         return s.handWorkPace * (s.windowPaceNovice + (s.windowPaceMaster - s.windowPaceNovice) * CraftMath.Clamp01(skill));
     }
 
@@ -590,9 +703,12 @@ public class CraftStation : MonoBehaviour, IInteractable
     {
         if (item is CraftPieceItemSO)
             return true;
+        // Raw fibre (a fibre stock item, or any item that is a fibre by its name) is laid on a fibre bench or a wheel as a batch.
+        bool fibreHere = (Tools & (CraftTools.FibreBench | CraftTools.SpinningWheel)) != 0;
         if (item is CraftStockItemSO s)
-            return s.StockKind <= CraftStockKind.Fasteners;
-        return false;
+            return s.StockKind <= CraftStockKind.Fasteners || s.StockKind == CraftStockKind.Log || s.StockKind == CraftStockKind.Gem
+                || s.StockKind == CraftStockKind.Supply && IsFibre(s.CraftId) && fibreHere;
+        return fibreHere && FibreOf(item) != null;
     }
 
     /// <summary>
@@ -615,7 +731,15 @@ public class CraftStation : MonoBehaviour, IInteractable
         {
             CraftPiece piece;
             List<CraftPiece> parts = null;
-            if (item is CraftPieceItemSO pi)
+            if (!(item is CraftPieceItemSO) && !(item is CraftStockItemSO))
+            {
+                // A fibre item of the project's own (not a crafting stock item): it becomes a batch of that fibre.
+                string fibre = FibreOf(item);
+                if (fibre == null) break;
+                if (!free && (inv == null || !TakeOne(inv, item, out _))) { if (done == 0) reason = $"You have no {item.Name}."; break; }
+                piece = CraftFibre.NewFibre(Rules, fibre);
+            }
+            else if (item is CraftPieceItemSO pi)
             {
                 if (!free && (inv == null || inv.GetItemCount(item) <= 0)) break;
                 piece = pi.Piece?.Clone();
@@ -637,7 +761,10 @@ public class CraftStation : MonoBehaviour, IInteractable
                     code = CraftStockItemSO.OreCode(stock.DefaultDeposit, freeLump++);
                 else if (stock.StockKind == CraftStockKind.Hide)
                     code = CraftStockItemSO.HideCode(seed * 7919 + freeLump++);
-                piece = stock.MakePiece(Rules, code);
+                // Every rough stone is a stone of its own: one bought without a value of its own gets one.
+                if (code == 0 && stock.StockKind == CraftStockKind.Gem)
+                    code = CraftStockItemSO.HideCode(seed * 7919 + 104729 + freeLump++);
+                piece = stock.StockKind == CraftStockKind.Supply ? CraftFibre.NewFibre(Rules, stock.CraftId) : stock.MakePiece(Rules, code);
                 if (piece == null) { reason = $"{item.Name} cannot be worked here."; break; }
             }
             string id = workshop.AddPiece(piece, parts);
@@ -901,9 +1028,86 @@ public class CraftStation : MonoBehaviour, IInteractable
         return false;
     }
 
-    private static bool Matches(ItemSO item, string id, string itemName) =>
-        item is CraftStockItemSO s && string.Equals(s.CraftId, id, StringComparison.OrdinalIgnoreCase)
-        || !string.IsNullOrEmpty(itemName) && (string.Equals(item.Name, itemName, StringComparison.OrdinalIgnoreCase) || string.Equals(((UnityEngine.Object)item).name, itemName, StringComparison.OrdinalIgnoreCase));
+    private bool Matches(ItemSO item, string id, string itemName)
+    {
+        if (item is CraftStockItemSO s)
+            return string.Equals(s.CraftId, id, StringComparison.OrdinalIgnoreCase) || s.StockKind == CraftStockKind.Supply && SameWords(s.Name, itemName);
+        if (item is CraftPieceItemSO)
+            return false;
+        // An item of the project's own: by its name or asset name, against the supply's item name, its name or its id,
+        // ignoring case, punctuation and word order ("Raw Wool", "raw_wool", "Wool, raw").
+        CraftSupplyDefinition def = Rules.Supply(id);
+        string a = item.Name, b = ((UnityEngine.Object)item).name;
+        foreach (string want in new[] { itemName, def?.displayName, def?.id, id })
+            if (!string.IsNullOrEmpty(want) && (SameWords(a, want) || SameWords(b, want)))
+                return true;
+        // a fibre by its plain name ("Wool", "Fleece", "Raw flax")
+        if (def != null && def.kind == CraftSupplyKind.Fibre)
+        {
+            string stem = def.id.Split('_')[0];
+            if (string.Equals(FibreWord(a), stem, StringComparison.OrdinalIgnoreCase) || string.Equals(FibreWord(b), stem, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Do two names have the same words (any case, order or punctuation)?</summary>
+    public static bool SameWords(string a, string b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+            return false;
+        string[] Split(string x)
+        {
+            string[] w = x.ToLowerInvariant().Split(new[] { ' ', '_', '-', '(', ')', ',', '.', '\'', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            Array.Sort(w, StringComparer.Ordinal);
+            return w;
+        }
+        string[] x1 = Split(a), x2 = Split(b);
+        if (x1.Length != x2.Length) return false;
+        for (int i = 0; i < x1.Length; i++)
+            if (x1[i] != x2[i]) return false;
+        return true;
+    }
+
+    /// <summary>The fibre an item is (a Fibre supply id), or null: by its supply name, or plainly ("Wool", "Fleece", "Raw flax", "Cotton bale").</summary>
+    public string FibreOf(ItemSO item)
+    {
+        if (item == null) return null;
+        if (item is CraftStockItemSO s)
+            return s.StockKind == CraftStockKind.Supply && IsFibre(s.CraftId) ? s.CraftId : null;
+        if (item is CraftPieceItemSO) return null;
+        foreach (CraftSupplyDefinition d in Rules.Supplies)
+            if (d.kind == CraftSupplyKind.Fibre && Matches(item, d.id, ItemNameOf(d.id)))
+                return d.id;
+        return null;
+    }
+
+    private static readonly string[] RawWords = { "raw", "fibre", "fiber", "floss", "unspun", "loose", "bale", "bundle", "of", "a", "tow", "hank", "lock", "locks", "greasy", "boll", "bolls" };
+
+    /// <summary>The one word of a name that is not just "raw" or the like (fleece counts as wool), or null.</summary>
+    private static string FibreWord(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        string found = null;
+        foreach (string w in name.ToLowerInvariant().Split(new[] { ' ', '_', '-', '(', ')', ',', '.', '\'', '/' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (Array.IndexOf(RawWords, w) >= 0) continue;
+            if (found != null) return null;
+            found = w == "fleece" ? "wool" : w;
+        }
+        return found;
+    }
+
+    /// <summary>Batches of a fibre (or of any fibre, <paramref name="fibre"/> null) lying on the station, ready to work or spin.</summary>
+    public List<CraftPiece> FibreBatches(string fibre = null)
+    {
+        var list = new List<CraftPiece>();
+        if (workshop == null) return list;
+        foreach (CraftPiece p in workshop.Pieces)
+            if (p.kind == CraftPieceKind.Fibre && p.location == CraftLocation.Air && (fibre == null || string.Equals(p.fibre.fibre, fibre, StringComparison.OrdinalIgnoreCase)))
+                list.Add(p);
+        return list;
+    }
 
     private bool HaveSupply(CombatEntity player, string id, int count, out string reason)
     {
@@ -1015,7 +1219,8 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (!Has(CraftTools.SpinningWheel)) { reason = "There is no spinning wheel here."; return false; }
         CraftSupplyDefinition f = Rules.Supply(fibre);
         if (f == null || f.kind != CraftSupplyKind.Fibre) { reason = "That cannot be spun."; return false; }
-        string thread = CraftTextiles.Spun(Rules, f, evenness, twist);
+        // spun straight from the bag, the fibre is raw: it never spins fine (prepare a batch at the fibre bench for that)
+        string thread = CraftTextiles.Spun(Rules, f, evenness, twist, CraftTextiles.RawPrep(Rules, f.id));
         if (string.IsNullOrEmpty(thread)) { reason = "Nothing spins from it."; return false; }
         if (!HaveSupply(player, f.id, 1, out reason) || !UseSupply(player, f.id, 1, out reason))
             return false;
@@ -1024,16 +1229,107 @@ public class CraftStation : MonoBehaviour, IInteractable
         return true;
     }
 
+    // ------------------------------------------------------------------ fibre, yarn and gems
+    private bool IsFibre(string id) => Rules.Supply(id)?.kind == CraftSupplyKind.Fibre;
+
+    /// <summary>Lays <paramref name="count"/> items of a fibre on the fibre bench, each a batch of its own.</summary>
+    private bool PutFibre(CombatEntity player, string fibre, int count, out string reason)
+    {
+        reason = "";
+        if ((Tools & (CraftTools.FibreBench | CraftTools.SpinningWheel)) == 0) { reason = "There is no fibre bench or spinning wheel here."; return false; }
+        int done = 0;
+        for (int k = 0; k < count; k++)
+        {
+            if (!HaveSupply(player, fibre, 1, out reason) || !UseSupply(player, fibre, 1, out reason))
+                break;
+            CraftPiece p = CraftFibre.NewFibre(Rules, fibre);
+            if (p == null) { reason = "That is not a fibre."; break; }
+            workshop.AddPiece(p);
+            done++;
+        }
+        if (done > 0) reason = "";
+        return done > 0;
+    }
+
+    /// <summary>
+    /// Reels a measured skein off as thread: one thread item for every <see cref="CraftFibre.MetresPerThread"/> metres
+    /// counted (never more than is really there), coarse, even or fine as the yarn is good.
+    /// </summary>
+    private bool ReelYarn(CombatEntity player, string id, out string reason)
+    {
+        reason = "";
+        CraftPiece p = workshop.Piece(id);
+        if (p == null || p.kind != CraftPieceKind.Yarn) { reason = "That is not yarn."; return false; }
+        if (!p.yarn.measured) { reason = "Wind it into a skein and count it first: its length must be known."; return false; }
+        int n = CraftFibre.ThreadCount(p);
+        string thread = CraftFibre.ThreadOf(Rules, p);
+        if (n < 1 || string.IsNullOrEmpty(thread)) { reason = $"There is not enough of it to reel ({CraftFibre.MetresPerThread:0} m a skein)."; return false; }
+        if (workshop.RemovePiece(id, out reason) == null)
+            return false;
+        Give(player, FindSupply(player, thread, out _) ?? CraftItems.Stock(Rules, CraftStockKind.Supply, thread), n);
+        Tell(player, $"Reeled into {n} × {Rules.Supply(thread)?.Name.ToLowerInvariant() ?? thread}.");
+        return true;
+    }
+
+    /// <summary>The instrument each gem test needs.</summary>
+    public static CraftInstruments InstrumentFor(CraftGemTest t) => t switch
+    {
+        CraftGemTest.Loupe => CraftInstruments.Loupe,
+        CraftGemTest.Scratch => CraftInstruments.HardnessPoints,
+        CraftGemTest.Refractometer => CraftInstruments.Refractometer,
+        CraftGemTest.Gravity => CraftInstruments.Scale,
+        CraftGemTest.Dichroscope => CraftInstruments.Dichroscope,
+        _ => CraftInstruments.Loupe,
+    };
+
+    private bool TestGem(CraftRequest r, out string reason)
+    {
+        var test = (CraftGemTest)r.i0;
+        if (!HasInstrument(InstrumentFor(test)))
+        {
+            reason = $"There is no {InstrumentFor(test).ToString().ToLowerInvariant()} here.";
+            return false;
+        }
+        return workshop.TestGem(r.piece, test, r.a, r.b, out reason);
+    }
+
+    private bool IdentifyGem(CombatEntity player, string id, string gem, out string reason)
+    {
+        if (!workshop.IdentifyGem(id, gem, out reason))
+            return false;
+        CraftPiece p = workshop.Piece(id);
+        if (player != null && p != null && p.gem.identified)
+            CraftKnowledge.For(player)?.IdentifiedGem(Rules, p.gem.gem);
+        return true;
+    }
+
+    /// <summary>Polishes a stone: the compound comes from the inventory (one for each stone, the first time it is polished).</summary>
+    private bool PolishGem(CombatEntity player, CraftRequest r, out string reason)
+    {
+        CraftPiece p = workshop.Piece(r.piece);
+        bool first = p != null && p.kind == CraftPieceKind.Gem && p.gem.polish <= 0;
+        if (first && !HaveSupply(player, r.id, 1, out reason))
+            return false;
+        if (!workshop.PolishGem(r.piece, r.id, Math.Max(1, r.count), r.a, r.b, out reason, r.points))
+            return false;
+        return !first || UseSupply(player, r.id, 1, out reason);
+    }
+
     // ------------------------------------------------------------------ finishing and testing
     private bool Finish(CombatEntity player, string id, out string reason)
     {
-        if (!workshop.Finish(id, out reason))
-            return false;
         CraftPiece asm = workshop.Piece(id);
+        CraftDesign design = asm != null && asm.kind == CraftPieceKind.Assembly ? Rules.Design(asm.assembly.design) : null;
+        CraftDiscipline craft = CraftMastery.OfDesign(design);
+        // the finisher's practice goes into it: a master's finishing touches
+        if (!workshop.Finish(id, out reason, Mastery(player, craft)))
+            return false;
         if (player != null && asm != null)
         {
             CraftItemReport report = CraftEvaluator.Item(Rules, workshop, asm);
-            CraftKnowledge.For(player)?.Made(report, CraftJournal.Procedure(workshop, asm, CraftKnowledge.For(player)?.Data));
+            CraftKnowledge k = CraftKnowledge.For(player);
+            k?.Made(report, CraftJournal.Procedure(workshop, asm, k?.Data));
+            k?.Practised(craft, CraftMastery.ItemExperience(design, report.Quality, MasterySettings), false, true, MasterySettings);
         }
         return true;
     }

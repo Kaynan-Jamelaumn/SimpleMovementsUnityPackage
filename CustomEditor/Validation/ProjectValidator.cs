@@ -294,6 +294,7 @@ namespace SimpleMovements.Validation
             CheckResource<HubWorld.HubWorldSettings>(issues, SMAssets.Settings, "HubWorldSettings", "Hub World Settings", setup + "Create Hub World Settings (Resources)");
             CheckInjurySettings(issues);
             CheckAlchemyDatabase(issues);
+            CheckHarvestDatabase(issues);
             if (SMAssets.Load<ItemDatabase>(SMAssets.Databases, ItemDatabase.ResourcesName) == null)
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Project",
                     $"No {SMAssets.ResourcePath(SMAssets.Databases, ItemDatabase.ResourcesName)}: items have no stable ids (needed for network sessions and saves)")
@@ -360,6 +361,35 @@ namespace SimpleMovements.Validation
                 issues.Add(new ValidationIssue(IssueSeverity.Info, "Alchemy",
                         "Some outcome tiers have no item: bottles are made at runtime offline, but a network session or a save cannot carry them", db)
                     .WithFix("Create Potion Items", () => AlchemyEditorTools.CreatePotionItems(db, false) > 0));
+        }
+
+        /// <summary>The harvesting rules (optional: without a database the built-in creatures are used) and the hides they give the tannery.</summary>
+        private static void CheckHarvestDatabase(List<ValidationIssue> issues)
+        {
+            HarvestDatabase db = SMAssets.Load<HarvestDatabase>(SMAssets.Settings, HarvestDatabase.ResourcesName);
+            if (db != null)
+            {
+                var errors = new List<string>();
+                var warnings = new List<string>();
+                db.MarkChanged();
+                db.Validate(errors, warnings);
+                foreach (string e in errors)
+                    issues.Add(new ValidationIssue(IssueSeverity.Error, "Harvesting", e, db));
+                foreach (string w in warnings)
+                    issues.Add(new ValidationIssue(IssueSeverity.Warning, "Harvesting", w, db));
+            }
+            // What the creatures (the built-in ones when there is no database) release that alchemy does not know.
+            var alchemy = new List<string>();
+            HarvestingEditorTools.CheckAlchemy(db != null ? db : HarvestDatabase.Instance, alchemy);
+            Object alchemyDb = db != null ? (Object)db : SMAssets.Load<AlchemyDatabase>(SMAssets.Settings, AlchemyDatabase.ResourcesName);
+            foreach (string w in alchemy)
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, "Harvesting", w, alchemyDb));
+            List<string> hides = HarvestingEditorTools.MissingCraftHides();
+            if (hides.Count > 0)
+                issues.Add(new ValidationIssue(IssueSeverity.Warning, "Harvesting",
+                        $"The Crafting Database has no {string.Join(", ", hides)} hide: those creatures' skins become plain hide items, not hides for the tannery",
+                        SMAssets.Load<CraftDatabase>(SMAssets.Settings, CraftDatabase.ResourcesName))
+                    .WithFix("Add Hides", () => HarvestingEditorTools.AddMissingCraftHides() > 0));
         }
 
         private static void CheckScenesInBuild(List<ValidationIssue> issues)

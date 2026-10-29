@@ -89,6 +89,12 @@ public class CraftJournalData
     public List<string> insights = new List<string>();
     public List<string> agents = new List<string>();
     public List<CraftExperiment> experiments = new List<CraftExperiment>();
+    [Tooltip("Gemstones the player has identified rightly: they know them by sight and by their readings now.")]
+    public List<string> gems = new List<string>();
+    [Tooltip("Practice, craft by craft (smithing, leatherwork, woodwork, tailoring, jewellery).")]
+    public List<CraftMasteryNote> mastery = new List<CraftMasteryNote>();
+    [Tooltip("An older journal's items and insights have been turned into practice.")]
+    public bool masterySeeded;
 
     public const int MaxExperiments = 40;
 
@@ -110,6 +116,8 @@ public class CraftJournalData
             d.insights ??= new List<string>();
             d.agents ??= new List<string>();
             d.experiments ??= new List<CraftExperiment>();
+            d.gems ??= new List<string>();
+            d.mastery ??= new List<CraftMasteryNote>();
             return d;
         }
         catch (Exception)
@@ -128,14 +136,23 @@ public class CraftJournalData
 /// </summary>
 public static class CraftJournal
 {
-    /// <summary>How steady the hands are from practice (items made, insights had): 0 novice .. 1 master.</summary>
+    /// <summary>
+    /// How steady the hands are from practice in general: the player's best craft (each craft has its own mastery,
+    /// <see cref="CraftMastery"/>; this is for work that belongs to none).
+    /// </summary>
     public static double HandSkill(CraftJournalData d)
     {
         if (d == null) return 0;
+        double best = 0;
+        foreach (CraftMasteryNote n in d.mastery) best = Math.Max(best, CraftMastery.Level(n.xp));
+        if (best > 0 || d.masterySeeded) return best;
         int made = 0;
         foreach (CraftDesignNote n in d.designs) made += n.timesMade;
         return CraftMath.Clamp01(made / 40.0 + d.insights.Count / 60.0);
     }
+
+    /// <summary>How practised the player is in <paramref name="craft"/> (0 novice - 1 complete mastery).</summary>
+    public static double Mastery(CraftJournalData d, CraftDiscipline craft, CraftMasterySettings s = null) => CraftMastery.Of(d, craft, s);
 
     // ------------------------------------------------------------------ insights
     /// <summary>The insights there are: id → what the player now understands.</summary>
@@ -166,16 +183,46 @@ public static class CraftJournal
         ["warp"] = "A blade quenched unevenly - held still, moved side to side, or heated on one face - warps. Turn it in the fire and plunge it point first, moving it up and down.",
         ["normalise"] = "Steel held too long too hot grows a coarse, weak grain. Heating it just past the critical heat and letting it cool in the air refines it again.",
         ["loose_joint"] = "A well-made part badly fitted is a weak item: a loose guard rattles, a loose head flies off, a badly peened rivet lets go.",
+        ["drawknife"] = "Debark at the bark's own depth: the inner bark lifts off green wood at the cambium. Dig deeper and the drawknife gouges the wood you wanted.",
+        ["grits"] = "Sand through the grits in order: each paper only takes out the scratches of the one before it. Jump from coarse to fine and the coarse scratches stay under the finish.",
+        ["felting"] = "Wool felts when it is hot, wet and moved - or shocked from hot water into cold. Scour it in hot water, but leave it still and rinse it at the same heat.",
+        ["carding"] = "Card lightly: pressed hard, the cards roll the fibres into little knots (neps) that make a lumpy yarn.",
+        ["cleavage"] = "A stone with cleavage parts cleanly along its plane with one firm blow - off the plane, or struck too hard, it shatters. Find the plane first.",
+        ["table_cleavage"] = "Never lay a table along a cleavage plane: it flakes when it is polished. Tilt it a few degrees off.",
+        ["heat_gem"] = "Opal, emerald, peridot and their like crack with heat: grind them wet and polish them light and slow.",
+        ["polish_compound"] = "A compound polishes only stones no harder than it: tripoli for the soft ones, cerium for quartz, alumina for corundum, diamond for diamond.",
+        ["pavilion_angle"] = "The pavilion's angle decides the light: too shallow and it falls through (a window), too deep and the middle goes dark. The higher the stone's refractive index, the shallower it can be.",
+        ["clean_rough"] = "Clean the rough before testing it: matrix stuck to it blurs the refractometer, reads light on the balance and hides inclusions from the loupe. The brush is slow but safe; the pick marks bare stone.",
+        ["preform_grind"] = "Grind the preform to its outline on the wheel before faceting: ground freehand on the lap, the outline comes out lopsided and the cut suffers. Ease off before the wheel cuts into the planned stone.",
+        ["overpolish"] = "Polish each part of a stone until it is bright, then stop: polished on, the facet edges round and it loses weight. And no polish mends a badly cut facet.",
+        ["weaving_beat"] = "Beat each row in evenly with the reed: a row beaten off its measure lies askew, and a bad beat skips a pick - a flaw across the cloth. Tension the warp evenly first, or the cloth puckers.",
+        ["seat_fit"] = "A seat cut wider than the stone never holds it, however hard the setting is pushed: cut the seat to the girdle.",
     };
 
     public static bool HasInsight(CraftJournalData d, string id) => d != null && d.insights.Contains(id);
 
+    // ------------------------------------------------------------------ gems
+    /// <summary>Does the player know this gemstone (named it rightly once)?</summary>
+    public static bool KnowsGem(CraftJournalData d, string gem) => d != null && d.gems != null && d.gems.Contains(gem);
+
+    /// <summary>The player named a stone rightly: from now on they know its readings. Returns what was learnt.</summary>
+    public static string IdentifiedGem(CraftJournalData d, CraftRules rules, string gem)
+    {
+        CraftGemDefinition g = rules.Gem(gem);
+        if (d == null || g == null || KnowsGem(d, g.id))
+            return null;
+        d.gems.Add(g.id);
+        return $"You know {g.Name} now: refractive index about {g.refractiveIndex:0.00}, specific gravity {g.specificGravity:0.0#}, hardness {g.hardness:0.#}{(g.cleavage >= CraftCleavage.Good ? ", and it cleaves" : "")}.";
+    }
+
     /// <summary>Learns an insight (returns the line to tell the player, or null if already known).</summary>
-    public static string Learn(CraftJournalData d, string id)
+    public static string Learn(CraftJournalData d, string id, CraftMasterySettings s = null)
     {
         if (d == null || string.IsNullOrEmpty(id) || d.insights.Contains(id) || !Insights.TryGetValue(id, out string text))
             return null;
         d.insights.Add(id);
+        // understood, it is practised a little
+        CraftMastery.Note(d.mastery, CraftMastery.OfInsight(id), true).xp += (float)CraftMastery.InsightExperience(s);
         return "Insight: " + text;
     }
 
@@ -420,6 +467,20 @@ public static class CraftJournal
                 {
                     case "skate": return "file_skate";
                     case "blick": return "cupel";
+                    case "gouged": return "drawknife";
+                    case "skipped_grit": return "grits";
+                    case "felted": return "felting";
+                    case "neps": return "carding";
+                    case "shattered": return "cleavage";
+                    case "flaked": return "table_cleavage";
+                    case "crazed": return "heat_gem";
+                    case "soft_compound": return "polish_compound";
+                    case "pavilion": return "pavilion_angle";
+                    case "loose_stone": return "seat_fit";
+                    case "crusted": return "clean_rough";
+                    case "freehand": return "preform_grind";
+                    case "overpolished": return "overpolish";
+                    case "skipped_pick": return "weaving_beat";
                 }
                 return null;
             default: return null;

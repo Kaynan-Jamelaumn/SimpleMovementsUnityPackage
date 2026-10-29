@@ -22,6 +22,12 @@ public enum CraftPieceKind
     Fasteners,
     /// <summary>An item being put together from its components (<see cref="CraftDesign"/>).</summary>
     Assembly,
+    /// <summary>A batch of loose fibre (fleece, flax, cotton, silk) being made ready to spin.</summary>
+    Fibre,
+    /// <summary>Spun yarn on a bobbin or in a skein: singles or plied.</summary>
+    Yarn,
+    /// <summary>A gemstone: rough, sawn, faceted or polished.</summary>
+    Gem,
 }
 
 /// <summary>Where a piece is in the workshop: decides how it heats, cools, dries and soaks. Serialized as numbers: add at the END.</summary>
@@ -120,6 +126,32 @@ public enum CraftOpKind
     StackWood,
     SandWood,
     Varnish,
+    DebarkWood,
+    SplitLog,
+    CleanFibre,
+    ScourFibre,
+    OpenFibre,
+    CardFibre,
+    CombFibre,
+    SpinFibre,
+    PlyYarn,
+    MeasureYarn,
+    LayoutPattern,
+    MeasureFit,
+    TestGem,
+    IdentifyGem,
+    EvaluateGem,
+    OrientGem,
+    CleaveGem,
+    SawGem,
+    FacetGem,
+    PolishGem,
+    FormShank,
+    SeatSetting,
+    FinishJewel,
+    CleanGem,
+    GrindGem,
+    WeaveCloth,
 }
 
 /// <summary>A defect a piece can carry. Visible or hidden, recoverable or not (<see cref="CraftDefect"/>). Serialized as numbers: add at the END.</summary>
@@ -169,6 +201,12 @@ public enum CraftDefectKind
     Blotch,
     /// <summary>A sharp, unfinished metal edge that chafes leather.</summary>
     RoughEdge,
+    /// <summary>Bark left on wood, or gouged into the wood beneath it.</summary>
+    Bark,
+    /// <summary>A chip off a gemstone (or a stone cleaved where it should not).</summary>
+    Chip,
+    /// <summary>Fibre felted into a mat (wool scoured hot and agitated, or shocked).</summary>
+    Felted,
 }
 
 /// <summary>The face of a bar the hammer works. Serialized as numbers: add at the END.</summary>
@@ -278,6 +316,12 @@ public enum CraftSupplyKind
     Fibre,
     /// <summary>A varnish or a finishing oil for wood.</summary>
     Varnish,
+    /// <summary>A polishing compound for gems (cerium oxide, alumina, diamond paste): it polishes stones up to its hardness.</summary>
+    Compound,
+    /// <summary>Solder (hard silver or gold solder) for joining metal at the jeweller's bench.</summary>
+    Solder,
+    /// <summary>A scouring agent (soap, washing soda) that lifts grease from fibre.</summary>
+    Detergent,
 }
 
 /// <summary>What a joint of a design is. Serialized as numbers: add at the END.</summary>
@@ -299,6 +343,12 @@ public enum CraftJointKind
     Socket,
     /// <summary>A buckle on a strap.</summary>
     Buckle,
+    /// <summary>Two metal parts soldered (a setting onto a shank, a ring's seam): flux, heat until the solder flows.</summary>
+    Solder,
+    /// <summary>A stone held by a collar of metal pushed and burnished over its girdle.</summary>
+    BezelSet,
+    /// <summary>A stone held by claws (prongs) pushed over its crown, in opposite pairs.</summary>
+    ProngSet,
 }
 
 /// <summary>What an item design makes. Serialized as numbers: add at the END.</summary>
@@ -308,6 +358,8 @@ public enum CraftDesignKind
     Armor,
     Tool,
     Shield,
+    /// <summary>A ring, a pendant, a brooch: a stone set in metal (see <see cref="CraftJewelry"/>).</summary>
+    Jewelry,
 }
 
 /// <summary>What kind of fastener a set is. Serialized as numbers: add at the END.</summary>

@@ -650,7 +650,7 @@ public class AlchemyStationUI : MonoBehaviour, IExclusivePanel
         AlchemyEquipmentProfile eq = brew != null ? brew.Equipment : station.EquipmentProfile; // a restored preparation keeps its vessel
 
         title.text = station.DisplayName;
-        subtitle.text = $"{eq.displayName} · holds {eq.capacity:0} u · {VaporText(eq)}{(eq.canCool ? " · can cool" : "")}{(eq.revealsSubstances ? " · transparent" : "")}";
+        subtitle.text = $"{eq.displayName} · holds {eq.capacity:0} u · {VaporText(eq)}{(eq.canCool ? " · can cool" : "")}{(eq.revealsSubstances ? " · transparent" : "")} · {PracticeText()}";
 
         // What it looks like (a test bench also shows the numbers).
         bool reveal = station.RevealsResults, thermo = station.HasThermometer;
@@ -1087,6 +1087,34 @@ public class AlchemyStationUI : MonoBehaviour, IExclusivePanel
         return sb.ToString().TrimEnd('\n');
     }
 
+    /// <summary>"Alchemy: Journeyman alchemist, 40% to expert".</summary>
+    private string PracticeText()
+    {
+        double m = AlchemyStation.Mastery(player);
+        CraftRank r = CraftMastery.RankOf(m);
+        string next = r < CraftRank.Master ? $", {CraftMastery.RankProgress(m) * 100:0}% to {CraftMastery.RankName(r + 1).ToLowerInvariant()}" : "";
+        return $"<color=#ffcc61>{CraftMastery.Title(CraftDiscipline.Alchemy, m)}</color>{next}";
+    }
+
+    /// <summary>
+    /// What a practised alchemist can tell from the colour, the smell and the feel of a brew: from journeyman, what a
+    /// brew they have made before is becoming; from expert, roughly how good it will be.
+    /// </summary>
+    private string Intuition(AlchemyJournalData data, AlchemyResult r)
+    {
+        double m = AlchemyStation.Mastery(player);
+        CraftRank rank = CraftMastery.RankOf(m);
+        if (rank < CraftRank.Journeyman || r == null || r.Outcome == null || r.Kind == AlchemyOutcomeKind.Inert)
+            return "";
+        if (r.IsFailure)
+            return "\n<color=#ffcc61>Your nose tells you it is going wrong.</color>";
+        if (!AlchemyJournal.IsDiscovered(data, r.OutcomeId))
+            return "\n<color=#9aa0a6>It is nothing you have made before.</color>";
+        string how = rank < CraftRank.Expert ? "" : r.Quality >= 0.8 ? ", and a fine one" : r.Quality >= 0.55 ? ", a fair one" : r.Quality >= 0.3 ? ", but weak" : ", but a poor one";
+        string name = r.DisplayName.ToLowerInvariant();
+        return $"\n<color=#ffcc61>You know that smell: it is becoming {CraftText.A(name)} {name}{how}.</color>";
+    }
+
     private void Verdict(AlchemyRules rules, AlchemyJournalData data, AlchemyBrew brew, bool reveal)
     {
         AlchemyResult r = brew != null && !brew.IsEmpty ? brew.Evaluate() : null;
@@ -1096,7 +1124,7 @@ public class AlchemyStationUI : MonoBehaviour, IExclusivePanel
             // Outside a test bench nobody knows what it is until it is bottled: only how it looks.
             verdict.text = look.HasLiquid ? Capital(AlchemyLook.ColorName(look.Color), "—") : "—";
             verdictBody.text = look.HasLiquid
-                ? $"{Capital(look.LiquidWords(), "")}.\n<color=#9aa0a6>What it has become - and how good it is - shows once it is bottled.</color>"
+                ? $"{Capital(look.LiquidWords(), "")}.\n<color=#9aa0a6>What it has become - and how good it is - shows once it is bottled.</color>" + Intuition(data, r)
                 : brew != null && !brew.IsEmpty ? "There is no liquid to bottle." : "Nothing in the vessel.";
         }
         else if (r == null || r.LiquidUnits < rules.Settings.traceAmount)

@@ -513,6 +513,119 @@ public class CraftSupplyDefinition
 
     [Tooltip("Fibre: the thread it spins into - coarse, even, fine (supply ids).")]
     public List<string> spinsInto = new List<string>();
+    [Tooltip("Fibre: the cloth its yarn weaves into on the loom (a textile hide id).")]
+    public string weavesInto = "";
+
+    [Header("Fibre (prepared at the fibre bench)")]
+    [Tooltip("Fibre: staple length (mm). Short fibres (cotton) are carded, not combed; long ones comb into a smooth worsted.")]
+    [Min(0f)] public float staple = 80f;
+    [Tooltip("Fibre: grease, wax or gum in it as it comes (0-1): lanolin in wool, sericin in silk. Scouring lifts it.")]
+    [Range(0f, 1f)] public float grease;
+    [Tooltip("Fibre: dirt and vegetable matter in it (0-1): burrs, seeds, shives.")]
+    [Range(0f, 1f)] public float dirt;
+    [Tooltip("Fibre: short and broken fibres in it as it comes (0-1).")]
+    [Range(0f, 1f)] public float shortFibre = 0.15f;
+    [Tooltip("Fibre: it felts when hot, wet and agitated (wool).")]
+    public bool felts;
+    [Tooltip("Fibre: grams one item of it is.")]
+    [Min(1f)] public float gramsPerItem = 100f;
+
+    [Header("Compound and detergent")]
+    [Tooltip("Polishing compound: the hardest stone (Mohs) it polishes well. Detergent: how well it lifts grease (strength).")]
+    [Min(0f)] public float polishHardness = 7f;
+
+    public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
+}
+
+/// <summary>How a crystal splits along planes of weakness. Serialized as numbers: add at the END.</summary>
+public enum CraftCleavage
+{
+    /// <summary>No cleavage: it breaks with a curved (conchoidal) fracture - saw it.</summary>
+    None,
+    Poor,
+    /// <summary>Good: it cleaves with care, and can flake when struck or heated.</summary>
+    Good,
+    /// <summary>Perfect: it splits cleanly along its plane with one good blow - and as readily by accident.</summary>
+    Perfect,
+}
+
+/// <summary>
+/// A gemstone species (or variety): what it is (hardness, toughness, cleavage, refractive index, specific gravity,
+/// dispersion, how its colour changes with direction), how it comes rough (its usual size and clarity), what it is worth
+/// and what it does set in jewellery (an element it holds).
+/// </summary>
+[Serializable]
+public class CraftGemDefinition
+{
+    public string id = "";
+    public string displayName = "";
+    [Tooltip("The mineral it is a variety of (ruby and sapphire are both corundum).")]
+    public string species = "";
+    [TextArea(1, 3)] public string description = "";
+    [Tooltip("What the rough stone looks like to someone who does not know it.")]
+    public string observation = "";
+    public Color color = new Color(0.8f, 0.2f, 0.25f);
+    [Tooltip("Mohs hardness (scratch hardness, 1-10).")]
+    [Range(1f, 10f)] public float hardness = 7f;
+    [Tooltip("Toughness (0-1): how well it takes a knock without chipping.")]
+    [Range(0f, 1f)] public float toughness = 0.6f;
+    public CraftCleavage cleavage = CraftCleavage.None;
+    [Tooltip("Planes of cleavage (diamond 4, topaz 1).")]
+    [Range(0, 6)] public int cleavagePlanes;
+    [Tooltip("Refractive index (what a refractometer reads).")]
+    public float refractiveIndex = 1.54f;
+    [Tooltip("Specific gravity (density, g/cm³).")]
+    public float specificGravity = 2.65f;
+    [Tooltip("Dispersion (fire).")]
+    public float dispersion = 0.013f;
+    [Tooltip("Pleochroism (0-1): its colour depends on the direction it is seen through - orient the table across its axis.")]
+    [Range(0f, 1f)] public float pleochroism;
+    [Tooltip("It cracks or loses its colour with heat (opal, emerald, tanzanite): polish it cool.")]
+    public bool heatSensitive;
+    [Tooltip("Opaque or phenomenal: it is cut en cabochon, not faceted.")]
+    public bool opaque;
+    [Tooltip("The cut it shows best in (a gem cut id).")]
+    public string preferredCut = "round_brilliant";
+    [Tooltip("Typical rough stone (carats) and its usual clarity (0 included - 1 clean).")]
+    [Min(0.05f)] public float typicalCarats = 3f;
+    [Range(0f, 1f)] public float clarity = 0.6f;
+    [Tooltip("Value of a fine cut carat.")]
+    [Min(0f)] public float valuePerCarat = 40f;
+    [Tooltip("The element it carries into jewellery (a resistance), and how strongly.")]
+    public ElementType affinity = ElementType.None;
+    [Range(0f, 1f)] public float affinityStrength;
+
+    public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
+}
+
+/// <summary>What part of a gem a tier of facets is.</summary>
+public enum CraftCutTierKind { Pavilion, Girdle, Crown, Table, Base, Dome }
+
+/// <summary>One tier of a cut: its facets and the angle it is cut at (relative to the gem's ideal angle for that part).</summary>
+[Serializable]
+public class CraftCutTier
+{
+    public string name = "";
+    public CraftCutTierKind kind = CraftCutTierKind.Pavilion;
+    [Tooltip("Facets in the tier (the index stops).")]
+    [Min(1)] public int facets = 8;
+    [Tooltip("Degrees added to the gem's ideal angle for this part (stars and breaks sit a little shallower).")]
+    public float angleOffset;
+}
+
+/// <summary>A cut: its outline, its tiers in the order they are cut, how much of the outline's rough it keeps.</summary>
+[Serializable]
+public class CraftGemCut
+{
+    public string id = "";
+    public string displayName = "";
+    [Tooltip("A domed, unfaceted cabochon.")]
+    public bool cabochon;
+    [Tooltip("Outline length over width (1 round; 1.4 oval; emerald cut 1.35).")]
+    [Min(0.5f)] public float lengthRatio = 1f;
+    [Tooltip("Share of the outline's rough weight that is left after cutting (0-1).")]
+    [Range(0.1f, 1f)] public float yield = 0.4f;
+    public List<CraftCutTier> tiers = new List<CraftCutTier>();
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }

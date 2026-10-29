@@ -48,9 +48,26 @@ A **hide** has its size in cells, thickness along the back and at the belly, fib
 hair colour, an affinity (drake hide: fire) and a price; tick **Textile** for cloth (a straight-edged bolt, woven and
 finished: cut and sewn at the tailor's, never tanned). A **wood** has density, toughness, stiffness, splitting,
 colour, a blank size and a price. A **supply** is used up as it is worked: kind (Flux, Thread, Padding, Wax, Oil, Dye,
-Clay, Cupel, Other, Fibre, Varnish), item, strength (thread strength, padding protection, how much oil or wax gives,
-how well a flux works, how tough a varnish is), colour (dyes) and price; a **Fibre** lists **Spins Into** (the thread
-supplies a coarse, an even and a fine hank become). A design's sheet part (kind Hide) says in **Leather ▸ Fabric**
+Clay, Cupel, Other, Fibre, Varnish, Compound, Solder, Detergent), item, strength (thread strength, padding protection,
+how much oil or wax gives, how well a flux works, how tough a varnish is, how strongly a detergent scours), colour (dyes)
+and price; a **Fibre** lists **Spins Into** (the thread supplies a coarse, an even and a fine hank become) and how it
+comes: **staple** (mm; under 40 it cannot be combed), **grease**, **dirt**, **short fibre**, whether it **felts** and the
+grams of one item, and **weaves into** - the cloth (a textile hide id) its yarn becomes on a loom; a **Compound** its **polish hardness** (the hardest stone it polishes well). A varnish whose id
+contains *resin* builds a resin film; a Wax supply is rubbed in.
+
+## Gems and cuts
+
+A **gem** is a species or variety: hardness (Mohs), toughness, cleavage (None, Poor, Good, Perfect) and its planes,
+refractive index, specific gravity, dispersion, pleochroism, heat sensitivity, whether it is opaque (a cabochon only),
+its preferred cut, its typical rough carats and clarity, its value per carat, an element affinity and strength (what it
+gives jewellery), what the rough looks like (its item is named for that) and a description (shown once it is known).
+Players tell gems apart by these very numbers - keep them distinct, or two stones become indistinguishable. Hardness and
+toughness also set how forgiving the timing bars are when the stone is split, sawn and faceted (`CraftLapidary.Difficulty`),
+and whether a stone without a cleavage can be nicked and snapped (toughness under 0.65) or must be sawn.
+
+A **cut** has its outline's length ratio, whether it is a cabochon, its yield (share of the outline's rough left) and its
+**tiers** in the order they are cut: each a name, a kind (Pavilion, Girdle, Crown, Table, Base, Dome), the facets in it
+and an angle offset from the stone's ideal (stars and breaks sit shallower). A design's sheet part (kind Hide) says in **Leather ▸ Fabric**
 whether it is cut from leather, cloth or either.
 
 ## Abrasives, moulds and patterns
@@ -70,8 +87,12 @@ A **design** is an item that can be made:
   it should be — a **shape target** for metal and wood (length range, profile points of width and thickness, edge kind
   and where it runs, edge angle, tang, curvature, dish, eye, mass range, whether it is hardened), a **leather spec**
   (pattern, thickness, tannage, stiffness), a **wood spec**, a fastener kind and count, a supply kind and count;
-* **joints**: kind (Fit, Peen, Rivet, Stitch, Wrap, Wedge, Socket, Buckle), the two roles, a count (stitches, rivets,
-  turns) and an importance;
+* **joints**: kind (Fit, Peen, Rivet, Stitch, Wrap, Wedge, Socket, Buckle, Solder, Bezel Set, Prong Set), the two roles,
+  a count (stitches, rivets, turns, prongs) and an importance;
+* **jewellery** (kind Jewelry, an armour slot - Ring, Amulet, Helmet for a circlet, Bracers for a bracelet): metal parts
+  with a function **Band** (and a **Jewel Part**: Band, Bail, Chain) or **Setting** (a bezel or prong head, by its joint
+  with the stone), a part of kind **Gem** with function **Stone** and a **Gem spec** (carats from-to, faceted and/or
+  cabochon), a Solder supply; their metal parts need no shape profile;
 * **menu group**: where a station's Assembly menu lists it, as "Category/Group" ("Weapons/Swords", "Armour/Plate",
   or your own: "Heirlooms/Knives"); empty = worked out from its kind and parts (`CraftDesignMenu`);
 * the numbers a well-made one reaches: damage, critical chance and multiplier, knockback, reference mass, ideal balance,
@@ -90,5 +111,20 @@ catalogue).
 ## Simulation settings
 
 `settings` holds every constant of the rules (heat transfer, the fire, scale, carbon, the phase model, forging,
-abrasion, smelting, process time, how quickly players learn). Change them to make metal heat faster, tanning slower or
-learning quicker; the tests in `CustomEditor/Crafting` check the built-in values behave as described.
+abrasion, smelting, process time, how quickly players learn, and the **timing bars**: the half-width of each zone -
+Perfect, Excellent, Good, Poor -, the score at each zone's edge, the score below which a hit does damage, the
+indicator's speed, how much harder material narrows the zones and how much practice widens them). Change them to make
+metal heat faster, tanning slower, learning quicker or the precision work more forgiving; the tests in `CustomEditor/Crafting` check the built-in values behave as described.
+
+**Mastery** (`settings.mastery`, chapter 04 *Practice*) sets how players get better at each craft:
+
+| Setting | Default | What it does |
+|---|---|---|
+| Experience Scale | 45 | the experience for 63 % mastery (`1 − e^(−experience / scale)`): double it and every rank takes twice the work |
+| Per Item | 1.2 | experience for a finished item, × (0.5 + its quality) × how much work the design is (its parts and joints) |
+| Work Per Minute | 0.35 | the most small work (blows, strokes, a bobbin spun) teaches a minute in one craft |
+| Per Insight | 0.5 | experience for each insight, in its craft |
+| Apprentice, Journeyman, Expert, Master | 0.15, 0.35, 0.55, 0.78 | the mastery each rank starts at |
+| Fatigue Relief | 0.4 | how much less a master's arm tires |
+| Finishing Touch | 0.12 | the share of what an item still lacks a master's finishing adds to its quality |
+| Routine Low, Routine High | 0.55, 0.9 | the quality of work done by routine at the rank that allows it, and at full mastery |

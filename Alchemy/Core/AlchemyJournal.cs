@@ -69,6 +69,8 @@ public class AlchemyJournalData
     public List<string> undissolvedSeen = new List<string>();
     public List<AlchemyIngredientNote> ingredients = new List<AlchemyIngredientNote>();
     public List<AlchemyExperiment> experiments = new List<AlchemyExperiment>();
+    [Tooltip("Practice at alchemy (every potion bottled teaches - a better one more).")]
+    public List<CraftMasteryNote> mastery = new List<CraftMasteryNote>();
 
     public const int MaxExperiments = 40;
 
@@ -87,6 +89,7 @@ public class AlchemyJournalData
             d.undissolvedSeen ??= new List<string>();
             d.ingredients ??= new List<AlchemyIngredientNote>();
             d.experiments ??= new List<AlchemyExperiment>();
+            d.mastery ??= new List<CraftMasteryNote>();
             return d;
         }
         catch (Exception)

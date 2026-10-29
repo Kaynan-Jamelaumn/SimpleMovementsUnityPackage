@@ -280,8 +280,18 @@ namespace GameNet
         private static List<int> UnitDurabilities(InventoryItem stack, int count)
         {
             var list = new List<int>(count);
-            if (stack == null || stack.itemScriptableObject == null || stack.itemScriptableObject.MaxDurability <= 1)
+            if (stack == null || stack.itemScriptableObject == null)
                 return list;
+            if (stack.itemScriptableObject.MaxDurability <= 1)
+            {
+                // Copies that each keep a value (a brewed potion's strength, a harvested piece's quality): the values of
+                // the copies taken - the last ones of the list.
+                List<int> values = stack.DurabilityList;
+                if (values != null)
+                    for (int i = System.Math.Max(0, values.Count - count); i < values.Count; i++)
+                        list.Add(values[i]);
+                return list;
+            }
             list.Add(Mathf.RoundToInt(stack.durability));
             List<int> rest = stack.DurabilityList;
             for (int i = rest.Count - 1; i >= 0 && list.Count < count; i--)

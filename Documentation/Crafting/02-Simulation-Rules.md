@@ -197,7 +197,26 @@ the shade and the warmth; when it dries faster than the wood can shrink evenly t
 (`checks`; sealed ends check far less), and unevenly stickered it warps. Checks cost toughness and integrity; wood
 still green (moisture over 20%) in an item shrinks loose (a note, less integrity).
 
-**Sanding** smooths the surface toward a floor set by the grit and the direction (across the grain leaves scratches).
+**Debarking** (`DebarkWood`, at the shaving horse): a green **log** (`CraftDefaults.Log`, the Log stock kind) comes in its
+bark (`MetalSegment.bark` on every stretch). Each pull of the drawknife takes bark off a stretch by its **depth** (under
+0.3 only the outer bark, from 0.3 at the cambium all of it), how much of the log's round it reached and how readily the
+bark lets go (green wood ×1.25, dry ×0.65, sharper tools more); past the cambium (0.62 green, 0.52 dry) it **gouges**:
+width and thickness lost, a rough surface, `WoodState.gouged`. Bark left on wet wood slows its drying and lets rot in.
+
+**Splitting a log** (`SplitLog`, at the chopping block; only stock at least 60 mm wide): the wedge's line `a` off the
+heart (0 through the pith) and `b` along the rays: through the heart the halves are even and their grain follows the
+split; off it one half is much bigger (up to 88/12), across the rays the split twists out (runout, a defect); `c` how
+solid the maul's blows landed.
+
+**Seasoning** follows the air: the stack dries the wood toward the **equilibrium moisture** of the station's humidity
+(`CraftWoodwork.Equilibrium`: about 8% in dry air, 17% in damp), faster in dry air, slower with bark on; damp air even
+wets dry wood again.
+
+**Sanding** smooths the surface toward a floor set by the grit and the direction (across the grain leaves scratches);
+the **grits must go in order**: a paper only takes out the scratches of the one before it, so jumping more than one
+grade (coarse 0.25, medium 0.55, fine 0.85) leaves the coarse floor under the fine (`lastGrit`).
+**Wax** is rubbed in (`wax`): it sheds water but wears off; a **resin** sealer (a varnish whose id says resin) builds the
+hardest film (`resin`); **oil** soaks in. `FinishWear` is how well it stands wear: resin best, wax least.
 **Varnish or oil** builds a finish (`finish`, `finishEven`): it takes on dry wood (on damp wood it clouds and lifts),
 evenly on a smooth surface (blotchy on a rough one), runs when laid thick, wrinkles over a wet coat. The finish keeps
 water out (`FinishProtection`): items with finished wooden parts last longer.
@@ -212,9 +231,151 @@ cleanness). A design's sheet part says what it is cut from (`CraftLeatherSpec.fa
 
 **Spinning** (at the station: fibre from the inventory - one per bobbin, checked before the drafting starts - thread
 back into it; threading the needle needs the thread in the inventory too): the quality is the draft's evenness
-times how near the twist was to right (`SpinQuality`); a fibre lists what it spins into (`spinsInto`: coarse, even,
-fine). **Thread** added to an item carries its strength (`Attach`'s supply strength, kept as `<role>@strength`): the
+times how near the twist was to right (`SpinQuality`), times how well the fibre was prepared (0.55 + 0.45 × its
+preparation, `CraftFibre.Prep`): spun straight from the bag the fibre is raw (`CraftTextiles.RawPrep` - greasy, dirty,
+tangled), so it never spins the fine thread; for that, prepare a batch at the fibre bench and spin it. A fibre lists
+what it spins into (`spinsInto`: coarse, even, fine). **Thread** added to an item carries its strength (`Attach`'s supply strength, kept as `<role>@strength`): the
 seams are as strong as the thread (×0.8-1.15 of ordinary thread).
+
+**Measuring and fit**: `MeasureFit` (the tape, the ring sizer) records how accurately the wearer was measured and the
+size read; the next item started takes it (`AssemblyState.measured`, `fit`, `fitSize`). Clothes and rings made without
+measuring fit like any other (×0.95, *a loose, common fit*); measured, ×(0.9 + 0.12·accuracy) - a careless measure fits
+worse than none; a ring's band formed off the measured size fits worse still.
+
+**Layout**: patterns are chalked on cloth or a hide before cutting (`LayoutPattern`): they may not overlap; the share of
+the sheet they use is its utilization (`CraftTextiles.Utilization`); a cut on a chalked placement is cleaner (+0.05) and
+any chalk a cut goes through is lost.
+
+**Sewing**: the stitches' spacing and spread are as true as the station's tools (÷ tool quality); a practised hand
+lays a run of stitches with each click (see *Practice*); and the **thread must suit the material** (`CraftTextiles.ThreadSuits`): heavy leather needs a strong thread (0.6 + 0.2 per mm of
+thickness), fine cloth puckers under a far heavier one.
+
+## Fibre and yarn
+
+A **batch of fibre** (`FibreState`, laid on the fibre bench from a Fibre supply: its staple, grease, dirt and short
+fibre come from the supply) carries dirt, grease, tangle, alignment, short fibre, neps, felting, water and soap.
+
+* **Clean** (`CleanFibre`): picks a share of the dirt out; fibre pulled with it is lost.
+* **Scour** (`ScourFibre`): grease melts out above about 35-62 °C (silk's gum near boiling) with a detergent, over the
+  minutes it soaks; wool **felts** when stirred hot or shocked from hot to cold (`felted`, the Felted defect); too few
+  rinses leave soap in it; it comes out wet and dries in the air (slower in damp air).
+* **Open** (`OpenFibre`): teases the tangle out; torn hard, fibres break (more short fibre); felted fibre hardly opens.
+* **Card** (`CardFibre`): aligns the fibres toward two-thirds, opens the last tangles; heavy strokes and clogged cards
+  (wet, tangled, felted fibre) roll **neps** and break fibres. Not while it is wet.
+* **Comb** (`CombFibre`): long staple only (40 mm and up: not cotton): straightens toward 0.95 and leaves the short
+  fibre, neps and dirt in the comb as noil (weight lost). A combed batch spins **worsted**.
+* **Spin** (`SpinFibre`, at the wheel): grams of the batch into a bobbin of **yarn** (`YarnState`): its evenness is the
+  draft's times the preparation (`CraftFibre.Prep`), its length the fineness of the draft, its strength the fibre's, the
+  twist's and the evenness's (+12% worsted, less with short fibre and neps).
+* **Ply** (`PlyYarn`): two or three bobbins twisted the other way: the shortest sets the length; evenness rises, the
+  strengths add; it is **balanced** when the ply twist is near 0.8 of the singles' twist.
+* **Measure** (`MeasureYarn`): a skein wound on the niddy-noddy and counted (1.5 m a wrap): the count may be off.
+* **Reel** (the station's ReelYarn): a counted skein becomes thread items, one per 20 m of the count (never more than is
+  really there), coarse, even or fine by the yarn's quality (`CraftFibre.Quality`: plied yarn +0.08).
+* **Weave** (`WeaveCloth`, at a **Loom**): a bobbin of yarn into a new length of cloth (a textile hide piece: the fibre's
+  `weavesInto` - wool cloth, linen, canvas, cotton, silk) `width` cells wide, one row for every beat sent (each row takes
+  `CraftFibre.MetresPerCell` = 12 m of yarn per cell; never more rows than the yarn allows, at most 30 a length; what is
+  left stays on the bobbin; a practised weaver's beat packs 2 or 3 rows, each as its beat - see *Practice*). Each row's beat (its timing-bar score) sets how smooth it is; a beat below the damage
+  threshold skips a pick - a flaw across the row; an uneven warp (the tension) puckers cells, a lumpy yarn shows slubs,
+  a beat far from balanced (open or packed) is weaker and stiffer. A fine yarn weaves a thinner cloth. The cloth is laid
+  out, cut and sewn like any other.
+
+## The timing bar
+
+`CraftTimingBar` (with `CraftTimingSettings` on the database: **Simulation → Timing bars**) is the precision mechanic
+sawing, splitting, faceting and weaving share. An indicator runs along the bar (speed × (0.75 + 0.25 × difficulty)
+lengths a second) and turns back at either end; the bar has targets (an ideal point, a size, the best score it gives).
+Each target has nested zones - half-widths `perfectZone` 0.02, `excellentZone` 0.055, `goodZone` 0.12, `poorZone` 0.24
+of the bar, × the target's size × difficulty^-`narrowing` × (1 + `skillWidening` × practice). A hit's score falls
+continuously with its distance from the ideal point: 100% on it, then linearly through `perfectScore` 0.95,
+`excellentScore` 0.8, `goodScore` 0.55 and `poorScore` 0.2 at the zones' edges, to 0 a further Poor-zone width beyond
+(the grade is the zone it fell in; beyond the Poor zone it is a Miss). Below `damageBelow` (0.25) the hit harms the work.
+The hand's tremble moves the hit; the targets' places come from the piece's seed, so the same moments give the same hits.
+
+## Gems
+
+A **gemstone** (`GemState`, `CraftLapidary`) is rough, a preform, faceted or polished. Rough, it has its carats, tone, the
+tilt of its optic axis and of its cleavage plane and the trace of that plane, and **inclusions** (crystals, feathers -
+cracks -, clouds, needles) placed in its plan and depth, as many and as large as its species' clarity makes likely;
+and **crust** - matrix and dirt round its skin, in 16 sectors, thicker on one side.
+
+* **Cleaning** (`CleanGem`): work on each sector of the crust with a brush (slow, never harms) or a steel pick (quick;
+  worked on bare stone it scratches - more on a soft stone - and, held carelessly on a brittle one, chips it). How
+  clean it was left, less the marks, is its `cleaned`. Crust left on blurs the refractometer and the dichroscope
+  (×1 + 3·dirt), makes the balance read light (−0.6·dirt), hides inclusions beneath it from the loupe (a thick crust is
+  opaque) and throws the saw (more kerf lost).
+
+* **Tests** (`TestGem`): the loupe (and the cleavage cracks, for a stone that has them); scratch with a hardness point
+  (harder than the stone: it is scratched - a surface scratch the polish takes off - and the reading narrows); the
+  refractometer (the refractive index, ±0.035 × (1.15 - care) ÷ tool quality, doubled on the rough: a spot reading); the
+  hydrostatic balance (specific gravity, less exact under a carat); the dichroscope (pleochroism and the axis' tilt).
+  Each needs its instrument at the station.
+* **Identification** (`IdentifyGem`, at least two tests): the name given sticks to the stone, right or wrong; named
+  rightly, the player knows that gem from then on (the journal).
+* **Evaluation** (`EvaluateGem`): every look of the loupe (where, at what focus depth) finds the inclusions near it at
+  that depth; the stone's worth is then estimated from what was found only - a careless search over-values it.
+* **Orientation** (`OrientGem`): the cut, where the finished stone sits in the rough (a circle in the plan) and the
+  table's tilt to the crystal. Inclusions outside the circle are cut away; a pleochroic stone's colour is best with the
+  table across its axis (×1 - 0.6·pleochroism·sin²); a table within 8° of a Good or Perfect cleavage flakes when polished.
+* **Splitting and sawing** (`CleaveGem`, `SawGem`): a line across the plan. **Cleaving** (a stone with a cleavage):
+  the blow is judged on the split's timing bar (`CraftLapidary.SplitBar`: the ideal force 0.42 + 0.25 × toughness,
+  zones narrowed by `CraftLapidary.Difficulty` - harder, more brittle stones are less forgiving); within 4° (Perfect),
+  2.5° (Good) or 1° (Poor) of the cleavage's trace and above the damage threshold it parts along its plane, losing
+  1% + 6% × (1 - score); below Good the face steps (a chip); off the plane or below the damage threshold it shatters (a
+  chip, a feather into the stone, 12% lost). Under 0.3 the blow does not part it. **Nick and snap** (`snap`, a stone
+  with no cleavage worth following and toughness under 0.65 - quartz, garnet, tourmaline, peridot, emerald, opal):
+  never clean - 6% + 15% × (1 - score) lost and chips; below the damage threshold a crack runs in. Tough stones
+  without a cleavage (corundum) must be sawn. **Sawing**: its steadiness is the strokes' average score; the kerf and a
+  wandering cut cost carats; every **miss** (a stroke below the damage threshold) jumps the blade: 2% more lost and a
+  chip; a dry cut heats it (heat-sensitive stones crack); pressing hard on a brittle stone chips it. The far side, when
+  big enough (0.15 ct), is a stone of its own. A preform has at most 55% of its rough outside the planned stone.
+* **Grinding** (`GrindGem`, the gem bench's wheel or the faceting machine, once oriented): the preform's outline (32
+  radii from the planned stone's centre) is ground toward the planned outline - an ellipse as long as the cut, inside
+  the window - by touches (angle, amount) at a rate set by the stone's hardness, the tool and the steadiness; each
+  touch takes the neighbouring radii too. Carats follow the area. Ground into the planned outline it is `overground`
+  (smaller), and its `shapeError` grows with that and with how unevenly the outline came; dry grinding heats a sensitive
+  stone. Under 15% left outside the outline it is a preform ready to facet; faceting a ground preform with more left is
+  refused. Never ground, the first tier grinds it freehand: `shapeError` 0.25.
+* **Faceting** (`FacetGem`, the faceting machine): tier by tier in the cut's order, each at its angle - the pavilion's
+  ideal is 40.75° + (2.42 - n) × 2.6 and the crown's 34.5° + (2.42 - n) × 8.5 for refractive index n (diamond 40.75/34.5,
+  quartz about 43/42), plus the tier's offset; the index stops' error; how the facets met (short: they do not meet, a
+  window of old surface; past: overcut, weight lost); how unevenly the tier's facets came (`asymmetry`) and how many
+  were botched (`misses`: 1% weight and a chip each - recut the tier). In the window each facet is a timing-bar hit:
+  its offset sets the angle's and the meet's error, its score the index error, the spread of the scores the asymmetry.
+  A worn machine adds to the angle's error. Heat-sensitive stones ground dry crack. The first tier takes the preform
+  down to the planned stone; after the last the girdle is measured.
+* **Polishing** (`PolishGem`): a compound polishes well only stones up to its hardness (tripoli 6, cerium oxide 7.5,
+  alumina 9, diamond paste 10); the polish is followed over 9 regions (where the lap worked; evenly if not said): each
+  region's shine is 1 - e^(-1.6 × its polish), the stone's polish their mean, a region below 0.6 is a dull patch; past
+  2.5 the edges round (meets, a little weight). Heat (pressure × speed) crazes sensitive stones and rounds the facets'
+  meets. Polish takes scratches off but never changes a facet's angle, index, asymmetry or misses.
+* **Grade** (`CraftLapidary.Grade`): clarity (the inclusions kept), colour (tone × orientation, less for heat),
+  integrity (feathers, heat, chips, cleavage), cut (each tier's angle, index, meet, × (1 - 0.5 asymmetry) ×
+  (1 - 0.15 per botched facet); the pavilion counts double; × (1 - 0.6 × min(1, 2 × shapeError)) for the outline),
+  polish, **brilliance** (a pavilion more than 3° shallow leaks light, more than 3° deep goes dark), carats → quality and
+  value (value per carat × carats × (0.15 + 1.7 q²), more for a big stone).
+
+## Jewellery
+
+The jeweller's work is done on metal **wire and strip** (`CraftDefaults.JewelleryForms`: 600 mm × 2.5 × 1.8 wire, 150 mm ×
+4 × 0.5 bezel strip) at the jeweller's bench (`CraftJewelry`):
+
+* **Forming** (`FormShank`): a band, a bezel, a prong head (3-8 prongs), a bail or a chain, to an inner size: the metal
+  must be thin enough (bezel 1.2 mm, chain 2.5, others 4) and long enough (π × (size + thickness) for a band or bezel);
+  how round it came off the mandrel and the gap left at the seam are kept; a hard, brittle metal cracks.
+* **The seat** (`SeatSetting`): cut in a bezel or prong head to a stone's girdle: 0.15 mm too small and the stone does
+  not go in; up to 0.08 mm wide it is snug; wider, it never holds fully (`SeatFit`); how level and clean it was cut.
+* **Soldering** (a Solder joint, `CraftJointWork.Solder`, with solder added to the piece): flux, then heat to the
+  solder's flow (0.85-1 of it); a gapped seam does not fill; past 1.12 it overheats (porosity, firescale), and a stone
+  already set feels it (heat-sensitive or brittle stones crack).
+* **Setting** (BezelSet, ProngSet joints, `CraftJointWork.Push`): pushes, their pressure and how evenly round
+  (opposite sides in turn) - security grows up to what the seat allows; uneven pushing and an unlevel seat tilt the
+  stone; too hard on a brittle stone chips it. Set when secure (0.6) and, for prongs, every prong pushed.
+* **Finishing** (`FinishJewel`): buffed and cleaned, then inspected - a loose or tilted stone, pitted solder, a chip
+  are found here. A jewellery design finishes only after it.
+* **What it is** (`CraftJewelry.Evaluate`): named for its metal and stone ("Gold solitaire ring with a ruby"), its magic
+  defence from the stone's quality and size (and the metal's magic), a resistance of the stone's element, as much of it
+  as the stone is secure; durability from the metal and the setting; the price adds the stone's value.
 
 ## Assembly
 
@@ -227,8 +388,12 @@ leather), rivets peened (too light: loose; too hard: crushed leather, a cracked 
 pommel (it must be long enough), a wrap wound, a wedge driven (too far splits the haft). An item finishes when every
 required part is in place and every joint made.
 
+Jewellery adds solder joints and bezel and prong settings (see *Jewellery*): a metal part must be formed into the
+right part (a band, a bail, a chain; a setting follows its joint with the stone - a bezel or a prong head), and a stone
+must be cut and polished, within the design's carats, faceted or a cabochon as the setting takes.
+
 **Where it is made** (`CraftAssembly.MadeAt`): a design is started only at a station with an assembly or leather bench
-that has the tools for each required part - metal: an anvil or a crucible; leather: a leather bench; cloth: a tailor's
+that has the tools for each required part - jewellery: a jeweller's bench (its metal is wire and strip); metal: an anvil or a crucible; leather: a leather bench; cloth: a tailor's
 table or a leather bench; wood: files, a chopping block or a sawhorse. A station can narrow it further to a list of
 designs (`CraftStation.designs`). The Assembly area lists only what can be made there, and the station refuses the rest.
 
@@ -243,12 +408,41 @@ designs (`CraftStation.designs`). The Assembly area lists only what can be made 
 * **Heat treatment** — hardened where it should be, tempered, not brittle (or not hardened at all).
 * **Assembly** — the quality of every joint.
 * **Protection** — for armour: thickness, hardness and toughness of the plates, the leather's tannage and stiffness,
-  padding, studs.
+  padding, studs; for jewellery, the stone's quality.
+* **Fit** — clothes and rings: measured or not, and how well (see *The tailor's*).
+* **Seams** — stitches as strong as their thread, and only if the thread suits the material.
 
-They give the quality (and its tier: Crude, Poor, Serviceable, Good, Fine, Superior, Masterwork) and the item's numbers:
+They give the quality - raised by the finisher's **finishing touches** (`AssemblyState.mastery`, kept with the item
+when it was finished: the quality gains `finishingTouch` × mastery of what it still lacks; *Practice*) - and its tier
+(Crude, Poor, Serviceable, Good, Fine, Superior, Masterwork) and the item's numbers:
 damage, critical chance and multiplier, knockback, attack speed (from mass and balance), tool damage, element (from
 materials with an affinity, or what it was quenched in), durability, defence, magic defence, resistances, weight, price.
 A missing part makes an item incomplete (it cannot be finished; asked anyway, it rates very low).
+
+## Practice
+
+Each player's practice in each craft (`CraftMastery`, kept in their journal: chapter 04) is used where the rules run -
+the station, or the server in a network session - so a client cannot claim more than it has:
+
+* **Which craft** (`CraftMastery.OfRequest`): from the request and the piece it is on - grinding, filing or polishing
+  wood is woodwork, steel smithing; cutting cloth is tailoring, leather leatherwork; the tape is tailoring, the ring
+  sizer jewellery; work on an item is the item's craft (`OfDesign`: jewellery for a jewellery design, otherwise the kind
+  of part that matters most - metal smithing, wood woodwork, a stone jewellery, cloth tailoring, leather leatherwork).
+  The bellows, the fuel, waiting, putting and taking are nobody's craft.
+* **The hands** of that request are as steady as that practice (the guard's floor and the window's pace too).
+* **More with each action** (`CraftMastery.ByPractice`): a JointWork request names its tool in `i1` - 1 the needle (it
+  punches and stitches a run of `StitchesPerAction`: 1, 2 from Journeyman, 3 for a master), 2 the pricking iron and awl
+  (the iron punches `HolesPerBeat` = 4 holes a beat, the awl a run of stitches) - and the count is multiplied there
+  (the workshop's operation records the stitches, so replays are exact); a WeaveCloth request's beats are each repeated
+  `RowsPerBeat` times (at most 30 rows).
+* **Routines** (`CraftRequestKind.Routine`, `i0` = the `CraftRoutine`): refused below the rank they need; otherwise
+  `CraftMastery.DoRoutine` does the ordinary operation at the quality practice gives (`RoutineQuality` ± 3 % from one
+  time to the next): the skein counted a little short (never long), the wearer measured near their size, the fibre
+  picked or teased, the crust brushed sector by sector as long as each needs, the stone searched on a grid as fine as
+  the practice at every depth.
+* **Experience**: each request done teaches its craft (`WorkExperience`: 0.01 a blow or stroke, 0.04 most work, 0.12 a
+  cut, a weld, a facet tier, a bend, a seat; 0.25 a bobbin, a pour, a bloom, a length of cloth; nothing done by
+  routine), no faster than `workPerMinute`; a finished item `ItemExperience`; a wrong name for a stone a quarter.
 
 ## Reproducibility and saving
 

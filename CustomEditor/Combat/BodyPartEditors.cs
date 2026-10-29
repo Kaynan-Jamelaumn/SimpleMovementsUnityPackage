@@ -78,6 +78,11 @@ public static class BodyPartDiagram
             GUI.Label(r, "No parts", EditorStyles.centeredGreyMiniLabel);
             return;
         }
+        if (p.UsesLength)
+        {
+            DrawSideView(r, p);
+            return;
+        }
         BodyPartProfile id = p; // keyed by the profile itself (GetInstanceID is obsolete in Unity 6.3+)
         int sel = Picked(p);
         // The figure is half as wide as it is tall, narrower when the inspector is (the label columns need room).
@@ -196,6 +201,72 @@ public static class BodyPartDiagram
             GUI.Label(new Rect(r.xMax - colW - 4f, r.y + 1f, colW, 14f), "Left side", rs);
             GUI.Label(new Rect(r.x, r.yMax - 14f, r.width, 14f), "front view · click a part", EditorStyles.centeredGreyMiniLabel);
         }
+    }
+
+    /// <summary>
+    /// A horizontal body from the side (the tail on the left, the nose on the right): each part's box over its length and
+    /// height bands, the right side's limbs a little behind the left side's, labelled with the damage multiplier.
+    /// </summary>
+    private static void DrawSideView(Rect r, BodyPartProfile p)
+    {
+        int sel = Picked(p);
+        var body = new Rect(r.x + 12f, r.y + 18f, r.width - 24f, r.height - 40f);
+        Event e = Event.current;
+        var rects = new List<(int index, Rect rect)>();
+        for (int i = 0; i < p.parts.Count; i++)
+        {
+            BodyPartDefinition part = p.parts[i];
+            if (part == null)
+                continue;
+            float l0 = part.HasLength ? Mathf.Clamp01(Mathf.Min(part.lengthRange.x, part.lengthRange.y)) : 0f;
+            float l1 = part.HasLength ? Mathf.Clamp01(Mathf.Max(part.lengthRange.x, part.lengthRange.y)) : 1f;
+            float h0 = Mathf.Clamp01(Mathf.Min(part.heightRange.x, part.heightRange.y)), h1 = Mathf.Clamp01(Mathf.Max(part.heightRange.x, part.heightRange.y));
+            float shift = part.side == BodySide.Right ? 4f : part.side == BodySide.Left ? -4f : 0f;
+            rects.Add((i, new Rect(body.x + l0 * body.width + shift, body.y + (1f - h1) * body.height - shift, Mathf.Max(3f, (l1 - l0) * body.width),
+                Mathf.Max(3f, (h1 - h0) * body.height))));
+        }
+        // Picking: the smallest box under the mouse.
+        int hover = -1;
+        float hoverArea = float.MaxValue;
+        foreach ((int index, Rect rect) in rects)
+            if (rect.Contains(e.mousePosition) && rect.width * rect.height < hoverArea)
+            {
+                hoverArea = rect.width * rect.height;
+                hover = index;
+            }
+        if (e.type == EventType.MouseDown && e.button == 0 && body.Contains(e.mousePosition))
+        {
+            picked[p] = hover;
+            e.Use();
+            GUI.changed = true;
+        }
+        if (e.type != EventType.Repaint)
+            return;
+        // Big boxes first, the right side's (far) limbs before the left side's.
+        rects.Sort((a, b) =>
+        {
+            int fa = p.parts[a.index].side == BodySide.Right ? 0 : 1, fb = p.parts[b.index].side == BodySide.Right ? 0 : 1;
+            return fa != fb ? fa.CompareTo(fb) : (b.rect.width * b.rect.height).CompareTo(a.rect.width * a.rect.height);
+        });
+        var style = new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white }, fontStyle = FontStyle.Bold };
+        foreach ((int index, Rect rect) in rects)
+        {
+            BodyPartDefinition part = p.parts[index];
+            Color c = BodyPartController.PartColor(part, index);
+            bool hi = index == sel || index == hover;
+            float alpha = part.side == BodySide.Right ? 0.4f : 0.62f;
+            EditorGUI.DrawRect(rect, new Color(c.r, c.g, c.b, hi ? 0.95f : alpha));
+            Handles.color = hi ? Color.white : new Color(0f, 0f, 0f, 0.55f);
+            Handles.DrawAAPolyLine(hi ? 2.5f : 1.2f, new Vector3(rect.x, rect.y), new Vector3(rect.xMax, rect.y), new Vector3(rect.xMax, rect.yMax),
+                new Vector3(rect.x, rect.yMax), new Vector3(rect.x, rect.y));
+            string text = $"{BodyPartLayout.ShortName(part.name)} ×{part.damageMultiplier:0.##}";
+            Vector2 size = style.CalcSize(new GUIContent(text));
+            if (rect.width >= size.x && rect.height >= size.y)
+                GUI.Label(new Rect(rect.center.x - size.x * 0.5f, rect.center.y - size.y * 0.5f, size.x, size.y), text, style);
+        }
+        GUI.Label(new Rect(r.x + 4f, r.y + 1f, 120f, 14f), "Tail end", EditorStyles.miniBoldLabel);
+        GUI.Label(new Rect(r.xMax - 124f, r.y + 1f, 120f, 14f), "Nose", new GUIStyle(EditorStyles.miniBoldLabel) { alignment = TextAnchor.UpperRight });
+        GUI.Label(new Rect(r.x, r.yMax - 16f, r.width, 14f), "side view (length bands) · right-side limbs behind · click a part", EditorStyles.centeredGreyMiniLabel);
     }
 
     private static Drawn Make(int index, Vector2[] shape, int column, System.Func<Vector2, Vector2> toGui)
@@ -493,6 +564,12 @@ public class BodyPartControllerEditor : Editor
         Vector3 point = e.BasePosition + Vector3.up * mid * e.Height;
         if (part.side == BodySide.Left) point -= c.transform.right * e.Radius;
         else if (part.side != BodySide.Any) point += c.transform.right * e.Radius;
+        if (part.HasLength)
+        {
+            c.BodyExtent(out float back, out float front);
+            float along = (part.lengthRange.x + part.lengthRange.y) * 0.5f;
+            point += c.transform.forward * (back + along * (front - back));
+        }
         e.ApplyDamage(new DamageInfo
         {
             amount = testDamage,

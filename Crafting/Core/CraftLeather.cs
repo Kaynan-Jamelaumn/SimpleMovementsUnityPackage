@@ -24,6 +24,20 @@ using System.Collections.Generic;
 /// </summary>
 public static class CraftLeather
 {
+    /// <summary>The mean thickness (mm) of what is left of a hide or a piece of cloth.</summary>
+    public static double MeanThickness(CraftRules rules, CraftPiece p)
+    {
+        double t = 0;
+        int n = 0;
+        foreach (HideCell c in p.hide.cells)
+            if (c.present)
+            {
+                t += c.thickness;
+                n++;
+            }
+        return n > 0 ? t / n : 0;
+    }
+
     /// <summary>A fresh hide of an animal (the same seed always gives the same hide).</summary>
     public static CraftPiece NewHide(CraftRules rules, string hideId, int seed)
     {
@@ -749,6 +763,20 @@ public sealed partial class CraftWorkshop
         pat.Size(op.i2, out int w, out int h);
         CraftPiece part = Create(op, CraftPieceKind.Hide, $"{pat.Name} cut from a {Rules.Hide(src.hide.hide)?.Name ?? "hide"}");
         HideState from = src.hide;
+        // Cut along a chalked line: cleaner. Any chalked pattern it cuts through is lost.
+        double accuracy = op.a;
+        int chalked = from.layout.FindIndex(l => l.pattern == pat.id && l.x == op.i0 && l.y == op.i1 && l.rotation == ((op.i2 % 4) + 4) % 4);
+        if (chalked >= 0)
+        {
+            from.layout.RemoveAt(chalked);
+            accuracy = Math.Min(1, accuracy + 0.05);
+        }
+        int hit = CraftTextiles.Overlaps(Rules, from, pat, op.i0, op.i1, op.i2);
+        while (hit >= 0)
+        {
+            from.layout.RemoveAt(hit);
+            hit = CraftTextiles.Overlaps(Rules, from, pat, op.i0, op.i1, op.i2);
+        }
         HideState to = part.hide;
         to.hide = from.hide;
         to.seed = from.seed;
@@ -759,7 +787,7 @@ public sealed partial class CraftWorkshop
         to.dried = from.dried;
         to.pattern = pat.id;
         to.rotation = op.i2;
-        to.cutQuality = op.a;
+        to.cutQuality = accuracy;
         to.width = w;
         to.height = h;
         for (int py = 0; py < h; py++)
@@ -773,7 +801,7 @@ public sealed partial class CraftWorkshop
                     c.present = false;
                     // A careless cut leaves ragged edges.
                     bool border = !pat.Covers(px - 1, py, op.i2) || !pat.Covers(px + 1, py, op.i2) || !pat.Covers(px, py - 1, op.i2) || !pat.Covers(px, py + 1, op.i2);
-                    if (border) copy.damage = Math.Min(1, copy.damage + (1 - op.a) * 0.25);
+                    if (border) copy.damage = Math.Min(1, copy.damage + (1 - accuracy) * 0.25);
                 }
                 to.cells.Add(copy);
             }
@@ -781,7 +809,7 @@ public sealed partial class CraftWorkshop
             part.record.Add(new CraftRecordEntry { time = r.time, kind = r.kind, text = r.text, count = r.count, min = r.min, max = r.max });
         foreach (CraftDefect d in src.defects)
             if (d.at < 0) part.defects.Add(d.Clone());
-        part.Record(Elapsed, op.kind, $"Cut out as {CraftText.A(pat.Name)} {pat.Name.ToLowerInvariant()}", op.a);
+        part.Record(Elapsed, op.kind, chalked >= 0 ? $"Cut out along the chalk as {CraftText.A(pat.Name)} {pat.Name.ToLowerInvariant()}" : $"Cut out as {CraftText.A(pat.Name)} {pat.Name.ToLowerInvariant()}", accuracy);
         bool any = false;
         foreach (HideCell c in from.cells) any |= c.present;
         if (!any)

@@ -124,6 +124,12 @@ public class AlchemyHandsOn : MonoBehaviour
     public float Fatigue => fatigue;
 
     // ------------------------------------------------------------------ the player's hands
+    /// <summary>The player's practice at alchemy (0 novice - 1 master): a steadier pestle, spoon and jug, arms that tire less.</summary>
+    private float Practice => player != null ? (float)(AlchemyKnowledge.For(player)?.Mastery ?? 0) : 0f;
+
+    /// <summary>Stamina for the work: the stat's, and a practised alchemist's economy of movement.</summary>
+    private float Endurance => Power(staminaStat) / (float)CraftMastery.FatigueFactor(Practice);
+
     /// <summary>
     /// What <paramref name="stat"/> makes of a pair of hands: 1 for a character without combat stats, else 0.7 (no
     /// points) rising to 1.1 at the reference and toward 1.5.
@@ -384,7 +390,7 @@ public class AlchemyHandsOn : MonoBehaviour
         float stir = dipped ? Mathf.Clamp01(turns / turnsForFullStir * (0.35f + 0.65f * reach) * Mathf.Clamp(power, 0.6f, 1.5f)) : 0f;
 
         // The arms tire with hard stirring (sooner in a thick brew), and rest when it is gentle.
-        float endurance = Power(staminaStat);
+        float endurance = Endurance;
         fatigue = Mathf.Clamp01(fatigue + dt * (stir * 0.06f * (1f + look.Thickness) / endurance - 0.1f * (1f - stir)));
 
         // What reaches the preparation: a few changes a second (each is a step of the history). A reversal is sent at
@@ -460,7 +466,7 @@ public class AlchemyHandsOn : MonoBehaviour
                 float strength = Mathf.Clamp01(stroke * (0.55f + 0.45f * Mathf.Clamp01(strokeSpeed / 3f)) * power);
                 Send(new AlchemyRequest(AlchemyRequestKind.Bellows, Mathf.Round(strength * 100f) / 100f));
                 visuals.PuffBellows(strength);
-                fatigue = Mathf.Clamp01(fatigue + 0.05f * strength / Power(staminaStat));
+                fatigue = Mathf.Clamp01(fatigue + 0.05f * strength / Endurance);
             }
             stroke = strokeSpeed = 0f;
         }
@@ -484,7 +490,7 @@ public class AlchemyHandsOn : MonoBehaviour
             return;
         }
         // Held: the mouse's height tilts the jug; a less steady hand trembles.
-        float steady = Power(steadinessStat);
+        float steady = Power(steadinessStat) * (1f + 0.35f * Practice);
         float want = held ? Mathf.Clamp01((pointer.y / Mathf.Max(1f, Screen.height) - 0.15f) / 0.7f) : 0f;
         if (held) want += (Mathf.PerlinNoise(Time.unscaledTime * 5f, 0.37f) - 0.5f) * 0.14f / steady;
         tilt = Mathf.Lerp(tilt, Mathf.Clamp01(want), 1f - Mathf.Exp(-dt * 8f));
@@ -569,7 +575,7 @@ public class AlchemyHandsOn : MonoBehaviour
             if (aim.magnitude > 0.9f) aim = aim.normalized * 0.9f;
         }
         float power = Power(strengthStat) * (1f - 0.45f * fatigue);
-        float endurance = Power(staminaStat);
+        float endurance = Endurance;
         lastHead = head;
         head = Vector2.Lerp(head, aim, 1f - Mathf.Exp(-dt * (pressing ? 12f : 22f)));
         float moved = (head - lastHead).magnitude;
@@ -692,6 +698,7 @@ public class AlchemyHandsOn : MonoBehaviour
     private void FinishGrinding()
     {
         mortar.Result(out int level, out double even);
+        even = 1 - (1 - even) * (1 - 0.35 * Practice); // a practised pestle grinds more evenly
         AlchemyIngredientForm form = level > 0 ? grindLevels[level - 1] : null;
         station.RequestAndTell(player, new AlchemyRequest(AlchemyRequestKind.AddItem, 0f, grindCount, grindItem, form?.id, form != null ? (float)even : 1f));
         End(true);

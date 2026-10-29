@@ -21,6 +21,10 @@ public enum CraftStockKind
     Supply,
     /// <summary>A tanning or soaking agent poured into a vat (lime, bark, alum, brain oil...).</summary>
     Agent,
+    /// <summary>A length of log in its bark, green (debark it, split it, season it).</summary>
+    Log,
+    /// <summary>A rough gemstone (each stone in a stack keeps which stone it is: its size, clarity and flaws).</summary>
+    Gem,
 }
 
 /// <summary>An element of a stock metal and its share by mass.</summary>
@@ -84,7 +88,7 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
     public float FastenerMass => fastenerMass;
 
     /// <summary>Does each copy carry a value of its own (ore lumps and hides)?</summary>
-    public bool HasUnitCodes => stockKind == CraftStockKind.Ore || stockKind == CraftStockKind.Hide;
+    public bool HasUnitCodes => stockKind == CraftStockKind.Ore || stockKind == CraftStockKind.Hide || stockKind == CraftStockKind.Gem;
 
     public override bool ShowsDurability => false;
 
@@ -183,6 +187,12 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
             case CraftStockKind.Wood:
                 p = CraftDefaults.WoodBlank(rules, craftId, size.x, size.y, size.z);
                 break;
+            case CraftStockKind.Log:
+                p = CraftDefaults.Log(rules, craftId, size.x > 0 ? size.x : 900, size.y > 0 ? size.y : 0);
+                break;
+            case CraftStockKind.Gem:
+                p = CraftLapidary.NewRough(rules, craftId, code > 0 ? HideSeed(code) : (int)(CraftMath.Hash(((UnityEngine.Object)this).name) & 0xFFFF));
+                break;
             case CraftStockKind.Fasteners:
             {
                 (string element, double fraction)[] f = Fractions();
@@ -212,6 +222,8 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
             case CraftStockKind.Fuel: lines.Add("Fuel for the forge or the furnace"); break;
             case CraftStockKind.Supply: lines.Add("Crafting supply"); break;
             case CraftStockKind.Agent: lines.Add("Goes in a vat"); break;
+            case CraftStockKind.Log: lines.Add("A green log in its bark: debark it, split it, season it"); break;
+            case CraftStockKind.Gem: lines.Add("A rough stone: test it, then cut it at the lapidary's"); break;
         }
         if (stockKind == CraftStockKind.Metal && size.x > 0)
             lines.Add($"<color=#9aa0a6>About {size.x / 10f:0} cm long, {size.y / 10f:0.#} cm wide, {size.z:0.#} mm thick</color>");
@@ -236,14 +248,14 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
         craftId = id ?? "";
         price = itemPrice;
         weight = itemWeight;
-        stackMax = kind == CraftStockKind.Hide || kind == CraftStockKind.Wood ? 5 : kind == CraftStockKind.Metal ? 10 : 20;
+        stackMax = kind == CraftStockKind.Hide || kind == CraftStockKind.Wood || kind == CraftStockKind.Log ? 5 : kind == CraftStockKind.Metal ? 10 : 20;
         composition = metal != null ? new List<CraftStockElement>(metal) : new List<CraftStockElement>();
         if (dimensions.HasValue) size = dimensions.Value;
         cast = isCast;
         SetMaterial(kind == CraftStockKind.Ore ? MaterialKind.Ore : kind == CraftStockKind.Metal ? MaterialKind.Ingot : kind == CraftStockKind.Hide ? MaterialKind.Leather
-            : kind == CraftStockKind.Wood ? MaterialKind.Wood : kind == CraftStockKind.Agent ? MaterialKind.Herb : MaterialKind.Other);
+            : kind == CraftStockKind.Wood || kind == CraftStockKind.Log ? MaterialKind.Wood : kind == CraftStockKind.Agent ? MaterialKind.Herb : kind == CraftStockKind.Gem ? MaterialKind.Gem : MaterialKind.Other);
         if (itemIcon != null) icon = itemIcon;
-        SetGridSize(kind == CraftStockKind.Hide ? new Vector2Int(2, 2) : kind == CraftStockKind.Wood ? new Vector2Int(1, 3) : kind == CraftStockKind.Metal && size.x > 300 ? new Vector2Int(1, 2) : Vector2Int.one);
+        SetGridSize(kind == CraftStockKind.Hide ? new Vector2Int(2, 2) : kind == CraftStockKind.Wood || kind == CraftStockKind.Log ? new Vector2Int(1, 3) : kind == CraftStockKind.Metal && size.x > 300 ? new Vector2Int(1, 2) : Vector2Int.one);
     }
 
     /// <summary>Sets the fasteners a Fasteners item holds.</summary>

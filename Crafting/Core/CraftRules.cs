@@ -25,6 +25,8 @@ public class CraftContent
     public List<CraftMold> molds = new List<CraftMold>();
     public List<CraftPattern> patterns = new List<CraftPattern>();
     public List<CraftDesign> designs = new List<CraftDesign>();
+    public List<CraftGemDefinition> gems = new List<CraftGemDefinition>();
+    public List<CraftGemCut> cuts = new List<CraftGemCut>();
 
     /// <summary>Adds <paramref name="other"/>'s entries; one with an id already here replaces it (effects are added).</summary>
     public void Merge(CraftContent other)
@@ -45,6 +47,8 @@ public class CraftContent
         MergeById(molds, other.molds, e => e.id);
         MergeById(patterns, other.patterns, e => e.id);
         MergeById(designs, other.designs, e => e.id);
+        MergeById(gems ??= new List<CraftGemDefinition>(), other.gems, e => e.id);
+        MergeById(cuts ??= new List<CraftGemCut>(), other.cuts, e => e.id);
     }
 
     /// <summary>
@@ -68,6 +72,8 @@ public class CraftContent
         n += AddMissingById(molds, other.molds, e => e.id);
         n += AddMissingById(patterns, other.patterns, e => e.id);
         n += AddMissingById(designs, other.designs, e => e.id);
+        n += AddMissingById(gems ??= new List<CraftGemDefinition>(), other.gems, e => e.id);
+        n += AddMissingById(cuts ??= new List<CraftGemCut>(), other.cuts, e => e.id);
         return n;
     }
 
@@ -118,6 +124,8 @@ public sealed class CraftRules
     public CraftHideDefinition[] Hides { get; private set; }
     public CraftWoodDefinition[] Woods { get; private set; }
     public CraftSupplyDefinition[] Supplies { get; private set; }
+    public CraftGemDefinition[] Gems { get; private set; }
+    public CraftGemCut[] Cuts { get; private set; }
     public CraftAbrasive[] Abrasives { get; private set; }
     public CraftMold[] Molds { get; private set; }
     public CraftPattern[] Patterns { get; private set; }
@@ -149,6 +157,8 @@ public sealed class CraftRules
     public CraftTanningAgent Agent(string id) => Find<CraftTanningAgent>("agent:", id);
     public CraftHideDefinition Hide(string id) => Find<CraftHideDefinition>("hide:", id);
     public CraftWoodDefinition Wood(string id) => Find<CraftWoodDefinition>("wood:", id);
+    public CraftGemDefinition Gem(string id) => Find<CraftGemDefinition>("gem:", id);
+    public CraftGemCut Cut(string id) => Find<CraftGemCut>("cut:", id);
     public CraftSupplyDefinition Supply(string id) => Find<CraftSupplyDefinition>("supply:", id);
     public CraftAbrasive Abrasive(string id) => Find<CraftAbrasive>("abrasive:", id);
     public CraftMold Mold(string id) => Find<CraftMold>("mold:", id) ?? PatternMold(id);
@@ -282,6 +292,8 @@ public sealed class CraftRules
         r.Molds = r.Register("mold:", Unique(content.molds, e => e.id, "mould", r), e => e.id);
         r.Patterns = r.Register("pattern:", Unique(content.patterns, e => e.id, "pattern", r), e => e.id);
         r.Designs = r.Register("design:", Unique(content.designs, e => e.id, "design", r), e => e.id);
+        r.Gems = r.Register("gem:", Unique(content.gems, e => e.id, "gem", r), e => e.id);
+        r.Cuts = r.Register("cut:", Unique(content.cuts, e => e.id, "gem cut", r), e => e.id);
         CraftMaterialClass[] classes = r.Register("class:", Unique(content.classes, e => e.id, "material class", r), e => e.id);
         Array.Sort(classes, (a, b) => b.priority.CompareTo(a.priority));
         r.Classes = classes;
@@ -391,7 +403,7 @@ public sealed class CraftRules
                     CompileErrors.Add($"Design '{d.id}': two components are '{c.role}'.");
                 if (c.kind == CraftPieceKind.Hide && !c.supply && Pattern(c.leather?.pattern) == null)
                     CompileErrors.Add($"Design '{d.id}', {c.role}: unknown pattern '{c.leather?.pattern}'.");
-                if ((c.kind == CraftPieceKind.Metal || c.kind == CraftPieceKind.Wood) && !c.supply && (c.shape?.profile == null || c.shape.profile.Count < 2) && c.kind == CraftPieceKind.Metal)
+                if ((c.kind == CraftPieceKind.Metal || c.kind == CraftPieceKind.Wood) && !c.supply && (c.shape?.profile == null || c.shape.profile.Count < 2) && c.kind == CraftPieceKind.Metal && d.kind != CraftDesignKind.Jewelry)
                     CompileErrors.Add($"Design '{d.id}', {c.role}: the shape needs at least two profile points.");
             }
             if (d.joints != null)
@@ -405,6 +417,12 @@ public sealed class CraftRules
         foreach (CraftPattern p in Patterns)
             if (p.Area == 0)
                 CompileErrors.Add($"Pattern '{p.id}' covers no cells.");
+        foreach (CraftGemCut c in Cuts)
+            if (c.tiers == null || c.tiers.Count == 0)
+                CompileErrors.Add($"Gem cut '{c.id}' has no tiers of facets.");
+        foreach (CraftGemDefinition g in Gems)
+            if (!string.IsNullOrEmpty(g.preferredCut) && Cut(g.preferredCut) == null)
+                CompileWarnings.Add($"Gem '{g.id}': unknown preferred cut '{g.preferredCut}'.");
         if (SteelBase < 0)
             CompileWarnings.Add($"No '{Settings.steelBase}' element: nothing hardens by quenching.");
     }

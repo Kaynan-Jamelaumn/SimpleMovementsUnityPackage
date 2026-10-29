@@ -25,7 +25,7 @@ Two kinds of station:
   time can be skipped and items come out already tried.
 
 The built-in content: 16 elements (iron, carbon, copper, tin, zinc, lead, silver, gold, nickel… and mythril, starmetal,
-orichalcum), 36 material classes decided by composition, 13 ores, 4 fuels, 5 quenchants, 7 vat agents, 7 hides, 6
+orichalcum), 36 material classes decided by composition, 13 ores, 4 fuels, 5 quenchants, 7 vat agents, 9 hides, 6
 woods, 19 supplies, 16 abrasives, 15 moulds, 10 leather patterns and 18 designs (dagger, arming sword, greatsword,
 battle axe, spear, mace, pickaxe, hatchet, leather cap, jerkin, studded armour, plated bracers, plated gloves, boots,
 plate helm, breastplate, belt, round shield).

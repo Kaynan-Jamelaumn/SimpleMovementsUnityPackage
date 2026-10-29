@@ -120,10 +120,16 @@ ogre hits heads. Projectiles land where they touch.
 3. **Create Editable Profile** saves a copy as an asset and assigns it. In the profile you set, per part:
    * **Height Range** (0 = feet, 1 = top of the character's height) and **Side** (Any, Left, Right, Either Side with
      **Side Offset** = how far out from the centre, as a fraction of the body radius);
+   * **Length Range**, for bodies longer than they are tall (four-legged animals, fish, serpents): where along the body
+     the part is (0 = the tail end, 1 = the nose; (0, 0) = the whole length) — a wolf's head and its haunch are at the
+     same height, but not at the same place. A profile with length ranges is drawn from the side in the inspector, and
+     the body's length is measured from its renderers and colliders;
    * **Damage Multiplier**, **Protected By** (armour slots), **Bonus Defense / Magic Resistance**;
    * **Effects** (Stagger, Impair Movement, Ability Effects, Sever), each with a chance and a minimum damage;
    * the profile's **Default Part** (area damage), **Other Armor Share** and **Global Damage Scale**.
-   *Reset To Detailed Humanoid* / *Reset To Simple Humanoid* in the profile restores the defaults. Give non-humanoids (a wolf, a spider) their own profile.
+   *Reset To Detailed Humanoid* / *Reset To Simple Humanoid* in the profile restores the defaults. Give non-humanoids (a wolf, a spider) their own profile —
+   or make them harvestable: a [harvestable creature](../Harvesting/02-The-Fight-and-the-Body.md#body-parts-made-from-the-anatomy) without body parts
+   gets a profile made from its anatomy (weak points, natural armour, length bands).
 4. Optional, for exact hits that follow the animation: **Add Hitboxes (Humanoid)** puts one hitbox on each segment
    the profile has — a sphere on the head, capsules on the neck, upper and lower torso, a sphere at the groin, and
    capsules on each upper arm, forearm, hand, thigh, shin and foot (a simple profile gets Head / Torso / Arms / Legs) (triggers named `Hitbox_…`, on the

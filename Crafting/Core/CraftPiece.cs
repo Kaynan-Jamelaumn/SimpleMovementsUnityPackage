@@ -133,6 +133,8 @@ public class MetalSegment
     public double clay;
     [Tooltip("Accumulated strain toward a crack (forging too cold, a brittle metal).")]
     public double crackRisk;
+    [Tooltip("Wood: bark still on this stretch (0-1).")]
+    public double bark;
     public CraftZone edge = new CraftZone();
     public CraftZone body = new CraftZone();
 
@@ -330,6 +332,8 @@ public class HideState
     public double cutQuality = 1;
     [Tooltip("Edges bevelled and burnished (0-1).")]
     public double edgeFinish;
+    [Tooltip("Cloth: the patterns laid out and chalked on it before cutting.")]
+    public List<CraftLayoutPlacement> layout = new List<CraftLayoutPlacement>();
     [Tooltip("Has it dried since it was tanned? (leather is only finished dry)")]
     public bool dried;
 
@@ -359,6 +363,18 @@ public class WoodState
     public double finish, finishEven = 1, finishWet;
     [Tooltip("In the drying stack: how evenly it is stickered (0-1), its ends sealed (0-1), the cover over it (0 open sun - 1 shade).")]
     public double stackEven = 0.5, endsSealed, shade = 0.5;
+    [Tooltip("Still a round log (not yet split).")]
+    public bool log;
+    [Tooltip("Bark left on it (0-1, the mean of its stretches).")]
+    public double bark;
+    [Tooltip("Gouged into the wood while debarking (0-1).")]
+    public double gouged;
+    [Tooltip("Rot and beetle from bark left on wet wood (0-1).")]
+    public double rot;
+    [Tooltip("The finest grit it has been sanded with so far (0-1); -1 = never sanded.")]
+    public double lastGrit = -1;
+    [Tooltip("Wax rubbed in (0-1) and a hard resin film (0-1): sealers besides varnish and oil.")]
+    public double wax, resin;
 }
 
 /// <summary>A set of fasteners: kind, count, size and what they are like.</summary>
@@ -411,6 +427,11 @@ public class JointState
     public double wedge;
     [Tooltip("Damage done to the parts while joining them (0-1).")]
     public double damage;
+    [Tooltip("Solder: how well it flowed into the joint (0-1); overheated (0-1).")]
+    public double solder, overheat;
+    [Tooltip("Setting a stone: pushes made, how secure it is (0-1), how far it sits tilted (0-1).")]
+    public int pushes;
+    public double security, tilt;
 }
 
 /// <summary>An item being put together: its design, the pieces in each role, the joints.</summary>
@@ -423,6 +444,15 @@ public class AssemblyState
     [Tooltip("Supplies used in it (padding, thread), by id, with counts as variables.")]
     public List<CraftVariable> supplies = new List<CraftVariable>();
     public bool finished;
+    [Tooltip("The wearer was measured (tailoring, rings): how accurately (0-1).")]
+    public bool measured;
+    public double fit;
+    [Tooltip("The size measured (mm: a finger's ring size inside, a chest...).")]
+    public double fitSize;
+    [Tooltip("Jewellery: how well the metal was finished and polished (0-1).")]
+    public double finish;
+    [Tooltip("The mastery of whoever finished it (0-1): a master's finishing touches.")]
+    public double mastery;
 
     public JointState Joint(string id)
     {
@@ -540,6 +570,9 @@ public class CraftPiece
     public WoodState wood = new WoodState();
     public FastenerState fasteners = new FastenerState();
     public AssemblyState assembly = new AssemblyState();
+    public FibreState fibre = new FibreState();
+    public YarnState yarn = new YarnState();
+    public GemState gem = new GemState();
     public List<CraftDefect> defects = new List<CraftDefect>();
     [Tooltip("Named extras (an element affinity from the quench: \"affinity.Fire\").")]
     public List<CraftVariable> tags = new List<CraftVariable>();
@@ -654,6 +687,8 @@ public class CraftPiece
             case CraftPieceKind.Metal:
             case CraftPieceKind.Fasteners:
                 return Profile(rules).Density;
+            case CraftPieceKind.Gem:
+                return rules.Gem(gem.gem)?.specificGravity ?? 2.65;
             default:
                 return 1;
         }
@@ -686,6 +721,12 @@ public class CraftPiece
                 return fasteners.count * fasteners.massEach;
             case CraftPieceKind.Assembly:
                 return 0;
+            case CraftPieceKind.Fibre:
+                return fibre.grams * (1 + fibre.wet);
+            case CraftPieceKind.Yarn:
+                return yarn.grams;
+            case CraftPieceKind.Gem:
+                return gem.carats * 0.2;
             default:
             {
                 double m = 0;

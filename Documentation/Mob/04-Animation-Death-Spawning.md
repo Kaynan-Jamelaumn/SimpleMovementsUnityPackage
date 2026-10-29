@@ -34,7 +34,10 @@ Animator.
 1. Health reaches 0 → the **Dead** state: the `Die` trigger plays, the AI stops, `Mob.Died` is raised (with the
    killer), spawners count the kill.
 2. With *Disable Colliders On Death* the corpse stops blocking.
-3. After *Destroy Delay* seconds (profile, or `MobStatusController ▸ Destroy Delay` when 0 or more) the mob is removed.
+3. After *Destroy Delay* seconds (profile, or `MobStatusController ▸ Destroy Delay` when 0 or more) the mob is removed —
+   unless it is a **harvestable creature**: then its body stays as a carcass that players harvest, and is removed when it
+   is empty or left alone long enough (see [Harvesting 01](../Harvesting/01-Overview-and-Setup.md#loot-and-corpse-removal)).
+   A harvestable creature also drops nothing from the Item Drop Manager's Mob tables: its body is its loot.
 
 Killing a mob can give XP and abilities (absorption, [03 §6](03-Combat-and-Abilities.md)).
 

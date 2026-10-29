@@ -107,6 +107,12 @@ public static class CraftModels
             case CraftStockKind.Wood:
                 Box(go.transform, Vector3.zero, new Vector3(0.04f, 0.45f, 0.04f), c, false, 0.2f);
                 break;
+            case CraftStockKind.Log:
+                Roll(go.transform, 0.12f, 0.9f, c);
+                break;
+            case CraftStockKind.Gem:
+                Lump(go.transform, Vector3.zero, 0.02f, c);
+                break;
             case CraftStockKind.Fasteners:
                 for (int i = 0; i < 5; i++)
                     Box(go.transform, new Vector3((i - 2) * 0.012f, 0, (i % 2) * 0.01f), new Vector3(0.006f, 0.02f, 0.006f), c, true, 0.5f);
@@ -239,6 +245,15 @@ public static class CraftModels
             case CraftPieceKind.Fasteners:
                 for (int i = 0; i < 4; i++)
                     Box(into, at + new Vector3((i - 1.5f) * 0.012f, 0, 0), new Vector3(0.006f, 0.016f, 0.006f), CraftArt.MetalColor(rules, p), true, 0.5f);
+                break;
+            case CraftPieceKind.Fibre:
+                Lump(into, at, 0.06f, Color.Lerp(new Color(0.93f, 0.9f, 0.82f), new Color(0.6f, 0.52f, 0.4f), (float)p.fibre.dirt));
+                break;
+            case CraftPieceKind.Yarn:
+                Roll(into, 0.03f, 0.08f, new Color(0.9f, 0.86f, 0.76f));
+                break;
+            case CraftPieceKind.Gem:
+                Lump(into, at, Mathf.Clamp(Mathf.Pow((float)Math.Max(0.05, p.gem.carats), 1f / 3f) * 0.004f, 0.003f, 0.03f), rules.Gem(p.gem.gem)?.color ?? Color.white);
                 break;
         }
     }

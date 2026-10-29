@@ -3,6 +3,15 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
+/// Something on a mob that gives its loot another way - a carcass to harvest: when it says so, the Item Drop Manager's
+/// Mob / Elite / Boss tables are not rolled for it (its own Item Drop On Death and Item Spawner still drop).
+/// </summary>
+public interface IMobLootProvider
+{
+    bool ReplacesTableDrops { get; }
+}
+
+/// <summary>
 /// The item drop manager (like Albion Online's loot tables): one place that holds every <see cref="ItemDropTable"/> of
 /// the game - the "inventory" of what can drop and from where - the default tables for chests, breakables (urns,
 /// barrels, crates), mobs, elites and bosses, global drop-rate and quantity multipliers, and items that never drop.
@@ -212,6 +221,9 @@ public class ItemDropManager : ScriptableObject
             return;   // summons drop nothing
         if (victim.GetComponentInParent<ItemDropOnDeath>() != null || victim.GetComponentInChildren<ItemDropOnDeath>() != null)
             return;   // it drops its own table
+        IMobLootProvider provider = victim.GetComponentInParent<IMobLootProvider>();
+        if (provider != null && provider.ReplacesTableDrops)
+            return;   // its loot comes another way (harvesting its body)
         ItemSpawner own = victim.GetComponentInParent<ItemSpawner>() ?? victim.GetComponentInChildren<ItemSpawner>();
         if (own != null && own.HasDrops)
             return;   // its Item Spawner drops its own loot

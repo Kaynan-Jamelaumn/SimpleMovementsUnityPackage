@@ -58,9 +58,19 @@ sequenceDiagram
   * **the hammer** must be raised to strike hard: a blow's force is held to what the time since the last one charges,
     and to what the arm has left - the server tires and rests its own model of the player's arm with the blows it lets
     through, so a client cannot keep striking full blows with a spent arm;
-  * **the hands** are never steadier than the player's practice (their journal on the server) allows: whetstone
-    wobble, pour steadiness, the timing of stitches have a floor; blows whose tilt never trembles are noticed over a
-    dozen strikes, and from then on the server adds the hands' tremble itself;
+  * **the hands** are never steadier than the player's practice (their journal on the server) allows - their practice
+    in the craft of that request (a master smith's hands are a novice's at the loom): whetstone wobble, pour
+    steadiness, the timing of stitches have a floor; blows whose tilt never trembles are noticed over a dozen strikes,
+    and from then on the server adds the hands' tremble itself;
+  * **practice** is the server's: a client only names its tool (a stitching request's needle or pricking iron) and
+    the server multiplies the run of stitches, holes or woven rows from the journal it keeps; work done **by routine**
+    comes one at a time and only for known routines, and the server refuses it below the rank it needs and does it at
+    the quality the player's practice gives; experience is added on the server, so a client cannot practise itself
+    into a master;
+  * **the later crafts** the same way: drawknife strokes, a split with the maul (from the arm), picking, teasing,
+    carding and combing strokes, one bobbin at a time at the wheel, the loupe's looks as a drawn path, a chisel blow on a
+    gem (and where it sits: never truer than the hands), a facet takes time on the lap (a tier at once is refused) and
+    its angle, index and meet carry the hands' error, the burr, the mandrel and the tape are never steadier than practice;
   * **shape** - ids, paths and numbers are checked (short ids, finite numbers, bounded counts).
   Honest players never meet these limits. Alchemy has the same with an `AlchemyRequestGuard` (stirring, the bellows,
   filters, and grinding in the mortar take real time).
@@ -68,7 +78,7 @@ sequenceDiagram
   (`NetInventory`), so a client cannot invent stock or keep what it put on the anvil.
 * **The journal** lives with the character on the server (`persistentDataPath/Crafting/Journal/<character>.json`
   there) and is sent to the player while they work a station; a client never reads or writes its own copy, so it
-  cannot teach itself metals, heat colours or insights.
+  cannot teach itself metals, heat colours, insights or practice.
 
 ## Items made at runtime
 

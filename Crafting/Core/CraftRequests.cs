@@ -17,6 +17,14 @@ public enum CraftRequestKind : byte
     BrushOre,
     Rive, BendWood, SawCut, StackWood, SandWood, Varnish,
     Spin,
+    DebarkWood, SplitLog,
+    CleanFibre, ScourFibre, OpenFibre, CardFibre, CombFibre, SpinFibre, PlyYarn, MeasureYarn, ReelYarn,
+    LayoutPattern, MeasureFit,
+    TestGem, IdentifyGem, EvaluateGem, OrientGem, CleaveGem, SawGem, FacetGem, PolishGem,
+    FormShank, SeatSetting, FinishJewel,
+    CleanGem, GrindGem, WeaveCloth,
+    /// <summary>Work done by routine (<c>i0</c> = the <see cref="CraftRoutine"/>): the station works out how well from the player's practice.</summary>
+    Routine,
 }
 
 /// <summary>

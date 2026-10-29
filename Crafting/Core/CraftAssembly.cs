@@ -16,6 +16,10 @@ public enum CraftJointWork
     Wrap,
     /// <summary>Drive a wedge into a haft: strikes and force.</summary>
     Wedge,
+    /// <summary>Solder a joint: <c>a</c> how near the heat came to the solder's flow without overheating (0-1), <c>b</c> the flux's cover (0-1).</summary>
+    Solder,
+    /// <summary>Push a bezel or the prongs over the stone: <c>a</c> the pressure (0-1), <c>b</c> how evenly round (opposite sides in turn, 0-1), count pushes.</summary>
+    Push,
 }
 
 /// <summary>
@@ -39,13 +43,16 @@ public static class CraftAssembly
         bool Has(CraftTools t) => (tools & t) != 0;
         if (d == null) return false;
         if (!Has(CraftTools.AssemblyBench | CraftTools.LeatherBench)) { missing = "a bench to assemble on"; return false; }
+        bool jewel = d.kind == CraftDesignKind.Jewelry;
+        if (jewel && !Has(CraftTools.JewelersBench)) { missing = "a jeweller's bench"; return false; }
         foreach (CraftComponentSpec c in d.components)
         {
             if (c.optional || c.supply) continue;
             switch (c.kind)
             {
                 case CraftPieceKind.Metal:
-                    if (!Has(CraftTools.Anvil | CraftTools.Crucible)) { missing = $"an anvil or a crucible ({c.Name.ToLowerInvariant()})"; return false; }
+                    // jewellery is wire and strip, formed at the jeweller's bench (the stock comes drawn or rolled)
+                    if (!Has(CraftTools.Anvil | CraftTools.Crucible) && !jewel) { missing = $"an anvil or a crucible ({c.Name.ToLowerInvariant()})"; return false; }
                     break;
                 case CraftPieceKind.Hide:
                     CraftFabric fabric = c.leather?.fabric ?? CraftFabric.Leather;
@@ -128,8 +135,9 @@ public static class CraftAssembly
                 double total = j.holes + n;
                 if (total > 0)
                 {
-                    j.spacingError = (j.spacingError * j.holes + Math.Max(0, op.a) * n) / total;
-                    j.alignError = (j.alignError * j.holes + Math.Max(0, op.b) * n) / total;
+                    // a fine pricking iron spaces true; a worn one wanders
+                    j.spacingError = (j.spacingError * j.holes + Math.Max(0, op.a) / ws.ToolQuality * n) / total;
+                    j.alignError = (j.alignError * j.holes + Math.Max(0, op.b) / ws.ToolQuality * n) / total;
                 }
                 j.holes += n;
                 if (op.b > 0.6)
@@ -143,7 +151,7 @@ public static class CraftAssembly
                 if (total > 0)
                 {
                     j.tension = (j.tension * j.stitches + CraftMath.Clamp01(op.a) * n) / total;
-                    j.tensionSpread = (j.tensionSpread * j.stitches + Math.Max(0, op.b) * n) / total;
+                    j.tensionSpread = (j.tensionSpread * j.stitches + Math.Max(0, op.b) / ws.ToolQuality * n) / total;
                 }
                 j.stitches += n;
                 if (op.a > 0.9)
@@ -238,6 +246,12 @@ public static class CraftAssembly
                 }
                 break;
             }
+            case CraftJointWork.Solder:
+                CraftJewelry.Solder(ws, asm, spec, j, op);
+                break;
+            case CraftJointWork.Push:
+                CraftJewelry.Push(ws, asm, spec, j, op);
+                break;
         }
         j.done = JointDone(spec, j);
         asm.Record(ws.Elapsed, CraftOpKind.JointWork, $"{spec.Name}: {work.ToString().ToLowerInvariant()}", force);
@@ -257,6 +271,9 @@ public static class CraftAssembly
             case CraftJointKind.Wedge: return j.wedge >= 0.3;
             case CraftJointKind.Socket: return j.wedge >= 0.3 || j.rivets >= 1;
             case CraftJointKind.Buckle: return j.holes >= 1 && (j.rivets >= 1 || j.stitches >= 2);
+            case CraftJointKind.Solder:
+            case CraftJointKind.BezelSet:
+            case CraftJointKind.ProngSet: return CraftJewelry.JointDone(spec, j);
             default: return true;
         }
     }
@@ -308,6 +325,8 @@ public static class CraftAssembly
             if (j == null || !JointDone(js, j))
                 list.Add($"{js.Name}: not finished.");
         }
+        if (d.kind == CraftDesignKind.Jewelry && list.Count == 0 && asm.assembly.finish <= 0)
+            list.Add("Buff and inspect it first.");
         return list;
     }
 }
@@ -349,6 +368,7 @@ public sealed partial class CraftWorkshop
         a.assembly.design = d.id;
         foreach (CraftJointSpec j in d.joints)
             if (j != null) a.assembly.joints.Add(new JointState { joint = j.id });
+        TakeMeasurements(a);
         a.Record(Elapsed, op.kind, $"Started {CraftText.A(d.Name)} {d.Name.ToLowerInvariant()}");
     }
 
@@ -385,6 +405,8 @@ public sealed partial class CraftWorkshop
         if (p.location != CraftLocation.Air)
             return Refuse("Take it out first.", out reason, piece);
         if (!Compatible(spec, p, out reason))
+            return Refuse(reason, out reason, piece);
+        if (!CraftJewelry.PartFits(this, asm, d, spec, p, out reason))
             return Refuse(reason, out reason, piece);
         if (p.MaxTemperature > 200 && (spec.kind != CraftPieceKind.Fasteners))
         {
@@ -469,6 +491,7 @@ public sealed partial class CraftWorkshop
         CraftPieceKind.Wood => "wood",
         CraftPieceKind.Fasteners => "fasteners",
         CraftPieceKind.Metal => "metal",
+        CraftPieceKind.Gem => "a gemstone",
         _ => k.ToString().ToLowerInvariant(),
     };
 
@@ -614,9 +637,34 @@ public sealed partial class CraftWorkshop
             case CraftJointKind.Wrap: fits = work == CraftJointWork.Wrap; break;
             case CraftJointKind.Wedge: fits = work == CraftJointWork.Wedge; break;
             case CraftJointKind.Socket: fits = work == CraftJointWork.Wedge || work == CraftJointWork.Punch || work == CraftJointWork.Rivet; break;
+            case CraftJointKind.Solder: fits = work == CraftJointWork.Solder; break;
+            case CraftJointKind.BezelSet:
+            case CraftJointKind.ProngSet: fits = work == CraftJointWork.Push; break;
         }
         if (!fits)
             return Refuse($"That is not how the {spec.Name.ToLowerInvariant()} is made.", out reason, assembly);
+        if (CraftJewelry.IsJewelJoint(spec.kind) && !Has(CraftTools.JewelersBench))
+            return Refuse("That is jeweller's work: there is no jeweller's bench here.", out reason, assembly);
+        if (work == CraftJointWork.Solder)
+        {
+            bool wants = false, have = false;
+            foreach (CraftComponentSpec c in d.components)
+                if (c.supply && c.supplyKind == CraftSupplyKind.Solder)
+                {
+                    wants = true;
+                    have |= asm.assembly.Supply(c.role) > 0;
+                }
+            if (wants && !have)
+                return Refuse("Add solder first.", out reason, assembly);
+        }
+        if (work == CraftJointWork.Push)
+        {
+            CraftJewelry.SettingParts(this, asm, spec, out CraftPiece setting, out CraftPiece stone);
+            if (setting == null || stone == null)
+                return Refuse("Put the stone in its setting first.", out reason, assembly);
+            if (CraftJewelry.SeatFit(setting, stone) <= 0)
+                return Refuse(setting.Tag(CraftJewelry.SeatTag) <= 0 ? "Cut the seat for the stone first." : "The stone will not sit in the seat: cut it wider.", out reason, assembly);
+        }
         if (work == CraftJointWork.Rivet)
         {
             CraftPiece r = CraftAssembly.RivetsOf(this, asm, d);
@@ -641,8 +689,11 @@ public sealed partial class CraftWorkshop
         return true;
     }
 
-    /// <summary>Finishes an assembly (every required part in place, every joint made). The evaluator then says what it is.</summary>
-    public bool Finish(string assembly, out string reason)
+    /// <summary>
+    /// Finishes an assembly (every required part in place, every joint made). The evaluator then says what it is;
+    /// <paramref name="mastery"/> is the finisher's practice in the item's craft (a master's finishing touches).
+    /// </summary>
+    public bool Finish(string assembly, out string reason, double mastery = 0)
     {
         reason = "";
         CraftPiece asm = Piece(assembly);
@@ -651,7 +702,7 @@ public sealed partial class CraftWorkshop
         List<string> missing = CraftAssembly.Missing(this, asm);
         if (missing.Count > 0)
             return Refuse(string.Join(" ", missing), out reason, assembly);
-        Record(new CraftOperation { kind = CraftOpKind.Finish, piece = assembly });
+        Record(new CraftOperation { kind = CraftOpKind.Finish, piece = assembly, a = (float)CraftMath.Clamp01(mastery) });
         return true;
     }
 
@@ -661,6 +712,7 @@ public sealed partial class CraftWorkshop
         if (asm == null)
             return;
         asm.assembly.finished = true;
+        asm.assembly.mastery = CraftMath.Clamp01(op.a);
         asm.Record(Elapsed, op.kind, "Finished");
         Raise(CraftEventKind.Finished, asm.id, asm.assembly.design, "");
     }

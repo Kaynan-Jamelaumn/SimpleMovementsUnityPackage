@@ -19,6 +19,10 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
     [SerializeField] private CraftStockItemSO oreItem;
     [Tooltip("Which seam this is: deposits with the same number give the same ore (-1 = from the object's place in the world).")]
     [SerializeField] private int deposit = -1;
+    [Tooltip("A gemstone the seam carries (a Crafting Database gem id: ruby, sapphire, emerald, aquamarine, topaz, garnet, peridot, amethyst, citrine, rock_crystal, tourmaline, diamond, opal, moonstone, turquoise, lapis_lazuli; empty = none). Now and then a lump brings a rough stone out with it, crusted in the rock - clean it and cut it at a lapidary's bench.")]
+    [SerializeField] private string gem = "";
+    [Tooltip("The chance a lump brings a rough stone out with it (decided by the seam and the lump, so the same every time).")]
+    [SerializeField, Range(0f, 1f)] private float gemChance = 0.15f;
     [Tooltip("Lumps it gives before it is worked out.")]
     [SerializeField, Min(1)] private int lumps = 12;
     [Tooltip("Seconds until a worked-out deposit can be mined again (0 = never).")]
@@ -80,12 +84,30 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
         int left = inv != null ? inv.AddItem(item, 1, new List<int> { code }) : 1;
         if (left > 0)
             ItemHandler.SpawnWorldItem(item, left, new List<int> { code }, transform.position + Vector3.up * 0.5f, gameObject);
+        GiveGem(inv, taken - 1);
         if (breakSound != null)
             AudioSource.PlayClipAtPoint(breakSound, transform.position);
         if (WorkedOut)
             depletedAt = Time.time;
         ShowState();
         return true;
+    }
+
+    /// <summary>Now and then a lump brings a rough stone of the seam's gem out with it (every stone a stone of its own).</summary>
+    private void GiveGem(InventoryManager inv, int lump)
+    {
+        if (string.IsNullOrEmpty(gem) || CraftMath.Noise(Deposit, lump, 61) >= gemChance)
+            return;
+        CraftRules rules = CraftDatabase.Instance != null ? CraftDatabase.Instance.Rules : null;
+        if (rules?.Gem(gem) == null)
+            return;
+        CraftStockItemSO stone = CraftItems.Stock(rules, CraftStockKind.Gem, gem);
+        if (stone == null)
+            return;
+        int code = CraftStockItemSO.HideCode(Deposit * 1031 + lump * 7 + 3);
+        int left = inv != null ? inv.AddItem(stone, 1, new List<int> { code }) : 1;
+        if (left > 0)
+            ItemHandler.SpawnWorldItem(stone, left, new List<int> { code }, transform.position + Vector3.up * 0.6f, gameObject);
     }
 
     // ------------------------------------------------------------------ a pick

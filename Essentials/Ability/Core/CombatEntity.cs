@@ -284,6 +284,7 @@ public class CombatEntity : MonoBehaviour
         CacheComponents();
         BodyPartController.EnsureFor(this);
         InjuryController.EnsureFor(this);
+        HarvestableCreature.EnsureFor(this);
     }
 
     private void OnEnable()

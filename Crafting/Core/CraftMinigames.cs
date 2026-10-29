@@ -21,6 +21,8 @@ public sealed class CraftHands
     public double skill;
     /// <summary>Seconds since the last movement (resting starts in earnest after a moment).</summary>
     public double idle;
+    /// <summary>How much less a master tires (fatigue × (1 - this × skill); from the mastery settings).</summary>
+    public double fatigueRelief = 0.4;
 
     public CraftHands() { }
     public CraftHands(int seed, double skill = 0) { this.seed = seed; this.skill = CraftMath.Clamp01(skill); }
@@ -58,7 +60,8 @@ public sealed class CraftHands
     {
         count++;
         idle = 0;
-        fatigue = Math.Min(1, fatigue + 0.004 + 0.02 * effort * effort);
+        // a practised arm's movements are sure and economical: it tires less
+        fatigue = Math.Min(1, fatigue + (0.004 + 0.02 * effort * effort) * (1 - fatigueRelief * CraftMath.Clamp01(skill)));
     }
 
     /// <summary>
@@ -412,4 +415,142 @@ public sealed class CraftBellowsPump
         hands?.Move(0.4);
         return Strength;
     }
+}
+
+/// <summary>How a timing-bar hit was judged. Serialized as numbers: add at the END.</summary>
+public enum CraftTimingGrade { Miss, Poor, Good, Excellent, Perfect }
+
+/// <summary>One target on a timing bar: where its ideal point is, how wide its zones are (×), the best score it gives.</summary>
+[Serializable]
+public struct CraftTimingTarget
+{
+    public float ideal, size, best;
+
+    public CraftTimingTarget(float ideal, float size = 1f, float best = 1f)
+    {
+        this.ideal = ideal;
+        this.size = size;
+        this.best = best;
+    }
+}
+
+/// <summary>A timing-bar hit: its score (0-1), grade, signed offset from the ideal (in Poor-zone widths: -1..1 and past), whether it did damage.</summary>
+public struct CraftTimingHit
+{
+    public float score, offset, position;
+    public CraftTimingGrade grade;
+    public bool damage;
+    public int target;
+
+    public string Words => grade == CraftTimingGrade.Miss ? $"Miss ({score * 100:0}%)" : $"{grade} ({score * 100:0}%)";
+}
+
+/// <summary>
+/// The timing bar the precision work shares (sawing, faceting, splitting, weaving): an indicator runs along a bar and back,
+/// the bar carries one or more targets with nested zones (Perfect, Excellent, Good, Poor), and the player strikes when
+/// the indicator is on a target. The score comes from the real distance to the target's ideal point - 100% on it - not
+/// from which zone was touched; below the damage threshold the work is harmed. Harder material (difficulty) narrows the
+/// zones and speeds the indicator; practice widens them; the hands' tremble moves the hit. Pure and seeded: the same
+/// moments give the same hits.
+/// </summary>
+public sealed class CraftTimingBar
+{
+    public readonly CraftTimingSettings settings;
+    public readonly List<CraftTimingTarget> targets = new List<CraftTimingTarget>();
+    /// <summary>The indicator (0-1 along the bar) and its direction (+1 right, -1 left).</summary>
+    public float position, direction = 1f;
+    /// <summary>1 ordinary; above 1 harder (narrower zones, a faster indicator).</summary>
+    public float difficulty = 1f;
+    /// <summary>The player's practice (0-1): wider zones.</summary>
+    public float skill;
+    public int hits;
+
+    public CraftTimingBar(CraftTimingSettings settings)
+    {
+        this.settings = settings ?? new CraftTimingSettings();
+    }
+
+    /// <summary>The half-width of a zone of a target, after difficulty and practice.</summary>
+    public float Zone(CraftTimingGrade grade, CraftTimingTarget t)
+    {
+        float z = grade switch
+        {
+            CraftTimingGrade.Perfect => settings.perfectZone,
+            CraftTimingGrade.Excellent => settings.excellentZone,
+            CraftTimingGrade.Good => settings.goodZone,
+            _ => settings.poorZone,
+        };
+        return z * t.size * (float)Math.Pow(Math.Max(0.2, difficulty), -settings.narrowing) * (1f + settings.skillWidening * Math.Max(0f, Math.Min(1f, skill)));
+    }
+
+    /// <summary>The indicator moves (and turns back at either end).</summary>
+    public void Tick(float dt)
+    {
+        float v = settings.speed * (0.75f + 0.25f * Math.Max(0.5f, difficulty));
+        position += direction * v * dt;
+        for (int k = 0; k < 4 && (position < 0f || position > 1f); k++)
+        {
+            if (position > 1f) { position = 2f - position; direction = -1f; }
+            if (position < 0f) { position = -position; direction = 1f; }
+        }
+    }
+
+    /// <summary>The score of a hit <paramref name="distance"/> from a target's ideal point (falls through each zone's edge score).</summary>
+    public float Score(float distance, CraftTimingTarget t)
+    {
+        float d = Math.Abs(distance);
+        float zp = Zone(CraftTimingGrade.Perfect, t), ze = Zone(CraftTimingGrade.Excellent, t), zg = Zone(CraftTimingGrade.Good, t), zo = Zone(CraftTimingGrade.Poor, t);
+        float s;
+        if (d <= zp) s = Lerp(1f, settings.perfectScore, d / zp);
+        else if (d <= ze) s = Lerp(settings.perfectScore, settings.excellentScore, (d - zp) / Math.Max(1e-6f, ze - zp));
+        else if (d <= zg) s = Lerp(settings.excellentScore, settings.goodScore, (d - ze) / Math.Max(1e-6f, zg - ze));
+        else if (d <= zo) s = Lerp(settings.goodScore, settings.poorScore, (d - zg) / Math.Max(1e-6f, zo - zg));
+        else s = Math.Max(0f, settings.poorScore * (1f - (d - zo) / Math.Max(1e-6f, zo)));
+        return s * Math.Max(0f, Math.Min(1f, t.best));
+    }
+
+    public CraftTimingGrade Grade(float score, float distance, CraftTimingTarget t)
+    {
+        if (Math.Abs(distance) > Zone(CraftTimingGrade.Poor, t)) return CraftTimingGrade.Miss;
+        if (score >= settings.perfectScore * t.best - 1e-4f && Math.Abs(distance) <= Zone(CraftTimingGrade.Perfect, t)) return CraftTimingGrade.Perfect;
+        if (score >= settings.excellentScore * t.best - 1e-4f) return CraftTimingGrade.Excellent;
+        if (score >= settings.goodScore * t.best - 1e-4f) return CraftTimingGrade.Good;
+        return CraftTimingGrade.Poor;
+    }
+
+    /// <summary>
+    /// The player strikes now: the indicator (moved by the hands' tremble) against the best target. Without targets
+    /// every strike is a miss.
+    /// </summary>
+    public CraftTimingHit Hit(CraftHands hands = null)
+    {
+        float at = position + (hands != null ? (float)hands.Tremble(9000 + hits) * 0.6f : 0f);
+        hits++;
+        var best = new CraftTimingHit { grade = CraftTimingGrade.Miss, offset = 2f, position = at, target = -1 };
+        for (int i = 0; i < targets.Count; i++)
+        {
+            CraftTimingTarget t = targets[i];
+            float dist = at - t.ideal, score = Score(dist, t);
+            if (best.target >= 0 && score <= best.score) continue;
+            best = new CraftTimingHit { score = score, grade = Grade(score, dist, t), offset = dist / Math.Max(1e-6f, Zone(CraftTimingGrade.Poor, t)), position = at, target = i };
+        }
+        best.damage = best.score < settings.damageBelow;
+        hands?.Move(0.05);
+        return best;
+    }
+
+    /// <summary>A new set of targets: a main one (its ideal set by the seed) and, with <paramref name="safe"/>, a wider target that gives less.</summary>
+    public void NewTargets(int seed, int round, bool safe = false)
+    {
+        targets.Clear();
+        float main = 0.2f + 0.6f * (float)CraftMath.Noise(seed, round, 77);
+        targets.Add(new CraftTimingTarget(main));
+        if (safe)
+        {
+            float other = main < 0.5f ? Math.Min(0.88f, main + 0.4f) : Math.Max(0.12f, main - 0.4f);
+            targets.Add(new CraftTimingTarget(other, 1.8f, 0.7f));
+        }
+    }
+
+    private static float Lerp(float a, float b, float t) => a + (b - a) * Math.Max(0f, Math.Min(1f, t));
 }

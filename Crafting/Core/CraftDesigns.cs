@@ -221,6 +221,22 @@ public enum CraftComponentFunction
     Wrap,
     /// <summary>Thread for the seams.</summary>
     Thread,
+    /// <summary>A gemstone set in a piece of jewellery.</summary>
+    Stone,
+    /// <summary>What holds the stone (a bezel cup, a prong head).</summary>
+    Setting,
+    /// <summary>A ring's band, a pendant's bail and chain.</summary>
+    Band,
+}
+
+/// <summary>What a set stone must be: its size, and whether it may be faceted or a cabochon.</summary>
+[Serializable]
+public class CraftGemSpec
+{
+    [Min(0f)] public float caratsMin = 0.2f;
+    [Min(0f)] public float caratsMax = 20f;
+    public bool facetedOk = true;
+    public bool cabochonOk = true;
 }
 
 /// <summary>One part of a design: its role, what it is made of, the shape or pattern it should have.</summary>
@@ -243,6 +259,10 @@ public class CraftComponentSpec
     public CraftLeatherSpec leather = new CraftLeatherSpec();
     [Tooltip("Wooden parts.")]
     public CraftWoodSpec wood = new CraftWoodSpec();
+    [Tooltip("Gemstones: what may be set here.")]
+    public CraftGemSpec gem = new CraftGemSpec();
+    [Tooltip("Jewellery metal parts: what it must be formed into (a band, a bail, a chain; settings follow their joint with the stone).")]
+    public CraftJewelPart jewelPart = CraftJewelPart.None;
     [Tooltip("Fasteners: what kind and how many.")]
     public CraftFastenerKind fastener = CraftFastenerKind.Rivet;
     [Min(0)] public int fastenerCount;
@@ -374,10 +394,10 @@ public class CraftDesign
 /// </summary>
 public static class CraftDesignMenu
 {
-    public const string Weapons = "Weapons", Tools = "Tools", Shields = "Shields", Armour = "Armour", Clothing = "Clothing";
+    public const string Weapons = "Weapons", Tools = "Tools", Shields = "Shields", Armour = "Armour", Clothing = "Clothing", Jewellery = "Jewellery";
 
     /// <summary>The categories in menu order (custom ones from menuGroup come after these).</summary>
-    public static readonly string[] Order = { Weapons, Tools, Shields, Armour, Clothing };
+    public static readonly string[] Order = { Weapons, Tools, Shields, Armour, Clothing, Jewellery };
 
     public static void Of(CraftDesign d, out string category, out string group)
     {
@@ -404,6 +424,10 @@ public static class CraftDesignMenu
             case CraftDesignKind.Shield:
                 category = Shields;
                 group = Material(d);
+                return;
+            case CraftDesignKind.Jewelry:
+                category = Jewellery;
+                group = d.armorSlot == ArmorSlotType.Ring ? "Rings" : d.armorSlot == ArmorSlotType.Amulet ? "Pendants and necklaces" : Slot(d.armorSlot);
                 return;
         }
         string material = Material(d);
@@ -466,6 +490,9 @@ public static class CraftDesignMenu
             case ArmorSlotType.Shoulders: return "Shoulders";
             case ArmorSlotType.Cloak: return "Cloaks";
             case ArmorSlotType.Belt: return "Belts";
+            case ArmorSlotType.Ring: return "Rings";
+            case ArmorSlotType.Amulet: return "Amulets";
+            case ArmorSlotType.Trinket: return "Trinkets";
             default: return "Other";
         }
     }

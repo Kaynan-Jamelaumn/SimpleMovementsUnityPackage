@@ -94,3 +94,21 @@ A discovery keeps the steps of its best preparation ("0:00 Added 2 × Spring Wat
 24% (→ 73 °C) · 3:00 Bottled 7 × Healing Draught (Potent)"). Same steps, same vessel, same surroundings ⇒ the same result: the
 simulation is deterministic ([02 §14](02-Simulation-Rules.md#14-reproducibility-and-randomness)). The Alchemy Lab can replay a
 live preparation's exact history ([07](07-Editor-Tools-and-Testing.md)).
+
+## 6. Practice
+
+The alchemy journal keeps the player's practice in **Alchemy** - the same mastery and ranks as the crafts
+([Crafting 04](../Crafting/04-Discovery-and-Journal.md#practice-mastery-craft-by-craft)): Novice, Apprentice, Journeyman,
+Expert, Master. Every bottling teaches it (more for a better brew, a little more for more bottles; a failure a little),
+and so does pouring a brew away; the journal's mastery is kept on the server in a network session.
+
+What it gives:
+
+* **Steadier hands** - the filter is held up to 35 % steadier, the pestle grinds up to 35 % more evenly, and the arms
+  tire up to 40 % less with the spoon, the bellows and the mortar.
+* **A cleaner decant** - a bottled or collected potion's purity gains the finishing touch (up to 12 % of what it
+  lacks, at full mastery) and its quality with it; its tier stays what the brew was.
+* **Intuition** - outside a test bench nobody knows what a brew is until it is bottled; from Journeyman the verdict
+  names what a brew made before is becoming (*"You know that smell: it is becoming a healing draught"*), says when it
+  is going wrong or is nothing made before; from Expert, roughly how good it will be (*"... and a fine one"*).
+

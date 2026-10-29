@@ -348,7 +348,9 @@ namespace GameNet
                 return;
             }
             CraftRequest r = m.ToRequest();
-            if (!GuardOf(conn, player).Check(ref r, Time.unscaledTimeAsDouble, out string reason))
+            CraftRequestGuard guard = GuardOf(conn, player);
+            guard.Skill = s.SkillFor(player, r); // never steadier than the player's practice in this craft
+            if (!guard.Check(ref r, Time.unscaledTimeAsDouble, out string reason))
             {
                 Refuse(conn, reason);
                 return;

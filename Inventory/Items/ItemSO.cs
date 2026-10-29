@@ -41,6 +41,19 @@ public interface IItemInstanceTooltip
 }
 
 /// <summary>
+/// An item whose copies are worth different amounts (a pristine pelt and a ripped one, both "Wolf pelt"): merchants pay
+/// for each copy sold <see cref="InstanceValueFactor"/> × the item's Price - several sold at once, each by its own.
+/// </summary>
+public interface IItemInstanceValue
+{
+    /// <summary>
+    /// What a copy of <paramref name="stack"/> is worth against the item's Price (1 = full price):
+    /// <paramref name="fromTop"/> 0 is the next copy the stack gives, 1 the one after it, and so on.
+    /// </summary>
+    float InstanceValueFactor(InventoryItem stack, int fromTop = 0);
+}
+
+/// <summary>
 /// Base of every item asset: name, icon, stack size, weight, durability, cooldown, how it sits in the hand and how it
 /// looks and sounds when used. Consumables, equippables (armor, trinkets) and weapons derive from it.
 /// </summary>

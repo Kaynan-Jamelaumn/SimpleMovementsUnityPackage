@@ -5,10 +5,10 @@
 | Menu | What it does |
 |---|---|
 | *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Crafting Database (Resources)* | the project's database (`Settings/CraftingDatabase`), filled with the built-in content |
-| *Tools ▸ SimpleMovements ▸ Crafting ▸ Create Smithy / Smeltery / Tannery / Leatherworks / Woodshop / Tailor's / Armourer / Complete Workshop* | a station with those tools in the open scene: primitive work places in a row, a collider, the station, its visuals, its surroundings (and, with Fish-Net, a NetworkObject and a `NetCraftStation`) |
+| *Tools ▸ SimpleMovements ▸ Crafting ▸ Create Smithy / Smeltery / Tannery / Leatherworks / Woodshop / Tailor's / Armourer / Spinnery / Lapidary / Jeweller's / Complete Workshop* | a station with those tools in the open scene: primitive work places in a row, a collider, the station, its visuals, its surroundings (and, with Fish-Net, a NetworkObject and a `NetCraftStation`) |
 | *… ▸ Create Test Station* | a station with every tool and instrument, free materials and the numbers shown |
 | *… ▸ Create Ore Deposit* | a seam of hematite (change its ore in the inspector) |
-| *… ▸ Create Stock Items* | item assets (`Items/Crafting/Stock`, icons in `Items/Crafting/Icons`) for the stock metals, every ore, hide, wood, fuel, supply and agent, and fasteners |
+| *… ▸ Create Stock Items* | item assets (`Items/Crafting/Stock`, icons in `Items/Crafting/Icons`) for the stock metals (and the jeweller's wire and bezel strip), every ore, hide, wood (blanks and green logs), rough gem, fuel, supply and agent, and fasteners |
 | *… ▸ Create Design Templates* | a weapon (built-in moveset of its kind) or armour asset per design in `Items/Crafting/Templates`, assigned in the database |
 | *… ▸ Validate Crafting Database* | errors and warnings in the Console |
 | *… ▸ Help* | this guide |
@@ -42,6 +42,27 @@
 | Evaluation | better work makes a better item; incomplete items rate low |
 | Observation and knowledge | no numbers without instruments; the journal learns metals by working and assay, and from what happens |
 | Hand-skill models | the hammer is repeatable and rewards a full swing; the stroke measures what the hands did; the pour counts interruptions; the rhythm rewards timing |
+
+`CustomEditor/Crafting/CraftProcessChainTests.cs` covers the production chains:
+
+| Area | Tests |
+|---|---|
+| Woodworking | a careful debark keeps the wood, a hasty one gouges it; a split through the heart gives even halves; seasoning follows the air's humidity; sanding through the grits and a resin seal last longest |
+| Fibre | hot, churned wool felts; prepared fibre spins a better yarn and plying strengthens it; a skein reels only its counted length; short staple is carded, not combed |
+| Tailoring | layout refuses overlaps and a cut on the chalk is cleaner; measured garments fit; thread must suit the material |
+| Lapidary | the tests read the stone's properties and a wrong name sticks; the loupe finds what it sweeps over; facets at the right angles give a brilliant stone; a compound must be as hard as the stone, a table must not lie on the cleavage; cleaving along the plane parts cleanly |
+| Jewellery | a ring from rough to finished carries its stone's element; a wide seat leaves the stone loose; jewellery is made only at a jeweller's bench |
+| Bounds and knowledge | the guard holds faceting and carding to real hands; the journal learns gems and the new insights; the whole chain replays exactly |
+
+`CustomEditor/Crafting/CraftMasteryTests.cs` covers practice:
+
+| Area | Tests |
+|---|---|
+| Earning it | mastery grows with experience, each step harder won; small work comes only so fast, a finished item always counts; a new rank is announced with what it allows; an older journal turns its work into practice once, and it is saved |
+| What it gives | more stitches, rows and fewer facets by hand with each rank; routines at their rank and never a master's best; a master's arm tires less and is steadier; the station multiplies a needle's or an awl's run and a reed's rows itself; a master's finishing touches raise what an item lacks, and replay |
+| Which craft | each design and each request belongs to its craft (cloth is tailoring, leather leatherwork, the sizer jewellery; the bellows nobody's) |
+| Routines | done as well as practice does them: fibre picked and teased, a skein counted closer by a master and never long, the wearer and the finger measured, a stone brushed clean without a mark and searched to the last inclusion; the guard lets them through one at a time and only known ones; they replay |
+| Fibre | raw fibre spun from the bag never spins fine |
 
 `CustomEditor/Networking/Tests/StationNetTests.cs` covers the network parts (no Fish-Net needed):
 

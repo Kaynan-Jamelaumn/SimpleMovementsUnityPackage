@@ -91,6 +91,19 @@ public class AlchemyKnowledge : MonoBehaviour
     public void RecordResult(AlchemyBrew brew, AlchemyResult result, int bottles) =>
         Report(AlchemyJournal.RecordResult(Data, brew, result, bottles, DateTime.UtcNow.Ticks), true);
 
+    /// <summary>How practised the player is at alchemy (0 novice - 1 complete mastery).</summary>
+    public double Mastery => CraftMastery.Of(Data.mastery, CraftDiscipline.Alchemy);
+
+    /// <summary>
+    /// Practice at alchemy: <paramref name="xp"/> experience (small work - <paramref name="work"/> - only so fast; a
+    /// bottled potion always counts). Tells the player when they reach a new rank.
+    /// </summary>
+    public void Practised(double xp, bool work, bool finishedOne = false)
+    {
+        string line = CraftMastery.Practise(Data.mastery, CraftDiscipline.Alchemy, xp, work, Time.unscaledTimeAsDouble, finishedOne);
+        Report(line != null ? new List<string> { line } : new List<string>(), true);
+    }
+
     private void Report(List<string> learnt, bool changed = false)
     {
         if (learnt.Count > 0 || changed)

@@ -18,7 +18,7 @@ public static class CraftingEditorTools
     private const string Menu = SMMenu.Root + "Crafting/";
 
     /// <summary>What a station preset has.</summary>
-    public enum StationPreset { Smithy, Smeltery, Tannery, Leatherworks, Complete, Test, Woodshop, Tailor, Armourer }
+    public enum StationPreset { Smithy, Smeltery, Tannery, Leatherworks, Complete, Test, Woodshop, Tailor, Armourer, Spinnery, Lapidary, Jeweller }
 
     [MenuItem(SMMenu.Root + "Project Setup/Create Crafting Database (Resources)", false, SMMenu.ProjectSetup + 9)]
     public static CraftDatabase CreateDatabaseMenu() => ProjectDatabase(true);
@@ -38,11 +38,20 @@ public static class CraftingEditorTools
     [MenuItem(Menu + "Create Woodshop (froe, saws, steam box, drying stack, finishing)", false, SMMenu.Crafting + 3)]
     private static void WoodshopMenu() => CreateStation(StationPreset.Woodshop);
 
-    [MenuItem(Menu + "Create Tailor's (spinning wheel, tailor's table)", false, SMMenu.Crafting + 3)]
+    [MenuItem(Menu + "Create Tailor's (spinning wheel, loom, tailor's table)", false, SMMenu.Crafting + 3)]
     private static void TailorMenu() => CreateStation(StationPreset.Tailor);
 
     [MenuItem(Menu + "Create Armourer (smithy with a leather bench and tailor's table: plate and mixed armour)", false, SMMenu.Crafting + 3)]
     private static void ArmourerMenu() => CreateStation(StationPreset.Armourer);
+
+    [MenuItem(Menu + "Create Spinnery (fibre bench, spinning wheel, loom)", false, SMMenu.Crafting + 3)]
+    private static void SpinneryMenu() => CreateStation(StationPreset.Spinnery);
+
+    [MenuItem(Menu + "Create Lapidary (gem bench, trim saw, faceting machine, gem tester's kit)", false, SMMenu.Crafting + 3)]
+    private static void LapidaryMenu() => CreateStation(StationPreset.Lapidary);
+
+    [MenuItem(Menu + "Create Jeweller's (jeweller's bench, buffing wheel, assembly)", false, SMMenu.Crafting + 3)]
+    private static void JewellerMenu() => CreateStation(StationPreset.Jeweller);
 
     [MenuItem(Menu + "Create Complete Workshop", false, SMMenu.Crafting + 4)]
     private static void CompleteMenu() => CreateStation(StationPreset.Complete);
@@ -119,6 +128,9 @@ public static class CraftingEditorTools
             case StationPreset.Woodshop: return CraftTools.Woodshop;
             case StationPreset.Tailor: return CraftTools.Tailor;
             case StationPreset.Armourer: return CraftTools.Armourer;
+            case StationPreset.Spinnery: return CraftTools.Spinnery;
+            case StationPreset.Lapidary: return CraftTools.Lapidary;
+            case StationPreset.Jeweller: return CraftTools.Jeweller;
             default: return CraftTools.Everything;
         }
     }
@@ -246,12 +258,57 @@ public static class CraftingEditorTools
             Transform bench = Place("Finishing Bench (wood)", 1f);
             Shape(PrimitiveType.Cube, "Bench", bench, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.5f), wood);
         }
+        if ((tools & CraftTools.ShavingHorse) != 0)
+        {
+            Transform horse = Place("Shaving Horse", 1.2f);
+            GameObject seat = Shape(PrimitiveType.Cube, "Bench", horse, new Vector3(0f, 0.4f, 0f), new Vector3(1.2f, 0.08f, 0.3f), wood);
+            seat.transform.localRotation = Quaternion.Euler(0f, 0f, 8f);
+            Shape(PrimitiveType.Cube, "Jaw", horse, new Vector3(0.3f, 0.6f, 0f), new Vector3(0.08f, 0.4f, 0.3f), wood);
+        }
+        if ((tools & CraftTools.FibreBench) != 0)
+        {
+            Transform fb = Place("Fibre Bench and Scouring Tubs", 1.6f);
+            Shape(PrimitiveType.Cube, "Picking Table", fb, new Vector3(-0.4f, 0.4f, 0f), new Vector3(0.8f, 0.8f, 0.6f), wood);
+            Shape(PrimitiveType.Cylinder, "Tub", fb, new Vector3(0.5f, 0.3f, 0f), new Vector3(0.6f, 0.3f, 0.6f), iron);
+        }
+        if ((tools & CraftTools.GemBench) != 0)
+        {
+            Transform gb = Place("Gem Bench and Trim Saw", 1.2f);
+            Shape(PrimitiveType.Cube, "Bench", gb, new Vector3(0f, 0.4f, 0f), new Vector3(1.1f, 0.8f, 0.6f), wood);
+            GameObject saw = Shape(PrimitiveType.Cylinder, "Saw Blade", gb, new Vector3(0.3f, 0.95f, 0f), new Vector3(0.25f, 0.01f, 0.25f), iron);
+            saw.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+        if ((tools & CraftTools.FacetingMachine) != 0)
+        {
+            Transform fm = Place("Faceting Machine", 0.9f);
+            Shape(PrimitiveType.Cube, "Stand", fm, new Vector3(0f, 0.4f, 0f), new Vector3(0.7f, 0.8f, 0.5f), iron);
+            Shape(PrimitiveType.Cylinder, "Lap", fm, new Vector3(0f, 0.82f, 0f), new Vector3(0.3f, 0.02f, 0.3f), new Color(0.6f, 0.6f, 0.65f));
+            Shape(PrimitiveType.Cube, "Mast and Quill", fm, new Vector3(0.25f, 1f, 0f), new Vector3(0.05f, 0.4f, 0.05f), iron);
+        }
+        if ((tools & CraftTools.JewelersBench) != 0)
+        {
+            Transform jb = Place("Jeweller's Bench", 1.2f);
+            Shape(PrimitiveType.Cube, "Bench", jb, new Vector3(0f, 0.45f, 0f), new Vector3(1.1f, 0.9f, 0.6f), wood);
+            GameObject mandrel = Shape(PrimitiveType.Cylinder, "Ring Mandrel", jb, new Vector3(-0.3f, 1f, 0f), new Vector3(0.04f, 0.12f, 0.04f), iron);
+            mandrel.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            Shape(PrimitiveType.Cylinder, "Buffing Wheel", jb, new Vector3(0.35f, 1f, 0f), new Vector3(0.2f, 0.03f, 0.2f), new Color(0.85f, 0.8f, 0.7f));
+        }
         if ((tools & CraftTools.SpinningWheel) != 0)
         {
             Transform spin = Place("Spinning Wheel", 0.8f);
             GameObject wheelGo = Shape(PrimitiveType.Cylinder, "Wheel", spin, new Vector3(0f, 0.7f, 0f), new Vector3(0.6f, 0.02f, 0.6f), wood);
             wheelGo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             Shape(PrimitiveType.Cube, "Stand", spin, new Vector3(0f, 0.25f, 0f), new Vector3(0.5f, 0.5f, 0.2f), wood);
+        }
+        if ((tools & CraftTools.Loom) != 0)
+        {
+            Transform loom = Place("Loom", 1.4f);
+            Shape(PrimitiveType.Cube, "Post L", loom, new Vector3(-0.6f, 0.6f, 0f), new Vector3(0.08f, 1.2f, 0.08f), wood);
+            Shape(PrimitiveType.Cube, "Post R", loom, new Vector3(0.6f, 0.6f, 0f), new Vector3(0.08f, 1.2f, 0.08f), wood);
+            GameObject beam = Shape(PrimitiveType.Cylinder, "Warp Beam", loom, new Vector3(0f, 0.3f, 0.2f), new Vector3(0.12f, 0.6f, 0.12f), wood);
+            beam.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            Shape(PrimitiveType.Cube, "Warp", loom, new Vector3(0f, 0.8f, 0f), new Vector3(1.1f, 0.7f, 0.01f), new Color(0.85f, 0.82f, 0.72f));
+            Shape(PrimitiveType.Cube, "Reed", loom, new Vector3(0f, 0.75f, -0.05f), new Vector3(1.15f, 0.06f, 0.05f), wood);
         }
         if ((tools & CraftTools.TailorTable) != 0)
         {
@@ -278,7 +335,12 @@ public static class CraftingEditorTools
         so.FindProperty("stationName").stringValue = title;
         so.FindProperty("tools").intValue = (int)tools;
         so.FindProperty("testStation").boolValue = test;
-        so.FindProperty("instruments").intValue = (int)(test ? CraftInstruments.All : CraftInstruments.Magnet | CraftInstruments.TestFile);
+        // The instruments each kind of workshop keeps at hand: a lapidary the gem tester's kit, a woodshop its moisture meter.
+        CraftInstruments kit = CraftInstruments.Magnet | CraftInstruments.TestFile;
+        if ((tools & (CraftTools.GemBench | CraftTools.FacetingMachine | CraftTools.JewelersBench)) != 0) kit |= CraftInstruments.GemKit | CraftInstruments.Calipers;
+        if ((tools & (CraftTools.DryingStack | CraftTools.ShavingHorse)) != 0) kit |= CraftInstruments.MoistureMeter;
+        if ((tools & CraftTools.FibreBench) != 0) kit |= CraftInstruments.Thermometer | CraftInstruments.Scale;
+        so.FindProperty("instruments").intValue = (int)(test ? CraftInstruments.All : kit);
         so.FindProperty("range").floatValue = Mathf.Max(3f, x * 0.5f + 1.5f);
         so.ApplyModifiedPropertiesWithoutUndo();
         root.AddComponent<AlchemySurroundings>();
@@ -371,8 +433,9 @@ public static class CraftingEditorTools
 
     // ------------------------------------------------------------------ stock
     /// <summary>
-    /// Stock item assets (Resources/SimpleMovements/Items/Crafting/Stock) with generated icons: the stock metals, every
-    /// ore, hide, wood, fuel, supply and agent of the database, and ready-made fasteners. Existing ones are kept.
+    /// Stock item assets (Resources/SimpleMovements/Items/Crafting/Stock) with generated icons: the stock metals (and the
+    /// jeweller's wire and strip), every ore, hide, wood (blanks and green logs), rough gem, fuel, supply and agent of the
+    /// database, and ready-made fasteners. Existing ones are kept.
     /// </summary>
     public static List<CraftStockItemSO> CreateStockItems(bool select)
     {
@@ -382,6 +445,10 @@ public static class CraftingEditorTools
         foreach (CraftOreDefinition o in rules.Ores) specs.Add((CraftStockKind.Ore, o.id));
         foreach (CraftHideDefinition h in rules.Hides) specs.Add((CraftStockKind.Hide, h.id));
         foreach (CraftWoodDefinition w in rules.Woods) specs.Add((CraftStockKind.Wood, w.id));
+        foreach (CraftWoodDefinition w in rules.Woods) specs.Add((CraftStockKind.Log, w.id));
+        foreach (CraftGemDefinition g in rules.Gems) specs.Add((CraftStockKind.Gem, g.id));
+        foreach (string m in CraftDefaults.JewelleryMetals)
+            foreach (var form in CraftDefaults.JewelleryForms) specs.Add((CraftStockKind.Metal, $"{m} {form.suffix}"));
         foreach (CraftFuel f in rules.Fuels) specs.Add((CraftStockKind.Fuel, f.id));
         foreach (CraftSupplyDefinition s in rules.Supplies) specs.Add((CraftStockKind.Supply, s.id));
         foreach (CraftTanningAgent a in rules.Agents)

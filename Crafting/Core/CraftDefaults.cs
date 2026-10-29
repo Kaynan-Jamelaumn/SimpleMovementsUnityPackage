@@ -417,6 +417,13 @@ public static partial class CraftDefaults
         list[9].color = new Color(0.68f, 0.62f, 0.48f);
         list[6].affinity = ElementType.Fire;
         list[6].affinityStrength = 0.5f;
+        // Hides of the harvested creatures that no other animal gives (see HarvestDefaults).
+        CraftHideDefinition snake = Hide("snake", "Snakeskin", 18, 5, 1.2f, 0.9f, 0.7f, 0.85f, 0f, 0.15f, 0.03f, 18, "Thin and scaled: belts, wraps, sheaths.");
+        snake.color = new Color(0.45f, 0.5f, 0.3f);
+        CraftHideDefinition troll = Hide("troll", "Troll hide", 16, 12, 9f, 6f, 1.5f, 0.15f, 0.3f, 0.6f, 0.06f, 60, "Thick as a door: heavy leather armour that shrugs off blows.");
+        troll.color = new Color(0.4f, 0.45f, 0.36f);
+        list.Add(snake);
+        list.Add(troll);
         return list;
     }
 

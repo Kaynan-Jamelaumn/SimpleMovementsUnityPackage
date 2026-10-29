@@ -7,10 +7,12 @@ using UnityEngine.UI;
 /// <summary>
 /// The assembly bench: start an item from a design, fit each part into its place (a part must be the right kind, cut
 /// to the right pattern, cool, and it must go on: a slot too tight is filed bigger, a haft too thick rasped down), then
-/// make each joint by hand: punch the holes and stitch in the rhythm of the awl (each click on the beat; off the beat
-/// the spacing and tension wander), wind the wrap, set rivets and peen the tang or drive the wedge with the hammer
+/// make each joint by hand: punch the holes with the pricking iron (four teeth: four holes a beat) and stitch them in the
+/// rhythm of the awl (a stitch a beat - a run of two from journeyman, three for a master; off the beat the spacing and
+/// tension wander), wind the wrap, set rivets and peen the tang or drive the wedge with the hammer
 /// (hold and release: too light a rivet stays loose, too hard crushes leather or cracks a hard rivet). Finish it, then
-/// try it - flex it, strike with it, pull its straps - to know what it is.
+/// try it - flex it, strike with it, pull its straps - to know what it is. The work moves on by itself: once the holes
+/// are punched it turns to stitching them, once a joint is done to the next one still to make.
 /// </summary>
 public sealed class CraftAssemblyMode : CraftMode
 {
@@ -29,6 +31,7 @@ public sealed class CraftAssemblyMode : CraftMode
     private int beats;
 
     public override string Title => "Assemble";
+    public override CraftDiscipline Discipline => Assembly != null ? CraftMastery.OfDesign(Rules.Design(Assembly.assembly.design)) : CraftDiscipline.Smithing;
     public override bool Available(CraftStation s) => s.Has(CraftTools.AssemblyBench) || s.Has(CraftTools.LeatherBench);
     public override string Hint => "Start a design, fit the parts, then work each joint: click on the beat to punch and stitch; hold and release to rivet, peen or wedge.";
 
@@ -252,12 +255,49 @@ public sealed class CraftAssemblyMode : CraftMode
             return;
         }
         double spacing = rhythm.MeanError, spread = rhythm.Spread;
-        var r = new CraftRequest(CraftRequestKind.JointWork, a.id) { id = joints[Mathf.Clamp(joint.value, 0, joints.Count - 1)], i0 = (int)w.Value, count = beats };
+        // i1 = 2: the pricking iron's teeth and the awl - the station counts the holes and stitches a beat makes (practice)
+        var r = new CraftRequest(CraftRequestKind.JointWork, a.id) { id = joints[Mathf.Clamp(joint.value, 0, joints.Count - 1)], i0 = (int)w.Value, count = beats, i1 = w == CraftJointWork.Wrap ? 0 : 2 };
         if (w == CraftJointWork.Punch) { r.a = (float)spacing; r.b = (float)spread; }
         else { r.a = (float)rhythm.Pull; r.b = (float)spread; }
         Send(r);
         rhythm.Clear();
         beats = 0;
+        AdvanceWork();
+    }
+
+    /// <summary>The work moves on by itself: the holes all punched, to stitching them; a joint done, to the next one still to make.</summary>
+    private void AdvanceWork()
+    {
+        CraftPiece a = Assembly;
+        CraftDesign d = a != null ? Rules.Design(a.assembly.design) : null;
+        if (d == null || joints.Count == 0)
+            return;
+        CraftJointSpec j = d.Joint(joints[Mathf.Clamp(joint.value, 0, joints.Count - 1)]);
+        JointState s = j != null ? a.assembly.Joint(j.id) : null;
+        if (j == null || s == null)
+            return;
+        if (s.done)
+        {
+            for (int k = 0; k < joints.Count; k++)
+            {
+                CraftJointSpec other = d.Joint(joints[k]);
+                JointState os = other != null ? a.assembly.Joint(other.id) : null;
+                if (other == null || os == null || os.done || CraftJewelry.IsJewelJoint(other.kind)) continue;
+                joint.value = k; // fills its work
+                ui.Message($"{j.Name} done: on to the {other.Name.ToLowerInvariant()}.");
+                return;
+            }
+            return;
+        }
+        if (Work == CraftJointWork.Punch && j.kind == CraftJointKind.Stitch && s.holes >= Math.Max(1, j.count))
+        {
+            int i = works.IndexOf(CraftJointWork.Stitch);
+            if (i >= 0)
+            {
+                work.value = i;
+                ui.Message("The holes are punched: now stitch them, on the beat.");
+            }
+        }
     }
 
     public override void Draw(CraftPixels c)
@@ -338,6 +378,7 @@ public sealed class CraftAssemblyMode : CraftMode
         {
             CraftBlow b = hammer.Release(0.5, 0, Hands);
             Send(new CraftRequest(CraftRequestKind.JointWork, a.id) { id = joints[Mathf.Clamp(joint.value, 0, joints.Count - 1)], i0 = (int)w.Value, count = 1, a = (float)(b.force * 4) });
+            AdvanceWork();
         }
     }
 
@@ -351,7 +392,9 @@ public sealed class CraftAssemblyMode : CraftMode
         CraftJointSpec j = d != null && joints.Count > 0 ? d.Joint(joints[Mathf.Clamp(joint.value, 0, joints.Count - 1)]) : null;
         JointState s = j != null ? a.assembly.Joint(j.id) : null;
         info.text = j == null || s == null ? "" :
+            CraftJewelry.IsJewelJoint(j.kind) ? $"{j.Name}: jeweller's work, at the Jeweller area - {(j.kind == CraftJointKind.Solder ? $"solder {(s.solder >= 0.5 ? "flowed" : "not yet flowed")}" : s.security >= 0.6 ? "the stone is held" : "the stone is not set yet")}{(s.done ? " - done" : "")}" :
             j.kind == CraftJointKind.Fit ? $"{j.Name}: gap {(Station.Reveals || Station.HasInstrument(CraftInstruments.Calipers) ? $"{s.gap:0.0} mm" : s.gap > 1.5 ? "it rattles" : s.gap >= 0 ? "snug" : "too tight")}" :
-            $"{j.Name}: holes {s.holes}, stitches {s.stitches}, rivets {s.rivets}, turns {s.turns}{(s.done ? " - done" : "")}";
+            $"{j.Name}: holes {s.holes}, stitches {s.stitches}, rivets {s.rivets}, turns {s.turns}{(s.done ? " - done" : "")}" +
+            (j.kind == CraftJointKind.Stitch && !s.done ? $" · {CraftMastery.HolesPerBeat} holes a beat of the pricking iron, {CraftMastery.StitchesPerAction(Mastery, MasterySettings)} stitch{(CraftMastery.StitchesPerAction(Mastery, MasterySettings) == 1 ? "" : "es")} a beat of the awl" : "");
     }
 }

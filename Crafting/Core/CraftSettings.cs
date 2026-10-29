@@ -147,9 +147,48 @@ public class CraftSimulationSettings
     [Tooltip("Hours a raw, wet hide lasts at 20 °C before it starts to rot.")]
     [Min(0.1f)] public float rotHours = 48f;
 
+    [Header("Timing bars (sawing, faceting, splitting, weaving)")]
+    [Tooltip("The zones of the timing bars, the scores they give and when a bad hit does damage.")]
+    public CraftTimingSettings timing = new CraftTimingSettings();
+
+    [Header("Mastery: practice, craft by craft")]
+    [Tooltip("How experience is earned in each craft (smithing, leatherwork, woodwork, tailoring, jewellery, alchemy), the ranks and what practice gives.")]
+    public CraftMasterySettings mastery = new CraftMasterySettings();
+
     [Header("Observation")]
     [Tooltip("Times a material class must be worked before the player recognises it without an assay.")]
     [Min(1)] public int workingsToRecognise = 3;
     [Tooltip("Times the player must read a thermometer at a heat colour before they learn its temperature.")]
     [Min(1)] public int readingsToLearnHeat = 2;
+}
+
+/// <summary>
+/// The timing bars' zones and scores (<see cref="CraftTimingBar"/>), shared by every station on the Crafting Database.
+/// A zone is a half-width around the target's ideal point (a share of the bar); the score falls continuously with the
+/// distance from the ideal point, through the score set for the edge of each zone.
+/// </summary>
+[Serializable]
+public class CraftTimingSettings
+{
+    [Tooltip("Half-width of the Perfect zone around the ideal point (share of the bar).")]
+    [Range(0.002f, 0.2f)] public float perfectZone = 0.02f;
+    [Tooltip("Half-width of the Excellent zone.")]
+    [Range(0.005f, 0.3f)] public float excellentZone = 0.055f;
+    [Tooltip("Half-width of the Good zone.")]
+    [Range(0.01f, 0.4f)] public float goodZone = 0.12f;
+    [Tooltip("Half-width of the Poor zone: beyond it the hit is a Miss.")]
+    [Range(0.02f, 0.5f)] public float poorZone = 0.24f;
+    [Tooltip("The score (0-1) at the edge of each zone: the score falls through these as the hit lands further from the ideal point (100% on it).")]
+    [Range(0f, 1f)] public float perfectScore = 0.95f;
+    [Range(0f, 1f)] public float excellentScore = 0.8f;
+    [Range(0f, 1f)] public float goodScore = 0.55f;
+    [Range(0f, 1f)] public float poorScore = 0.2f;
+    [Tooltip("A hit scoring below this does damage (a chip, a crack, lost material, a skipped thread).")]
+    [Range(0f, 1f)] public float damageBelow = 0.25f;
+    [Tooltip("How fast the indicator moves at difficulty 1 (lengths of the bar a second).")]
+    [Min(0.05f)] public float speed = 0.75f;
+    [Tooltip("How much harder material narrows the zones: zones × difficulty^-this.")]
+    [Range(0f, 2f)] public float narrowing = 1f;
+    [Tooltip("How much a master's practice widens the zones (×1 + this at full skill).")]
+    [Range(0f, 1f)] public float skillWidening = 0.35f;
 }

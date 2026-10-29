@@ -170,9 +170,11 @@ public class MerchantDetailsPanel : MonoBehaviour
         if (maxButton != null) maxButton.interactable = quantity < maxQuantity && !busy;
 
         int total = quote.TotalPrice > 0 ? quote.TotalPrice : e.UnitPrice * quantity;
+        // A refused sale of copies that differ (harvested pieces) is not worth the next one's price × the quantity: no total then.
+        bool noTotal = !buying && !quote.Succeeded && e.Item is IItemInstanceValue;
         if (totalText != null)
         {
-            totalText.text = (buying ? "Total  " : "You get  ") + (currency != null ? currency.Format(total) : total.ToString());
+            totalText.text = (buying ? "Total  " : "You get  ") + (noTotal ? "—" : currency != null ? currency.Format(total) : total.ToString());
             totalText.color = buying && quote.Status == MerchantTransactionStatus.NotEnoughCurrency ? skin.unaffordableColor : skin.priceColor;
         }
         string reason = quote.Succeeded ? "" : quote.Message;

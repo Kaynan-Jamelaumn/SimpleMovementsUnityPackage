@@ -3,6 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
+/// Something that keeps a dead mob's body in the world for longer than its profile's Destroy Delay (a carcass to
+/// harvest), and removes it itself when it is done with it.
+/// </summary>
+public interface IDeathRemovalHandler
+{
+    /// <summary>The mob died: true when this keeps the body (and will remove it); false = removed after <paramref name="delay"/> as usual.</summary>
+    bool KeepsBody(float delay);
+}
+
+/// <summary>
 /// A mob's health and speed, the status effects it accepts (health, heal/damage factors, regeneration, speed) and
 /// its death: death animation, item drops, ability absorption (automatic through <see cref="CombatEvents"/>) and
 /// removal after a delay.
@@ -135,6 +145,10 @@ public class MobStatusController : BaseStatusController
             mob.OnDeath(killer);
 
         float delay = destroyDelayOverride >= 0f ? destroyDelayOverride : (mob != null ? mob.Profile.destroyDelay : 0f);
+        // A body that is kept (a carcass to harvest) is removed by what keeps it.
+        foreach (IDeathRemovalHandler keeper in GetComponents<IDeathRemovalHandler>())
+            if (keeper != null && keeper.KeepsBody(Mathf.Max(0f, delay)))
+                return;
         // Offline this is Destroy(gameObject, delay); on a server a networked mob is despawned for every client.
         GameNet.NetSpawn.Destroy(gameObject, Mathf.Max(0f, delay));
     }

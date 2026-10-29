@@ -24,8 +24,11 @@ public readonly struct MerchantPriceContext
     /// <summary>The buyer / seller (may be null in editor previews).</summary>
     public readonly GameObject Player;
     public readonly ItemCategoryMatch Category;
+    /// <summary>Which copy of <see cref="Stack"/> is priced, for items whose copies differ (0 = the next one, 1 the one after it).</summary>
+    public readonly int Copy;
 
-    public MerchantPriceContext(Merchant merchant, ItemSO item, bool playerBuys, MerchantStockSlot slot, InventoryItem stack, GameObject player, ItemCategoryMatch category)
+    public MerchantPriceContext(Merchant merchant, ItemSO item, bool playerBuys, MerchantStockSlot slot, InventoryItem stack, GameObject player, ItemCategoryMatch category,
+        int copy = 0)
     {
         Merchant = merchant;
         Item = item;
@@ -34,6 +37,7 @@ public readonly struct MerchantPriceContext
         Stack = stack;
         Player = player;
         Category = category;
+        Copy = copy;
     }
 }
 
@@ -180,6 +184,9 @@ public class MerchantPricing
             float d = Mathf.Clamp01(c.Stack.durability / c.Item.MaxDurability);
             price *= Mathf.Lerp(brokenItemValue, 1f, d);
         }
+        // Copies worth different amounts (harvested pieces by their quality).
+        if (c.Stack != null && c.Item is IItemInstanceValue byCopy)
+            price *= Mathf.Max(0f, byCopy.InstanceValueFactor(c.Stack, c.Copy));
         price = ApplyModifiers(price, c);
         int sell = Mathf.Max(0, Round(price));
         if (sellNeverAboveBuy)

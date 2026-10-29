@@ -83,10 +83,15 @@ public class CraftKnowledge : MonoBehaviour
     {
         string insight = CraftJournal.InsightOf(e, piece);
         if (insight != null)
-            Report(CraftJournal.Learn(Data, insight));
+            Report(CraftJournal.Learn(Data, insight, MasterySettings));
     }
 
-    public void LearnInsight(string id) => Report(CraftJournal.Learn(Data, id));
+    public void LearnInsight(string id) => Report(CraftJournal.Learn(Data, id, MasterySettings));
+
+    private static CraftMasterySettings MasterySettings => CraftDatabase.Instance != null ? CraftDatabase.Instance.Rules?.Settings?.mastery : null;
+
+    /// <summary>The player named a gemstone rightly: they know it from now on.</summary>
+    public void IdentifiedGem(CraftRules rules, string gem) => Report(CraftJournal.IdentifiedGem(Data, rules, gem), true);
 
     /// <summary>The player worked a metal (struck, ground, filed it): after enough work it is recognised.</summary>
     public void Worked(CraftRules rules, CraftAlloyProfile p) => Report(CraftJournal.Worked(Data, rules, p), true);
@@ -109,6 +114,16 @@ public class CraftKnowledge : MonoBehaviour
         Data.agents.Add(agent);
         MarkDirty();
     }
+
+    /// <summary>
+    /// Practice in <paramref name="craft"/>: <paramref name="xp"/> experience (small work - <paramref name="work"/> - only so
+    /// fast; a finished item always counts). Tells the player when they reach a new rank.
+    /// </summary>
+    public void Practised(CraftDiscipline craft, double xp, bool work, bool finishedOne = false, CraftMasterySettings settings = null) =>
+        Report(CraftMastery.Practise(Data.mastery, craft, xp, work, Time.unscaledTimeAsDouble, finishedOne, settings), true);
+
+    /// <summary>How practised the player is at <paramref name="craft"/> (0 novice - 1 complete mastery).</summary>
+    public double Mastery(CraftDiscipline craft, CraftMasterySettings settings = null) => CraftMastery.Of(Data.mastery, craft, settings);
 
     /// <summary>A finished item, with the steps that made it.</summary>
     public void Made(CraftItemReport report, List<string> procedure)
@@ -150,6 +165,7 @@ public class CraftKnowledge : MonoBehaviour
         if (string.IsNullOrEmpty(json))
             return false;
         data = CraftJournalData.FromJson(json);
+        SeedMastery();
         MarkDirty();
         return true;
     }
@@ -245,5 +261,18 @@ public class CraftKnowledge : MonoBehaviour
         {
             Debug.LogWarning($"[Crafting] Could not read the journal: {e.Message}", this);
         }
+        SeedMastery();
+    }
+
+    /// <summary>A journal kept before practice was counted craft by craft: its items and insights become practice, once.</summary>
+    private void SeedMastery()
+    {
+        if (data == null || data.masterySeeded)
+            return;
+        CraftRules rules = CraftDatabase.Instance != null ? CraftDatabase.Instance.Rules : null;
+        if (rules == null)
+            return;
+        CraftMastery.Seed(data, rules, rules.Settings?.mastery);
+        dirty = true;
     }
 }

@@ -199,6 +199,16 @@ namespace SimpleMovements.Validation
                 if (type != null && go.GetComponent(type) == null)
                     missing.Add(type.Name);
             }
+            // A harvestable mob needs its carcass networked (clients could not harvest it otherwise) - also one Auto Attach
+            // makes harvestable when it plays.
+            if (kind == "Mob" && NetworkSetupMenu.FindType("GameNet.NetCarcass") is Type carcass)
+            {
+                foreach (HarvestableCreature creature in go.GetComponentsInChildren<HarvestableCreature>(true))
+                    if (creature.GetComponent(carcass) == null && !missing.Contains(carcass.Name))
+                        missing.Add(carcass.Name);
+                if (HarvestingEditorTools.AutoAttachHost(go) != null && !missing.Contains(carcass.Name))
+                    missing.Add(carcass.Name);
+            }
             if (missing.Count > 0)
                 issues.Add(FixWithMake(Issue(IssueSeverity.Warning, $"\"{go.name}\" ({kind}) has no {string.Join(", ", missing)}", go, prefabPath), prefabPath, kind));
         }

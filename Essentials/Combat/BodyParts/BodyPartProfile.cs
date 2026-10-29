@@ -34,6 +34,9 @@ public class BodyPartDefinition
     public BodySide side = BodySide.Any;
     [Tooltip("For side parts: how far out from the centre line a hit must be, as a fraction of the body radius.")]
     [Range(0f, 1f)] public float sideOffset = 0.6f;
+    [Tooltip("Length band where hits land on this part, for bodies longer than they are tall (four-legged animals, fish, serpents): " +
+             "0 = the tail end, 1 = the nose (x = from, y = to). The head is at the front, the haunch at the back. (0, 0) = the whole length.")]
+    public Vector2 lengthRange = Vector2.zero;
 
     [Header("Damage")]
     [Tooltip("Damage multiplier of hits on this part (Head 1.6 = headshots deal 60% more; Legs 0.85).")]
@@ -87,6 +90,18 @@ public class BodyPartDefinition
     {
         float lo = Mathf.Min(heightRange.x, heightRange.y), hi = Mathf.Max(heightRange.x, heightRange.y);
         return height01 < lo ? lo - height01 : height01 > hi ? height01 - hi : 0f;
+    }
+
+    /// <summary>Has it a length band (a part of a horizontal body)?</summary>
+    public bool HasLength => lengthRange.x != 0f || lengthRange.y != 0f;
+
+    /// <summary>Distance (in body lengths) from <paramref name="along01"/> (0 tail end - 1 nose) to this part's length band (0 inside or without one).</summary>
+    public float LengthDistance(float along01)
+    {
+        if (!HasLength)
+            return 0f;
+        float lo = Mathf.Min(lengthRange.x, lengthRange.y), hi = Mathf.Max(lengthRange.x, lengthRange.y);
+        return along01 < lo - 1e-4f ? lo - along01 : along01 > hi + 1e-4f ? along01 - hi : 0f;
     }
 
     /// <summary>Does a hit <paramref name="lateral"/> (signed fraction of the radius, + = right) fit this part's side?</summary>
@@ -352,11 +367,31 @@ public class BodyPartProfile : ScriptableObject
         }
     }
 
+    /// <summary>Do some parts have a length band (a horizontal body: hits are located along it too)?</summary>
+    public bool UsesLength
+    {
+        get
+        {
+            if (parts != null)
+                for (int i = 0; i < parts.Count; i++)
+                    if (parts[i] != null && parts[i].HasLength)
+                        return true;
+            return false;
+        }
+    }
+
     /// <summary>
     /// The part at <paramref name="height01"/> (0 feet - 1 head) and <paramref name="lateral"/> (signed fraction of the
     /// body radius, + = the character's right): side parts first, then centre parts, then the nearest band.
     /// </summary>
-    public BodyPartDefinition Locate(float height01, float lateral)
+    public BodyPartDefinition Locate(float height01, float lateral) => Locate(height01, lateral, -1f);
+
+    /// <summary>
+    /// The part at <paramref name="height01"/> (0 feet - 1 head), <paramref name="lateral"/> (signed fraction of the body
+    /// radius, + = the character's right) and <paramref name="along01"/> (0 the tail end - 1 the nose; negative = unknown,
+    /// length bands ignored): side parts first, then centre parts, then the nearest band.
+    /// </summary>
+    public BodyPartDefinition Locate(float height01, float lateral, float along01)
     {
         if (parts == null || parts.Count == 0)
             return null;
@@ -367,7 +402,7 @@ public class BodyPartProfile : ScriptableObject
             BodyPartDefinition p = parts[i];
             if (p == null)
                 continue;
-            float d = p.HeightDistance(height01);
+            float d = p.HeightDistance(height01) + (along01 >= 0f ? p.LengthDistance(along01) : 0f);
             if (d <= 0f)
             {
                 if (p.side == BodySide.Any) { if (centre == null) centre = p; }
@@ -397,6 +432,7 @@ public class BodyPartProfile : ScriptableObject
             if (string.IsNullOrWhiteSpace(p.name)) errors.Add($"Part #{i + 1} has no name.");
             else if (!names.Add(p.name.Trim())) errors.Add($"Two parts are named '{p.name}'.");
             if (p.heightRange.x > p.heightRange.y) warnings.Add($"{p.name}: its height range is reversed (from > to); it is read as {p.heightRange.y:0.##}-{p.heightRange.x:0.##}.");
+            if (p.lengthRange.x > p.lengthRange.y) warnings.Add($"{p.name}: its length range is reversed (from > to); it is read as {p.lengthRange.y:0.##}-{p.lengthRange.x:0.##}.");
             if (p.effects != null)
                 foreach (BodyPartEffect e in p.effects)
                     e?.Validate(p.name, errors, warnings);

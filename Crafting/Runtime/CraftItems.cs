@@ -80,19 +80,54 @@ public static class CraftItems
         {
             case CraftStockKind.Metal:
             {
-                var m = CraftDefaults.StockMetals().Find(x => string.Equals(x.name, id, StringComparison.OrdinalIgnoreCase));
+                // A bar, or the jeweller's wire and strip ("Gold wire", "Sterling silver bezel strip").
+                string metalName = id;
+                (string suffix, float length, float width, float thickness) form = ("bar", 200, 30, 6);
+                foreach (var f in CraftDefaults.JewelleryForms)
+                    if (id.EndsWith(" " + f.suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        metalName = id.Substring(0, id.Length - f.suffix.Length - 1);
+                        form = f;
+                    }
+                var m = CraftDefaults.StockMetals().Find(x => string.Equals(x.name, metalName, StringComparison.OrdinalIgnoreCase));
                 if (m.composition == null)
                     return null;
                 metal = new List<CraftStockElement>();
                 foreach (var e in m.composition) metal.Add(new CraftStockElement(e.element, (float)e.fraction));
-                CraftPiece bar = CraftDefaults.Bar(rules, 200, 30, 6, m.composition);
+                CraftPiece bar = CraftDefaults.Bar(rules, form.length, form.width, form.thickness, m.composition);
                 CraftAlloyProfile prof = bar.Profile(rules);
-                name = $"{m.name} bar";
-                description = $"A bar of {m.name.ToLowerInvariant()} from the stores, 20 cm long, 3 cm wide, 6 mm thick.";
+                name = $"{m.name} {form.suffix}";
+                description = form.suffix == "bar"
+                    ? $"A bar of {m.name.ToLowerInvariant()} from the stores, 20 cm long, 3 cm wide, 6 mm thick."
+                    : $"{CraftText.Capital(form.suffix)} of {m.name.ToLowerInvariant()} for the jeweller: {form.length / 10f:0} cm long, {form.width:0.#} mm by {form.thickness:0.#} mm.";
                 weight = (float)bar.Mass(rules) / 1000f;
                 price = (float)(bar.Mass(rules) * prof.PricePerGram);
                 color = prof.Color;
-                size = new Vector3(200, 30, 6);
+                size = new Vector3(form.length, form.width, form.thickness);
+                break;
+            }
+            case CraftStockKind.Log:
+            {
+                CraftWoodDefinition w = rules.Wood(id);
+                if (w == null) return null;
+                name = $"{w.Name} log";
+                description = $"A green {w.Name.ToLowerInvariant()} log in its bark, 90 cm long. {w.description}";
+                price = w.price * 1.5f;
+                weight = (float)(Math.PI * 0.12 * 0.12 * 0.9 * w.density * 1000 * (1 + CraftWoodwork.Green));
+                color = Color.Lerp(w.color, new Color(0.35f, 0.27f, 0.2f), 0.6f);
+                size = new Vector3(900, 240, 240);
+                break;
+            }
+            case CraftStockKind.Gem:
+            {
+                CraftGemDefinition g = rules.Gem(id);
+                if (g == null) return null;
+                // Named for what it looks like: what it is, the gem tests tell.
+                name = CraftText.Capital(Unnamed(g.observation));
+                description = $"A rough stone: {g.observation}. A loupe, a balance and a refractometer tell what it is.";
+                price = g.valuePerCarat * g.typicalCarats * 0.12f;
+                weight = 0.01f;
+                color = g.color;
                 break;
             }
             case CraftStockKind.Ore:
@@ -203,6 +238,14 @@ public static class CraftItems
                 if (h.textile) Add(Stock(rules, CraftStockKind.Hide, h.id));
         if ((tools & (CraftTools.ChoppingBlock | CraftTools.Sawhorse | CraftTools.SteamBox | CraftTools.DryingStack | CraftTools.FinishingBench)) != 0)
             foreach (CraftWoodDefinition w in rules.Woods) Add(Stock(rules, CraftStockKind.Wood, w.id));
+        if ((tools & (CraftTools.ShavingHorse | CraftTools.ChoppingBlock)) != 0)
+            foreach (CraftWoodDefinition w in rules.Woods) Add(Stock(rules, CraftStockKind.Log, w.id));
+        if ((tools & (CraftTools.GemBench | CraftTools.FacetingMachine)) != 0)
+            foreach (CraftGemDefinition g in rules.Gems) Add(Stock(rules, CraftStockKind.Gem, g.id));
+        if ((tools & CraftTools.JewelersBench) != 0)
+            foreach (string m in CraftDefaults.JewelleryMetals)
+                foreach (var f in CraftDefaults.JewelleryForms)
+                    Add(Stock(rules, CraftStockKind.Metal, $"{m} {f.suffix}"));
         if ((tools & CraftTools.AssemblyBench) != 0)
         {
             foreach (CraftWoodDefinition w in rules.Woods) Add(Stock(rules, CraftStockKind.Wood, w.id));
@@ -265,7 +308,10 @@ public static class CraftItems
         switch (p.kind)
         {
             case CraftPieceKind.Hide: return p.hide.width * p.hide.height > 80 ? new Vector2Int(2, 2) : Vector2Int.one;
-            case CraftPieceKind.Fasteners: return Vector2Int.one;
+            case CraftPieceKind.Fasteners:
+            case CraftPieceKind.Fibre:
+            case CraftPieceKind.Yarn:
+            case CraftPieceKind.Gem: return Vector2Int.one;
             default:
                 double l = p.Length;
                 return new Vector2Int(1, Mathf.Clamp(Mathf.CeilToInt((float)(l / 350.0)), 1, 5));
@@ -296,6 +342,21 @@ public static class CraftItems
             }
             case CraftPieceKind.Wood:
                 v = rules.Wood(p.wood.wood)?.price ?? 1;
+                break;
+            case CraftPieceKind.Fibre:
+            {
+                CraftSupplyDefinition s = rules.Supply(p.fibre.fibre);
+                v = (s?.price ?? 0.5) * p.fibre.grams / Math.Max(1, s?.gramsPerItem ?? 100) * (1 + CraftFibre.Prep(p.fibre));
+                break;
+            }
+            case CraftPieceKind.Yarn:
+            {
+                string thread = CraftFibre.ThreadOf(rules, p);
+                v = (rules.Supply(thread)?.price ?? 0.5) * p.yarn.length / CraftFibre.MetresPerThread;
+                break;
+            }
+            case CraftPieceKind.Gem:
+                v = CraftLapidary.Grade(rules, p).Value;
                 break;
         }
         if (parts != null)

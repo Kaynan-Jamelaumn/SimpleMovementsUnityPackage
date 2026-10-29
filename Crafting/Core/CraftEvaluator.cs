@@ -45,6 +45,10 @@ public sealed class CraftPieceReport
     public int Count;
     public double FastenerQuality;
 
+    // Gems, fibre and yarn
+    public CraftGemGrade Gem;
+    public double FibrePrep, YarnQuality;
+
     public readonly List<string> Defects = new List<string>();
 }
 
@@ -129,6 +133,24 @@ public static class CraftEvaluator
                 break;
             case CraftPieceKind.Assembly:
                 r.MaterialName = rules.Design(p.assembly.design)?.Name ?? "";
+                break;
+            case CraftPieceKind.Gem:
+                r.MaterialName = rules.Gem(p.gem.gem)?.Name ?? p.gem.gem;
+                r.Gem = CraftLapidary.Grade(rules, p);
+                r.Integrity = r.Gem.Integrity;
+                r.Polish = r.Gem.Polish;
+                r.Width = r.Length = p.gem.girdle;
+                break;
+            case CraftPieceKind.Fibre:
+                r.MaterialName = rules.Supply(p.fibre.fibre)?.Name ?? p.fibre.fibre;
+                r.FibrePrep = CraftFibre.Prep(p.fibre);
+                r.Moisture = p.fibre.wet;
+                break;
+            case CraftPieceKind.Yarn:
+                r.MaterialName = rules.Supply(p.yarn.fibre)?.Name ?? p.yarn.fibre;
+                r.YarnQuality = CraftFibre.Quality(p.yarn);
+                r.Strength = p.yarn.strength;
+                r.Length = p.yarn.length * 1000;
                 break;
         }
         foreach (CraftDefect d in p.defects)
@@ -384,8 +406,15 @@ public static class CraftEvaluator
         r.WoodHardness = w?.hardness ?? 0.5;
         r.Split = p.wood.split;
         r.Charred = p.wood.charred;
-        r.Integrity = CraftMath.Clamp01((1 - p.wood.split) * (1 - 0.7 * p.wood.charred) * (1 - 0.6 * CraftMath.Clamp01(p.wood.checks)));
-        r.WaterResistance = CraftWoodwork.FinishProtection(p.wood);
+        // Bark left on, rot under it and gouges from the drawknife weaken it too.
+        double bark = CraftWoodwork.BarkLeft(p);
+        r.Integrity = CraftMath.Clamp01((1 - p.wood.split) * (1 - 0.7 * p.wood.charred) * (1 - 0.6 * CraftMath.Clamp01(p.wood.checks))
+                                        * (1 - 0.4 * bark) * (1 - 0.8 * CraftMath.Clamp01(p.wood.rot)) * (1 - 0.3 * CraftMath.Clamp01(p.wood.gouged)));
+        r.WoodToughness *= (1 - 0.7 * CraftMath.Clamp01(p.wood.rot));
+        if (bark > 0.1) r.ShapeNotes.Add("bark is still on it");
+        if (p.wood.rot > 0.1) r.ShapeNotes.Add("rot has got into it under the bark");
+        if (p.wood.gouged > 0.15) r.ShapeNotes.Add("gouged by the drawknife");
+        r.WaterResistance = CraftWoodwork.FinishProtection(p.wood) * (0.85 + 0.15 * CraftWoodwork.FinishWear(p.wood) / Math.Max(0.05, CraftWoodwork.FinishProtection(p.wood) + 0.05));
         r.Moisture = p.wood.moisture;
         double rough = 0, l = 0;
         foreach (MetalSegment s in p.segments) { rough += s.rough * s.length; l += s.length; }
@@ -556,7 +585,9 @@ public static class CraftEvaluator
         r.Integrity *= complete;
         r.Assembly = AssemblyScore(rules, d, joints, parts, r.Notes);
 
-        if (d.IsWeaponLike)
+        if (d.kind == CraftDesignKind.Jewelry)
+            CraftJewelry.Evaluate(rules, d, reports, joints, r);
+        else if (d.IsWeaponLike)
             Weapon(rules, d, reports, m, mass, r);
         else
             Armor(rules, d, reports, joints, mass, r);
@@ -588,13 +619,60 @@ public static class CraftEvaluator
             if (m.Kind == CraftPieceKind.Metal && m.Scale > 0.03) r.Notes.Add($"{main.Name}: still scaled");
             if (m.Kind == CraftPieceKind.Metal && m.Roughness > 25) r.Notes.Add($"{main.Name}: rough surface (hammer marks, scratches)");
         }
-        double quality = d.IsWeaponLike
+        double quality = d.kind == CraftDesignKind.Jewelry
+            ? (r.Material * 0.15 + r.Workmanship * 0.2 + r.Integrity * 0.15 + r.Protection * 0.25 + r.Assembly * 0.25) * (0.85 + 0.15 * (joints?.finish ?? 0))
+            : d.IsWeaponLike
             ? r.Material * 0.22 + r.Workmanship * 0.18 + r.Integrity * 0.2 + r.Edge * 0.15 + r.HeatTreatment * 0.12 + r.Assembly * 0.13
             : r.Material * 0.2 + r.Workmanship * 0.18 + r.Integrity * 0.2 + r.Protection * 0.17 + r.HeatTreatment * 0.07 + r.Assembly * 0.18;
+        quality *= FitFactor(d, reports, joints, r.Notes);
         r.Quality = CraftMath.Clamp01(quality * complete * complete);
+        if (joints != null && joints.mastery > 0)
+        {
+            // the finishing touches of a practised hand: what is left to put right, a master sees and does
+            CraftMasterySettings ms = rules.Settings?.mastery;
+            r.Quality = CraftMastery.FinishingTouch(r.Quality, joints.mastery, ms);
+            if (joints.mastery >= CraftMastery.RankStart(CraftRank.Expert, ms)) r.Notes.Add($"{(joints.mastery >= CraftMastery.RankStart(CraftRank.Master, ms) ? "a master's" : "an expert's")} finishing touches");
+        }
         r.Tier = TierName(r.Quality);
         r.Price = (float)(d.price * (0.3 + 1.4 * r.Quality) + price);
         return r;
+    }
+
+    /// <summary>
+    /// How well it fits its wearer: clothes and rings made to measurements fit (as well as the measuring was); made
+    /// without measuring, a garment fits like any other and a ring is a guess.
+    /// </summary>
+    private static double FitFactor(CraftDesign d, Dictionary<string, List<CraftPieceReport>> reports, AssemblyState a, List<string> notes)
+    {
+        bool cloth = false, ring = false;
+        double band = 0;
+        foreach (CraftComponentSpec c in d.components)
+            if (c.kind == CraftPieceKind.Hide && c.leather != null && c.leather.fabric == CraftFabric.Cloth) cloth = true;
+        if (d.kind == CraftDesignKind.Jewelry)
+            foreach (KeyValuePair<string, List<CraftPieceReport>> kv in reports)
+                foreach (CraftPieceReport pr in kv.Value)
+                    if (pr.Kind == CraftPieceKind.Metal && CraftJewelry.PartOf(pr.Piece) == CraftJewelPart.Band)
+                    {
+                        ring = true;
+                        band = pr.Piece.Tag(CraftJewelry.SizeTag);
+                    }
+        if (!cloth && !ring)
+            return 1;
+        if (a == null || !a.measured)
+        {
+            notes.Add(ring ? "sized by guess: it may not fit" : "made without measuring the wearer: a loose, common fit");
+            return 0.95;
+        }
+        double f = 0.9 + 0.12 * CraftMath.Clamp01(a.fit);
+        if (ring && a.fitSize > 0 && band > 0)
+        {
+            double off = Math.Abs(band - a.fitSize);
+            if (off > 0.4) notes.Add(off > 1.2 ? "the band is the wrong size for the finger" : "the band is a little off the size measured");
+            f *= Math.Max(0.75, 1 - Math.Max(0, off - 0.25) * 0.12);
+        }
+        else if (a.fit > 0.8)
+            notes.Add("made to measure");
+        return f;
     }
 
     public static string TierName(double q) =>
@@ -640,6 +718,8 @@ public static class CraftEvaluator
                 return (rules.Hide(p.hide.hide)?.price ?? 5) * pr.Cells / Math.Max(1, (rules.Hide(p.hide.hide)?.width ?? 10) * (rules.Hide(p.hide.hide)?.height ?? 10)) * 1.5;
             case CraftPieceKind.Wood:
                 return (rules.Wood(p.wood.wood)?.price ?? 1) * pr.Length / 1000;
+            case CraftPieceKind.Gem:
+                return pr.Gem?.Value ?? 0;
             default:
                 return 0;
         }
@@ -674,6 +754,8 @@ public static class CraftEvaluator
             }
             case CraftPieceKind.Fasteners:
                 return CraftMath.Clamp01(pr.FastenerQuality * (0.6 + 0.4 * CraftMath.Smooth(10, 40, pr.Ductility)));
+            case CraftPieceKind.Gem:
+                return pr.Gem != null ? CraftMath.Clamp01(0.5 * pr.Gem.Clarity + 0.5 * pr.Gem.Color) : 0.5;
             default:
                 return 0.5;
         }
@@ -693,6 +775,8 @@ public static class CraftEvaluator
                 return CraftMath.Clamp01(pr.Piece.hide.cutQuality * (0.8 + 0.2 * pr.DyeEvenness) * (0.9 + 0.1 * pr.Piece.hide.edgeFinish));
             case CraftPieceKind.Wood:
                 return CraftMath.Clamp01(shape * (0.8 + 0.2 * CraftMath.Clamp01(1 - pr.Roughness / 80)));
+            case CraftPieceKind.Gem:
+                return pr.Gem != null ? CraftMath.Clamp01((0.7 * pr.Gem.Cut + 0.3 * pr.Gem.Polish) * pr.Gem.Brilliance) : 0.5;
             default:
                 return 0.8;
         }
@@ -754,7 +838,26 @@ public static class CraftEvaluator
                         thread = 0.9 * (strength > 0 ? CraftMath.Clamp(0.75 + 0.25 * strength, 0.8, 1.15) : 1);
                     }
                 q = Math.Min(1, j.stitches / (double)Math.Max(1, spec.count)) * thread * (1 - Math.Min(0.8, j.tensionSpread)) * (1 - Math.Min(0.6, Math.Abs(j.tension - 0.6)))
-                    * (1 - 0.5 * Math.Min(1, j.spacingError)) * (1 - 0.5 * Math.Min(1, j.alignError));
+                    * (1 - 0.5 * Math.Min(1, j.spacingError)) * (1 - 0.5 * Math.Min(1, j.alignError)) * ThreadSuits(rules, d, spec, parts, a);
+                break;
+            }
+            case CraftJointKind.Solder:
+            case CraftJointKind.BezelSet:
+            case CraftJointKind.ProngSet:
+            {
+                q = CraftJewelry.JointQuality(spec, j);
+                if (spec.kind != CraftJointKind.Solder)
+                {
+                    // a wide seat never holds the stone as a snug one does
+                    CraftPiece setting = null, stone = null;
+                    foreach (string role in new[] { spec.roleA, spec.roleB })
+                        if (role != null && parts.TryGetValue(role, out List<CraftPiece> list) && list.Count > 0)
+                        {
+                            if (list[0].kind == CraftPieceKind.Metal) setting = list[0];
+                            if (list[0].kind == CraftPieceKind.Gem) stone = list[0];
+                        }
+                    if (setting != null && stone != null) q *= 0.6 + 0.4 * CraftJewelry.SeatFit(setting, stone);
+                }
                 break;
             }
             case CraftJointKind.Wrap:
@@ -781,6 +884,23 @@ public static class CraftEvaluator
                 break;
         }
         return CraftMath.Clamp01(q * (1 - j.damage));
+    }
+
+    /// <summary>How well the thread suits the material it sewed (heavy leather wants strong thread; fine cloth puckers under coarse).</summary>
+    private static double ThreadSuits(CraftRules rules, CraftDesign d, CraftJointSpec spec, Dictionary<string, List<CraftPiece>> parts, AssemblyState a)
+    {
+        double strength = 0;
+        foreach (CraftComponentSpec c in d.components)
+            if (c.supply && c.supplyKind == CraftSupplyKind.Thread && a != null)
+                strength = Math.Max(strength, a.Supply(c.role + CraftWorkshop.StrengthSuffix));
+        if (strength <= 0)
+            return 1;
+        double thick = 0;
+        foreach (string role in new[] { spec.roleA, spec.roleB })
+            if (!string.IsNullOrEmpty(role) && parts.TryGetValue(role, out List<CraftPiece> list))
+                foreach (CraftPiece p in list)
+                    if (p.kind == CraftPieceKind.Hide) thick = Math.Max(thick, CraftLeather.MeanThickness(rules, p));
+        return thick > 0 ? CraftTextiles.ThreadSuits(thick, strength) : 1;
     }
 
     private static double AssemblyScore(CraftRules rules, CraftDesign d, AssemblyState a, Dictionary<string, List<CraftPiece>> parts, List<string> notes)

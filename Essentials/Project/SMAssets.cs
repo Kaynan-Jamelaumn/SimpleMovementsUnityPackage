@@ -7,7 +7,7 @@ using UnityEngine;
 /// <para>Everything generated goes under <c>Assets/Resources/SimpleMovements/</c>, one folder per kind of asset:</para>
 /// <code>
 /// Resources/SimpleMovements/
-///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings, Alchemy Database
+///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings, Alchemy and Harvest Databases
 ///   Databases/     Ability, Trait, Item and Item Category databases, Character Catalog
 ///   Economy/       Default currency
 ///   Characters/    Races/, Classes/, Traits/
@@ -15,7 +15,8 @@ using UnityEngine;
 ///   Mobs/          one folder per mob type (profile, basic attack, abilities)
 ///   Combat/        Body Parts/
 ///   Items/         Weapons/, Armor/, Consumables/, Ammo/, Medical/, Limbs/, Drops/ (Item Drop Manager + Tables/),
-///                  Alchemy/ (Ingredients/, Potions/, Icons/, Models/)
+///                  Alchemy/ (Ingredients/, Potions/, Icons/, Models/), Harvesting/ (Tools/, Icons/, one folder per creature)
+///   Harvesting/    Anatomies/ (creature anatomies)
 ///   UI/            HUD/, Inventory/
 ///   World/         Weather/, Hub World/, Biome Backups/
 ///   Alchemy/       Equipment/ (vessels)
@@ -65,6 +66,10 @@ public static class SMAssets
     public const string CraftingStock = "Items/Crafting/Stock";
     public const string CraftingTemplates = "Items/Crafting/Templates";
     public const string CraftingIcons = "Items/Crafting/Icons";
+    public const string HarvestItems = "Items/Harvesting";
+    public const string HarvestTools = "Items/Harvesting/Tools";
+    public const string Harvesting = "Harvesting";
+    public const string Anatomies = "Harvesting/Anatomies";
     public const string UI = "UI";
     public const string HUD = "UI/HUD";
     public const string InventoryUI = "UI/Inventory";
@@ -120,7 +125,7 @@ public static class SMAssets
         switch (name)
         {
             case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": case "InjurySettings":
-            case "AlchemyDatabase": return Settings;
+            case "AlchemyDatabase": case "HarvestDatabase": return Settings;
             case "AbilityDatabase": case "TraitDatabase": case "ItemDatabase": case "ItemCategoryDatabase": case "CharacterCatalog": return Databases;
             case "DefaultCurrency": return Economy;
             case "ItemDropManager": return ItemDrops;

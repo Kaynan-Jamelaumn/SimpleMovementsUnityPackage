@@ -32,6 +32,9 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
     [SerializeField] private BodyPartProfile profile;
     [Tooltip("Hits closer than this to a hitbox collider count as hitting it (metres), for hits that report only a point.")]
     [SerializeField, Min(0f)] private float hitboxTolerance = 0.15f;
+    [Tooltip("For profiles with length bands (four-legged animals, fish, serpents): the body's length front to back, in metres, " +
+             "centred on the character's pivot. 0 = measured from its model (its meshes, else its colliders).")]
+    [SerializeField, Min(0f)] private float bodyLength = 0f;
     [Tooltip("Log the part of every hit (debug).")]
     [SerializeField] private bool debugLog = false;
     [Tooltip("Scene view: the body-part bands, the hitboxes and the last hits (with the part and damage), so you can see where " +
@@ -128,6 +131,9 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
     }
 
     public CombatEntity Entity => entity;
+
+    /// <summary>Has a profile of its own been assigned (rather than Combat Settings' default or the built-in humanoid)?</summary>
+    public bool HasOwnProfile => profile != null;
 
     /// <summary>True when a severed part stops this character from attacking with weapons.</summary>
     public bool WeaponAttacksDisabled { get; private set; }
@@ -332,7 +338,94 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
         Vector3 offset = point - basePos;
         offset.y = 0f;
         float lateral = right.sqrMagnitude > 1e-6f ? Vector3.Dot(offset, right.normalized) / Mathf.Max(0.05f, entity.Radius) : 0f;
-        return p.Locate(h01, lateral);
+        return p.Locate(h01, lateral, p.UsesLength ? Along(point) : -1f);
+    }
+
+    // ------------------------------------------------------------------ length (horizontal bodies)
+    private bool extentMeasured;
+    private float extentBack, extentFront;
+
+    /// <summary>
+    /// Where <paramref name="point"/> is along the body: 0 at its tail end, 1 at its nose (clamped), for profiles with
+    /// length bands.
+    /// </summary>
+    public float Along(Vector3 point)
+    {
+        BodyExtent(out float back, out float front);
+        Transform t = entity != null ? entity.transform : transform;
+        float z = Vector3.Dot(point - t.position, Flat(t.forward));
+        return Mathf.Clamp01((z - back) / Mathf.Max(0.01f, front - back));
+    }
+
+    /// <summary>
+    /// How far the body reaches behind (<paramref name="back"/>, negative) and in front of (<paramref name="front"/>) the
+    /// character's pivot along its facing, in metres: Body Length when set, else measured once from the meshes (their own
+    /// bounds, so it does not matter which way it faces), else from the colliders.
+    /// </summary>
+    public void BodyExtent(out float back, out float front)
+    {
+        if (bodyLength > 0f)
+        {
+            back = -bodyLength * 0.5f;
+            front = bodyLength * 0.5f;
+            return;
+        }
+        if (!extentMeasured || !Application.isPlaying)
+        {
+            Measure(out extentBack, out extentFront);
+            extentMeasured = true;
+        }
+        back = extentBack;
+        front = extentFront;
+    }
+
+    private static Vector3 Flat(Vector3 v)
+    {
+        v.y = 0f;
+        return v.sqrMagnitude > 1e-6f ? v.normalized : Vector3.forward;
+    }
+
+    private void Measure(out float back, out float front) =>
+        MeasureLength(entity != null ? entity.transform : transform, entity != null ? entity.Radius : 0.5f, out back, out front);
+
+    /// <summary>
+    /// How far a body reaches behind (<paramref name="back"/>, negative) and in front of (<paramref name="front"/>)
+    /// <paramref name="t"/>'s pivot along its facing, in metres: from its meshes' own bounds (whichever way it faces), else
+    /// its colliders, else twice <paramref name="radius"/> each way.
+    /// </summary>
+    public static void MeasureLength(Transform t, float radius, out float back, out float front)
+    {
+        Vector3 fwd = Flat(t.forward), origin = t.position;
+        float lo = float.MaxValue, hi = float.MinValue;
+        void Box(Matrix4x4 m, Bounds b)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 c = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1f : 1f, (i & 2) == 0 ? -1f : 1f, (i & 4) == 0 ? -1f : 1f));
+                float z = Vector3.Dot(m.MultiplyPoint3x4(c) - origin, fwd);
+                if (z < lo) lo = z;
+                if (z > hi) hi = z;
+            }
+        }
+        foreach (Renderer r in t.GetComponentsInChildren<Renderer>())
+        {
+            if (r is SkinnedMeshRenderer smr)
+                Box((smr.rootBone != null ? smr.rootBone : smr.transform).localToWorldMatrix, smr.localBounds);
+            else if (r is MeshRenderer && r.TryGetComponent(out MeshFilter mf) && mf.sharedMesh != null)
+                Box(r.transform.localToWorldMatrix, mf.sharedMesh.bounds);
+        }
+        if (lo > hi)
+            foreach (Collider c in t.GetComponentsInChildren<Collider>())
+                if (c != null && !c.isTrigger && c.GetComponent<BodyPartHitbox>() == null)
+                    Box(Matrix4x4.identity, c.bounds);
+        if (lo > hi)
+        {
+            float r = Mathf.Max(0.2f, radius);
+            lo = -r * 2f;
+            hi = r * 2f;
+        }
+        back = lo;
+        front = Mathf.Max(lo + 0.05f, hi);
     }
 
     /// <summary>A severed part's hits go to its redirect part (one level).</summary>
@@ -685,6 +778,29 @@ public class BodyPartController : MonoBehaviour, IDamageInterceptor, ILocational
             Color c = PartColor(part, i);
             float lo = Mathf.Min(part.heightRange.x, part.heightRange.y) * hgt;
             float hi = Mathf.Max(part.heightRange.x, part.heightRange.y) * hgt;
+            if (part.HasLength)
+            {
+                // A horizontal body: the part's box along the body, on its side for limbs.
+                BodyExtent(out float back, out float front);
+                float z0 = back + Mathf.Min(part.lengthRange.x, part.lengthRange.y) * (front - back);
+                float z1 = back + Mathf.Max(part.lengthRange.x, part.lengthRange.y) * (front - back);
+                float halfW = rad, x0 = -halfW, x1 = halfW;
+                if (part.side == BodySide.Left) { x0 = -halfW; x1 = -halfW * part.sideOffset * 0.999f; if (part.sideOffset <= 0.01f) x1 = 0f; }
+                else if (part.side == BodySide.Right) { x0 = part.sideOffset <= 0.01f ? 0f : halfW * part.sideOffset; x1 = halfW; }
+                var centre = new Vector3((x0 + x1) * 0.5f, (lo + hi) * 0.5f, (z0 + z1) * 0.5f);
+                var size = new Vector3(Mathf.Max(0.02f, x1 - x0), Mathf.Max(0.02f, hi - lo), Mathf.Max(0.02f, z1 - z0));
+                Vector3 pivot = new Vector3(transform.position.x, b.y, transform.position.z);
+                Matrix4x4 old = Gizmos.matrix;
+                Gizmos.matrix = Matrix4x4.TRS(pivot, rot, Vector3.one);
+                Gizmos.color = new Color(c.r, c.g, c.b, wire);
+                Gizmos.DrawWireCube(centre, size);
+                Gizmos.color = new Color(c.r, c.g, c.b, fill);
+                Gizmos.DrawCube(centre, size);
+                Gizmos.matrix = old;
+                if (!anyBox)
+                    UnityEditor.Handles.Label(pivot + rot * (centre + Vector3.up * (size.y * 0.5f + 0.05f)), $"{BodyPartLayout.ShortName(part.name)} ×{part.damageMultiplier:0.##}", SmallLabel(c));
+                continue;
+            }
             Vector2[] shape = BodyPartLayout.Shape(region);
             string label = $"{BodyPartLayout.ShortName(part.name)} ×{part.damageMultiplier:0.##}";
             if (shape == null)

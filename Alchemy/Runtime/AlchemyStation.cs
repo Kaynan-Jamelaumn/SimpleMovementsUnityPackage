@@ -952,12 +952,16 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             return false;
         }
         AlchemyResult r = brew.Bottle(n);
+        CleanerDecant(r, Mastery(player));
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
         if (bottleItem != null && inv != null)
             inv.RemoveItems(bottleItem, r.Bottles);
         Give(inv, item, r.Bottles, r);
         if (player != null)
+        {
             AlchemyKnowledge.For(player)?.RecordResult(brew, r, r.Bottles);
+            AlchemyKnowledge.For(player)?.Practised(BrewExperience(r), false, true);
+        }
         Tell(player, $"Bottled {r.Bottles} × {r.DisplayName}{QualityText(r)}.");
         if (brew.IsEmpty)
             SetBrew(null);
@@ -982,8 +986,10 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         AlchemyHarvest h = brew.CollectDistillate();
         if (item != null)
         {
+            CleanerDecant(preview, Mastery(player));
             if (bottleItem != null && inv != null) inv.RemoveItems(bottleItem, bottles);
             Give(inv, item, bottles, preview);
+            if (player != null) AlchemyKnowledge.For(player)?.Practised(BrewExperience(preview), false, true);
         }
         int harvested = GiveHarvest(inv, h);
         if (player != null)
@@ -1019,7 +1025,10 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
         int harvested = GiveHarvest(inv, h);
         if (player != null && hadLiquid)
+        {
             AlchemyKnowledge.For(player)?.RecordResult(finished, h.Liquid, 0);
+            AlchemyKnowledge.For(player)?.Practised(0.15, true); // a failure teaches a little too
+        }
         Tell(player, (harvested > 0 ? $"Emptied the vessel and collected {harvested} item(s) from it." : "Emptied the vessel.") +
                      (residue.Count > 0 ? " A film of residue clings to it." : ""));
         SetBrew(null);
@@ -1040,6 +1049,26 @@ public class AlchemyStation : MonoBehaviour, IInteractable
         }
         return total;
     }
+
+    // ------------------------------------------------------------------ practice
+    /// <summary>How practised <paramref name="player"/> is at alchemy (their journal, kept where the brew runs).</summary>
+    public static double Mastery(CombatEntity player) => player != null ? AlchemyKnowledge.For(player)?.Mastery ?? 0 : 0;
+
+    /// <summary>
+    /// A practised alchemist decants cleaner - the dregs and the scum stay behind: the purity (and with it the quality)
+    /// gains part of what it lacks. It never makes a weak brew strong, nor changes what it is.
+    /// </summary>
+    private void CleanerDecant(AlchemyResult r, double mastery)
+    {
+        if (r == null || r.Outcome == null || !r.Outcome.HasPotency || r.IsFailure || mastery <= 0)
+            return;
+        r.Purity = CraftMastery.FinishingTouch(r.Purity, mastery);
+        r.Quality = AlchemySimulator.Clamp(Math.Min(1.0, r.Potency) * (1.0 - Rules.Settings.purityInfluence * (1.0 - r.Purity)), 0, 1);
+    }
+
+    /// <summary>What bottling a brew teaches: more for a better one, a little more for more of it.</summary>
+    private static double BrewExperience(AlchemyResult r) =>
+        r == null || r.IsFailure ? 0.2 : CraftMastery.ItemExperience(null, r.Quality) * (1 + 0.15 * Math.Min(4, Math.Max(0, r.Bottles - 1)));
 
     /// <summary>" - quality 72 % (strength 80 %, purity 91 %)": what bottling reveals.</summary>
     public static string QualityText(AlchemyResult r) =>

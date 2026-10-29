@@ -265,13 +265,16 @@ public class Merchant : NPCBehaviour
         return Pricing.BuyPrice(new MerchantPriceContext(this, slot.Item, true, slot, null, player, CategoryOf(slot.Item, slot.Source)));
     }
 
-    /// <summary>Price the player gets for one item of <paramref name="stack"/> (0 = worthless).</summary>
-    public int GetSellPrice(InventoryItem stack, GameObject player = null)
+    /// <summary>
+    /// Price the player gets for one item of <paramref name="stack"/> (0 = worthless): the next one, or for items whose
+    /// copies differ (harvested pieces) copy <paramref name="copy"/> (0 = the next one, 1 the one after it).
+    /// </summary>
+    public int GetSellPrice(InventoryItem stack, GameObject player = null, int copy = 0)
     {
         if (stack == null || stack.itemScriptableObject == null)
             return 0;
         ItemSO item = stack.itemScriptableObject;
-        return Pricing.SellPrice(new MerchantPriceContext(this, item, false, null, stack, player, CategoryOf(item)));
+        return Pricing.SellPrice(new MerchantPriceContext(this, item, false, null, stack, player, CategoryOf(item), copy));
     }
 
     /// <summary>Price for one undamaged <paramref name="item"/> (inspector previews).</summary>

@@ -42,6 +42,7 @@ public sealed class CraftGrindMode : CraftMode
     };
 
     public override string Title => "Grind";
+    public override CraftDiscipline Discipline => Selected != null && Selected.kind == CraftPieceKind.Wood ? CraftDiscipline.Woodwork : CraftDiscipline.Smithing;
     // Metal surface work: a wheel, polishing, or files where metal is worked (not the files of a leather bench).
     public override bool Available(CraftStation s) =>
         s.Has(CraftTools.Grinder) || s.Has(CraftTools.Polishing) || s.Has(CraftTools.Files) && (s.Has(CraftTools.Anvil) || s.Has(CraftTools.Forge));

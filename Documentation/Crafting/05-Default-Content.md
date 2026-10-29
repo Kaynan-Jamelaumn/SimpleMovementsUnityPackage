@@ -146,6 +146,8 @@ Frostwater lends ice and dragon's blood fire to the steel they harden.
 | Bear hide | `bear` | 16x12 | Very thick, very fatty. |
 | Rabbit pelt | `rabbit` | 4x3 | Small and soft: linings. |
 | Drake hide | `drake` | 14x10 | Scaled and fire-proof by nature. |
+| Snakeskin | `snake` | 18x5 | Thin and scaled: belts, wraps, sheaths. (Skinned giant serpents.) |
+| Troll hide | `troll` | 16x12 | Thick as a door: heavy leather armour that shrugs off blows. (Skinned trolls.) |
 | Linen cloth (textile) | `linen_cloth` | 14x20 | Smooth, cool linen: shirts, linings, the layers of a gambeson. |
 | Wool cloth (textile) | `wool_cloth` | 14x20 | Warm, springy wool: cloaks, hoods, padding. |
 | Canvas (textile) | `canvas` | 12x18 | Heavy hemp canvas: the outer shell of a gambeson, bags, sails. |

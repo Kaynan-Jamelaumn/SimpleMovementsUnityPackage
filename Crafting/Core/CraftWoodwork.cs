@@ -2,16 +2,33 @@ using System;
 using System.Collections.Generic;
 
 /// <summary>
-/// The woodshop: riving a billet along its grain, sawing to a line, steaming and bending over a form, seasoning in a
-/// drying stack, sanding and varnishing. Wood is fibres: a piece split along them is strong (its <see cref="WoodState.runout"/>
+/// The woodshop: debarking a log on the shaving horse, splitting it with wedges and a maul, riving a billet along its
+/// grain, sawing to a line, steaming and bending over a form, seasoning in a drying stack, sanding through the grits and
+/// sealing (varnish, oil, wax, resin). Wood is fibres: a piece split along them is strong (its <see cref="WoodState.runout"/>
 /// stays low), one whose fibres run out of it breaks along them; steamed long enough for its thickness it bends - too
 /// fast, too cold or too cross-grained and the outside of the bend tears; dried too fast it checks; a finish keeps the
 /// water out, if it goes on dry wood in thin, even coats over a sanded surface.
 /// </summary>
 public static class CraftWoodwork
 {
-    /// <summary>Moisture of seasoned wood (it ends near this indoors).</summary>
+    /// <summary>Moisture of seasoned wood in ordinary air (it ends near this indoors).</summary>
     public const double Seasoned = 0.12;
+    /// <summary>Moisture of a freshly felled log.</summary>
+    public const double Green = 0.55;
+    /// <summary>The least width (mm) a log can be split with wedges (narrower: rive it with the froe).</summary>
+    public const double MinSplitWidth = 60;
+
+    /// <summary>What wood settles to in air of <paramref name="humidity"/> (0-1): 8 % in dry air, about 12 % in ordinary air, 20 % in damp.</summary>
+    public static double Equilibrium(double humidity) => 0.06 + 0.12 * CraftMath.Clamp01(humidity) + (humidity > 0.8 ? (humidity - 0.8) * 0.3 : 0);
+
+    /// <summary>The mean bark left on a piece (0-1).</summary>
+    public static double BarkLeft(CraftPiece p)
+    {
+        if (p == null || p.segments.Count == 0) return 0;
+        double b = 0;
+        foreach (MetalSegment s in p.segments) b += s.bark;
+        return b / p.segments.Count;
+    }
     /// <summary>The least width (mm) a half can be after riving.</summary>
     public const double MinRiveWidth = 8;
 
@@ -37,14 +54,22 @@ public static class CraftWoodwork
             w.steamed = Math.Max(0, w.steamed - hours * 0.6); // cooled, it sets again
         // A finish dries.
         if (w.finishWet > 0) w.finishWet = Math.Max(0, w.finishWet - hours * 0.25);
+        // Bark left on wet wood keeps the water in and lets rot and beetles in.
+        w.bark = BarkLeft(p);
+        if (w.bark > 0.2 && w.moisture > 0.25 && p.location != CraftLocation.Steam)
+            w.rot = Math.Min(1, w.rot + hours * 0.002 * w.bark * (w.moisture - 0.2) * 4);
         // Seasoning: in the stack (or hung on the rack) the water goes; too fast and the surface and ends check.
         if (p.location == CraftLocation.Stack || p.location == CraftLocation.Rack)
         {
             bool stack = p.location == CraftLocation.Stack;
             double even = stack ? w.stackEven : 0.4, shade = stack ? w.shade : 0.5, ends = stack ? w.endsSealed : 0;
-            double rate = 0.08 * (0.6 + 0.8 * even) * (1.5 - shade) * (1 + Math.Max(0, ws.Ambient - 18) / 30);
+            // Damp air dries it slower and to a wetter end; bark left on holds the water in.
+            double humid = ws.Humidity, settle = Equilibrium(humid);
+            double rate = 0.08 * (0.6 + 0.8 * even) * (1.5 - shade) * (1 + Math.Max(0, ws.Ambient - 18) / 30) * (1.35 - 0.7 * humid) * (1 - 0.6 * w.bark);
             double before = w.moisture;
-            w.moisture = Math.Max(Seasoned, w.moisture - (w.moisture - Seasoned) * (1 - Math.Exp(-rate * hours)));
+            w.moisture = before > settle
+                ? Math.Max(settle, w.moisture - (w.moisture - settle) * (1 - Math.Exp(-rate * hours)))
+                : Math.Min(settle, w.moisture + (settle - w.moisture) * (1 - Math.Exp(-rate * 0.5 * hours)));
             double lost = before - w.moisture;
             if (lost > 0 && before > 0.2)
             {
@@ -221,6 +246,13 @@ public static class CraftWoodwork
             return;
         double grit = CraftMath.Clamp01(op.a), work = Math.Max(0, op.b), along = CraftMath.Clamp01(op.c);
         double floor = 4 + 30 * (1 - grit) + 25 * (1 - along);
+        // Through the grits in order: a fine paper straight after a coarse one cannot take out the coarse scratches
+        // (they stay under the polish); each paper only clears what the one before it left.
+        double last = p.wood.lastGrit;
+        bool skipped = last >= 0 && grit - last > 0.4;
+        if (skipped) floor = Math.Max(floor, 4 + 30 * (1 - last) * 0.7);
+        // Sanding through bark is wasted paper; sharp tools (and paper) cut faster.
+        work *= ws.ToolQuality;
         int a = Math.Max(0, Math.Min(op.i0, op.i1)), b = Math.Min(p.segments.Count - 1, Math.Max(op.i0, op.i1));
         for (int i = a; i <= b; i++)
         {
@@ -235,7 +267,9 @@ public static class CraftWoodwork
             else p.wood.finishEven = Math.Min(1, p.wood.finishEven + 0.1 * along * grit);
             p.wood.finish = Math.Max(0, p.wood.finish - 0.03 * work * (1 - grit));
         }
-        p.Record(ws.Elapsed, CraftOpKind.SandWood, along > 0.7 ? "Sanded with the grain" : "Sanded across the grain", grit);
+        p.wood.lastGrit = Math.Max(last, grit);
+        if (skipped) ws.Raise(CraftEventKind.Note, p.id, "skipped_grit", "The coarse scratches still show under the fine paper.");
+        p.Record(ws.Elapsed, CraftOpKind.SandWood, skipped ? "Sanded with a fine paper straight after a coarse one: the coarse scratches stay" : along > 0.7 ? "Sanded with the grain" : "Sanded across the grain", grit);
     }
 
     /// <summary>
@@ -259,6 +293,14 @@ public static class CraftWoodwork
         double smooth = CraftMath.Smooth(60, 10, rough);
         double coat = 0.35 * (0.4 + 0.6 * thick) * adhesion * strength * share;
         double quality = even * (0.5 + 0.5 * smooth) * (w.finishWet > 0.4 ? 0.7 : 1) * (thick > 0.75 ? 1 - (thick - 0.75) * 1.6 : 1);
+        if (s != null && s.kind == CraftSupplyKind.Wax)
+        {
+            // Wax is rubbed into the surface, not built up as a film: it sheds water and wears away.
+            w.wax = Math.Min(1, w.wax + coat * 1.4 * (0.5 + 0.5 * smooth));
+            for (int i = a; i <= b; i++) p.segments[i].coating = Math.Min(1, p.segments[i].coating + coat * 0.5 / Math.Max(0.05, share));
+            p.Record(ws.Elapsed, CraftOpKind.Varnish, adhesion < 1 ? "Wax rubbed on damp wood: it smears" : "Wax rubbed in", coat);
+            return;
+        }
         double before = w.finish;
         w.finish = Math.Min(1, w.finish + coat);
         w.finishEven = before + coat > 1e-6 ? (w.finishEven * before + quality * coat) / (before + coat) : quality;
@@ -267,14 +309,120 @@ public static class CraftWoodwork
         for (int i = a; i <= b; i++) p.segments[i].coating = Math.Min(1, p.segments[i].coating + coat / Math.Max(0.05, share));
         bool oil = s != null && s.kind == CraftSupplyKind.Oil;
         if (oil) w.oil = Math.Min(1, w.oil + coat);
+        // Wax sits on the surface (it sheds water, wears off); a resin sealer builds a hard film (it wears well).
+        if (s != null && s.id.IndexOf("resin", StringComparison.OrdinalIgnoreCase) >= 0) w.resin = Math.Min(1, w.resin + coat);
         if (thick > 0.75)
             for (int i = a; i <= b; i++) p.segments[i].rough = Math.Max(p.segments[i].rough, 20 + 60 * (thick - 0.75)); // runs and sags
         string how = adhesion < 1 ? "A coat on damp wood: it clouds and will lift" : thick > 0.75 ? "A thick coat: it runs" : even < 0.5 ? "A patchy coat" : "An even coat";
         p.Record(ws.Elapsed, CraftOpKind.Varnish, $"{how} of {s?.Name.ToLowerInvariant() ?? "varnish"}", coat);
     }
 
-    /// <summary>How well the finish keeps water out (0-1).</summary>
-    public static double FinishProtection(WoodState w) => CraftMath.Clamp01(w.finish * (0.4 + 0.6 * w.finishEven));
+    /// <summary>
+    /// How well the finish keeps water out (0-1): the film (varnish, resin) by how even it is, oil soaked in, wax on top.
+    /// </summary>
+    public static double FinishProtection(WoodState w) =>
+        CraftMath.Clamp01(w.finish * (0.4 + 0.6 * w.finishEven) + 0.25 * w.oil * (1 - w.finish) + 0.2 * w.wax * (1 - w.finish * 0.5));
+
+    /// <summary>How well the finish stands wear and weather (0-1): a hard resin or varnish film best, wax least.</summary>
+    public static double FinishWear(WoodState w) => CraftMath.Clamp01(w.finish * (0.5 + 0.5 * w.finishEven) * (0.7 + 0.3 * w.resin) + 0.15 * w.oil + 0.05 * w.wax);
+
+    // ------------------------------------------------------------------ logs
+    /// <summary>
+    /// Takes the bark off segments <c>i0</c>-<c>i1</c> with the drawknife: <c>a</c> = how deep the knife bit (0 skimming
+    /// the outer bark - 0.5 right under it, at the sapwood - 1 deep into the wood), <c>b</c> = how steady the stroke
+    /// was (0-1), <c>c</c> = how much of the way round the log the strokes went (0-1). Green wood (sap up) peels clean;
+    /// a dry log's bark is tight and needs digging (gouges). Too deep gouges the wood itself: it loses thickness and is
+    /// rough there.
+    /// </summary>
+    public static void Debark(CraftWorkshop ws, CraftPiece p, CraftOperation op)
+    {
+        if (p == null || p.kind != CraftPieceKind.Wood || p.segments.Count == 0)
+            return;
+        double depth = CraftMath.Clamp01(op.a), steady = CraftMath.Clamp01(op.b), round = CraftMath.Clamp01(op.c);
+        double tq = ws.ToolQuality;
+        bool green = p.wood.moisture > 0.3;
+        double peel = (green ? 1.25 : 0.65) * Math.Min(1.2, tq);
+        // Too shallow takes only the outer bark; at the cambium it all lifts; deeper still cuts into the wood.
+        double take = depth < 0.3 ? depth / 0.3 * 0.5 : 1;
+        double gouge = Math.Max(0, depth - (green ? 0.62 : 0.52)) * 1.8 * (1.2 - 0.5 * steady) / Math.Max(0.5, tq);
+        int a = Math.Max(0, Math.Min(op.i0, op.i1)), b = Math.Min(p.segments.Count - 1, Math.Max(op.i0, op.i1));
+        double gouged = 0;
+        for (int i = a; i <= b; i++)
+        {
+            MetalSegment s = p.segments[i];
+            s.bark = Math.Max(0, s.bark - round * take * peel);
+            if (gouge > 0)
+            {
+                double g = gouge * round;
+                s.width = Math.Max(5, s.width - g * 6);
+                s.thickness = Math.Max(5, s.thickness - g * 6);
+                s.rough = Math.Max(s.rough, 40 + 80 * g);
+                gouged += g;
+            }
+            if (steady < 0.4) s.rough = Math.Max(s.rough, 30 + 40 * (0.4 - steady)); // chatter marks
+        }
+        if (b >= a) p.wood.gouged = CraftMath.Clamp01(p.wood.gouged + gouged / (b - a + 1) * 0.5);
+        if (gouge > 0.1) ws.Raise(CraftEventKind.Note, p.id, "gouged", "The drawknife bites into the wood under the bark.");
+        p.wood.bark = BarkLeft(p);
+        string how = gouge > 0.1 ? "Debarked, the drawknife gouging into the wood" : depth < 0.3 ? "Shaved the outer bark: the inner bark is still on" : green ? "Peeled the bark clean" : "Worked the tight bark off";
+        p.Record(ws.Elapsed, CraftOpKind.DebarkWood, how, p.wood.bark);
+        if (p.wood.bark < 0.05) ws.Raise(CraftEventKind.Note, p.id, "debarked", "The last of the bark comes away.");
+    }
+
+    /// <summary>
+    /// Splits a log (or a large half) with wedges and the maul: <c>a</c> = how far off the heart the wedge was set
+    /// (0 through the pith - 1 at the bark), <c>b</c> = how true the line followed a check or ray (0 across - 1 along),
+    /// <c>c</c> = how square and solid the blows landed (0-1), <c>i0</c> = blows it took. Through the heart and along the
+    /// rays it splits straight into two even halves whose grain follows them; off the heart the halves are uneven, and a
+    /// line across the rays twists out and leaves runout and splinters.
+    /// </summary>
+    public static void SplitLog(CraftWorkshop ws, CraftPiece p, CraftOperation op)
+    {
+        if (p == null || p.kind != CraftPieceKind.Wood || p.segments.Count == 0)
+            return;
+        double off = CraftMath.Clamp01(op.a), along = CraftMath.Clamp01(op.b), solid = CraftMath.Clamp01(op.c);
+        int blows = Math.Max(1, op.i0);
+        CraftPiece q = ws.Create(op, CraftPieceKind.Wood, $"split from {p.origin}");
+        string id = q.id;
+        CraftPiece copy = p.Clone();
+        q.wood = copy.wood;
+        q.segments = copy.segments;
+        q.record = copy.record;
+        q.tags = copy.tags;
+        q.location = CraftLocation.Air;
+        q.id = id;
+        // Off the heart the halves are uneven; the smaller one is the far side of the wedge.
+        double share = 0.5 + 0.38 * off;
+        double runout = CraftMath.Clamp01(p.wood.runout * (0.5 + 0.5 * (1 - along)) + (1 - along) * 0.5 + off * 0.1);
+        bool first = true;
+        foreach (CraftPiece half in new[] { p, q })
+        {
+            double f = first ? share : 1 - share;
+            first = false;
+            half.wood.log = false;
+            half.wood.runout = runout;
+            foreach (MetalSegment s in half.segments)
+            {
+                s.width = Math.Max(6, s.width * f - 1);
+                s.rough = Math.Max(s.rough, 30 + 50 * (1 - along) + 30 * (1 - solid));
+            }
+            // Glancing, uneven blows (and many of them) bruise and check the ends.
+            if (solid < 0.5 || blows > 8)
+                half.wood.checks = Math.Min(1, half.wood.checks + (0.5 - Math.Min(0.5, solid)) * 0.3 + Math.Max(0, blows - 8) * 0.01);
+        }
+        // A line across the rays twists out: the halves end in splinters for part of their length.
+        if (along < 0.4)
+        {
+            int n = q.segments.Count;
+            int bad = Math.Max(1, (int)Math.Round(n * (0.4 - along)));
+            for (int i = n - bad; i < n; i++) q.segments[i].width = Math.Max(6, q.segments[i].width * 0.6);
+            q.AddDefect(CraftDefectKind.Crack, n - 1, 0.4 - along, true, "the split twisted out across the grain");
+        }
+        string how = off < 0.15 && along > 0.75 ? "Split cleanly through the heart" : off >= 0.15 ? "Split off the heart: the halves are uneven" : "Split, the line twisting across the grain";
+        p.Record(ws.Elapsed, CraftOpKind.SplitLog, how, off);
+        q.Record(ws.Elapsed, CraftOpKind.SplitLog, how, off);
+        ws.Raise(CraftEventKind.Cut, p.id, q.id, how);
+    }
 }
 
 public sealed partial class CraftWorkshop
@@ -306,6 +454,34 @@ public sealed partial class CraftWorkshop
             return null;
         }
         var op = new CraftOperation { kind = CraftOpKind.Rive, piece = id, a = (float)CraftMath.Clamp01(stray), b = (float)CraftMath.Clamp01(steadiness) };
+        Record(op);
+        return op.other;
+    }
+
+    /// <summary>Takes bark off segments <paramref name="from"/>-<paramref name="to"/> with the drawknife (see <see cref="CraftWoodwork.Debark"/>).</summary>
+    public bool DebarkWood(string id, int from, int to, double depth, double steadiness, double round, out string reason)
+    {
+        if (!WoodCheck(id, CraftTools.ShavingHorse, "There is no shaving horse and drawknife here.", out CraftPiece p, out reason))
+            return false;
+        if (CraftWoodwork.BarkLeft(p) <= 0.001)
+            return Refuse("There is no bark on it.", out reason, id);
+        Record(new CraftOperation { kind = CraftOpKind.DebarkWood, piece = id, i0 = from, i1 = to, a = (float)CraftMath.Clamp01(depth), b = (float)CraftMath.Clamp01(steadiness), c = (float)CraftMath.Clamp01(round) });
+        return true;
+    }
+
+    /// <summary>Splits a log in two with wedges and the maul (see <see cref="CraftWoodwork.SplitLog"/>). Returns the other half's id.</summary>
+    public string SplitLog(string id, double offHeart, double alongRays, double solid, int blows, out string reason)
+    {
+        if (!WoodCheck(id, CraftTools.ChoppingBlock, "There are no wedges and maul here.", out CraftPiece p, out reason))
+            return null;
+        double w = 0;
+        foreach (MetalSegment s in p.segments) w = Math.Max(w, s.width);
+        if (w < CraftWoodwork.MinSplitWidth)
+        {
+            Refuse("It is small enough to rive with the froe.", out reason, id);
+            return null;
+        }
+        var op = new CraftOperation { kind = CraftOpKind.SplitLog, piece = id, a = (float)CraftMath.Clamp01(offHeart), b = (float)CraftMath.Clamp01(alongRays), c = (float)CraftMath.Clamp01(solid), i0 = Math.Max(1, Math.Min(99, blows)) };
         Record(op);
         return op.other;
     }
@@ -379,7 +555,7 @@ public sealed partial class CraftWorkshop
         if (!WoodCheck(id, CraftTools.FinishingBench, "There is no finishing bench here.", out _, out reason))
             return false;
         CraftSupplyDefinition s = Rules.Supply(supply);
-        if (s == null || s.kind != CraftSupplyKind.Varnish && s.kind != CraftSupplyKind.Oil)
+        if (s == null || s.kind != CraftSupplyKind.Varnish && s.kind != CraftSupplyKind.Oil && s.kind != CraftSupplyKind.Wax)
             return Refuse("That is not a finish for wood.", out reason, id);
         Record(new CraftOperation { kind = CraftOpKind.Varnish, piece = id, id = s.id, i0 = from, i1 = to, a = (float)CraftMath.Clamp01(evenness), b = (float)CraftMath.Clamp01(thickness) });
         return true;

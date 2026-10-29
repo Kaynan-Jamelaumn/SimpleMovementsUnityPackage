@@ -37,21 +37,24 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
     private int journalTab;
 
     private Canvas canvas;
-    private TextMeshProUGUI title, subtitle, hint, lookText, statusText, logText, journalText, message, assayText;
-    private RectTransform materialList, pieceList, tabRow, controls, journalPanel, testRow;
-    private Button takeButton, scrapButton, assayButton, turnButton;
+    private TextMeshProUGUI title, subtitle, hint, lookText, statusText, logText, journalText, message, assayText, guideText;
+    private RectTransform materialList, pieceList, tabRow, craftRow, controls, journalPanel, testRow, guideRow;
+    private Button takeButton, scrapButton, assayButton, turnButton, guideButton;
+    private CraftGuide.Step? guide;
+    private int craftShown = -1;
     private CraftCanvasView view;
     private readonly List<CraftMode> modes = new List<CraftMode>();
     private readonly List<Button> tabButtons = new List<Button>();
     private readonly List<Button> journalTabs = new List<Button>();
     private CraftMode mode;
     private CraftHandsOn handsOn;
+    private CraftKnowledge knowledge;
     private readonly List<string> log = new List<string>();
     private float messageTime;
 
     private const int Order = 58;
     public const int SurfaceWidth = 720, SurfaceHeight = 400;
-    private static readonly string[] JournalTabs = { "Metals", "Ores", "Heat", "Quenching", "Made", "Insights", "Experiments" };
+    private static readonly string[] JournalTabs = { "Mastery", "Metals", "Ores", "Heat", "Quenching", "Made", "Insights", "Experiments" };
 
     public string PanelName => station != null ? "Crafting: " + station.DisplayName : "Crafting";
     public CraftStation Station => station;
@@ -85,7 +88,10 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
             s.BeginTending(p);
             s.WorkshopEvent += instance.OnEvent;
             s.LocalMessage += instance.Message;
+            instance.knowledge = CraftKnowledge.For(p);
+            if (instance.knowledge != null) instance.knowledge.Learnt += instance.OnLearnt;
             instance.Hands = new CraftHands(s.GetHashCode() ^ p.GetHashCode(), Skill(CraftKnowledge.For(p)?.Data));
+            instance.Hands.fatigueRelief = s.Rules?.Settings?.mastery?.fatigueRelief ?? 0.4f;
             instance.materialSignature = instance.pieceSignature = instance.tabSignature = null;
             instance.log.Clear();
             instance.selected = null;
@@ -191,6 +197,8 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         {
             station.WorkshopEvent -= OnEvent;
             station.LocalMessage -= Message;
+            if (knowledge != null) knowledge.Learnt -= OnLearnt;
+            knowledge = null;
             if (player != null) station.EndTending(player);
         }
         station = null;
@@ -272,7 +280,10 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         modes.Add(new CraftCrucibleMode());
         modes.Add(new CraftTanneryMode());
         modes.Add(new CraftCuttingMode());
+        modes.Add(new CraftFibreMode());
         modes.Add(new CraftTailorMode());
+        modes.Add(new CraftLapidaryMode());
+        modes.Add(new CraftJewellerMode());
         modes.Add(new CraftAssemblyMode());
         foreach (CraftMode m in modes) m.Attach(this);
 
@@ -306,6 +317,9 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
 
         // Middle: the work areas.
         RectTransform mid = Column(w, "Work", 404f, 1144f);
+        // A workshop with many work areas groups them by craft: the crafts above, the areas of the one chosen below.
+        craftRow = UITheme.Row("Crafts", mid, 32f, 4f);
+        craftRow.GetComponent<HorizontalLayoutGroup>().childForceExpandWidth = true;
         tabRow = UITheme.Row("Tabs", mid, 36f, 4f);
         tabRow.GetComponent<HorizontalLayoutGroup>().childForceExpandWidth = true;
         Image surfaceBack = UITheme.Panel("Surface", mid, new Color(0f, 0f, 0f, 0.5f), UITheme.RadiusSmall);
@@ -326,6 +340,11 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         UITheme.Header(right, "What you see");
         RectTransform lookArea = UITheme.ScrollList("Look", right, 300f, out _);
         lookText = UITheme.Label(lookArea, "", 15f, UITheme.Text);
+        // What comes next for the piece picked, and a button to go to that work.
+        guideRow = UITheme.Row("Next", right, 34f, 8f);
+        guideText = UITheme.Label(guideRow, "", 13f, UITheme.Gold);
+        InventoryUIFactory.Size(guideText, -1f, 32f, 1f);
+        guideButton = UITheme.Button("Go", guideRow, "Go", GoToGuide, UITheme.ButtonStyle.Primary, 64f, 30f);
         RectTransform assayRow = UITheme.Row("Assay", right, 34f, 8f);
         assayButton = UITheme.Button("Assay", assayRow, "Assay", () => Send(new CraftRequest(CraftRequestKind.Assay, selected)), UITheme.ButtonStyle.Normal, 120f, 32f);
         assayText = UITheme.Label(assayRow, "", 12f, UITheme.Muted);
@@ -387,6 +406,7 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
                 Destroy(controls.GetChild(i).gameObject);
         if (mode != null && controls != null)
             mode.Build(controls);
+        Practise();
         if (hint != null) hint.text = mode != null ? mode.Hint : "";
         tabSignature = null;
     }
@@ -470,6 +490,37 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
             Hide();
     }
 
+    /// <summary>The hands as practised as the player is in the craft of the area in front of them.</summary>
+    private void Practise()
+    {
+        if (mode == null || station == null)
+            return;
+        Hands.skill = CraftMastery.Of(Known, mode.Discipline, station.Rules?.Settings?.mastery);
+    }
+
+    /// <summary>What the player learnt (a new rank, an insight): under the work surface and in the log.</summary>
+    private void OnLearnt(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        Message(text);
+        log.Add(text);
+        if (log.Count > 40) log.RemoveAt(0);
+    }
+
+    /// <summary>"Tailoring: Journeyman tailor, 46% · next Expert".</summary>
+    private string PracticeText()
+    {
+        if (mode == null || station == null)
+            return "";
+        CraftMasterySettings s = station.Rules?.Settings?.mastery;
+        CraftDiscipline d = mode.Discipline;
+        double m = CraftMastery.Of(Known, d, s);
+        CraftRank r = CraftMastery.RankOf(m, s);
+        string next = r < CraftRank.Master ? $", {CraftMastery.RankProgress(m, s) * 100:0}% to {CraftMastery.RankName(r + 1).ToLowerInvariant()}" : "";
+        return $"<color=#ffcc61>{CraftMastery.Name(d)}: {CraftMastery.Title(d, m, s)}</color>{next}";
+    }
+
     /// <summary>A line under the work surface for a few seconds.</summary>
     public void Message(string text)
     {
@@ -507,7 +558,9 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         CraftRules rules = station.Rules;
         CraftJournalData known = Known ?? new CraftJournalData();
         title.text = station.DisplayName;
-        subtitle.text = (station.IsTestStation ? "<color=#ffcc61>Test station</color> · every tool and instrument, free materials, the numbers shown · " : "") + InstrumentsText(station.Instruments);
+        subtitle.text = (station.IsTestStation ? "<color=#ffcc61>Test station</color> · every tool and instrument, free materials, the numbers shown · " : "") + InstrumentsText(station.Instruments)
+                        + (mode != null ? " · " + PracticeText() : "");
+        Practise();
         if (ws == null)
             return;
         if (selected != null && ws.Piece(selected) == null)
@@ -531,6 +584,14 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         else
             sb.Append("<color=#9aa0a6>Pick a piece on the station to look at it and work it. Put materials from your inventory on the station first.</color>");
         lookText.text = sb.ToString();
+        guide = CraftGuide.Next(station, p, known);
+        guideRow.gameObject.SetActive(guide.HasValue);
+        if (guide.HasValue)
+        {
+            CraftMode target = ModeTitled(guide.Value.area);
+            guideText.text = $"Next: {guide.Value.text} <color=#9aa0a6>({guide.Value.area}{(guide.Value.place.Length > 0 ? " → " + guide.Value.place : "")})</color>";
+            guideButton.gameObject.SetActive(target != null && target.Available(station));
+        }
         bool canAssay = p != null && station.HasInstrument(CraftInstruments.Assay) && (p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Ore || p.kind == CraftPieceKind.Fasteners);
         assayButton.gameObject.SetActive(canAssay);
         assayText.text = canAssay ? string.Join(" · ", station.AssayLines(selected, known)) : "";
@@ -547,6 +608,7 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
             lb.Append(log[i]).Append('\n');
         logText.text = lb.ToString();
         mode?.Refresh();
+        mode?.RefreshPractice();
 
         journalPanel.gameObject.SetActive(journalOpen);
         if (journalOpen)
@@ -564,21 +626,81 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
         return n != null && n.assayed;
     }
 
+    /// <summary>The work area with this title (the guide names them so).</summary>
+    private CraftMode ModeTitled(string title)
+    {
+        foreach (CraftMode m in modes)
+            if (m.Title == title) return m;
+        return null;
+    }
+
+    /// <summary>Go: to the work area and place the guide names.</summary>
+    private void GoToGuide()
+    {
+        if (!guide.HasValue)
+            return;
+        CraftMode m = ModeTitled(guide.Value.area);
+        if (m == null || !m.Available(station))
+            return;
+        SetMode(m);
+        craftShown = -1;
+        if (guide.Value.place.Length > 0) m.GoTo(guide.Value.place);
+        Refresh(true);
+    }
+
+    /// <summary>The craft a work area is grouped under on the tabs (the assembly bench is its own).</summary>
+    private static int CraftOf(CraftMode m) => m is CraftAssemblyMode ? 99 : m is CraftGrindMode ? (int)CraftDiscipline.Smithing : (int)m.Discipline;
+
     private void RefreshTabs()
     {
         var sb = new StringBuilder();
         foreach (CraftMode m in modes) sb.Append(m.Available(station) ? '1' : '0');
-        sb.Append(mode != null ? modes.IndexOf(mode) : -1);
+        sb.Append(mode != null ? modes.IndexOf(mode) : -1).Append(':').Append(craftShown);
         string sig = sb.ToString();
         if (sig == tabSignature)
             return;
         tabSignature = sig;
         for (int i = tabRow.childCount - 1; i >= 0; i--) Destroy(tabRow.GetChild(i).gameObject);
+        for (int i = craftRow.childCount - 1; i >= 0; i--) Destroy(craftRow.GetChild(i).gameObject);
         tabButtons.Clear();
+        // Many work areas (a complete workshop): a row of crafts, then the areas of the craft in hand.
+        var crafts = new List<int>();
+        int available = 0;
+        foreach (CraftMode m in modes)
+            if (m.Available(station))
+            {
+                available++;
+                if (!crafts.Contains(CraftOf(m))) crafts.Add(CraftOf(m));
+            }
+        bool grouped = available > 8 && crafts.Count > 1;
+        craftRow.gameObject.SetActive(grouped);
+        if (grouped)
+        {
+            if (mode != null && craftShown < 0) craftShown = CraftOf(mode);
+            if (!crafts.Contains(craftShown)) craftShown = crafts[0];
+            foreach (int c in crafts)
+            {
+                int captured = c;
+                string name = c == 99 ? "Assemble" : CraftMastery.Name((CraftDiscipline)c);
+                Button b = UITheme.Button(name, craftRow, name, () =>
+                {
+                    craftShown = captured;
+                    // the first area of that craft
+                    foreach (CraftMode m in modes)
+                        if (m.Available(station) && CraftOf(m) == captured) { SetMode(m); break; }
+                    tabSignature = null;
+                    Refresh(true);
+                }, UITheme.ButtonStyle.Tab, 0f, 30f);
+                TMP_Text t = b.GetComponentInChildren<TMP_Text>(true);
+                if (t != null) { t.enableAutoSizing = true; t.fontSizeMin = 9f; t.fontSizeMax = 13f; }
+                UITheme.SetSelected(b, c == craftShown);
+            }
+        }
         CraftMode first = null;
         foreach (CraftMode m in modes)
         {
             if (!m.Available(station)) continue;
+            if (grouped && CraftOf(m) != craftShown) continue;
             first ??= m;
             CraftMode captured = m;
             Button b = UITheme.Button(m.Title, tabRow, m.Title, () => { SetMode(captured); Refresh(true); }, UITheme.ButtonStyle.Tab, 0f, 34f);
@@ -635,6 +757,13 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
             Button put = UITheme.Button("Put", row, "Put", () => Send(new CraftRequest(CraftRequestKind.PutItem) { item = captured, count = 1 }), UITheme.ButtonStyle.Normal, 60f, 34f);
             TMP_Text t = put.GetComponentInChildren<TMP_Text>(true);
             if (t != null) t.fontSize = 14f;
+            // all of them at once (each still a piece of its own)
+            if (!free && counts.TryGetValue(item, out int all) && all > 1)
+            {
+                Button putAll = UITheme.Button("All", row, "All", () => Send(new CraftRequest(CraftRequestKind.PutItem) { item = captured, count = Mathf.Min(all, 20) }), UITheme.ButtonStyle.Ghost, 48f, 34f);
+                TMP_Text ta = putAll.GetComponentInChildren<TMP_Text>(true);
+                if (ta != null) ta.fontSize = 13f;
+            }
         }
     }
 
@@ -760,8 +889,26 @@ public class CraftStationUI : MonoBehaviour, IExclusivePanel
     private static string JournalText(CraftRules rules, CraftJournalData d, int tab)
     {
         var sb = new StringBuilder();
-        switch (tab)
+        switch (tab - 1)
         {
+            case -1:
+            {
+                CraftMasterySettings ms = rules.Settings?.mastery;
+                sb.Append("<b>Your practice, craft by craft</b> <color=#9aa0a6>(every finished piece teaches its craft - better work more - and so, slowly, does the work itself)</color>\n");
+                foreach (CraftDiscipline c in CraftMastery.All)
+                {
+                    if (c == CraftDiscipline.Alchemy) continue; // the alchemy station keeps its own journal
+                    CraftMasteryNote n = CraftMastery.Note(d.mastery, c);
+                    double m = CraftMastery.Level(n?.xp ?? 0, ms);
+                    CraftRank r = CraftMastery.RankOf(m, ms);
+                    sb.Append($"\n<color=#ffcc61>{CraftMastery.Name(c)}</color>: {CraftMastery.Title(c, m, ms)} · {m * 100:0}%");
+                    if (r < CraftRank.Master) sb.Append($" <color=#9aa0a6>({CraftMastery.RankProgress(m, ms) * 100:0}% of the way to {CraftMastery.RankName(r + 1).ToLowerInvariant()})</color>");
+                    if (n != null && n.finished > 0) sb.Append($" · {n.finished} finished");
+                    sb.Append('\n');
+                    foreach (string line in CraftMastery.Benefits(c, m, ms)) sb.Append($"   {line}\n");
+                }
+                break;
+            }
             case 0:
                 sb.Append("<b>Metals you know</b>\n");
                 foreach (CraftClassNote n in d.classes)

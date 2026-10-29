@@ -489,6 +489,16 @@ namespace GameNet.EditorTools
 #endif
                 if (PrefabComponents.TryGetValue(kind, out string[] types))
                     AddByName(root, types, added, missing);
+                // A harvestable mob: its carcass is networked too (next to the creature; for a mob Auto Attach makes
+                // harvestable when it plays, where the creature will be - the NetCarcass brings it along).
+                if (kind == "Mob")
+                {
+                    foreach (HarvestableCreature creature in root.GetComponentsInChildren<HarvestableCreature>(true))
+                        AddByName(creature.gameObject, new[] { "GameNet.NetCarcass" }, added, missing);
+                    GameObject auto = HarvestingEditorTools.AutoAttachHost(root);
+                    if (auto != null)
+                        AddByName(auto, new[] { "GameNet.NetCarcass" }, added, missing);
+                }
                 if (kind == "Player")
                     WireInteractor(root, added);
                 if (kind != "Player")

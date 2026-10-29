@@ -55,18 +55,36 @@ public enum CraftTools
     FinishingBench = 1 << 22,
     /// <summary>A spinning wheel (and a drop spindle): fibre into thread.</summary>
     SpinningWheel = 1 << 23,
-    /// <summary>A tailor's table: shears, chalk, pins, needles and thimbles.</summary>
+    /// <summary>A tailor's table: shears, chalk, pins, needles and thimbles, a tape measure and a dress form.</summary>
     TailorTable = 1 << 24,
+    /// <summary>A shaving horse with a drawknife and a bark spud: debarking logs, shaving.</summary>
+    ShavingHorse = 1 << 25,
+    /// <summary>A fibre bench: a picking table, scouring tubs over a fire, hand cards, wool combs and a flax hackle.</summary>
+    FibreBench = 1 << 26,
+    /// <summary>A lapidary bench: loupe and lamp, refractometer, hardness points, a hydrostatic balance, cleaving chisels and a trim saw.</summary>
+    GemBench = 1 << 27,
+    /// <summary>A faceting machine: a mast with an angle quadrant and index gear, cutting laps and polishing laps.</summary>
+    FacetingMachine = 1 << 28,
+    /// <summary>A jeweller's bench: ring mandrel, piercing saw, burrs, a soldering torch, setting pushers and burnishers.</summary>
+    JewelersBench = 1 << 29,
+    /// <summary>A floor loom: warp beam, heddles and treadles, a reed to beat the weft in, shuttles.</summary>
+    Loom = 1 << 30,
 
     Smithy = Forge | Anvil | QuenchTank | Grinder | Files | Polishing | Whetstone | Ashes | Oven | AssemblyBench,
     Smeltery = OreBench | Furnace | Crucible,
     Tannery = FleshingBeam | Vats | Frame | Rack,
     Leatherworks = LeatherBench | AssemblyBench,
-    Woodshop = ChoppingBlock | Sawhorse | SteamBox | DryingStack | FinishingBench | Files | AssemblyBench,
-    Tailor = SpinningWheel | TailorTable | AssemblyBench,
+    Woodshop = ChoppingBlock | Sawhorse | SteamBox | DryingStack | FinishingBench | Files | AssemblyBench | ShavingHorse,
+    Tailor = SpinningWheel | TailorTable | AssemblyBench | Loom,
     /// <summary>A smithy with a leather bench and a tailor's table: plate and mixed armour (metal on leather and cloth) is assembled here.</summary>
     Armourer = Smithy | LeatherBench | TailorTable,
-    Everything = Smithy | Smeltery | Tannery | Leatherworks | Woodshop | Tailor,
+    /// <summary>Fibre made ready, spun and woven: cleaning, scouring, opening, carding, combing, spinning, plying, reeling, weaving.</summary>
+    Spinnery = FibreBench | SpinningWheel | Loom,
+    /// <summary>Rough stones into cut gems: identifying, evaluating, orienting, cleaving and sawing, faceting, polishing.</summary>
+    Lapidary = GemBench | FacetingMachine,
+    /// <summary>Settings, shanks and chains made, stones set, the piece finished.</summary>
+    Jeweller = JewelersBench | AssemblyBench | Polishing | Files,
+    Everything = Smithy | Smeltery | Tannery | Leatherworks | Woodshop | Tailor | Spinnery | Lapidary | Jeweller,
 }
 
 /// <summary>
@@ -302,6 +320,15 @@ public sealed partial class CraftWorkshop
 
     public double Variable(string name) => Variables.TryGetValue(name, out double v) ? v : 0;
 
+    /// <summary>
+    /// How good the station's tools are (the "toolQuality" variable the station sets: 0.6 crude - 1 ordinary - 1.4
+    /// masterwork): sharper drawknives and cards, truer laps and quadrants do more with each stroke and less damage.
+    /// </summary>
+    public double ToolQuality => Variables.TryGetValue("toolQuality", out double q) && q > 0 ? CraftMath.Clamp(q, 0.3, 2) : 1;
+
+    /// <summary>The air's humidity (0-1; 0.5 when the station reads none): wood seasons and fibre dries slower in damp air.</summary>
+    public double Humidity => Variables.TryGetValue("humidity", out double h) ? CraftMath.Clamp01(h) : 0.5;
+
     /// <summary>A new piece id, unique to this workshop (and the same in a replay).</summary>
     private string NewId() => $"{Id}-{++sequence}";
 
@@ -415,6 +442,9 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.StackWood: CraftWoodwork.Stack(this, Piece(op.piece), op); break;
             case CraftOpKind.SandWood: CraftWoodwork.Sand(this, Piece(op.piece), op); break;
             case CraftOpKind.Varnish: CraftWoodwork.Varnish(this, Piece(op.piece), op); break;
+            case CraftOpKind.DebarkWood: CraftWoodwork.Debark(this, Piece(op.piece), op); break;
+            case CraftOpKind.SplitLog: CraftWoodwork.SplitLog(this, Piece(op.piece), op); break;
+            default: ApplyMore(op); break;
         }
     }
 
@@ -873,6 +903,9 @@ public sealed partial class CraftWorkshop
                     break;
                 case CraftPieceKind.Hide:
                     CraftLeather.StepHide(this, p, dt);
+                    break;
+                case CraftPieceKind.Fibre:
+                    CraftFibre.Step(this, p, dt);
                     break;
             }
         }

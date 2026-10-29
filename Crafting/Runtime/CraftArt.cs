@@ -498,6 +498,25 @@ public static class CraftArt
                 }
                 break;
             }
+            case CraftPieceKind.Fibre:
+            {
+                Color f = Color.Lerp(new Color(0.93f, 0.9f, 0.82f), new Color(0.6f, 0.52f, 0.4f), (float)(p.fibre.dirt * 0.8 + p.fibre.grease * 0.4));
+                for (int i = 0; i < 7; i++)
+                    c.Disc(18 + (i * 37 % 28), 18 + (i * 23 % 28), 10, Color.Lerp(f, Color.white, i * 0.04f));
+                if (p.fibre.alignment > 0.5)
+                    for (int i = 0; i < 6; i++) c.Line(10, 20 + i * 5, 54, 22 + i * 5, f * 0.85f, 1f);
+                break;
+            }
+            case CraftPieceKind.Yarn:
+            {
+                Color y = Color.Lerp(new Color(0.9f, 0.86f, 0.76f), Color.white, (float)p.yarn.evenness * 0.3f);
+                c.Ring(32, 32, 20, 9, y);
+                for (int i = 0; i < 8; i++) c.Line(32 + 12 * Mathf.Cos(i * 0.785f), 32 + 12 * Mathf.Sin(i * 0.785f), 32 + 28 * Mathf.Cos(i * 0.785f + 0.3f), 32 + 28 * Mathf.Sin(i * 0.785f + 0.3f), y * 0.8f, 1f);
+                break;
+            }
+            case CraftPieceKind.Gem:
+                DrawGem(c, rules, p, area);
+                break;
             case CraftPieceKind.Assembly:
             {
                 CraftPiece main = parts != null && parts.Count > 0 ? parts[0] : null;
@@ -513,6 +532,61 @@ public static class CraftArt
                 break;
         }
         return c.ToSprite($"Craft Piece {p.id}");
+    }
+
+    /// <summary>A gemstone, from above: a rough crystal, or its cut outline with the facets' light and dark.</summary>
+    public static void DrawGem(CraftPixels c, CraftRules rules, CraftPiece p, Rect area)
+    {
+        GemState g = p.gem;
+        CraftGemDefinition d = rules.Gem(g.gem);
+        Color col = d != null ? d.color : new Color(0.7f, 0.7f, 0.75f);
+        col.a = 1f;
+        float cx = area.center.x, cy = area.center.y, r = Mathf.Min(area.width, area.height) * 0.42f;
+        if (g.stage < CraftGemStage.Faceted)
+        {
+            // the rough: its outline as sawn, and the window marked on it
+            var pts = new List<Vector2>();
+            for (int i = 0; i < 24; i++)
+            {
+                double a = i / 24.0 * Math.PI * 2;
+                double rr = 0.85 + 0.15 * CraftMath.Noise(g.seed, i, 41);
+                double x = Math.Cos(a) * rr, y = Math.Sin(a) * rr;
+                foreach (CraftGemPlane b in g.bounds)
+                {
+                    double over = b.nx * x + b.ny * y - b.offset;
+                    if (over > 0) { x -= b.nx * over; y -= b.ny * over; }
+                }
+                pts.Add(new Vector2(cx + (float)x * r, cy + (float)y * r));
+            }
+            c.Polygon(pts, col * 0.75f);
+            c.Disc(cx - r * 0.25f, cy + r * 0.25f, r * 0.25f, Color.Lerp(col, Color.white, 0.25f));
+            if (g.oriented) c.Ring(cx + (float)g.windowX * r, cy + (float)g.windowY * r, (float)CraftLapidary.WindowRadius(g) * r, 1f, new Color(1f, 1f, 1f, 0.6f));
+            return;
+        }
+        CraftGemCut cut = rules.Cut(g.cut);
+        float ratio = cut != null ? Mathf.Max(1f, cut.lengthRatio) : 1f;
+        bool cab = cut != null && cut.cabochon;
+        var outline = new List<Vector2>();
+        int n = cut != null && cut.id.Contains("emerald") ? 8 : 16;
+        for (int i = 0; i < n; i++)
+        {
+            double a = (i + 0.5) / n * Math.PI * 2;
+            outline.Add(new Vector2(cx + (float)Math.Cos(a) * r / ratio * 1.1f, cy + (float)Math.Sin(a) * r));
+        }
+        c.Polygon(outline, col * (cab ? 0.85f : 0.7f));
+        if (cab)
+        {
+            c.Disc(cx - r * 0.2f, cy + r * 0.3f, r * 0.35f, Color.Lerp(col, Color.white, 0.35f * (float)g.polish));
+            return;
+        }
+        // facets: alternating light and dark wedges, the table in the middle
+        for (int i = 0; i < 8; i++)
+        {
+            double a0 = i / 8.0 * Math.PI * 2, a1 = (i + 1) / 8.0 * Math.PI * 2;
+            var tri = new List<Vector2> { new Vector2(cx, cy), new Vector2(cx + (float)Math.Cos(a0) * r / ratio, cy + (float)Math.Sin(a0) * r), new Vector2(cx + (float)Math.Cos(a1) * r / ratio, cy + (float)Math.Sin(a1) * r) };
+            c.Polygon(tri, i % 2 == 0 ? Color.Lerp(col, Color.white, 0.15f + 0.3f * (float)g.polish) : col * 0.6f);
+        }
+        c.Disc(cx, cy, r * 0.42f / Mathf.Sqrt(ratio), Color.Lerp(col, Color.white, 0.2f + 0.25f * (float)g.polish));
     }
 
     /// <summary>Draws a long piece corner to corner (rotated by drawing into a temporary canvas and resampling).</summary>
@@ -627,6 +701,17 @@ public static class CraftArt
             case CraftStockKind.Agent:
                 c.Rect(18, 10, 46, 46, color);
                 c.Rect(24, 46, 40, 54, new Color(0.5f, 0.35f, 0.2f));
+                break;
+            case CraftStockKind.Log:
+                c.Rect(10, 22, 50, 42, color);
+                c.Disc(50, 32, 11, color * 0.8f);
+                c.Disc(50, 32, 8, new Color(0.85f, 0.72f, 0.5f));
+                c.Ring(50, 32, 4, 0.8f, new Color(0.6f, 0.45f, 0.3f));
+                break;
+            case CraftStockKind.Gem:
+                c.Polygon(new List<Vector2> { new Vector2(32, 54), new Vector2(46, 40), new Vector2(42, 14), new Vector2(22, 14), new Vector2(18, 40) }, color * 0.85f);
+                c.Polygon(new List<Vector2> { new Vector2(32, 54), new Vector2(46, 40), new Vector2(34, 30) }, Color.Lerp(color, Color.white, 0.35f));
+                c.Polygon(new List<Vector2> { new Vector2(22, 14), new Vector2(34, 30), new Vector2(42, 14) }, color * 0.65f);
                 break;
             default:
                 c.Disc(32, 30, 18, color);

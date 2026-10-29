@@ -14,9 +14,11 @@ using UnityEngine.SceneManagement;
 /// (or one pack) per Spawn Interval on valid ground - on the NavMesh of the mob's agent type, dry, not too steep, clear
 /// of trees and rocks, in an allowed biome and height band, away from the player, the camera's view, safe zones and
 /// other mobs - and removed when the player is beyond Deactivation Distance or the chunk unloads.</item>
-/// <item>Respawning: removed mobs come back when the player returns. Killed ones (their Mob was destroyed) leave a gap
-/// for Respawn Delay, remembered in <see cref="WorldSpawnRegistry"/> even while the chunk is unloaded - so clearing
-/// an area and coming back doesn't instantly refill it.</item>
+/// <item>Respawning: removed mobs come back when the player returns. Killed ones (counted when they die, or when the
+/// game destroys them alive) leave a gap for Respawn Delay, remembered in <see cref="WorldSpawnRegistry"/> even while
+/// the chunk is unloaded - so clearing an area and coming back doesn't instantly refill it. A body that stays after
+/// death (a carcass to harvest) no longer counts as one of the chunk's mobs; it is removed when it is done with, or
+/// with the chunk.</item>
 /// <item>Limits: per type per chunk (Max Instances), per chunk (the population) and world-wide (Max Mobs In World) -
 /// all counted from what actually exists, so nothing can be duplicated or over-counted.</item>
 /// </list>
@@ -42,6 +44,8 @@ public class MobSpawner : ChunkSpawnerBase
 
     private MobSettings settings;
     private readonly List<LiveMob> live = new List<LiveMob>();
+    /// <summary>Dead mobs whose bodies are still there (carcasses): already counted as killed, removed with the chunk.</summary>
+    private readonly List<LiveMob> bodies = new List<LiveMob>();
     private readonly List<GameObject> mobObjects = new List<GameObject>();
     private Transform container;
     private int population;
@@ -64,6 +68,7 @@ public class MobSpawner : ChunkSpawnerBase
         public SpawnableMob Type;
         public Mob Mob;
         public Mob.MobDestroyedHandler Handler;
+        public System.Action<Mob, CombatEntity> DiedHandler;
     }
 
     /// <summary>What a mob prefab needs from the NavMesh: its agent type and areas, and its radius.</summary>
@@ -134,6 +139,7 @@ public class MobSpawner : ChunkSpawnerBase
     protected override void OnEnd()
     {
         DespawnAll();
+        RemoveBodies();
         active = false;
     }
 
@@ -505,23 +511,41 @@ public class MobSpawner : ChunkSpawnerBase
         {
             entry.Handler = () => OnMobGone(entry);
             entry.Mob.OnMobDestroyed += entry.Handler;
+            // The kill counts when it dies: its body may stay a while (a carcass to harvest).
+            entry.DiedHandler = (mob, killer) => OnMobDied(entry);
+            entry.Mob.Died += entry.DiedHandler;
         }
         live.Add(entry);
         WorldSpawnRegistry.MobCount++;
     }
 
-    /// <summary>A mob died (or the game destroyed it): one gap in this chunk until its respawn time.</summary>
+    /// <summary>A mob died: one gap in this chunk until its respawn time. Its body, while it lasts, is removed with the chunk.</summary>
+    private void OnMobDied(LiveMob entry)
+    {
+        if (CountKilled(entry) && entry.Go != null)
+            bodies.Add(entry);
+    }
+
+    /// <summary>A mob was destroyed: one gap until its respawn time if it was still alive (a dead one was counted when it died).</summary>
     private void OnMobGone(LiveMob entry)
     {
+        if (!bodies.Remove(entry))
+            CountKilled(entry);
+    }
+
+    /// <summary>Takes a mob out of the chunk's living mobs and starts its respawn time. False when it was not among them.</summary>
+    private bool CountKilled(LiveMob entry)
+    {
         if (!live.Remove(entry))
-            return;
+            return false;
         WorldSpawnRegistry.MobCount = Mathf.Max(0, WorldSpawnRegistry.MobCount - 1);
         if (!Started || settings == null)
-            return;
+            return true;
         kills++;
         float variation = 1f + settings.respawnDelayVariation * ((float)random.NextDouble() * 2f - 1f);
         WorldSpawnRegistry.RecordKill(Coord, Time.time + settings.respawnDelay * variation);
         Log($"{(entry.Type != null && entry.Type.mobPrefab != null ? entry.Type.mobPrefab.name : "mob")} killed");
+        return true;
     }
 
     /// <summary>Mobs destroyed without a Mob component's event count as killed.</summary>
@@ -530,6 +554,7 @@ public class MobSpawner : ChunkSpawnerBase
         for (int i = live.Count - 1; i >= 0; i--)
             if (live[i].Go == null)
                 OnMobGone(live[i]);
+        bodies.RemoveAll(b => b.Go == null);
     }
 
     /// <summary>
@@ -552,8 +577,7 @@ public class MobSpawner : ChunkSpawnerBase
             Vector3 p = m.Go.transform.position;
             if (c.Allows(p) || DistanceToNearestRealmPlayer(p) < near)
                 continue;
-            if (m.Mob != null && m.Handler != null)
-                m.Mob.OnMobDestroyed -= m.Handler;
+            Unhook(m);
             live.RemoveAt(i);
             WorldSpawnRegistry.MobCount = Mathf.Max(0, WorldSpawnRegistry.MobCount - 1);
             GameNet.NetSpawn.Destroy(m.Go);
@@ -566,13 +590,34 @@ public class MobSpawner : ChunkSpawnerBase
     {
         foreach (LiveMob m in live)
         {
-            if (m.Mob != null && m.Handler != null)
-                m.Mob.OnMobDestroyed -= m.Handler;
+            Unhook(m);
             if (m.Go != null)
                 GameNet.NetSpawn.Destroy(m.Go); // offline Destroy; on a server the mob is despawned for every client
         }
         WorldSpawnRegistry.MobCount = Mathf.Max(0, WorldSpawnRegistry.MobCount - live.Count);
         live.Clear();
+    }
+
+    /// <summary>Removes the bodies of the chunk's dead mobs still lying there (carcasses) - the chunk is unloading.</summary>
+    private void RemoveBodies()
+    {
+        foreach (LiveMob m in bodies)
+        {
+            Unhook(m);
+            if (m.Go != null)
+                GameNet.NetSpawn.Destroy(m.Go);
+        }
+        bodies.Clear();
+    }
+
+    private static void Unhook(LiveMob m)
+    {
+        if (m.Mob == null)
+            return;
+        if (m.Handler != null)
+            m.Mob.OnMobDestroyed -= m.Handler;
+        if (m.DiedHandler != null)
+            m.Mob.Died -= m.DiedHandler;
     }
 
     private Vector2 RandomInsideCircle()

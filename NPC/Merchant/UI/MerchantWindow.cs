@@ -351,7 +351,10 @@ public class MerchantWindow : NPCWindow
         RefreshDetails();
     }
 
-    /// <summary>As many as possible: what is in stock and affordable and fits in the bag (buying), the whole stack (selling).</summary>
+    /// <summary>
+    /// As many as possible: what is in stock and affordable and fits in the bag (buying), the most of the stack the
+    /// merchant takes (selling).
+    /// </summary>
     public void SetMaxQuantity()
     {
         MerchantDisplayEntry e = SelectedEntry();
@@ -366,6 +369,19 @@ public class MerchantWindow : NPCWindow
             {
                 int mid = (lo + hi + 1) / 2;
                 if (PlayerInventory.HasEnoughSpace(e.Item, mid)) lo = mid;
+                else hi = mid - 1;
+            }
+            max = lo;
+        }
+        else if (e.Mode == MerchantTransactionType.Sell && max > 1 && !Quote(e, max).Succeeded && Quote(e, 1).Succeeded)
+        {
+            // The most that sells (a worthless copy further down a harvested stack, the wallet's room): refusals only
+            // grow with the quantity.
+            int lo = 1, hi = max - 1;
+            while (lo < hi)
+            {
+                int mid = (lo + hi + 1) / 2;
+                if (Quote(e, mid).Succeeded) lo = mid;
                 else hi = mid - 1;
             }
             max = lo;
