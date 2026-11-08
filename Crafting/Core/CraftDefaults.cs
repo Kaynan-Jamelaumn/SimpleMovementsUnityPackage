@@ -84,7 +84,8 @@ public static partial class CraftDefaults
         list.Add(e);
         e = E(Nickel, "Nickel", "Ni", CraftElementKind.Metal, new Color(0.66f, 0.64f, 0.6f), 8.9f, 1455, 100, 90, 45, 0.6f, 0.4f, 0.02f, "a pale, slightly golden grey metal");
         e.magnetic = true; e.curieTemperature = 358; e.oxidationOnset = 800; e.oxidationRate = 0.3f; e.recrystallization = 600; e.hotWorkMin = 850; e.hotWorkMax = 1200;
-        e.burnTemperature = 1380; e.slagAffinity = 0.35f; e.description = "Found with fallen stars. Tough, it brightens steel in a pattern.";
+        e.burnTemperature = 1380; e.slagAffinity = 0.35f;
+        e.description = "Found with fallen stars, and in a green clay-rock that gives it up to a hot furnace. Tough: it brightens steel in a pattern, and copper and zinc take it into a silvery metal.";
         list.Add(e);
         e = E(Silica, "Silica", "SiO₂", CraftElementKind.Impurity, new Color(0.85f, 0.85f, 0.82f), 2.65f, 1710, 0, 0, 0, 0, 0, 0, "");
         e.slagAffinity = 1; e.description = "Rock. In the furnace it becomes slag - and takes iron with it unless there is lime.";
@@ -109,7 +110,8 @@ public static partial class CraftDefaults
         e.boilingPoint = 907; e.oxidationOnset = 300; e.recrystallization = 100; e.hotWorkMin = 100; e.hotWorkMax = 250; e.burnTemperature = 410; e.slagAffinity = 0.5f;
         e.description = "Boils away before copper melts: it is taken into copper from its ore under a cover (cementation) to make brass.";
         list.Add(e);
-        e = E(Lead, "Lead", "Pb", CraftElementKind.Metal, new Color(0.45f, 0.46f, 0.5f), 11.34f, 327, 5, 10, 50, 0.75f, 0.8f, 0.005f, "a dull, very heavy, very soft metal");
+        // Cheap by the gram - silver is worth some 500 times as much - so cupelling lead rich in silver pays, as it did.
+        e = E(Lead, "Lead", "Pb", CraftElementKind.Metal, new Color(0.45f, 0.46f, 0.5f), 11.34f, 327, 5, 10, 50, 0.75f, 0.8f, 0.001f, "a dull, very heavy, very soft metal");
         e.boilingPoint = 1749; e.oxidationOnset = 400; e.oxidationRate = 0.3f; e.recrystallization = 0; e.hotWorkMin = 50; e.hotWorkMax = 250; e.burnTemperature = 320;
         e.slagAffinity = 0.55f; e.description = "Carries silver out of its ore; a cupel takes the lead away and leaves the silver.";
         list.Add(e);
@@ -231,14 +233,19 @@ public static partial class CraftDefaults
     private static CraftMaterialClass Class(string id, string name, string baseId, int priority, string observation, float price = 1f, string description = "") =>
         new CraftMaterialClass { id = id, displayName = name, baseElement = baseId, priority = priority, observation = observation, priceMultiplier = price, description = description };
 
+    // A class's price multiplier is what its making and its quality add to the metal's own value (the elements' value of a
+    // gram), raw, worked or finished alike: carburizing iron into a hard steel more than doubles it, alloying copper with
+    // tin adds half. The rare metals of legend are dear by the gram already, so an alloy of them is not multiplied many
+    // times again (an orichalcum bronze is a fine bronze, a mythril steel a fine steel). Classes of one base and one
+    // priority never overlap (a shared boundary goes to the first listed).
     public static List<CraftMaterialClass> Classes()
     {
         return new List<CraftMaterialClass>
         {
             Class("cast_iron", "Cast iron", Iron, 100, "a coarse grey metal that sparks in short dull streaks", 0.6f, "Too much carbon: it casts well and cannot be forged.").With(Carbon, 0.021f, 1),
-            Class("starmetal_steel", "Starmetal steel", Iron, 99, "a steel with a faint shimmer, as if lit from inside", 6f, "Steel with fallen-star metal in it.").With(Starmetal, 0.03f, 1).With(Carbon, 0.0025f, 0.021f),
-            Class("meteoric_iron", "Meteoric iron", Iron, 98, "a dark iron with a shimmer and bright nickel streaks", 5f, "Fallen-star iron: nickel and starmetal.").With(Nickel, 0.04f, 0.2f).With(Starmetal, 0.01f, 1).With(Carbon, 0, 0.0025f),
-            Class("mythril_steel", "Mythril steel", Iron, 97, "a pale steel, lighter in the hand than it looks", 8f).With(Mythril, 0.05f, 0.5f),
+            Class("starmetal_steel", "Starmetal steel", Iron, 99, "a steel with a faint shimmer, as if lit from inside", 2.5f, "Steel with fallen-star metal in it.").With(Starmetal, 0.03f, 1).With(Carbon, 0.0025f, 0.021f),
+            Class("meteoric_iron", "Meteoric iron", Iron, 98, "a dark iron with a shimmer and bright nickel streaks", 2f, "Fallen-star iron: nickel and starmetal.").With(Nickel, 0.04f, 0.2f).With(Starmetal, 0.01f, 1).With(Carbon, 0, 0.0025f),
+            Class("mythril_steel", "Mythril steel", Iron, 97, "a pale steel, lighter in the hand than it looks", 2.5f).With(Mythril, 0.05f, 0.5f),
             Class("phosphoric_iron", "Phosphoric iron", Iron, 95, "a bright, hard iron that rings sharply", 1f, "Iron from bog ore: hard, and brittle in the cold.").With(Phosphorus, 0.002f, 1).With(Carbon, 0, 0.003f),
             Class("nickel_steel", "Nickel steel", Iron, 92, "a steel that etches bright", 2.5f).With(Nickel, 0.01f, 0.1f).With(Carbon, 0.0025f, 0.021f),
             Class("wrought_iron", "Wrought iron", Iron, 90, "a soft, fibrous grey iron that sparks in long straw streaks", 1f, "Iron with hardly any carbon: tough, soft, it does not harden.").With(Carbon, 0, 0.0008f),
@@ -247,29 +254,28 @@ public static partial class CraftDefaults
             Class("high_carbon_steel", "High-carbon steel", Iron, 80, "a grey metal that throws a bushy shower of stars", 2.4f, "Hardens very hard: keen edges, if it is tempered.").With(Carbon, 0.006f, 0.012f),
             Class("ultra_high_carbon_steel", "Ultra-high-carbon steel", Iron, 80, "a steel that throws a dense shower of bursting stars", 2.4f, "The hardest steel - and the most brittle.").With(Carbon, 0.012f, 0.021f),
             Class("copper_matte", "Copper matte", Copper, 99, "a dark, brittle, metallic lump that smells of sulfur", 0.3f, "Copper still full of sulfur: roast it and smelt it again.").With(Sulfur, 0.02f, 1),
-            Class("orichalcum_bronze", "Orichalcum bronze", Copper, 95, "a red-gold bronze, warm to the touch", 8f).With(Orichalcum, 0.05f, 0.5f),
+            Class("orichalcum_bronze", "Orichalcum bronze", Copper, 95, "a red-gold bronze, warm to the touch", 2f).With(Orichalcum, 0.05f, 0.5f),
             Class("nickel_silver", "Nickel silver", Copper, 92, "a silvery metal that is not silver", 1.5f).With(Nickel, 0.1f, 0.3f).With(Zinc, 0.1f, 0.35f),
             Class("bell_bronze", "Bell bronze", Copper, 90, "a pale golden metal that rings like a bell - and snaps", 1.4f, "Too much tin: very hard, very brittle.").With(Tin, 0.16f, 0.35f),
             Class("leaded_bronze", "Leaded bronze", Copper, 88, "a dull golden metal", 1.2f, "Casts well; softer.").With(Tin, 0.04f, 0.16f).With(Lead, 0.03f, 0.3f),
-            Class("bronze", "Bronze", Copper, 85, "a golden-brown metal", 1.6f, "Copper with about a tenth of tin: hard, tough, it casts well and hardens when hammered cold.").With(Tin, 0.04f, 0.16f),
-            Class("brass", "Brass", Copper, 85, "a bright yellow metal", 1.5f, "Copper and zinc.").With(Zinc, 0.1f, 0.45f),
+            Class("bronze", "Bronze", Copper, 85, "a golden-brown metal", 1.6f, "Copper with about a tenth of tin: hard, tough, it casts well and hardens when hammered cold.").With(Tin, 0.04f, 0.16f).With(Zinc, 0, 0.1f),
+            Class("brass", "Brass", Copper, 85, "a bright yellow metal", 1.5f, "Copper and zinc (a tenth or more of zinc makes a brass, tin or no tin).").With(Zinc, 0.1f, 0.45f),
             Class("copper_metal", "Copper", Copper, 50, "a soft, rosy metal", 1f).With(Tin, 0, 0.04f).With(Zinc, 0, 0.1f),
             Class("pewter", "Pewter", Tin, 80, "a soft, dull grey metal", 1.2f).With(Copper, 0.005f, 0.1f),
             Class("tin_metal", "Tin", Tin, 50, "a soft, bright metal that crackles when bent"),
-            Class("silver_lead", "Silver-bearing lead", Lead, 80, "a soft, heavy grey metal", 2f, "Lead carrying silver: cupel it.").With(Silver, 0.0005f, 0.3f),
+            Class("silver_lead", "Silver-bearing lead", Lead, 80, "a soft, heavy grey metal", 1f, "Lead carrying silver: cupel it.").With(Silver, 0.0005f, 0.3f),
             Class("lead_metal", "Lead", Lead, 50, "a dull, heavy, soft metal"),
             Class("sterling_silver", "Sterling silver", Silver, 80, "a bright white metal, harder than silver", 1f).With(Copper, 0.05f, 0.1f),
             Class("coin_silver", "Coin silver", Silver, 75, "a white metal with a warm cast", 0.9f).With(Copper, 0.1f, 0.25f),
             Class("fine_silver", "Fine silver", Silver, 60, "a soft, bright white metal", 1.1f).With(Copper, 0, 0.05f),
             Class("electrum", "Electrum", Gold, 85, "a pale yellow-white metal", 0.7f, "Gold and silver together, as rivers give it.").With(Silver, 0.15f, 0.5f),
-            Class("rose_gold", "Rose gold", Gold, 85, "a pinkish gold", 0.8f).With(Copper, 0.15f, 0.35f),
+            Class("rose_gold", "Rose gold", Gold, 85, "a pinkish gold", 0.8f, "Gold reddened with copper (with as much silver again it is electrum).").With(Copper, 0.15f, 0.35f).With(Silver, 0, 0.15f),
             Class("fine_gold", "Fine gold", Gold, 60, "a deep yellow metal", 1.1f).With(Silver, 0, 0.02f).With(Copper, 0, 0.02f),
             Class("gold_metal", "Gold", Gold, 40, "a yellow metal"),
             Class("mythril_silver", "Mythril silver", Mythril, 80, "a pale blue metal with a silver sheen", 1.3f).With(Silver, 0.03f, 0.2f),
             Class("mythril_metal", "Mythril", Mythril, 50, "a pale blue, feather-light metal"),
             Class("zinc_metal", "Zinc", Zinc, 50, "a bluish-grey metal"),
             Class("nickel_metal", "Nickel", Nickel, 50, "a pale grey metal"),
-            Class("starmetal_metal", "Starmetal", Starmetal, 50, "a dark metal with a faint inner shimmer"),
             Class("orichalcum_metal", "Orichalcum", Orichalcum, 50, "a fiery red-gold metal"),
         };
     }
@@ -286,68 +292,77 @@ public static partial class CraftDefaults
         };
     }
 
+    // A lump's price is about what the metal of the poorest lump of the poorest deposit is worth (CraftValue.OreMetal: by
+    // the gram, its class's multiplier with it), so smelting a lump never makes less than it cost; a usual lump's metal is
+    // worth two to three times its price, which pays for the cleaning, the fuel, the flux and what the slag takes.
     public static List<CraftOreDefinition> Ores()
     {
         var list = new List<CraftOreDefinition>();
         CraftOreDefinition o;
         o = Ore("hematite", "Red iron ore", "a heavy, rust-red rock that leaves a red-brown streak", new Color(0.55f, 0.22f, 0.18f), "earthy to metallic", "red-brown",
-            new Color(0.55f, 0.25f, 0.2f), 5.2f, 6f, 0.35f, 0.7f, CraftGangue.Quartz, 1050, 1f, 3f, "Hematite. The common iron ore: rich, with quartz around it.");
+            new Color(0.55f, 0.25f, 0.2f), 5.2f, 6f, 0.35f, 0.7f, CraftGangue.Quartz, 1050, 1f, 0.6f, "Hematite. The common iron ore: rich, with quartz around it.");
         o.Yields(Iron, 0.6f, 0.68f).Yields(Silica, 0.02f, 0.08f).Yields(Phosphorus, 0.0005f, 0.003f).Yields(Sulfur, 0.0002f, 0.002f).Yields(Manganese, 0.001f, 0.01f);
         list.Add(o);
         o = Ore("magnetite", "Black iron ore", "a heavy black rock that a lodestone pulls", new Color(0.15f, 0.15f, 0.17f), "metallic", "black", new Color(0.12f, 0.12f, 0.12f),
-            5.15f, 6f, 0.45f, 0.8f, CraftGangue.Quartz, 1100, 0.8f, 4f, "Magnetite. Rich and clean, slow to reduce.");
+            5.15f, 6f, 0.45f, 0.8f, CraftGangue.Quartz, 1100, 0.8f, 0.85f, "Magnetite. Rich and clean, slow to reduce.");
         o.magnetic = true;
         o.Yields(Iron, 0.65f, 0.71f).Yields(Silica, 0.01f, 0.05f).Yields(Phosphorus, 0.0002f, 0.001f).Yields(Sulfur, 0.0001f, 0.001f);
         list.Add(o);
         o = Ore("bog_iron", "Bog iron", "a light, yellow-brown, crumbly lump from a marsh", new Color(0.55f, 0.4f, 0.2f), "earthy", "yellow-brown", new Color(0.65f, 0.5f, 0.25f),
-            3.8f, 4f, 0.4f, 0.75f, CraftGangue.Clay, 950, 1.3f, 1.5f, "Limonite from the bogs: easy to smelt, but full of phosphorus.");
+            3.8f, 4f, 0.4f, 0.75f, CraftGangue.Clay, 950, 1.3f, 0.5f, "Limonite from the bogs: easy to smelt, but full of phosphorus.");
         o.dirtMin = 0.08f; o.dirtMax = 0.2f;
         o.Yields(Iron, 0.45f, 0.58f).Yields(Silica, 0.04f, 0.12f).Yields(Phosphorus, 0.004f, 0.012f).Yields(Sulfur, 0.0002f, 0.001f).Yields(Manganese, 0.005f, 0.02f);
         list.Add(o);
         o = Ore("malachite", "Green copper ore", "a banded, bright green stone", new Color(0.18f, 0.55f, 0.35f), "silky", "pale green", new Color(0.55f, 0.8f, 0.6f),
-            3.9f, 3.8f, 0.25f, 0.6f, CraftGangue.Limestone, 900, 1.4f, 5f, "Malachite. Smelts easily into clean copper; it often sits in limestone.");
+            3.9f, 3.8f, 0.25f, 0.6f, CraftGangue.Limestone, 900, 1.4f, 0.9f, "Malachite. Smelts easily into clean copper; it often sits in limestone.");
         o.Yields(Copper, 0.5f, 0.57f).Yields(Silica, 0.01f, 0.05f).Yields(Iron, 0.005f, 0.02f);
         list.Add(o);
         o = Ore("chalcopyrite", "Brassy copper ore", "a brassy yellow, glittering rock that smells of sulfur when struck", new Color(0.78f, 0.68f, 0.3f), "metallic", "greenish black",
-            new Color(0.2f, 0.25f, 0.18f), 4.2f, 3.7f, 0.3f, 0.6f, CraftGangue.Quartz, 1100, 1f, 4f, "Chalcopyrite: copper and iron bound with sulfur. Roast it, or it gives matte.");
+            new Color(0.2f, 0.25f, 0.18f), 4.2f, 3.7f, 0.3f, 0.6f, CraftGangue.Quartz, 1100, 1f, 0.9f, "Chalcopyrite: copper and iron bound with sulfur. Roast it, or it gives matte.");
         o.sulfide = true; o.roastTemperature = 650;
         o.Yields(Copper, 0.3f, 0.35f).Yields(Iron, 0.28f, 0.31f).Yields(Sulfur, 0.33f, 0.35f).Yields(Silica, 0.01f, 0.04f);
         list.Add(o);
         o = Ore("cassiterite", "Tin stone", "a dark brown stone, very heavy for its size, with a greasy shine", new Color(0.25f, 0.17f, 0.12f), "adamantine", "pale brown",
-            new Color(0.8f, 0.7f, 0.6f), 6.9f, 6.5f, 0.15f, 0.45f, CraftGangue.Quartz, 1000, 0.9f, 8f, "Cassiterite. Heavy: it stays in the pan when the rock washes away.");
+            new Color(0.8f, 0.7f, 0.6f), 6.9f, 6.5f, 0.15f, 0.45f, CraftGangue.Quartz, 1000, 0.9f, 2.3f, "Cassiterite. Heavy: it stays in the pan when the rock washes away.");
         o.Yields(Tin, 0.7f, 0.78f).Yields(Iron, 0.005f, 0.03f).Yields(Silica, 0.01f, 0.04f);
         list.Add(o);
         o = Ore("galena", "Lead ore", "heavy grey cubes with a bright metallic shine", new Color(0.5f, 0.52f, 0.56f), "metallic", "lead-grey", new Color(0.4f, 0.42f, 0.45f),
-            7.5f, 2.6f, 0.3f, 0.7f, CraftGangue.Quartz, 800, 1.2f, 3f, "Galena: lead and sulfur, and a little silver. Roast it, smelt it, cupel the lead.");
+            7.5f, 2.6f, 0.3f, 0.7f, CraftGangue.Quartz, 800, 1.2f, 0.18f, "Galena: lead and sulfur, and a little silver. Roast it, smelt it, cupel the lead.");
         o.sulfide = true; o.roastTemperature = 600;
-        o.Yields(Lead, 0.84f, 0.86f).Yields(Sulfur, 0.13f, 0.135f).Yields(Silver, 0.0005f, 0.006f);
+        o.Yields(Lead, 0.84f, 0.86f).Yields(Sulfur, 0.13f, 0.135f).Yields(Silver, 0.0001f, 0.003f);
         list.Add(o);
         o = Ore("native_silver", "Native silver", "black-tarnished silvery wires in white rock", new Color(0.6f, 0.6f, 0.62f), "metallic", "silver-white", new Color(0.85f, 0.85f, 0.85f),
-            10.5f, 2.7f, 0.1f, 0.35f, CraftGangue.Quartz, 960, 1f, 20f, "Silver as it grows in the rock: melt it out.");
+            10.5f, 2.7f, 0.15f, 0.35f, CraftGangue.Quartz, 960, 1f, 50f, "Silver as it grows in the rock: melt it out.");
         o.native = true;
         o.Yields(Silver, 0.88f, 0.98f).Yields(Copper, 0.005f, 0.05f).Yields(Gold, 0f, 0.01f);
         list.Add(o);
         o = Ore("gold_quartz", "Gold-bearing quartz", "white quartz with specks of yellow metal", new Color(1f, 0.82f, 0.35f), "metallic in glassy rock", "gold", new Color(1f, 0.82f, 0.35f),
-            19f, 2.8f, 0.01f, 0.06f, CraftGangue.Quartz, 1065, 1f, 15f, "Gold in quartz: crush it, wash it, melt the gold out. Natural gold carries silver.");
+            19f, 2.8f, 0.02f, 0.05f, CraftGangue.Quartz, 1065, 1f, 65f, "Gold in quartz: crush it, wash it, melt the gold out. Natural gold carries silver.");
         o.native = true; o.lumpMass = 1500;
         o.Yields(Gold, 0.75f, 0.92f).Yields(Silver, 0.06f, 0.22f).Yields(Copper, 0f, 0.02f);
         list.Add(o);
         o = Ore("calamine", "Calamine", "a pale, porous, honey-coloured stone", new Color(0.75f, 0.72f, 0.6f), "earthy", "white", new Color(0.92f, 0.92f, 0.9f),
-            4.4f, 4.5f, 0.3f, 0.65f, CraftGangue.Limestone, 950, 1f, 4f, "Zinc ore. Its zinc boils away in a furnace: heat it in a covered crucible with molten copper and the copper drinks it (brass).");
+            4.4f, 4.5f, 0.3f, 0.65f, CraftGangue.Limestone, 950, 1f, 1f, "Zinc ore. Its zinc boils away in a furnace: heat it in a covered crucible with molten copper and the copper drinks it (brass).");
         o.Yields(Zinc, 0.45f, 0.52f).Yields(Iron, 0.01f, 0.04f).Yields(Silica, 0.01f, 0.05f);
         list.Add(o);
+        o = Ore("garnierite", "Green nickel ore", "an apple-green, waxy rock that crumbles in the hand", new Color(0.45f, 0.68f, 0.42f), "waxy to earthy", "pale green",
+            new Color(0.72f, 0.86f, 0.68f), 2.6f, 2.5f, 0.3f, 0.6f, CraftGangue.Clay, 1150, 0.7f, 0.9f,
+            "Garnierite: nickel in a green clay-rock. Its nickel does not melt in the furnace but gathers in a bloom, as iron does; melted with copper and zinc it makes nickel silver.");
+        o.dirtMin = 0.08f; o.dirtMax = 0.2f;
+        o.Yields(Nickel, 0.2f, 0.32f).Yields(Iron, 0.02f, 0.06f).Yields(Silica, 0.3f, 0.4f);
+        list.Add(o);
         o = Ore("meteorite", "Fallen star", "a heavy, black, pitted lump with a rusty crust; a lodestone pulls it", new Color(0.18f, 0.17f, 0.17f), "metallic under the crust", "grey",
-            new Color(0.4f, 0.4f, 0.42f), 7.5f, 5f, 0.75f, 0.95f, CraftGangue.Quartz, 1000, 1f, 40f, "Iron from the sky, with nickel and starmetal. Heat it and it welds into a bloom.");
+            new Color(0.4f, 0.4f, 0.42f), 7.5f, 5f, 0.75f, 0.95f, CraftGangue.Quartz, 1000, 1f, 52f, "Iron from the sky, with nickel and starmetal. Heat it and it welds into a bloom.");
         o.native = true; o.magnetic = true; o.dirtMin = 0.01f; o.dirtMax = 0.04f; o.lumpMass = 2500;
         o.Yields(Iron, 0.85f, 0.9f).Yields(Nickel, 0.06f, 0.1f).Yields(Starmetal, 0.02f, 0.05f).Yields(Phosphorus, 0.001f, 0.003f).Yields(Carbon, 0.0003f, 0.001f);
         list.Add(o);
         o = Ore("mythril_ore", "Mythril vein", "grey rock shot with pale blue, glimmering veins", new Color(0.55f, 0.72f, 0.9f), "pearly metallic", "silver-blue",
-            new Color(0.7f, 0.8f, 0.95f), 4.5f, 7f, 0.2f, 0.5f, CraftGangue.Quartz, 1350, 0.6f, 60f, "It will not give up its metal without a very hot furnace and an arcane flux.");
+            new Color(0.7f, 0.8f, 0.95f), 4.5f, 7f, 0.3f, 0.5f, CraftGangue.Quartz, 1350, 0.6f, 200f, "It will not give up its metal without a very hot furnace and an arcane flux.");
         o.needsFlux = "arcane_flux";
-        o.Yields(Mythril, 0.4f, 0.6f).Yields(Silver, 0.01f, 0.05f).Yields(Silica, 0.05f, 0.15f);
+        o.Yields(Mythril, 0.45f, 0.6f).Yields(Silver, 0.01f, 0.05f).Yields(Silica, 0.05f, 0.15f);
         list.Add(o);
         o = Ore("orichalcum_ore", "Orichalcum ore", "fiery orange crystals that feel warm", new Color(0.92f, 0.45f, 0.18f), "glassy to metallic", "orange", new Color(0.95f, 0.55f, 0.25f),
-            5f, 5.5f, 0.25f, 0.55f, CraftGangue.Quartz, 1000, 1f, 45f, "A sulfide like copper's: roast it first.");
+            5f, 5.5f, 0.25f, 0.55f, CraftGangue.Quartz, 1000, 1f, 110f, "A sulfide like copper's: roast it first.");
         o.sulfide = true; o.roastTemperature = 650;
         o.Yields(Orichalcum, 0.5f, 0.65f).Yields(Copper, 0.05f, 0.15f).Yields(Sulfur, 0.02f, 0.05f).Yields(Silica, 0.01f, 0.03f);
         list.Add(o);
@@ -382,13 +397,13 @@ public static partial class CraftDefaults
     {
         return new List<CraftTanningAgent>
         {
-            new CraftTanningAgent { id = "water", displayName = "Water", kind = CraftAgentKind.Water, dose = 0, hoursThrough = 1, observation = "clear water" },
-            new CraftTanningAgent { id = "lime", displayName = "Lime water", kind = CraftAgentKind.Lime, item = "Quicklime", dose = 0.25f, actionHours = 24, observation = "milky, caustic lime water" },
+            new CraftTanningAgent { id = "water", displayName = "Water", kind = CraftAgentKind.Water, dose = 0, hoursThrough = 1, color = new Color(0.3f, 0.45f, 0.6f), observation = "clear water" },
+            new CraftTanningAgent { id = "lime", displayName = "Lime water", kind = CraftAgentKind.Lime, item = "Quicklime", dose = 0.25f, actionHours = 24, color = new Color(0.88f, 0.88f, 0.82f), observation = "milky, caustic lime water" },
             new CraftTanningAgent { id = "bark", displayName = "Oak bark liquor", kind = CraftAgentKind.Vegetable, item = "Oak Bark", dose = 0.15f, hoursThrough = 72, caseHardeningAbove = 0.55f, fixation = 1, stiffness = 0.55f, waterResistance = 0.45f, shrinkTemperature = 78, bestTemperature = 22, maxTemperature = 40, color = new Color(0.55f, 0.36f, 0.22f), durability = 1.2f, observation = "a brown, bitter-smelling liquor" },
             new CraftTanningAgent { id = "alum", displayName = "Alum and salt", kind = CraftAgentKind.Mineral, item = "Alum Powder", dose = 0.3f, hoursThrough = 18, caseHardeningAbove = 0.9f, fixation = 0.35f, stiffness = 0.25f, waterResistance = 0.1f, shrinkTemperature = 70, bestTemperature = 25, maxTemperature = 40, color = new Color(0.92f, 0.9f, 0.85f), durability = 0.85f, observation = "a clear, salty, puckering liquor" },
             new CraftTanningAgent { id = "brain_oil", displayName = "Oil emulsion", kind = CraftAgentKind.Oil, item = "Tanning Oil", dose = 0.25f, hoursThrough = 30, caseHardeningAbove = 0.95f, fixation = 0.85f, stiffness = 0.1f, waterResistance = 0.5f, shrinkTemperature = 65, bestTemperature = 30, maxTemperature = 45, color = new Color(0.85f, 0.78f, 0.6f), durability = 0.95f, observation = "a creamy, greasy emulsion" },
             new CraftTanningAgent { id = "tanning_essence", displayName = "Alchemical tanning essence", kind = CraftAgentKind.Alchemical, item = "Tanning Essence", dose = 0.4f, hoursThrough = 8, caseHardeningAbove = 0.8f, fixation = 1, stiffness = 0.45f, waterResistance = 0.7f, shrinkTemperature = 110, bestTemperature = 30, maxTemperature = 60, color = new Color(0.45f, 0.3f, 0.4f), durability = 1.4f, fireResistance = 0.4f, observation = "a violet liquor that smells of smoke" },
-            new CraftTanningAgent { id = "vinegar", displayName = "Vinegar pickle", kind = CraftAgentKind.Acid, item = "Vinegar", dose = 0.4f, actionHours = 6, observation = "sharp-smelling vinegar" },
+            new CraftTanningAgent { id = "vinegar", displayName = "Vinegar pickle", kind = CraftAgentKind.Acid, item = "Vinegar", dose = 0.4f, actionHours = 6, color = new Color(0.78f, 0.66f, 0.38f), observation = "sharp-smelling vinegar" },
         };
     }
 
@@ -408,14 +423,26 @@ public static partial class CraftDefaults
             Hide("rabbit", "Rabbit pelt", 4, 3, 1f, 0.7f, 0.5f, 0.9f, 0.9f, 0.2f, 0.03f, 1, "Small and soft: linings."),
             Hide("drake", "Drake hide", 14, 10, 7f, 5f, 1.6f, 0.2f, 0f, 0.4f, 0.03f, 60, "Scaled and fire-proof by nature."),
             // Cloth, by the bolt (cut and sewn at the tailor's table).
-            Hide("linen_cloth", "Linen cloth", 14, 20, 0.7f, 0.7f, 0.55f, 0.8f, 0f, 0f, 0.01f, 6, "Smooth, cool linen: shirts, linings, the layers of a gambeson."),
-            Hide("wool_cloth", "Wool cloth", 14, 20, 1.6f, 1.6f, 0.45f, 0.85f, 0f, 0f, 0.015f, 8, "Warm, springy wool: cloaks, hoods, padding."),
-            Hide("canvas", "Canvas", 12, 18, 1.2f, 1.2f, 0.8f, 0.55f, 0f, 0f, 0.01f, 7, "Heavy hemp canvas: the outer shell of a gambeson, bags, sails."),
+            Hide("linen_cloth", "Linen cloth", 14, 20, 0.7f, 0.7f, 0.55f, 0.8f, 0f, 0f, 0.01f, 12, "Smooth, cool linen: shirts, linings, the layers of a gambeson."),
+            Hide("wool_cloth", "Wool cloth", 14, 20, 1.6f, 1.6f, 0.45f, 0.85f, 0f, 0f, 0.015f, 13, "Warm, springy wool: cloaks, hoods, padding."),
+            Hide("canvas", "Canvas", 12, 18, 1.2f, 1.2f, 0.8f, 0.55f, 0f, 0f, 0.01f, 8, "Heavy hemp canvas: the outer shell of a gambeson, bags, sails."),
         };
         foreach (CraftHideDefinition c in list)
             if (c.id == "linen_cloth" || c.id == "wool_cloth" || c.id == "canvas") c.textile = true;
-        list[0].color = new Color(0.62f, 0.5f, 0.42f);
-        list[6].color = new Color(0.35f, 0.42f, 0.3f);
+        // Each animal's skin (the grain under the hair) and its coat: a red-brown cow, a fawn deer, a near-black boar's
+        // bristles, a grey wolf, a dark brown bear, a grey-brown rabbit; the scaled drake has no hair to show.
+        void Colours(int i, Color skin, Color hair)
+        {
+            list[i].color = skin;
+            list[i].hairColor = hair;
+        }
+        Colours(0, new Color(0.62f, 0.5f, 0.42f), new Color(0.45f, 0.27f, 0.16f));
+        Colours(1, new Color(0.7f, 0.56f, 0.44f), new Color(0.6f, 0.42f, 0.26f));
+        Colours(2, new Color(0.52f, 0.44f, 0.4f), new Color(0.2f, 0.17f, 0.15f));
+        Colours(3, new Color(0.64f, 0.56f, 0.5f), new Color(0.52f, 0.5f, 0.47f));
+        Colours(4, new Color(0.5f, 0.4f, 0.34f), new Color(0.22f, 0.15f, 0.1f));
+        Colours(5, new Color(0.74f, 0.64f, 0.57f), new Color(0.6f, 0.54f, 0.46f));
+        Colours(6, new Color(0.35f, 0.42f, 0.3f), new Color(0.3f, 0.36f, 0.26f));
         list[7].color = new Color(0.86f, 0.83f, 0.74f);
         list[8].color = new Color(0.5f, 0.42f, 0.36f);
         list[9].color = new Color(0.68f, 0.62f, 0.48f);
@@ -424,27 +451,32 @@ public static partial class CraftDefaults
         // Hides of the harvested creatures that no other animal gives (see HarvestDefaults).
         CraftHideDefinition snake = Hide("snake", "Snakeskin", 18, 5, 1.2f, 0.9f, 0.7f, 0.85f, 0f, 0.15f, 0.03f, 18, "Thin and scaled: belts, wraps, sheaths.");
         snake.color = new Color(0.45f, 0.5f, 0.3f);
+        snake.hairColor = snake.color;
         CraftHideDefinition troll = Hide("troll", "Troll hide", 16, 12, 9f, 6f, 1.5f, 0.15f, 0.3f, 0.6f, 0.06f, 60, "Thick as a door: heavy leather armour that shrugs off blows.");
         troll.color = new Color(0.4f, 0.45f, 0.36f);
+        troll.hairColor = new Color(0.27f, 0.3f, 0.21f); // coarse, mossy hair
         list.Add(snake);
         list.Add(troll);
         return list;
     }
 
     private static CraftWoodDefinition Wood(string id, string name, float density, float hardness, float toughness, float flex, Color color, float price, string description,
-        float l = 1000, float w = 40, float t = 40) =>
-        new CraftWoodDefinition { id = id, displayName = name, density = density, hardness = hardness, toughness = toughness, flexibility = flex, color = color, price = price, description = description, blankLength = l, blankWidth = w, blankThickness = t };
+        float l = 1000, float w = 40, float t = 40, float cleave = 0.6f) =>
+        new CraftWoodDefinition { id = id, displayName = name, density = density, hardness = hardness, toughness = toughness, flexibility = flex, cleave = cleave, color = color, price = price, description = description, blankLength = l, blankWidth = w, blankThickness = t };
 
+    // A blank's price is for the species' blank: by volume, ash, oak, maple, hickory, elm and birch cost 0.5-0.95 a
+    // litre, walnut and yew about 1.6, ironwood 5, linden and pine planks 0.3-0.45 (relative timber prices: the softwoods
+    // and linden at about half of ash, walnut and yew at two to three times it, the iron-hard wood far above all).
     public static List<CraftWoodDefinition> Woods()
     {
         var list = new List<CraftWoodDefinition>
         {
-            Wood("ash", "Ash", 0.68f, 0.5f, 0.85f, 0.55f, new Color(0.8f, 0.72f, 0.55f), 1, "Springy and tough: the wood for hafts and shafts.", 2200),
-            Wood("hickory", "Hickory", 0.8f, 0.65f, 0.95f, 0.5f, new Color(0.75f, 0.6f, 0.45f), 1.5f, "The toughest haft wood."),
-            Wood("oak", "Oak", 0.75f, 0.6f, 0.6f, 0.35f, new Color(0.65f, 0.5f, 0.32f), 1.2f, "Hard and heavy; it splits under shock."),
-            Wood("maple", "Maple", 0.7f, 0.62f, 0.6f, 0.4f, new Color(0.85f, 0.78f, 0.62f), 1.2f, "Fine and hard: grips."),
-            Wood("linden", "Linden plank", 0.5f, 0.3f, 0.45f, 0.5f, new Color(0.88f, 0.82f, 0.66f), 1, "Light boards for shields.", 650, 650, 16),
-            Wood("ironwood", "Ironwood", 1.1f, 0.9f, 0.9f, 0.3f, new Color(0.3f, 0.22f, 0.18f), 8, "So dense it sinks; a legend among haft-makers."),
+            Wood("ash", "Ash", 0.68f, 0.5f, 0.85f, 0.55f, new Color(0.8f, 0.72f, 0.55f), 2.5f, "Springy and tough, and it rives straight: the wood for hafts and shafts.", 2200, cleave: 0.85f),
+            Wood("hickory", "Hickory", 0.8f, 0.65f, 0.95f, 0.5f, new Color(0.75f, 0.6f, 0.45f), 1.5f, "The toughest haft wood.", cleave: 0.6f),
+            Wood("oak", "Oak", 0.75f, 0.6f, 0.6f, 0.35f, new Color(0.65f, 0.5f, 0.32f), 1.2f, "Hard and heavy; it cleaves true, and splits under shock.", cleave: 0.9f),
+            Wood("maple", "Maple", 0.7f, 0.62f, 0.6f, 0.4f, new Color(0.85f, 0.78f, 0.62f), 1.2f, "Fine and hard: grips.", cleave: 0.5f),
+            Wood("linden", "Linden plank", 0.5f, 0.3f, 0.45f, 0.5f, new Color(0.88f, 0.82f, 0.66f), 5, "Light boards for shields: long and wide enough for a kite's.", 1100, 650, 16, 0.6f),
+            Wood("ironwood", "Ironwood", 1.1f, 0.9f, 0.9f, 0.3f, new Color(0.3f, 0.22f, 0.18f), 8, "So dense it sinks; a legend among haft-makers.", cleave: 0.3f),
         };
         list[5].affinity = ElementType.Earth;
         list[5].affinityStrength = 0.3f;
@@ -459,37 +491,53 @@ public static partial class CraftDefaults
     {
         return new List<CraftSupplyDefinition>
         {
-            Supply("limestone", "Limestone", CraftSupplyKind.Flux, "Limestone", 1, 0.5f, "Furnace flux: its lime takes the silica's place in the slag, so the iron stays."),
-            Supply("borax", "Borax", CraftSupplyKind.Flux, "Borax", 1, 2, "Flux for welding and for covering a melt."),
-            Supply("sand", "Sand", CraftSupplyKind.Flux, "Sand", 0.6f, 0.1f, "A cheap welding flux."),
-            Supply("arcane_flux", "Arcane flux", CraftSupplyKind.Flux, "Arcane Flux", 1, 25, "Without it, mythril ore gives nothing."),
+            Flux(Supply("limestone", "Limestone", CraftSupplyKind.Flux, "Limestone", 1, 0.5f, "Furnace flux: its lime takes the silica's place in the slag, so the iron stays."), CraftFluxUse.Furnace),
+            Flux(Supply("borax", "Borax", CraftSupplyKind.Flux, "Borax", 1, 2, "Flux for welding and for covering a melt."), CraftFluxUse.Weld | CraftFluxUse.Cover),
+            Flux(Supply("sand", "Sand", CraftSupplyKind.Flux, "Sand", 0.6f, 0.1f, "A cheap welding flux."), CraftFluxUse.Weld),
+            Flux(Supply("arcane_flux", "Arcane flux", CraftSupplyKind.Flux, "Arcane Flux", 1, 25, "Without it, mythril ore gives nothing."), CraftFluxUse.Furnace),
             Supply("bone_ash", "Bone-ash cupel", CraftSupplyKind.Cupel, "Bone Ash Cupel", 1, 3, "Soaks up lead as it oxidises; silver stays on it."),
-            Supply("linen_thread", "Linen thread", CraftSupplyKind.Thread, "Linen Thread", 1, 1, "Ordinary sewing thread."),
-            Supply("waxed_thread", "Waxed thread", CraftSupplyKind.Thread, "Waxed Thread", 1.3f, 2, "Strong and it sheds water."),
-            Supply("sinew", "Sinew", CraftSupplyKind.Thread, "Sinew", 1.2f, 1, "Shrinks tight as it dries."),
-            Supply("silk_thread", "Silk thread", CraftSupplyKind.Thread, "Silk Thread", 1.5f, 6, "The strongest thread."),
+            Supply("linen_thread", "Linen thread", CraftSupplyKind.Thread, "Linen Thread", 1, 0.055f, "Ordinary sewing thread."),
+            Supply("waxed_thread", "Waxed thread", CraftSupplyKind.Thread, "Waxed Thread", 1.3f, 0.08f, "Strong and it sheds water."),
+            Supply("sinew", "Sinew", CraftSupplyKind.Thread, "Sinew", 1.2f, 0.06f, "Shrinks tight as it dries."),
+            Supply("silk_thread", "Silk thread", CraftSupplyKind.Thread, "Silk Thread", 1.5f, 0.3f, "The strongest thread."),
             Supply("wool_padding", "Wool batting", CraftSupplyKind.Padding, "Wool Batting", 1, 3, "Padding under armour: it softens blows."),
             Supply("linen_padding", "Linen padding", CraftSupplyKind.Padding, "Linen Padding", 0.8f, 2, "Quilted linen padding."),
-            Supply("beeswax", "Beeswax", CraftSupplyKind.Wax, "Beeswax", 1, 2, "Sheds water; stiffens leather a little."),
-            Supply("neatsfoot_oil", "Neatsfoot oil", CraftSupplyKind.Oil, "Neatsfoot Oil", 1, 2, "Makes leather supple."),
-            Supply("linseed_oil", "Linseed oil", CraftSupplyKind.Oil, "Linseed Oil", 0.8f, 1, "Protects metal and wood; softens leather a little."),
+            Supply("beeswax", "Beeswax", CraftSupplyKind.Wax, "Beeswax", 1, 2, "Sheds water; stiffens leather a little.", new Color(0.93f, 0.8f, 0.42f)),
+            Supply("neatsfoot_oil", "Neatsfoot oil", CraftSupplyKind.Oil, "Neatsfoot Oil", 1, 2, "Makes leather supple.", new Color(0.86f, 0.78f, 0.55f)),
+            Dries(Supply("linseed_oil", "Linseed oil", CraftSupplyKind.Oil, "Linseed Oil", 0.8f, 1, "Protects metal and wood (it dries slowly in the grain); softens leather a little.", new Color(0.82f, 0.66f, 0.28f)), 10),
             Supply("dye_black", "Black dye", CraftSupplyKind.Dye, "Black Dye", 1, 2, "Iron and vinegar.", new Color(0.08f, 0.07f, 0.07f)),
             Supply("dye_brown", "Walnut dye", CraftSupplyKind.Dye, "Walnut Dye", 1, 1, "A warm brown.", new Color(0.35f, 0.22f, 0.12f)),
             Supply("dye_red", "Madder dye", CraftSupplyKind.Dye, "Madder Dye", 1, 3, "A deep red.", new Color(0.6f, 0.12f, 0.1f)),
             Supply("dye_blue", "Woad dye", CraftSupplyKind.Dye, "Woad Dye", 1, 3, "A dark blue.", new Color(0.12f, 0.2f, 0.45f)),
             Supply("refractory_clay", "Refractory clay", CraftSupplyKind.Clay, "Refractory Clay", 1, 1, "Coat the spine before the quench: it stays soft and tough, the edge hardens."),
-            // The tailor's: fibre to spin, and what it spins into (coarse, even, fine).
+            // The tailor's: fibre to spin, and what it spins into (coarse, even, fine). One chain of worth, fibre to cloth: a
+            // skein of thread (CraftFibre.MetresPerThread, 20 m) is priced by the fibre in it - about 5 g of a middling yarn -
+            // × 1.8 coarse, 2.2 even, 2.6 fine, so spinning adds a little and reeling a skein makes nothing; a bolt of cloth is
+            // worth more than the yarn it is woven from at its finest (12 m a cell); CraftRules.Check says where it is not.
             Spinnable(Supply("wool_fibre", "Raw wool", CraftSupplyKind.Fibre, "Raw Wool", 1, 0.5f, "Washed, carded wool, ready to spin."), "coarse_wool_yarn", "wool_yarn", "fine_wool_yarn"),
             Spinnable(Supply("flax_fibre", "Flax tow", CraftSupplyKind.Fibre, "Flax Tow", 1, 0.5f, "Hackled flax, ready to spin into linen."), "coarse_linen_yarn", "linen_thread", "fine_linen_thread"),
-            Supply("coarse_wool_yarn", "Coarse wool yarn", CraftSupplyKind.Thread, "Coarse Wool Yarn", 0.6f, 0.4f, "Lumpy, hand-spun yarn: it holds, roughly."),
-            Supply("wool_yarn", "Wool yarn", CraftSupplyKind.Thread, "Wool Yarn", 0.85f, 0.8f, "Even wool yarn."),
-            Supply("fine_wool_yarn", "Fine worsted", CraftSupplyKind.Thread, "Fine Worsted", 1.05f, 1.5f, "Fine, smooth, strong wool thread."),
-            Supply("coarse_linen_yarn", "Tow yarn", CraftSupplyKind.Thread, "Tow Yarn", 0.7f, 0.4f, "Coarse linen from the short fibres."),
-            Supply("fine_linen_thread", "Fine linen thread", CraftSupplyKind.Thread, "Fine Linen Thread", 1.25f, 2, "Fine, even and very strong."),
+            Supply("coarse_wool_yarn", "Coarse wool yarn", CraftSupplyKind.Thread, "Coarse Wool Yarn", 0.6f, 0.045f, "Lumpy, hand-spun yarn: it holds, roughly."),
+            Supply("wool_yarn", "Wool yarn", CraftSupplyKind.Thread, "Wool Yarn", 0.85f, 0.055f, "Even wool yarn."),
+            Supply("fine_wool_yarn", "Fine worsted", CraftSupplyKind.Thread, "Fine Worsted", 1.05f, 0.065f, "Fine, smooth, strong wool thread."),
+            Supply("coarse_linen_yarn", "Tow yarn", CraftSupplyKind.Thread, "Tow Yarn", 0.7f, 0.045f, "Coarse linen from the short fibres."),
+            Supply("fine_linen_thread", "Fine linen thread", CraftSupplyKind.Thread, "Fine Linen Thread", 1.25f, 0.065f, "Fine, even and very strong."),
             // The woodshop's finishes.
-            Supply("spirit_varnish", "Spirit varnish", CraftSupplyKind.Varnish, "Spirit Varnish", 1, 2, "Dries fast to a bright, thin film."),
-            Supply("oil_varnish", "Oil varnish", CraftSupplyKind.Varnish, "Oil Varnish", 1.25f, 3, "Slow to dry, tough and weatherproof."),
+            Dries(Supply("spirit_varnish", "Spirit varnish", CraftSupplyKind.Varnish, "Spirit Varnish", 1, 2, "Dries fast to a bright, thin film.", new Color(0.85f, 0.62f, 0.3f)), 1),
+            Dries(Supply("oil_varnish", "Oil varnish", CraftSupplyKind.Varnish, "Oil Varnish", 1.25f, 3, "Slow to dry, tough and weatherproof.", new Color(0.66f, 0.4f, 0.16f)), 8),
         };
+    }
+
+    private static CraftSupplyDefinition Flux(CraftSupplyDefinition s, CraftFluxUse use)
+    {
+        s.fluxUse = use;
+        return s;
+    }
+
+    /// <summary>A wood finish that takes <paramref name="hours"/> process hours to dry.</summary>
+    private static CraftSupplyDefinition Dries(CraftSupplyDefinition s, float hours)
+    {
+        s.dryingHours = hours;
+        return s;
     }
 
     private static CraftSupplyDefinition Spinnable(CraftSupplyDefinition s, params string[] into)
@@ -542,12 +590,13 @@ public static partial class CraftDefaults
             Mold("bar", "Bar", 250, 30, 12),
             Mold("plate", "Plate", 250, 200, 3),
             Profiled("blade_blank", "Blade blank", 600, (0, 14, 7), (0.15f, 45, 7), (0.95f, 35, 6), (1, 10, 5)),
-            Profiled("dagger_blank", "Dagger blank", 300, (0, 12, 6), (0.3f, 32, 6), (1, 8, 4)),
+            // the dagger's stepped tang, long enough for its grip and pommel (the dagger design's tangTo)
+            Profiled("dagger_blank", "Dagger blank", 430, (0, 12, 6), (0.46f, 12, 6), (0.47f, 32, 6), (1, 8, 4)),
             Profiled("axe_head", "Axe head", 170, (0, 40, 30), (0.25f, 40, 30), (0.5f, 30, 12), (1, 100, 6)),
-            Mold("mace_head", "Mace head", 90, 60, 60),
-            Profiled("spear_head", "Spear head", 300, (0, 26, 26), (0.3f, 26, 18), (0.4f, 40, 8), (1, 6, 3)),
+            Mold("mace_head", "Mace head", 90, 40, 40),
+            Profiled("spear_head", "Spear head", 280, (0, 32, 32), (0.12f, 32, 30), (0.22f, 18, 14), (0.27f, 40, 8), (0.7f, 30, 6), (1, 4, 3)),
             Mold("guard", "Guard", 200, 22, 12),
-            Mold("pommel", "Pommel", 55, 40, 35),
+            Mold("pommel", "Pommel", 50, 40, 18),
             Mold("boss", "Shield boss", 160, 160, 4),
             Profiled("pick_head", "Pick head", 450, (0, 10, 10), (0.45f, 35, 30), (0.55f, 35, 30), (1, 10, 10)),
             new CraftMold { id = "rivets", displayName = "Rivets", length = 14, width = 5, thickness = 5, fasteners = true, fastenerKind = CraftFastenerKind.Rivet, count = 12, fastenerMass = 5 },
@@ -559,7 +608,7 @@ public static partial class CraftDefaults
             {
                 case "axe_head": m.eyeAt = 0.12f; m.eyeDiameter = 28; break;
                 case "mace_head": m.eyeAt = 0.5f; m.eyeDiameter = 28; break;
-                case "spear_head": m.eyeAt = 0.1f; m.eyeDiameter = 26; break;
+                case "spear_head": m.eyeAt = 0.06f; m.eyeDiameter = 26; break;
                 case "guard": m.eyeAt = 0.5f; m.eyeDiameter = 13; break;
                 case "pommel": m.eyeAt = 0.5f; m.eyeDiameter = 11; break;
                 case "pick_head": m.eyeAt = 0.5f; m.eyeDiameter = 30; break;
@@ -567,28 +616,28 @@ public static partial class CraftDefaults
         return list;
     }
 
-    private static CraftPattern Pattern(string id, string name, int seamHoles, params string[] rows) =>
-        new CraftPattern { id = id, displayName = name, seamHoles = seamHoles, rows = new List<string>(rows) };
+    private static CraftPattern Pattern(string id, string name, params string[] rows) =>
+        new CraftPattern { id = id, displayName = name, rows = new List<string>(rows) };
 
     public static List<CraftPattern> Patterns()
     {
         return new List<CraftPattern>
         {
-            Pattern("jerkin_body", "Jerkin body", 40, ".XXXXXX.", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", ".XXXXXX."),
-            Pattern("strap", "Strap", 8, "XXXX"),
-            Pattern("long_strap", "Belt strap", 10, "XXXXXXXXXX"),
-            Pattern("cap", "Cap crown", 20, ".X.", "XXX", "XXX"),
-            Pattern("bracer", "Bracer", 12, "XXX", "XXX"),
-            Pattern("glove", "Glove", 30, "XX", "XX", "XX"),
-            Pattern("boot_upper", "Boot upper", 24, "XXX", "XXX", "XXX", "XX."),
-            Pattern("sole", "Sole", 24, "X", "X", "X"),
-            Pattern("liner", "Helm liner", 12, "XXX", "XXX", "XXX"),
-            Pattern("grip_wrap", "Grip wrap", 0, "XXX"),
+            Pattern("jerkin_body", "Jerkin body", ".XXXXXX.", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", ".XXXXXX."),
+            Pattern("strap", "Strap", "XXXX"),
+            Pattern("long_strap", "Belt strap", "XXXXXXXXXX"),
+            Pattern("cap", "Cap crown", ".X.", "XXX", "XXX"),
+            Pattern("bracer", "Bracer", "XXX", "XXX"),
+            Pattern("glove", "Glove", "XX", "XX", "XX"),
+            Pattern("boot_upper", "Boot upper", "XXX", "XXX", "XXX", "XX."),
+            Pattern("sole", "Sole", "X", "X", "X"),
+            Pattern("liner", "Helm liner", "XXX", "XXX", "XXX"),
+            Pattern("grip_wrap", "Grip wrap", "XXX"),
             // Cloth (the bolt's length - its grain - runs down the rows).
-            Pattern("gambeson_panel", "Gambeson panel", 36, ".XXXX.", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", ".XXXX."),
-            Pattern("cloak_half", "Cloak half", 30, "..XXX", ".XXXX", "XXXXX", "XXXXX", "XXXXXX", "XXXXXX", "XXXXXXX", "XXXXXXX"),
-            Pattern("hood", "Hood side", 16, ".XX.", "XXXX", "XXXX", "XXXX", "XXX."),
-            Pattern("trouser_leg", "Trouser leg", 26, "XXXX", "XXXX", "XXXX", "XXX.", "XXX.", "XXX.", "XXX.", "XXX.", "XX..", "XX.."),
+            Pattern("gambeson_panel", "Gambeson panel", ".XXXX.", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", ".XXXX."),
+            Pattern("cloak_half", "Cloak half", "..XXX", ".XXXX", "XXXXX", "XXXXX", "XXXXXX", "XXXXXX", "XXXXXXX", "XXXXXXX"),
+            Pattern("hood", "Hood side", ".XX.", "XXXX", "XXXX", "XXXX", "XXX."),
+            Pattern("trouser_leg", "Trouser leg", "XXXX", "XXXX", "XXXX", "XXX.", "XXX.", "XXX.", "XXX.", "XXX.", "XX..", "XX.."),
         };
     }
 
@@ -631,15 +680,24 @@ public static partial class CraftDefaults
     private static CraftJointSpec Joint(string id, string name, CraftJointKind kind, string a, string b, int count, float importance = 1f) =>
         new CraftJointSpec { id = id, displayName = name, kind = kind, roleA = a, roleB = b, count = count, importance = importance };
 
+    /// <summary>
+    /// A hilted blade: the blade's tang runs through the guard, the grip and the pommel and is peened over it - so each
+    /// design's tang (<c>tangTo</c> of its shortest blade) is as long as its longest grip and pommel, and a segment more.
+    /// The guard's slot and the pommel's hole are made for the tang: half a millimetre over its section.
+    /// </summary>
     private static CraftDesign Hilted(string id, string name, WeaponCategory cat, DamageForm form, WeaponScaling scaling, CraftShapeTarget blade, CraftShapeTarget guard,
         float gripMin, float gripMax, float gripD0, float gripD1, CraftShapeTarget pommel, string description)
     {
         blade.edge = CraftEdgeKind.Double;
         blade.hardened = true;
+        float tw = blade.profile[0].width, tt = blade.profile[0].thickness;
+        float eye = Mathf.Round((Mathf.Max(tw, tt) * 0.75f + Mathf.Min(tw, tt) * 0.25f + 0.5f) * 10f) / 10f;
         guard.eye = true;
         guard.eyeAt = 0.5f;
+        guard.eyeDiameter = eye;
         pommel.eye = true;
         pommel.eyeAt = 0.5f;
+        pommel.eyeDiameter = eye;
         var d = new CraftDesign
         {
             id = id, displayName = name, kind = CraftDesignKind.Weapon, weaponCategory = cat, damageForm = form, scaling = scaling, description = description,
@@ -681,32 +739,39 @@ public static partial class CraftDefaults
         var list = new List<CraftDesign>();
         CraftDesign d;
 
+        // Every metal part's own profile (what its pattern mould casts, what the anvil's target draws) falls inside its mass
+        // range in steel and in bronze (12 % denser): the heavy ones sit at 85-90 % of the range's top in steel. A weapon's
+        // referenceMass (the mass its damage and speed are rated for) lies in its main part's range - the part's own
+        // profile's mass where the part was reshaped. Eyes leave metal round them: a socket's wall is 3 mm, an axe's cheeks
+        // 2-4, a hilt's slot at least 1.
+
         // Hilted blades.
-        CraftShapeTarget blade = Shape(300, 380, 150, 350, (0, 12, 6), (0.3f, 12, 6), (0.31f, 32, 5.5f), (0.7f, 26, 4.5f), (1, 4, 3));
-        blade.edgeFrom = 0.33f; blade.edgeAngle = 28; blade.tangTo = 0.3f;
+        // Each blade's tang (tangTo of its shortest blade) runs through its longest grip and pommel with a segment to spare.
+        CraftShapeTarget blade = Shape(390, 490, 200, 410, (0, 12, 6), (0.46f, 12, 6), (0.47f, 32, 5.5f), (0.77f, 26, 4.5f), (1, 4, 3));
+        blade.edgeFrom = 0.485f; blade.edgeAngle = 28; blade.tangTo = 0.46f;
         d = Hilted("dagger", "Dagger", WeaponCategory.Dagger, DamageForm.Pierce, WeaponScaling.Agility, blade,
-            Shape(70, 110, 30, 90, (0, 14, 8), (1, 14, 8)), 85, 110, 22, 30, Shape(25, 45, 40, 120, (0, 30, 25), (1, 30, 25)),
+            Shape(70, 110, 30, 90, (0, 14, 8), (1, 14, 8)), 85, 110, 22, 30, Shape(25, 45, 40, 120, (0, 30, 12), (1, 30, 12)),
             "A short double-edged blade: quick stabs.");
-        d.damageMin = 7; d.damageMax = 10; d.critChance = 0.12f; d.critMultiplier = 1.8f; d.knockback = 0.2f; d.referenceMass = 260; d.idealBalance = 30;
+        d.damageMin = 7; d.damageMax = 10; d.critChance = 0.12f; d.critMultiplier = 1.8f; d.knockback = 0.2f; d.referenceMass = 315; d.idealBalance = 10;
         d.durability = 220; d.price = 40; d.gridSize = new Vector2Int(1, 2);
         d.joints[3].count = 8;
         list.Add(d);
 
-        blade = Shape(820, 940, 900, 1350, (0, 14, 6.5f), (0.12f, 14, 6.5f), (0.13f, 46, 6), (0.5f, 42, 5), (0.9f, 32, 4), (1, 8, 3));
-        blade.edgeFrom = 0.14f; blade.edgeAngle = 30; blade.tangTo = 0.13f;
+        blade = Shape(940, 1070, 980, 1500, (0, 14, 6.5f), (0.24f, 14, 6.5f), (0.25f, 46, 6), (0.569f, 42, 5), (0.914f, 32, 4), (1, 8, 3));
+        blade.edgeFrom = 0.259f; blade.edgeAngle = 30; blade.tangTo = 0.24f;
         d = Hilted("arming_sword", "Arming sword", WeaponCategory.Sword, DamageForm.Slash, WeaponScaling.Strength, blade,
-            Shape(180, 240, 150, 320, (0, 20, 12), (1, 20, 12)), 95, 120, 26, 34, Shape(40, 60, 180, 340, (0, 45, 38), (1, 45, 38)),
+            Shape(180, 240, 150, 320, (0, 20, 8), (1, 20, 8)), 95, 120, 26, 34, Shape(40, 60, 180, 340, (0, 45, 18), (1, 45, 18)),
             "A one-handed double-edged sword.");
-        d.damageMin = 10; d.damageMax = 14; d.critChance = 0.07f; d.critMultiplier = 1.6f; d.knockback = 0.5f; d.referenceMass = 1150; d.idealBalance = 120;
+        d.damageMin = 10; d.damageMax = 14; d.critChance = 0.07f; d.critMultiplier = 1.6f; d.knockback = 0.5f; d.referenceMass = 1230; d.idealBalance = 100;
         d.durability = 300; d.price = 120; d.gridSize = new Vector2Int(1, 4);
         list.Add(d);
 
-        blade = Shape(1250, 1450, 1800, 2600, (0, 16, 7), (0.2f, 16, 7), (0.21f, 54, 7), (0.6f, 46, 6), (0.95f, 34, 4.5f), (1, 10, 3));
-        blade.edgeFrom = 0.22f; blade.edgeAngle = 32; blade.tangTo = 0.2f;
+        blade = Shape(1430, 1650, 1990, 3100, (0, 16, 7), (0.3f, 16, 7), (0.31f, 54, 7), (0.651f, 46, 6), (0.956f, 34, 4.5f), (1, 10, 3));
+        blade.edgeFrom = 0.319f; blade.edgeAngle = 32; blade.tangTo = 0.3f;
         d = Hilted("greatsword", "Greatsword", WeaponCategory.Greatsword, DamageForm.Slash, WeaponScaling.Strength, blade,
-            Shape(260, 320, 250, 450, (0, 24, 14), (1, 24, 14)), 220, 280, 28, 36, Shape(50, 70, 300, 520, (0, 52, 44), (1, 52, 44)),
+            Shape(260, 320, 250, 450, (0, 24, 7), (1, 24, 7)), 220, 280, 28, 36, Shape(50, 70, 300, 520, (0, 52, 19), (1, 52, 19)),
             "A two-handed sword.");
-        d.damageMin = 18; d.damageMax = 26; d.critChance = 0.05f; d.critMultiplier = 1.8f; d.knockback = 1.2f; d.referenceMass = 2200; d.idealBalance = 160;
+        d.damageMin = 18; d.damageMax = 26; d.critChance = 0.05f; d.critMultiplier = 1.8f; d.knockback = 1.2f; d.referenceMass = 2400; d.idealBalance = 125;
         d.durability = 350; d.price = 220; d.gridSize = new Vector2Int(1, 5);
         d.joints[3].count = 16;
         list.Add(d);
@@ -720,16 +785,18 @@ public static partial class CraftDefaults
         d.durability = 280; d.price = 100; d.gridSize = new Vector2Int(2, 4);
         list.Add(d);
 
-        head = Shape(220, 320, 250, 500, (0, 26, 26), (0.3f, 26, 20), (0.35f, 40, 8), (0.7f, 30, 6), (1, 4, 3));
-        head.edge = CraftEdgeKind.Double; head.edgeFrom = 0.35f; head.edgeAngle = 28; head.eye = true; head.eyeAt = 0.12f; head.eyeDiameter = 26; head.hardened = true;
+        // A round socket with a 3 mm wall round its 26 mm bore, narrowing into the blade's neck. The model counts the socket
+        // solid (only its bore is cut out), so the head's mass range is the solid pattern's.
+        head = Shape(220, 320, 300, 700, (0, 32, 32), (0.12f, 32, 30), (0.22f, 18, 14), (0.27f, 40, 8), (0.7f, 30, 6), (1, 4, 3));
+        head.edge = CraftEdgeKind.Double; head.edgeFrom = 0.27f; head.edgeAngle = 28; head.eye = true; head.eyeAt = 0.06f; head.eyeDiameter = 26; head.hardened = true;
         d = Hafted("spear", "Spear", CraftDesignKind.Weapon, WeaponCategory.Spear, DamageForm.Pierce, Metal("head", "Spear head", CraftComponentFunction.Edge, head),
             WoodPart("haft", "Shaft", 1700, 2100, 26, 34, 0.6f), CraftJointKind.Socket, "A socketed spear head on an ash shaft.");
         d.components.Add(Fasteners("rivets", "Socket pin", CraftFastenerKind.Rivet, 1, true));
-        d.damageMin = 11; d.damageMax = 15; d.critChance = 0.1f; d.critMultiplier = 1.7f; d.knockback = 0.4f; d.referenceMass = 350; d.idealBalance = 900;
+        d.damageMin = 11; d.damageMax = 15; d.critChance = 0.1f; d.critMultiplier = 1.7f; d.knockback = 0.4f; d.referenceMass = 590; d.idealBalance = 900;
         d.durability = 260; d.price = 80; d.gridSize = new Vector2Int(1, 6);
         list.Add(d);
 
-        head = Shape(80, 120, 700, 1200, (0, 60, 60), (1, 60, 60));
+        head = Shape(80, 120, 700, 1200, (0, 36, 36), (1, 36, 36));
         head.eye = true; head.eyeAt = 0.5f; head.eyeDiameter = 28;
         d = Hafted("mace", "Mace", CraftDesignKind.Weapon, WeaponCategory.Mace, DamageForm.Blunt, Metal("head", "Mace head", CraftComponentFunction.Striking, head),
             WoodPart("haft", "Haft", 500, 700, 30, 38, 0.6f), CraftJointKind.Wedge, "A heavy iron head on a haft.");
@@ -737,21 +804,21 @@ public static partial class CraftDefaults
         d.durability = 350; d.price = 90; d.gridSize = new Vector2Int(1, 3);
         list.Add(d);
 
-        head = Shape(400, 500, 1000, 1700, (0, 10, 10), (0.42f, 34, 28), (0.58f, 34, 28), (1, 10, 10));
+        head = Shape(400, 500, 1000, 2000, (0, 10, 10), (0.42f, 34, 28), (0.58f, 34, 28), (1, 10, 10));
         head.eye = true; head.eyeAt = 0.5f; head.eyeDiameter = 30; head.hardened = true;
         d = Hafted("pickaxe", "Pickaxe", CraftDesignKind.Tool, WeaponCategory.Tool, DamageForm.Pierce, Metal("head", "Pick head", CraftComponentFunction.Striking, head),
             WoodPart("haft", "Haft", 750, 900, 32, 40, 0.6f), CraftJointKind.Wedge, "For ore and stone.");
         d.toolType = ToolType.PickAxe;
-        d.damageMin = 8; d.damageMax = 11; d.toolDamage = 15; d.critChance = 0.03f; d.knockback = 0.6f; d.referenceMass = 1300; d.idealBalance = 650;
+        d.damageMin = 8; d.damageMax = 11; d.toolDamage = 15; d.critChance = 0.03f; d.knockback = 0.6f; d.referenceMass = 1700; d.idealBalance = 650;
         d.durability = 400; d.price = 60; d.gridSize = new Vector2Int(2, 4);
         list.Add(d);
 
-        head = Shape(130, 170, 600, 1000, (0, 32, 24), (0.3f, 32, 24), (0.5f, 24, 10), (1, 80, 5));
+        head = Shape(130, 170, 450, 1000, (0, 32, 24), (0.3f, 32, 24), (0.5f, 24, 10), (1, 80, 5));
         head.edge = CraftEdgeKind.Single; head.edgeFrom = 0.75f; head.edgeAngle = 30; head.eye = true; head.eyeAt = 0.15f; head.eyeDiameter = 26; head.hardened = true;
         d = Hafted("hatchet", "Hatchet", CraftDesignKind.Tool, WeaponCategory.Tool, DamageForm.Slash, Metal("head", "Hatchet head", CraftComponentFunction.Edge, head),
             WoodPart("haft", "Haft", 380, 480, 28, 36, 0.6f), CraftJointKind.Wedge, "For felling trees.");
         d.toolType = ToolType.Axe;
-        d.damageMin = 7; d.damageMax = 10; d.toolDamage = 14; d.referenceMass = 800; d.idealBalance = 300; d.durability = 320; d.price = 45; d.gridSize = new Vector2Int(2, 3);
+        d.damageMin = 7; d.damageMax = 10; d.toolDamage = 14; d.referenceMass = 550; d.idealBalance = 300; d.durability = 320; d.price = 45; d.gridSize = new Vector2Int(2, 3);
         list.Add(d);
 
         // Leather and mixed armour.
@@ -841,7 +908,7 @@ public static partial class CraftDefaults
         };
         list.Add(d);
 
-        plate = Shape(220, 280, 900, 1500, (0, 190, 2), (1, 190, 2));
+        plate = Shape(220, 280, 750, 1100, (0, 240, 2), (1, 240, 2));
         plate.dish = 60;
         d = new CraftDesign
         {
@@ -858,7 +925,7 @@ public static partial class CraftDefaults
         };
         list.Add(d);
 
-        plate = Shape(380, 450, 3500, 6000, (0, 340, 2.5f), (0.5f, 360, 2.5f), (1, 320, 2.2f));
+        plate = Shape(380, 450, 2200, 3200, (0, 340, 2.5f), (0.5f, 360, 2.5f), (1, 320, 2.2f));
         plate.dish = 50;
         d = new CraftDesign
         {
@@ -868,7 +935,8 @@ public static partial class CraftDefaults
                 Metal("plate", "Breastplate", CraftComponentFunction.Protection, plate, 3),
                 Leather("straps", "Strap", CraftComponentFunction.Strap, "strap", 3, 5, 0, 1, 2, 0.5f),
                 Fasteners("buckles", "Buckles", CraftFastenerKind.Buckle, 2),
-                Fasteners("rivets", "Rivets", CraftFastenerKind.Rivet, 8),
+                // a rivet for each buckle as well as the straps' eight
+                Fasteners("rivets", "Rivets", CraftFastenerKind.Rivet, 10),
                 SupplyPart("padding", "Padding", CraftSupplyKind.Padding, 2, CraftComponentFunction.Padding),
             },
             joints = { Joint("straps_riveted", "Straps riveted on", CraftJointKind.Rivet, "plate", "straps", 8, 1.2f), Joint("buckles", "Buckles", CraftJointKind.Buckle, "straps", "buckles", 2) },
@@ -879,8 +947,8 @@ public static partial class CraftDefaults
         d = new CraftDesign
         {
             id = "belt", displayName = "Belt", kind = CraftDesignKind.Armor, armorSlot = ArmorSlotType.Belt, description = "A buckled leather belt.",
-            components = { Leather("strap", "Strap", CraftComponentFunction.Strap, "long_strap", 3, 5, 0, 1, 1, 2), Fasteners("buckle", "Buckle", CraftFastenerKind.Buckle, 1) },
-            joints = { Joint("buckle", "Buckle", CraftJointKind.Buckle, "strap", "buckle", 1) },
+            components = { Leather("strap", "Strap", CraftComponentFunction.Strap, "long_strap", 3, 5, 0, 1, 1, 2), Fasteners("buckle", "Buckle", CraftFastenerKind.Buckle, 1), Fasteners("rivets", "Rivet", CraftFastenerKind.Rivet, 1) },
+            joints = { Joint("buckle", "Buckle riveted on", CraftJointKind.Buckle, "strap", "buckle", 1) },
             defense = 1, durability = 300, price = 12, gridSize = new Vector2Int(3, 1),
         };
         list.Add(d);
@@ -1006,7 +1074,9 @@ public static partial class CraftDefaults
         CraftWoodDefinition w = rules.Wood(wood);
         if (w == null)
             return null;
-        var p = new CraftPiece { kind = CraftPieceKind.Wood, origin = $"wood:{w.id}" };
+        string name = w.Name.ToLowerInvariant();
+        string blank = name.EndsWith("plank") ? name : name + " blank"; // "an ash blank", "a linden plank"
+        var p = new CraftPiece { kind = CraftPieceKind.Wood, origin = $"{CraftText.A(blank)} {blank}" };
         p.wood.wood = w.id;
         length = length > 0 ? length : w.blankLength;
         width = width > 0 ? width : w.blankWidth;
@@ -1021,16 +1091,38 @@ public static partial class CraftDefaults
         return p;
     }
 
+    /// <summary>A stock log's diameter (mm): green, in its bark.</summary>
+    public const float LogDiameter = 240;
+
     /// <summary>
-    /// A green log of a species in its bark (length and diameter in mm; 200 mm across unless given): for the shaving horse,
-    /// the wedges and the seasoning stack.
+    /// A stock log of a species is as long as the species' blank, and never shorter than 90 cm: the long blanks (a
+    /// 2.2 m ash stave for a spear's shaft, a yew bow stave) are rived from logs as long as they are.
     /// </summary>
-    public static CraftPiece Log(CraftRules rules, string wood, double length = 900, double diameter = 0)
+    public static float LogLength(CraftWoodDefinition w) => Mathf.Max(900f, w != null ? w.blankLength : 900f);
+
+    /// <summary>The species' blank in words: "a blank 220 cm long, 4 by 4 cm", "a plank 110 cm long, 65 cm wide and 16 mm thick".</summary>
+    public static string BlankSize(CraftWoodDefinition w)
     {
-        double d = diameter > 0 ? diameter : 200;
-        CraftPiece p = WoodBlank(rules, wood, length > 0 ? length : 900, d, d);
+        if (w == null)
+            return "";
+        return w.blankWidth >= 3 * w.blankThickness
+            ? $"a plank {w.blankLength / 10f:0} cm long, {w.blankWidth / 10f:0.#} cm wide and {w.blankThickness:0.#} mm thick"
+            : $"a blank {w.blankLength / 10f:0} cm long, {w.blankWidth / 10f:0.#} by {w.blankThickness / 10f:0.#} cm";
+    }
+
+    /// <summary>
+    /// A green log of a species in its bark (length and diameter in mm; unless given, the stock log: as long as the
+    /// species' blank, at least 900 mm, and <see cref="LogDiameter"/> across): for the shaving horse, the wedges and the
+    /// seasoning stack.
+    /// </summary>
+    public static CraftPiece Log(CraftRules rules, string wood, double length = 0, double diameter = 0)
+    {
+        double d = diameter > 0 ? diameter : LogDiameter;
+        CraftPiece p = WoodBlank(rules, wood, length > 0 ? length : LogLength(rules.Wood(wood)), d, d);
         if (p == null)
             return null;
+        string log = rules.Wood(wood).Name.ToLowerInvariant().Replace(" plank", "") + " log";
+        p.origin = $"{CraftText.A(log)} {log}";
         p.wood.log = true;
         p.wood.moisture = 0.6;
         p.wood.bark = 1;
@@ -1075,7 +1167,7 @@ public static partial class CraftDefaults
             ("Tin", new[] { (Tin, 1.0) }),
             ("Sterling silver", new[] { (Silver, 0.925), (Copper, 0.075) }),
             ("Gold", new[] { (Gold, 0.99), (Silver, 0.01) }),
-            ("Mythril", new[] { (Mythril, 0.97), (Silver, 0.03) }),
+            ("Mythril", new[] { (Mythril, 0.985), (Silver, 0.015) }), // plain Mythril, well inside its class (mythril silver starts at 3 % silver)
             ("Starmetal steel", new[] { (Iron, 0.9325), (Carbon, 0.0075), (Starmetal, 0.05), (Nickel, 0.01) }),
             ("Orichalcum bronze", new[] { (Copper, 0.72), (Tin, 0.08), (Orichalcum, 0.2) }),
         };

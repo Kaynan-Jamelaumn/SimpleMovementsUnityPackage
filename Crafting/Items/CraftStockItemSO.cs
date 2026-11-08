@@ -25,6 +25,8 @@ public enum CraftStockKind
     Log,
     /// <summary>A rough gemstone (each stone in a stack keeps which stone it is: its size, clarity and flaws).</summary>
     Gem,
+    /// <summary>What a quench tank is filled with (rock salt for brine, quenching oil, frostwater...): one fills the tank.</summary>
+    Quenchant,
 }
 
 /// <summary>An element of a stock metal and its share by mass.</summary>
@@ -56,7 +58,7 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
     [SerializeField] private string craftId = "";
     [Tooltip("Metal and fasteners: what the metal is made of (element ids and mass fractions; they are normalised).")]
     [SerializeField] private List<CraftStockElement> composition = new List<CraftStockElement>();
-    [Tooltip("Metal: length, width and thickness (mm). Wood: the blank's size (0 = the species' usual blank).")]
+    [Tooltip("Metal: length, width and thickness (mm). Wood: the blank's size (0, or the 200 x 30 x 6 it starts at = the species' own blank). Log: length and diameter (0 = the species' log).")]
     [SerializeField] private Vector3 size = new Vector3(200f, 30f, 6f);
     [Tooltip("Metal: it was cast (an ingot: coarse-grained, maybe porous) rather than forged stock.")]
     [SerializeField] private bool cast;
@@ -86,6 +88,12 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
     public CraftFastenerKind FastenerKind => fastenerKind;
     public int FastenerCount => fastenerCount;
     public float FastenerMass => fastenerMass;
+
+    /// <summary>The size the field starts at (a metal bar's), which wooden blanks made before they had sizes of their own still carry.</summary>
+    public static readonly Vector3 BarSize = new Vector3(200f, 30f, 6f);
+
+    /// <summary>A wooden blank's size that means "the species' own blank": none, or the bar's size it was left at.</summary>
+    public static bool UnsetWoodSize(Vector3 s) => s.x <= 0 || s.y <= 0 || s.z <= 0 || s == BarSize;
 
     /// <summary>Does each copy carry a value of its own (ore lumps and hides)?</summary>
     public bool HasUnitCodes => stockKind == CraftStockKind.Ore || stockKind == CraftStockKind.Hide || stockKind == CraftStockKind.Gem;
@@ -185,10 +193,11 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
                 p = CraftLeather.NewHide(rules, craftId, code > 0 ? HideSeed(code) : (int)(CraftMath.Hash(((UnityEngine.Object)this).name) & 0xFFFF));
                 break;
             case CraftStockKind.Wood:
-                p = CraftDefaults.WoodBlank(rules, craftId, size.x, size.y, size.z);
+                // No size (or the metal bar's size every asset got before wood had its own) = the species' blank.
+                p = UnsetWoodSize(size) ? CraftDefaults.WoodBlank(rules, craftId) : CraftDefaults.WoodBlank(rules, craftId, size.x, size.y, size.z);
                 break;
             case CraftStockKind.Log:
-                p = CraftDefaults.Log(rules, craftId, size.x > 0 ? size.x : 900, size.y > 0 ? size.y : 0);
+                p = CraftDefaults.Log(rules, craftId, size.x > 0 ? size.x : 0, size.y > 0 ? size.y : 0);
                 break;
             case CraftStockKind.Gem:
                 p = CraftLapidary.NewRough(rules, craftId, code > 0 ? HideSeed(code) : (int)(CraftMath.Hash(((UnityEngine.Object)this).name) & 0xFFFF));
@@ -204,8 +213,9 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
             default:
                 return null;
         }
-        if (p != null)
-            p.origin = Name;
+        // where it came from, as a taken piece says it: the item it was ("an ash blank", "a heavy, rust-red rock"; a set as named)
+        if (p != null && !string.IsNullOrEmpty(Name))
+            p.origin = stockKind == CraftStockKind.Fasteners ? Name : $"{CraftText.A(Name)} {Name.ToLowerInvariant()}";
         return p;
     }
 
@@ -224,9 +234,19 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
             case CraftStockKind.Agent: lines.Add("Goes in a vat"); break;
             case CraftStockKind.Log: lines.Add("A green log in its bark: debark it, split it, season it"); break;
             case CraftStockKind.Gem: lines.Add("A rough stone: test it, then cut it at the lapidary's"); break;
+            case CraftStockKind.Quenchant: lines.Add("Fills a quench tank"); break;
         }
         if (stockKind == CraftStockKind.Metal && size.x > 0)
             lines.Add($"<color=#9aa0a6>About {size.x / 10f:0} cm long, {size.y / 10f:0.#} cm wide, {size.z:0.#} mm thick</color>");
+        if (stockKind == CraftStockKind.Wood)
+        {
+            CraftWoodDefinition w = CraftDatabase.Instance != null ? CraftDatabase.Instance.Rules?.Wood(craftId) : null;
+            Vector3 s = UnsetWoodSize(size) && w != null ? new Vector3(w.blankLength, w.blankWidth, w.blankThickness) : size;
+            if (s.x > 0)
+                lines.Add($"<color=#9aa0a6>About {s.x / 10f:0} cm long, {s.y / 10f:0.#} by {s.z / 10f:0.#} cm</color>");
+        }
+        if (stockKind == CraftStockKind.Log && size.x > 0)
+            lines.Add($"<color=#9aa0a6>About {size.x / 10f:0} cm long, {size.y / 10f:0} cm across</color>");
         base.AppendTooltip(lines);
     }
 
@@ -290,6 +310,7 @@ public class CraftStockItemSO : MaterialSO, IItemInstanceTooltip, IRuntimeItem
             case CraftStockKind.Fuel: if (rules.Fuel(craftId) == null) errors.Add($"Unknown fuel '{craftId}'."); break;
             case CraftStockKind.Supply: if (rules.Supply(craftId) == null) errors.Add($"Unknown supply '{craftId}'."); break;
             case CraftStockKind.Agent: if (rules.Agent(craftId) == null) errors.Add($"Unknown agent '{craftId}'."); break;
+            case CraftStockKind.Quenchant: if (rules.Quenchant(craftId) == null) errors.Add($"Unknown quenchant '{craftId}'."); break;
         }
     }
 }

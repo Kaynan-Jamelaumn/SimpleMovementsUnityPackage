@@ -49,8 +49,12 @@ public class CraftMasterySettings
 {
     [Tooltip("The experience for 63% mastery: mastery = 1 - e^(-experience / this). Every item teaches a little less than the last.")]
     [Min(1f)] public float experienceScale = 45f;
-    [Tooltip("Experience for finishing an item: × (0.5 + its quality) × how much work the design is.")]
+    [Tooltip("Experience for finishing an item: × (0.5 + its quality) × how much work the design is (its price against Work Price).")]
     [Min(0f)] public float perItem = 1.2f;
+    [Tooltip("The price of an ordinary piece of work: an item worth this teaches as much as an ordinary item; one worth four times as much, twice as much (a hemmed sash a third, a greatsword over twice).")]
+    [Min(1f)] public float workPrice = 45f;
+    [Tooltip("Every item of a design already made teaches less: the next one × 1 / (1 + made / this) - the same sash a sixteenth time teaches half as much.")]
+    [Min(1f)] public float repeatsHalve = 15f;
     [Tooltip("Experience from small work (blows, strokes, a bobbin spun) comes no faster than this a minute in one craft.")]
     [Min(0f)] public float workPerMinute = 0.35f;
     [Tooltip("Experience for each insight (understood, it is practised).")]
@@ -158,8 +162,17 @@ public static class CraftMastery
     /// faster than the settings allow a minute (<paramref name="now"/>, seconds), so idle blows teach little; finished
     /// work always counts. Returns the line to tell the player when a new rank is reached, else null.
     /// </summary>
-    public static string Practise(List<CraftMasteryNote> notes, CraftDiscipline d, double xp, bool work, double now, bool finishedOne = false, CraftMasterySettings s = null)
+    public static string Practise(List<CraftMasteryNote> notes, CraftDiscipline d, double xp, bool work, double now, bool finishedOne = false, CraftMasterySettings s = null) =>
+        Practise(notes, d, xp, work, now, out _, finishedOne, s);
+
+    /// <summary>
+    /// <see cref="Practise(List{CraftMasteryNote}, CraftDiscipline, double, bool, double, bool, CraftMasterySettings)"/>, saying
+    /// whether the journal's practice really changed (<paramref name="changed"/>: experience added or an item counted -
+    /// small work past the minute's allowance changes nothing worth sending).
+    /// </summary>
+    public static string Practise(List<CraftMasteryNote> notes, CraftDiscipline d, double xp, bool work, double now, out bool changed, bool finishedOne = false, CraftMasterySettings s = null)
     {
+        changed = false;
         if (notes == null || !(xp > 0))
             return null;
         s = S(s);
@@ -176,25 +189,39 @@ public static class CraftMastery
                 return null;
         }
         CraftRank before = RankOf(Level(n.xp, s), s);
+        float was = n.xp;
         n.xp += (float)xp;
         if (finishedOne) n.finished++;
+        changed = n.xp != was || finishedOne;
         CraftRank after = RankOf(Level(n.xp, s), s);
         if (after <= before)
             return null;
         string what = string.Join("; ", Unlocked(d, after, s));
-        return $"You are a {RankName(after).ToLowerInvariant()} {Crafter(d)} now." + (what.Length > 0 ? $" {what}." : "");
+        string rank = RankName(after).ToLowerInvariant();
+        return $"You are {CraftText.A(rank)} {rank} {Crafter(d)} now." + (what.Length > 0 ? $" {CraftText.Capital(what)}." : "");
     }
 
     /// <summary>Experience for an insight, in its craft (understood, it is practised a little).</summary>
     public static double InsightExperience(CraftMasterySettings s = null) => S(s).perInsight;
 
-    /// <summary>Experience for finishing an item of <paramref name="quality"/> (a design with more parts and joints is more work).</summary>
-    public static double ItemExperience(CraftDesign d, double quality, CraftMasterySettings s = null)
-    {
-        int parts = d != null ? d.components.Count + d.joints.Count : 2;
-        double work = CraftMath.Clamp(0.6 + 0.12 * parts, 0.8, 2);
-        return S(s).perItem * (0.5 + CraftMath.Clamp01(quality)) * work;
-    }
+    /// <summary>
+    /// Experience for finishing an item of <paramref name="quality"/>: as much as the work the design is
+    /// (<see cref="DesignWork"/>), less for each one of it already made (<paramref name="timesMade"/>: <see cref="RepeatFactor"/>)
+    /// - variety teaches, the quickest design made again and again does not.
+    /// </summary>
+    public static double ItemExperience(CraftDesign d, double quality, CraftMasterySettings s = null, int timesMade = 0) =>
+        S(s).perItem * (0.5 + CraftMath.Clamp01(quality)) * DesignWork(d, s) * RepeatFactor(timesMade, s);
+
+    /// <summary>
+    /// How much work a design is (0.4 - 3), by what it is worth against an ordinary piece of work
+    /// (<see cref="CraftMasterySettings.workPrice"/>): 1.4 × √(price / work price) - a hemmed sash a third of an ordinary
+    /// item, a quilted gambeson a little over, an arming sword half as much again, a greatsword or a breastplate the most.
+    /// </summary>
+    public static double DesignWork(CraftDesign d, CraftMasterySettings s = null) =>
+        d == null ? 1 : CraftMath.Clamp(1.4 * Math.Sqrt(Math.Max(0, d.price) / Math.Max(1, S(s).workPrice)), 0.4, 3);
+
+    /// <summary>What the next item of a design teaches against the first, with <paramref name="timesMade"/> of it made already.</summary>
+    public static double RepeatFactor(int timesMade, CraftMasterySettings s = null) => 1 / (1 + Math.Max(0, timesMade) / Math.Max(1, S(s).repeatsHalve));
 
     // ------------------------------------------------------------------ what practice gives
     /// <summary>How much the arm tires with a movement, × this (a master's movements are sure and economical).</summary>
@@ -283,14 +310,16 @@ public static class CraftMastery
         return lines;
     }
 
-    /// <summary>Everything practice gives now in a craft, for the journal.</summary>
-    public static List<string> Benefits(CraftDiscipline d, double m, CraftMasterySettings s = null)
+    private static readonly CraftTimingSettings DefaultTiming = new CraftTimingSettings();
+
+    /// <summary>Everything practice gives now in a craft, for the journal (<paramref name="timing"/>: the rules' timing bars, how far practice widens their zones).</summary>
+    public static List<string> Benefits(CraftDiscipline d, double m, CraftMasterySettings s = null, CraftTimingSettings timing = null)
     {
         s = S(s);
         var lines = new List<string>();
         if (d != CraftDiscipline.Alchemy)
         {
-            lines.Add($"Hands {Math.Round(60 * m)}% steadier; the timing bars' zones {Math.Round(100 * m * 0.35)}% wider");
+            lines.Add($"Hands {Math.Round(100 * CraftHands.SkillSteadies * m)}% steadier; the timing bars' zones {Math.Round(100 * m * (timing ?? DefaultTiming).skillWidening)}% wider");
             lines.Add($"The arm tires {Math.Round(100 * (1 - FatigueFactor(m, s)))}% less");
         }
         else
@@ -324,16 +353,23 @@ public static class CraftMastery
     /// <summary>
     /// What a practised hand does with one action, worked out where the rules run from the player's practice (the
     /// request only says which tool it was): the needle (JointWork <c>i1</c> = 1) lays a run of stitches and pierces as
-    /// many holes; the pricking iron (<c>i1</c> = 2) punches its teeth's holes a beat and the awl a run of stitches; the
-    /// reed (WeaveCloth) beats in rows together.
+    /// many holes (<c>flag</c>: as it draws them - only the needle does); the pricking iron (<c>i1</c> = 2) punches its
+    /// teeth's holes a beat and the awl a run of stitches; a run's pulls past the cut (<c>i2</c>) are as many runs of
+    /// stitches; the reed (WeaveCloth) beats in rows together.
     /// </summary>
     public static void ByPractice(ref CraftRequest r, double m, CraftMasterySettings s = null)
     {
+        if (r.kind == CraftRequestKind.JointWork)
+            r.flag &= r.i1 == 1 && r.i0 == (int)CraftJointWork.Stitch;
         if (r.kind == CraftRequestKind.JointWork && (r.i1 == 1 || r.i1 == 2))
         {
             var work = (CraftJointWork)r.i0;
             if (work == CraftJointWork.Punch) r.count *= r.i1 == 2 ? HolesPerBeat : StitchesPerAction(m, s);
-            else if (work == CraftJointWork.Stitch) r.count *= StitchesPerAction(m, s);
+            else if (work == CraftJointWork.Stitch)
+            {
+                r.count *= StitchesPerAction(m, s);
+                r.i2 *= StitchesPerAction(m, s);
+            }
             r.i1 = 0;
         }
         else if (r.kind == CraftRequestKind.WeaveCloth && r.points != null)
@@ -437,34 +473,40 @@ public static class CraftMastery
 
     /// <summary>
     /// The craft a request practises (null: none - the bellows, putting things down, waiting). Work on an item being
-    /// assembled is the item's craft; cutting cloth is tailoring and cutting leather leatherwork; rasping wood woodwork.
+    /// assembled is the item's craft; cutting cloth is tailoring and cutting leather leatherwork; rasping, sawing to
+    /// length, coating or brushing wood woodwork; running the furnace's metal into a mould smithing, like a pour.
     /// </summary>
     public static CraftDiscipline? OfRequest(CraftRules rules, CraftWorkshop ws, in CraftRequest r)
     {
         CraftPiece p = ws?.Piece(r.piece);
         switch (r.kind)
         {
-            case CraftRequestKind.Strike: case CraftRequestKind.Fold: case CraftRequestKind.Weld: case CraftRequestKind.Split:
-            case CraftRequestKind.FormFastener: case CraftRequestKind.Agitate: case CraftRequestKind.Clay: case CraftRequestKind.Descale:
-            case CraftRequestKind.Coat: case CraftRequestKind.Sharpen: case CraftRequestKind.Crush: case CraftRequestKind.Wash:
+            case CraftRequestKind.Strike: case CraftRequestKind.Fold: case CraftRequestKind.Weld:
+            case CraftRequestKind.FormFastener: case CraftRequestKind.Agitate: case CraftRequestKind.Clay:
+            case CraftRequestKind.Sharpen: case CraftRequestKind.Crush: case CraftRequestKind.Wash:
             case CraftRequestKind.Sieve: case CraftRequestKind.Flux: case CraftRequestKind.TapSlag: case CraftRequestKind.ExtractBloom:
             case CraftRequestKind.StirMelt: case CraftRequestKind.Skim: case CraftRequestKind.Pour: case CraftRequestKind.BrushOre:
+            case CraftRequestKind.TakeMelt:
                 return CraftDiscipline.Smithing;
-            case CraftRequestKind.Grind: case CraftRequestKind.File: case CraftRequestKind.Polish:
+            // Work done to metal or to wood alike: a saw cut to length, a coat of oil, the wire brush are the woodworker's on wood.
+            case CraftRequestKind.Grind: case CraftRequestKind.File: case CraftRequestKind.Polish: case CraftRequestKind.Split:
+            case CraftRequestKind.Coat: case CraftRequestKind.Descale:
                 return p != null && p.kind == CraftPieceKind.Wood ? CraftDiscipline.Woodwork : CraftDiscipline.Smithing;
             case CraftRequestKind.FillVat: case CraftRequestKind.StirVat: case CraftRequestKind.Scrape: case CraftRequestKind.Stretch:
             case CraftRequestKind.Stake: case CraftRequestKind.Condition: case CraftRequestKind.Dye: case CraftRequestKind.Slick:
             case CraftRequestKind.Skive:
                 return CraftDiscipline.Leatherwork;
-            case CraftRequestKind.Cut:
+            // laying patterns out and cutting them: on cloth the tailor's craft, on leather the leatherworker's
+            case CraftRequestKind.Cut: case CraftRequestKind.LayoutPattern:
                 return rules != null && CraftTextiles.IsCloth(rules, p) ? CraftDiscipline.Tailoring : CraftDiscipline.Leatherwork;
             case CraftRequestKind.Carve: case CraftRequestKind.Rive: case CraftRequestKind.BendWood: case CraftRequestKind.SawCut:
             case CraftRequestKind.StackWood: case CraftRequestKind.SandWood: case CraftRequestKind.Varnish: case CraftRequestKind.DebarkWood:
-            case CraftRequestKind.SplitLog:
+            case CraftRequestKind.SplitLog: case CraftRequestKind.RipCut:
                 return CraftDiscipline.Woodwork;
             case CraftRequestKind.Spin: case CraftRequestKind.CleanFibre: case CraftRequestKind.ScourFibre: case CraftRequestKind.OpenFibre:
             case CraftRequestKind.CardFibre: case CraftRequestKind.CombFibre: case CraftRequestKind.SpinFibre: case CraftRequestKind.PlyYarn:
-            case CraftRequestKind.MeasureYarn: case CraftRequestKind.ReelYarn: case CraftRequestKind.LayoutPattern: case CraftRequestKind.WeaveCloth:
+            case CraftRequestKind.MeasureYarn: case CraftRequestKind.ReelYarn: case CraftRequestKind.WeaveCloth:
+            case CraftRequestKind.JoinYarn:
                 return CraftDiscipline.Tailoring;
             case CraftRequestKind.TestGem: case CraftRequestKind.IdentifyGem: case CraftRequestKind.EvaluateGem: case CraftRequestKind.OrientGem:
             case CraftRequestKind.CleaveGem: case CraftRequestKind.SawGem: case CraftRequestKind.FacetGem: case CraftRequestKind.PolishGem:
@@ -488,12 +530,24 @@ public static class CraftMastery
 
     /// <summary>
     /// The experience a piece of work gives (before the minute's allowance): products more than single blows or strokes;
-    /// nothing for work done by routine, for fuelling a fire or moving things about.
+    /// nothing for work done by routine, for fuelling a fire or moving things about - nor for reading, measuring and
+    /// planning (testing a stone, searching it, planning its cut, the tape, laying a pattern out: the work they guide
+    /// teaches), nor for a step only done again on <paramref name="piece"/> as it is before the request (a skein counted
+    /// again, a stone named again).
     /// </summary>
-    public static double WorkExperience(in CraftRequest r)
+    public static double WorkExperience(in CraftRequest r, CraftPiece piece = null)
     {
+        if (r.kind == CraftRequestKind.JointWork && r.flag)
+            return 0.02; // the needle's pull that pierces and draws: a punch's work and a stitch's in one
         switch (r.kind)
         {
+            case CraftRequestKind.TestGem: case CraftRequestKind.EvaluateGem: case CraftRequestKind.OrientGem:
+            case CraftRequestKind.MeasureFit: case CraftRequestKind.LayoutPattern:
+                return 0;
+            case CraftRequestKind.MeasureYarn:
+                return piece != null && piece.kind == CraftPieceKind.Yarn && piece.yarn.measured ? 0 : 0.04;
+            case CraftRequestKind.IdentifyGem:
+                return piece != null && piece.kind == CraftPieceKind.Gem && piece.gem.identified ? 0 : 0.12;
             case CraftRequestKind.Strike: case CraftRequestKind.Scrape: case CraftRequestKind.Carve: case CraftRequestKind.Grind:
             case CraftRequestKind.Sharpen: case CraftRequestKind.File: case CraftRequestKind.SandWood: case CraftRequestKind.GrindGem:
             case CraftRequestKind.JointWork: case CraftRequestKind.CardFibre: case CraftRequestKind.Stake: case CraftRequestKind.Slick:
@@ -501,17 +555,19 @@ public static class CraftMastery
             case CraftRequestKind.BrushOre: case CraftRequestKind.Crush:
                 return 0.01;
             case CraftRequestKind.Spin: case CraftRequestKind.SpinFibre: case CraftRequestKind.Pour: case CraftRequestKind.ExtractBloom:
-            case CraftRequestKind.WeaveCloth:
+            case CraftRequestKind.WeaveCloth: case CraftRequestKind.TakeMelt:
                 return 0.25;
             case CraftRequestKind.PlyYarn: case CraftRequestKind.Cut: case CraftRequestKind.Weld: case CraftRequestKind.BendWood:
-            case CraftRequestKind.FormShank: case CraftRequestKind.SeatSetting: case CraftRequestKind.FacetGem: case CraftRequestKind.IdentifyGem:
+            case CraftRequestKind.FormShank: case CraftRequestKind.SeatSetting: case CraftRequestKind.FacetGem:
                 return 0.12;
+            case CraftRequestKind.StackCover:
             case CraftRequestKind.Routine: case CraftRequestKind.PutItem: case CraftRequestKind.TakePiece: case CraftRequestKind.Move:
             case CraftRequestKind.AddFuel: case CraftRequestKind.Bellows: case CraftRequestKind.Damper: case CraftRequestKind.Oven:
             case CraftRequestKind.Wait: case CraftRequestKind.Suspend: case CraftRequestKind.Resume: case CraftRequestKind.Inspect:
             case CraftRequestKind.Finish: case CraftRequestKind.StartAssembly: case CraftRequestKind.Detach: case CraftRequestKind.Turn:
-            case CraftRequestKind.SetIntent: case CraftRequestKind.ScrapPiece: case CraftRequestKind.Assay: case CraftRequestKind.TakeMelt:
+            case CraftRequestKind.SetIntent: case CraftRequestKind.ScrapPiece: case CraftRequestKind.Assay:
             case CraftRequestKind.DiscardFragment: case CraftRequestKind.DrainVat: case CraftRequestKind.VatHeat:
+            case CraftRequestKind.JoinYarn:
                 return 0;
             default:
                 return 0.04;
@@ -519,14 +575,18 @@ public static class CraftMastery
     }
 
     // ------------------------------------------------------------------ an older journal
-    /// <summary>The craft an insight was learnt in.</summary>
+    /// <summary>
+    /// The craft an insight belongs to (a quench's warp is the smith's; a loose joint is learnt on an item and counts for
+    /// the item's craft - <see cref="CraftJournal.Learn"/> - and for smithing, the hilts and heads it is mostly about, when
+    /// an older journal's insights are turned into practice).
+    /// </summary>
     public static CraftDiscipline OfInsight(string id)
     {
         switch (id)
         {
-            case "case_hardened": case "rot": case "alum": case "shrink": case "stiff_leather": case "blotch": case "loose_joint":
+            case "case_hardened": case "rot": case "alum": case "shrink": case "stiff_leather": case "blotch":
                 return CraftDiscipline.Leatherwork;
-            case "warp": case "drawknife": case "grits":
+            case "drawknife": case "grits":
                 return CraftDiscipline.Woodwork;
             case "felting": case "carding": case "weaving_beat":
                 return CraftDiscipline.Tailoring;
@@ -552,7 +612,8 @@ public static class CraftMastery
         {
             CraftDesign d = rules?.Design(n.designId);
             CraftMasteryNote m = Note(j.mastery, OfDesign(d), true);
-            m.xp += (float)(ItemExperience(d, n.bestQuality * 0.85, s) * n.timesMade);
+            for (int k = 0; k < n.timesMade; k++)
+                m.xp += (float)ItemExperience(d, n.bestQuality * 0.85, s, k); // each one of a design less than the one before
             m.finished += n.timesMade;
         }
         foreach (string insight in j.insights)

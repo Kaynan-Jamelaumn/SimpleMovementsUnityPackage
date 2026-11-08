@@ -88,7 +88,7 @@ public class CraftElement
     [Min(0f)] public float oxidationRate = 1f;
     [Tooltip("Cold work goes (it anneals, recrystallises) above this (°C).")]
     public float recrystallization = 550f;
-    [Tooltip("The forging window: below Hot Work Min it is worked cold (it hardens, then cracks); above Hot Work Max it starts to burn.")]
+    [Tooltip("The forging window: below Hot Work Min it is worked cold (it hardens, then cracks); Hot Work Max is the top of the window (never closer than 40 °C to where the metal burns - an alloy's own burn temperature, below its base's). It burns above Burn Temperature.")]
     public float hotWorkMin = 800f;
     public float hotWorkMax = 1250f;
     [Tooltip("Above this it burns (grain boundaries melt): irreversible.")]
@@ -229,7 +229,7 @@ public class CraftMaterialClass
     public string baseElement = "";
     [Tooltip("Ranges the other elements must be in (by mass fraction).")]
     public List<CraftElementRange> ranges = new List<CraftElementRange>();
-    [Tooltip("Classes are tried from the highest priority down.")]
+    [Tooltip("Classes are tried from the highest priority down; of equal priority, the one listed first. Give classes whose ranges overlap different priorities.")]
     public int priority;
     [Tooltip("Value of the metal × this.")]
     [Min(0f)] public float priceMultiplier = 1f;
@@ -360,6 +360,22 @@ public class CraftFuel
     public bool burnsAnyWood;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
+
+    /// <summary>Words that name wood as kindling and leavings: it goes on the fire before any other.</summary>
+    private static readonly string[] FirewoodWords = { "firewood", "kindling", "offcut", "offcuts", "branch", "branches", "stick", "sticks", "twig", "twigs" };
+
+    /// <summary>
+    /// Which wood in a bag a fire that burns any wood (<see cref="burnsAnyWood"/>) takes first - the lowest first: wood
+    /// named as firewood (kindling, offcuts, branches, sticks) before any other, then the cheapest by its price. So an
+    /// ironwood blank or a yew stave never goes on the fire while a cheap plank is left.
+    /// </summary>
+    public static double BurnOrder(string itemName, double price)
+    {
+        bool firewood = false;
+        foreach (string word in (itemName ?? "").ToLowerInvariant().Split(new[] { ' ', '_', '-', '(', ')', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            firewood |= Array.IndexOf(FirewoodWords, word) >= 0;
+        return (firewood ? 0 : 1e6) + Math.Max(0, price);
+    }
 }
 
 /// <summary>
@@ -483,11 +499,14 @@ public class CraftWoodDefinition
     [Range(0f, 1f)] public float toughness = 0.6f;
     [Tooltip("How much it flexes (0-1).")]
     [Range(0f, 1f)] public float flexibility = 0.4f;
+    [Tooltip("How readily it cleaves along its grain (0 interlocked: it will not split true - 1 it splits straight): the wedges, the froe and a forced knife follow it.")]
+    [Range(0f, 1f)] public float cleave = 0.6f;
     public Color color = new Color(0.68f, 0.52f, 0.34f);
-    [Tooltip("The blank one item gives (mm).")]
+    [Tooltip("The blank one item gives (mm). A stock log of the wood is as long, at least 90 cm.")]
     public float blankLength = 1000f;
     public float blankWidth = 40f;
     public float blankThickness = 40f;
+    [Tooltip("Value of one blank. Any piece of the wood is worth its share of a blank by volume (half that while it is unseasoned): a log, a billet, a grip.")]
     [Min(0f)] public float price = 1f;
     public ElementType affinity = ElementType.None;
     [Range(0f, 1f)] public float affinityStrength;
@@ -510,6 +529,12 @@ public class CraftSupplyDefinition
     [Tooltip("Dye colour; colour of the supply.")]
     public Color color = Color.white;
     [Min(0f)] public float price = 1f;
+    [Tooltip("Flux: where it works - in the furnace's charge, as a cover over a melt, on a weld (any of them unless set).")]
+    public CraftFluxUse fluxUse = CraftFluxUse.Any;
+    [Tooltip("Oil, wax, dye: how many cells of leather one item (a flask, a cake, a pot) takes up fully - it is used by what the leather takes in.")]
+    [Min(0.1f)] public float cellsPerItem = 12f;
+    [Tooltip("Grams one item of it weighs - in the bag, and in what it goes into: a batting of padding, a skein of thread, a pallion of solder (0 = by its kind: a fibre its grams per item below, padding 300 g, thread a skein's 5 g, solder half a gram, anything else 300 g).")]
+    [Min(0f)] public float itemGrams;
 
     [Tooltip("Fibre: the thread it spins into - coarse, even, fine (supply ids).")]
     public List<string> spinsInto = new List<string>();
@@ -534,7 +559,34 @@ public class CraftSupplyDefinition
     [Tooltip("Polishing compound: the hardest stone (Mohs) it polishes well. Detergent: how well it lifts grease (strength).")]
     [Min(0f)] public float polishHardness = 7f;
 
+    [Header("Wood finish (the finishing bench)")]
+    [Tooltip("Varnish, oil: process hours a coat takes to dry before the next (0 = four). A spirit varnish dries in about one, an oil varnish in eight.")]
+    [Min(0f)] public float dryingHours;
+
+    [Header("Solder (the jeweller's torch)")]
+    [Tooltip("Solder: the heat (°C) it flows at - the glow the joint comes to as it takes (0 = a hard solder's 760 °C). The torch's heat is judged as a share of it.")]
+    [Min(0f)] public float flowTemperature;
+
+    /// <summary>A solder's flow point (°C): its own, or a hard solder's 760 °C when none is given.</summary>
+    public float FlowTemperature => flowTemperature > 0f ? flowTemperature : 760f;
+
+    /// <summary>
+    /// Grams one item of it weighs (<see cref="itemGrams"/>, or by its kind): the bag item weighs it, and an item it went
+    /// into (the batting quilted into a gambeson, the thread in its seams, the solder in a ring's joint) weighs it too.
+    /// </summary>
+    public double ItemGrams => itemGrams > 0f ? itemGrams : kind switch
+    {
+        CraftSupplyKind.Fibre => gramsPerItem,
+        CraftSupplyKind.Padding => 300,
+        CraftSupplyKind.Thread => CraftFibre.SkeinGrams,
+        CraftSupplyKind.Solder => 0.5,
+        _ => 300,
+    };
+
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
+
+    /// <summary>Is this a flux that does its work <paramref name="use"/> (the furnace, a melt's cover, a weld)?</summary>
+    public bool FluxFor(CraftFluxUse use) => kind == CraftSupplyKind.Flux && (fluxUse & use) != 0;
 }
 
 /// <summary>How a crystal splits along planes of weakness. Serialized as numbers: add at the END.</summary>
@@ -671,8 +723,6 @@ public class CraftAbrasive
     public bool leather;
     [Tooltip("Whetstones: the edge apex it reaches (µm).")]
     [Min(0.1f)] public float apex = 10f;
-    [Tooltip("The item a station needs for it (empty = part of the station's tools).")]
-    public string item = "";
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
 }

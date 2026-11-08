@@ -5,108 +5,111 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// The woodshop, in seven places, each worked with the hands:
+/// The woodshop, in seven places, each worked with the hands on the drawing:
 /// <list type="bullet">
 /// <item><b>Debark</b>: the log on the shaving horse, its end in section beside it. Pull the drawknife along the log
-/// (drag right to left) with its edge at the bark's own depth - the thin bright band under the bark: above it only the
-/// outer bark comes off, below it the knife gouges the wood. Hold the depth steady; turn the log (wheel or right-click)
-/// to reach the bark on its other faces. A green log peels easily; a dry one's bark is tight.</item>
-/// <item><b>Split</b>: the log's end. Drag a line across it where the wedge goes - through the heart and along a ray
-/// (or a check) splits it in even halves along the grain; off the heart one half is small, across the rays it twists out.
-/// Then drive the wedge with the maul (hold and release, full, square blows on the wedge) until it parts.</item>
-/// <item><b>Rive</b>: the billet from the side, its grain drawn along it. Set the froe on a grain line at the end, drive
-/// it in with the mallet (hold and release), then lever the split along: keep the pointer on the grain line as it
-/// wanders - the split follows the fibres if you do, and cuts across them (or runs out of the side) if you do not; rush
-/// it and it runs off on its own.</item>
-/// <item><b>Saw</b>: mark where to cut on the board, then saw: stroke up and down at the mark and keep the blade on the
-/// line - wandering off it leaves the cut crooked and the end torn.</item>
-/// <item><b>Steam &amp; bend</b>: drag the piece into the steam box and leave it (an hour for every 25 mm of thickness -
-/// the gauge fills), drag it out and bend it at once, while it is hot: drag its free end round the form, steadily. The
-/// strain gauge shows how near the outside fibres are to tearing; the strap holds them. It cools fast.</item>
-/// <item><b>Dry</b>: lay stickers under the board, evenly; seal its ends with wax (hold on each end); pull the cover
-/// over the stack; then drag the board onto the stack. Seasoning too fast - in the sun, unsealed, on uneven stickers -
-/// checks and warps it.</item>
-/// <item><b>Finish</b>: sand it (coarse, then fine, along the grain: strokes across it leave scratches), then brush on
-/// varnish or oil - dip the brush, lay long even strokes; a loaded brush lays it thick (it runs), damp wood clouds it.</item>
+/// (drag right to left) with its edge on the bright line under the bark: the DEPTH gauge shows where it peels (green),
+/// only skims (grey) or gouges the wood (red) - the same depths the workshop uses, green wood peeling deeper than dry.
+/// Two pulls bare a face; turn the log (the wheel, or Turn the log) to reach the bark on its other faces. A green log
+/// peels in one round of the faces, a dry one's tight bark takes two.</item>
+/// <item><b>Split</b>: the piece's end, standing on the block as it really is - a round log, a half, a quarter, a billet.
+/// Drag a line right across it where the wedge goes - across the side the wedges part (a half's from its flat face out):
+/// the halves are as even as the line divides the end, and a line through the heart along a ray (or the check) splits
+/// straight; one that misses the heart crosses the rays. Then drive the wedge with the maul (hold and let go, full, square
+/// blows on the wedge) until it parts. The wedges take a piece of 60 mm or more, 40 mm thick or more; smaller is riven,
+/// a thin board ripped.</item>
+/// <item><b>Rive</b>: the billet from the side at its real size, its grain drawn along it. Set the froe on a grain line at
+/// the end (where it is set is where it parts: off the middle the halves are uneven and the split runs out), drive it
+/// in with the mallet (two good blows), then lever the split along from its end: keep the pointer on the grain line as
+/// it wanders, at an even pace.</item>
+/// <item><b>Saw</b>: the board from above. Across: click to mark where to cut (it is cut exactly there), press on the
+/// mark and stroke up and down across the board, long even strokes, keeping on the line. A taper: click where the line
+/// starts and where it ends (its width there), then saw along it - both edges are ripped to it.</item>
+/// <item><b>Steam &amp; bend</b>: drag the piece by its clamped end into the steam box: it heats through (HEAT), then soaks
+/// (SOAK). Drag it out and bend it at once - it stays soft (SOFT) only a minute or so: drag its free end round the form,
+/// at an even pace. The STRAIN gauge is how hard the form strains its outside fibres at the pull's fastest pace so far -
+/// what the bend is judged by - with the pace now as a thin tick (past the tick they tear; right-click lets it spring back
+/// unbent); the strap holds them. The part says how much bend it wants.</item>
+/// <item><b>Dry</b>: lay stickers under the board (one under each end, the rest evenly between - four or more), hold on
+/// each end to seal it with wax (a seal stays with the piece), pull the cover over the stack (it shades every board in it),
+/// then drag the board onto the stack. Seasoning too fast - in the sun, unsealed, on uneven stickers - checks and warps
+/// it; thick stock seasons slowly (rive it first).</item>
+/// <item><b>Finish</b>: sand it through the grits along the grain - each paper only clears the scratches of the one before
+/// (the strip under the board shows, stretch by stretch, where the paper in hand bites and where its scratches are too deep
+/// for it; the SURFACE gauge how rough it is on the whole) - then brush on a varnish (a film), rub in oil (it soaks into
+/// the grain) or wax: thin, even coats on dry wood, each left to dry at its own pace. A pot opened lays about two
+/// full-length coats.</item>
 /// </list>
-/// A test station has quick buttons for all of it.
+/// Right-click puts down what the hands hold: the knife lifts, the maul and the mallet come down without striking, the
+/// saw stops in its kerf, a bend springs back, a carried board goes back. Work begun on a piece - a wedge half driven,
+/// the froe in, a kerf, stickers and seals - stays with that piece while another place, area or piece is picked. A test
+/// station has quick buttons for all of it.
 /// </summary>
 public sealed class CraftWoodshopMode : CraftMode
 {
     private enum Place { Debark, Split, Rive, Saw, Bend, Dry, Finish }
     private enum FinishTool { Coarse, Medium, Fine, Brush }
+    private enum Hold { None, SealLeft, SealRight, Cover }
     private static readonly string[] PlaceNames = { "Debark", "Split log", "Rive", "Saw", "Steam & bend", "Dry", "Finish" };
     private static readonly float[] Grits = { 0.25f, 0.55f, 0.85f };
-    private static readonly string[] FormNames = { "Tight form (6 cm)", "Medium form (12 cm)", "Gentle form (25 cm)" };
-    private static readonly float[] FormRadius = { 60f, 120f, 250f };
+    private static readonly string[] GritNames = { "coarse", "medium", "fine" };
+    private static readonly string[] FormNames = { "Tight form (6 cm)", "Medium form (12 cm)", "Gentle form (25 cm)", "Snath form (60 cm)" };
+    private static readonly float[] FormRadius = { 60f, 120f, 250f, 600f };
+
+    /// <summary>
+    /// The hand work under way on one piece, kept with it (by its id) when another piece, place or area is picked: the
+    /// faces drawn on the horse, the wedge and how far it is driven, the froe, the saw's mark and kerf, the stickers and
+    /// the sealed ends. Cleared when the work is done or the piece is gone - or cut since (elsewhere, by other hands):
+    /// marks kept as shares of its length, and faces kept by its stretches, no longer fall where they were made.
+    /// </summary>
+    private sealed class PieceWork
+    {
+        /// <summary>The piece's length (mm) and stretches when the work was begun: the marks and faces are of that piece.</summary>
+        public double length;
+        public int stretches;
+        public readonly Dictionary<long, int> faceStrokes = new Dictionary<long, int>();
+        public int face;
+        public bool wedgeSet, splitSent;
+        public Vector2 lineA, lineB;
+        public float splitWork, splitSolid;
+        public int splitBlows;
+        public int riveLine = -1, riveStage, malletBlows;
+        public float riveFront, riveStray, riveWeight, riveJerk;
+        public bool riveSent;
+        public readonly List<Vector2> splitPath = new List<Vector2>();
+        public float mark = -1f, ripA = -1f, ripB = -1f, ripWa, ripWb;
+        public CraftSawStroke saw = new CraftSawStroke();
+        public bool sawStarted, sawSent;
+        /// <summary>The saw under way is a rip along the taper (else a cut across at the mark).</summary>
+        public bool sawRip;
+        public readonly List<float> stickers = new List<float>();
+        public float sealLeft, sealRight;
+    }
 
     private Place place = Place.Debark;
     private FinishTool finishTool = FinishTool.Coarse;
-    private readonly List<Button> placeButtons = new List<Button>(), finishButtons = new List<Button>();
-    private readonly List<RectTransform> bendRows = new List<RectTransform>(), finishRows = new List<RectTransform>();
+    private bool ripMode;
+    private readonly List<Button> placeButtons = new List<Button>(), finishButtons = new List<Button>(), sawButtons = new List<Button>();
+    private readonly Dictionary<Place, RectTransform> placeRows = new Dictionary<Place, RectTransform>();
     private TMP_Dropdown form, finishSupply;
-    private Slider bendAt;
+    private Slider bendFrom;
     private Button strapButton;
+    private TextMeshProUGUI faceText;
     private bool strap = true;
     private TextMeshProUGUI info;
     private readonly List<string> finishes = new List<string>();
     private string said = "";
-
-    // Riving.
-    private readonly CraftHammer mallet = new CraftHammer { fullCharge = 0.6f };
-    private int riveStage, riveLine = -1, malletBlows;
-    private float riveFront, riveStray, riveWeight, riveLastX, riveLastT, riveJerk;
-    private readonly List<Vector2> splitPath = new List<Vector2>();
-    private Rect billet;
-
-    // Sawing.
-    private Rect board;
-    private float markX = -1f, sawStartX, kerf, wanderSum;
-    private int wanderN;
-    private bool sawing;
-    private readonly CraftShake saw = new CraftShake();
-
-    // Steaming and bending.
-    private Rect steamBox, bench, formArea, clamp;
-    private Vector2 formCentre;
-    private bool dragging, bending;
-    private Vector2 dragAt;
-    private float bendAngle, bendPeak, lastAngle, lastAngleTime;
-
-    // Drying.
-    private Rect trestle, stackArea, coverHandle, leftEnd, rightEnd;
-    private readonly List<float> stickers = new List<float>();
-    private float sealLeft, sealRight, cover = 0.2f;
-    private int holding; // 1 left end, 2 right end, 3 the cover
-
-    // Finishing.
-    private readonly List<Vector2> stroke = new List<Vector2>();
-    private float strokeStart, load;
-    private Rect pot;
-
-    // Debarking: the log on the horse, the face turned up, the strokes on each face of each stretch.
-    private Rect logSide, logEnd;
-    private int face;
-    private const int Faces = 4;
-    private readonly Dictionary<long, int> faceStrokes = new Dictionary<long, int>();
-    private string debarkFor = "";
-    private readonly List<Vector2> knife = new List<Vector2>();
-    private float knifeStart;
-
-    // Splitting: the wedge's line across the end, then the maul.
-    private readonly CraftHammer maul = new CraftHammer { fullCharge = 0.9f, weight = 1.4f };
-    private Vector2 lineA, lineB;
-    private bool lining, wedgeSet;
-    private float splitWork, splitSolid;
-    private int splitBlows;
-    private Vector2 endCentre;
-    private float endRadius;
+    private readonly Dictionary<string, PieceWork> works = new Dictionary<string, PieceWork>();
+    /// <summary>The press under way acted when it went down (a mark, a sticker, the froe set): its drag and release do nothing.</summary>
+    private bool ignorePress;
 
     public override string Title => "Woodshop";
     public override CraftDiscipline Discipline => CraftDiscipline.Woodwork;
     public override bool Available(CraftStation s) =>
         s.Has(CraftTools.ChoppingBlock) || s.Has(CraftTools.Sawhorse) || s.Has(CraftTools.SteamBox) || s.Has(CraftTools.DryingStack) || s.Has(CraftTools.FinishingBench) || s.Has(CraftTools.ShavingHorse);
-    public override string Hint => "Debark the log, split it, rive along the grain, saw to the line, steam and bend, season in the stack, sand through the grits and seal - each with the hands, on the drawing.";
+    public override string Hint => "Pick a place: debark the log, split it, rive along the grain, saw to the line, steam and bend, season in the stack, sand and seal - each with the hands, on the drawing. Right-click puts down.";
+    // the maul on the wedge and the mallet on the froe strike blows; the drawknife, the saw and the papers are strokes
+    public override string ArmWords(int level) => CraftHands.FeelingAt(level, place == Place.Split || place == Place.Rive);
 
     /// <summary>Does the station have the tools for a place?</summary>
     private bool Here(Place p)
@@ -123,10 +126,10 @@ public sealed class CraftWoodshopMode : CraftMode
         }
     }
 
+    // ------------------------------------------------------------------ building
     public override void Build(RectTransform controls)
     {
-        bendRows.Clear();
-        finishRows.Clear();
+        placeRows.Clear();
         RectTransform r0 = Row(controls, 30f, 4f);
         placeButtons.Clear();
         if (!Here(place))
@@ -135,97 +138,243 @@ public sealed class CraftWoodshopMode : CraftMode
         for (int i = 0; i < PlaceNames.Length; i++)
         {
             Place pl = (Place)i;
-            Button b = Btn(r0, PlaceNames[i], () => { place = pl; Reset(); Show(); }, 0f, UITheme.ButtonStyle.Tab, 28f);
+            Button b = Btn(r0, PlaceNames[i], () => GoToPlace(pl), 0f, UITheme.ButtonStyle.Tab, 28f);
             b.gameObject.SetActive(Here(pl));
             placeButtons.Add(b);
         }
-        RectTransform b1 = Row(controls);
-        form = Drop(b1, FormNames, 1, 190f);
-        strapButton = Btn(b1, "Strap on", () => { strap = !strap; Show(); }, 100f);
-        bendAt = Slide(b1, "Bend at", 0.1f, 0.9f, 0.5f, false, 56f);
-        bendRows.Add(b1);
-        RectTransform f1 = Row(controls, 30f, 4f);
+
+        RectTransform debark = Row(controls);
+        Btn(debark, "Turn the log", () => TurnLog(1), 130f);
+        faceText = Text(debark, "", 13f);
+        placeRows[Place.Debark] = debark;
+
+        RectTransform split = Row(controls);
+        Btn(split, "Lift the wedge out", LiftWedge, 170f);
+        Text(split, "A press on the end draws the wedge's line; then hold and let go on the wedge to drive it.", 12f);
+        placeRows[Place.Split] = split;
+
+        RectTransform rive = Row(controls);
+        Btn(rive, "Lift the froe out", LiftFroe, 160f);
+        Text(rive, "Set the froe on a grain line at the left end; two mallet blows; then lever from the split's end.", 12f);
+        placeRows[Place.Rive] = rive;
+
+        RectTransform saw = Row(controls, 30f, 4f);
+        sawButtons.Clear();
+        sawButtons.Add(Btn(saw, "Across", () => SetRip(false), 110f, UITheme.ButtonStyle.Tab, 28f));
+        sawButtons.Add(Btn(saw, "A taper (rip)", () => SetRip(true), 130f, UITheme.ButtonStyle.Tab, 28f));
+        Btn(saw, "Clear the marks", ClearMarks, 140f, UITheme.ButtonStyle.Ghost, 28f);
+        placeRows[Place.Saw] = saw;
+
+        RectTransform bend = Row(controls);
+        form = Drop(bend, FormNames, 1, 180f);
+        strapButton = Btn(bend, "Strap on", () => { strap = !strap; Show(); }, 96f);
+        bendFrom = Slide(bend, "Bend from", 0.1f, 0.9f, 0.5f, false, 70f, v => BendFromText(v));
+        placeRows[Place.Bend] = bend;
+
+        RectTransform dry = Row(controls);
+        Btn(dry, "Take up the stickers", () => { PieceWork k = Current; if (k != null) { k.stickers.Clear(); said = "The stickers are taken up."; } }, 180f);
+        Text(dry, "Stickers: under each end and evenly between. Seal: hold an end. Cover: drag its handle.", 12f);
+        placeRows[Place.Dry] = dry;
+
+        RectTransform fin = Row(controls, 30f, 4f);
         finishButtons.Clear();
         string[] tools = { "Coarse", "Medium", "Fine", "Brush / rub" };
         for (int i = 0; i < tools.Length; i++)
         {
             FinishTool t = (FinishTool)i;
-            finishButtons.Add(Btn(f1, tools[i], () => { finishTool = t; Show(); }, 0f, UITheme.ButtonStyle.Tab, 28f));
+            finishButtons.Add(Btn(fin, tools[i], () => { finishTool = t; EndGestures(false); Show(); }, 0f, UITheme.ButtonStyle.Tab, 28f));
         }
         finishes.Clear();
-        var fn = new List<string>();
         foreach (CraftSupplyDefinition s in Rules.Supplies)
-            if (s.kind == CraftSupplyKind.Varnish || s.kind == CraftSupplyKind.Oil || s.kind == CraftSupplyKind.Wax) { finishes.Add(s.id); fn.Add(s.Name); }
-        finishSupply = CountedDrop(f1, finishes, 190f, "No finish");
-        finishRows.Add(f1);
+            if (s.kind == CraftSupplyKind.Varnish || s.kind == CraftSupplyKind.Oil || s.kind == CraftSupplyKind.Wax) finishes.Add(s.id);
+        finishSupply = CountedDrop(fin, finishes, 236f, "No finish");
+        finishSupply.onValueChanged.AddListener(_ => { if (load > 0f) { load = 0f; said = "A different finish: dip the brush afresh."; } });
+        placeRows[Place.Finish] = fin;
+
         if (QuickBench)
         {
             RectTransform q = Row(controls);
             Btn(q, "Debark", () => { CraftPiece p = Selected; if (p != null) Send(new CraftRequest(CraftRequestKind.DebarkWood, p.id) { i0 = 0, i1 = p.segments.Count - 1, a = 0.45f, b = 0.95f, c = 1f }); }, 70f);
             Btn(q, "Split", () => Send(new CraftRequest(CraftRequestKind.SplitLog, ui.SelectedId) { a = 0.02f, b = 0.95f, c = 0.9f, i0 = 5 }), 50f);
-            Btn(q, "Rive", () => Send(new CraftRequest(CraftRequestKind.Rive, ui.SelectedId) { a = 0.05f, b = 0.9f }), 60f);
+            Btn(q, "Rive", () => Send(new CraftRequest(CraftRequestKind.Rive, ui.SelectedId) { a = 0.05f, b = 0.9f, c = 0.5f }), 60f);
             Btn(q, "Saw in half", () => Send(new CraftRequest(CraftRequestKind.SawCut, ui.SelectedId) { a = 0.5f, b = 0.05f, c = 0.95f }), 100f);
             Btn(q, "Steam", () => Send(new CraftRequest(CraftRequestKind.Move, ui.SelectedId) { location = CraftLocation.Steam }), 70f);
-            Btn(q, "Bend 90°", () => { CraftPiece p = Selected; if (p != null) Send(new CraftRequest(CraftRequestKind.BendWood, p.id) { i0 = p.segments.Count / 4, i1 = p.segments.Count * 3 / 4, a = 90f, b = 0.2f, flag = true }); }, 80f);
+            Btn(q, "Bend 90°", () => { CraftPiece p = Selected; if (p != null) Send(new CraftRequest(CraftRequestKind.BendWood, p.id) { i0 = p.segments.Count / 4, i1 = p.segments.Count * 3 / 4, a = 90f, b = 0.2f, c = FormR, flag = true }); }, 80f);
             Btn(q, "Stack", () => Send(new CraftRequest(CraftRequestKind.StackWood, ui.SelectedId) { a = 1f, b = 1f, c = 1f }), 60f);
             Btn(q, "Sand", () => { CraftPiece p = Selected; if (p != null) Send(new CraftRequest(CraftRequestKind.SandWood, p.id) { i0 = 0, i1 = p.segments.Count - 1, a = 0.9f, b = 10f, c = 1f }); }, 60f);
             Btn(q, "Varnish", () => { CraftPiece p = Selected; if (p != null && finishes.Count > 0) Send(new CraftRequest(CraftRequestKind.Varnish, p.id) { id = finishes[0], i0 = 0, i1 = p.segments.Count - 1, a = 0.9f, b = 0.5f }); }, 70f);
         }
-        info = InfoRow(controls, 44f);
+        info = InfoRow(controls, 48f);
         Show();
     }
 
     public override void GoTo(string where)
     {
-        if (System.Enum.TryParse(where, out Place p) && Here(p)) { place = p; Show(); }
+        if (Enum.TryParse(where, out Place p) && Here(p)) GoToPlace(p);
+    }
+
+    public override bool HasPlace(string place) => Enum.TryParse(place, out Place p) && Here(p);
+
+    public override string PlaceTitle(string place) => Enum.TryParse(place, out Place p) ? PlaceNames[(int)p] : place;
+
+    /// <summary>Another place: the hands put down what they hold there; the work begun on the piece stays with it.</summary>
+    private void GoToPlace(Place p)
+    {
+        if (p == place) return;
+        EndGestures(false);
+        place = p;
+        said = "";
+        Show();
     }
 
     private void Show()
     {
         for (int i = 0; i < placeButtons.Count; i++) UITheme.SetSelected(placeButtons[i], (Place)i == place);
         for (int i = 0; i < finishButtons.Count; i++) UITheme.SetSelected(finishButtons[i], (FinishTool)i == finishTool);
-        foreach (RectTransform r in bendRows) r.gameObject.SetActive(place == Place.Bend);
-        foreach (RectTransform r in finishRows) r.gameObject.SetActive(place == Place.Finish);
+        for (int i = 0; i < sawButtons.Count; i++) UITheme.SetSelected(sawButtons[i], (i == 1) == ripMode);
+        foreach (KeyValuePair<Place, RectTransform> kv in placeRows)
+            if (kv.Value != null) kv.Value.gameObject.SetActive(kv.Key == place);
         TMP_Text t = strapButton != null ? strapButton.GetComponentInChildren<TMP_Text>(true) : null;
         if (t != null) t.text = strap ? "Strap on" : "No strap";
         if (strapButton != null) UITheme.SetSelected(strapButton, strap);
     }
 
-    private void Reset()
+    // ------------------------------------------------------------------ the piece, its work
+    private CraftPiece WoodPiece => Selected != null && Selected.kind == CraftPieceKind.Wood && Selected.segments.Count > 0 ? Selected : null;
+
+    private PieceWork Work(CraftPiece p)
     {
-        riveStage = 0;
-        riveLine = -1;
-        malletBlows = 0;
-        splitPath.Clear();
-        markX = -1f;
-        sawing = false;
-        dragging = bending = false;
-        holding = 0;
-        stroke.Clear();
-        mallet.Lower();
-        maul.Lower();
-        knife.Clear();
-        lining = wedgeSet = false;
-        splitWork = splitSolid = 0f;
-        splitBlows = 0;
+        if (p == null) return null;
+        if (works.TryGetValue(p.id, out PieceWork k) && Math.Abs(k.length - p.Length) <= 0.5 && k.stretches == p.segments.Count)
+            return k;
+        if (k != null && (k.sawSent || k.splitSent || k.riveSent))
+            return k; // its own cut on the way: the answer clears the work
+        if (k != null && (k.mark >= 0f || k.ripA >= 0f || k.sawStarted || k.stickers.Count > 0 || k.faceStrokes.Count > 0 || k.wedgeSet || k.riveStage > 0))
+            said = "It has been cut since the work here was begun on it: the marks and the work are gone - begin again.";
+        // a fresh start: the ends it has sealed are the piece's own (the workshop keeps a seal however often it is stacked)
+        works[p.id] = k = new PieceWork { length = p.Length, stretches = p.segments.Count };
+        k.sealLeft = k.sealRight = Mathf.Clamp01((float)p.wood.endsSealed);
+        return k;
     }
 
-    public override void Leave() => Reset();
+    /// <summary>The work under way on the selected piece (null with no wooden piece picked).</summary>
+    private PieceWork Current => Work(WoodPiece);
+
+    /// <summary>Where a piece that is not on the bench is, and where it is taken out.</summary>
+    private static string OutOfPlace(CraftPiece p)
+    {
+        switch (p.location)
+        {
+            case CraftLocation.Steam: return "It is in the steam box: drag it out at Steam & bend.";
+            case CraftLocation.Stack: return "It is seasoning in the stack: drag it off the stack at Dry.";
+            case CraftLocation.Assembled: return "It is fitted to an item: it is worked where it is fitted.";
+            default: return $"It is {CraftStationUI.LocationText(p)}: take it out first.";
+        }
+    }
+
+    public override string Busy
+    {
+        get
+        {
+            PieceWork k = Current;
+            if (k == null) return null;
+            if (k.wedgeSet && k.splitWork > 0.001f) return "splitting it";
+            if (k.riveStage == 2 || k.riveStage == 1 && k.malletBlows > 0) return "riving it";
+            if (k.sawStarted && k.saw.Progress > 0 && k.saw.Progress < 1) return k.sawRip ? "ripping the taper" : "sawing it through";
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------ leaving, the piece changing
+    public override void Leave() => EndGestures(true);
+
+    public override void SelectionChanging(string from, string to)
+    {
+        EndGestures(true); // a pull, a pass, a coat under way goes to the piece it was made on
+        said = "";
+    }
+
+    public override void SelectionChanged(string to)
+    {
+        SetSlider(bendFrom, bendFrom != null ? bendFrom.value : 0.5f); // "Bend from" in the millimetres of the piece now picked
+        // a piece no longer on the station takes its work with it
+        if (Station == null || Station.Workshop == null || works.Count == 0) return;
+        var gone = new List<string>();
+        foreach (string id in works.Keys)
+            if (Ws.Piece(id) == null) gone.Add(id);
+        foreach (string id in gone) works.Remove(id);
+        // the saw goes the way the cut begun on this piece goes (across, or along its taper)
+        PieceWork k = Current;
+        if (k != null && k.sawStarted && k.saw.Progress > 0 && k.sawRip != ripMode)
+        {
+            ripMode = k.sawRip;
+            Show();
+        }
+    }
+
+    /// <summary>
+    /// The hands put down what they hold: a pull of the drawknife, a pass of the paper or a coat of the brush already
+    /// made is sent (when <paramref name="finish"/>) - the rest of a gesture (a raised maul or mallet, the saw, a lever, a
+    /// bend, a carried board) is put down as it is, nothing lost of the piece's work.
+    /// </summary>
+    private void EndGestures(bool finish)
+    {
+        if (finish)
+        {
+            if (knife.Count > 0) Pull(WoodPiece);
+            if (sanding.Active) EndSanding(WoodPiece);
+            if (brushing.Count > 0) EndBrush(WoodPiece);
+        }
+        knife.Clear();
+        sanding.Clear();
+        sandPoints.Clear();
+        sentPasses = 0;
+        brushing.Clear();
+        lining = false;
+        maul.Lower();
+        mallet.Lower();
+        levering = false;
+        if (sawing) StopSaw();
+        dragging = false;
+        bending = false;
+        if (holding == Hold.Cover) { coverPending = true; coverSentAt = Time.unscaledTime; } // it stays where the hand left it
+        holding = Hold.None;
+        coverHeld = false;
+        ignorePress = ui != null && ui.PointerHeld; // the rest of a press under way does nothing
+        LiveDraw = false;
+    }
 
     public override void Tick(float dt)
     {
         mallet.Tick(dt);
         maul.Tick(dt);
-        // Sealing an end, pulling the cover: held on the drawing.
-        if (holding != 0 && !ui.PointerHeld) holding = 0;
-        if (holding == 1) sealLeft = Mathf.Min(1f, sealLeft + dt / 1.2f);
-        if (holding == 2) sealRight = Mathf.Min(1f, sealRight + dt / 1.2f);
+        if (holding != Hold.None && !ui.PointerHeld)
+        {
+            if (holding == Hold.Cover) { coverPending = true; coverSentAt = Time.unscaledTime; }
+            holding = Hold.None;
+            coverHeld = false;
+        }
+        PieceWork k = Current;
+        if (k != null && holding == Hold.SealLeft) k.sealLeft = Mathf.Min(1f, k.sealLeft + dt / 1.2f);
+        if (k != null && holding == Hold.SealRight) k.sealRight = Mathf.Min(1f, k.sealRight + dt / 1.2f);
+        if (coverPending && Station != null && Station.Workshop != null &&
+            (Ws.StackCover.HasValue && Mathf.Abs((float)Ws.StackCover.Value - coverValue) < 0.01f || Time.unscaledTime - coverSentAt > 1.5f))
+            coverPending = false;
+        LiveDraw = knife.Count > 0 || lining || maul.Raised || mallet.Raised || levering || sawing || dragging || bending || holding != Hold.None
+                   || sanding.Active || brushing.Count > 0 || place == Place.Bend && WoodPiece != null && WoodPiece.wood.steamed > 0;
     }
 
-    private CraftPiece WoodPiece => Selected != null && Selected.kind == CraftPieceKind.Wood && Selected.segments.Count > 0 ? Selected : null;
-
     // ------------------------------------------------------------------ drawing the wood
-    private Color WoodColour(CraftPiece p) => Rules.Wood(p.wood.wood)?.color ?? new Color(0.7f, 0.55f, 0.35f);
+    private Color WoodColour(CraftPiece p)
+    {
+        Color wood = Rules.Wood(p.wood.wood)?.color ?? new Color(0.7f, 0.55f, 0.35f);
+        if (p.wood.moisture > 0.2) wood = Color.Lerp(wood, wood * 0.7f, Mathf.Clamp01(((float)p.wood.moisture - 0.2f) * 6f));
+        if (p.wood.charred > 0.05) wood = Color.Lerp(wood, Color.black, (float)p.wood.charred);
+        wood.a = 1f;
+        return wood;
+    }
+
+    private static Color Bark(Color wood) => Color.Lerp(wood, new Color(0.28f, 0.2f, 0.14f), 0.75f);
 
     /// <summary>The grain line <paramref name="k"/> of <paramref name="lines"/> across a board drawn in <paramref name="r"/>, at x: it wanders, and slopes out of the side as much as the grain runs out.</summary>
     private static float GrainY(CraftPiece p, Rect r, int k, int lines, float x)
@@ -238,10 +387,10 @@ public sealed class CraftWoodshopMode : CraftMode
         return baseY + wave + slope * (t - 0.5f) * r.height;
     }
 
-    private void DrawBoard(CraftPixels c, CraftPiece p, Rect r, bool grain = true)
+    /// <summary>A board in a rectangle: its wood, grain, checks and whatever finish is on it, stretch by stretch.</summary>
+    private void DrawBoard(CraftPixels c, CraftPiece p, Rect r, bool grain = true, int highlightLine = -1)
     {
         Color wood = WoodColour(p);
-        if (p.wood.moisture > 0.2) wood = Color.Lerp(wood, wood * 0.7f, Mathf.Clamp01(((float)p.wood.moisture - 0.2f) * 6f));
         c.Rect(r.xMin, r.yMin, r.xMax, r.yMax, wood);
         if (grain)
         {
@@ -253,12 +402,18 @@ public sealed class CraftWoodshopMode : CraftMode
                 {
                     float y = GrainY(p, r, k, lines, x);
                     if (y > r.yMin && y < r.yMax && lastY > r.yMin && lastY < r.yMax)
-                        c.Line(x - 4f, lastY, x, y, k == riveLine && place == Place.Rive ? Mark : Color.Lerp(wood, Color.black, 0.25f), k == riveLine && place == Place.Rive ? 2f : 1f);
+                        c.Line(x - 4f, lastY, x, y, k == highlightLine ? Mark : Color.Lerp(wood, Color.black, 0.25f), k == highlightLine ? 2f : 1f);
                     lastY = y;
                 }
             }
         }
-        // Checks at the ends and along the faces.
+        DrawChecks(c, p, r);
+        DrawCoats(c, p, r);
+        c.Frame(r.xMin, r.yMin, r.xMax, r.yMax, new Color(0.1f, 0.07f, 0.05f, 0.8f), 1f);
+    }
+
+    private static void DrawChecks(CraftPixels c, CraftPiece p, Rect r)
+    {
         int checks = Mathf.RoundToInt((float)p.wood.checks * 12f);
         for (int k = 0; k < checks; k++)
         {
@@ -266,26 +421,34 @@ public sealed class CraftWoodshopMode : CraftMode
             float x = k % 2 == 0 ? r.xMin + 2f : r.xMax - 2f - 14f;
             c.Line(x, y, x + 14f, y + 2f, new Color(0.1f, 0.07f, 0.05f, 0.9f), 1.5f);
         }
-        // The finish where it went on: a sheen, blotchy where uneven, a wet gleam while tacky.
-        if (p.wood.finish > 0.02)
-        {
-            int n = p.segments.Count;
-            for (int i = 0; i < n; i++)
-            {
-                float coat = Mathf.Clamp01((float)p.segments[i].coating);
-                if (coat < 0.02f) continue;
-                float x0 = r.xMin + r.width * i / n, x1 = r.xMin + r.width * (i + 1) / n;
-                float blotch = (float)((1 - p.wood.finishEven) * (CraftMath.Noise(CraftMath.Hash(p.id ?? ""), i, 7) - 0.5));
-                float a = Mathf.Clamp01(coat * 1.6f + blotch * 0.6f);
-                c.Rect(x0, r.yMin, x1 + 0.5f, r.yMax, new Color(0.7f, 0.38f, 0.12f, a * 0.55f));
-                c.Rect(x0, r.yMin + r.height * 0.62f, x1 + 0.5f, r.yMin + r.height * 0.68f, new Color(1f, 0.95f, 0.8f, a * 0.35f)); // the gloss
-                if (p.wood.finishWet > 0.3) c.Rect(x0, r.yMax - r.height * 0.3f, x1 + 0.5f, r.yMax - r.height * 0.2f, new Color(1f, 1f, 1f, 0.25f * coat));
-            }
-        }
-        c.Frame(r.xMin, r.yMin, r.xMax, r.yMax, new Color(0.1f, 0.07f, 0.05f, 0.8f), 1f);
     }
 
-    /// <summary>Roughness as specks, per segment of the board drawn in <paramref name="r"/>.</summary>
+    /// <summary>The finish where it went on, stretch by stretch: a film's sheen (blotchy where uneven, a wet gleam while tacky), oil darkening the grain, a wax's soft shine.</summary>
+    private static void DrawCoats(CraftPixels c, CraftPiece p, Rect r)
+    {
+        int n = p.segments.Count;
+        WoodState w = p.wood;
+        for (int i = 0; i < n; i++)
+        {
+            float coat = Mathf.Clamp01((float)p.segments[i].coating);
+            if (coat < 0.02f) continue;
+            float x0 = r.xMin + r.width * i / n, x1 = r.xMin + r.width * (i + 1) / n;
+            if (w.finish > 0.02)
+            {
+                float blotch = (float)((1 - w.finishEven) * (CraftMath.Noise(CraftMath.Hash(p.id ?? ""), i, 7) - 0.5));
+                float a = Mathf.Clamp01(coat * 1.6f + blotch * 0.6f);
+                c.Rect(x0, r.yMin, x1 + 0.5f, r.yMax, new Color(0.7f, 0.38f, 0.12f, a * 0.5f));
+                c.Rect(x0, r.yMin + r.height * 0.62f, x1 + 0.5f, r.yMin + r.height * 0.68f, new Color(1f, 0.95f, 0.8f, a * 0.35f)); // the gloss
+            }
+            else if (w.oil > 0.02)
+                c.Rect(x0, r.yMin, x1 + 0.5f, r.yMax, new Color(0.45f, 0.26f, 0.08f, Mathf.Clamp01(coat) * 0.35f)); // oil darkens the grain
+            if (w.wax > 0.02)
+                c.Rect(x0, r.yMin + r.height * 0.55f, x1 + 0.5f, r.yMin + r.height * 0.75f, new Color(1f, 0.95f, 0.75f, Mathf.Clamp01(coat) * 0.25f)); // a soft shine
+            if (w.finishWet > 0.3) c.Rect(x0, r.yMax - r.height * 0.3f, x1 + 0.5f, r.yMax - r.height * 0.2f, new Color(1f, 1f, 1f, 0.25f * coat));
+        }
+    }
+
+    /// <summary>Roughness as specks, per stretch of the board drawn in <paramref name="r"/>.</summary>
     private static void DrawRough(CraftPixels c, CraftPiece p, Rect r)
     {
         int n = p.segments.Count;
@@ -297,6 +460,21 @@ public sealed class CraftWoodshopMode : CraftMode
                 c.Disc(x0 + (k * 29 % 97) / 97f * w, r.yMin + (k * 53 % 89) / 89f * r.height, 1f, new Color(0.15f, 0.1f, 0.06f, 0.55f));
         }
     }
+
+    /// <summary>A labelled meter: the label in the drawing's letters at <paramref name="x"/>, the meter from <paramref name="x"/> + <paramref name="labelWidth"/>.</summary>
+    private static void Gauge(CraftPixels c, string label, float x, float y, float w, float h, float value, Color fill, float labelWidth = 64f,
+                              params (float from, float to, Color color)[] bands)
+    {
+        CraftArt.Label(c, x, y + h * 0.5f - 5f, label, CraftArt.LabelInk);
+        Meter(c, x + labelWidth, y, w - labelWidth, h, value, fill, bands);
+    }
+
+    /// <summary>
+    /// How hard a maul or mallet would come down if let go now (0-1: 1 a full blow; the green band on its gauge is a blow
+    /// that drives): as the blow would land (<see cref="CraftHammer.Expected"/>) - a tired arm's lighter, one held up until
+    /// the arm wavers weaker.
+    /// </summary>
+    private float Raised(CraftHammer h) => (float)(h.Expected(Hands) / (0.8 + 0.2 * h.weight));
 
     public override void Draw(CraftPixels c)
     {
@@ -312,266 +490,523 @@ public sealed class CraftWoodshopMode : CraftMode
         }
     }
 
-    // ------------------------------------------------------------------ debarking
-    /// <summary>The depth of the knife's edge (0 skimming the bark's surface - 0.5 at the cambium - 1 deep in the wood) at height y.</summary>
-    private float KnifeDepth(float y) => Mathf.Clamp01((logSide.yMax - y) / 36f);
+    // ================================================================== debarking
+    private Rect logSide, logEnd;
+    private readonly List<Vector2> knife = new List<Vector2>();
+    private float knifeStart, knifeLast;
 
+    /// <summary>The depth of the knife's edge (0 the bark's surface - 1 deep in the wood) at height y over the log.</summary>
+    private float KnifeDepth(float y) => Mathf.Clamp01((logSide.yMax - y) / 36f);
+    private float DepthY(float depth) => logSide.yMax - 36f * depth;
     private int Stretch(CraftPiece p, float x) => Mathf.Clamp(Mathf.FloorToInt((x - logSide.xMin) / logSide.width * p.segments.Count), 0, p.segments.Count - 1);
+    private static long Key(int stretch, int face) => stretch * 16L + face;
+
+    /// <summary>The bark showing on one face of a stretch: the stretch's own (the workshop's), worse on a face not yet pulled, none once it is bare.</summary>
+    private static float FaceBark(CraftPiece p, PieceWork k, int i, int face)
+    {
+        float bark = (float)p.segments[i].bark;
+        if (bark < 0.05f) return 0f;
+        int strokes = k.faceStrokes.TryGetValue(Key(i, face), out int s) ? s : 0;
+        return Mathf.Clamp01(bark * (strokes == 0 ? 1.3f : strokes == 1 ? 0.7f : 0.25f));
+    }
 
     private void DrawDebark(CraftPixels c)
     {
+        // The shaving horse: its bench and legs.
+        c.Rect(30, 96, 520, 116, Wood);
+        c.Rect(44, 30, 58, 96, Wood);
+        c.Rect(492, 30, 506, 96, Wood);
+        logSide = new Rect(50, 120, 470, 90);
+        logEnd = new Rect(566, 104, 136, 136);
         CraftPiece p = WoodPiece;
-        // The shaving horse: its bench, the jaw holding the log down.
-        c.Rect(30, 120, 520, 140, Wood);
-        c.Rect(40, 60, 54, 120, Wood);
-        c.Rect(496, 60, 510, 120, Wood);
-        logSide = new Rect(50, 150, 470, 90);
-        logEnd = new Rect(560, 120, 140, 140);
-        if (p == null) return;
-        if (debarkFor != p.id) { faceStrokes.Clear(); debarkFor = p.id; }
-        Color wood = WoodColour(p), bark = Color.Lerp(wood, new Color(0.28f, 0.2f, 0.14f), 0.75f);
+        if (p == null || p.location != CraftLocation.Air)
+            return;
+        PieceWork k = Work(p);
+        Color wood = WoodColour(p), bark = Bark(wood);
+        float gouge = (float)CraftWoodwork.GougeDepth(p);
         c.Rect(logSide.xMin, logSide.yMin, logSide.xMax, logSide.yMax, wood);
         int n = p.segments.Count;
         for (int i = 0; i < n; i++)
         {
             MetalSegment s = p.segments[i];
             float x0 = logSide.xMin + logSide.width * i / n, x1 = logSide.xMin + logSide.width * (i + 1) / n;
-            // The bark on the face turned up: what is left of it, worse where this face was not yet stroked.
-            int strokes = faceStrokes.TryGetValue(Key(i, face), out int k) ? k : 0;
-            float left = Mathf.Clamp01((float)s.bark * (strokes == 0 ? 1.4f : strokes == 1 ? 0.7f : 0.3f));
-            c.Rect(x0, logSide.yMin + 6, x1 + 0.5f, logSide.yMax, new Color(bark.r * 0.8f, bark.g * 0.8f, bark.b * 0.8f, Mathf.Clamp01(left * 1.1f)));
-            for (int f = 0; f < 3 && left > 0.2f; f++) c.Line(x0 + 3 + f * 7, logSide.yMin + 14 + f * 21, x0 + 9 + f * 7, logSide.yMin + 30 + f * 21, bark * 0.7f, 1f);
-            if (s.rough > 60) c.Disc(x0 + 6, logSide.yMax - 10, 2f, new Color(0.1f, 0.06f, 0.03f, 0.7f));
+            // the bark on the face turned up, over the top of the log down to the line where it lifts
+            float left = FaceBark(p, k, i, k.face);
+            c.Rect(x0, DepthY((float)CraftWoodwork.PeelDepth), x1 + 0.5f, logSide.yMax, new Color(bark.r, bark.g, bark.b, left));
+            c.Rect(x0, logSide.yMin + 4, x1 + 0.5f, DepthY((float)CraftWoodwork.PeelDepth), new Color(bark.r * 0.8f, bark.g * 0.8f, bark.b * 0.8f, left * 0.55f));
+            for (int f = 0; f < 3 && left > 0.2f; f++) c.Line(x0 + 3 + f * 7, logSide.yMin + 14 + f * 18, x0 + 9 + f * 7, logSide.yMin + 28 + f * 18, bark * 0.7f, 1f);
+            if (s.rough > 60) c.Disc(x0 + 6, logSide.yMin + 8, 2f, new Color(0.1f, 0.06f, 0.03f, 0.7f));
         }
+        // the cambium: the bright line where the bark lifts, and the line past which the knife gouges
+        c.Rect(logSide.xMin, DepthY((float)CraftWoodwork.PeelDepth) - 1f, logSide.xMax, DepthY((float)CraftWoodwork.PeelDepth) + 1f, new Color(0.95f, 0.9f, 0.6f, 0.85f));
+        for (float x = logSide.xMin; x < logSide.xMax; x += 10f) c.Line(x, DepthY(gouge), x + 5f, DepthY(gouge), new Color(1f, 0.45f, 0.35f, 0.6f), 1f);
         if (p.wood.gouged > 0.05)
             for (int g = 0; g < Mathf.RoundToInt((float)p.wood.gouged * 20f); g++)
-                c.Line(logSide.xMin + (g * 53 % 97) / 97f * logSide.width, logSide.yMax - 4, logSide.xMin + (g * 53 % 97) / 97f * logSide.width + 18, logSide.yMax - 8, new Color(0.15f, 0.1f, 0.06f), 2f);
-        // The bark's thickness and the cambium: the band the knife's edge should run in.
-        float cambium = logSide.yMax - 18f;
-        c.Rect(logSide.xMax + 4, cambium - 3, logSide.xMax + 14, cambium + 3, new Color(0.95f, 0.9f, 0.6f));
-        c.Rect(logSide.xMax + 4, logSide.yMax - 8, logSide.xMax + 14, logSide.yMax, bark);
-        // The end, in section: bark ring, the face turned up marked.
-        endCentre = logEnd.center;
-        endRadius = logEnd.width * 0.45f;
-        c.Disc(endCentre.x, endCentre.y, endRadius, bark);
-        c.Disc(endCentre.x, endCentre.y, endRadius - 6, Color.Lerp(wood, Color.white, 0.15f));
-        for (int r = 1; r < 6; r++) c.Ring(endCentre.x, endCentre.y, (endRadius - 6) * r / 6f, 1f, wood * 0.8f);
-        float a = (90f + face * 360f / Faces) * Mathf.Deg2Rad;
-        c.Line(endCentre.x, endCentre.y, endCentre.x + Mathf.Cos(a) * endRadius, endCentre.y + Mathf.Sin(a) * endRadius, Mark, 2f);
-        // The drawknife: its edge at the pointer, its depth shown on the section.
+            {
+                float gx = logSide.xMin + (g * 53 % 97) / 97f * logSide.width;
+                c.Line(gx, logSide.yMax - 4, gx + 18, logSide.yMax - 8, new Color(0.15f, 0.1f, 0.06f), 2f);
+            }
+        // DEPTH: where the edge skims, peels and gouges - the workshop's own depths
+        float gx0 = 526f, gx1 = 538f;
+        c.Rect(gx0 - 1, DepthY(1f) - 1, gx1 + 1, DepthY(0f) + 1, new Color(0f, 0f, 0f, 0.6f));
+        c.Rect(gx0, DepthY((float)CraftWoodwork.PeelDepth), gx1, DepthY(0f), IdleBand); // it skims
+        c.Rect(gx0, DepthY(gouge), gx1, DepthY((float)CraftWoodwork.PeelDepth), GoodBand); // it peels
+        c.Rect(gx0, DepthY(1f), gx1, DepthY(gouge), HarmBand); // it gouges
+        CraftArt.Label(c, 516f, DepthY(0f) + 6f, "DEPTH", CraftArt.LabelInk);
+        // The end, in section: each face's bark round it, the face turned up at the top.
+        Vector2 ec = logEnd.center;
+        float er = logEnd.width * 0.45f;
+        c.Disc(ec.x, ec.y, er, Color.Lerp(wood, Color.white, 0.15f));
+        for (int r = 1; r < 6; r++) c.Ring(ec.x, ec.y, (er - 6) * r / 6f, 1f, wood * 0.8f);
+        for (int f = 0; f < CraftWoodwork.LogFaces; f++)
+        {
+            float mean = 0f;
+            for (int i = 0; i < n; i++) mean += FaceBark(p, k, i, f);
+            mean /= Mathf.Max(1, n);
+            float centre = 90f + (f - k.face) * 360f / CraftWoodwork.LogFaces;
+            for (float a = centre - 44f; a <= centre + 44f; a += 4f)
+            {
+                float rad = a * Mathf.Deg2Rad;
+                c.Disc(ec.x + Mathf.Cos(rad) * (er - 3f), ec.y + Mathf.Sin(rad) * (er - 3f), 3.2f, new Color(bark.r, bark.g, bark.b, 0.25f + 0.75f * mean));
+            }
+        }
+        c.Line(ec.x, ec.y + er + 2f, ec.x, ec.y + er + 12f, Mark, 2f);
+        CraftArt.Label(c, ec.x - CraftArt.LabelWidth($"FACE {k.face + 1}/{CraftWoodwork.LogFaces}") * 0.5f, logEnd.yMin - 14f, $"FACE {k.face + 1}/{CraftWoodwork.LogFaces}", CraftArt.LabelInk);
+        // The drawknife: its edge at the pointer, its depth on the section and the gauge.
         Vector2 h = ui.Hover;
-        if (h.x >= 0 && logSide.Contains(h) || knife.Count > 0)
+        bool over = h.x >= 0 && h.x >= logSide.xMin - 20 && h.x <= logSide.xMax + 20 && h.y >= logSide.yMin && h.y <= logSide.yMax + 30;
+        if (over || knife.Count > 0)
         {
             Vector2 at = knife.Count > 0 ? knife[knife.Count - 1] : h;
             float d = KnifeDepth(at.y);
-            Color edge = d < 0.3f ? new Color(0.6f, 0.85f, 1f) : d <= 0.62f ? new Color(0.45f, 0.9f, 0.45f) : new Color(1f, 0.4f, 0.3f);
+            Color edge = d < CraftWoodwork.PeelDepth ? CraftArt.LabelDim : d <= gouge ? Good : Harm;
             c.Rect(at.x - 50, at.y - 2, at.x + 50, at.y + 2, new Color(0.75f, 0.76f, 0.8f));
             c.Rect(at.x - 60, at.y - 4, at.x - 50, at.y + 20, Wood);
             c.Rect(at.x + 50, at.y - 4, at.x + 60, at.y + 20, Wood);
-            float rr = (endRadius - 1) - d * 14f;
-            c.Ring(endCentre.x, endCentre.y, rr, 1.5f, edge);
-            Meter(c, logEnd.xMin, logEnd.yMin - 16, logEnd.width, 6, d, edge);
+            c.Ring(ec.x, ec.y, Mathf.Max(4f, (er - 1) - d * 14f), 1.5f, edge);
+            c.Rect(gx0 - 4, DepthY(d) - 1, gx1 + 4, DepthY(d) + 1, Color.white);
         }
         for (int i = 1; i < knife.Count; i++) c.Line(knife[i - 1].x, knife[i - 1].y, knife[i].x, knife[i].y, new Color(1f, 1f, 1f, 0.35f), 2f);
-        Meter(c, logSide.xMin, logSide.yMin - 30, logSide.width, 6, 1f - (float)CraftWoodwork.BarkLeft(p), new Color(0.9f, 0.8f, 0.55f));
+        Gauge(c, "BARK", 50f, 290f, 470f, 8f, (float)CraftWoodwork.BarkLeft(p), bark * 1.6f, 44f);
     }
 
-    private static long Key(int stretch, int face) => stretch * 16L + face;
+    private void TurnLog(int dir)
+    {
+        PieceWork k = Current;
+        if (k == null) { said = "Pick a log (on the left) to put it on the horse."; return; }
+        k.face = (k.face + dir + CraftWoodwork.LogFaces) % CraftWoodwork.LogFaces;
+        knife.Clear();
+        said = $"Turned the log: face {k.face + 1} of {CraftWoodwork.LogFaces} is up.";
+    }
 
-    private void DebarkPointer(CraftPointer phase, Vector2 pos, bool right, float scroll)
+    private void DebarkPointer(CraftPointer phase, Vector2 pos, float scroll)
     {
         CraftPiece p = WoodPiece;
-        if (p == null || p.location != CraftLocation.Air) { if (phase == CraftPointer.Down) said = "Pick a log (left) and put it on the horse."; return; }
-        if (phase == CraftPointer.Scroll || right && phase == CraftPointer.Down)
+        if (phase == CraftPointer.Scroll)
         {
-            face = (face + (phase == CraftPointer.Scroll && scroll < 0 ? Faces - 1 : 1)) % Faces;
-            knife.Clear();
-            said = "Turned the log: a new face up.";
+            // the log turns on the horse only with the knife off it: the pull under way is not thrown away
+            if (knife.Count > 0) { said = "Finish the pull first: the log turns once the drawknife is off it."; return; }
+            TurnLog(scroll < 0 ? -1 : 1);
             return;
         }
-        if (phase == CraftPointer.Down && logSide.Contains(pos))
+        if (phase == CraftPointer.Down)
         {
-            if (CraftWoodwork.BarkLeft(p) <= 0.001) { said = "There is no bark left on it."; return; }
+            if (p == null) { said = "Pick a log (on the left) to put it on the horse."; return; }
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            if (pos.x < logSide.xMin - 20 || pos.x > logSide.xMax + 20 || pos.y < logSide.yMin || pos.y > logSide.yMax + 30)
+                return;
+            if (CraftWoodwork.BarkLeft(p) <= 0.001) { said = "There is no bark left on it: split it, rive it or season it."; ignorePress = true; return; }
             knife.Clear();
             knife.Add(pos + new Vector2(0f, (float)Hands.Tremble(91) * 60f));
-            knifeStart = Time.unscaledTime;
+            knifeStart = knifeLast = ui.PointerTime;
             return;
         }
         if (knife.Count == 0) return;
         if (phase == CraftPointer.Drag)
         {
-            // The edge follows the hand, trembling: the depth wavers as it does.
+            // the edge follows the hand, trembling: the depth wavers as it does
             knife.Add(pos + new Vector2(0f, (float)Hands.Tremble(knife.Count + 91) * 60f));
+            knifeLast = ui.PointerTime;
             return;
         }
-        if (phase != CraftPointer.Up) return;
-        // A pull of the drawknife: right to left along the log.
-        float minX = float.MaxValue, maxX = float.MinValue, mean = 0f, sq = 0f;
-        foreach (Vector2 k in knife) { minX = Mathf.Min(minX, k.x); maxX = Mathf.Max(maxX, k.x); float d = KnifeDepth(k.y); mean += d; sq += d * d; }
-        mean /= knife.Count;
-        float sd = Mathf.Sqrt(Mathf.Max(0f, sq / knife.Count - mean * mean));
-        bool pulled = knife[0].x > knife[knife.Count - 1].x;
-        float seconds = Time.unscaledTime - knifeStart, speed = (maxX - minX) / Mathf.Max(0.05f, seconds);
+        if (phase == CraftPointer.Up) Pull(p);
+    }
+
+    /// <summary>A pull of the drawknife (right to left along the log) as far as it went: sent to the log it was made on.</summary>
+    private void Pull(CraftPiece p)
+    {
+        var pts = new List<Vector2>(knife);
         knife.Clear();
-        if (maxX - minX < 20f) return;
-        if (!pulled) { said = "A drawknife is pulled toward you: stroke from right to left."; return; }
+        if (p == null || p.location != CraftLocation.Air || pts.Count < 2)
+            return;
+        float minX = float.MaxValue, maxX = float.MinValue, mean = 0f, sq = 0f;
+        foreach (Vector2 q in pts) { minX = Mathf.Min(minX, q.x); maxX = Mathf.Max(maxX, q.x); float d = KnifeDepth(q.y); mean += d; sq += d * d; }
+        mean /= pts.Count;
+        if (maxX - minX < 20f) return; // a dab, not a pull
+        if (pts[0].x <= pts[pts.Count - 1].x) { said = "A drawknife is pulled toward you: stroke from right to left."; return; }
+        float sd = Mathf.Sqrt(Mathf.Max(0f, sq / pts.Count - mean * mean));
+        float seconds = Mathf.Max(0.05f, knifeLast - knifeStart), speed = (maxX - minX) / seconds;
         float steady = Mathf.Clamp01(1f - sd * 4f) * Mathf.Clamp01(1f - Mathf.Max(0f, speed - 700f) / 900f);
+        PieceWork k = Work(p);
         int i0 = Stretch(p, minX), i1 = Stretch(p, maxX);
-        // A face of a stretch takes two strokes at most: then turn the log.
+        // a stretch pulled twice on every face with bark still on it (tight, dry bark): another round starts afresh
+        for (int i = i0; i <= i1; i++)
+        {
+            bool round = true;
+            for (int f = 0; f < CraftWoodwork.LogFaces && round; f++) round = k.faceStrokes.TryGetValue(Key(i, f), out int s) && s >= 2;
+            if (round && p.segments[i].bark > 0.05)
+                for (int f = 0; f < CraftWoodwork.LogFaces; f++) k.faceStrokes.Remove(Key(i, f));
+        }
         int fresh = 0;
         for (int i = i0; i <= i1; i++)
         {
-            long key = Key(i, face);
-            faceStrokes.TryGetValue(key, out int done);
-            if (done < 2) fresh++;
-            faceStrokes[key] = done + 1;
+            long key = Key(i, k.face);
+            k.faceStrokes.TryGetValue(key, out int done);
+            if (done < 2 && p.segments[i].bark > 0.05) fresh++;
+            k.faceStrokes[key] = done + 1;
         }
-        float round = 0.3f * fresh / Mathf.Max(1, i1 - i0 + 1) + 0.02f;
         Hands.Move(0.3);
-        if (Send(new CraftRequest(CraftRequestKind.DebarkWood, p.id) { i0 = i0, i1 = i1, a = mean, b = steady, c = round }))
-            said = fresh == 0 ? "That face is bare already: turn the log (wheel or right-click)."
-                : mean > 0.62f ? "Too deep: the knife digs into the wood under the bark." : mean < 0.3f ? "Too shallow: only the outer bark comes off - set the edge at the bright band."
-                : steady < 0.5f ? "The edge wavered: it skipped and dug in by turns." : p.wood.moisture > 0.3 ? "The bark peels off in a long strip." : "The tight, dry bark comes off in chips.";
+        if (fresh == 0) { said = "That face is bare already: turn the log (the wheel, or Turn the log)."; return; }
+        float round01 = (float)CraftWoodwork.DebarkPerStroke * fresh / Mathf.Max(1, i1 - i0 + 1);
+        float gouge = (float)CraftWoodwork.GougeDepth(p);
+        bool green = p.wood.moisture > 0.3;
+        string id = p.id;
+        Send(new CraftRequest(CraftRequestKind.DebarkWood, id) { i0 = i0, i1 = i1, a = mean, b = steady, c = round01 }, (ok, why) =>
+        {
+            if (!ok) return;
+            said = mean > gouge ? "Too deep: the knife digs into the wood under the bark (red)."
+                : mean < CraftWoodwork.PeelDepth ? "Too shallow: only the outer bark comes off - set the edge on the bright line (green)."
+                : steady < 0.5f ? "The edge wavered: it skipped and dug in by turns."
+                : green ? "The bark peels off in a long strip." : "The tight, dry bark comes off in chips.";
+            CraftPiece q = Ws.Piece(id);
+            if (q != null && CraftWoodwork.BarkLeft(q) < 0.05) ui.Message("The last of the bark comes away: split it, rive it or season it.");
+        });
     }
 
-    // ------------------------------------------------------------------ splitting
-    private void DrawSplit(CraftPixels c)
+    // ================================================================== splitting
+    private readonly CraftHammer maul = new CraftHammer { fullCharge = 0.9f, weight = 1.4f };
+    private bool lining;
+    private Vector2 lineA, lineB;
+    // The end as it is drawn: its shape (0 round, 1 a half, 2 a quarter, 3 a billet), its box, the heart (pith) and the radius.
+    private int sectionShape;
+    private Rect sectionBox;
+    private Vector2 pith;
+    private float pithRadius;
+
+    private static int Count(CraftPiece p, CraftOpKind kind)
     {
-        CraftPiece p = WoodPiece;
-        c.Rect(200, 40, 520, 90, new Color(0.32f, 0.22f, 0.14f)); // the block
-        if (p == null) return;
-        Color wood = WoodColour(p), bark = Color.Lerp(wood, new Color(0.28f, 0.2f, 0.14f), 0.75f);
-        endCentre = new Vector2(360f, 240f);
-        float w = 0f;
-        foreach (MetalSegment s in p.segments) w = Mathf.Max(w, (float)s.width);
-        endRadius = Mathf.Clamp(w * 0.55f, 40f, 140f);
-        int seed = CraftMath.Hash(p.id ?? "");
-        // The end: bark ring, growth rings round the heart, rays out from it, a check along one ray.
-        c.Disc(endCentre.x, endCentre.y, endRadius, (float)p.wood.bark > 0.3f ? bark : wood * 0.85f);
-        c.Disc(endCentre.x, endCentre.y, endRadius - 5, Color.Lerp(wood, Color.white, 0.12f));
-        for (int r = 1; r < 9; r++) c.Ring(endCentre.x, endCentre.y, (endRadius - 5) * r / 9f, 1f, wood * 0.82f);
-        for (int k = 0; k < 12; k++)
+        int n = 0;
+        foreach (CraftRecordEntry e in p.record) if (e.kind == kind) n += Math.Max(1, e.count);
+        return n;
+    }
+
+    /// <summary>The end of the piece as it really is, standing on the block: a round log, a half, a quarter, or a billet.</summary>
+    private void Section(CraftPiece p)
+    {
+        double w = 0, t = 0;
+        foreach (MetalSegment s in p.segments) { w += s.width; t += s.thickness; }
+        w /= p.segments.Count;
+        t /= p.segments.Count;
+        float k = Mathf.Min(2.4f, 250f / Mathf.Max(1f, (float)Math.Max(w, t)));
+        float W = (float)w * k, T = (float)t * k;
+        int splits = Count(p, CraftOpKind.SplitLog), rives = Count(p, CraftOpKind.Rive);
+        float ratio = T / Mathf.Max(1f, W);
+        sectionShape = p.wood.log ? 0 : rives == 0 && splits == 1 && ratio > 1.7f && ratio < 2.3f ? 1 : rives == 0 && splits == 2 && ratio > 0.8f && ratio < 1.25f ? 2 : 3;
+        if (sectionShape == 0) W = T = Mathf.Max(W, T);
+        sectionBox = new Rect(360f - W * 0.5f, 72f, W, T);
+        switch (sectionShape)
         {
-            float a = Ray(seed, k);
-            c.Line(endCentre.x, endCentre.y, endCentre.x + Mathf.Cos(a) * (endRadius - 6), endCentre.y + Mathf.Sin(a) * (endRadius - 6), new Color(wood.r * 0.9f, wood.g * 0.85f, wood.b * 0.8f, 0.7f), 1f);
+            case 0: pith = sectionBox.center; pithRadius = W * 0.5f; break;
+            case 1: pith = new Vector2(sectionBox.xMin, sectionBox.center.y); pithRadius = T * 0.5f; break;
+            case 2: pith = new Vector2(sectionBox.xMin, sectionBox.yMin); pithRadius = Mathf.Max(W, T); break;
+            default: pith = new Vector2(sectionBox.xMin - W * 0.6f, sectionBox.yMin - T * 0.5f); pithRadius = 0f; break;
         }
-        float check = Ray(seed, seed & 7);
-        c.Line(endCentre.x, endCentre.y, endCentre.x + Mathf.Cos(check) * (endRadius - 8), endCentre.y + Mathf.Sin(check) * (endRadius - 8), new Color(0.08f, 0.05f, 0.03f), 2f);
-        c.Disc(endCentre.x, endCentre.y, 3f, new Color(0.25f, 0.15f, 0.08f)); // the pith
-        // The wedge's line, the crack opening along it as the maul drives it.
-        if (lining || wedgeSet)
+    }
+
+    private bool InSection(Vector2 q)
+    {
+        switch (sectionShape)
         {
-            c.Line(lineA.x, lineA.y, lineB.x, lineB.y, wedgeSet ? Mark : new Color(1f, 1f, 1f, 0.6f), wedgeSet ? 2f : 1.5f);
-            if (wedgeSet)
-            {
-                Vector2 mid = (lineA + lineB) * 0.5f;
-                c.Rect(mid.x - 6, mid.y - 6, mid.x + 6, mid.y + 14, Iron); // the wedge
-                Vector2 d = (lineB - lineA).normalized;
-                float open = Mathf.Clamp01(splitWork) * endRadius;
-                c.Line(mid.x - d.x * open, mid.y - d.y * open, mid.x + d.x * open, mid.y + d.y * open, new Color(0.05f, 0.03f, 0.02f), 3f);
-                Meter(c, 30, 380, 260, 8, Mathf.Clamp01(splitWork), new Color(0.6f, 0.85f, 1f));
-                if (maul.Raised) Meter(c, 30, 366, 260, 6, (float)maul.Charge, new Color(1f, 0.8f, 0.4f));
-            }
+            case 0: return (q - pith).sqrMagnitude <= pithRadius * pithRadius;
+            case 1: return q.x >= pith.x && (q - pith).sqrMagnitude <= pithRadius * pithRadius;
+            case 2: return q.x >= pith.x && q.y >= pith.y && (q - pith).sqrMagnitude <= pithRadius * pithRadius;
+            default: return sectionBox.Contains(q);
         }
     }
 
     private static float Ray(int seed, int k) => (k * 30f + (seed % 30)) * Mathf.Deg2Rad;
 
-    /// <summary>How far the line runs off the heart (0 through the pith - 1 at the bark), and how near it lies to a ray or the check (1 along one).</summary>
-    private void LineQuality(CraftPiece p, out float off, out float along)
+    /// <summary>Why the wedges do not take it, with the places that do: the froe, and for a board too thin for a wedge the rip saw.</summary>
+    private string NotForTheWedges(CraftPiece p, string why) =>
+        $"{why.TrimEnd('.')} ({(CraftWoodwork.CrossSize(p) >= CraftWoodwork.MinSplitWidth && Here(Place.Saw) ? "Rive, or Saw: A taper" : "Rive")}).";
+
+    /// <summary>
+    /// How a wedge line from <paramref name="a"/> to <paramref name="b"/> parts the end: <paramref name="off"/> = how unevenly
+    /// it divides it (0 in two equal halves - 1: the smaller part at 12 %; the share the workshop gives each half), and
+    /// <paramref name="along"/> = how true it runs to a ray of the wood or its check (0 across - 1 along). The rays run out
+    /// from the heart: on an end that shows it (a log, a half, a quarter) a line that misses the heart crosses them
+    /// whatever its angle - <paramref name="heart"/> (1 through it - 0 well off it) counts in. False when it does not
+    /// cross the end.
+    /// </summary>
+    private bool LineQuality(CraftPiece p, Vector2 a, Vector2 b, out float off, out float along, out float heart)
     {
-        Vector2 d = (lineB - lineA).normalized;
-        Vector2 n = new Vector2(-d.y, d.x);
-        off = Mathf.Clamp01(Mathf.Abs(Vector2.Dot(endCentre - lineA, n)) / Mathf.Max(1f, endRadius));
+        off = 1f;
+        along = 0f;
+        heart = 1f;
+        Vector2 d = b - a;
+        if (d.sqrMagnitude < 4f) return false;
+        int one = 0, other = 0;
+        const int grid = 28;
+        for (int ix = 0; ix < grid; ix++)
+            for (int iy = 0; iy < grid; iy++)
+            {
+                var q = new Vector2(sectionBox.xMin + (ix + 0.5f) / grid * sectionBox.width, sectionBox.yMin + (iy + 0.5f) / grid * sectionBox.height);
+                if (!InSection(q)) continue;
+                float cross = d.x * (q.y - a.y) - d.y * (q.x - a.x);
+                if (cross >= 0f) one++; else other++;
+            }
+        int all = one + other;
+        if (all == 0 || one == 0 || other == 0) return false;
+        float smaller = Mathf.Min(one, other) / (float)all;
+        off = Mathf.Clamp01((0.5f - smaller) / (float)CraftWoodwork.SplitShare);
         int seed = CraftMath.Hash(p.id ?? "");
-        float angle = Mathf.Atan2(d.y, d.x), best = 999f;
+        float angle = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, best = 999f;
         for (int k = 0; k < 12; k++)
         {
-            float diff = Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, Ray(seed, k) * Mathf.Rad2Deg));
-            diff = Mathf.Min(diff, 180f - diff);
-            best = Mathf.Min(best, diff);
+            float diff = Mathf.Abs(Mathf.DeltaAngle(angle, Ray(seed, k) * Mathf.Rad2Deg));
+            best = Mathf.Min(best, Mathf.Min(diff, 180f - diff));
         }
-        // Off the heart, a line crosses the rays whatever its angle.
-        along = Mathf.Clamp01(1f - best / 15f) * (1f - off * 0.8f);
-        float checkDiff = Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, Ray(seed, seed & 7) * Mathf.Rad2Deg));
-        if (Mathf.Min(checkDiff, 180f - checkDiff) < 6f && off < 0.15f) along = Mathf.Max(along, 0.95f);
+        if (sectionShape <= 2)
+        {
+            // how far the line passes from the heart: within a few pixels it goes through it
+            float miss = Mathf.Abs(d.x * (pith.y - a.y) - d.y * (pith.x - a.x)) / d.magnitude;
+            heart = Mathf.Clamp01(1f - (miss - 6f) / 24f);
+        }
+        along = Mathf.Clamp01(1f - best / 15f) * (1f - off * 0.8f) * heart;
+        if (p.wood.log)
+        {
+            float checkDiff = Mathf.Abs(Mathf.DeltaAngle(angle, Ray(seed, seed & 7) * Mathf.Rad2Deg));
+            if (Mathf.Min(checkDiff, 180f - checkDiff) < 6f && off < CraftWoodwork.SplitEven && heart > 0.75f) along = Mathf.Max(along, 0.95f);
+        }
+        return true;
+    }
+
+    /// <summary>Draws a ray of the wood from the heart outward, only where it is inside the end.</summary>
+    private void DrawRay(CraftPixels c, float angle, Color col, float thick)
+    {
+        float reach = sectionShape == 3 ? Vector2.Distance(pith, new Vector2(sectionBox.xMax, sectionBox.yMax)) : pithRadius - 4f;
+        Vector2 dir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+        Vector2 last = pith;
+        bool inside = InSection(last);
+        for (float r = 3f; r <= reach; r += 3f)
+        {
+            Vector2 q = pith + dir * r;
+            bool now = InSection(q);
+            if (now && inside) c.Line(last.x, last.y, q.x, q.y, col, thick);
+            last = q;
+            inside = now;
+        }
+    }
+
+    private void DrawSplit(CraftPixels c)
+    {
+        c.Rect(170, 20, 550, 70, new Color(0.32f, 0.22f, 0.14f)); // the block
+        c.Rect(170, 66, 550, 70, new Color(0.42f, 0.3f, 0.2f));
+        CraftPiece p = WoodPiece;
+        if (p == null || p.location != CraftLocation.Air)
+            return;
+        PieceWork k = Work(p);
+        Section(p);
+        Color wood = WoodColour(p), bark = Bark(wood);
+        int seed = CraftMath.Hash(p.id ?? "");
+        Color face = Color.Lerp(wood, Color.white, 0.12f), rings = wood * 0.82f;
+        rings.a = 1f;
+        switch (sectionShape)
+        {
+            case 0:
+                c.Disc(pith.x, pith.y, pithRadius, CraftWoodwork.BarkLeft(p) > 0.3 ? bark : wood * 0.85f);
+                c.Disc(pith.x, pith.y, pithRadius - 5, face);
+                for (int r = 1; r < 9; r++) c.Ring(pith.x, pith.y, (pithRadius - 5) * r / 9f, 1f, rings);
+                break;
+            default:
+                // a half, a quarter or a billet: the part of the round it is, the growth rings round the heart where it lies
+                var pts = new List<Vector2>();
+                if (sectionShape == 1) { for (float a = -90f; a <= 90f; a += 6f) pts.Add(pith + new Vector2(Mathf.Cos(a * Mathf.Deg2Rad), Mathf.Sin(a * Mathf.Deg2Rad)) * pithRadius); }
+                else if (sectionShape == 2) { pts.Add(pith); for (float a = 0f; a <= 90f; a += 5f) pts.Add(pith + new Vector2(Mathf.Cos(a * Mathf.Deg2Rad), Mathf.Sin(a * Mathf.Deg2Rad)) * pithRadius); }
+                else { pts.Add(new Vector2(sectionBox.xMin, sectionBox.yMin)); pts.Add(new Vector2(sectionBox.xMax, sectionBox.yMin)); pts.Add(new Vector2(sectionBox.xMax, sectionBox.yMax)); pts.Add(new Vector2(sectionBox.xMin, sectionBox.yMax)); }
+                c.Polygon(pts, face);
+                float far = Vector2.Distance(pith, new Vector2(sectionBox.xMax, sectionBox.yMax));
+                for (float r = 10f; r < far; r += 12f)
+                    for (float a = 0f; a < 360f; a += 4f)
+                    {
+                        var q = pith + new Vector2(Mathf.Cos(a * Mathf.Deg2Rad), Mathf.Sin(a * Mathf.Deg2Rad)) * r;
+                        if (InSection(q)) c.Rect(q.x - 0.5f, q.y - 0.5f, q.x + 0.5f, q.y + 0.5f, rings);
+                    }
+                c.Outline(pts, new Color(0.1f, 0.07f, 0.05f, 0.8f), 1f);
+                break;
+        }
+        for (int r = 0; r < 12; r++) DrawRay(c, Ray(seed, r), new Color(wood.r * 0.9f, wood.g * 0.85f, wood.b * 0.8f, 0.7f), 1f);
+        if (p.wood.log) DrawRay(c, Ray(seed, seed & 7), new Color(0.08f, 0.05f, 0.03f), 2f); // the check
+        if (InSection(pith) || sectionShape == 1 || sectionShape == 2) c.Disc(pith.x, pith.y, 3f, new Color(0.25f, 0.15f, 0.08f)); // the heart
+        // The wedge's line, the crack opening along it as the maul drives it.
+        if (lining) c.Line(lineA.x, lineA.y, lineB.x, lineB.y, new Color(1f, 1f, 1f, 0.6f), 1.5f);
+        if (k.wedgeSet)
+        {
+            c.Line(k.lineA.x, k.lineA.y, k.lineB.x, k.lineB.y, Mark, 2f);
+            Vector2 mid = (k.lineA + k.lineB) * 0.5f, d = (k.lineB - k.lineA).normalized;
+            float open = Mathf.Clamp01(k.splitWork) * Vector2.Distance(k.lineA, k.lineB) * 0.5f;
+            c.Line(mid.x - d.x * open, mid.y - d.y * open, mid.x + d.x * open, mid.y + d.y * open, new Color(0.05f, 0.03f, 0.02f), 3f);
+            c.Rect(mid.x - 6, mid.y - 6, mid.x + 6, mid.y + 14, Iron); // the wedge
+            Gauge(c, "SPLIT", 24f, 372f, 300f, 8f, Mathf.Clamp01(k.splitWork), new Color(0.6f, 0.85f, 1f), 50f);
+            if (maul.Raised) Gauge(c, "MAUL", 24f, 356f, 300f, 6f, Raised(maul), new Color(1f, 0.8f, 0.4f), 50f, (0.75f, 1f, GoodBand));
+        }
+        Vector2 h = ui.Hover;
+        if (k.wedgeSet && maul.Raised && h.x >= 0f)
+        {
+            // the maul's head over the wedge where the hand is
+            c.Rect(h.x - 16, h.y + 10, h.x + 16, h.y + 28, Iron);
+            c.Rect(h.x - 3, h.y + 28, h.x + 3, Mathf.Min(398f, h.y + 70), Wood);
+        }
     }
 
     private void SplitPointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
-        if (p == null || p.location != CraftLocation.Air) { if (phase == CraftPointer.Down) said = "Pick a log or a large half (left)."; return; }
-        if (!wedgeSet)
+        PieceWork k = Current;
+        if (phase == CraftPointer.Down)
         {
-            if (phase == CraftPointer.Down && Vector2.Distance(pos, endCentre) <= endRadius + 10f) { lining = true; lineA = lineB = pos; return; }
-            if (!lining) return;
+            if (p == null) { said = "Pick a log or a large half (on the left) to stand it on the block."; return; }
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            if (!k.wedgeSet)
+            {
+                if (!sectionBox.Contains(pos) && Vector2.Distance(pos, sectionBox.center) > Mathf.Max(sectionBox.width, sectionBox.height) * 0.5f + 14f)
+                    return;
+                if (!CraftWoodwork.SplitsWithWedges(p, out string why)) { said = NotForTheWedges(p, why); ignorePress = true; return; }
+                lining = true;
+                lineA = lineB = pos;
+                return;
+            }
+            if (k.splitSent) { said = "Waiting for it to part..."; ignorePress = true; return; }
+            maul.Raise();
+            return;
+        }
+        if (lining)
+        {
             if (phase == CraftPointer.Drag) { lineB = pos; return; }
             if (phase != CraftPointer.Up) return;
             lining = false;
             lineB = pos;
-            if (Vector2.Distance(lineA, lineB) < endRadius) { said = "Draw the line right across the end."; return; }
-            wedgeSet = true;
-            splitWork = splitSolid = 0f;
-            splitBlows = 0;
-            LineQuality(p, out float off, out float along);
-            said = off < 0.12f && along > 0.8f ? "The wedge is set through the heart, along a ray. Now the maul: hold and release, full blows." : off >= 0.12f ? "The wedge is set off the heart: one half will be small. Drive it - or click away from the wedge to draw it again." : "Set across the rays: it may twist out. Drive it - or click away from the wedge to draw it again.";
+            if (!LineQuality(p, lineA, lineB, out float off, out float along, out float heart) || Vector2.Distance(lineA, lineB) < Mathf.Min(sectionBox.width, sectionBox.height) * 0.5f)
+            {
+                said = "Draw the line right across the end.";
+                return;
+            }
+            // the wedges part the larger side: a line along it (a slab) is not a split they make
+            if (!CraftWoodwork.WedgeLineAcross(p, lineB.x - lineA.x, lineB.y - lineA.y, out string across))
+            {
+                said = across;
+                return;
+            }
+            k.wedgeSet = true;
+            k.lineA = lineA;
+            k.lineB = lineB;
+            k.splitWork = k.splitSolid = 0f;
+            k.splitBlows = 0;
+            float trueTo = (float)CraftWoodwork.SplitAlongOf(along, CraftWoodwork.Cleave(Rules, p));
+            float share = (float)CraftWoodwork.SplitShareOf(off);
+            said = (off < CraftWoodwork.SplitEven && trueTo > CraftWoodwork.SplitAlong ? "The wedge is set through the heart, along a ray: even, straight halves."
+                    : off >= CraftWoodwork.SplitEven ? $"The wedge is set off the heart: the halves will be about {share * 100:0} and {(1 - share) * 100:0} %."
+                    : heart < 0.5f ? (trueTo < CraftWoodwork.TwistsOut ? "The line misses the heart: it runs across the rays, and the split will twist out." : "The line passes off the heart: the split may wander.")
+                    : trueTo < CraftWoodwork.TwistsOut ? "Set across the rays: it will twist out." : "Set a little across the rays: the split may wander.")
+                   + " Now the maul: hold, and let go on the wedge.";
             return;
         }
-        if (phase == CraftPointer.Down)
-        {
-            if (Vector2.Distance(pos, (lineA + lineB) * 0.5f) > endRadius * 0.6f) { wedgeSet = false; said = "The wedge is lifted out: draw the line again."; return; }
-            maul.Raise();
-            return;
-        }
-        if (phase != CraftPointer.Up || !maul.Raised) return;
-        Vector2 mid = (lineA + lineB) * 0.5f;
+        if (phase != CraftPointer.Up || !maul.Raised || k == null || !k.wedgeSet) return;
+        Vector2 mid = (k.lineA + k.lineB) * 0.5f + new Vector2(0f, 10f);
         CraftBlow b = maul.Release(0.5, 0, Hands);
         float square = Mathf.Clamp01(1f - Vector2.Distance(pos, mid) / 30f) * (b.slipped ? 0.2f : 1f);
         float tough = (float)(Rules.Wood(p.wood.wood)?.toughness ?? 0.6);
-        float w = 0f;
-        foreach (MetalSegment s in p.segments) w = Mathf.Max(w, (float)s.width);
-        splitWork += (float)b.force * square * 0.5f / (0.4f + tough) / Mathf.Max(0.6f, w / 200f);
-        splitSolid += (float)b.force * square;
-        splitBlows++;
+        float cleave = (float)CraftWoodwork.Cleave(Rules, p);
+        float size = (float)CraftWoodwork.CrossSize(p);
+        // a heavier, tougher piece takes more; interlocked grain fights the wedge
+        k.splitWork += (float)b.force * square * 0.5f / (0.4f + tough) / Mathf.Max(0.6f, size / 200f) * (0.6f + 0.4f * cleave);
+        k.splitSolid += (float)b.force * square;
+        k.splitBlows++;
         said = b.slipped ? b.Words : square < 0.5f ? "The maul glances off the wedge's edge." : b.force < 0.5f ? "A light blow: the wedge hardly moves." : "The wedge sinks in; the crack runs.";
-        if (splitWork < 1f) return;
-        LineQuality(p, out float o, out float al);
-        float solid = Mathf.Clamp01(splitSolid / splitBlows);
-        if (Send(new CraftRequest(CraftRequestKind.SplitLog, p.id) { a = o, b = al, c = solid, i0 = splitBlows }))
-            said = o < 0.12f && al > 0.8f ? "It splits open along the heart: two even halves." : o >= 0.12f ? "It splits off the heart: a big half and a small one." : "It splits, twisting out across the grain.";
-        wedgeSet = false;
+        if (k.splitWork < 1f) return;
+        LineQuality(p, k.lineA, k.lineB, out float o, out float al, out _);
+        float solid = Mathf.Clamp01(k.splitSolid / k.splitBlows);
+        string id = p.id;
+        k.splitSent = true;
+        Send(new CraftRequest(CraftRequestKind.SplitLog, id) { a = o, b = al, c = solid, i0 = k.splitBlows }, (ok, why) =>
+        {
+            if (!ok && why != CraftAnswerWaits.NoAnswer) { k.splitSent = false; return; } // refused: the wedge is still in, another blow sends it again
+            works.Remove(id);
+            if (ok) ui.Message(CraftText.Capital(LastRecord(id)) + ".");
+        });
     }
 
-    // ------------------------------------------------------------------ riving
+    private void LiftWedge()
+    {
+        PieceWork k = Current;
+        if (k == null || !k.wedgeSet) { said = "There is no wedge in it."; return; }
+        if (k.splitWork > 0.05f && !Confirm("wedge", "Click again to knock the wedge out: the split so far closes up.")) return;
+        k.wedgeSet = false;
+        k.splitWork = k.splitSolid = 0f;
+        k.splitBlows = 0;
+        maul.Lower();
+        said = "The wedge is out: draw its line again.";
+    }
+
+    // ================================================================== riving
+    private readonly CraftHammer mallet = new CraftHammer { fullCharge = 0.6f };
+    private Rect billet;
+    private bool levering;
+    private Vector2 leverLast;
+    private float leverT, leverEma;
+
+    /// <summary>The dimension the froe parts (mm): the larger across.</summary>
+    private static float RiveDepth(CraftPiece p)
+    {
+        double w = 0, t = 0;
+        foreach (MetalSegment s in p.segments) { w += s.width; t += s.thickness; }
+        return (float)(Math.Max(w, t) / Math.Max(1, p.segments.Count));
+    }
+
     private void DrawRive(CraftPixels c)
     {
+        c.Rect(30, 80, 690, 130, new Color(0.32f, 0.22f, 0.14f)); // the block it lies on
+        c.Rect(30, 126, 690, 130, new Color(0.42f, 0.3f, 0.2f));
         CraftPiece p = WoodPiece;
-        // The chopping block it lies on.
-        c.Rect(30, 100, 690, 160, new Color(0.32f, 0.22f, 0.14f));
-        if (p == null) return;
-        billet = new Rect(60, 160, 600, 130);
-        DrawBoard(c, p, billet);
-        // The split so far, the froe at its front.
-        for (int i = 1; i < splitPath.Count; i++)
-            c.Line(splitPath[i - 1].x, splitPath[i - 1].y, splitPath[i].x, splitPath[i].y, new Color(0.05f, 0.03f, 0.02f), 3f);
-        if (riveStage >= 1 && riveLine >= 0)
+        if (p == null || p.location != CraftLocation.Air)
+            return;
+        PieceWork k = Work(p);
+        float h = Mathf.Clamp(RiveDepth(p) * 2.2f, 24f, 170f);
+        billet = new Rect(60, 132, 600, h);
+        DrawBoard(c, p, billet, true, k.riveStage > 0 ? k.riveLine : -1);
+        for (int i = 1; i < k.splitPath.Count; i++)
+            c.Line(k.splitPath[i - 1].x, k.splitPath[i - 1].y, k.splitPath[i].x, k.splitPath[i].y, new Color(0.05f, 0.03f, 0.02f), 3f);
+        if (k.riveStage >= 1 && k.riveLine >= 0)
         {
-            Vector2 f = splitPath.Count > 0 ? splitPath[splitPath.Count - 1] : new Vector2(billet.xMin, GrainY(p, billet, riveLine, 7, billet.xMin));
-            c.Rect(f.x - 3, f.y - 30, f.x + 3, f.y + 30, Iron); // the froe's blade
-            c.Rect(f.x - 4, f.y + 30, f.x + 4, f.y + 90, Wood); // its handle, up
-            if (riveStage == 1)
+            Vector2 f = k.splitPath.Count > 0 ? k.splitPath[k.splitPath.Count - 1] : new Vector2(billet.xMin, GrainY(p, billet, k.riveLine, 7, billet.xMin));
+            c.Rect(f.x - 3, f.y - 24, f.x + 3, f.y + 24, Iron); // the froe's blade
+            c.Rect(f.x - 4, f.y + 24, f.x + 4, Mathf.Min(396f, f.y + 80), Wood); // its handle, up
+            if (k.riveStage == 1)
             {
-                Meter(c, billet.xMin, billet.yMax + 50, 120, 8, malletBlows / 2f, Mark);
-                if (mallet.Raised) Meter(c, billet.xMin, billet.yMax + 62, 120, 6, (float)mallet.Charge, new Color(1f, 0.8f, 0.4f));
+                Gauge(c, "BLOWS", 30f, 50f, 260f, 8f, k.malletBlows / 2f, Mark, 58f);
+                if (mallet.Raised) Gauge(c, "MALLET", 30f, 34f, 260f, 6f, Raised(mallet), new Color(1f, 0.8f, 0.4f), 58f, (0.5f, 1f, GoodBand));
             }
-            if (riveStage == 2) Meter(c, billet.xMin, billet.yMax + 50, billet.width, 6, (riveFront - billet.xMin) / billet.width, new Color(0.6f, 0.85f, 1f));
+            else
+            {
+                Gauge(c, "SPLIT", 30f, 50f, 660f, 8f, (k.riveFront - billet.xMin) / billet.width, new Color(0.6f, 0.85f, 1f), 58f);
+                Gauge(c, "PACE", 30f, 34f, 300f, 6f, Mathf.Clamp01(leverEma / 900f), Mathf.Clamp01((leverEma - 450f) / 600f) > 0f ? Harm : Good, 58f, (0f, 0.5f, GoodBand), (0.5f, 1f, HarmBand));
+            }
         }
-        Vector2 h = ui.Hover;
-        if (riveStage == 0 && h.x >= 0 && Mathf.Abs(h.x - billet.xMin) < 40f)
+        Vector2 hv = ui.Hover;
+        if (k.riveStage == 0 && hv.x >= 0 && Mathf.Abs(hv.x - billet.xMin) < 40f && hv.y > billet.yMin - 10 && hv.y < billet.yMax + 10)
         {
-            int k = NearestLine(p, h.y, billet.xMin);
-            float y = GrainY(p, billet, k, 7, billet.xMin);
-            c.Ring(billet.xMin, y, 8f, 2f, Mark);
+            int line = NearestLine(p, hv.y, billet.xMin);
+            c.Ring(billet.xMin, GrainY(p, billet, line, 7, billet.xMin), 8f, 2f, Mark);
         }
     }
 
@@ -590,261 +1025,623 @@ public sealed class CraftWoodshopMode : CraftMode
     private void RivePointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
-        if (p == null || p.location != CraftLocation.Air) { if (phase == CraftPointer.Down) said = "Take it onto the block first."; return; }
-        switch (riveStage)
+        PieceWork k = Current;
+        if (phase == CraftPointer.Down && (p == null || p.location != CraftLocation.Air))
+        {
+            said = p == null ? "Pick a billet (on the left) to lay it on the block." : OutOfPlace(p);
+            return;
+        }
+        if (p == null || k == null) return;
+        switch (k.riveStage)
         {
             case 0:
                 // Set the froe on a grain line at the end of the billet.
-                if (phase == CraftPointer.Down && Mathf.Abs(pos.x - billet.xMin) < 40f && pos.y > billet.yMin - 10 && pos.y < billet.yMax + 10)
-                {
-                    riveLine = NearestLine(p, pos.y, billet.xMin);
-                    riveStage = 1;
-                    malletBlows = 0;
-                    said = "The froe is set on the grain. Drive it in with the mallet: hold to raise it, release to strike (two good blows).";
-                }
+                if (phase != CraftPointer.Down || Mathf.Abs(pos.x - billet.xMin) >= 40f || pos.y < billet.yMin - 10 || pos.y > billet.yMax + 10)
+                    return;
+                ignorePress = true;
+                if (!CraftWoodwork.RivesWithFroe(p, out string why)) { said = why.StartsWith("Split") ? $"{why.TrimEnd('.')} (Split log)." : why; return; }
+                k.riveLine = NearestLine(p, pos.y, billet.xMin);
+                k.riveStage = 1;
+                k.malletBlows = 0;
+                float share = (k.riveLine + 0.5f) / 7f;
+                said = (Mathf.Abs(share - 0.5f) < 0.1f ? "The froe is set on the middle line." : $"The froe is set off the middle: the halves will be about {share * 100:0} and {(1 - share) * 100:0} %, and the split runs out more.")
+                       + " Drive it in with the mallet: hold, and let go - two good blows.";
                 return;
             case 1:
-                // Drive it in.
                 if (phase == CraftPointer.Down) mallet.Raise();
                 else if (phase == CraftPointer.Up && mallet.Raised)
                 {
                     CraftBlow b = mallet.Release(0.5, 0, Hands);
-                    if (b.force > 0.5 && !b.slipped) malletBlows++;
+                    if (b.force > 0.5 && !b.slipped) k.malletBlows++;
                     said = b.slipped ? b.Words : b.force > 0.5 ? "The froe bites into the end grain." : "Too light a blow.";
-                    if (malletBlows >= 2)
+                    if (k.malletBlows >= 2)
                     {
-                        riveStage = 2;
-                        riveFront = billet.xMin;
-                        riveStray = riveWeight = riveJerk = 0f;
-                        splitPath.Clear();
-                        splitPath.Add(new Vector2(billet.xMin, GrainY(p, billet, riveLine, 7, billet.xMin)));
-                        riveLastX = billet.xMin;
-                        riveLastT = Time.unscaledTime;
-                        said = "It is in. Now lever the split along: hold and move right, keeping on the grain line (it wanders).";
+                        k.riveStage = 2;
+                        k.riveFront = billet.xMin;
+                        k.riveStray = k.riveWeight = k.riveJerk = 0f;
+                        k.splitPath.Clear();
+                        k.splitPath.Add(new Vector2(billet.xMin, GrainY(p, billet, k.riveLine, 7, billet.xMin)));
+                        said = "It is in. Now lever the split along from its end: hold and move right, keeping on the highlighted grain line, at an even pace.";
                     }
                 }
                 return;
             default:
-                if (phase != CraftPointer.Down && phase != CraftPointer.Drag)
-                    return;
-                if (pos.x <= riveFront)
-                    return;
-                float x = Mathf.Min(pos.x, billet.xMax);
-                float now = Time.unscaledTime, dx = x - riveFront, dt = Mathf.Max(0.016f, now - riveLastT);
-                float speed = dx / dt; // px/s
-                float gy = GrainY(p, billet, riveLine, 7, x);
-                float y = pos.y + (float)Hands.Tremble(splitPath.Count + 61) * 80f;
-                // Off the line, the split cuts the fibres; where the line has run out of the side, the split runs out with it.
-                float off = Mathf.Clamp01(Mathf.Abs(y - gy) / 28f);
-                float outside = gy < billet.yMin + 3f || gy > billet.yMax - 3f ? 0.7f : 0f;
-                float rushed = Mathf.Clamp01((speed - 450f) / 600f) * 0.5f;
-                riveStray += Mathf.Max(off, Mathf.Max(outside, rushed)) * dx;
-                riveWeight += dx;
-                riveJerk += Mathf.Abs(speed - (riveLastX > billet.xMin ? (riveFront - riveLastX) / dt : speed)) * 0.0002f * dx;
-                riveLastX = riveFront;
-                riveFront = x;
-                riveLastT = now;
-                splitPath.Add(new Vector2(x, Mathf.Lerp(gy, y, Mathf.Clamp01(off))));
-                if (riveFront >= billet.xMax - 1f)
+                if (k.riveSent) return;
+                if (phase == CraftPointer.Down)
                 {
-                    float stray = riveWeight > 0 ? riveStray / riveWeight : 1f;
-                    float steady = Mathf.Clamp01(1f - riveJerk / Mathf.Max(1f, riveWeight) * 20f) * Mathf.Clamp01(1f - (float)Hands.Unsteadiness * 4f);
-                    if (Send(new CraftRequest(CraftRequestKind.Rive, p.id) { a = stray, b = steady }))
-                        said = stray < 0.15f ? "It splits cleanly along the grain: two straight-grained halves." : stray < 0.45f ? "It splits, but the split wandered across the fibres." : "The split ran out of the side: one half is short and tapered.";
-                    Hands.Move(0.5);
-                    riveStage = 0;
-                    riveLine = -1;
-                    splitPath.Clear();
+                    float fy = k.splitPath.Count > 0 ? k.splitPath[k.splitPath.Count - 1].y : GrainY(p, billet, k.riveLine, 7, k.riveFront);
+                    if (Mathf.Abs(pos.x - k.riveFront) > 25f || Mathf.Abs(pos.y - fy) > 40f)
+                    {
+                        said = "Lever from the end of the split, where the froe is.";
+                        ignorePress = true;
+                        return;
+                    }
+                    levering = true;
+                    leverLast = pos;
+                    leverT = ui.PointerTime;
+                    leverEma = 0f;
+                    return;
                 }
+                if (phase == CraftPointer.Up) { levering = false; return; }
+                if (phase != CraftPointer.Drag || !levering) return;
+                Lever(p, k, pos);
                 return;
         }
     }
 
-    // ------------------------------------------------------------------ sawing
+    /// <summary>
+    /// The split levered on to the hand at <paramref name="pos"/>: the way from the last sample is followed in 4 px steps
+    /// (a jump is judged all along it, against the grain under it), at the hand's pace smoothed over a fifth of a second.
+    /// </summary>
+    private void Lever(CraftPiece p, PieceWork k, Vector2 pos)
+    {
+        float now = ui.PointerTime, dt = Mathf.Max(1e-3f, now - leverT);
+        float x1 = Mathf.Min(pos.x, billet.xMax);
+        if (x1 > k.riveFront)
+        {
+            float dx = x1 - k.riveFront;
+            float before = leverEma;
+            leverEma += (dx / dt - leverEma) * (1f - Mathf.Exp(-dt / 0.2f));
+            float rushed = Mathf.Clamp01((leverEma - 450f) / 600f) * 0.5f;
+            int steps = Mathf.Max(1, Mathf.CeilToInt(dx / 4f));
+            float span = pos.x - leverLast.x;
+            for (int s = 1; s <= steps; s++)
+            {
+                float sx = k.riveFront + dx * s / steps;
+                float along = Mathf.Abs(span) > 1e-3f ? Mathf.Clamp01((sx - leverLast.x) / span) : 1f;
+                float y = Mathf.Lerp(leverLast.y, pos.y, along) + (float)Hands.Tremble(k.splitPath.Count + 61) * 80f;
+                float gy = GrainY(p, billet, k.riveLine, 7, sx);
+                // off the line the split cuts the fibres; where the line runs out of the side, the split runs out with it
+                float offLine = Mathf.Clamp01(Mathf.Abs(y - gy) / 28f);
+                float outside = gy < billet.yMin + 3f || gy > billet.yMax - 3f ? 0.7f : 0f;
+                k.riveStray += Mathf.Max(offLine, Mathf.Max(outside, rushed)) * (dx / steps);
+                k.riveWeight += dx / steps;
+                k.splitPath.Add(new Vector2(sx, Mathf.Lerp(gy, y, offLine)));
+            }
+            k.riveJerk += Mathf.Abs(leverEma - before) * 0.0008f * dx; // a stop and a start, a lurch: the pace jumping
+            k.riveFront = x1;
+        }
+        leverLast = pos;
+        leverT = now;
+        if (k.riveFront < billet.xMax - 1f) return;
+        levering = false;
+        float stray = k.riveWeight > 0 ? k.riveStray / k.riveWeight : 1f;
+        float steady = Mathf.Clamp01(1f - k.riveJerk / Mathf.Max(1f, k.riveWeight) * 20f) * Mathf.Clamp01(1f - (float)Hands.Unsteadiness * 4f);
+        Hands.Move(0.5);
+        string id = p.id;
+        k.riveSent = true;
+        Send(new CraftRequest(CraftRequestKind.Rive, id) { a = stray, b = steady, c = (k.riveLine + 0.5f) / 7f }, (ok, why) =>
+        {
+            if (!ok && why != CraftAnswerWaits.NoAnswer) { k.riveSent = false; return; }
+            works.Remove(id);
+            if (ok) ui.Message(CraftText.Capital(LastRecord(id)) + (steady < 0.5f ? ": the jerky levering bruised its faces." : "."));
+        });
+    }
+
+    private void LiftFroe()
+    {
+        PieceWork k = Current;
+        if (k == null || k.riveStage == 0) { said = "The froe is not set."; return; }
+        if ((k.riveStage == 2 || k.malletBlows > 0) && !Confirm("froe", "Click again to pull the froe out: the split so far closes up.")) return;
+        k.riveStage = 0;
+        k.riveLine = -1;
+        k.malletBlows = 0;
+        k.splitPath.Clear();
+        mallet.Lower();
+        levering = false;
+        said = "The froe is out.";
+    }
+
+    // ================================================================== sawing
+    private float boardX0 = 60f, boardLen = 600f, boardCY = 210f, xs = 1f, ys = 1f;
+    private bool sawing;
+    private float pressX, pressOff;
+    /// <summary>The rip saw was set on the taper's lower line (the drawing mirrors it onto the upper one).</summary>
+    private bool ripLower;
+
+    /// <summary>The board laid on the sawhorses: its length over 600 px, its width (to its own scale) about the middle.</summary>
+    private void BoardGeometry(CraftPiece p)
+    {
+        double maxW = 1;
+        foreach (MetalSegment s in p.segments) maxW = Math.Max(maxW, s.width);
+        xs = Mathf.Max(0.05f, (float)p.Length / boardLen);
+        ys = Mathf.Max(0.25f, (float)maxW / 150f);
+    }
+
+    private float XAt(float t) => boardX0 + t * boardLen;
+    private float TAt(float x) => Mathf.Clamp01((x - boardX0) / boardLen);
+    private float HalfAt(CraftPiece p, float x) => (float)p.segments[Mathf.Clamp(p.SegmentAt(TAt(x)), 0, p.segments.Count - 1)].width * 0.5f / ys;
+
+    /// <summary>The upper line of a marked taper at x (pixels), and its ends.</summary>
+    private float RipY(PieceWork k, float x) => boardCY + (float)CraftWoodwork.RipLineAt(k.ripA, k.ripWa, k.ripB, k.ripWb, TAt(x)) * 0.5f / ys;
+
+    private void DrawPlank(CraftPixels c, CraftPiece p)
+    {
+        Color wood = WoodColour(p);
+        double pos = 0;
+        foreach (MetalSegment s in p.segments)
+        {
+            float x0 = boardX0 + (float)(pos / xs), x1 = boardX0 + (float)((pos + s.length) / xs);
+            float hw = (float)s.width * 0.5f / ys;
+            c.Rect(x0, boardCY - hw, x1 + 0.6f, boardCY + hw, wood);
+            for (int g = -2; g <= 2; g++)
+                c.Line(x0, boardCY + g * hw * 0.35f, x1, boardCY + g * hw * 0.35f + Mathf.Sin((float)pos * 0.01f + g) * 1.2f, new Color(0f, 0f, 0f, 0.12f), 1f);
+            if (s.rough > 50) c.Disc(x0 + 4, boardCY + hw - 4, 1.5f, new Color(0.15f, 0.1f, 0.06f, 0.6f));
+            pos += s.length;
+        }
+    }
+
     private void DrawSaw(CraftPixels c)
     {
         CraftPiece p = WoodPiece;
         // Two sawhorses.
-        c.Rect(120, 60, 140, 180, Wood);
-        c.Rect(560, 60, 580, 180, Wood);
-        if (p == null) return;
-        float mm = Mathf.Max(0.5f, (float)p.Length / 600f);
-        float len = (float)p.Length / mm, wide = Mathf.Clamp((float)p.segments[0].width / mm, 30f, 140f);
-        board = new Rect(60, 180, len, wide);
-        DrawBoard(c, p, board);
-        if (markX >= 0f)
+        c.Rect(116, 30, 136, 120, Wood);
+        c.Rect(584, 30, 604, 120, Wood);
+        c.Rect(100, 116, 152, 124, Wood);
+        c.Rect(568, 116, 620, 124, Wood);
+        if (p == null || p.location != CraftLocation.Air)
+            return;
+        PieceWork k = Work(p);
+        BoardGeometry(p);
+        DrawPlank(c, p);
+        double widest = 1;
+        foreach (MetalSegment s in p.segments) widest = Math.Max(widest, s.width);
+        float top = boardCY + (float)widest * 0.5f / ys; // the board's far edge as drawn: the lengths are written above it
+        if (!ripMode && k.mark >= 0f)
         {
-            for (float y = board.yMin - 6; y < board.yMax + 6; y += 6) c.Line(markX, y, markX, y + 3, new Color(0.1f, 0.1f, 0.12f), 1.5f);
-            if (sawing)
+            float mx = XAt(k.mark);
+            float hw = HalfAt(p, mx);
+            for (float y = boardCY - hw - 8; y < boardCY + hw + 8; y += 6) c.Line(mx, y, mx, y + 3, new Color(0.1f, 0.1f, 0.12f), 1.5f);
+            string near = $"{k.mark * p.Length:0} MM", far = $"{(1 - k.mark) * p.Length:0} MM";
+            float nearX = Mathf.Max(boardX0, mx - 10 - CraftArt.LabelWidth(near)), farX = Mathf.Min(boardX0 + boardLen - CraftArt.LabelWidth(far), mx + 10);
+            Apart(nearX, CraftArt.LabelWidth(near), farX, CraftArt.LabelWidth(far), top + 10, out float nearY, out float farY);
+            CraftArt.Label(c, nearX, nearY, near, CraftArt.LabelInk);
+            CraftArt.Label(c, farX, farY, far, CraftArt.LabelInk);
+            if (k.sawStarted && !k.sawRip)
             {
-                float depth = Mathf.Clamp01(kerf) * board.height;
-                c.Rect(sawStartX - 1.5f, board.yMax - depth, sawStartX + 1.5f, board.yMax, new Color(0.05f, 0.04f, 0.03f));
-                Meter(c, board.xMin, board.yMax + 30, board.width, 6, Mathf.Clamp01(kerf), new Color(0.6f, 0.85f, 1f));
-                for (int k = 0; k < Mathf.Min(30, saw.Shakes * 3); k++)
-                    c.Disc(markX + (k * 7 % 11 - 5) * 3f, board.yMin - 8 - (k * 5 % 13), 1.2f, Color.Lerp(WoodColour(p), Color.white, 0.3f));
+                float bx = mx + (float)k.saw.Blade;
+                float depth = (float)k.saw.Progress * hw * 2f;
+                c.Rect(bx - 1.5f, boardCY + hw - depth, bx + 1.5f, boardCY + hw, new Color(0.05f, 0.04f, 0.03f));
+                Gauge(c, "SAW", 60f, 372f, 600f, 8f, (float)k.saw.Progress, new Color(0.6f, 0.85f, 1f), 40f);
+                for (int s = 0; s < Mathf.Min(30, k.saw.Strokes * 2); s++)
+                    c.Disc(bx + (s * 7 % 11 - 5) * 3f, boardCY - hw - 6 - (s * 5 % 13), 1.2f, Color.Lerp(WoodColour(p), Color.white, 0.3f));
+            }
+        }
+        if (ripMode)
+        {
+            Color line = new Color(0.1f, 0.1f, 0.12f);
+            float waX = 0f, waY = 0f;
+            string wa = $"{k.ripWa:0} MM";
+            if (k.ripA >= 0f)
+            {
+                float ax = XAt(k.ripA), ay = boardCY + k.ripWa * 0.5f / ys;
+                c.Disc(ax, ay, 3f, Mark);
+                c.Disc(ax, boardCY - k.ripWa * 0.5f / ys, 3f, Mark);
+                waX = Mathf.Clamp(ax - CraftArt.LabelWidth(wa) * 0.5f, 4f, 716f - CraftArt.LabelWidth(wa));
+                waY = Mathf.Max(ay, top) + 10;
+                if (k.ripB < 0f) CraftArt.Label(c, waX, waY, wa, CraftArt.LabelInk);
+            }
+            if (k.ripA >= 0f && k.ripB >= 0f)
+            {
+                float x0 = XAt(Mathf.Min(k.ripA, k.ripB)), x1 = XAt(Mathf.Max(k.ripA, k.ripB));
+                for (float x = x0; x < x1; x += 8f)
+                {
+                    float xe = Mathf.Min(x + 4f, x1);
+                    c.Line(x, RipY(k, x), xe, RipY(k, xe), line, 1.5f);
+                    c.Line(x, 2 * boardCY - RipY(k, x), xe, 2 * boardCY - RipY(k, xe), line, 1.5f);
+                }
+                string wb = $"{k.ripWb:0} MM";
+                float bx = XAt(k.ripB), wbX = Mathf.Clamp(bx - CraftArt.LabelWidth(wb) * 0.5f, 4f, 716f - CraftArt.LabelWidth(wb)), wbY = Mathf.Max(RipY(k, bx), top) + 10;
+                // the two widths, the left one first, a row apart when they would fall on each other
+                bool aFirst = waX <= wbX;
+                Apart(aFirst ? waX : wbX, CraftArt.LabelWidth(aFirst ? wa : wb), aFirst ? wbX : waX, CraftArt.LabelWidth(aFirst ? wb : wa), Mathf.Max(waY, wbY), out float y0, out float y1);
+                CraftArt.Label(c, waX, aFirst ? y0 : y1, wa, CraftArt.LabelInk);
+                CraftArt.Label(c, wbX, aFirst ? y1 : y0, wb, CraftArt.LabelInk);
+                if (k.sawStarted && k.sawRip)
+                {
+                    float dir = k.ripB >= k.ripA ? 1f : -1f, xa = XAt(k.ripA), reach = (float)k.saw.Progress * Mathf.Abs(x1 - x0);
+                    for (float x = 0f; x < reach; x += 2f)
+                    {
+                        float px = xa + dir * x;
+                        c.Rect(px - 1f, RipY(k, px) - 1.5f, px + 1f, RipY(k, px) + 1.5f, new Color(0.05f, 0.04f, 0.03f));
+                        c.Rect(px - 1f, 2 * boardCY - RipY(k, px) - 1.5f, px + 1f, 2 * boardCY - RipY(k, px) + 1.5f, new Color(0.05f, 0.04f, 0.03f));
+                    }
+                    Gauge(c, "RIP", 60f, 372f, 600f, 8f, (float)k.saw.Progress, new Color(0.6f, 0.85f, 1f), 40f);
+                }
             }
         }
         Vector2 h = ui.Hover;
-        if (h.x >= 0 && (board.Contains(h) || sawing))
+        if (h.x >= 0 && h.x > boardX0 - 20 && h.x < boardX0 + boardLen + 20)
         {
-            // The saw: its blade where the hand is.
-            c.Rect(h.x - 2, h.y - 40, h.x + 2, h.y + 60, new Color(0.7f, 0.72f, 0.76f));
-            c.Rect(h.x - 8, h.y + 60, h.x + 8, h.y + 90, Wood);
+            if (!ripMode)
+            {
+                // the saw: its blade upright where the hand is
+                c.Rect(h.x - 2, h.y - 40, h.x + 2, h.y + 60, new Color(0.7f, 0.72f, 0.76f));
+                c.Rect(h.x - 8, h.y + 60, h.x + 8, h.y + 90, Wood);
+            }
+            else
+            {
+                // a rip saw lies along the line
+                c.Rect(h.x - 60, h.y - 2, h.x + 40, h.y + 2, new Color(0.7f, 0.72f, 0.76f));
+                c.Rect(h.x + 40, h.y - 8, h.x + 70, h.y + 8, Wood);
+            }
         }
+    }
+
+    /// <summary>
+    /// Two labels on one row, the first (at <paramref name="x0"/>, <paramref name="w0"/> wide) left of the second: where
+    /// they would fall on each other, the shorter goes a row up.
+    /// </summary>
+    private static void Apart(float x0, float w0, float x1, float w1, float y, out float y0, out float y1)
+    {
+        y0 = y1 = y;
+        if (x0 + w0 + 6f <= x1) return;
+        if (w0 <= w1) y0 += 12f; else y1 += 12f;
+    }
+
+    private void SetRip(bool rip)
+    {
+        if (rip == ripMode) return;
+        PieceWork k = Current;
+        if (k != null && k.sawStarted && k.saw.Progress > 0 && k.sawRip != rip)
+        {
+            said = rip ? "Finish the cut begun across the board first (or clear the marks)." : "Finish ripping the taper begun first (or clear the marks).";
+            return;
+        }
+        if (sawing) StopSaw();
+        if (k != null && k.sawStarted && k.sawRip != rip) { k.saw = new CraftSawStroke(); k.sawStarted = false; }
+        ripMode = rip;
+        said = "";
+        Show();
+    }
+
+    private void ClearMarks()
+    {
+        PieceWork k = Current;
+        if (k == null) return;
+        if (k.sawStarted && k.saw.Progress > 0.05 && !Confirm("marks", "Click again to give up the cut begun at the mark.")) return;
+        if (sawing) StopSaw();
+        k.mark = k.ripA = k.ripB = -1f;
+        k.saw = new CraftSawStroke();
+        k.sawStarted = false;
+        said = ripMode ? "Click where the taper's line starts on the board, then where it ends." : "Click on the board to mark where to cut.";
+    }
+
+    private void StopSaw()
+    {
+        sawing = false;
+        PieceWork k = Current;
+        k?.saw.Stop();
+    }
+
+    /// <summary>Strokes a cut takes: across the section at the mark (a wide board longer than a stick), and along a rip as long as it is (300 mm counts as one cut across).</summary>
+    private double SawStrokes(CraftPiece p, PieceWork k)
+    {
+        if (!ripMode)
+        {
+            MetalSegment s = p.segments[Mathf.Clamp(p.SegmentAt(k.mark), 0, p.segments.Count - 1)];
+            return CraftSawStroke.StrokesFor(s.width, s.thickness);
+        }
+        double t = 0;
+        foreach (MetalSegment s in p.segments) t = Math.Max(t, s.thickness);
+        double length = Math.Abs(k.ripB - k.ripA) * p.Length;
+        return CraftSawStroke.StrokesFor(t) * Math.Max(1, length / 300);
     }
 
     private void SawPointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
-        if (p == null || p.location != CraftLocation.Air) { if (phase == CraftPointer.Down) said = "Lay it on the sawhorses first (take it out)."; return; }
-        if (!sawing)
+        PieceWork k = Current;
+        if (phase == CraftPointer.Down)
         {
-            if (phase == CraftPointer.Down && board.Contains(pos))
-            {
-                if (markX < 0f || Mathf.Abs(pos.x - markX) > 12f)
-                {
-                    markX = pos.x;
-                    float at = (markX - board.xMin) / Mathf.Max(1f, board.width);
-                    said = $"Marked: {at * p.Length:0} mm and {(1 - at) * p.Length:0} mm. Press on the mark and saw - stroke up and down, keep on the line.";
-                }
-                else
-                {
-                    sawing = true;
-                    sawStartX = pos.x;
-                    kerf = 0f;
-                    wanderSum = 0f;
-                    wanderN = 0;
-                    saw.Clear();
-                }
-            }
+            if (p == null) { said = "Pick a board (on the left) to lay it on the sawhorses."; return; }
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            if (k.sawSent) { said = "Waiting for the cut..."; ignorePress = true; return; }
+            if (pos.x < boardX0 - 10 || pos.x > boardX0 + boardLen + 10) return;
+            if (ripMode) RipDown(p, k, pos);
+            else CrossDown(p, k, pos);
             return;
         }
-        if (phase == CraftPointer.Drag || phase == CraftPointer.Down)
-        {
-            saw.Add(pos.y, Time.unscaledTime);
-            float x = pos.x + (float)Hands.Tremble(wanderN + 71) * 60f;
-            wanderSum += Mathf.Abs(x - markX);
-            wanderN++;
-            float needed = 6f + (float)p.segments[0].thickness / 5f;
-            kerf = saw.Shakes / needed * (0.5f + 0.5f * saw.Rhythm);
-            if (wanderN % 15 == 0) Hands.Move(0.3);
-            if (kerf >= 1f)
-            {
-                float wander = Mathf.Clamp01(wanderSum / Mathf.Max(1, wanderN) / 14f);
-                float square = 1f - Mathf.Clamp01(Mathf.Abs(x - sawStartX) / 18f);
-                float at = Mathf.Clamp01((sawStartX - board.xMin) / Mathf.Max(1f, board.width));
-                if (Send(new CraftRequest(CraftRequestKind.SawCut, p.id) { a = at, b = wander, c = square }))
-                    said = wander < 0.2f && square > 0.8f ? "Through, square and on the line." : wander < 0.5f ? "Through - the cut wandered a little: the end is ragged." : "Through, well off the line: a torn, crooked end.";
-                sawing = false;
-                markX = -1f;
-            }
-        }
-        else if (phase == CraftPointer.Up && kerf < 1f)
-            said = $"The saw stops {kerf * 100:0}% of the way through: press again on the mark and go on.";
+        if (!sawing) return;
+        if (phase == CraftPointer.Up) { StopSaw(); if (k != null && k.saw.Progress < 1) said = $"The saw rests {k.saw.Progress * 100:0}% of the way: press on the line again to go on."; return; }
+        if (phase != CraftPointer.Drag || k == null) return;
+        if (ripMode) k.saw.Add((ripLower ? 2 * boardCY - pos.y : pos.y) - RipY(k, pos.x) - pressOff, pos.x, ui.PointerTime, Hands);
+        else k.saw.Add(pos.x - pressX, pos.y, ui.PointerTime, Hands);
+        if (k.saw.Progress >= 1) FinishCut(p, k);
     }
 
-    // ------------------------------------------------------------------ steaming and bending
+    private void CrossDown(CraftPiece p, PieceWork k, Vector2 pos)
+    {
+        float hw = HalfAt(p, pos.x);
+        if (Mathf.Abs(pos.y - boardCY) > hw + 14f) return;
+        if (k.mark >= 0f && Mathf.Abs(pos.x - XAt(k.mark)) <= 12f)
+        {
+            // the blade is set on the mark: where the hand pressed is only where the stroke starts from
+            sawing = true;
+            pressX = pos.x;
+            if (k.sawStarted) k.saw.Resume();
+            else { k.saw.Begin(SawStrokes(p, k)); k.sawStarted = true; k.sawRip = ripMode; }
+            return;
+        }
+        ignorePress = true;
+        if (k.sawStarted && k.saw.Progress > 0) { said = "Finish the cut begun at the mark (press on it), or clear the marks."; return; }
+        float at = TAt(pos.x);
+        if (!CraftWoodwork.CanSawAt(p, at, out string why)) { said = why; return; }
+        k.mark = at;
+        k.saw = new CraftSawStroke();
+        k.sawStarted = false;
+        said = $"Marked: {at * p.Length:0} mm and {(1 - at) * p.Length:0} mm. Press on the mark and saw: long strokes up and down across the board, keeping on the line.";
+    }
+
+    private void RipDown(CraftPiece p, PieceWork k, Vector2 pos)
+    {
+        if (k.ripA >= 0f && k.ripB >= 0f)
+        {
+            float lo = XAt(Mathf.Min(k.ripA, k.ripB)), hi = XAt(Mathf.Max(k.ripA, k.ripB));
+            if (pos.x >= lo - 8 && pos.x <= hi + 8 && Mathf.Abs(Mathf.Abs(pos.y - boardCY) - Mathf.Abs(RipY(k, pos.x) - boardCY)) <= 14f)
+            {
+                sawing = true;
+                ripLower = pos.y < boardCY; // the lower edge: the same line, mirrored
+                pressOff = (ripLower ? 2 * boardCY - pos.y : pos.y) - RipY(k, pos.x);
+                if (k.sawStarted) k.saw.Resume();
+                else { k.saw.Begin(SawStrokes(p, k)); k.sawStarted = true; k.sawRip = ripMode; }
+                return;
+            }
+            ignorePress = true;
+            said = k.sawStarted ? "Press on the line to go on sawing along it." : "Press on the line to saw along it - or clear the marks to mark another.";
+            return;
+        }
+        ignorePress = true;
+        float t = TAt(pos.x), width = Mathf.Max(3f, Mathf.Abs(pos.y - boardCY) * 2f * ys);
+        if (k.ripA < 0f)
+        {
+            k.ripA = t;
+            k.ripWa = width;
+            said = $"The line starts {t * p.Length:0} mm along, {width:0} mm wide: click where it ends.";
+            return;
+        }
+        if (!CraftWoodwork.RipNarrows(p, k.ripA, t, k.ripWa, width, out string why)) { said = why; return; }
+        k.ripB = t;
+        k.ripWb = width;
+        k.saw = new CraftSawStroke();
+        k.sawStarted = false;
+        said = $"A taper from {k.ripWa:0} to {k.ripWb:0} mm: press on the line and saw along it - long strokes back and forth, keeping on it. Both edges are ripped to it.";
+    }
+
+    private void FinishCut(CraftPiece p, PieceWork k)
+    {
+        sawing = false;
+        k.saw.Stop();
+        k.sawSent = true;
+        float wander = (float)k.saw.Wander, square = (float)k.saw.Square;
+        string id = p.id;
+        Hands.Move(0.3);
+        CraftRequest r = ripMode
+            ? new CraftRequest(CraftRequestKind.RipCut, id) { a = k.ripA, b = k.ripB, c = k.ripWa, d = k.ripWb, i0 = Mathf.RoundToInt(wander * 1000f) }
+            : new CraftRequest(CraftRequestKind.SawCut, id) { a = k.mark, b = wander, c = square };
+        bool rip = ripMode;
+        Send(r, (ok, why) =>
+        {
+            if (!ok && why != CraftAnswerWaits.NoAnswer) { k.sawSent = false; return; } // still in its kerf: a stroke more sends it again
+            works.Remove(id);
+            if (!ok) return;
+            if (rip) ui.Message(wander < CraftWoodwork.SawSquare ? "Ripped along the line: a clean taper." : wander < 0.5f ? "Ripped - the saw wandered a little: a wavy, rough edge." : "Ripped well off the line: a ragged edge.");
+            else ui.Message(wander < CraftWoodwork.SawSquare && square >= 0.8f ? "Through, square and on the line." : wander < 0.5f ? "Through - the cut wandered a little: the end is ragged." : "Through, well off the line: a torn, crooked end.");
+        });
+    }
+
+    // ================================================================== steaming and bending
     private float FormR => FormRadius[Mathf.Clamp(form != null ? form.value : 1, 0, FormRadius.Length - 1)];
+    private float From => bendFrom != null ? bendFrom.value : 0.5f;
+    private Rect steamBox;
+    private Vector2 formC, clampAt, tip;
+    private float bendScale = 1f, formPx = 40f, thickPx = 6f;
+    private readonly List<Vector2> freeLine = new List<Vector2>(), heldLine = new List<Vector2>();
+    private bool dragging, bending;
+    private Vector2 dragAt;
+    private float sweep0, sweep, sweepEma, sweepPeak, sweepT;
+
+    private string BendFromText(float v)
+    {
+        CraftPiece p = WoodPiece;
+        return p != null ? $"{v * p.Length:0} mm" : $"{v * 100:0}%";
+    }
+
+    /// <summary>The bearing (degrees) of a point round the form's centre.</summary>
+    private float Bearing(Vector2 q) => Mathf.Atan2(q.y - formC.y, q.x - formC.x) * Mathf.Rad2Deg;
+
+    /// <summary>The most it can be bent: as much of the free end as there is to wrap round the form.</summary>
+    private float MaxSweep(CraftPiece p) => Mathf.Min(170f, (float)((1 - From) * p.Length / FormR) * Mathf.Rad2Deg);
+
+    /// <summary>
+    /// Lays out the piece clamped on the form at its "bend from" point, to one scale with the form (so it wraps it truly):
+    /// the part behind the clamp to the left, the free part to the right wrapped round the form by <paramref name="wrap"/>
+    /// degrees and then on along its own curve (the bend it already keeps).
+    /// </summary>
+    private void LayOut(CraftPiece p, float wrap)
+    {
+        float L = (float)p.Length, behind = From * L;
+        bendScale = Mathf.Max(Mathf.Max(behind / 170f, (L - behind) / 220f), Mathf.Max(FormR / 110f, 0.5f));
+        // A piece that already keeps bends can curl out of the room: drawn smaller until all of it is in (right of the steam box, under the gauges).
+        for (int tries = 0; ; tries++)
+        {
+            Trace(p, wrap);
+            if (tries == 4) break;
+            float fit = 1f;
+            foreach (List<Vector2> line in new[] { freeLine, heldLine })
+                foreach (Vector2 q in line)
+                {
+                    if (q.x < 244f) fit = Mathf.Min(fit, (clampAt.x - 244f) / Mathf.Max(1f, clampAt.x - q.x));
+                    if (q.x > 712f) fit = Mathf.Min(fit, (712f - clampAt.x) / Mathf.Max(1f, q.x - clampAt.x));
+                    if (q.y < 10f) fit = Mathf.Min(fit, (clampAt.y - 10f) / Mathf.Max(1f, clampAt.y - q.y));
+                    if (q.y > 332f) fit = Mathf.Min(fit, (332f - clampAt.y) / Mathf.Max(1f, q.y - clampAt.y));
+                }
+            if (fit >= 1f) break;
+            bendScale /= Mathf.Max(0.2f, fit * 0.97f);
+        }
+    }
+
+    private void Trace(CraftPiece p, float wrap)
+    {
+        float L = (float)p.Length, behind = From * L, free = L - behind;
+        formPx = FormR / bendScale;
+        thickPx = Mathf.Clamp((float)CraftWoodwork.Thickness(p) / bendScale, 3f, 14f);
+        formC = new Vector2(420f, 230f - formPx * 0.5f);
+        clampAt = new Vector2(formC.x, formC.y + formPx + thickPx * 0.5f);
+        float rr = formPx + thickPx * 0.5f, wrapMm = wrap * Mathf.Deg2Rad * FormR, step = 3f;
+        freeLine.Clear();
+        freeLine.Add(clampAt);
+        Vector2 at = clampAt;
+        float dir = 0f; // degrees: 0 pointing right
+        for (float mm = 0f; mm < free; mm += step * bendScale)
+        {
+            float s = Mathf.Min(step * bendScale, free - mm);
+            if (mm < wrapMm)
+            {
+                // round the form
+                float a = (90f - (mm + s) / FormR * Mathf.Rad2Deg) * Mathf.Deg2Rad;
+                at = formC + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * rr;
+                dir = -(mm + s) / FormR * Mathf.Rad2Deg;
+            }
+            else
+            {
+                int i = Mathf.Clamp(p.SegmentAt((behind + mm) / L), 0, p.segments.Count - 1);
+                dir -= (float)(p.segments[i].bend / Math.Max(1, p.segments[i].length)) * s;
+                at += new Vector2(Mathf.Cos(dir * Mathf.Deg2Rad), Mathf.Sin(dir * Mathf.Deg2Rad)) * (s / bendScale);
+            }
+            freeLine.Add(at);
+        }
+        tip = at;
+        heldLine.Clear();
+        heldLine.Add(clampAt);
+        at = clampAt;
+        dir = 180f;
+        for (float mm = 0f; mm < behind; mm += step * bendScale)
+        {
+            float s = Mathf.Min(step * bendScale, behind - mm);
+            int i = Mathf.Clamp(p.SegmentAt((behind - mm) / L), 0, p.segments.Count - 1);
+            dir += (float)(p.segments[i].bend / Math.Max(1, p.segments[i].length)) * s;
+            at += new Vector2(Mathf.Cos(dir * Mathf.Deg2Rad), Mathf.Sin(dir * Mathf.Deg2Rad)) * (s / bendScale);
+            heldLine.Add(at);
+        }
+    }
+
+    private static float Near(List<Vector2> line, Vector2 q)
+    {
+        float best = float.MaxValue;
+        for (int i = 1; i < line.Count; i++)
+        {
+            Vector2 a = line[i - 1], b = line[i], d = b - a;
+            float t = d.sqrMagnitude > 1e-6f ? Mathf.Clamp01(Vector2.Dot(q - a, d) / d.sqrMagnitude) : 0f;
+            best = Mathf.Min(best, Vector2.Distance(q, a + d * t));
+        }
+        return best;
+    }
 
     private void DrawBend(CraftPixels c)
     {
         CraftPiece p = WoodPiece;
-        steamBox = new Rect(30, 190, 220, 130);
-        bench = new Rect(30, 60, 220, 60);
+        steamBox = new Rect(20, 150, 210, 110);
         // The steam box, its fire under it, steam leaking from the lid.
         c.Rect(steamBox.xMin, steamBox.yMin, steamBox.xMax, steamBox.yMax, new Color(0.35f, 0.25f, 0.16f));
         c.Rect(steamBox.xMin + 6, steamBox.yMin + 6, steamBox.xMax - 6, steamBox.yMax - 6, new Color(0.12f, 0.1f, 0.09f));
         for (int k = 0; k < 6; k++)
-            c.Line(steamBox.xMin + 20 + k * 34, steamBox.yMax, steamBox.xMin + 24 + k * 34 + Mathf.Sin(Time.unscaledTime * 3f + k) * 5f, steamBox.yMax + 24, new Color(1f, 1f, 1f, 0.25f), 3f);
-        c.Rect(steamBox.xMin + 60, steamBox.yMin - 20, steamBox.xMax - 60, steamBox.yMin, new Color(1f, 0.5f, 0.15f, 0.7f));
+            c.Line(steamBox.xMin + 18 + k * 34, steamBox.yMax, steamBox.xMin + 22 + k * 34 + Mathf.Sin(Time.unscaledTime * 3f + k) * 5f, steamBox.yMax + 22, new Color(1f, 1f, 1f, 0.25f), 3f);
+        c.Rect(steamBox.xMin + 60, steamBox.yMin - 18, steamBox.xMax - 60, steamBox.yMin, new Color(1f, 0.5f, 0.15f, 0.7f));
+        if (p == null)
+            return;
+        LayOut(p, bending ? sweep : 0f);
         // The form: a block with its curve, the stop the piece is clamped to.
-        float r = Mathf.Clamp(FormR * 0.55f, 40f, 150f);
-        formCentre = new Vector2(470f, 200f);
-        formArea = new Rect(formCentre.x - r - 40, formCentre.y - r - 40, (r + 40) * 2 + 200, (r + 40) * 2);
-        c.Disc(formCentre.x, formCentre.y, r, new Color(0.45f, 0.32f, 0.2f));
-        c.Rect(formCentre.x - 4, formCentre.y + r, formCentre.x + 4, formCentre.y + r + 20, Iron);
-        if (p == null) return;
-        float plastic = (float)CraftWoodwork.Plasticity(p);
-        Meter(c, steamBox.xMin, steamBox.yMin - 34, steamBox.width, 8, (float)p.wood.steamed, new Color(0.85f, 0.85f, 0.95f));
-        Meter(c, steamBox.xMin, steamBox.yMin - 46, steamBox.width, 6, plastic, new Color(1f, 0.6f, 0.3f));
+        c.Disc(formC.x, formC.y, formPx, new Color(0.45f, 0.32f, 0.2f));
+        c.Rect(formC.x - formPx - 6, formC.y - formPx - 10, formC.x + formPx + 6, formC.y - formPx - 4, Wood); // the bench under it
         Color wood = WoodColour(p);
-        float thick = Mathf.Clamp((float)CraftWoodwork.Thickness(p) * 0.6f, 4f, 16f);
+        // HEAT, SOAK and SOFT: it heats through (it soaks once it is past the tick), softens through, and sets again out of the steam.
+        float heat = Mathf.Clamp01(((float)CraftWoodwork.MeanTemperature(p) - 20f) / 80f), soakAt = ((float)CraftWoodwork.SoakHeat - 20f) / 80f;
+        Gauge(c, "HEAT", 20f, 372f, 210f, 8f, heat, new Color(1f, 0.55f, 0.25f), 46f, (0f, soakAt, ColdBand), (soakAt, 1f, GoodBand));
+        Gauge(c, "SOAK", 20f, 356f, 210f, 8f, (float)p.wood.steamed, new Color(0.85f, 0.85f, 0.95f), 46f);
+        Gauge(c, "SOFT", 20f, 340f, 210f, 8f, (float)CraftWoodwork.Plasticity(p), new Color(1f, 0.6f, 0.3f), 46f);
         if (p.location == CraftLocation.Steam && !dragging)
-            c.Rect(steamBox.xMin + 14, steamBox.center.y - thick * 0.5f, steamBox.xMax - 14, steamBox.center.y + thick * 0.5f, Color.Lerp(wood, new Color(0.3f, 0.2f, 0.12f), 0.3f));
+            c.Rect(steamBox.xMin + 14, steamBox.center.y - thickPx * 0.5f, steamBox.xMax - 14, steamBox.center.y + thickPx * 0.5f, Color.Lerp(wood, new Color(0.3f, 0.2f, 0.12f), 0.3f));
         else if (dragging)
-            c.Rect(dragAt.x - 80, dragAt.y - thick * 0.5f, dragAt.x + 80, dragAt.y + thick * 0.5f, wood);
+            c.Rect(dragAt.x - 80, dragAt.y - thickPx * 0.5f, dragAt.x + 80, dragAt.y + thickPx * 0.5f, wood);
         else if (p.location == CraftLocation.Air)
         {
-            // On the form: clamped at the top, the free end following the bend.
-            float total = Mathf.Min(360f, (float)p.Length * 0.5f);
-            float arc = bendAngle * Mathf.Deg2Rad * (r + thick * 0.5f);
-            float rest = Mathf.Max(0f, total - arc);
-            var top = new Vector2(formCentre.x, formCentre.y + r + thick * 0.5f);
-            c.Rect(top.x - 60, top.y - thick * 0.5f, top.x, top.y + thick * 0.5f, wood); // clamped behind the stop
-            Vector2 last = top;
-            int steps = Mathf.Max(1, Mathf.CeilToInt(bendAngle / 4f));
-            for (int k = 1; k <= steps; k++)
-            {
-                float a = 90f - bendAngle * k / steps;
-                var q = new Vector2(formCentre.x + Mathf.Cos(a * Mathf.Deg2Rad) * (r + thick * 0.5f), formCentre.y + Mathf.Sin(a * Mathf.Deg2Rad) * (r + thick * 0.5f));
-                c.Line(last.x, last.y, q.x, q.y, wood, thick);
-                last = q;
-            }
-            float endA = (90f - bendAngle) * Mathf.Deg2Rad;
-            var tangent = new Vector2(Mathf.Sin(endA), -Mathf.Cos(endA));
-            Vector2 tip = last + tangent * rest;
-            c.Line(last.x, last.y, tip.x, tip.y, wood, thick);
-            // The strap rides on the outside of the bend, from the clamp to the free end.
+            for (int i = 1; i < heldLine.Count; i++) c.Line(heldLine[i - 1].x, heldLine[i - 1].y, heldLine[i].x, heldLine[i].y, wood, thickPx);
+            for (int i = 1; i < freeLine.Count; i++) c.Line(freeLine[i - 1].x, freeLine[i - 1].y, freeLine[i].x, freeLine[i].y, wood, thickPx);
+            // where the bend starts: the clamp on it there
+            c.Rect(clampAt.x - 12f, clampAt.y + thickPx * 0.5f, clampAt.x - 4f, clampAt.y + thickPx * 0.5f + 14f, Iron);
+            c.Rect(clampAt.x - 14f, clampAt.y - thickPx * 0.5f - 4f, clampAt.x - 2f, clampAt.y - thickPx * 0.5f, Iron);
             if (strap)
-            {
-                float rs = r + thick + 2f;
-                var sl = new Vector2(top.x - 60, top.y + thick * 0.5f + 2f);
-                var s0 = new Vector2(top.x, formCentre.y + rs);
-                c.Line(sl.x, sl.y, s0.x, s0.y, Iron, 1.5f);
-                for (int k = 1; k <= steps; k++)
+                for (int i = 1; i < freeLine.Count; i++)
                 {
-                    float a = 90f - bendAngle * k / steps;
-                    var q = new Vector2(formCentre.x + Mathf.Cos(a * Mathf.Deg2Rad) * rs, formCentre.y + Mathf.Sin(a * Mathf.Deg2Rad) * rs);
-                    c.Line(s0.x, s0.y, q.x, q.y, Iron, 1.5f);
-                    s0 = q;
+                    Vector2 a = freeLine[i - 1], b = freeLine[i], n = new Vector2(-(b - a).y, (b - a).x).normalized * (thickPx * 0.5f + 2f);
+                    c.Line(a.x - n.x, a.y - n.y, b.x - n.x, b.y - n.y, Iron, 1.5f);
                 }
-                Vector2 st = s0 + tangent * rest;
-                c.Line(s0.x, s0.y, st.x, st.y, Iron, 1.5f);
-            }
-            clamp = new Rect(top.x - 70f, top.y - 20f, 70f, 40f);
-            c.Rect(top.x - 30f, top.y + thick * 0.5f, top.x - 20f, top.y + thick * 0.5f + 14f, Iron); // the clamp
             c.Disc(tip.x, tip.y, 6f, bending ? Mark : new Color(1f, 1f, 1f, 0.4f));
-            // The strain: how near the outside fibres are to tearing.
-            float tear = (float)CraftWoodwork.BendTear(Rules, p, BendLength(p), Mathf.Max(1f, bendAngle), Speed, strap, out _);
-            float strain = bendAngle <= 0f ? 0f : Mathf.Clamp01(1f - Mathf.Exp(-(tear + 0.4f) * 1.2f));
-            Meter(c, formArea.xMin, 40, 220, 10, strain, tear > 0f ? new Color(1f, 0.35f, 0.25f) : strain > 0.6f ? Mark : new Color(0.5f, 0.85f, 0.55f));
+            // STRAIN: how hard this form strains the outside fibres, against what they take (past the tick, they tear) - at
+            // the pace the bend is judged by: the fastest of the pull so far (a yank has strained them, whatever the hand
+            // does after it); the pace the hand has now is the thin tick
+            float strain = BendStrainNow(p, true);
+            Gauge(c, "STRAIN", 270f, 372f, 430f, 8f, strain / 1.5f, strain >= 1f ? Harm : strain >= 0.8f ? Fair : Good, 56f,
+                (0f, 0.8f / 1.5f, GoodBand), (0.8f / 1.5f, 1f / 1.5f, FairBand), (1f / 1.5f, 1f, HarmBand));
+            if (bending)
+            {
+                float now = 327f + 372f * Mathf.Clamp01(BendStrainNow(p, false) / 1.5f); // on the meter as Meter lays it out
+                c.Rect(now - 0.5f, 368f, now + 0.5f, 384f, new Color(1f, 1f, 1f, 0.55f));
+                string deg = $"{sweep:0}°";
+                CraftArt.Label(c, Mathf.Clamp(tip.x + 10f, 4f, 716f - CraftArt.LabelWidth(deg)), Mathf.Clamp(tip.y + 6f, 4f, 386f), deg, CraftArt.LabelInk);
+            }
         }
     }
 
-    private float Speed => Mathf.Clamp01(bendPeak / 90f); // degrees per second, 90 is forcing it
-
-    /// <summary>The length of the piece bent round the form for the angle (its radius × the angle), in mm.</summary>
-    private float BendLength(CraftPiece p) => Mathf.Min((float)p.Length * 0.8f, FormR * Mathf.Max(1f, bendAngle) * Mathf.Deg2Rad);
+    /// <summary>
+    /// The strain of a bend over the form (1 = the limit): at the pace it is judged by (<paramref name="judged"/>: the
+    /// fastest of the pull so far, as <see cref="Bend"/> sends it), or at the hand's pace now; before a pull, an even one.
+    /// </summary>
+    private float BendStrainNow(CraftPiece p, bool judged) =>
+        (float)CraftWoodwork.BendStrain(Rules, p, FormR, bending ? Mathf.Clamp01((judged ? sweepPeak : sweepEma) / 90f) : 0.1f, strap);
 
     private void BendPointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
-        if (p == null) return;
         if (phase == CraftPointer.Down)
         {
-            if (p.location == CraftLocation.Air && clamp.Contains(pos) || p.location == CraftLocation.Steam && steamBox.Contains(pos))
+            if (p == null) { said = "Pick a piece of wood (on the left)."; return; }
+            if (p.location == CraftLocation.Steam)
             {
-                dragging = true;
-                dragAt = pos;
+                if (steamBox.Contains(pos)) { dragging = true; dragAt = pos; }
                 return;
             }
-            if (p.location == CraftLocation.Air && formArea.Contains(pos))
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            if (Vector2.Distance(pos, tip) <= 24f || Near(freeLine, pos) <= 14f)
             {
                 bending = true;
-                bendAngle = bendPeak = 0f;
-                lastAngle = 0f;
-                lastAngleTime = Time.unscaledTime;
+                sweep0 = Bearing(pos);
+                sweep = sweepEma = sweepPeak = 0f;
+                sweepT = ui.PointerTime;
+                return;
             }
+            if (Near(heldLine, pos) <= 14f) { dragging = true; dragAt = pos; }
             return;
         }
         if (phase == CraftPointer.Drag)
@@ -852,15 +1649,17 @@ public sealed class CraftWoodshopMode : CraftMode
             if (dragging) dragAt = pos;
             if (bending)
             {
-                // The free end follows the hand round the form: the angle swept from the top.
-                Vector2 d = pos - formCentre;
-                float a = Mathf.Clamp(90f - Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg, 0f, 170f);
-                a = Mathf.Clamp(a + (float)Hands.Tremble(Mathf.RoundToInt(a) + 81) * 30f, 0f, 170f);
-                float now = Time.unscaledTime, dt = Mathf.Max(0.016f, now - lastAngleTime);
-                if (a > bendAngle) bendPeak = Mathf.Max(bendPeak * 0.97f, (a - lastAngle) / dt);
-                bendAngle = Mathf.Max(bendAngle, a);
-                lastAngle = a;
-                lastAngleTime = now;
+                // the free end swept round the form, from where it was taken (clockwise: down round the form)
+                float now = ui.PointerTime, dt = Mathf.Max(1e-3f, now - sweepT);
+                float next = Mathf.Clamp(Mathf.DeltaAngle(Bearing(pos), sweep0), 0f, MaxSweep(p));
+                float rate = Mathf.Max(0f, next - sweep) / dt;
+                sweepEma += (rate - sweepEma) * (1f - Mathf.Exp(-dt / 0.3f));
+                bool torn = BendStrainNow(p, true) >= 1f;
+                sweepPeak = Mathf.Max(sweepPeak, sweepEma);
+                sweep = next;
+                sweepT = now;
+                if (!torn && BendStrainNow(p, true) >= 1f)
+                    said = "Too fast: the fibres on the outside are strained past what they take - let go and it cracks. Right-click lets it spring back unbent.";
             }
             return;
         }
@@ -869,160 +1668,280 @@ public sealed class CraftWoodshopMode : CraftMode
         if (dragging)
         {
             dragging = false;
-            if (p.location == CraftLocation.Air && steamBox.Contains(pos) && Send(new CraftRequest(CraftRequestKind.Move, p.id) { location = CraftLocation.Steam }))
-                said = $"Into the steam. About {CraftWoodwork.Thickness(p) / 25.0:0.#} hours for its thickness - the white gauge fills; then bend it at once.";
-            else if (p.location == CraftLocation.Steam && !steamBox.Contains(pos) && Send(new CraftRequest(CraftRequestKind.Move, p.id) { location = CraftLocation.Air }))
-                said = "Out of the steam, hot and limp: bend it now, before it cools (the orange gauge).";
+            if (p.location == CraftLocation.Air && steamBox.Contains(pos))
+            {
+                Send(new CraftRequest(CraftRequestKind.Move, p.id) { location = CraftLocation.Steam }, (ok, why) =>
+                {
+                    if (ok) said = "Into the steam: it heats through first (HEAT), then it soaks (SOAK) - thicker wood takes longer. Then bend it at once.";
+                });
+            }
+            else if (p.location == CraftLocation.Steam && !steamBox.Contains(pos))
+            {
+                string id = p.id;
+                Send(new CraftRequest(CraftRequestKind.Move, id) { location = CraftLocation.Air }, (ok, why) =>
+                {
+                    CraftPiece q = Ws.Piece(id);
+                    if (ok && q != null)
+                        said = q.wood.steamed >= 0.99 ? $"Out of the steam, hot and limp: bend it now - it stays soft about {CraftWoodwork.CoolSeconds(q):0} s (SOFT)."
+                            : "Out of the steam before it soaked through (SOAK): it is still stiff inside.";
+                });
+            }
             return;
         }
-        if (bending)
-        {
-            bending = false;
-            if (bendAngle < 3f) { bendAngle = 0f; return; }
-            int n = p.segments.Count;
-            float lenFrac = BendLength(p) / Mathf.Max(1f, (float)p.Length);
-            float centre = bendAt != null ? bendAt.value : 0.5f;
-            int i0 = Mathf.Clamp(Mathf.FloorToInt((centre - lenFrac * 0.5f) * n), 0, n - 1), i1 = Mathf.Clamp(Mathf.CeilToInt((centre + lenFrac * 0.5f) * n) - 1, i0, n - 1);
-            float tear = (float)CraftWoodwork.BendTear(Rules, p, BendLength(p), bendAngle, Speed, strap, out double kept);
-            if (Send(new CraftRequest(CraftRequestKind.BendWood, p.id) { i0 = i0, i1 = i1, a = bendAngle, b = Speed, flag = strap }))
-                said = tear > 0f ? (CraftWoodwork.Plasticity(p) < 0.3 ? "Crack! It was too cold and stiff: steam it through first." : Speed > 0.6f ? "Crack! Forced round too fast." : "It creaks and the outside tears: too tight for it.") + $" It keeps {kept:0}°."
-                    : $"It takes the bend and springs back a little: {kept:0}° kept. Let it cool and dry on the form.";
-            Hands.Move(0.6);
-            bendAngle = 0f;
-        }
+        if (bending) Bend(p);
     }
 
-    // ------------------------------------------------------------------ drying
+    private void Bend(CraftPiece p)
+    {
+        bending = false;
+        if (p == null || sweep < 3f) { sweep = 0f; return; }
+        // the hands' tremble moves where the end is let go, drifting a quarter-second at a time
+        float angle = Mathf.Clamp(sweep + (float)Hands.Tremble(81 + Mathf.FloorToInt(sweepT * 4f)) * 30f, 1f, MaxSweep(p));
+        float speed = Mathf.Clamp01(sweepPeak / 90f);
+        double L = p.Length, arc = angle * Mathf.Deg2Rad * FormR;
+        int i0 = Mathf.Clamp(p.SegmentAt(From + 1e-4), 0, p.segments.Count - 1);
+        int i1 = Mathf.Clamp(p.SegmentAt(Math.Min(1, From + arc / L) - 1e-4), i0, p.segments.Count - 1);
+        string id = p.id;
+        CraftComponentSpec part = !string.IsNullOrEmpty(p.intentDesign) ? Rules.Design(p.intentDesign)?.Component(p.intentRole) : null;
+        Hands.Move(0.6);
+        sweep = 0f;
+        Send(new CraftRequest(CraftRequestKind.BendWood, id) { i0 = i0, i1 = i1, a = angle, b = speed, c = FormR, flag = strap }, (ok, why) =>
+        {
+            if (!ok) return;
+            CraftPiece q = Ws.Piece(id);
+            if (q == null) return;
+            double has = 0;
+            foreach (MetalSegment s in q.segments) has += s.bend;
+            string record = LastRecord(id);
+            bool cracked = record.Contains("cracked");
+            string verdict = cracked
+                ? (CraftWoodwork.Plasticity(q) < 0.3 ? "Crack! It was too cold and stiff: steam it through and bend it at once." : speed > 0.6f ? "Crack! Forced round too fast." : "It creaks and the outside tears: too tight a form for it (or no strap).")
+                : "It takes the bend and springs back a little.";
+            string want = part != null && part.shape != null ? (Math.Abs(part.shape.curvature) < 1 ? $" The {part.Name.ToLowerInvariant()} should stay straight." : $" The {part.Name.ToLowerInvariant()} wants {part.shape.curvature:0}°.") : "";
+            ui.Message($"{verdict} It has {has:0}° now.{want}");
+        });
+    }
+
+    // ================================================================== drying
+    private Rect trestle, stackArea, coverHandle, leftEnd, rightEnd, stripRect;
+    private Hold holding;
+    private bool coverHeld, coverPending;
+    private float coverValue = 0.2f, coverSentAt;
+
+    /// <summary>The cover as the stack has it (or as the hand holds it, until the stack shows it).</summary>
+    private float Cover => coverHeld || coverPending ? coverValue : Station != null && Station.Workshop != null && Ws.StackCover.HasValue ? (float)Ws.StackCover.Value : 0.2f;
+
+    /// <summary>How well the stickers are laid (0-1): the workshop's rule - four or more, one under each end, even gaps between.</summary>
+    private static float Evenness(List<float> stickers) => (float)CraftWoodwork.StickerEvenness(stickers);
+
+    /// <summary>How well an end is sealed: as the hands have waxed it, and never less than the piece's own seal (the workshop keeps it).</summary>
+    private static float Seal(PieceWork k, CraftPiece p, bool left) => Mathf.Max(left ? k.sealLeft : k.sealRight, Mathf.Clamp01((float)p.wood.endsSealed));
+
     private void DrawDry(CraftPixels c)
     {
         CraftPiece p = WoodPiece;
-        trestle = new Rect(30, 220, 330, 30);
-        stackArea = new Rect(420, 60, 280, 230);
-        // The shed: its roof, the stack's base, and the cover pulled over it as far as the handle.
-        c.Rect(stackArea.xMin - 10, stackArea.yMax + 30, stackArea.xMax + 10, stackArea.yMax + 40, Wood);
-        c.Rect(stackArea.xMin, stackArea.yMin - 10, stackArea.xMax, stackArea.yMin, new Color(0.25f, 0.25f, 0.27f));
+        trestle = new Rect(40, 190, 320, 24);
+        stripRect = new Rect(40, 168, 320, 34);
+        stackArea = new Rect(420, 70, 280, 216);
+        // The shed: the stack's base, its roof, and the cover pulled over it as far as the handle.
+        c.Rect(stackArea.xMin - 10, stackArea.yMin - 6, stackArea.xMax + 10, stackArea.yMin, Wood); // the base the stack stands on
+        c.Rect(stackArea.xMin - 6, stackArea.yMax + 6, stackArea.xMax + 6, stackArea.yMax + 14, new Color(0.25f, 0.25f, 0.27f));
+        float cover = Cover;
         float coverX = stackArea.xMin + stackArea.width * cover;
-        c.Rect(stackArea.xMin, stackArea.yMax + 20, coverX, stackArea.yMax + 30, new Color(0.45f, 0.5f, 0.35f));
-        coverHandle = new Rect(coverX - 8, stackArea.yMax + 14, 16, 22);
-        c.Rect(coverHandle.xMin, coverHandle.yMin, coverHandle.xMax, coverHandle.yMax, holding == 3 ? Mark : new Color(0.7f, 0.6f, 0.4f));
+        c.Rect(stackArea.xMin, stackArea.yMax + 14, coverX, stackArea.yMax + 24, new Color(0.45f, 0.5f, 0.35f));
+        coverHandle = new Rect(coverX - 8, stackArea.yMax + 8, 16, 22);
+        c.Rect(coverHandle.xMin, coverHandle.yMin, coverHandle.xMax, coverHandle.yMax, holding == Hold.Cover ? Mark : new Color(0.7f, 0.6f, 0.4f));
         // The sun where the cover does not reach.
-        if (cover < 0.95f) c.Halo(stackArea.xMax - 20, stackArea.yMax + 70, 30, new Color(1f, 0.9f, 0.5f), 0.6f * (1 - cover));
-        // What is in the stack already, with how dry each is.
+        if (cover < 0.95f) c.Halo(stackArea.xMax - 26, stackArea.yMax + 66, 26, new Color(1f, 0.9f, 0.5f), 0.6f * (1 - cover));
+        // What is in the stack already, with how dry each is (DRY: the tick is dry enough for a fit).
         int row = 0;
+        float dryTick = (float)((CraftWoodwork.Green - CraftWoodwork.DryEnough) / (CraftWoodwork.Green - CraftWoodwork.Seasoned));
         foreach (CraftPiece q in Ws.Pieces)
-            if (q.kind == CraftPieceKind.Wood && q.location == CraftLocation.Stack && q != (dragging ? p : null))
+            if (q.kind == CraftPieceKind.Wood && q.location == CraftLocation.Stack && !(dragging && q == p))
             {
-                var r = new Rect(stackArea.xMin + 10, stackArea.yMin + 10 + row * 34, stackArea.width - 20, 18);
-                if (r.yMax > stackArea.yMax) break;
+                // stacked from the bottom up, each board on its stickers
+                var r = new Rect(stackArea.xMin + 10, stackArea.yMin + 6 + row * 36, stackArea.width - 20, 16);
+                if (r.yMax + 14 > stackArea.yMax) break;
                 DrawBoard(c, q, r, false);
                 for (int k = 0; k < 4; k++) c.Rect(r.xMin + 10 + k * (r.width - 30) / 3f, r.yMin - 6, r.xMin + 18 + k * (r.width - 30) / 3f, r.yMin, new Color(0.25f, 0.18f, 0.1f));
-                Meter(c, r.xMin, r.yMax + 2, r.width, 4, 1f - Mathf.Clamp01(((float)q.wood.moisture - (float)CraftWoodwork.Seasoned) / 0.25f), new Color(0.9f, 0.8f, 0.55f));
+                float dryness = Mathf.Clamp01((float)((CraftWoodwork.Green - q.wood.moisture) / (CraftWoodwork.Green - CraftWoodwork.Seasoned)));
+                Gauge(c, "DRY", r.xMin, r.yMax + 4, r.width, 6, dryness, new Color(0.9f, 0.8f, 0.55f), 30f, (dryTick, 1f, GoodBand));
                 if (q == p) c.Frame(r.xMin - 2, r.yMin - 2, r.xMax + 2, r.yMax + 2, Mark, 1.5f);
                 row++;
             }
-        c.Rect(trestle.xMin, trestle.yMin - 40, trestle.xMin + 10, trestle.yMin, Wood);
-        c.Rect(trestle.xMax - 10, trestle.yMin - 40, trestle.xMax, trestle.yMin, Wood);
-        if (p == null || p.location == CraftLocation.Stack && !dragging) return;
-        // The board on the trestles: the stickers laid under it, its ends being sealed.
+        // The trestles.
+        c.Rect(trestle.xMin, trestle.yMin - 60, trestle.xMin + 10, trestle.yMin - 10, Wood);
+        c.Rect(trestle.xMax - 10, trestle.yMin - 60, trestle.xMax, trestle.yMin - 10, Wood);
+        c.Rect(trestle.xMin - 6, trestle.yMin - 16, trestle.xMax + 6, trestle.yMin - 10, Wood);
+        if (p == null || p.location == CraftLocation.Stack && !dragging || p.location != CraftLocation.Air && p.location != CraftLocation.Stack)
+            return;
+        PieceWork w = Work(p);
+        // The board on the trestles: the stickers laid under it, its ends being sealed (or carried).
         Rect b = dragging ? new Rect(dragAt.x - 120, dragAt.y - 12, 240, 24) : trestle;
         DrawBoard(c, p, b);
-        if (!dragging)
+        if (dragging)
+            return;
+        foreach (float s in w.stickers)
         {
-            foreach (float s in stickers) c.Rect(s - 4, b.yMin - 8, s + 4, b.yMin, new Color(0.25f, 0.18f, 0.1f));
-            leftEnd = new Rect(b.xMin - 6, b.yMin - 6, 22, b.height + 12);
-            rightEnd = new Rect(b.xMax - 16, b.yMin - 6, 22, b.height + 12);
-            c.Rect(b.xMin, b.yMin, b.xMin + 6, b.yMax, new Color(0.9f, 0.82f, 0.5f, sealLeft));
-            c.Rect(b.xMax - 6, b.yMin, b.xMax, b.yMax, new Color(0.9f, 0.82f, 0.5f, sealRight));
-            Meter(c, trestle.xMin, trestle.yMin - 60, trestle.width, 6, Evenness(), new Color(0.6f, 0.85f, 1f));
+            float sx = trestle.xMin + s * trestle.width;
+            c.Rect(sx - 4, trestle.yMin - 10, sx + 4, trestle.yMin, new Color(0.25f, 0.18f, 0.1f));
         }
+        leftEnd = new Rect(b.xMin - 8, b.yMin - 6, 22, b.height + 12);
+        rightEnd = new Rect(b.xMax - 14, b.yMin - 6, 22, b.height + 12);
+        float sealL = Seal(w, p, true), sealR = Seal(w, p, false);
+        c.Rect(b.xMin, b.yMin, b.xMin + 6, b.yMax, new Color(0.9f, 0.82f, 0.5f, sealL));
+        c.Rect(b.xMax - 6, b.yMin, b.xMax, b.yMax, new Color(0.9f, 0.82f, 0.5f, sealR));
+        float even = Evenness(w.stickers), sealed_ = (sealL + sealR) * 0.5f;
+        Gauge(c, "STICKERS", 24f, 372f, 340f, 8f, even, new Color(0.6f, 0.85f, 1f), 74f, (0f, (float)CraftWoodwork.EvenStickers, HarmBand), ((float)CraftWoodwork.EvenStickers, 1f, GoodBand));
+        Gauge(c, "SEALED", 24f, 356f, 340f, 8f, sealed_, new Color(0.9f, 0.82f, 0.5f), 74f, (0f, (float)CraftWoodwork.WellSealed, HarmBand), ((float)CraftWoodwork.WellSealed, 1f, GoodBand));
+        Gauge(c, "COVER", 24f, 340f, 340f, 8f, Cover, new Color(0.45f, 0.5f, 0.35f), 74f, (0f, (float)CraftWoodwork.WellShaded, HarmBand), ((float)CraftWoodwork.WellShaded, 1f, GoodBand));
     }
 
-    /// <summary>How evenly the stickers are laid (0-1): enough of them, with even gaps between them and the ends.</summary>
-    private float Evenness()
+    /// <summary>The board on the trestles was let go over the stack: stacked with its stickers, its seals and the cover as it is; the words name every shortfall.</summary>
+    private void StackIt(CraftPiece p)
     {
-        if (stickers.Count < 2) return 0f;
-        var xs = new List<float>(stickers);
-        xs.Sort();
-        var gaps = new List<float> { xs[0] - trestle.xMin };
-        for (int i = 1; i < xs.Count; i++) gaps.Add(xs[i] - xs[i - 1]);
-        gaps.Add(trestle.xMax - xs[xs.Count - 1]);
-        float mean = 0f;
-        foreach (float g in gaps) mean += g;
-        mean /= gaps.Count;
-        float v = 0f;
-        foreach (float g in gaps) v += (g - mean) * (g - mean);
-        float cv = Mathf.Sqrt(v / gaps.Count) / Mathf.Max(1f, mean);
-        float enough = Mathf.Clamp01((xs.Count - 1) / 3f);
-        return Mathf.Clamp01(1f - cv * 1.5f) * enough;
+        PieceWork w = Work(p);
+        float even = Evenness(w.stickers), sealed_ = (Seal(w, p, true) + Seal(w, p, false)) * 0.5f, cover = Cover;
+        string id = p.id;
+        Send(new CraftRequest(CraftRequestKind.StackWood, id) { a = even, b = sealed_, c = cover }, (ok, why) =>
+        {
+            if (!ok) return;
+            works.Remove(id); // stacked: the stickers and the seals went with it
+            var wrong = new List<string>();
+            if (even < CraftWoodwork.EvenStickers) wrong.Add("on too few or uneven stickers it will warp (one under each end, the rest evenly between: four or more)");
+            if (sealed_ < CraftWoodwork.WellSealed) wrong.Add("its ends are not sealed: they will check");
+            if (cover < CraftWoodwork.WellShaded) wrong.Add("in the sun it dries too fast and checks (pull the cover over)");
+            ui.Message(wrong.Count == 0 ? "Stacked well: shaded, sealed, on even stickers. Now it seasons slowly." : "Stacked - but " + string.Join("; ", wrong) + ".");
+        });
     }
 
     private void DryPointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
+        PieceWork w = Current;
         if (phase == CraftPointer.Down)
         {
-            if (coverHandle.Contains(pos)) { holding = 3; return; }
-            if (p == null) return;
-            if (p.location == CraftLocation.Stack && stackArea.Contains(pos)) { dragging = true; dragAt = pos; return; }
-            if (p.location != CraftLocation.Air) return;
-            if (leftEnd.Contains(pos)) { holding = 1; return; }
-            if (rightEnd.Contains(pos)) { holding = 2; return; }
-            if (trestle.Contains(pos))
+            if (coverHandle.Contains(pos)) { coverValue = Cover; holding = Hold.Cover; coverHeld = true; return; }
+            if (p == null) { said = "Pick a board (on the left) to lay it on the trestles."; return; }
+            if (p.location == CraftLocation.Stack)
             {
-                // A click on the board lays a sticker there (a click on one takes it up); a drag carries the board.
-                for (int i = 0; i < stickers.Count; i++)
-                    if (Mathf.Abs(stickers[i] - pos.x) < 8f) { stickers.RemoveAt(i); return; }
-                if (stickers.Count < 8 && pos.y < trestle.center.y) { stickers.Add(pos.x); return; }
-                dragging = true;
-                dragAt = pos;
+                if (stackArea.Contains(pos)) { dragging = true; dragAt = pos; }
+                return;
             }
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            // under the board a sticker (one under each end too), on the board's ends the wax
+            bool under = stripRect.Contains(pos) && pos.y < trestle.yMin;
+            if (!under && leftEnd.Contains(pos)) { holding = Hold.SealLeft; return; }
+            if (!under && rightEnd.Contains(pos)) { holding = Hold.SealRight; return; }
+            if (under)
+            {
+                // a sticker laid under the board where it is clicked (a click on one takes it up)
+                ignorePress = true;
+                float at = Mathf.Clamp01((pos.x - trestle.xMin) / trestle.width);
+                for (int i = 0; i < w.stickers.Count; i++)
+                    if (Mathf.Abs(w.stickers[i] - at) * trestle.width < 8f) { w.stickers.RemoveAt(i); return; }
+                if (w.stickers.Count < 8) w.stickers.Add(at);
+                else said = "Eight stickers are plenty.";
+                return;
+            }
+            if (trestle.Contains(pos)) { dragging = true; dragAt = pos; }
             return;
         }
         if (phase == CraftPointer.Drag)
         {
-            if (holding == 3) cover = Mathf.Clamp01((pos.x - stackArea.xMin) / stackArea.width);
+            if (holding == Hold.Cover)
+            {
+                float v = Mathf.Clamp01((pos.x - stackArea.xMin) / stackArea.width);
+                if (Mathf.Abs(v - coverValue) > 0.002f)
+                {
+                    coverValue = v;
+                    // a setting: only its latest value goes, without a full refresh of the window for each step of the drag
+                    ui.WithoutRefresh(() => Send(new CraftRequest(CraftRequestKind.StackCover) { a = v }));
+                }
+            }
             if (dragging) dragAt = pos;
             return;
         }
         if (phase != CraftPointer.Up)
             return;
-        holding = 0;
+        if (holding == Hold.Cover) { coverPending = true; coverSentAt = Time.unscaledTime; }
+        holding = Hold.None;
+        coverHeld = false;
         if (!dragging || p == null)
             return;
         dragging = false;
         if (p.location == CraftLocation.Air && stackArea.Contains(pos))
+            StackIt(p);
+        else if (p.location == CraftLocation.Stack && !stackArea.Contains(pos))
         {
-            float even = Evenness(), sealed_ = (sealLeft + sealRight) * 0.5f;
-            if (Send(new CraftRequest(CraftRequestKind.StackWood, p.id) { a = even, b = sealed_, c = cover }))
+            string id = p.id;
+            Send(new CraftRequest(CraftRequestKind.Move, id) { location = CraftLocation.Air }, (ok, why) =>
             {
-                said = even < 0.5f ? "Stacked on uneven stickers: it will dry unevenly and warp." : sealed_ < 0.5f ? "Stacked - its ends are bare: they will check as it dries." : cover < 0.5f ? "Stacked in the sun: it will dry fast, and check." : "Stacked well: shaded, sealed, on even stickers. Now it seasons slowly.";
-                stickers.Clear();
-                sealLeft = sealRight = 0f;
-            }
+                CraftPiece q = Ws.Piece(id);
+                if (ok && q != null)
+                    ui.Message(q.wood.moisture > CraftWoodwork.DryEnough ? "Taken off the stack still damp: it will shrink loose in a fit." : "Taken off the stack, seasoned.");
+            });
         }
-        else if (p.location == CraftLocation.Stack && !stackArea.Contains(pos) && Send(new CraftRequest(CraftRequestKind.Move, p.id) { location = CraftLocation.Air }))
-            said = p.wood.moisture > 0.18 ? "Taken off the stack still damp." : "Taken off the stack, seasoned.";
     }
 
-    // ------------------------------------------------------------------ sanding and finishing
+    // ================================================================== sanding and finishing
+    private Rect board, pot;
+    private float load;
+    private readonly CraftStroke sanding = new CraftStroke(0.12);
+    private readonly List<Vector2> sandPoints = new List<Vector2>(), brushing = new List<Vector2>();
+    private int sentPasses;
+
+    private CraftSupplyDefinition FinishSupply => finishes.Count > 0 && finishSupply != null ? Rules.Supply(finishes[Mathf.Clamp(finishSupply.value, 0, finishes.Count - 1)]) : null;
+
+    /// <summary>The roughness (0-60 on the gauge) a paper of <paramref name="grit"/> bites fully below; none for the coarsest.</summary>
+    private static float BitesBelow(float grit) => grit <= CraftWoodwork.CoarsestGrit + 1e-4 ? 999f : (float)(CraftWoodwork.SandFloor(grit - CraftWoodwork.GritStep) + CraftWoodwork.GritReach);
+
     private void DrawFinish(CraftPixels c)
     {
         CraftPiece p = WoodPiece;
-        pot = new Rect(600, 30, 90, 70);
-        c.Rect(30, 120, 690, 140, Wood);
+        pot = new Rect(614, 280, 76, 64);
+        c.Rect(30, 112, 690, 132, Wood);
+        board = new Rect(40, 140, 640, 110);
         if (finishTool == FinishTool.Brush)
         {
-            CraftSupplyDefinition s = finishes.Count > 0 ? Rules.Supply(finishes[Mathf.Clamp(finishSupply.value, 0, finishes.Count - 1)]) : null;
+            CraftSupplyDefinition s = FinishSupply;
+            Color stuff = s != null && s.color != Color.white ? s.color : new Color(0.6f, 0.38f, 0.15f);
+            stuff.a = 1f;
             c.Rect(pot.xMin, pot.yMin, pot.xMax, pot.yMax, Iron);
-            c.Rect(pot.xMin + 6, pot.yMax - 18, pot.xMax - 6, pot.yMax - 6, s != null && s.kind == CraftSupplyKind.Oil ? new Color(0.75f, 0.6f, 0.25f) : new Color(0.6f, 0.38f, 0.15f));
-            Meter(c, pot.xMin, pot.yMin - 12, pot.width, 6, load, Mark);
+            c.Rect(pot.xMin + 6, pot.yMax - 18, pot.xMax - 6, pot.yMax - 6, stuff);
+            Gauge(c, "BRUSH", 560f, 352f, 130f, 6f, load, Mark, 48f);
         }
-        if (p == null) return;
-        board = new Rect(40, 150, 640, 110);
+        if (p == null || p.location != CraftLocation.Air)
+            return;
         DrawBoard(c, p, board);
         DrawRough(c, p, board);
-        for (int i = 1; i < stroke.Count; i++)
-            c.Line(stroke[i - 1].x, stroke[i - 1].y, stroke[i].x, stroke[i].y, finishTool == FinishTool.Brush ? new Color(0.8f, 0.55f, 0.25f, 0.6f) : new Color(1f, 1f, 1f, 0.35f), finishTool == FinishTool.Brush ? 8f : 4f);
+        if (finishTool != FinishTool.Brush)
+        {
+            // SURFACE: how rough it is on the whole (smooth to the left), where the paper in hand bites (green) and hardly
+            // does (grey); the strip under the board says it stretch by stretch - the paper is judged where it goes:
+            // green where it bites, grey where the scratches there are deeper than it takes out, bright where it has done
+            // all it can
+            double rough = 0, l = 0;
+            foreach (MetalSegment s in p.segments) { rough += s.rough * s.length; l += s.length; }
+            rough /= Math.Max(1e-6, l);
+            float grit = Grits[(int)finishTool], floor = (float)CraftWoodwork.SandFloor(grit) / 60f, bites = Mathf.Min(1f, BitesBelow(grit) / 60f);
+            Gauge(c, "SURFACE", 30f, 372f, 470f, 8f, (float)rough / 60f, new Color(0.85f, 0.75f, 0.55f), 70f, (floor, bites, GoodBand), (bites, 1f, IdleBand));
+            int n = p.segments.Count;
+            for (int i = 0; i < n; i++)
+            {
+                double r = p.segments[i].rough;
+                Color band = CraftWoodwork.SkipsGrit(r, grit) ? IdleBand : r <= CraftWoodwork.SandFloor(grit) + 1.5 ? Good : GoodBand;
+                CraftArt.Span(c, board.xMin + board.width * i / n, board.yMin - 6f, board.xMin + board.width * (i + 1) / n, board.yMin - 2f, band);
+            }
+            for (int g = 0; g < Grits.Length; g++)
+            {
+                float gx = 100f + (float)CraftWoodwork.SandFloor(Grits[g]) / 60f * 400f;
+                c.Line(gx, 366f, gx, 371f, CraftArt.LabelDim, 1f);
+                CraftArt.Label(c, gx - 3f, 354f, GritNames[g].Substring(0, 1), CraftArt.LabelDim);
+            }
+        }
+        for (int i = 1; i < sandPoints.Count; i++) c.Line(sandPoints[i - 1].x, sandPoints[i - 1].y, sandPoints[i].x, sandPoints[i].y, new Color(1f, 1f, 1f, 0.35f), 4f);
+        for (int i = 1; i < brushing.Count; i++) c.Line(brushing[i - 1].x, brushing[i - 1].y, brushing[i].x, brushing[i].y, new Color(0.8f, 0.55f, 0.25f, 0.6f), 8f);
         Vector2 h = ui.Hover;
         if (h.x >= 0)
         {
@@ -1034,132 +1953,315 @@ public sealed class CraftWoodshopMode : CraftMode
     private void FinishPointer(CraftPointer phase, Vector2 pos)
     {
         CraftPiece p = WoodPiece;
-        if (finishTool == FinishTool.Brush && phase == CraftPointer.Down && pot.Contains(pos))
+        if (phase == CraftPointer.Down)
         {
-            load = 1f;
-            said = "The brush is loaded.";
+            if (finishTool == FinishTool.Brush && pot.Contains(pos))
+            {
+                ignorePress = true;
+                CraftSupplyDefinition s = FinishSupply;
+                if (s == null) { said = "There is no finish here."; return; }
+                load = 1f;
+                said = (s.kind == CraftSupplyKind.Wax ? "You take up wax on the cloth." : "The brush is loaded.")
+                       + (Have(s.id) == 0 ? $" You have no {ItemOf(s.id)}: only what is left in a pot you opened will do." : "");
+                return;
+            }
+            if (p == null) { said = "Pick a piece of wood (on the left) to lay it on the bench."; return; }
+            if (p.location != CraftLocation.Air) { said = OutOfPlace(p); return; }
+            if (!board.Contains(pos)) return;
+            if (finishTool == FinishTool.Brush)
+            {
+                brushing.Clear();
+                brushing.Add(pos);
+            }
+            else
+            {
+                sanding.Clear();
+                sandPoints.Clear();
+                sentPasses = 0;
+                SandSample(pos);
+            }
             return;
         }
-        if (p == null) return;
-        if (phase == CraftPointer.Down && board.Contains(pos))
-        {
-            stroke.Clear();
-            stroke.Add(pos);
-            strokeStart = Time.unscaledTime;
-            return;
-        }
-        if (stroke.Count == 0) return;
         if (phase == CraftPointer.Drag)
         {
-            stroke.Add(pos);
+            if (brushing.Count > 0) brushing.Add(pos);
+            else if (sanding.Active)
+            {
+                SandSample(pos);
+                while (sentPasses < sanding.PassRuns.Count) SendPass(p, sanding.PassRuns[sentPasses++]);
+            }
             return;
         }
         if (phase != CraftPointer.Up)
             return;
-        // What the stroke did: the span along the board, how much along the grain, how many passes, how steady.
-        float minX = float.MaxValue, maxX = float.MinValue, along = 0f, across = 0f, wobble = 0f;
-        int passes = 1, dir = 0;
-        for (int i = 0; i < stroke.Count; i++)
+        if (brushing.Count > 0) EndBrush(p);
+        else if (sanding.Active) EndSanding(p);
+    }
+
+    private void SandSample(Vector2 pos)
+    {
+        sandPoints.Add(pos);
+        sanding.Add(ui.PointerTime, (pos.x - board.xMin) / Mathf.Max(1f, board.width), (pos.y - board.yMin) / Mathf.Max(1f, board.height), 0, 0.3, Hands);
+    }
+
+    /// <summary>The pass under way, if it is one, and the stroke is over.</summary>
+    private void EndSanding(CraftPiece p)
+    {
+        while (sentPasses < sanding.PassRuns.Count) SendPass(p, sanding.PassRuns[sentPasses++]);
+        if (sanding.Current(out CraftPass last)) SendPass(p, last);
+        else if (sentPasses == 0 && sandPoints.Count > 2) said = "Longer strokes: back and forth along the board, a hand's length each way.";
+        sanding.Clear();
+        sandPoints.Clear();
+        sentPasses = 0;
+    }
+
+    /// <summary>One pass of the paper along the board: its stretch, how much along the grain - sent as it is made.</summary>
+    private void SendPass(CraftPiece p, CraftPass pass)
+    {
+        if (p == null || p.location != CraftLocation.Air) return;
+        int n = p.segments.Count;
+        int i0 = Mathf.Clamp(Mathf.FloorToInt((float)Math.Min(pass.from, pass.to) * n), 0, n - 1), i1 = Mathf.Clamp(Mathf.FloorToInt((float)Math.Max(pass.from, pass.to) * n), i0, n - 1);
+        float along = 0f, across = 0f;
+        for (int i = pass.first + 1; i <= pass.last && i < sandPoints.Count; i++)
         {
-            minX = Mathf.Min(minX, stroke[i].x);
-            maxX = Mathf.Max(maxX, stroke[i].x);
-            if (i == 0) continue;
-            float dx = stroke[i].x - stroke[i - 1].x, dy = stroke[i].y - stroke[i - 1].y;
-            along += Mathf.Abs(dx);
-            across += Mathf.Abs(dy);
-            wobble += Mathf.Abs(dy);
-            int s = Math.Sign(dx);
-            if (Mathf.Abs(dx) > 2f && s != 0) { if (dir != 0 && s != dir) passes++; dir = s; }
+            along += Mathf.Abs(sandPoints[i].x - sandPoints[i - 1].x);
+            across += Mathf.Abs(sandPoints[i].y - sandPoints[i - 1].y);
         }
+        float alongGrain = along + across > 1f ? along / (along + across) : 1f;
+        float grit = Grits[(int)finishTool];
+        string skips = SkippedWhere(p, i0, i1, grit);
+        string name = GritNames[(int)finishTool], coarser = finishTool > FinishTool.Coarse ? GritNames[(int)finishTool - 1] : "coarse";
+        Send(new CraftRequest(CraftRequestKind.SandWood, p.id) { i0 = i0, i1 = i1, a = grit, b = 1.5f, c = alongGrain }, (ok, why) =>
+        {
+            if (!ok) return;
+            said = alongGrain < 0.7f ? "Across the grain: it leaves scratches. Sand along it (left and right)."
+                : skips == "" ? (finishTool == FinishTool.Coarse ? "The coarse paper takes the tool marks off. Then the medium."
+                    : finishTool == FinishTool.Medium ? "The medium paper takes out the coarse scratches. Then the fine." : "The fine paper leaves it smooth.")
+                : skips == "all" ? $"The {name} paper hardly bites: the scratches it meets are deeper than it takes out (grey under the board). Go back to the {coarser} paper."
+                : $"{CraftText.Capital(skips)} the {name} paper hardly bites (grey under the board): take the {coarser} paper there first. Elsewhere it does its work.";
+        });
+    }
+
+    /// <summary>
+    /// Where along stretches <paramref name="i0"/>-<paramref name="i1"/> a paper of <paramref name="grit"/> hardly bites
+    /// (<see cref="CraftWoodwork.SkipsGrit(double, double)"/>, stretch by stretch): "" nowhere, "all" all of them, else in
+    /// words - "at the left end", "at the right end", "from 120 to 180 mm".
+    /// </summary>
+    private static string SkippedWhere(CraftPiece p, int i0, int i1, float grit)
+    {
+        int first = -1, last = -1, count = 0, n = p.segments.Count, a = Math.Max(0, i0), b = Math.Min(n - 1, i1);
+        for (int i = a; i <= b; i++)
+            if (CraftWoodwork.SkipsGrit(p.segments[i].rough, grit)) { if (first < 0) first = i; last = i; count++; }
+        if (first < 0) return "";
+        if (count == b - a + 1) return "all";
+        bool together = count == last - first + 1;
+        if (together && first == 0) return "at the left end";
+        if (together && last == n - 1) return "at the right end";
+        double from = 0;
+        for (int i = 0; i < first; i++) from += p.segments[i].length;
+        double to = from;
+        for (int i = first; i <= last; i++) to += p.segments[i].length;
+        return $"from {from:0} to {to:0} mm";
+    }
+
+    /// <summary>A stroke of the brush (or of the wax cloth) as it was laid: how even, how thick - sent with what it lays.</summary>
+    private void EndBrush(CraftPiece p)
+    {
+        var pts = new List<Vector2>(brushing);
+        brushing.Clear();
+        if (p == null || p.location != CraftLocation.Air || pts.Count < 2 || finishes.Count == 0) return;
+        float minX = float.MaxValue, maxX = float.MinValue, along = 0f, wobble = 0f;
+        for (int i = 0; i < pts.Count; i++)
+        {
+            minX = Mathf.Min(minX, pts[i].x);
+            maxX = Mathf.Max(maxX, pts[i].x);
+            if (i == 0) continue;
+            along += Mathf.Abs(pts[i].x - pts[i - 1].x);
+            wobble += Mathf.Abs(pts[i].y - pts[i - 1].y);
+        }
+        if (maxX - minX < 8f) return;
+        CraftSupplyDefinition s = FinishSupply;
+        if (s == null) return;
+        bool wax = s.kind == CraftSupplyKind.Wax;
+        if (load <= 0.05f) { said = wax ? "The cloth is dry: take up wax from the pot." : "The brush is dry: dip it in the pot."; return; }
         int n = p.segments.Count;
         int i0 = Mathf.Clamp(Mathf.FloorToInt((minX - board.xMin) / board.width * n), 0, n - 1), i1 = Mathf.Clamp(Mathf.FloorToInt((maxX - board.xMin) / board.width * n), i0, n - 1);
-        float alongGrain = along + across > 1f ? along / (along + across) : 1f;
-        stroke.Clear();
-        if (maxX - minX < 8f) return;
-        if (finishTool != FinishTool.Brush)
-        {
-            float grit = Grits[(int)finishTool];
-            bool skipped = p.wood.lastGrit >= 0 && grit - p.wood.lastGrit > 0.4f;
-            Hands.Move(0.25);
-            if (Send(new CraftRequest(CraftRequestKind.SandWood, p.id) { i0 = i0, i1 = i1, a = grit, b = passes * 1.5f, c = alongGrain }))
-                said = alongGrain < 0.7f ? "Across the grain: it leaves scratches. Sand along it." : skipped ? "Straight from coarse to fine: the coarse scratches stay under it. Use the medium paper between."
-                    : finishTool == FinishTool.Coarse ? "The coarse paper takes the tool marks off. Then the medium." : finishTool == FinishTool.Medium ? "The medium paper takes out the coarse scratches. Then the fine." : "The fine paper leaves it smooth.";
-            return;
-        }
-        if (finishes.Count == 0) return;
-        if (load <= 0.05f) { said = "The brush is dry: dip it in the pot."; return; }
+        float alongGrain = along + wobble > 1f ? along / (along + wobble) : 1f;
         // A loaded brush on a short stroke lays it thick; a long, straight stroke lays it thin and even.
         float spread = (maxX - minX) / board.width;
         float thick = Mathf.Clamp01(load * (1.1f - 0.8f * spread));
         float even = Mathf.Clamp01(alongGrain * (1f - wobble / Mathf.Max(1f, along) * 2f)) * Mathf.Clamp01(1f - (float)Hands.Unsteadiness * 3f);
         load = Mathf.Max(0f, load - 0.35f - 0.4f * spread);
-        string id = finishes[Mathf.Clamp(finishSupply.value, 0, finishes.Count - 1)];
-        if (Send(new CraftRequest(CraftRequestKind.Varnish, p.id) { id = id, i0 = i0, i1 = i1, a = even, b = thick }))
-            said = p.wood.moisture > 0.2 ? "On damp wood it clouds: season it first." : thick > 0.75f ? "Laid on thick: it runs and sags." : even < 0.5f ? "A patchy, wavering coat." : "A thin, even coat. Let it dry, sand lightly with the fine paper, and lay another.";
+        bool damp = p.wood.moisture > CraftWoodwork.DryEnough, overWet = p.wood.finishWet > 0.4 && !wax;
+        float dryS = (float)((s.dryingHours > 0 ? s.dryingHours : CraftWoodwork.DefaultDryingHours) / Math.Max(1e-3, Rules.Settings.processHoursPerSecond));
+        Hands.Move(0.2);
+        Send(new CraftRequest(CraftRequestKind.Varnish, p.id) { id = s.id, i0 = i0, i1 = i1, a = even, b = thick }, (ok, why) =>
+        {
+            if (!ok) return;
+            if (wax) said = damp ? "Wax on damp wood smears." : thick > 0.75f ? "Laid on thick: the wax smears instead of working in." : even < 0.5f ? "Patchy: rub it in with long, even strokes." : "Rubbed in thin and even: a soft sheen that sheds water.";
+            else if (s.kind == CraftSupplyKind.Oil) said = damp ? "On damp wood little of the oil soaks in: season it first." : $"It soaks into the grain (no film). It dries in about {dryS:0} s; a smooth surface takes it best.";
+            else said = damp ? "On damp wood it clouds: season it first." : overWet ? "Over a wet coat it wrinkles: let the last one dry first." : thick > 0.75f ? "Laid on thick: it runs and sags." : even < 0.5f ? "A patchy, wavering coat." : $"A thin, even coat. Let it dry (about {dryS:0} s), sand lightly with the fine paper, and lay another.";
+        });
     }
 
     // ------------------------------------------------------------------ the pointer
     public override void Pointer(CraftPointer phase, Vector2 pos, bool right, float scroll)
     {
+        if (phase == CraftPointer.Move)
+            return;
+        if (phase == CraftPointer.Cancel)
+        {
+            Cancel();
+            return;
+        }
+        if (phase == CraftPointer.Down) ignorePress = false;
+        if (ignorePress)
+        {
+            if (phase == CraftPointer.Up) ignorePress = false;
+            return;
+        }
         switch (place)
         {
-            case Place.Debark: DebarkPointer(phase, pos, right, scroll); break;
-            case Place.Split: SplitPointer(phase, pos); break;
-            case Place.Rive: RivePointer(phase, pos); break;
-            case Place.Saw: SawPointer(phase, pos); break;
-            case Place.Bend: BendPointer(phase, pos); break;
-            case Place.Dry: DryPointer(phase, pos); break;
-            default: FinishPointer(phase, pos); break;
+            case Place.Debark: DebarkPointer(phase, pos, scroll); break;
+            case Place.Split: if (phase != CraftPointer.Scroll) SplitPointer(phase, pos); break;
+            case Place.Rive: if (phase != CraftPointer.Scroll) RivePointer(phase, pos); break;
+            case Place.Saw: if (phase != CraftPointer.Scroll) SawPointer(phase, pos); break;
+            case Place.Bend: if (phase != CraftPointer.Scroll) BendPointer(phase, pos); break;
+            case Place.Dry: if (phase != CraftPointer.Scroll) DryPointer(phase, pos); break;
+            default: if (phase != CraftPointer.Scroll) FinishPointer(phase, pos); break;
         }
     }
 
+    /// <summary>Right-click: the hands put down what they hold, as it is - nothing is sent, nothing of the piece's work is lost.</summary>
+    private void Cancel()
+    {
+        bool any = knife.Count > 0 || lining || maul.Raised || mallet.Raised || levering || sawing || dragging || bending || holding != Hold.None || sanding.Active || brushing.Count > 0;
+        if (!any) return;
+        if (knife.Count > 0) said = "The drawknife is lifted: that pull did nothing.";
+        else if (maul.Raised || mallet.Raised) said = "You lower it without striking.";
+        else if (sawing) said = "The saw rests in its kerf.";
+        else if (bending) said = "You let it spring back: nothing bent.";
+        else if (dragging) said = "Put back where it was.";
+        else if (sanding.Active) said = sentPasses > 0 ? "The paper is lifted (the passes made count)." : "The paper is lifted.";
+        else if (brushing.Count > 0) said = "The brush is lifted: that stroke laid nothing.";
+        knife.Clear();
+        brushing.Clear();
+        sanding.Clear();
+        sandPoints.Clear();
+        sentPasses = 0;
+        lining = false;
+        maul.Lower();
+        mallet.Lower();
+        levering = false;
+        if (sawing) StopSaw();
+        dragging = false;
+        bending = false;
+        sweep = 0f;
+        if (holding == Hold.Cover) { coverPending = true; coverSentAt = Time.unscaledTime; }
+        holding = Hold.None;
+        coverHeld = false;
+        ignorePress = true; // the rest of the press does nothing
+    }
+
+    // ------------------------------------------------------------------ the words
     public override void Refresh()
     {
         RefreshCounts(finishSupply, finishes);
+        if (bendFrom != null) SetSlider(bendFrom, bendFrom.value); // its readout in this piece's millimetres (the piece may have been cut)
+        PieceWork cur = Current;
+        if (faceText != null) faceText.text = cur != null ? $"Face {cur.face + 1} of {CraftWoodwork.LogFaces} up - the wheel turns the log too." : "The wheel turns the log.";
         if (info == null) return;
         CraftPiece p = WoodPiece;
         string how;
-        switch (place)
-        {
-            case Place.Debark:
-                how = p == null ? "<b>Debark</b>: pick a log (left)." : CraftWoodwork.BarkLeft(p) <= 0.001 ? "<b>Debarked</b>: split it, rive it or season it."
-                    : $"<b>Debark</b>: pull the drawknife right to left along the log, its edge in the bright band (the cambium, green on the gauge): blue skims, red gouges. Turn the log for its other faces (wheel or right-click). {CraftWoodwork.BarkLeft(p) * 100:0}% of the bark left.";
-                break;
-            case Place.Split:
-                how = !wedgeSet ? "<b>Split</b>: drag a line right across the log's end where the wedge goes - through the heart (the dark dot) and along a ray or the check splits it evenly and straight."
-                    : $"Drive the wedge: hold to raise the maul, release on the wedge (full, square blows). {Mathf.Clamp01(splitWork) * 100:0}% split. Click away from the wedge to lift it out.";
-                break;
-            case Place.Rive:
-                how = riveStage == 0 ? "<b>Rive</b>: click on a grain line at the left end of the billet to set the froe on it (a line near the middle, that stays in the wood)."
-                    : riveStage == 1 ? $"Drive the froe in with the mallet: hold and release ({malletBlows}/2 good blows)."
-                    : "Lever the split along: hold and move right, staying on the highlighted grain line. Not too fast.";
-                break;
-            case Place.Saw:
-                how = markX < 0f ? "<b>Saw</b>: click on the board to mark where to cut." : sawing ? $"Stroke up and down, keep the blade on the mark ({kerf * 100:0}% through)." : "Press on the mark to start sawing (or click elsewhere to mark again).";
-                break;
-            case Place.Bend:
-                how = p == null ? "Pick a piece of wood." : p.location == CraftLocation.Steam ? $"Steaming: {p.wood.steamed * 100:0}% through (white gauge). When it is through, drag it out and bend it at once."
-                    : $"<b>Steam &amp; bend</b>: drag it by its clamped end (by the clamp) into the steam box; out and hot (orange gauge), drag its free end round the form steadily. The gauge over the form is the strain: keep it out of the red. {(strap ? "The strap holds the outside." : "No strap: it tears sooner.")}";
-                break;
-            case Place.Dry:
+        if (p != null && p.location != CraftLocation.Air && !(place == Place.Bend && p.location == CraftLocation.Steam) && !(place == Place.Dry && p.location == CraftLocation.Stack))
+            how = OutOfPlace(p);
+        else
+            switch (place)
             {
-                // The air seasons wood only as dry as it is itself: damp air leaves it damp.
-                double air = CraftWoodwork.Equilibrium(Ws.Humidity);
-                bool meter = Station.HasInstrument(CraftInstruments.MoistureMeter);
-                string wet = p == null ? "" : meter ? $"the moisture meter reads {p.wood.moisture * 100:0}%" : p.wood.moisture > 0.3 ? "it is heavy and cold with water" : p.wood.moisture > 0.18 ? "it still feels cool and damp" : "it feels dry and light";
-                how = p != null && p.location == CraftLocation.Stack ? $"In the stack: {wet}{(meter ? $" (seasoned is about {CraftWoodwork.Seasoned * 100:0}%; this air dries it to about {air * 100:0}%)" : "")}. Drag it off the stack to take it down."
-                    : $"<b>Dry</b>: click under the board to lay stickers, evenly (blue gauge); hold on each end to seal it with wax; drag the green cover over the stack; then drag the board onto the stack.{(p != null ? $" Now {wet}." : "")}";
-                break;
+                case Place.Debark:
+                    how = p == null ? "<b>Debark</b>: pick a log (on the left)." : CraftWoodwork.BarkLeft(p) <= 0.001 ? "<b>Debarked</b>: split it, rive it or season it."
+                        : $"<b>Debark</b>: pull the drawknife right to left along the log, its edge on the bright line (green on DEPTH: grey skims, red gouges{(p.wood.moisture > 0.3 ? "" : " - a dry log gouges sooner")}). Two pulls bare a face; turn the log for the next. {CraftWoodwork.BarkLeft(p) * 100:0}% of the bark left.";
+                    break;
+                case Place.Split:
+                    how = p == null ? "<b>Split</b>: pick a log or a large half (on the left)."
+                        : !CraftWoodwork.SplitsWithWedges(p, out string small) ? $"<b>Split</b>: {NotForTheWedges(p, small)}"
+                        : cur != null && cur.wedgeSet ? $"Drive the wedge: hold the maul, let go on the wedge - full, square blows. {Mathf.Clamp01(cur.splitWork) * 100:0}% split. (Lift the wedge out to draw its line again.)"
+                        : $"<b>Split</b> ({CraftWoodwork.CrossSize(p):0} mm across): drag a line right across the end where the wedge goes{(CraftWoodwork.WedgeLineAcross(p, 1, 0, out _) && CraftWoodwork.WedgeLineAcross(p, 0, 1, out _) ? "" : $", across its {CraftWoodwork.CrossSize(p):0} mm side")}. The halves are as even as the line divides the end; through the heart and along a ray (or the check) it splits straight.";
+                    break;
+                case Place.Rive:
+                    how = p == null ? "<b>Rive</b>: pick a billet (on the left)."
+                        : cur == null || cur.riveStage == 0 ? (!CraftWoodwork.RivesWithFroe(p, out string no) ? $"<b>Rive</b>: {no}" : $"<b>Rive</b> ({RiveDepth(p):0} mm across): click a grain line at the left end to set the froe - where it is set is where it parts (the middle line halves it).")
+                        : cur.riveStage == 1 ? $"Drive the froe in with the mallet: hold, and let go ({cur.malletBlows}/2 good blows)."
+                        : "Lever the split along from its end: hold and move right on the highlighted grain line, at an even pace (PACE in the green).";
+                    break;
+                case Place.Saw:
+                    how = p == null ? "<b>Saw</b>: pick a board (on the left)."
+                        : ripMode ? (cur == null || cur.ripA < 0f ? $"<b>A taper</b> ({p.Length:0} mm long, up to {CraftWoodwork.CrossSize(p):0} mm wide): click where the line starts on the board (its height there is the width it leaves), then where it ends."
+                            : cur.ripB < 0f ? "Click where the taper's line ends."
+                            : $"Saw along the line: long strokes back and forth, keeping on it ({cur.saw.Progress * 100:0}% done).")
+                        : cur == null || cur.mark < 0f ? $"<b>Saw across</b> ({p.Length:0} mm long): click on the board to mark where to cut - it is cut exactly at the mark."
+                        : $"Press on the mark and saw: long strokes up and down across the board, keeping the blade on the line ({cur.saw.Progress * 100:0}% through).";
+                    break;
+                case Place.Bend:
+                    how = p == null ? "<b>Steam & bend</b>: pick a piece of wood (on the left)." : BendText(p);
+                    break;
+                case Place.Dry:
+                {
+                    // The air seasons wood only as dry as it is itself: damp air leaves it damp.
+                    double air = CraftWoodwork.Equilibrium(Ws.Humidity);
+                    bool meter = Station.HasInstrument(CraftInstruments.MoistureMeter);
+                    string wet = p == null ? "" : meter ? $"the moisture meter reads {p.wood.moisture * 100:0}%" : p.wood.moisture > 0.3 ? "it is heavy and cold with water" : p.wood.moisture > CraftWoodwork.DryEnough ? "it still feels cool and damp" : "it feels dry and light";
+                    how = p != null && p.location == CraftLocation.Stack
+                        ? $"In the stack: {wet}{(meter ? $" (dry enough for a fit under {CraftWoodwork.DryEnough * 100:0}%; this air dries it to about {air * 100:0}%)" : "")}. Drag it off the stack to take it down."
+                        : $"<b>Dry</b>: click under the board to lay stickers - one under each end, the rest evenly between (four or more: STICKERS past the tick); hold on each end to seal it; drag the cover's handle over the stack; then drag the board onto the stack.{Thick(p)}{Seals(p)}{(p != null ? $" Now {wet}." : "")}";
+                    break;
+                }
+                default:
+                {
+                    CraftSupplyDefinition s = FinishSupply;
+                    if (finishTool == FinishTool.Brush)
+                        how = s == null ? "There is no finish here."
+                            : s.kind == CraftSupplyKind.Wax ? $"<b>Wax</b>: click the pot to take up {s.Name.ToLowerInvariant()}, then rub long, thin strokes along the board: it sheds water but wears away."
+                            : s.kind == CraftSupplyKind.Oil ? $"<b>Oil</b>: click the pot to load the brush, then lay long strokes along the board: {s.Name.ToLowerInvariant()} soaks into the grain (no film) and must dry between coats."
+                            : $"<b>Varnish</b>: click the pot to load the brush, then lay long, thin strokes along the board: {s.Name.ToLowerInvariant()} builds a film; let each coat dry. A pot lays about two full-length coats.";
+                    else
+                        how = $"<b>Sand</b> ({GritNames[(int)finishTool]}): stroke back and forth along the grain (left-right), a hand's length each way - coarse, then medium, then fine: each paper clears only the scratches of the one before. Under the board: green where this paper bites, grey where it is too fine for the scratches there, bright where it has done all it can.";
+                    break;
+                }
             }
-            default:
-            {
-                CraftSupplyDefinition s = finishes.Count > 0 ? Rules.Supply(finishes[Mathf.Clamp(finishSupply.value, 0, finishes.Count - 1)]) : null;
-                bool wax = s != null && s.kind == CraftSupplyKind.Wax;
-                how = finishTool == FinishTool.Brush ? (wax ? "<b>Wax</b>: click the pot to take up wax, then rub long strokes along the board: it sheds water but wears away." : "<b>Seal</b>: click the pot to load the brush, then lay long strokes along the board. Thin coats, dry between them (a resin sealer builds the hardest film; oil soaks in).")
-                    : $"<b>Sand</b>: stroke back and forth along the grain (left-right) - coarse, then medium, then fine: each paper only takes out the last one's scratches.{(p != null && p.wood.lastGrit >= 0 ? $" Finest so far: {(p.wood.lastGrit > 0.8 ? "fine" : p.wood.lastGrit > 0.45 ? "medium" : "coarse")}." : "")}";
-                break;
-            }
-        }
         info.text = (how + " " + said).Trim();
+    }
+
+    /// <summary>
+    /// Stock thicker than the stack seasons at its pace: it takes longer - and a half, a quarter or a log (twice that
+    /// thickness or more) is better split or rived first, its billets seasoning at the stack's pace.
+    /// </summary>
+    private static string Thick(CraftPiece p)
+    {
+        if (p == null) return "";
+        double pace = CraftWoodwork.Seasoning(p);
+        return pace < 0.95 ? $" {CraftWoodwork.Thickness(p):0} mm thick, it seasons {1 / pace:0.#} times as slowly{(pace <= 0.5 ? ": split or rive it first" : "")}." : "";
+    }
+
+    /// <summary>Its ends sealed before (the wax stays on through the stack and off it; a fresh saw cut is bare).</summary>
+    private static string Seals(CraftPiece p) =>
+        p == null || p.wood.endsSealed < 0.05 ? "" : p.wood.endsSealed >= CraftWoodwork.WellSealed ? " Its ends are still sealed from before." : " Its ends are partly sealed from before (a fresh cut is bare).";
+
+    private string BendText(CraftPiece p)
+    {
+        if (p.location == CraftLocation.Steam)
+            return CraftWoodwork.MeanTemperature(p) < CraftWoodwork.SoakHeat
+                ? $"Heating through ({CraftWoodwork.MeanTemperature(p):0} °C): it soaks once it is hot (HEAT past the tick)."
+                : p.wood.steamed < 1 ? $"Soaking: {p.wood.steamed * 100:0}% through (SOAK). When it is through, drag it out and bend it at once."
+                : "Steamed through: drag it out and bend it at once (and do not leave it in too long: it goes soft and mushy).";
+        double has = 0;
+        foreach (MetalSegment s in p.segments) has += s.bend;
+        CraftComponentSpec part = !string.IsNullOrEmpty(p.intentDesign) ? Rules.Design(p.intentDesign)?.Component(p.intentRole) : null;
+        string want = part == null || part.shape == null ? $"It has {has:0}° of bend."
+            : Math.Abs(part.shape.curvature) < 1 ? $"The {part.Name.ToLowerInvariant()} should stay straight{(Math.Abs(has) > 2 ? $" (it has {has:0}°)" : "")}."
+            : $"The {part.Name.ToLowerInvariant()} wants {part.shape.curvature:0}°: it has {has:0}° (it springs back: bend a little past).";
+        double soft = CraftWoodwork.Plasticity(p);
+        string state = soft > 0.3 ? $"Soft for about {Math.Max(0, p.wood.steamed * CraftWoodwork.CoolSeconds(p)):0} s more: drag the free end round the form, at an even pace." : "It is stiff: drag it by its clamped end into the steam box first.";
+        return $"<b>Steam & bend</b>: {state} STRAIN past the tick tears it (a gentler form, the strap, more steam) - it keeps the pull's fastest pace, the thin tick is the pace now. {want}";
     }
 }

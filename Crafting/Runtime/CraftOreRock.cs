@@ -3,11 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// One stone of an ore lump in 3D, for the brushes: a lumpy, seeded mesh coloured vertex by vertex - the ore mineral in
+/// One stone of an ore lump in 3D, for the brushes, as big as it is (a pebble drawn larger: <see cref="Magnified"/>, so the
+/// brush covers as much of it as it would of the real one): a lumpy, seeded mesh coloured vertex by vertex - the ore mineral in
 /// veins and patches through the loose rock, a dull weathered rind over parts of it, and patches of dirt and caked clay
-/// on top - as much of each as the fragment really holds. Brushing scrubs the vertices under the brush: the dirt comes
-/// off (as well as the brush can take it), the wire brush knocks the rind off. It measures how much of the surface each
-/// brush has gone over, which is what the workshop's <see cref="CraftWorkshop.BrushOre"/> takes.
+/// on top - as much of each as the fragment really holds now (and what each brush has already gone over, the fragment's
+/// <see cref="OreFragment.Brushed"/>). Brushing scrubs the vertices under the brush: the dirt comes off as well as that
+/// brush takes it, the wire brush knocks the rind off - each brush going over each patch once, as the workshop's rule
+/// says. What a going-over sends (<see cref="GoingOver"/>, then <see cref="NewGoingOver"/>) is counted as the workshop
+/// counts it (<see cref="CraftBrushCover"/>: each vertex by the patch of the stone it stands for - the many vertices
+/// crowded at the poles count for the little surface they cover - and by what the brush can take there), so the stone
+/// shows what the workshop does with it.
 /// </summary>
 public sealed class CraftOreRock
 {
@@ -18,26 +23,45 @@ public sealed class CraftOreRock
     private readonly List<int> tris = new List<int>();
     private readonly List<Color> colors = new List<Color>();
     private Color[] baseColor = new Color[0];
-    private float[] dirt = new float[0], rind = new float[0];
-    // How far each brush has gone over each vertex (0-1): a brush can clean only so much, however long it scrubs.
-    private readonly float[][] scrubbed = new float[3][];
-    private float dirtAtStart, rindAtStart;
+    // What each vertex shows and what each brush has done there: the workshop's own accounting.
+    private readonly CraftBrushCover cover = new CraftBrushCover();
+    private double dirtAtStart, rindAtStart;
     private Color dirtColor, rindColor;
 
+    /// <summary>The smallest and the largest a stone is drawn (m, its radius): a fine is drawn larger than it is.</summary>
+    public const float MinRadius = 0.03f, MaxRadius = 0.08f;
+    private float realRadius = 0.06f;
+
     public Mesh Mesh { get; private set; }
+    /// <summary>The stone's radius as drawn (m): its real size, within <see cref="MinRadius"/>..<see cref="MaxRadius"/>.</summary>
     public float Radius { get; private set; } = 0.06f;
+    /// <summary>How much larger than it really is the stone is drawn (1 for a stone drawn at its size).</summary>
+    public float Magnified => Radius / realRadius;
     /// <summary>The fragment this stone shows (its index in the lump when it was built).</summary>
     public int Fragment { get; private set; } = -1;
 
-    /// <summary>Dirt left on it, as a share of what it had when it was put on the bench (0-1).</summary>
-    public float DirtLeft => dirtAtStart > 1e-4f ? Mean(dirt) / dirtAtStart : 0f;
-    /// <summary>Rind left on it, as a share of what it had (0-1).</summary>
-    public float RindLeft => rindAtStart > 1e-4f ? Mean(rind) / rindAtStart : 0f;
-    public bool Dirty => Mean(dirt) > 0.05f;
-    public bool Rinded => Mean(rind) > 0.05f;
+    /// <summary>
+    /// The dirt on it now as a share of what it had when it was put on the bench (0-1, by its mass): what the brushes took
+    /// since, as the workshop takes it. The station's dirt share counts the stone lighter too, by all the brushes took off
+    /// it (<see cref="CraftOres.BrushTo"/>: what the 3D ore bench's Clean meter shows).
+    /// </summary>
+    public double DirtSinceBuilt => dirtAtStart > 1e-6 ? cover.MeanDirt / dirtAtStart : 1;
+    /// <summary>Rind left on it, as a share of what the stone had before any brush knocked it off (0-1).</summary>
+    public float RindLeft => rindAtStart > 1e-6 ? (float)(cover.MeanRind / rindAtStart) : 0f;
+    public bool Dirty => cover.MeanDirt > 0.05;
+    public bool Rinded => cover.MeanRind > 0.05;
 
-    /// <summary>How much of its surface <paramref name="brush"/> has gone over so far (0-1).</summary>
-    public float Covered(CraftOreBrush brush) => scrubbed[(int)brush] != null ? Mean(scrubbed[(int)brush]) : 0f;
+    /// <summary>
+    /// A new going-over starts: what was scrubbed so far went to the workshop as one going-over, and what a brush goes over
+    /// from here is the next one. The stone stays as it is: a brush that has gone over a patch takes nothing more there.
+    /// </summary>
+    public void NewGoingOver() => cover.Begin();
+
+    /// <summary>How much more of the stone <paramref name="brush"/> went over in this going-over, as the workshop counts it (0-1): what it sends.</summary>
+    public double GoingOver(CraftOreBrush brush) => cover.GoingOver(brush);
+
+    /// <summary>How far <paramref name="brush"/> has gone over the stone, as the workshop counts it (0-1: at 1 it takes no more).</summary>
+    public double Covered(CraftOreBrush brush) => cover.Covered(brush);
 
     /// <summary>Builds the stone for fragment <paramref name="index"/> of <paramref name="lump"/> (the same stone every time).</summary>
     public void Build(CraftRules rules, CraftPiece lump, int index)
@@ -77,16 +101,31 @@ public sealed class CraftOreRock
         var veins = Blobs(4 + (int)(f.mineral * 10), 0.3f, 0.9f, 0.6f, 1.2f);
         var crust = Blobs(6, 0.5f, 1.3f, 0.6f, 1.1f);
         var mud = Blobs(9, 0.4f, 1.1f, 0.6f, 1.2f);
-        Radius = Mathf.Lerp(0.04f, 0.07f, Mathf.Clamp01((float)f.size / 12f));
+        // As big as it really is (its size is across it), a pebble drawn no smaller than can be brushed and seen.
+        realRadius = Mathf.Max(0.0005f, (float)f.size * 0.005f);
+        Radius = Mathf.Clamp(realRadius, MinRadius, MaxRadius);
         float squash = 0.72f + 0.2f * (float)rnd.NextDouble();
         float mineralCut = 1f - Mathf.Clamp01((float)f.mineral) * 1.1f;
-        float dirtShare = Mathf.Clamp01((float)f.dirt / 0.2f);
-        float rindShare = Mathf.Clamp01((float)(f.gangue * CraftOres.Rind(f.size)) * 3f);
+        // The dirt in its patches, as deep as the stone's dirt is now (a dirtier stone darker, a brushed one lighter); the
+        // rind as the rock carries it, less what the brushes have already knocked off.
+        float dirtShare = Mathf.Clamp01((float)f.dirt / 0.15f);
+        float rindShare = Mathf.Clamp01((float)(f.gangue * f.RindShare) * 3f);
+        var takesDirt = new double[3];
+        var takesRind = new double[3];
+        var brushed = new double[3];
+        double rindKept = 1;
+        for (int b = 0; b < 3; b++)
+        {
+            takesDirt[b] = CraftOres.BrushOnDirt((CraftOreBrush)b, o);
+            takesRind[b] = CraftOres.BrushOnRind((CraftOreBrush)b);
+            brushed[b] = f.Brushed((CraftOreBrush)b);
+            rindKept *= 1 - takesRind[b] * brushed[b];
+        }
 
         verts.Clear(); dirs.Clear(); tris.Clear();
         var bc = new List<Color>();
-        var dl = new List<float>();
-        var rl = new List<float>();
+        var dl = new List<double>();
+        var rl = new List<double>();
         for (int y = 0; y <= Lat; y++)
         {
             float th = Mathf.PI * y / Lat;
@@ -100,8 +139,8 @@ public sealed class CraftOreRock
                 dirs.Add(new Vector3(d.x, d.y / squash, d.z).normalized);
                 float vein = Field(veins, d);
                 bc.Add(Color.Lerp(rock, ore, Mathf.Clamp01((vein - mineralCut) * 3f + 0.5f * (float)f.mineral)));
-                dl.Add(Mathf.Clamp01((Field(mud, d) - (1f - dirtShare)) * 3f));
-                rl.Add(Mathf.Clamp01((Field(crust, d) - (1f - rindShare)) * 3f));
+                dl.Add(Mathf.Clamp01((Field(mud, d) - 0.35f) * 2f) * dirtShare);
+                rl.Add(Mathf.Clamp01((Field(crust, d) - (1f - rindShare)) * 3f) * rindKept);
             }
         }
         for (int y = 0; y < Lat; y++)
@@ -112,11 +151,20 @@ public sealed class CraftOreRock
                 tris.Add(b); tris.Add(e); tris.Add(c);
             }
         baseColor = bc.ToArray();
-        dirt = dl.ToArray();
-        rind = rl.ToArray();
-        for (int k = 0; k < 3; k++) scrubbed[k] = new float[verts.Count];
-        dirtAtStart = Mathf.Max(1e-4f, Mean(dirt));
-        rindAtStart = Mathf.Max(1e-4f, Mean(rind));
+        // Each vertex's share of the surface: its ring's band of latitude, split among the ring's own vertices (the seam
+        // column repeats the first and counts nothing).
+        var area = new double[verts.Count];
+        for (int y = 0; y <= Lat; y++)
+        {
+            float a = Mathf.PI * Mathf.Max(0f, y - 0.5f) / Lat, b = Mathf.PI * Mathf.Min(Lat, y + 0.5f) / Lat;
+            float band = (Mathf.Cos(a) - Mathf.Cos(b)) / Lon;
+            for (int x = 0; x <= Lon; x++)
+                area[y * (Lon + 1) + x] = x == Lon ? 0f : band;
+        }
+        cover.Reset(area, dl, rl, takesDirt, takesRind, brushed);
+        dirtAtStart = cover.MeanDirt;
+        // The rind the stone had before any brush knocked it off: what the words call "left".
+        rindAtStart = cover.MeanRind / System.Math.Max(1e-6, rindKept);
         if (Mesh == null) Mesh = new Mesh { name = "Ore Stone" };
         Mesh.SetVertices(verts);
         Mesh.SetTriangles(tris, 0);
@@ -127,16 +175,15 @@ public sealed class CraftOreRock
 
     /// <summary>
     /// The brush drawn along a ray (in the stone's own space) with <paramref name="effort"/> (0-1 this frame): every
-    /// vertex facing the ray within <paramref name="reach"/> of it is scrubbed, nearer ones more. Returns how much of
-    /// the stone's surface this brush newly went over (a share of the whole stone).
+    /// vertex facing the ray within <paramref name="reach"/> of it is gone over, nearer ones more - each by
+    /// <paramref name="brush"/> once at the most. True when it went over anything new.
     /// </summary>
-    public float Brush(Vector3 from, Vector3 dir, float reach, float effort, CraftOreBrush brush, float onDirt, float onRind)
+    public bool Brush(Vector3 from, Vector3 dir, float reach, float effort, CraftOreBrush brush)
     {
-        if (verts.Count == 0 || effort <= 0f)
-            return 0f;
+        if (verts.Count == 0 || effort <= 0f || cover.Count != verts.Count)
+            return false;
         dir = dir.normalized;
-        float[] done = scrubbed[(int)brush];
-        float added = 0f;
+        bool any = false;
         for (int i = 0; i < verts.Count; i++)
         {
             if (Vector3.Dot(dirs[i], dir) > -0.15f)
@@ -146,17 +193,11 @@ public sealed class CraftOreRock
             float off = (v - dir * along).magnitude;
             if (along <= 0f || off >= reach)
                 continue;
-            float take = Mathf.Min(1f - done[i], effort * (1f - off / reach));
-            if (take <= 0f)
-                continue;
-            done[i] += take;
-            added += take;
-            dirt[i] = Mathf.Max(0f, dirt[i] - take * onDirt);
-            rind[i] = Mathf.Max(0f, rind[i] - take * onRind);
+            if (cover.Scrub(i, brush, effort * (1f - off / reach)) > 0) any = true;
         }
-        if (added > 0f)
+        if (any)
             Recolour();
-        return added / verts.Count;
+        return any;
     }
 
     /// <summary>Where the ray first meets the stone (its own space), if it does: the vertex facing it nearest the ray.</summary>
@@ -184,23 +225,16 @@ public sealed class CraftOreRock
         colors.Clear();
         for (int i = 0; i < verts.Count; i++)
         {
-            Color c = Color.Lerp(baseColor[i], rindColor, rind[i] * 0.85f);
-            c = Color.Lerp(c, dirtColor, dirt[i] * 0.92f);
+            float dirt = (float)cover.Dirt(i), rind = (float)cover.Rind(i);
+            Color c = Color.Lerp(baseColor[i], rindColor, rind * 0.85f);
+            c = Color.Lerp(c, dirtColor, dirt * 0.92f);
             // Scrubbed clean: a little brighter, as fresh rock is.
-            float fresh = Mathf.Max(scrubbed[0] != null ? scrubbed[0][i] : 0f, Mathf.Max(scrubbed[1] != null ? scrubbed[1][i] : 0f, scrubbed[2] != null ? scrubbed[2][i] : 0f));
-            c = Color.Lerp(c, Color.Lerp(c, Color.white, 0.12f), fresh * (1f - dirt[i]));
+            float fresh = Mathf.Max((float)cover.Done(i, CraftOreBrush.Soft), Mathf.Max((float)cover.Done(i, CraftOreBrush.Stiff), (float)cover.Done(i, CraftOreBrush.Wire)));
+            c = Color.Lerp(c, Color.Lerp(c, Color.white, 0.12f), fresh * (1f - dirt));
             c.a = 1f;
             colors.Add(c);
         }
         if (Mesh != null) Mesh.SetColors(colors);
-    }
-
-    private static float Mean(float[] v)
-    {
-        if (v == null || v.Length == 0) return 0f;
-        float s = 0f;
-        foreach (float x in v) s += x;
-        return s / v.Length;
     }
 
     /// <summary>A material that shows the vertex colours, lit where the pipeline has one (particle shaders read them).</summary>

@@ -303,7 +303,9 @@ namespace CraftingSystem.Tests
             Assert.IsTrue(CraftLapidary.Grade(w.Rules, patchy).Notes.Any(x => x.Contains("dull")), "a patchy polish leaves dull patches");
             for (int k = 0; k < 5; k++) Assert.IsTrue(w.PolishGem(over.id, "cerium_oxide", 30, 0.4, 0.5, out why2, everywhere), why2);
             Assert.Less(over.gem.carats, thorough.gem.carats, "polished on past bright, it loses weight");
-            Assert.Less(over.gem.facets.Average(f => f.meet), thorough.gem.facets.Average(f => f.meet), "and the facet edges round");
+            // the facet edges round: the facets meet worse, whichever way they were off (CraftLapidary.WorseMeet)
+            Assert.Greater(over.gem.facets.Average(f => Math.Abs(f.meet)), thorough.gem.facets.Average(f => Math.Abs(f.meet)), "and the facet edges round");
+            Assert.Less(CraftLapidary.Grade(w.Rules, over).Cut, CraftLapidary.Grade(w.Rules, thorough).Cut, "the cut is the worse for it");
 
             double angleBefore = badCut.gem.facets[0].angleError, cutBefore = CraftLapidary.Grade(w.Rules, badCut).Cut;
             for (int k = 0; k < 3; k++) Assert.IsTrue(w.PolishGem(badCut.id, "cerium_oxide", 12, 0.4, 0.5, out why2, everywhere), why2);

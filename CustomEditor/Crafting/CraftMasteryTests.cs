@@ -261,7 +261,7 @@ namespace CraftingSystem.Tests
             Assert.IsTrue(w.Attach(asm, "solder", 0, null, out why, 1, 1), why);
             Assert.IsTrue(w.JointWork(asm, "seat", CraftJointWork.Solder, 1, 1.0, 0.8, out why), why);
             Assert.IsTrue(w.Attach(asm, "stone", 0, stone.id, out why), why);
-            Assert.IsTrue(w.JointWork(asm, "set", CraftJointWork.Push, 16, 0.6, 0.8, out why), why);
+            Assert.IsTrue(w.JointWork(asm, "set", CraftJointWork.Push, 20, 0.6, 0.8, out why), why); // set: CraftJewelry.SetSecure
             Assert.IsTrue(w.FinishJewel(asm, 0.8, 0.8, out why), why);
             return w.Piece(asm);
         }

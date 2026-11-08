@@ -7,11 +7,15 @@ using UnityEngine;
 /// rock) or work it by hand (hold Interact: loose surface stones, slowly) and lumps of ore break off into the
 /// inventory. Every lump of a deposit comes from the same seam - its richness, its rock and its impurities - and no
 /// two lumps are quite alike: they keep their deposit and their number, so the station recreates exactly that lump.
-/// A deposit gives so many lumps, then is worked out for a while.
+/// A deposit gives so many lumps, then is worked out for a while; the lumps it gives after it grows back are new ones
+/// (they are numbered on from the last, never the same lump twice).
+/// <para>In a network session give the seam a NetworkObject and a NetInteractable (Tools > SimpleMovements > Network >
+/// Make Selected Prefab Networked > Interactable, or both components on it in its scene): the server breaks the lumps off,
+/// and every player sees the seam as it is - worked out, its loose stones gathered, grown back.</para>
 /// </summary>
 [DisallowMultipleComponent]
 [AddComponentMenu("SimpleMovements/Crafting/Ore Deposit")]
-public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
+public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable, IReplicatedInteractable
 {
     [Tooltip("The ore (a Crafting Database ore id: hematite, magnetite, bog_iron, malachite, chalcopyrite, cassiterite, galena, native_silver, gold_quartz, calamine, meteorite, mythril_ore, orichalcum_ore).")]
     [SerializeField] private string ore = "hematite";
@@ -42,7 +46,8 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
     [SerializeField] private AudioClip breakSound;
     [SerializeField] private float range = 2.5f;
 
-    private int taken, gathered;
+    // Lumps taken since it last grew back, loose stones gathered by hand; and every lump it ever gave (the next one's number).
+    private int taken, gathered, issued;
     private float work, depletedAt = -1f;
 
     public string Ore => ore;
@@ -78,13 +83,14 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
         CraftStockItemSO item = LumpItem;
         if (item == null)
             return false;
-        int code = CraftStockItemSO.OreCode(Deposit, taken);
+        int lump = issued++; // numbered on: a seam grown back gives new lumps, not the same ones again
+        int code = CraftStockItemSO.OreCode(Deposit, lump);
         taken++;
         InventoryManager inv = player != null ? InventoryManager.For(player) : null;
         int left = inv != null ? inv.AddItem(item, 1, new List<int> { code }) : 1;
         if (left > 0)
             ItemHandler.SpawnWorldItem(item, left, new List<int> { code }, transform.position + Vector3.up * 0.5f, gameObject);
-        GiveGem(inv, taken - 1);
+        GiveGem(inv, lump);
         if (breakSound != null)
             AudioSource.PlayClipAtPoint(breakSound, transform.position);
         if (WorkedOut)
@@ -162,4 +168,16 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable
     }
 
     public void OnFocusChanged(PlayerInteractor interactor, bool focused) { }
+
+    // ------------------------------------------------------------------ the network
+    /// <summary>What every player must see the same (read on the server): the lumps taken and the loose stones gathered.</summary>
+    public int ReplicatedState => Mathf.Clamp(taken, 0, 0x7FFF) | Mathf.Clamp(gathered, 0, 0x7FFF) << 15;
+
+    /// <summary>A client is told the server's seam: worked out or not, its loose stones gathered or not (no rules run here).</summary>
+    public void ApplyReplicatedState(int state)
+    {
+        taken = state & 0x7FFF;
+        gathered = (state >> 15) & 0x7FFF;
+        ShowState();
+    }
 }

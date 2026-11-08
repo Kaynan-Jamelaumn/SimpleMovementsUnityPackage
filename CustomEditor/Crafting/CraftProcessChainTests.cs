@@ -213,8 +213,15 @@ namespace CraftingSystem.Tests
             Assert.AreEqual(8, g.hardLo, 1e-6, "quartz-hard points do not scratch corundum");
             Assert.IsTrue(w.IdentifyGem(ruby, "garnet", out why), why);
             Assert.IsFalse(w.Piece(ruby).gem.identified, "a wrong name sticks, but it is wrong");
-            Assert.IsTrue(w.IdentifyGem(ruby, "ruby", out why), why);
-            Assert.IsTrue(w.Piece(ruby).gem.identified);
+            Assert.IsFalse(w.IdentifyGem(ruby, "ruby", out why), "the name sticks: a second naming is refused");
+            StringAssert.Contains("sticks", why);
+            Assert.IsFalse(w.Piece(ruby).gem.identified);
+            Assert.AreEqual("garnet", w.Piece(ruby).gem.identifiedAs);
+            string other = Rough(w, "ruby", 8);
+            Assert.IsTrue(w.TestGem(other, CraftGemTest.Refractometer, 0.9, 0, out why), why);
+            Assert.IsTrue(w.TestGem(other, CraftGemTest.Loupe, 0.9, 0, out why), why);
+            Assert.IsTrue(w.IdentifyGem(other, "ruby", out why), why);
+            Assert.IsTrue(w.Piece(other).gem.identified, "named rightly the first time");
         }
 
         [Test]
@@ -413,7 +420,7 @@ namespace CraftingSystem.Tests
             var guard = new CraftRequestGuard(5, 0);
             var facet = new CraftRequest(CraftRequestKind.FacetGem, "g") { i0 = 0, count = 16, a = 43f, b = 0f, c = 0f, d = 1f };
             Assert.IsTrue(guard.Check(ref facet, 0, out _), "a tier of sixteen facets, once");
-            Assert.AreNotEqual(43f, facet.a, "the quill is never set truer than the hands set it");
+            Assert.AreEqual(43f, facet.a, "the quill is left where the hands set it: the guard only clamps (their tremble is the window's)");
             Assert.Greater(facet.b, 0f, "nor the index stops hit exactly");
             var again = new CraftRequest(CraftRequestKind.FacetGem, "g") { i0 = 1, count = 16, a = 43f };
             Assert.IsFalse(guard.Check(ref again, 0.1, out string why), "the next tier at once: too fast");

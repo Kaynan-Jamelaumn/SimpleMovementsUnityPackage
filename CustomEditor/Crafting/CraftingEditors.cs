@@ -164,6 +164,7 @@ public static class CraftingEditorTools
         }
 
         Transform forge = null, anvil = null, quench = null, furnace = null, grinder = null, vats = null;
+        Transform finishing = null, oreBench = null, crucible = null, assembly = null;
         if ((tools & CraftTools.Forge) != 0)
         {
             forge = Place("Forge", 1.2f);
@@ -197,13 +198,13 @@ public static class CraftingEditorTools
         }
         if ((tools & (CraftTools.Files | CraftTools.Whetstone | CraftTools.Polishing)) != 0)
         {
-            Transform bench = Place("Finishing Bench", 1f);
-            Shape(PrimitiveType.Cube, "Bench", bench, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.6f), wood);
+            finishing = Place("Finishing Bench", 1f);
+            Shape(PrimitiveType.Cube, "Bench", finishing, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.6f), wood);
         }
         if ((tools & CraftTools.OreBench) != 0)
         {
-            Transform ore = Place("Ore Bench", 1f);
-            Shape(PrimitiveType.Cube, "Bench", ore, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.7f), stone);
+            oreBench = Place("Ore Bench", 1f);
+            Shape(PrimitiveType.Cube, "Bench", oreBench, new Vector3(0f, 0.4f, 0f), new Vector3(1f, 0.8f, 0.7f), stone);
         }
         if ((tools & CraftTools.Furnace) != 0)
         {
@@ -212,7 +213,7 @@ public static class CraftingEditorTools
         }
         if ((tools & CraftTools.Crucible) != 0)
         {
-            Transform crucible = Place("Crucible", 0.6f);
+            crucible = Place("Crucible", 0.6f);
             Shape(PrimitiveType.Cylinder, "Crucible", crucible, new Vector3(0f, 0.15f, 0f), new Vector3(0.3f, 0.15f, 0.3f), new Color(0.45f, 0.4f, 0.36f));
         }
         if ((tools & (CraftTools.FleshingBeam | CraftTools.Frame | CraftTools.Rack)) != 0)
@@ -318,8 +319,8 @@ public static class CraftingEditorTools
         }
         if ((tools & (CraftTools.LeatherBench | CraftTools.AssemblyBench)) != 0)
         {
-            Transform bench = Place("Assembly Bench", 1.4f);
-            Shape(PrimitiveType.Cube, "Bench", bench, new Vector3(0f, 0.4f, 0f), new Vector3(1.4f, 0.8f, 0.7f), wood);
+            assembly = Place("Assembly Bench", 1.4f);
+            Shape(PrimitiveType.Cube, "Bench", assembly, new Vector3(0f, 0.4f, 0f), new Vector3(1.4f, 0.8f, 0.7f), wood);
         }
         // Centre the row on the root and cover it with one collider (the interaction point is its middle).
         foreach ((string _, Transform t) in places)
@@ -335,11 +336,20 @@ public static class CraftingEditorTools
         so.FindProperty("stationName").stringValue = title;
         so.FindProperty("tools").intValue = (int)tools;
         so.FindProperty("testStation").boolValue = test;
+        // What the tank may be filled with: water from the well, brine and quenching oil (oil hardens a blade of high
+        // carbon steel without cracking it; the stock items include a Quenching Oil) - a test station every quenchant.
+        List<string> quenchants = CraftThermal.PresetQuenchants(CraftDatabase.Instance.Rules, tools, test);
+        SerializedProperty qp = so.FindProperty("quenchants");
+        qp.arraySize = quenchants.Count;
+        for (int i = 0; i < quenchants.Count; i++) qp.GetArrayElementAtIndex(i).stringValue = quenchants[i];
         // The instruments each kind of workshop keeps at hand: a lapidary the gem tester's kit, a woodshop its moisture meter.
         CraftInstruments kit = CraftInstruments.Magnet | CraftInstruments.TestFile;
         if ((tools & (CraftTools.GemBench | CraftTools.FacetingMachine | CraftTools.JewelersBench)) != 0) kit |= CraftInstruments.GemKit | CraftInstruments.Calipers;
         if ((tools & (CraftTools.DryingStack | CraftTools.ShavingHorse)) != 0) kit |= CraftInstruments.MoistureMeter;
         if ((tools & CraftTools.FibreBench) != 0) kit |= CraftInstruments.Thermometer | CraftInstruments.Scale;
+        // the ore bench: a streak plate (the colour of an ore's powder tells hematite from magnetite, galena from tin stone)
+        // and a balance for its lumps
+        if ((tools & CraftTools.OreBench) != 0) kit |= CraftInstruments.StreakPlate | CraftInstruments.Scale;
         so.FindProperty("instruments").intValue = (int)(test ? CraftInstruments.All : kit);
         so.FindProperty("range").floatValue = Mathf.Max(3f, x * 0.5f + 1.5f);
         so.ApplyModifiedPropertiesWithoutUndo();
@@ -354,6 +364,28 @@ public static class CraftingEditorTools
         if (furnace != null) vso.FindProperty("furnacePoint").objectReferenceValue = Point(furnace, 1.65f);
         if (grinder != null) vso.FindProperty("grinderPoint").objectReferenceValue = Point(grinder, 0.75f);
         if (vats != null) vso.FindProperty("vatPoint").objectReferenceValue = Point(vats, 0.7f);
+        // The work places worked by hand in 3D: where each stands (on the bench's top, at the tank's water...) and the
+        // station's own model of it, which steps aside while the hands work there (they bring their own).
+        if (finishing != null && (tools & CraftTools.Whetstone) != 0) vso.FindProperty("whetstonePoint").objectReferenceValue = Point(finishing, 0.8f, "Whetstone Point");
+        if (assembly != null && (tools & CraftTools.AssemblyBench) != 0) vso.FindProperty("carvingPoint").objectReferenceValue = Point(assembly, 0.8f, "Carving Point");
+        if (oreBench != null) vso.FindProperty("oreBenchPoint").objectReferenceValue = Point(oreBench, 0.8f, "Ore Bench Point");
+        if (crucible != null) vso.FindProperty("mouldPoint").objectReferenceValue = Point(crucible, 0.45f, "Mould Point");
+        var models = new List<CraftStationVisuals.WorkPlaceModel>();
+        if (anvil != null) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Hammer, anvil));
+        if (grinder != null) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Grind, grinder));
+        if (finishing != null && (tools & CraftTools.Whetstone) != 0) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Sharpen, finishing));
+        if (quench != null) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Quench, quench));
+        if (crucible != null) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Pour, crucible));
+        if (assembly != null && (tools & CraftTools.AssemblyBench) != 0) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Carve, assembly));
+        if (oreBench != null) models.Add(new CraftStationVisuals.WorkPlaceModel(CraftHandsOnMode.Brush, oreBench));
+        SerializedProperty list = vso.FindProperty("workPlaceModels");
+        list.arraySize = models.Count;
+        for (int i = 0; i < models.Count; i++)
+        {
+            SerializedProperty e = list.GetArrayElementAtIndex(i);
+            e.FindPropertyRelative("place").enumValueIndex = (int)models[i].place;
+            e.FindPropertyRelative("model").objectReferenceValue = models[i].model;
+        }
         vso.ApplyModifiedPropertiesWithoutUndo();
         MakeNetworked(root); // with Fish-Net in the project: the server runs it, every client follows
 
@@ -382,9 +414,9 @@ public static class CraftingEditorTools
         return true;
     }
 
-    private static Transform Point(Transform place, float height)
+    private static Transform Point(Transform place, float height, string name = "Effects Point")
     {
-        var p = new GameObject("Effects Point");
+        var p = new GameObject(name);
         p.transform.SetParent(place, false);
         p.transform.localPosition = new Vector3(0f, height, 0f);
         return p.transform;
@@ -435,9 +467,13 @@ public static class CraftingEditorTools
     /// <summary>
     /// Stock item assets (Resources/SimpleMovements/Items/Crafting/Stock) with generated icons: the stock metals (and the
     /// jeweller's wire and strip), every ore, hide, wood (blanks and green logs), rough gem, fuel, supply and agent of the
-    /// database, and ready-made fasteners. Existing ones are kept.
+    /// database, and ready-made fasteners. Existing ones are kept, but a wooden blank or log still at the old default
+    /// size takes the species' size - and the price of that size. Existing items priced otherwise than the rules make
+    /// them worth on the bench (an older built-in price, or one an author set) are listed, and with
+    /// <paramref name="askToReprice"/> (outside batch mode) the author is asked whether to bring them to the rules' prices:
+    /// an item sold under what it is worth once put down on the bench is bought, worked a moment and sold at a profit.
     /// </summary>
-    public static List<CraftStockItemSO> CreateStockItems(bool select)
+    public static List<CraftStockItemSO> CreateStockItems(bool select, bool askToReprice = true)
     {
         CraftRules rules = CraftDatabase.Instance.Rules;
         var specs = new List<(CraftStockKind kind, string id)>();
@@ -453,9 +489,12 @@ public static class CraftingEditorTools
         foreach (CraftSupplyDefinition s in rules.Supplies) specs.Add((CraftStockKind.Supply, s.id));
         foreach (CraftTanningAgent a in rules.Agents)
             if (!string.IsNullOrEmpty(a.item)) specs.Add((CraftStockKind.Agent, a.id));
+        foreach (CraftQuenchant q in rules.Quenchants)
+            if (!string.IsNullOrEmpty(q.item)) specs.Add((CraftStockKind.Quenchant, q.id));
         foreach (CraftFastenerKind k in Enum.GetValues(typeof(CraftFastenerKind))) specs.Add((CraftStockKind.Fasteners, k.ToString()));
 
         var made = new List<CraftStockItemSO>();
+        var priced = new List<(CraftStockItemSO item, float price)>();
         foreach ((CraftStockKind kind, string id) in specs)
         {
             CraftStockItemSO runtime = CraftItems.Stock(rules, kind, id);
@@ -474,8 +513,24 @@ public static class CraftingEditorTools
             }, false);
             if (item.Icon == null || AssetDatabase.GetAssetPath(item.Icon) == "")
                 item.SetArt(SaveIcon(file, runtime.Icon), null);
+            if (!RefreshWoodSize(item, runtime) && PricedOtherwise(item.Price, runtime.Price))
+                priced.Add((item, runtime.Price));
+            RefreshSupplyWeight(item, runtime);
             EditorUtility.SetDirty(item);
             made.Add(item);
+        }
+        if (priced.Count > 0)
+        {
+            string list = string.Join("\n", priced.GetRange(0, Math.Min(12, priced.Count)).ConvertAll(x => $"{x.item.Name}: {x.item.Price:0.##} - worth {x.price:0.##}"))
+                          + (priced.Count > 12 ? $"\n... and {priced.Count - 12} more" : "");
+            if (askToReprice && !Application.isBatchMode && EditorUtility.DisplayDialog("Crafting",
+                    $"{priced.Count} existing stock item(s) are priced otherwise than the crafting rules make them worth on the bench (an older built-in " +
+                    $"price, or one you set):\n\n{list}\n\nAn item sold for less than it is worth there is bought, put down, taken back and sold at a profit. " +
+                    "Bring them to the rules' prices?", "Update prices", "Keep their prices"))
+                foreach ((CraftStockItemSO item, float price) in priced)
+                    SetPrice(item, price);
+            else
+                Debug.Log($"[Crafting] Stock items priced otherwise than the rules make them worth (kept):\n{list}");
         }
         AssetDatabase.SaveAssets();
         if (select && made.Count > 0)
@@ -484,6 +539,60 @@ public static class CraftingEditorTools
             EditorGUIUtility.PingObject(made[0]);
         }
         return made;
+    }
+
+    /// <summary>
+    /// An existing blank still at the metal bar's size every wooden blank got before woods had their own (a 20 cm
+    /// stick), or a log still at the old 90 cm every log got, takes the species' size from the built-in stock - and its
+    /// price and weight with it (the old price was a smaller piece's: a 2.2 m log sold at a 90 cm log's price is worth
+    /// thirty times it on the bench). Sizes an author chose are kept. True when it was resized.
+    /// </summary>
+    private static bool RefreshWoodSize(CraftStockItemSO item, CraftStockItemSO runtime)
+    {
+        bool blank = item.StockKind == CraftStockKind.Wood && CraftStockItemSO.UnsetWoodSize(item.Size) && runtime.Size != item.Size;
+        bool log = item.StockKind == CraftStockKind.Log && item.Size == new Vector3(900f, 240f, 240f) && runtime.Size != item.Size;
+        if (!blank && !log)
+            return false;
+        var so = new SerializedObject(item);
+        SerializedProperty size = so.FindProperty("size");
+        if (size != null) size.vector3Value = runtime.Size;
+        SerializedProperty weight = so.FindProperty("weight");
+        if (weight != null) weight.floatValue = runtime.Weight;
+        SerializedProperty price = so.FindProperty("price");
+        if (price != null) price.floatValue = runtime.Price;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        return true;
+    }
+
+    /// <summary>
+    /// An existing supply item still at the 0.3 kg every supply weighed before supplies had their own weight takes its own
+    /// (<see cref="CraftSupplyDefinition.ItemGrams"/>: a skein of thread a few grams, a batting 300 g) - what it weighs in
+    /// the item it goes into. A weight an author chose is kept.
+    /// </summary>
+    private static void RefreshSupplyWeight(CraftStockItemSO item, CraftStockItemSO runtime)
+    {
+        if (item.StockKind != CraftStockKind.Supply || Math.Abs(item.Weight - 0.3f) > 1e-4f || Math.Abs(runtime.Weight - item.Weight) <= 1e-4f)
+            return;
+        var so = new SerializedObject(item);
+        SerializedProperty weight = so.FindProperty("weight");
+        if (weight == null)
+            return;
+        weight.floatValue = runtime.Weight;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>Is an asset's price other than the rules' (by more than a cent and half a per cent)?</summary>
+    public static bool PricedOtherwise(float asset, float rules) => Math.Abs(asset - rules) > Math.Max(0.01f, 0.005f * Math.Abs(rules));
+
+    private static void SetPrice(CraftStockItemSO item, float price)
+    {
+        var so = new SerializedObject(item);
+        SerializedProperty p = so.FindProperty("price");
+        if (p == null)
+            return;
+        p.floatValue = price;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        EditorUtility.SetDirty(item);
     }
 
     /// <summary>Saves a generated sprite as a PNG sprite asset (Items/Crafting/Icons) and returns it.</summary>
@@ -615,11 +724,12 @@ public class CraftDatabaseEditor : Editor
                 EditorUtility.SetDirty(db);
                 EditorUtility.DisplayDialog("Crafting", added > 0 ? $"Added {added} built-in entries. Run Create Design Templates and Create Stock Items for the new ones." : "Nothing was missing.", "OK");
             }
-            if (GUILayout.Button(new GUIContent("Reset To Built-in", "Replace the content with the built-in metals, ores, hides and designs.")) &&
-                EditorUtility.DisplayDialog("Crafting", "Replace every element, class, ore, hide, wood, supply and design with the built-in content?", "Replace", "Cancel"))
+            if (GUILayout.Button(new GUIContent("Reset To Built-in", "Replace the content with the built-in metals, ores, hides and designs. The simulation settings (Simulation) are kept.")) &&
+                EditorUtility.DisplayDialog("Crafting", "Replace every element, class, ore, hide, wood, supply and design with the built-in content? Your simulation settings (the step, the heat, the timing bars, mastery, the hands' pace) are kept.", "Replace", "Cancel"))
             {
                 Undo.RecordObject(db, "Reset Crafting Database");
-                CraftDefaults.Fill(db);
+                db.content = CraftDefaults.Content(); // the content only: the author's tuning of the simulation stays
+                db.MarkChanged(); // the compiled rules follow at once (the counts and warnings above, Play Mode)
                 EditorUtility.SetDirty(db);
             }
         }

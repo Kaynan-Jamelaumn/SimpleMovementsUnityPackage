@@ -229,6 +229,34 @@ namespace GameNet.Tests
             Assert.AreEqual(replaced.Checksum(), client.Workshop.Checksum());
         }
 
+        [Test]
+        public void CraftMirror_AnAnswerWaitsForItsOperations_AndKnowsTheEventsTheyRaised()
+        {
+            var server = new CraftWorkshop(Craft(), CraftTools.Smithy, 18, 1, 0, "water", "a");
+            var feed = new CraftWorkshopFeed();
+            feed.Attach(server);
+            var client = new CraftWorkshopFollower(Craft());
+            client.Restore(CraftMirrorSnapshot.FromJson(feed.Snapshot(null).ToJson()));
+            var answers = new CraftAnswerQueue();
+            client.Workshop.EventRaised += e => answers.Raised(client.Applying, e);
+
+            // The server runs a request: the operations it records are numbered before+1 .. feed.Seq.
+            int before = feed.Seq;
+            string bar = server.AddPiece(CraftDefaults.Bar(server.Rules, 200, 30, 6, Metal("Mild steel")));
+            Assert.Greater(feed.Seq, before);
+            var answer = new CraftAnswer(7, true, "", before + 1, feed.Seq);
+            answers.Arrived(answer); // an answer that came before its packet waits for it
+            Assert.IsFalse(answers.Next(client.State.LastSeq, out _), "the copy does not show the bar yet");
+            Assert.AreEqual(FollowResult.Followed, client.Apply(CraftMirrorPacket.FromJson(feed.TakePacket(false).ToJson())));
+            Assert.IsTrue(answers.Next(client.State.LastSeq, out CraftAnswer got), "now it does");
+            Assert.AreEqual(7, got.seq);
+            Assert.IsNotNull(client.Workshop.Piece(bar), "reading the copy when the answer is raised shows the result");
+            var raised = new List<CraftEvent>();
+            answers.EventsOf(got, raised);
+            Assert.IsTrue(raised.Exists(e => e.Kind == CraftEventKind.PieceAdded && e.Piece == bar), "the events its own operation raised on the copy");
+            Assert.AreEqual(0, client.Applying, "and nothing is being applied now");
+        }
+
         // ------------------------------------------------------------------ alchemy: following the server
         [Test]
         public void AlchemyMirror_FollowsTheServerExactly()
@@ -288,7 +316,7 @@ namespace GameNet.Tests
 
             var stone = new CraftRequest(CraftRequestKind.Sharpen, "p") { count = 500, c = 0f };
             Assert.IsTrue(g.Check(ref stone, 2.0, out _));
-            Assert.LessOrEqual(stone.count, 8);
+            Assert.LessOrEqual(stone.count, 16, "passes come from the whetstone's allowance: no more than the longest honest stroke holds");
             Assert.Greater(stone.c, 0f, "no stroke is perfectly steady");
         }
 
@@ -316,7 +344,7 @@ namespace GameNet.Tests
             CraftRequestGuard g = Guard();
             var r = new CraftRequest(CraftRequestKind.BrushOre, "p") { a = 1f, b = 0.5f };
             Assert.IsTrue(g.Check(ref r, 10, out _));
-            Assert.LessOrEqual(r.a, 0.2f + 1e-6f, "half a second of brushing does not scrub a whole stone");
+            Assert.LessOrEqual(r.a, 0.5f * (float)CraftRequestGuard.BrushCoverPerSecond + 1e-6f, "half a second of brushing does not scrub a whole stone");
         }
 
         [Test]
@@ -396,11 +424,12 @@ namespace GameNet.Tests
         {
             var r = new CraftRequest(CraftRequestKind.Sharpen, "ws-3")
             {
-                other = "ws-4", id = "fine_stone", count = 3, i0 = 2, i1 = 9, i2 = 1, a = 17.5f, b = 0.4f, c = 1.2f, d = -2f, flag = true,
+                seq = 42, other = "ws-4", id = "fine_stone", count = 3, i0 = 2, i1 = 9, i2 = 1, a = 17.5f, b = 0.4f, c = 1.2f, d = -2f, flag = true,
                 location = CraftLocation.Quench, points = new List<float> { 1, 2, 3, 4 },
             };
             CraftRequest back = CraftNetRequest.From(r, "item-1").ToRequest();
             Assert.AreEqual(r.kind, back.kind);
+            Assert.AreEqual(42, back.seq, "the server's answer finds its request by it");
             Assert.AreEqual(r.piece, back.piece);
             Assert.AreEqual(r.other, back.other);
             Assert.AreEqual(r.id, back.id);

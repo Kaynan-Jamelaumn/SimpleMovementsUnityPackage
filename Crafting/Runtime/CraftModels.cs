@@ -15,7 +15,9 @@ public static class CraftModels
 {
     private static GameObject root;
     private static readonly Dictionary<string, GameObject> cache = new Dictionary<string, GameObject>(StringComparer.Ordinal);
-    private static readonly Dictionary<int, Material> materials = new Dictionary<int, Material>();
+    private static readonly Dictionary<long, Material> materials = new Dictionary<long, Material>();
+    /// <summary>The meshes built here for the models kept (a bar's, a hide's): freed with their model - never Unity's own primitives.</summary>
+    private static readonly HashSet<Mesh> built = new HashSet<Mesh>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -23,6 +25,7 @@ public static class CraftModels
         root = null;
         cache.Clear();
         materials.Clear();
+        built.Clear();
     }
 
     private static Transform Root
@@ -105,10 +108,14 @@ public static class CraftModels
                 Roll(go.transform, 0.09f, 0.5f, c);
                 break;
             case CraftStockKind.Wood:
-                Box(go.transform, Vector3.zero, new Vector3(0.04f, 0.45f, 0.04f), c, false, 0.2f);
+            {
+                // the blank at its size (a 2.2 m ash stave, a linden plank); an old asset without one as a stick
+                Vector3 s = CraftStockItemSO.UnsetWoodSize(item.Size) ? new Vector3(450f, 40f, 40f) : item.Size;
+                Box(go.transform, Vector3.zero, new Vector3(s.y, s.x, s.z) * 0.001f, c, false, 0.2f);
                 break;
+            }
             case CraftStockKind.Log:
-                Roll(go.transform, 0.12f, 0.9f, c);
+                Roll(go.transform, item.Size.y > 0 ? item.Size.y * 0.0005f : 0.12f, item.Size.x > 0 ? item.Size.x * 0.001f : 0.9f, c);
                 break;
             case CraftStockKind.Gem:
                 Lump(go.transform, Vector3.zero, 0.02f, c);
@@ -124,13 +131,21 @@ public static class CraftModels
         return Keep(key, go);
     }
 
-    /// <summary>Forgets a model (its item is gone).</summary>
+    /// <summary>
+    /// Forgets a model (its item is gone): the object and the meshes built for it (a piece's bar or hide - the shared
+    /// materials and Unity's own primitive meshes stay).
+    /// </summary>
     public static void Forget(string key)
     {
         if (key != null && cache.TryGetValue(key, out GameObject go))
         {
             cache.Remove(key);
-            if (go != null) Destroy(go);
+            if (go == null)
+                return;
+            foreach (MeshFilter f in go.GetComponentsInChildren<MeshFilter>(true))
+                if (f.sharedMesh != null && built.Remove(f.sharedMesh))
+                    Destroy(f.sharedMesh);
+            Destroy(go);
         }
     }
 
@@ -274,69 +289,97 @@ public static class CraftModels
 
     // ------------------------------------------------------------------ meshes
     /// <summary>
-    /// A bar or blade: a ring of six points per segment boundary - the spine, the two faces and the bevels each face
-    /// takes down to the edge - following the bend, joined face by face (hard edges) and capped. Millimetres become
-    /// metres; the length runs along +Y, the width along X (the edge toward +X), the thickness along Z.
+    /// A bar or blade: a ring of points per segment boundary - the spine, the two faces (each with the fuller's groove down
+    /// its middle, flat where there is none) and the bevels each face takes down to the edge - following the bend and
+    /// lifted by the dish, joined face by face (hard edges) and capped; a cut half made notches both faces across it, as
+    /// deep as it has gone. A double-edged blade has its bevels mirrored onto the other edge (meeting in the middle at
+    /// most), as the section shows them. What is not metal goes into one more sub-mesh after the metal's
+    /// (<see cref="MarkedMesh"/>): an eye drifted through it (a dark disc on each face) and the cracks that show (dark
+    /// lines in from the edge), as the drawings mark them. Millimetres become metres; the length runs along +Y, the width
+    /// along X (the edge toward +X), the thickness along Z (the left face toward +Z).
     /// </summary>
     private static Mesh BarMesh(CraftPiece p, bool centred, bool perSegment = false)
     {
         List<MetalSegment> segs = p.segments;
         int n = segs.Count;
+        bool both = p.edges >= 2;
+        // The rings along the length (each boundary, and three more across a cut half made), the segment each ring's strip
+        // to the next belongs to, and each segment's middle and heading (where its marks go).
         var rings = new List<Vector3[]>(n + 1);
+        var owner = new List<int>(n + 1);
+        var mids = new Vector2[n];
+        var heads = new Vector2[n];
         Vector2 pos = Vector2.zero, dir = Vector2.up;
         for (int k = 0; k <= n; k++)
         {
-            MetalSegment a = segs[Math.Max(0, k - 1)], b = segs[Math.Min(n - 1, k)];
-            float hw = (float)(a.width + b.width) * 0.00025f;
-            float ht = (float)(a.thickness + b.thickness) * 0.00025f;
-            float bl = Mathf.Min((float)(a.bevelWidthL + b.bevelWidthL) * 0.0005f, hw * 1.9f);
-            float br = Mathf.Min((float)(a.bevelWidthR + b.bevelWidthR) * 0.0005f, hw * 1.9f);
-            float top = ht - (float)(a.bevelDepthL + b.bevelDepthL) * 0.0005f;
-            float bottom = -ht + (float)(a.bevelDepthR + b.bevelDepthR) * 0.0005f;
-            if (top < bottom + 0.0002f)
+            rings.Add(Ring(segs[Math.Max(0, k - 1)], segs[Math.Min(n - 1, k)], both, pos, dir, 0f));
+            if (k == n)
+                break;
+            MetalSegment s = segs[k];
+            float len = (float)(s.length * 0.001);
+            owner.Add(k);
+            mids[k] = pos + dir * len * 0.5f;
+            heads[k] = dir;
+            float cut = Mathf.Clamp((float)s.cut, 0f, 0.95f);
+            if (cut > 0.01f)
             {
-                float mid = (top + bottom) * 0.5f;
-                top = mid + 0.0001f;
-                bottom = mid - 0.0001f;
+                // A V across both faces at the middle, half the cut from each, about as wide as it is deep.
+                float half = Mathf.Clamp((float)(s.thickness * cut) / Mathf.Max(0.1f, (float)s.length), 0.05f, 0.3f);
+                rings.Add(Ring(s, s, both, pos + dir * len * (0.5f - half), dir, 0f));
+                owner.Add(k);
+                rings.Add(Ring(s, s, both, mids[k], dir, cut));
+                owner.Add(k);
+                rings.Add(Ring(s, s, both, pos + dir * len * (0.5f + half), dir, 0f));
+                owner.Add(k);
             }
-            Vector2 across = new Vector2(dir.y, -dir.x);
-            Vector3 P(float x, float z)
-            {
-                Vector2 q = pos + across * x;
-                return new Vector3(q.x, q.y, z);
-            }
-            rings.Add(new[] { P(-hw, ht), P(hw - bl, ht), P(hw, top), P(hw, bottom), P(hw - br, -ht), P(-hw, -ht) });
-            if (k < n)
-            {
-                pos += dir * (float)(segs[k].length * 0.001);
-                float bend = (float)segs[k].bend * Mathf.Deg2Rad;
-                dir = new Vector2(dir.x * Mathf.Cos(bend) - dir.y * Mathf.Sin(bend), dir.x * Mathf.Sin(bend) + dir.y * Mathf.Cos(bend));
-            }
+            pos += dir * len;
+            float bend = (float)s.bend * Mathf.Deg2Rad;
+            dir = new Vector2(dir.x * Mathf.Cos(bend) - dir.y * Mathf.Sin(bend), dir.x * Mathf.Sin(bend) + dir.y * Mathf.Cos(bend));
         }
         var v = new List<Vector3>();
         var tris = new List<List<int>>();
-        for (int k = 0; k < n; k++)
+        for (int k = 0; k < (perSegment ? n : 1); k++) tris.Add(new List<int>());
+        // Every ring runs the same way round, so one face that is surely outside (the edge's flat, outermost on +X) tells the
+        // winding for them all - the fuller's groove is not convex, and a test against the middle would turn its walls inside out.
+        const int e0 = 6, e1 = 7;
+        bool outward = Vector3.Dot(Vector3.Cross(rings[1][e0] - rings[0][e0], rings[1][e1] - rings[0][e0]),
+                                   (rings[0][e0] + rings[1][e1]) * 0.5f - (Center(rings[0]) + Center(rings[1])) * 0.5f) >= 0f;
+        for (int i = 0; i + 1 < rings.Count; i++)
         {
-            if (perSegment || k == 0) tris.Add(new List<int>());
-            List<int> tri = tris[tris.Count - 1];
-            Vector3[] r0 = rings[k], r1 = rings[k + 1];
-            Vector3 axis = (Center(r0) + Center(r1)) * 0.5f;
+            List<int> tri = tris[perSegment ? owner[i] : 0];
+            Vector3[] r0 = rings[i], r1 = rings[i + 1];
             for (int s = 0; s < r0.Length; s++)
             {
                 int s2 = (s + 1) % r0.Length;
-                Quad(v, tri, r0[s], r1[s], r1[s2], r0[s2], axis);
+                Quad(v, tri, r0[s], r1[s], r1[s2], r0[s2], outward);
             }
         }
-        Cap(v, tris[0], rings[0], Center(rings[Math.Min(1, n)]));
-        Cap(v, tris[tris.Count - 1], rings[n], Center(rings[Math.Max(0, n - 1)]));
+        Cap(v, tris[0], rings[0], Center(rings[1]));
+        Cap(v, tris[tris.Count - 1], rings[rings.Count - 1], Center(rings[rings.Count - 2]));
+        // The marks: an eye (a dark disc on each face), the cracks that show (from the edge in, on each face) - laid on the
+        // section the mesh has at the segment's middle, where its rings meet halfway.
+        var marks = new List<int>();
+        for (int k = 0; k < n; k++)
+        {
+            MetalSegment s = segs[k];
+            if (s.hole <= 0.5)
+                continue;
+            float r = Mathf.Min((float)s.hole * 0.0005f, (float)Mid(segs, k, g => g.width) * 0.00045f);
+            float ht = (float)Mid(segs, k, g => g.thickness) * 0.0005f, dish = (float)Mid(segs, k, g => g.dish) * 0.001f;
+            Disc(v, marks, mids[k], heads[k], r, ht + dish + 0.0002f, 1f);
+            Disc(v, marks, mids[k], heads[k], r, -ht + dish - 0.0002f, -1f);
+        }
+        foreach (CraftDefect d in p.defects)
+            if (Shows(d, n))
+                CrackMark(v, marks, segs, d.at, both, mids[d.at], heads[d.at], d.severity);
+        if (marks.Count > 0)
+            tris.Add(marks);
         if (centred)
         {
-            Vector3 mid = (Center(rings[0]) + Center(rings[n])) * 0.5f;
+            Vector3 mid = (Center(rings[0]) + Center(rings[rings.Count - 1])) * 0.5f;
             for (int i = 0; i < v.Count; i++) v[i] -= mid;
         }
-        if (tris.Count == 1)
-            return Build("Bar", v, tris[0]);
-        var mesh = new Mesh { name = "Bar (by segment)", hideFlags = HideFlags.DontSave };
+        var mesh = new Mesh { name = perSegment ? "Bar (by segment)" : "Bar", hideFlags = HideFlags.DontSave };
         if (v.Count > 65000)
             mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         mesh.SetVertices(v);
@@ -348,6 +391,203 @@ public static class CraftModels
         return mesh;
     }
 
+    /// <summary>
+    /// One ring of a bar's section at <paramref name="at"/> (heading <paramref name="along"/>), from segment
+    /// <paramref name="a"/>'s values and <paramref name="b"/>'s (their mean at a boundary): the top face from the back to
+    /// the edge (with the groove's four points), the edge, the bottom face back (its groove), and on a double-edged blade
+    /// the back edge. <paramref name="notch"/> (0-1) takes that share of the thickness off, half from each face. Always the
+    /// same points in the same order (a groove of no depth lies flat in its face), so rings join point to point.
+    /// </summary>
+    private static Vector3[] Ring(MetalSegment a, MetalSegment b, bool both, Vector2 at, Vector2 along, float notch)
+    {
+        float hw = (float)(a.width + b.width) * 0.00025f;
+        float ht = (float)(a.thickness + b.thickness) * 0.00025f;
+        float cap = both ? hw : hw * 1.9f;
+        float bl = Mathf.Min((float)(a.bevelWidthL + b.bevelWidthL) * 0.0005f, cap);
+        float br = Mathf.Min((float)(a.bevelWidthR + b.bevelWidthR) * 0.0005f, cap);
+        float top = ht - (float)(a.bevelDepthL + b.bevelDepthL) * 0.0005f;
+        float bottom = -ht + (float)(a.bevelDepthR + b.bevelDepthR) * 0.0005f;
+        // The fuller: its depth is both faces' together, half in each, down the middle of the flat between the bevels.
+        float groove = Mathf.Min((float)(a.fuller + b.fuller) * 0.00025f, ht * 0.45f);
+        if (notch > 0f)
+        {
+            ht *= 1f - notch;
+            top = Mathf.Min(top, ht);
+            bottom = Mathf.Max(bottom, -ht);
+            groove = Mathf.Min(groove, ht * 0.45f);
+        }
+        if (top < bottom + 0.0002f)
+        {
+            float mid = (top + bottom) * 0.5f;
+            top = mid + 0.0001f;
+            bottom = mid - 0.0001f;
+        }
+        float dish = (float)(a.dish + b.dish) * 0.0005f;
+        float backTop = both ? -hw + bl : -hw, backBottom = both ? -hw + br : -hw;
+        Groove(backTop, hw - bl, hw, groove, out float t0, out float t1, out float tq, out float td);
+        Groove(backBottom, hw - br, hw, groove, out float b0, out float b1, out float bq, out float bd);
+        Vector2 across = new Vector2(along.y, -along.x);
+        Vector3 P(float x, float z)
+        {
+            Vector2 q = at + across * x;
+            return new Vector3(q.x, q.y, z + dish);
+        }
+        var ring = new List<Vector3>(16)
+        {
+            P(backTop, ht), P(t0, ht), P(t0 + tq, ht - td), P(t1 - tq, ht - td), P(t1, ht), P(hw - bl, ht), P(hw, top),
+            P(hw, bottom), P(hw - br, -ht), P(b1, -ht), P(b1 - bq, -ht + bd), P(b0 + bq, -ht + bd), P(b0, -ht), P(backBottom, -ht),
+        };
+        if (both)
+        {
+            ring.Add(P(-hw, bottom));
+            ring.Add(P(-hw, top));
+        }
+        return ring.ToArray();
+    }
+
+    /// <summary>
+    /// Where a face's groove lies on its flat from <paramref name="back"/> to <paramref name="shoulder"/>: about a quarter of
+    /// the width about the middle, inside the flat; a flat too narrow (or no fuller) gets a groove of no depth at its middle.
+    /// </summary>
+    private static void Groove(float back, float shoulder, float hw, float depth, out float x0, out float x1, out float slope, out float deep)
+    {
+        float margin = hw * 0.05f, g = hw * 0.24f;
+        x0 = Mathf.Max(-g, back + margin);
+        x1 = Mathf.Min(g, shoulder - margin);
+        deep = depth;
+        if (x1 - x0 < hw * 0.08f || depth <= 1e-6f)
+        {
+            x0 = x1 = (back + shoulder) * 0.5f;
+            deep = 0f;
+        }
+        slope = (x1 - x0) * 0.25f;
+    }
+
+    /// <summary>
+    /// A value of the section the mesh has at the middle of segment <paramref name="k"/>: halfway between its two rings,
+    /// each the mean of the segment and its neighbour.
+    /// </summary>
+    private static double Mid(List<MetalSegment> segs, int k, Func<MetalSegment, double> of) =>
+        0.25 * of(segs[Math.Max(0, k - 1)]) + 0.5 * of(segs[k]) + 0.25 * of(segs[Math.Min(segs.Count - 1, k + 1)]);
+
+    /// <summary>A crack as the top view draws it: one that shows (on the surface, or deep), on a segment there is.</summary>
+    private static bool Shows(CraftDefect d, int segments) =>
+        (d.kind == CraftDefectKind.Crack || d.kind == CraftDefectKind.ColdShut || d.kind == CraftDefectKind.Delamination)
+        && d.at >= 0 && d.at < segments && (d.surface || d.severity >= 0.4);
+
+    /// <summary>A dark disc of <paramref name="r"/> lying at height <paramref name="z"/>, facing <paramref name="facing"/> (+1 up the thickness, -1 down).</summary>
+    private static void Disc(List<Vector3> v, List<int> tri, Vector2 at, Vector2 along, float r, float z, float facing)
+    {
+        Vector2 across = new Vector2(along.y, -along.x);
+        int c = v.Count;
+        v.Add(new Vector3(at.x, at.y, z));
+        const int sides = 12;
+        for (int i = 0; i < sides; i++)
+        {
+            float a = i * Mathf.PI * 2f / sides;
+            Vector2 q = at + across * (Mathf.Cos(a) * r) + along * (Mathf.Sin(a) * r);
+            v.Add(new Vector3(q.x, q.y, z));
+        }
+        for (int i = 0; i < sides; i++)
+            Tri(tri, v, c, c + 1 + i, c + 1 + (i + 1) % sides, new Vector3(0f, 0f, facing));
+    }
+
+    /// <summary>
+    /// A crack in from the edge over both faces, as far across the width as the top view draws it (half its severity of
+    /// the width, all of it at the most): down the bevel, then along the flat, a hair off the surface.
+    /// </summary>
+    private static void CrackMark(List<Vector3> v, List<int> tri, List<MetalSegment> segs, int k, bool both, Vector2 at, Vector2 along, double severity)
+    {
+        float hw = (float)Mid(segs, k, g => g.width) * 0.0005f, ht = (float)Mid(segs, k, g => g.thickness) * 0.0005f;
+        float dish = (float)Mid(segs, k, g => g.dish) * 0.001f;
+        float cap = both ? hw : hw * 1.9f;
+        float bl = Mathf.Min((float)Mid(segs, k, g => g.bevelWidthL) * 0.001f, cap), br = Mathf.Min((float)Mid(segs, k, g => g.bevelWidthR) * 0.001f, cap);
+        float top = ht - (float)Mid(segs, k, g => g.bevelDepthL) * 0.001f, bottom = -ht + (float)Mid(segs, k, g => g.bevelDepthR) * 0.001f;
+        float depth = Mathf.Clamp01((float)severity * 0.5f) * hw * 2f, wide = severity > 0.6 ? 0.0014f : 0.0008f;
+        Vector2 across = new Vector2(along.y, -along.x);
+        for (int face = 0; face < 2; face++)
+        {
+            float sg = face == 0 ? 1f : -1f, bevel = face == 0 ? bl : br, apex = face == 0 ? top : bottom;
+            var path = new List<Vector2> { new Vector2(hw, apex) };
+            if (bevel > 1e-5f && depth > 1e-5f)
+            {
+                float f = Mathf.Min(1f, depth / bevel);
+                path.Add(new Vector2(hw - bevel * f, apex + (sg * ht - apex) * f));
+            }
+            if (depth > bevel) path.Add(new Vector2(hw - depth, sg * ht));
+            for (int i = 0; i + 1 < path.Count; i++)
+            {
+                Vector2 p0 = path[i], p1 = path[i + 1];
+                // The face's outward side in the section (up on the top face, down underneath).
+                Vector2 outSide = new Vector2((p1.y - p0.y) * sg, -(p1.x - p0.x) * sg).normalized;
+                Vector3 W(Vector2 q, float l)
+                {
+                    Vector2 xy = at + across * (q.x + outSide.x * 0.0002f) + along * l;
+                    return new Vector3(xy.x, xy.y, q.y + outSide.y * 0.0002f + dish);
+                }
+                int c = v.Count;
+                v.Add(W(p0, -wide * 0.5f));
+                v.Add(W(p0, wide * 0.5f));
+                v.Add(W(p1, wide * 0.5f));
+                v.Add(W(p1, -wide * 0.5f));
+                var facing = new Vector3(across.x * outSide.x, across.y * outSide.x, outSide.y);
+                Tri(tri, v, c, c + 1, c + 2, facing);
+                Tri(tri, v, c, c + 2, c + 3, facing);
+            }
+        }
+    }
+
+    /// <summary>The triangle <paramref name="a"/>, <paramref name="b"/>, <paramref name="c"/> (vertex indices) wound to face <paramref name="facing"/>.</summary>
+    private static void Tri(List<int> tri, List<Vector3> v, int a, int b, int c, Vector3 facing)
+    {
+        bool front = Vector3.Dot(Vector3.Cross(v[b] - v[a], v[c] - v[a]), facing) >= 0f;
+        tri.Add(a);
+        tri.Add(front ? b : c);
+        tri.Add(front ? c : b);
+    }
+
+    /// <summary>
+    /// Has <paramref name="mesh"/> - with <paramref name="metalSubMeshes"/> sub-meshes of metal (one per segment for
+    /// <see cref="PieceMesh"/>, else one) - a last one of marks (an eye, cracks), to be given <see cref="Marks"/>?
+    /// </summary>
+    public static bool MarkedMesh(Mesh mesh, int metalSubMeshes) => mesh != null && mesh.subMeshCount > metalSubMeshes;
+
+    /// <summary>The dark material of a piece's marks (an eye, a crack).</summary>
+    public static Material Marks => MaterialFor(new Color(0.03f, 0.03f, 0.035f), false, 0.1f);
+
+    /// <summary>
+    /// A number that changes when what <see cref="PieceMesh"/> builds would: the segments' shape (length, width,
+    /// thickness, bevels, bend, dish, fuller, cut, eye), the edges, and the cracks that show.
+    /// </summary>
+    public static uint ShapeKey(CraftPiece p)
+    {
+        var h = new CraftChecksum();
+        h.Add(p.segments.Count);
+        h.Add(p.edges);
+        foreach (MetalSegment s in p.segments)
+        {
+            h.Add(s.length, 0.2);
+            h.Add(s.width, 0.2);
+            h.Add(s.thickness, 0.1);
+            h.Add(s.bevelDepthL, 0.05);
+            h.Add(s.bevelDepthR, 0.05);
+            h.Add(s.bevelWidthL, 0.1);
+            h.Add(s.bevelWidthR, 0.1);
+            h.Add(s.bend, 0.5);
+            h.Add(s.dish, 0.2);
+            h.Add(s.fuller, 0.1);
+            h.Add(s.cut, 0.02);
+            h.Add(s.hole, 0.2);
+        }
+        foreach (CraftDefect d in p.defects)
+            if (Shows(d, p.segments.Count))
+            {
+                h.Add(d.at);
+                h.Add(d.severity, 0.05);
+            }
+        return h.Value;
+    }
+
     // ------------------------------------------------------------------ for the hands-on work places
     /// <summary>
     /// A metal or wooden piece as it is now, one sub-mesh per segment (so each can glow at its own heat), along +Y from
@@ -355,14 +595,18 @@ public static class CraftModels
     /// </summary>
     public static Mesh PieceMesh(CraftPiece p, bool centred) => p != null && p.segments.Count > 0 ? BarMesh(p, centred, true) : null;
 
-    /// <summary>A shared material of <paramref name="c"/> that glows with <paramref name="glow"/> at <paramref name="strength"/> (0-1): hot metal.</summary>
+    /// <summary>
+    /// A shared material of <paramref name="c"/> that glows with <paramref name="glow"/> at <paramref name="strength"/>
+    /// (0-1): hot metal - as smooth as it is polished (kept apart by its smoothness too).
+    /// </summary>
     public static Material Glowing(Color c, bool metal, float smooth, Color glow, float strength)
     {
         strength = Mathf.Clamp01(strength);
         if (strength < 0.02f)
             return MaterialFor(c, metal, smooth);
-        int key = Mathf.RoundToInt(c.r * 15) | Mathf.RoundToInt(c.g * 15) << 4 | Mathf.RoundToInt(c.b * 15) << 8 | Mathf.RoundToInt(glow.r * 15) << 12
-                  | Mathf.RoundToInt(glow.g * 15) << 16 | Mathf.RoundToInt(glow.b * 15) << 20 | Mathf.RoundToInt(strength * 15) << 24 | 1 << 30 | (metal ? int.MinValue : 0);
+        long key = Mathf.RoundToInt(c.r * 15) | Mathf.RoundToInt(c.g * 15) << 4 | Mathf.RoundToInt(c.b * 15) << 8 | Mathf.RoundToInt(glow.r * 15) << 12
+                   | Mathf.RoundToInt(glow.g * 15) << 16 | Mathf.RoundToInt(glow.b * 15) << 20 | Mathf.RoundToInt(strength * 15) << 24
+                   | (long)Mathf.RoundToInt(Mathf.Clamp01(smooth) * 7) << 28 | (metal ? 1L << 31 : 0L) | 1L << 32;
         if (materials.TryGetValue(key, out Material m) && m != null)
             return m;
         m = MaterialFor(c, metal, smooth);
@@ -414,11 +658,14 @@ public static class CraftModels
     }
 
     /// <summary>A quad facing away from <paramref name="inside"/> (Unity's front faces wind clockwise).</summary>
-    private static void Quad(List<Vector3> v, List<int> tri, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 inside)
+    private static void Quad(List<Vector3> v, List<int> tri, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 inside) =>
+        Quad(v, tri, a, b, c, d, Vector3.Dot(Vector3.Cross(b - a, c - a), (a + c) * 0.5f - inside) >= 0f);
+
+    /// <summary>A quad wound as given: <paramref name="outward"/> = a, b, c is its front (Unity's front faces wind clockwise).</summary>
+    private static void Quad(List<Vector3> v, List<int> tri, Vector3 a, Vector3 b, Vector3 c, Vector3 d, bool outward)
     {
         int i = v.Count;
         v.Add(a); v.Add(b); v.Add(c); v.Add(d);
-        bool outward = Vector3.Dot(Vector3.Cross(b - a, c - a), (a + c) * 0.5f - inside) >= 0f;
         if (outward)
         {
             tri.Add(i); tri.Add(i + 1); tri.Add(i + 2);
@@ -487,12 +734,14 @@ public static class CraftModels
 
     private static void Child(Transform into, string name, Mesh mesh, Color color, bool metal, float smooth, Vector3 at, Quaternion turn)
     {
+        if (mesh != null) built.Add(mesh);
         var go = new GameObject(string.IsNullOrEmpty(name) ? "Part" : name);
         go.transform.SetParent(into, false);
         go.transform.localPosition = at;
         go.transform.localRotation = turn;
         go.AddComponent<MeshFilter>().sharedMesh = mesh;
-        go.AddComponent<MeshRenderer>().sharedMaterial = MaterialFor(color, metal, smooth);
+        MeshRenderer r = go.AddComponent<MeshRenderer>();
+        r.sharedMaterials = MarkedMesh(mesh, 1) ? new[] { MaterialFor(color, metal, smooth), Marks } : new[] { MaterialFor(color, metal, smooth) };
     }
 
     private static void Box(Transform into, Vector3 at, Vector3 size, Color color, bool metal, float smooth) =>
@@ -522,7 +771,7 @@ public static class CraftModels
 
     private static Material MaterialFor(Color c, bool metal, float smooth)
     {
-        int key = Mathf.RoundToInt(c.r * 31) | Mathf.RoundToInt(c.g * 31) << 5 | Mathf.RoundToInt(c.b * 31) << 10 | (metal ? 1 << 15 : 0)
+        long key = Mathf.RoundToInt(c.r * 31) | Mathf.RoundToInt(c.g * 31) << 5 | Mathf.RoundToInt(c.b * 31) << 10 | (metal ? 1 << 15 : 0)
                   | Mathf.RoundToInt(Mathf.Clamp01(smooth) * 7) << 16;
         if (materials.TryGetValue(key, out Material m) && m != null)
             return m;
@@ -559,9 +808,9 @@ public static class CraftModels
         return c;
     }
 
-    private static void Destroy(GameObject go)
+    private static void Destroy(UnityEngine.Object o)
     {
-        if (Application.isPlaying) UnityEngine.Object.Destroy(go);
-        else UnityEngine.Object.DestroyImmediate(go);
+        if (Application.isPlaying) UnityEngine.Object.Destroy(o);
+        else UnityEngine.Object.DestroyImmediate(o);
     }
 }

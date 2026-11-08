@@ -37,8 +37,8 @@ public class CraftShapeTarget
     [Tooltip("Where along the length the edge runs (t).")]
     [Range(0f, 1f)] public float edgeFrom = 0.15f;
     [Range(0f, 1f)] public float edgeTo = 1f;
-    [Tooltip("The edge's best inclusive angle (degrees): sharper cuts, wider lasts.")]
-    [Range(5f, 90f)] public float edgeAngle = 30f;
+    [Tooltip("The edge's best inclusive angle (degrees): sharper cuts, wider lasts. No steeper than bevels are ground (35° a side); where the section is too narrow for it, the edge is judged at the angle the section carries.")]
+    [Range(5f, 70f)] public float edgeAngle = 30f;
     [Tooltip("The first part of the length (t) is a tang that goes into a handle (narrow, unhardened is fine).")]
     [Range(0f, 0.6f)] public float tangTo;
     [Tooltip("The bend it should have along its length (degrees in total): a sabre's curve.")]
@@ -99,10 +99,8 @@ public class CraftPattern
 {
     public string id = "";
     public string displayName = "";
-    [Tooltip("Rows of the footprint, top first: 'X' = part of the pattern, '.' = not.")]
+    [Tooltip("Rows of the footprint, top first: 'X' = part of the pattern, '.' = not. How many stitches or rivets join it is the design's joint's count.")]
     public List<string> rows = new List<string>();
-    [Tooltip("Stitch holes along its seams (for stitching joints).")]
-    [Min(0)] public int seamHoles = 20;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? id : displayName;
     public int Width
@@ -158,6 +156,98 @@ public class CraftPattern
                             if (c == 'X' || c == 'x') n++;
             return n;
         }
+    }
+
+    /// <summary>
+    /// The true cutting line of the footprint after <paramref name="quarterTurns"/>: every side of a covered cell whose
+    /// neighbour is not covered, joined end to end into closed loops (the outer edge, and the edge of any hole). Each loop
+    /// is its corner points in footprint cells - x across, y down from the top row, so cell (x, y) spans x..x+1 and
+    /// y..y+1 - one point per cell corner (a step is one cell's side), the last joining the first. This is the line the
+    /// knife and the shears follow and the chalk is drawn on, not the middles of the edge cells.
+    /// </summary>
+    public List<List<Vector2>> Outline(int quarterTurns = 0)
+    {
+        Size(quarterTurns, out int w, out int h);
+        // Every side on the edge, going round the covered cells the same way (clockwise as drawn, y down).
+        var from = new Dictionary<int, List<int>>();
+        int edges = 0;
+        int Key(int x, int y) => x * 4096 + y;
+        void Side(int x0, int y0, int x1, int y1)
+        {
+            int k = Key(x0, y0);
+            if (!from.TryGetValue(k, out List<int> list)) from[k] = list = new List<int>(2);
+            list.Add(Key(x1, y1));
+            edges++;
+        }
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                if (!Covers(x, y, quarterTurns)) continue;
+                if (!Covers(x, y - 1, quarterTurns)) Side(x, y, x + 1, y);
+                if (!Covers(x + 1, y, quarterTurns)) Side(x + 1, y, x + 1, y + 1);
+                if (!Covers(x, y + 1, quarterTurns)) Side(x + 1, y + 1, x, y + 1);
+                if (!Covers(x - 1, y, quarterTurns)) Side(x, y + 1, x, y);
+            }
+        var loops = new List<List<Vector2>>();
+        for (int y = 0; y <= h && edges > 0; y++)
+            for (int x = 0; x <= w && edges > 0; x++)
+            {
+                int start = Key(x, y);
+                while (from.TryGetValue(start, out List<int> outs) && outs.Count > 0)
+                {
+                    var loop = new List<Vector2>();
+                    int at = start, dx = 0, dy = 0;
+                    do
+                    {
+                        loop.Add(new Vector2(at / 4096, at % 4096));
+                        List<int> next = from[at];
+                        // Where two cells touch only at a corner, keep to the turn to the right (each cell's own loop).
+                        int pick = 0, best = int.MinValue;
+                        for (int k = 0; k < next.Count; k++)
+                        {
+                            int nx = next[k] / 4096 - at / 4096, ny = next[k] % 4096 - at % 4096;
+                            int score = dx == 0 && dy == 0 ? 0 : -dy * nx + dx * ny == 0 ? (dx * nx + dy * ny > 0 ? 1 : -2) : (-dy * nx + dx * ny > 0 ? 2 : 0);
+                            if (score > best) { best = score; pick = k; }
+                        }
+                        int to = next[pick];
+                        next.RemoveAt(pick);
+                        edges--;
+                        dx = to / 4096 - at / 4096;
+                        dy = to % 4096 - at % 4096;
+                        at = to;
+                    } while (at != start && from.TryGetValue(at, out List<int> more) && more.Count > 0);
+                    loops.Add(loop);
+                }
+            }
+        return loops;
+    }
+
+    /// <summary>
+    /// The point of an outline (closed loops of points, as <see cref="Outline"/> gives them in any units) nearest to
+    /// <paramref name="p"/>, and its distance (0 on the line); <paramref name="loop"/> and <paramref name="side"/> say
+    /// where it lies - on the side from point <c>side</c> of that loop to the next. Infinity (and -1) for no outline.
+    /// </summary>
+    public static float NearestOnOutline(List<List<Vector2>> outline, Vector2 p, out Vector2 nearest, out int loop, out int side)
+    {
+        float best = float.PositiveInfinity;
+        nearest = p;
+        loop = side = -1;
+        if (outline == null)
+            return best;
+        for (int l = 0; l < outline.Count; l++)
+        {
+            List<Vector2> pts = outline[l];
+            for (int k = 0; k < pts.Count; k++)
+            {
+                Vector2 a = pts[k], b = pts[(k + 1) % pts.Count], ab = b - a;
+                float len2 = ab.sqrMagnitude;
+                float t = len2 > 1e-12f ? Math.Max(0f, Math.Min(1f, Vector2.Dot(p - a, ab) / len2)) : 0f;
+                Vector2 q = a + ab * t;
+                float d = (p - q).magnitude;
+                if (d < best) { best = d; nearest = q; loop = l; side = k; }
+            }
+        }
+        return best;
     }
 }
 

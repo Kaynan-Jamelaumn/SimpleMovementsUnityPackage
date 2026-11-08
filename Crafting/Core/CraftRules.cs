@@ -52,14 +52,16 @@ public class CraftContent
     }
 
     /// <summary>
-    /// Adds what <paramref name="other"/> has that this content lacks (by id), leaving everything already here as it is:
-    /// a project's database catches up with new built-in content without losing its own changes. Returns how many were added.
+    /// Adds what <paramref name="other"/> has that this content lacks (by id; an alloy effect by its base, element and
+    /// property), leaving everything already here as it is: a project's database catches up with new built-in content -
+    /// a new metal with what it does in alloys - without losing its own changes. Returns how many were added.
     /// </summary>
     public int AddMissing(CraftContent other)
     {
         if (other == null)
             return 0;
         int n = AddMissingById(elements, other.elements, e => e.id);
+        n += AddMissingEffects(effects ??= new List<CraftAlloyEffect>(), other.effects);
         n += AddMissingById(classes, other.classes, e => e.id);
         n += AddMissingById(ores, other.ores, e => e.id);
         n += AddMissingById(fuels, other.fuels, e => e.id);
@@ -76,6 +78,29 @@ public class CraftContent
         n += AddMissingById(cuts ??= new List<CraftGemCut>(), other.cuts, e => e.id);
         return n;
     }
+
+    /// <summary>
+    /// Adds the alloy effects of <paramref name="from"/> that <paramref name="into"/> has none of for the same base,
+    /// element and property (an effect has no id: those three are what it is about).
+    /// </summary>
+    public static int AddMissingEffects(List<CraftAlloyEffect> into, List<CraftAlloyEffect> from)
+    {
+        if (into == null || from == null)
+            return 0;
+        int n = 0;
+        foreach (CraftAlloyEffect x in from)
+        {
+            if (x == null || into.Exists(e => e != null && SameEffect(e, x))) continue;
+            into.Add(x);
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>Are two alloy effects about the same thing (base, element, property)?</summary>
+    public static bool SameEffect(CraftAlloyEffect a, CraftAlloyEffect b) =>
+        a != null && b != null && a.property == b.property && string.Equals(a.element ?? "", b.element ?? "", StringComparison.OrdinalIgnoreCase)
+        && string.Equals((a.baseElement ?? "").Trim(), (b.baseElement ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Adds the entries of <paramref name="from"/> whose id <paramref name="into"/> does not have yet.</summary>
     public static int AddMissingById<T>(List<T> into, List<T> from, Func<T, string> id) where T : class
@@ -295,7 +320,10 @@ public sealed class CraftRules
         r.Gems = r.Register("gem:", Unique(content.gems, e => e.id, "gem", r), e => e.id);
         r.Cuts = r.Register("cut:", Unique(content.cuts, e => e.id, "gem cut", r), e => e.id);
         CraftMaterialClass[] classes = r.Register("class:", Unique(content.classes, e => e.id, "material class", r), e => e.id);
-        Array.Sort(classes, (a, b) => b.priority.CompareTo(a.priority));
+        // Highest priority first; equal priorities keep the order they are listed in (Array.Sort alone is not stable).
+        var listed = new Dictionary<CraftMaterialClass, int>();
+        for (int i = 0; i < classes.Length; i++) listed[classes[i]] = i;
+        Array.Sort(classes, (a, b) => a.priority != b.priority ? b.priority.CompareTo(a.priority) : listed[a].CompareTo(listed[b]));
         r.Classes = classes;
 
         var effects = new List<CraftAlloyEffect>();
@@ -359,7 +387,11 @@ public sealed class CraftRules
         return result.ToArray();
     }
 
-    /// <summary>References between definitions (ore yields, class ranges, designs' patterns...).</summary>
+    /// <summary>
+    /// References between definitions (ore yields, class ranges, designs' patterns...) as errors, and what the content
+    /// asks that it cannot give as warnings: a part that cannot be made to its own target or from any stock, a price that
+    /// loses or prints money, classes that overlap (<see cref="CheckParts"/>, <see cref="CheckContradictions"/>).
+    /// </summary>
     private void Check()
     {
         foreach (CraftOreDefinition o in Ores)
@@ -413,7 +445,21 @@ public sealed class CraftRules
                     if (!roles.Contains(j.roleA) || !string.IsNullOrEmpty(j.roleB) && !roles.Contains(j.roleB))
                         CompileErrors.Add($"Design '{d.id}': joint '{j.id}' joins an unknown part ({j.roleA}, {j.roleB}).");
                 }
+            // A hilted blade's tang, at its shortest, must come through the longest grip and pommel it is made for (and be peened).
+            CraftJointSpec peen = CraftAssembly.PeenJoint(d);
+            CraftShapeTarget blade = peen != null ? d.Component(peen.roleA)?.shape : null;
+            if (blade != null && blade.tangTo > 0)
+            {
+                double hilt = CraftAssembly.PeenAllowance;
+                foreach (CraftComponentSpec c in d.components)
+                    if (c != null && !c.supply && (c.function == CraftComponentFunction.Grip || c.function == CraftComponentFunction.Counterweight))
+                        hilt += Math.Max(1, c.count) * (c.shape != null ? c.shape.lengthMax : c.wood?.lengthMax ?? 0);
+                if (blade.lengthMin * blade.tangTo < hilt)
+                    CompileWarnings.Add($"Design '{d.id}': the tang of its shortest blade ({blade.lengthMin * blade.tangTo:0} mm) is shorter than its longest grip and pommel and the peen ({hilt:0} mm): it could not be finished.");
+            }
+            CheckParts(d);
         }
+        CheckContradictions();
         foreach (CraftPattern p in Patterns)
             if (p.Area == 0)
                 CompileErrors.Add($"Pattern '{p.id}' covers no cells.");
@@ -425,5 +471,253 @@ public sealed class CraftRules
                 CompileWarnings.Add($"Gem '{g.id}': unknown preferred cut '{g.preferredCut}'.");
         if (SteelBase < 0)
             CompileWarnings.Add($"No '{Settings.steelBase}' element: nothing hardens by quenching.");
+    }
+
+    // ------------------------------------------------------------------ contradictions in the content
+    /// <summary>Density (g/cm³) of a composition (element id, mass fraction) by these rules; 0 when an element is unknown.</summary>
+    private double DensityOf(params (string element, double fraction)[] composition)
+    {
+        var f = new double[ElementCount];
+        foreach (var (element, fraction) in composition)
+        {
+            int i = IndexOf(element);
+            if (i < 0) return 0;
+            f[i] += fraction;
+        }
+        return CraftMetallurgy.Analyze(this, f).Density;
+    }
+
+    /// <summary>The metal a pattern's mass is checked in: a hardening steel and a tin bronze (the two a part is most often made of).</summary>
+    private double steelDensity = -1, bronzeDensity = -1;
+
+    /// <summary>
+    /// What a design asks of its parts that the content cannot give: a part whose own profile weighs outside its mass range
+    /// (in steel or in bronze), an eye as wide as the metal round it, a weapon rated for a mass its main part cannot have,
+    /// a wooden part longer or thicker than any blank or log of a wood tough enough, leather too thick for every thread.
+    /// </summary>
+    private void CheckParts(CraftDesign d)
+    {
+        if (steelDensity < 0)
+        {
+            steelDensity = DensityOf((Settings.steelBase, 0.995), (Settings.steelCarbon, 0.005));
+            bronzeDensity = DensityOf(("copper", 0.89), ("tin", 0.11));
+        }
+        foreach (CraftComponentSpec c in d.components)
+        {
+            if (c == null || c.supply) continue;
+            CraftShapeTarget s = c.shape;
+            if (s != null && (s.lengthMin > s.lengthMax || s.massMin > s.massMax))
+                CompileWarnings.Add($"Design '{d.id}', {c.role}: a length or mass range runs backwards (its min is above its max).");
+            if (Castable(c))
+            {
+                // A part made exactly to its own profile - what its pattern mould casts, what the anvil's target draws -
+                // must be inside its own mass range, or matching the drawn target is scored too light or too heavy.
+                CraftMold mold = PatternMold(PatternMoldId(d.id, c.role));
+                foreach (var (metal, density) in new[] { ("steel", steelDensity), ("bronze", bronzeDensity) })
+                {
+                    if (mold == null || density <= 0) continue;
+                    double grams = CraftSmelting.MoldMass(this, mold, density);
+                    if (grams < s.massMin - 0.5 || grams > s.massMax + 0.5)
+                        CompileWarnings.Add($"Design '{d.id}', {c.role}: its own profile weighs {grams:0} g in {metal}, outside its mass range ({s.massMin:0}-{s.massMax:0} g): made exactly to it, it is scored too {(grams < s.massMin ? "light" : "heavy")}.");
+                }
+                if (s.eye && s.eyeDiameter > 0)
+                {
+                    s.At(s.eyeAt, out float width, out _);
+                    if (width - s.eyeDiameter < 2)
+                        CompileWarnings.Add($"Design '{d.id}', {c.role}: its {s.eyeDiameter:0.#} mm eye leaves less than a millimetre of metal each side in a part {width:0.#} mm wide there.");
+                }
+                CheckEdge(d, c, s);
+            }
+            if (c.kind == CraftPieceKind.Wood && c.wood != null)
+            {
+                CraftWoodSpec w = c.wood;
+                if (w.lengthMin > w.lengthMax || w.diameterMin > w.diameterMax)
+                    CompileWarnings.Add($"Design '{d.id}', {c.role}: a length or thickness range runs backwards (its min is above its max).");
+                // as wide and thick as its profile's widest point (a board), at least its least diameter (a haft)
+                double across = w.diameterMin, through = w.diameterMin;
+                if (s?.profile != null)
+                    foreach (CraftProfilePoint p in s.profile)
+                    {
+                        across = Math.Max(across, p.width);
+                        through = Math.Max(through, Math.Min(p.width, p.thickness));
+                    }
+                bool any = false;
+                foreach (CraftWoodDefinition wood in Woods)
+                {
+                    if (wood.toughness < w.toughnessMin) continue;
+                    bool blank = wood.blankLength >= w.lengthMin && (wood.blankWidth >= across && wood.blankThickness >= through || wood.blankThickness >= across && wood.blankWidth >= through);
+                    bool log = CraftDefaults.LogLength(wood) >= w.lengthMin && CraftDefaults.LogDiameter >= across;
+                    if (blank || log) { any = true; break; }
+                }
+                if (!any)
+                    CompileWarnings.Add($"Design '{d.id}', {c.role}: no blank or log of a wood tough enough ({w.toughnessMin:0.##}) is {w.lengthMin:0} mm long and {across:0} mm across: it cannot be made.");
+            }
+            if (c.kind == CraftPieceKind.Hide && c.leather != null && c.leather.thicknessMin > c.leather.thicknessMax)
+                CompileWarnings.Add($"Design '{d.id}', {c.role}: its thickness range runs backwards (its min is above its max).");
+            if (c.kind == CraftPieceKind.Gem && c.gem != null && c.gem.caratsMin > c.gem.caratsMax)
+                CompileWarnings.Add($"Design '{d.id}', {c.role}: its carat range runs backwards (its min is above its max).");
+        }
+        // A weapon's damage and speed are rated for its reference mass: one main part (of several, each) must be able to weigh it.
+        CraftComponentSpec main = d.MainComponent;
+        if (d.IsWeaponLike && main != null && main.kind == CraftPieceKind.Metal && main.shape != null && main.shape.massMax > main.shape.massMin
+            && (d.referenceMass < main.shape.massMin || d.referenceMass > main.shape.massMax))
+            CompileWarnings.Add($"Design '{d.id}': its reference mass ({d.referenceMass:0} g) is outside its {main.Name.ToLowerInvariant()}'s mass range ({main.shape.massMin:0}-{main.shape.massMax:0} g): made well, it never reaches its rated damage.");
+        // Leather sewn with the strongest thread there is must hold: the thickest leather a seam joins wants this much.
+        double strongest = 0;
+        foreach (CraftSupplyDefinition t in Supplies)
+            if (t.kind == CraftSupplyKind.Thread) strongest = Math.Max(strongest, t.strength);
+        if (d.joints != null && strongest > 0)
+            foreach (CraftJointSpec j in d.joints)
+            {
+                if (j == null || j.kind != CraftJointKind.Stitch) continue;
+                double thick = 0;
+                foreach (string role in new[] { j.roleA, j.roleB })
+                {
+                    CraftComponentSpec part = d.Component(role);
+                    if (part != null && part.kind == CraftPieceKind.Hide && part.leather != null && part.leather.fabric != CraftFabric.Cloth)
+                        thick = Math.Max(thick, part.leather.thicknessMax);
+                }
+                if (thick > 0 && CraftTextiles.ThreadNeed(thick) > strongest + 1e-6)
+                    CompileWarnings.Add($"Design '{d.id}': its seam '{j.Name}' through leather up to {thick:0.#} mm wants a thread of {CraftTextiles.ThreadNeed(thick):0.##}, stronger than any ({strongest:0.##}).");
+            }
+    }
+
+    /// <summary>
+    /// An edge its own section can carry (<see cref="CraftSurface.EdgeHalfAngle"/>): an angle no steeper than bevels are
+    /// ground; a section not too narrow for the design's angle along most of the edge (ground to it, the bevels would
+    /// meet steeper, and the edge is judged at that); and nowhere so thick for its width that they meet steeper than a
+    /// whetstone is held (that stretch could not be honed).
+    /// </summary>
+    private void CheckEdge(CraftDesign d, CraftComponentSpec c, CraftShapeTarget s)
+    {
+        if (s == null || s.edge == CraftEdgeKind.None || c.kind != CraftPieceKind.Metal || s.profile == null || s.profile.Count < 2)
+            return;
+        if (s.edgeAngle > 2 * CraftSurface.MaxBevelAngle + 1e-3)
+            CompileWarnings.Add($"Design '{d.id}', {c.role}: its edge angle ({s.edgeAngle:0}°) is steeper than bevels are ground ({2 * CraftSurface.MaxBevelAngle:0}° at the most, {CraftSurface.MaxBevelAngle:0}° a side): it can never be reached.");
+        int edges = s.edge == CraftEdgeKind.Double ? 2 : 1, n = 0, stretches = Math.Max(8, Settings.segments);
+        double sum = 0, steepest = 0, steepestAt = 0;
+        for (int k = 0; k < stretches; k++)
+        {
+            float t = (k + 0.5f) / stretches;
+            if (t < s.edgeFrom || t > s.edgeTo) continue;
+            s.At(t, out float width, out float thickness);
+            double a = CraftSurface.EdgeHalfAngle(width, thickness, s.edgeAngle, edges);
+            sum += a;
+            n++;
+            if (a > steepest) { steepest = a; steepestAt = t; }
+        }
+        if (n == 0)
+            return;
+        if (sum / n > Math.Min(s.edgeAngle * 0.5, CraftSurface.MaxBevelAngle) + 2)
+            CompileWarnings.Add($"Design '{d.id}', {c.role}: its section is too narrow for its {s.edgeAngle:0}° edge along most of it - ground to the section, the bevels meet at about {2 * sum / n:0}°, and the edge is judged at that: give it that angle, or a wider, thinner section.");
+        if (steepest > CraftSurface.StoneAngleMax + 1e-3)
+            CompileWarnings.Add($"Design '{d.id}', {c.role}: at {steepestAt * 100:0}% of its length its section is too thick for its width - the bevels meet at {steepest:0}° a side there, steeper than a whetstone is held ({CraftSurface.StoneAngleMax:0}°): that stretch could not be honed.");
+    }
+
+    /// <summary>
+    /// Contradictions between definitions: an ore that sells for more than its poorest lump's metal is worth (or for a
+    /// fraction of a usual lump's), classes of one base and priority whose ranges overlap, ranges that run backwards,
+    /// fibres that spin into what is not a thread or weave into what is not cloth, an ore's flux that is not a flux.
+    /// </summary>
+    private void CheckContradictions()
+    {
+        foreach (CraftOreDefinition o in Ores)
+        {
+            if (o.yields != null)
+                foreach (CraftOreYield y in o.yields)
+                    if (y != null && y.min > y.max)
+                        CompileWarnings.Add($"Ore '{o.id}': its {y.element} yield runs backwards (its min is above its max).");
+            if (o.dirtMax < o.dirtMin)
+                CompileWarnings.Add($"Ore '{o.id}': Dirt Max is below Dirt Min.");
+            if (!string.IsNullOrEmpty(o.needsFlux) && Supply(o.needsFlux) is CraftSupplyDefinition flux && flux.kind != CraftSupplyKind.Flux)
+                CompileWarnings.Add($"Ore '{o.id}': it needs '{o.needsFlux}', which is not a flux.");
+            if (o.price <= 0 || o.yields == null || o.yields.Count == 0) continue;
+            // Smelted, the poorest lump must give metal worth its price; a usual lump not many times it (a money machine).
+            double poorest = CraftValue.OreMetal(this, o, 0), usual = CraftValue.OreMetal(this, o, 0.5);
+            if (poorest > 0 && o.price > poorest + 0.005)
+                CompileWarnings.Add($"Ore '{o.id}': a lump costs {o.price:0.##}, but the metal of the poorest lump is worth {poorest:0.##}: smelting it loses money.");
+            if (usual > 5 * o.price)
+                CompileWarnings.Add($"Ore '{o.id}': a lump costs {o.price:0.##}, but a usual lump's metal is worth {usual:0.##}: buying and smelting it prints money.");
+        }
+        foreach (CraftMaterialClass c in Classes)
+            if (c.ranges != null)
+                foreach (CraftElementRange e in c.ranges)
+                    if (e != null && e.min > e.max)
+                        CompileWarnings.Add($"Material class '{c.id}': its {e.element} range runs backwards (its min is above its max).");
+        // Equal-priority classes of one base are tried in the order they are listed; if their ranges overlap, which one
+        // names a metal depends on that order alone.
+        for (int a = 0; a < Classes.Length; a++)
+            for (int b = a + 1; b < Classes.Length; b++)
+            {
+                CraftMaterialClass x = Classes[a], y = Classes[b];
+                if (x.priority != y.priority || !string.Equals(x.baseElement, y.baseElement, StringComparison.OrdinalIgnoreCase)) continue;
+                if (Overlap(x, y))
+                    CompileWarnings.Add($"Material classes '{x.id}' and '{y.id}': the same base and priority ({x.priority}), and a metal can be both: give one a higher priority or narrow a range.");
+            }
+        foreach (CraftSupplyDefinition s in Supplies)
+        {
+            if (s.spinsInto != null)
+                foreach (string t in s.spinsInto)
+                    if (!string.IsNullOrEmpty(t) && Supply(t)?.kind != CraftSupplyKind.Thread)
+                        CompileWarnings.Add($"Supply '{s.id}': it spins into '{t}', which is not a thread.");
+            if (!string.IsNullOrEmpty(s.weavesInto) && !(Hide(s.weavesInto)?.textile ?? false))
+                CompileWarnings.Add($"Supply '{s.id}': it weaves into '{s.weavesInto}', which is not a cloth.");
+            CheckSpinning(s);
+        }
+        foreach (CraftWoodDefinition w in Woods)
+            if (w.blankLength <= 0 || w.blankWidth <= 0 || w.blankThickness <= 0)
+                CompileWarnings.Add($"Wood '{w.id}': its blank has no size.");
+    }
+
+    /// <summary>
+    /// A fibre, the thread it spins into and the cloth it weaves into are worth more at each step, never many times more:
+    /// a skein of its thread (<see cref="CraftFibre.MetresPerThread"/> of a middling yarn, a half-prepared fibre drafted
+    /// at 0.5) at most <see cref="SpinningAddsAtMost"/> times the fibre in it, and the yarn a bolt is woven from (12 m a
+    /// cell, <see cref="CraftFibre.MetresPerCell"/>) at its dearest thread less than the bolt.
+    /// </summary>
+    private void CheckSpinning(CraftSupplyDefinition s)
+    {
+        if (s.kind != CraftSupplyKind.Fibre || s.spinsInto == null || s.gramsPerItem <= 0)
+            return;
+        double fibre = s.price / s.gramsPerItem * CraftFibre.SkeinGrams, dearest = 0;
+        foreach (string t in s.spinsInto)
+        {
+            CraftSupplyDefinition thread = Supply(t);
+            if (thread == null) continue;
+            dearest = Math.Max(dearest, thread.price);
+            if (thread.price > fibre * SpinningAddsAtMost)
+                CompileWarnings.Add($"Supply '{t}': a {CraftFibre.MetresPerThread:0} m skein costs {thread.price:0.###}, but the {s.Name.ToLowerInvariant()} in it is worth {fibre:0.###}: spinning prints money.");
+        }
+        CraftHideDefinition cloth = Hide(s.weavesInto);
+        if (cloth == null || !cloth.textile)
+            return;
+        double yarn = dearest * cloth.width * cloth.height * CraftFibre.MetresPerCell / CraftFibre.MetresPerThread;
+        if (yarn > cloth.price)
+            CompileWarnings.Add($"Hide '{cloth.id}': a bolt costs {cloth.price:0.##}, but the yarn woven into it is worth {yarn:0.##}: weaving throws value away.");
+    }
+
+    /// <summary>The most a skein of thread may be worth against the fibre in it (<see cref="CheckSpinning"/>).</summary>
+    public const double SpinningAddsAtMost = 4;
+
+    /// <summary>Can one composition fall in both classes' ranges (more than on a shared boundary)? An element a class does not name may be anything.</summary>
+    private static bool Overlap(CraftMaterialClass x, CraftMaterialClass y)
+    {
+        var lo = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var hi = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (CraftMaterialClass c in new[] { x, y })
+            if (c.ranges != null)
+                foreach (CraftElementRange r in c.ranges)
+                {
+                    if (r == null) continue;
+                    lo[r.element] = Math.Max(lo.TryGetValue(r.element, out double l) ? l : 0, r.min);
+                    hi[r.element] = Math.Min(hi.TryGetValue(r.element, out double h) ? h : 1, r.max);
+                }
+        double least = 0;
+        foreach (KeyValuePair<string, double> e in lo)
+        {
+            if (hi[e.Key] - e.Value <= 1e-6) return false;
+            least += e.Value;
+        }
+        return least < 0.5; // what the base leaves room for: it is the most abundant metal
     }
 }

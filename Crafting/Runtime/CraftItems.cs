@@ -101,7 +101,8 @@ public static class CraftItems
                     ? $"A bar of {m.name.ToLowerInvariant()} from the stores, 20 cm long, 3 cm wide, 6 mm thick."
                     : $"{CraftText.Capital(form.suffix)} of {m.name.ToLowerInvariant()} for the jeweller: {form.length / 10f:0} cm long, {form.width:0.#} mm by {form.thickness:0.#} mm.";
                 weight = (float)bar.Mass(rules) / 1000f;
-                price = (float)(bar.Mass(rules) * prof.PricePerGram);
+                // its class's multiplier too: a premium steel is worth its premium as a bar as much as in a sword
+                price = (float)CraftValue.Of(rules, bar);
                 color = prof.Color;
                 size = new Vector3(form.length, form.width, form.thickness);
                 break;
@@ -110,12 +111,17 @@ public static class CraftItems
             {
                 CraftWoodDefinition w = rules.Wood(id);
                 if (w == null) return null;
+                // As long as the species' blank (a 2.2 m ash log gives spear shafts), never shorter than 90 cm.
+                float length = CraftDefaults.LogLength(w);
                 name = $"{w.Name} log";
-                description = $"A green {w.Name.ToLowerInvariant()} log in its bark, 90 cm long. {w.description}";
-                price = w.price * 1.5f;
-                weight = (float)(Math.PI * 0.12 * 0.12 * 0.9 * w.density * 1000 * (1 + CraftWoodwork.Green));
+                description = $"A green {w.Name.ToLowerInvariant()} log in its bark, {length / 10f:0} cm long and {CraftDefaults.LogDiameter / 10f:0} cm across. {w.description}";
+                // by the one rule for wood: its volume against the species' blank, at the unseasoned share; it weighs what
+                // the same log weighs on the bench, green (CraftPiece.Mass)
+                CraftPiece log = CraftDefaults.Log(rules, w.id, length, CraftDefaults.LogDiameter);
+                price = (float)CraftValue.Of(rules, log);
+                weight = (float)(log.Mass(rules) / 1000.0);
                 color = Color.Lerp(w.color, new Color(0.35f, 0.27f, 0.2f), 0.6f);
-                size = new Vector3(900, 240, 240);
+                size = new Vector3(length, CraftDefaults.LogDiameter, CraftDefaults.LogDiameter);
                 break;
             }
             case CraftStockKind.Gem:
@@ -148,7 +154,8 @@ public static class CraftItems
                 name = $"Raw {h.Name.ToLowerInvariant()}";
                 description = h.description;
                 price = h.price;
-                weight = 3f;
+                // as the hide (or the bolt) weighs on the bench: a wet raw cow hide some 9 kg, a bolt of linen half a kilo
+                weight = (float)((CraftLeather.NewHide(rules, h.id, 0)?.Mass(rules) ?? 3000) / 1000);
                 color = h.color;
                 break;
             }
@@ -157,10 +164,12 @@ public static class CraftItems
                 CraftWoodDefinition w = rules.Wood(id);
                 if (w == null) return null;
                 name = $"{w.Name} blank";
-                description = w.description;
+                description = $"{w.description} {CraftText.Capital(CraftDefaults.BlankSize(w))}.";
                 price = w.price;
                 weight = w.blankLength * w.blankWidth * w.blankThickness * w.density / 1e6f;
                 color = w.color;
+                // the species' blank (a 2.2 m ash stave, a 110 x 65 cm linden plank) is what goes on the bench
+                size = new Vector3(w.blankLength, w.blankWidth, w.blankThickness);
                 break;
             }
             case CraftStockKind.Fasteners:
@@ -168,10 +177,12 @@ public static class CraftItems
                 if (!Enum.TryParse(id, true, out CraftFastenerKind fk)) return null;
                 name = fk == CraftFastenerKind.Buckle ? "Iron buckles" : fk == CraftFastenerKind.Stud ? "Iron studs" : "Iron rivets";
                 description = "Ready-made, from the stores.";
-                price = fk == CraftFastenerKind.Buckle ? 2f : 1f;
-                weight = 0.1f;
-                color = new Color(0.55f, 0.55f, 0.58f);
                 metal = new List<CraftStockElement> { new CraftStockElement("iron", 0.998f), new CraftStockElement("carbon", 0.002f) };
+                // the set's metal and the making of each, as the set is worth on the bench
+                CraftPiece set = CraftDefaults.FastenerSet(rules, fk, StockFastenerCount(fk), StockFastenerMass(fk), (CraftDefaults.Iron, 0.998), (CraftDefaults.Carbon, 0.002));
+                price = (float)Math.Round(CraftValue.Of(rules, set), 2);
+                weight = (float)(set.Mass(rules) / 1000);
+                color = new Color(0.55f, 0.55f, 0.58f);
                 break;
             }
             case CraftStockKind.Fuel:
@@ -192,7 +203,8 @@ public static class CraftItems
                 name = !string.IsNullOrEmpty(s.item) ? s.item : s.Name;
                 description = s.description;
                 price = s.price;
-                weight = 0.3f;
+                // what one item of it weighs - and weighs in the item it goes into (a batting, a skein, a pallion of solder)
+                weight = (float)(s.ItemGrams / 1000);
                 color = s.color;
                 break;
             }
@@ -207,16 +219,31 @@ public static class CraftItems
                 color = a.color;
                 break;
             }
+            case CraftStockKind.Quenchant:
+            {
+                CraftQuenchant q = rules.Quenchant(id);
+                if (q == null) return null;
+                name = !string.IsNullOrEmpty(q.item) ? q.item : q.Name;
+                description = $"Enough to fill a quench tank with {q.Name.ToLowerInvariant()}.";
+                price = 2f;
+                weight = 2f;
+                color = q.id.Contains("oil") ? new Color(0.55f, 0.42f, 0.15f) : q.id.Contains("blood") ? new Color(0.5f, 0.05f, 0.05f) : new Color(0.75f, 0.82f, 0.88f);
+                break;
+            }
         }
         item.Setup(name, description, kind, kind == CraftStockKind.Metal || kind == CraftStockKind.Fasteners ? "" : id, price, weight, CraftArt.StockIcon(kind, color), metal, size);
         if (kind == CraftStockKind.Fasteners && Enum.TryParse(id, true, out CraftFastenerKind kindOf))
-            item.SetFasteners(kindOf, kindOf == CraftFastenerKind.Buckle ? 2 : 10, kindOf == CraftFastenerKind.Buckle ? 30f : 4f);
+            item.SetFasteners(kindOf, StockFastenerCount(kindOf), StockFastenerMass(kindOf));
         ((UnityEngine.Object)item).name = name;
         item.SetRuntimeKey(key);
         item.SetArt(null, CraftModels.ForStock(item, rules));
         stock[key] = item;
         return item;
     }
+
+    /// <summary>How many fasteners one stock item of ready-made ones holds, and the grams of each.</summary>
+    private static int StockFastenerCount(CraftFastenerKind kind) => kind == CraftFastenerKind.Buckle ? 2 : 10;
+    private static float StockFastenerMass(CraftFastenerKind kind) => kind == CraftFastenerKind.Buckle ? 30f : 4f;
 
     /// <summary>Every stock item a station with <paramref name="tools"/> can use (a test station's free supplies).</summary>
     public static List<CraftStockItemSO> AllStock(CraftRules rules, CraftTools tools)
@@ -255,6 +282,9 @@ public static class CraftItems
         }
         if ((tools & (CraftTools.Forge | CraftTools.Furnace)) != 0)
             foreach (CraftFuel f in rules.Fuels) Add(Stock(rules, CraftStockKind.Fuel, f.id));
+        if ((tools & CraftTools.QuenchTank) != 0)
+            foreach (CraftQuenchant q in rules.Quenchants)
+                if (!string.IsNullOrEmpty(q.item)) Add(Stock(rules, CraftStockKind.Quenchant, q.id));
         foreach (CraftSupplyDefinition s in rules.Supplies) Add(Stock(rules, CraftStockKind.Supply, s.id));
         return list;
     }
@@ -284,7 +314,7 @@ public static class CraftItems
         if (parts != null)
             foreach (CraftPiece p in parts) mass += p.Mass(rules);
         item.Setup(key, piece, parts, name, Description(rules, piece), (float)(mass / 1000.0), PieceValue(rules, piece, parts),
-            CraftArt.PieceIcon(rules, piece, parts), GridOf(piece));
+            CraftArt.PieceIcon(rules, piece, parts), GridOf(rules, piece, parts));
         item.SetModel(CraftModels.ForPiece(rules, item.RuntimeId, piece, parts));
         made[item.RuntimeId] = item;
         if (persist)
@@ -303,8 +333,23 @@ public static class CraftItems
         return string.IsNullOrEmpty(p.origin) ? "A piece of work." : CraftText.Capital(p.origin) + ".";
     }
 
-    private static Vector2Int GridOf(CraftPiece p)
+    /// <summary>The cells a carried piece takes: an unfinished item as its design's finished one would, or as its longest part.</summary>
+    private static Vector2Int GridOf(CraftRules rules, CraftPiece p, List<CraftPiece> parts)
     {
+        if (p.kind == CraftPieceKind.Assembly)
+        {
+            CraftDesign d = rules.Design(p.assembly.design);
+            if (d != null && d.gridSize.x > 0 && d.gridSize.y > 0)
+                return d.gridSize;
+            Vector2Int g = Vector2Int.one;
+            if (parts != null)
+                foreach (CraftPiece q in parts)
+                {
+                    Vector2Int c = GridOf(rules, q, null);
+                    g = new Vector2Int(Math.Max(g.x, c.x), Math.Max(g.y, c.y));
+                }
+            return g;
+        }
         switch (p.kind)
         {
             case CraftPieceKind.Hide: return p.hide.width * p.hide.height > 80 ? new Vector2Int(2, 2) : Vector2Int.one;
@@ -318,77 +363,33 @@ public static class CraftItems
         }
     }
 
-    /// <summary>What a piece (and its parts) is worth: its material, by weight.</summary>
+    /// <summary>What a piece (and its parts) is worth: its material, by the one rule for stock, pieces and finished items (<see cref="CraftValue"/>).</summary>
     public static float PieceValue(CraftRules rules, CraftPiece p, List<CraftPiece> parts = null)
     {
-        double v = 0;
-        switch (p.kind)
-        {
-            case CraftPieceKind.Metal:
-            case CraftPieceKind.Fasteners:
-                v = p.Mass(rules) * (p.Profile(rules)?.PricePerGram ?? 0.01);
-                break;
-            case CraftPieceKind.Ore:
-                v = (rules.Ore(p.ore.ore)?.price ?? 1) * p.ore.MineralMass / Math.Max(1, rules.Ore(p.ore.ore)?.lumpMass ?? 1000);
-                break;
-            case CraftPieceKind.Hide:
-            {
-                CraftHideDefinition h = rules.Hide(p.hide.hide);
-                int cells = 0;
-                foreach (HideCell c in p.hide.cells) if (c.present) cells++;
-                double share = h != null && h.width * h.height > 0 ? cells / (double)(h.width * h.height) : 0.5;
-                v = (h?.price ?? 5) * share * (1 + CraftLeather.MeanTannage(p.hide));
-                break;
-            }
-            case CraftPieceKind.Wood:
-                v = rules.Wood(p.wood.wood)?.price ?? 1;
-                break;
-            case CraftPieceKind.Fibre:
-            {
-                CraftSupplyDefinition s = rules.Supply(p.fibre.fibre);
-                v = (s?.price ?? 0.5) * p.fibre.grams / Math.Max(1, s?.gramsPerItem ?? 100) * (1 + CraftFibre.Prep(p.fibre));
-                break;
-            }
-            case CraftPieceKind.Yarn:
-            {
-                string thread = CraftFibre.ThreadOf(rules, p);
-                v = (rules.Supply(thread)?.price ?? 0.5) * p.yarn.length / CraftFibre.MetresPerThread;
-                break;
-            }
-            case CraftPieceKind.Gem:
-                v = CraftLapidary.Grade(rules, p).Value;
-                break;
-        }
+        double v = CraftValue.Of(rules, p);
         if (parts != null)
-            foreach (CraftPiece q in parts) v += PieceValue(rules, q);
+            foreach (CraftPiece q in parts) v += CraftValue.Of(rules, q);
         return (float)Math.Round(v, 2);
     }
 
-    /// <summary>What an assembly still needs (part names, unmade joints).</summary>
+    /// <summary>
+    /// What an assembly carried with its parts still needs before it can be finished: the bench's own rule
+    /// (<see cref="CraftAssembly.Missing(CraftRules, CraftPiece, Func{string, int, CraftPiece})"/>), each as a sentence.
+    /// </summary>
     public static List<string> MissingParts(CraftRules rules, CraftPiece asm, List<CraftPiece> parts)
     {
-        var list = new List<string>();
-        CraftDesign d = rules.Design(asm?.assembly.design);
-        if (d == null)
-            return list;
-        foreach (CraftComponentSpec c in d.components)
+        if (rules == null || asm?.assembly == null)
+            return new List<string>();
+        CraftPiece PieceIn(string role, int index)
         {
-            if (c.optional) continue;
-            if (c.supply)
-            {
-                if (asm.assembly.Supply(c.role) < c.supplyCount) list.Add(c.Name.ToLowerInvariant());
-                continue;
-            }
-            int have = 0;
-            foreach (AssemblyPart a in asm.assembly.parts) if (a.role == c.role) have++;
-            if (have < c.count) list.Add(c.Name.ToLowerInvariant());
+            string id = asm.assembly.PieceIn(role, index);
+            if (string.IsNullOrEmpty(id) || parts == null)
+                return null;
+            foreach (CraftPiece q in parts)
+                if (q != null && q.id == id) return q;
+            return null;
         }
-        foreach (CraftJointSpec j in d.joints)
-        {
-            JointState s = asm.assembly.Joint(j.id);
-            if (s == null || !s.done) list.Add(j.Name.ToLowerInvariant());
-        }
-        return list;
+        return CraftAssembly.Missing(rules, asm, PieceIn);
     }
 
     // ------------------------------------------------------------------ finished items
@@ -402,15 +403,10 @@ public static class CraftItems
         if (rules == null || report?.Design == null)
             return null;
         CraftDesign d = report.Design;
-        CraftComponentSpec main = d.MainComponent;
-        CraftPiece mainPiece = null;
-        if (parts != null && main != null)
-            foreach (CraftPiece p in parts)
-                if (p.intentRole == main.role && (mainPiece == null || p.Mass(rules) > mainPiece.Mass(rules))) mainPiece = p;
-        bool knownMaterial = mainPiece == null || mainPiece.kind != CraftPieceKind.Metal || mainPiece.Profile(rules).Class == null || CraftJournal.KnowsClass(known, rules, mainPiece.Profile(rules).Class);
+        // named and described as the maker knows its metals and stones (the record keeps no name they could not give it)
         var r = new CraftedItemRecord
         {
-            id = Guid.NewGuid().ToString("N"), designId = d.id, name = knownMaterial ? report.Name : d.Name, maker = maker ?? "", utc = DateTime.UtcNow.Ticks,
+            id = Guid.NewGuid().ToString("N"), designId = d.id, name = CraftEvaluator.KnownName(rules, report, known), maker = maker ?? "", utc = DateTime.UtcNow.Ticks,
             quality = (float)report.Quality, tier = report.Tier, material = report.MaterialWord, inspected = inspected, weight = report.Weight, price = report.Price,
             color = report.Color, damageMin = report.DamageMin, damageMax = report.DamageMax, critChance = report.CritChance, critMultiplier = report.CritMultiplier,
             knockback = report.Knockback, attackSpeed = report.AttackSpeed, toolDamage = report.ToolDamage, elementBuildup = report.ElementBuildup, element = report.Element,
@@ -419,9 +415,11 @@ public static class CraftItems
         foreach (ElementalResistanceValue v in report.Resistances)
             r.resistances.Add(new CraftedResistance { element = v.element, percent = v.percent });
         r.notes.AddRange(report.Notes);
-        r.parts.AddRange(report.Parts);
+        r.parts.AddRange(CraftEvaluator.KnownParts(rules, report, known));
+        r.assembly = (float)report.Assembly;
         if (procedure != null) r.procedure.AddRange(procedure);
-        if (inspected) r.inspection.AddRange(InspectionLines(report));
+        // what trying it tells is kept from the start (shown once it is tried: at the bench, or later from the bag)
+        r.inspection.AddRange(InspectionLines(report));
         r.assemblyJson = assembly != null ? JsonUtility.ToJson(assembly) : "";
         if (parts != null)
             foreach (CraftPiece p in parts) r.componentJson.Add(JsonUtility.ToJson(p));
@@ -431,30 +429,28 @@ public static class CraftItems
         return item;
     }
 
-    /// <summary>What trying a finished item tells (the final inspection): its qualities in words.</summary>
-    public static List<string> InspectionLines(CraftItemReport r)
-    {
-        var lines = new List<string>();
-        string Word(double v) => v > 0.88 ? "excellent" : v > 0.75 ? "very good" : v > 0.6 ? "good" : v > 0.4 ? "fair" : v > 0.2 ? "poor" : "bad";
-        lines.Add($"Material: {Word(r.Material)}; workmanship: {Word(r.Workmanship)}; soundness: {Word(r.Integrity)}.");
-        if (r.Design != null && r.Design.IsWeaponLike)
-            lines.Add($"Edge: {Word(r.Edge)}; heat treatment: {Word(r.HeatTreatment)}; assembly: {Word(r.Assembly)}.");
-        else
-            lines.Add($"Protection: {Word(r.Protection)}; assembly: {Word(r.Assembly)}.");
-        foreach (string n in r.Notes)
-            if (!n.Contains(":") || n.StartsWith(r.Design?.MainComponent?.Name ?? "\u0000", StringComparison.Ordinal))
-                lines.Add(CraftText.Capital(n) + ".");
-        return lines;
-    }
+    /// <summary>What trying a finished item tells (the final inspection): its qualities in words, and every note on it (see <see cref="CraftEvaluator.InspectionLines"/>).</summary>
+    public static List<string> InspectionLines(CraftItemReport r) => CraftEvaluator.InspectionLines(r);
 
-    /// <summary>Marks a finished item as inspected (its numbers are now known) and saves it.</summary>
+    /// <summary>Marks a finished item as inspected with what a new reading of it says (its numbers are now known) and saves it.</summary>
     public static void Inspect(CraftRules rules, ICraftedItem item, CraftItemReport report)
     {
         if (item?.Record == null)
             return;
-        item.Record.inspected = true;
         item.Record.inspection.Clear();
         item.Record.inspection.AddRange(InspectionLines(report));
+        Try(item);
+    }
+
+    /// <summary>
+    /// A finished item carried off untried is tried (from the bag, at a bench): its numbers and what trying it tells - kept
+    /// since it was made - show from now on. Saved, and every machine told (a client reads it again from the server).
+    /// </summary>
+    public static void Try(ICraftedItem item)
+    {
+        if (item?.Record == null)
+            return;
+        item.Record.inspected = true;
         SaveCrafted(item.Record);
         ItemDatabase.NotifyRuntimeItemChanged(CraftedTooltip.IdPrefix + item.Record.id);
     }
@@ -582,13 +578,23 @@ public static class CraftItems
         }
     }
 
-    /// <summary>A piece went back onto a station (or was destroyed): its item and file are no longer needed.</summary>
+    /// <summary>
+    /// A piece went back onto a station (or was destroyed): its item and file are no longer needed - nor its model and
+    /// the icon drawn for it alone (a piece's icon is its own; the stock icons are shared and stay).
+    /// </summary>
     public static void Forget(ItemSO item)
     {
         if (!(item is IRuntimeItem r) || !(item is CraftPieceItemSO))
             return;
         made.Remove(r.RuntimeId);
         CraftModels.Forget(r.RuntimeId);
+        Sprite icon = item.Icon;
+        if (icon != null)
+        {
+            Texture2D drawn = icon.texture;
+            Free(icon);
+            if (drawn != null) Free(drawn);
+        }
         if (ClientOfSession)
             return;
         try
@@ -597,6 +603,12 @@ public static class CraftItems
             if (File.Exists(path)) File.Delete(path);
         }
         catch (Exception) { }
+    }
+
+    private static void Free(UnityEngine.Object o)
+    {
+        if (Application.isPlaying) UnityEngine.Object.Destroy(o);
+        else UnityEngine.Object.DestroyImmediate(o);
     }
 
     /// <summary>

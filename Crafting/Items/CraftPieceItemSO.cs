@@ -124,8 +124,9 @@ public class CraftPieceItemSO : ItemSO, IRuntimeItem, IItemInstanceTooltip
         }
         if (p.kind == CraftPieceKind.Assembly)
         {
+            // the bench's own rule: what Finish would still ask for
             List<string> missing = CraftItems.MissingParts(rules, p, Components);
-            lines.Add(missing.Count > 0 ? "Unfinished: " + string.Join(", ", missing) : "All its parts are fitted: finish it at a bench.");
+            lines.Add(missing.Count > 0 ? "Unfinished. " + string.Join(" ", missing) : "Everything is fitted and made: finish it at a bench.");
         }
         if (p.MaxTemperature > 60)
             lines.Add("<color=#ffb070>Still hot.</color>");

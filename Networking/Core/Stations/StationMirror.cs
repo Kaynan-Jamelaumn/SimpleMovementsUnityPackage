@@ -224,6 +224,11 @@ namespace GameNet
         public CraftWorkshop Workshop { get; private set; }
         public StationFollowState State => state;
         public CraftStationMeta Meta { get; private set; } = new CraftStationMeta();
+        /// <summary>
+        /// The number of the operation being applied right now (0 otherwise): the events the copy raises meanwhile are
+        /// that operation's (a blow's ring, a solder's flash), as they were on the server.
+        /// </summary>
+        public int Applying { get; private set; }
 
         /// <summary>Raised when the copy is replaced by a snapshot.</summary>
         public event Action<CraftWorkshop> Replaced;
@@ -253,7 +258,15 @@ namespace GameNet
                 int n = p.firstSeq + i;
                 if (n <= state.LastSeq)
                     continue; // already in the snapshot
-                if (n != state.LastSeq + 1 || w == null || !w.ApplyRemote(p.ops[i], StationMirror.MaxCatchUp))
+                CraftOperation op = p.ops[i];
+                // the clock first (what it raises is the clock's), then the operation itself
+                if (n != state.LastSeq + 1 || w == null || op != null && !w.RunTo(op.step, StationMirror.MaxCatchUp))
+                    return Lose();
+                Applying = n;
+                bool applied;
+                try { applied = w.ApplyRemote(op, StationMirror.MaxCatchUp); }
+                finally { Applying = 0; }
+                if (!applied)
                     return Lose();
                 state.Took(n);
             }

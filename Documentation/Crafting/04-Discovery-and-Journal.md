@@ -7,17 +7,28 @@ Nothing is revealed up front. The window describes what a smith would see, hear 
 
 `CraftLook` turns a piece's real state into words that describe and never advise:
 
-* **Metals** are named once known — otherwise they are what they look like ("a grey metal that throws a bushy shower
-  of stars", "a golden-brown metal"). Iron and copper are always known.
+* **Metals** are named once known — otherwise they are what they look like, by the whole noun phrase of their
+  observation ("a grey metal", "a soft, bright metal": a "Bar of soft, bright metal"); what their sparks or ring tell
+  waits for the wheel or the hammer. Iron and copper are always known.
 * **Heat** is a colour (black heat, faint blood red, cherry red, orange, yellow, white throwing sparks), earlier in the
-  dark — with its degrees only if the player has learnt what that colour means, or with a pyrometer.
-* **The surface**: scale, polish, scratches, hammer marks, temper colours, an etched pattern or hardening line, a coat.
+  dark — with its degrees only if the player has learnt what that colour means, or with a pyrometer — and where on the
+  piece the hottest stretch is (at one end, in the middle, at the far end). The work surfaces
+  draw the glow from the same thresholds (`CraftMetallurgy.HeatColor`): nothing shows at black heat, a faint blood red
+  from 540 °C (470 °C at night), and so on up - the forge, the anvil, the tank, the furnace, the crucible, the
+  jeweller's torch on a soldered joint and the piece list alike.
+* **The surface**: scale, hammer marks; bare from an abrasive, its scratches in the Grind area's own words (coarse
+  scratches, fine scratches, a smooth grey finish, bright, a mirror: `CraftSurface.FinishOf`); temper colours, an etched
+  pattern or hardening line, a coat.
 * **The shape**: bent, uneven, dished, an eye; how close it is to the part it is meant to be.
-* **The edge**: light glinting along a dull edge, keen enough to catch a fingernail, a wire burr, nicks, uneven bevels.
+* **The edge**: blunt (light glints along it), sharp enough to cut but not keen, keen, razor-keen (it catches on a
+  fingernail) - the stone's own ladder (`CraftSurface.KeenStep`, the item's notes and the guide alike) - a wire burr
+  where the stone draws one, nicks, uneven bevels.
 * **In the hand**: heavy or light for its size, humming (magic), warm (fire), a faint frost.
 * **Flaws** that show (cracks, cold shuts, slag, porosity, burnt metal, scale pits, an overground edge, a pale raw core
   on a cut edge of case-hardened leather, rot, tears…) — hairline ones only under a loupe.
-* **Ores**: colour, lustre, density, fragments that are rich or barren, dirt, roasting; a magnet's pull; the streak.
+* **Ores**: colour, lustre, fragments that are rich or barren, dirt, roasting; a magnet's pull; the streak; how heavy
+  the lump is in the hand - its own bulk, mineral, rock and dirt together (`CraftLook.BulkDensity`: gold-bearing quartz
+  weighs like quartz, a fallen star twice as much).
 * **Hides**: flesh left, hair, how far tanned, sodden or dry, stiff or supple, water beading, patchy dye, shrinking.
 * **The workshop**: how the fire burns and how much fuel is left, slag labouring the draft, the melt sluggish or bright
   or glaring, dross, a flux cover, streaks of unmixed metal, the tank warm or steaming, the vats' strength and heat.
@@ -29,7 +40,7 @@ Nothing is revealed up front. The window describes what a smith would see, hear 
 |---|---|
 | Thermometer (pyrometer) | the temperature in degrees (and teaches what the colours mean) |
 | Calipers | length, width, thickness in mm; how far a part is from its pattern |
-| Scale | the mass in grams |
+| Scale (a balance) | the mass in grams; weighed in air and in water, a gem's carats and specific gravity |
 | Loupe | hairline cracks, inclusions and other faint flaws |
 | Magnet | whether steel still pulls — it stops at its hardening heat |
 | Test file | skates, barely bites, bites with effort, bites easily — roughly how hard |
@@ -52,8 +63,8 @@ A test station has all of them and adds the numbers behind everything.
 | A heat colour's meaning | reading a pyrometer while the colour shows, `readingsToLearnHeat` times |
 | A gemstone | naming it rightly after testing it (the journal's `gems`): from then on its rough is known by sight, its description and readings are shown, and the cutting chart for its refractive index |
 | Quenching | every quench of a metal in a medium is remembered: hardened, stayed soft, cracked |
-| Insights | mistakes and surprises, each explained once: burning, a quench crack, untempered brittleness, temper colours, the magnet, cold forging, cast iron, slag in a bloom, scale pits, grinding heat, a skating file, missing flux, sulfur, phosphorus, cupellation, cementation, case-hardened leather, rot, alum washing out, shrinking, stiff leather, blotchy dye, warping, coarse grain, a loose joint, a gouging drawknife, skipped grits, felted wool, carding neps, a shattered cleave, a table flaking on its cleavage, a heat-crazed stone, a compound too soft, a pavilion's angle, a loose stone in a wide seat |
-| What was made | every finished item with its tier; the best of each design is kept with the steps that made it (its pieces' records) |
+| Insights | mistakes and surprises, each explained once, each from what showed it - a crack by its real cause (burnt steel teaches burning, iron torn at forging heat sulfur, a crack as the steel hardens the quench's lesson), a flaw the first time it shows (scale hammered in, rot, a closed tan, shrinking), a note the work tells, steel passing the magnet's heat where there is a magnet, a finished item's coarse grain or loose fit: burning, a quench crack, untempered brittleness, temper colours, the magnet, cold forging, cast iron, slag in a bloom, scale pits, grinding heat, a skating file, a stone held below the bevel, missing flux, sulfur, phosphorus, cupellation, cementation, case-hardened leather, rot, alum washing out, shrinking, stiff leather, blotchy dye, warping, coarse grain, a loose joint, a gouging drawknife, skipped grits, felted wool, carding neps, a shattered cleave, a table flaking on its cleavage, a heat-crazed stone, a compound too soft, a pavilion's angle, matrix left on the rough, a preform never ground, a stone polished on past bright, a row beaten askew, a loose stone in a wide seat (the full list, word for word, is in chapter 05, *Insights*) |
+| What was made | every item the player finished, with its tier, once it is tried (by anyone); the best of each design is kept with the steps that made it (its pieces' records), in the player's words: heats by their glow (with the degrees once the colour is learnt) or by the hand (cold, hot), a vat by its strength and warmth (`CraftJournal.Worded`) |
 
 ## Practice: mastery, craft by craft
 
@@ -61,10 +72,15 @@ The journal also keeps how practised the player is in each craft — **Smithing*
 **Tailoring**, **Jewellery** and **Alchemy** (`CraftMastery`). A master smith is still a novice at the loom.
 
 **How it is earned.** Every finished item teaches its craft: `perItem` × (0.5 + its quality) × how much work the design
-is (more parts and joints, more experience). Work done teaches too, a little at a time — a blow or a stroke very little,
+is - 1.4 × √(its price / `workPrice`, 45), from 0.4 to 3 (`CraftMastery.DesignWork`: a hemmed sash 0.42, a dagger 1.3,
+a quilted gambeson 1.55, an arming sword 2.3, a greatsword 3) - and each one of a design already made teaches less, × 1 /
+(1 + made / `repeatsHalve`, 15): the sixteenth sash half the first, so variety teaches. Work done teaches too, a little at a time — a blow or a stroke very little,
 a bobbin spun, a casting poured or a length of cloth woven more — but small work counts no faster than `workPerMinute`
-a minute in one craft, so a thousand idle blows teach no more than a few minutes of real work. Each insight counts for
-its craft (`perInsight`). Work done *by routine* (below) teaches nothing. A finished item always counts.
+a minute in one craft, so a thousand idle blows teach no more than a few minutes of real work. Reading, measuring and
+planning teach nothing by themselves (testing or searching a stone, planning its cut, the tape, laying a pattern out:
+the work they guide does), nor does a step done again (a skein counted again, a stone named again). Each insight counts
+for its craft (`perInsight`; a loose joint the craft of the item it was learnt on). Work done *by routine* (below)
+teaches nothing. A finished item always counts.
 
 Mastery is `1 − e^(−experience / experienceScale)`: quick at first, then every step is harder won. With the default
 settings:
@@ -72,10 +88,10 @@ settings:
 | Rank | Mastery | Experience | Roughly (rings of 60 % quality alone; the work on them comes on top) |
 |---|---|---|---|
 | Novice | 0 | 0 | — |
-| Apprentice | 15 % | 7 | four or five rings, or half an hour of steady work |
-| Journeyman | 35 % | 19 | a dozen rings |
-| Expert | 55 % | 36 | twenty rings |
-| Master | 78 % | 68 | forty rings |
+| Apprentice | 15 % | 7 | five or six rings, or half an hour of steady work |
+| Journeyman | 35 % | 19 | thirteen rings and bracelets of four designs (twenty of one) |
+| Expert | 55 % | 36 | twenty-six of four designs (nearly sixty of one) |
+| Master | 78 % | 68 | sixty of four designs (one design alone, hundreds) |
 
 `experienceScale` sets the pace: double it and every rank takes twice the work. The ranks' thresholds are settings
 too (*Crafting Database → Simulation → Mastery*).
@@ -89,8 +105,9 @@ nobody's craft. The brewing station's practice is alchemy.
 
 **What practice gives, in its own craft.**
 
-* **Steadier hands** — less tremble, fewer slips, the window's pace nearer the real tool's (60 % → 90 %), the timing
-  bars' zones wider (`skillWidening`).
+* **Steadier hands** — less tremble and fewer slips (up to 60 % for a master: `CraftHands.SkillSteadies`), the window's
+  pace nearer the real tool's (60 % → 90 %), the timing bars' zones wider (the timing settings' `skillWidening`, 35 %
+  at full mastery: the Mastery tab says what the rules give).
 * **An arm that tires less** — up to `fatigueRelief` (40 %) less for a master.
 * **More done with each action** — the needle lays 2 stitches a click from Journeyman, 3 for a master, and a needleful
   of thread lasts 40 stitches for a novice, up to 80; the loom beats in 2 rows a beat from Journeyman, 3 for a master;
@@ -126,13 +143,22 @@ A journal from before mastery turns its work into practice once, when it is load
 
 ## Final inspection
 
-A finished item is taken off the bench **untried** at a normal station: its tooltip says how good it is will show in
-use or at a bench. **Try it (inspect)** — it is flexed, struck, its edge tried, its straps pulled — and its quality,
-tier, material, workmanship, soundness, edge, heat treatment, assembly and protection are known, here and on the item.
-A test station's items come out already tried.
+A finished item comes off the bench **untried** at a normal station: finishing it tells nothing of how good it is.
+**Try it** at the bench — it is flexed, struck, its edge tried, its straps pulled — and its quality, tier, material,
+workmanship, soundness, edge (a blunt head's striking face, or wood), heat treatment, assembly and protection are known,
+with every note on it, here and on the item; its maker's journal notes it as made only then (*"First dagger made: Dagger
+(Fine)."*). Its maker is whoever finished it: anyone may try it, but only the maker's journal notes it - wherever they
+are in the world (one away when it was tried on the bench hears of it when they take it). Taken untried, its
+tooltip says to try it at a bench where such things are made: *Try that* there, with it in the bag, tries it then (the
+`InspectItem` request: one at a time). The jeweller's *Inspect & finish* tries a jewel as it finishes it. The item and
+its parts are named as the player knows them: an unknown metal is not named ("Dagger", not "Steel dagger"), a stone not
+identified is named by sight or by what it looks like. A test station's items come out already tried.
 
 ## Failure is a result
 
 A cracked blade, a burnt bar, a short casting, a spongy bloom, a case-hardened hide, a split haft are what they are:
 they can still be finished, reheated, ground out, cut down, recast (a casting or scrap remelts in the crucible), or
-thrown away — and the journal remembers what caused them.
+thrown away — and the journal remembers what caused them. Finished, a part that is what breaks says so when the item is
+tried (*Blade: cracked - it will break in use*), and the item rates by it: a dagger whose blade cracked in the quench is
+Poor, however fine its fittings (chapter 02, *Evaluation*). A spongy bloom hammered sound at welding heat is a bloom no
+longer: it looks and is named as the bar it has become.

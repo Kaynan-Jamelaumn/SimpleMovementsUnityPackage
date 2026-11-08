@@ -20,10 +20,14 @@ namespace GameNet
     /// tanning itself, so the glow, the sparks and the steam show the same everywhere. A client that joins (or falls out
     /// of step: a checksum now and then tells) gets the workshop whole.</item>
     /// <item><b>Working it</b> is an interaction (relayed by the player's <see cref="NetInteractor"/>): the server lets
-    /// one player at a time work the station, opens the window on their screen and sends their journal. What they do
-    /// comes back as requests, checked against the player working there, the range, and a
-    /// <see cref="CraftRequestGuard"/> (no faster than real hands, never steadier than the player's practice) before
-    /// the station runs them like a local player's.</item>
+    /// one player at a time work the station, opens the window on their screen and sends their journal, and the lines
+    /// they learn (a new rank, an insight) as they learn them. What they do comes back as requests, checked against the
+    /// player working there and the range before the station runs them like a local player's - bounded, as everyone's
+    /// are, by the player's <see cref="CraftRequestGuard"/> (no faster than real hands, never steadier than the player's
+    /// practice).</item>
+    /// <item><b>Every request is answered</b> (done or not, and why - also a request refused before it reached the station,
+    /// and work granted only in part), right after the packet that carries its operations: the client raises the answer
+    /// (<see cref="CraftStation.Answered"/>) once its copy shows them, so its window reads the result.</item>
     /// </list>
     /// Offline it does nothing.
     /// </summary>
@@ -33,6 +37,10 @@ namespace GameNet
     {
         /// <summary>Longest message sent to a client.</summary>
         public const int MaxMessageLength = 200;
+        /// <summary>Longest answer or learnt line sent to a client (they are sent whole).</summary>
+        public const int MaxLineLength = 600;
+        /// <summary>Seconds before the same refusal of the 3D work is told again (a different one is told at once).</summary>
+        public const float RepeatInterval = CraftStation.RepeatInterval;
         private const byte Packet = 0, Snapshot = 1, Journal = 2;
 
         [Tooltip("Seconds between two clock updates while someone works here or a fire burns.")]
@@ -43,7 +51,7 @@ namespace GameNet
         [SerializeField, Range(1, 100)] private int checksumEvery = 10;
         [Tooltip("Metres a player may be beyond the station's reach (server positions) and still work it.")]
         [SerializeField, Range(0f, 5f)] private float rangeTolerance = 1.5f;
-        [Tooltip("Least seconds between two journal updates sent to the player working here.")]
+        [Tooltip("Least seconds between two journal updates sent to the player working here (it is sent only when it changed).")]
         [SerializeField, Range(0.2f, 10f)] private float journalInterval = 1f;
 
         private CraftStation station;
@@ -54,22 +62,25 @@ namespace GameNet
         private bool replaced;
         private int sentMeta = int.MinValue;
         private int transfer;
-        private readonly Dictionary<int, CraftRequestGuard> guards = new Dictionary<int, CraftRequestGuard>();
         private readonly Dictionary<int, float> nextSnapshot = new Dictionary<int, float>();
         private readonly Dictionary<int, float> nextTend = new Dictionary<int, float>();
+        private readonly Dictionary<int, (string text, float at)> lastTold = new Dictionary<int, (string, float)>();
+        private readonly List<(NetworkConnection conn, CraftAnswer answer)> answersOut = new List<(NetworkConnection, CraftAnswer)>();
+        private readonly List<string> learntOut = new List<string>();
         private CraftKnowledge watchedJournal;
         private NetworkConnection journalTo;
+        private string journalSent;
         private bool journalDirty;
         private float nextJournal, nextWatch;
 
-        private WeaponNetMath.RateLimiter messageLimiter = new WeaponNetMath.RateLimiter(4f, 4f);
-
         // Clients
         private CraftWorkshopFollower follower;
-        private readonly Dictionary<long, CraftRequest> settings = new Dictionary<long, CraftRequest>();
-        private float nextSetting;
+        private readonly CraftSettingQueue settings = new CraftSettingQueue();
+        private readonly List<CraftRequest> settingsDue = new List<CraftRequest>();
         private readonly NetPayloadAssembler observerParts = new NetPayloadAssembler();
         private readonly NetPayloadAssembler targetParts = new NetPayloadAssembler();
+        private readonly CraftAnswerQueue answers = new CraftAnswerQueue();
+        private readonly List<CraftEvent> answerEvents = new List<CraftEvent>();
         private bool openWhenReady;
 
         private CraftStation Station => station != null ? station : (station = GetComponent<CraftStation>());
@@ -101,9 +112,11 @@ namespace GameNet
             }
             feed.Attach(null);
             WatchJournal(null, null);
-            guards.Clear();
             nextSnapshot.Clear();
             nextTend.Clear();
+            lastTold.Clear();
+            answersOut.Clear();
+            learntOut.Clear();
         }
 
         public override void OnStartClient()
@@ -115,6 +128,7 @@ namespace GameNet
             s.Net = this;
             follower = new CraftWorkshopFollower(s.Rules);
             follower.Replaced += OnCopyReplaced;
+            s.WorkshopEvent += OnCopyEvent;
             s.SetMirror(null); // nothing to show until the server's workshop arrives
         }
 
@@ -124,10 +138,13 @@ namespace GameNet
             if (IsServerInitialized || station == null)
                 return;
             CraftStationUI.Close(station);
+            station.WorkshopEvent -= OnCopyEvent;
             station.ClearMirror();
             if (ReferenceEquals(station.Net, this))
                 station.Net = null;
             follower = null;
+            answers.Clear();
+            settings.Clear();
             openWhenReady = false;
         }
 
@@ -156,9 +173,19 @@ namespace GameNet
                 WatchTender();
             }
             if (journalDirty && journalTo != null && now >= nextJournal)
-                SendJournal(watchedJournal, journalTo, now);
+                SendJournal(watchedJournal, journalTo, now, false);
             if (feed.Workshop != s.Workshop)
                 OnWorkshopReplaced();
+            SendFeed(now);
+            // The answers (and the lines learnt doing that work) go after what carries their operations: the same reliable
+            // channel keeps them in order, so a client's copy shows the work before its answer is raised.
+            SendAnswers();
+        }
+
+        /// <summary>The workshop whole (it was replaced) or what happened since the last packet, when a beat is due.</summary>
+        private void SendFeed(float now)
+        {
+            CraftStation s = Station;
             bool metaChanged = s.MetaVersion != sentMeta;
             if (replaced)
             {
@@ -211,7 +238,7 @@ namespace GameNet
         private void SendSnapshot(NetworkConnection conn) => SendText(Snapshot, feed.Snapshot(Meta()).ToJson(), conn);
 
         // ------------------------------------------------------------------ server: who works here
-        /// <summary>The player working here walked away, died or left: the station is free again.</summary>
+        /// <summary>The player working here walked away, died or left: the station is free again (and forgets a player who left).</summary>
         private void WatchTender()
         {
             CraftStation s = Station;
@@ -227,6 +254,8 @@ namespace GameNet
                 s.EndTending(t);
                 if (conn != null && conn.IsActive)
                     TargetClose(conn);
+                else
+                    s.ForgetPlayer(t); // the connection went: their guard goes with them
                 WatchJournal(null, null);
                 return;
             }
@@ -252,21 +281,27 @@ namespace GameNet
             if (conn == null || !conn.IsActive || conn.IsLocalClient)
                 return false;
             SendSnapshot(conn);
-            SendJournal(CraftKnowledge.For(player), conn, Time.unscaledTime);
+            CraftKnowledge k = CraftKnowledge.For(player);
+            WatchJournal(k, conn); // what they learn from the first moment reaches them
+            SendJournal(k, conn, Time.unscaledTime, true);
             TargetOpen(conn);
             return true;
         }
 
         void ICraftStationNet.SendTending(bool tending)
         {
-            if (IsClientInitialized && !IsServerInitialized)
-                ServerTend(tending);
+            if (!IsClientInitialized || IsServerInitialized)
+                return;
+            if (!tending)
+                FlushSettings(true); // the last value of a setting the hand turned reaches the station before the hands leave it
+            ServerTend(tending);
         }
 
         [ServerRpc(RequireOwnership = false)]
         private void ServerTend(bool tending, NetworkConnection conn = null)
         {
-            if (conn == null || !conn.IsActive || !Allowed(nextTend, conn, 0.2f))
+            // Stopping is never held back (a quick open and close must not leave the station taken); starting a little.
+            if (conn == null || !conn.IsActive || tending && !Allowed(nextTend, conn, 0.2f))
                 return;
             CombatEntity player = NetObjects.PlayerOf(conn);
             CraftStation s = Station;
@@ -292,7 +327,9 @@ namespace GameNet
                 return;
             }
             s.BeginTending(player);
-            SendJournal(CraftKnowledge.For(player), conn, Time.unscaledTime);
+            CraftKnowledge k = CraftKnowledge.For(player);
+            WatchJournal(k, conn);
+            SendJournal(k, conn, Time.unscaledTime, true);
         }
 
         // ------------------------------------------------------------------ server: the journal of the player working here
@@ -301,21 +338,42 @@ namespace GameNet
             if (k == watchedJournal && conn == journalTo)
                 return;
             if (watchedJournal != null)
+            {
                 watchedJournal.Changed -= OnJournalChanged;
+                watchedJournal.Learnt -= OnJournalLearnt;
+            }
             watchedJournal = k;
             journalTo = conn;
+            journalSent = null; // the next one goes whole
+            learntOut.Clear();
             if (watchedJournal != null)
+            {
                 watchedJournal.Changed += OnJournalChanged;
+                watchedJournal.Learnt += OnJournalLearnt;
+            }
         }
 
         private void OnJournalChanged() => journalDirty = true;
 
-        private void SendJournal(CraftKnowledge k, NetworkConnection conn, float now)
+        /// <summary>The player working here learnt something (a new rank, an insight): it goes to their window, whole, after the work's answer.</summary>
+        private void OnJournalLearnt(string line)
+        {
+            if (!string.IsNullOrEmpty(line) && journalTo != null && learntOut.Count < 32)
+                learntOut.Add(line);
+        }
+
+        /// <summary>The journal, compact - only when something in it changed since the last one sent (<paramref name="whole"/>: anyway).</summary>
+        private void SendJournal(CraftKnowledge k, NetworkConnection conn, float now, bool whole)
         {
             journalDirty = false;
             nextJournal = now + journalInterval;
-            if (k != null && conn != null && conn.IsActive && !conn.IsLocalClient)
-                SendText(Journal, k.Export(), conn);
+            if (k == null || conn == null || !conn.IsActive || conn.IsLocalClient)
+                return;
+            string json = k.Export(false);
+            if (!whole && json == journalSent)
+                return;
+            journalSent = json;
+            SendText(Journal, json, conn);
         }
 
         // ------------------------------------------------------------------ server: requests
@@ -327,56 +385,84 @@ namespace GameNet
             SendSnapshot(conn);
         }
 
-        /// <summary>A client's player did something at the station; the server checks it and runs it like a local player's action.</summary>
+        /// <summary>
+        /// A client's player did something at the station; the server checks it and runs it like a local player's action
+        /// (the station bounds it with the player's guard), and answers it - also when it never reached the station.
+        /// </summary>
         [ServerRpc(RequireOwnership = false)]
         private void ServerRequest(CraftNetRequest m, NetworkConnection conn = null)
         {
-            if (conn == null || !conn.IsActive || !m.IsWellFormed)
+            if (conn == null || !conn.IsActive)
                 return;
+            if (!m.IsWellFormed)
+            {
+                Answer(conn, m.seq, false, CraftRequestGuard.TooMuch);
+                return;
+            }
             CombatEntity player = NetObjects.PlayerOf(conn);
             CraftStation s = Station;
             if (player == null || !player.IsAlive)
+            {
+                Answer(conn, m.seq, false, "You cannot work now.");
                 return;
+            }
             if (s.Tender != player)
             {
-                TargetMessage(conn, "You are not working at this station.");
+                Answer(conn, m.seq, false, "You are not working at this station.");
                 return;
             }
             if (!InReach(player))
             {
-                TargetMessage(conn, "Too far away to work there.");
+                Answer(conn, m.seq, false, "Too far away to work there.");
                 return;
             }
-            CraftRequest r = m.ToRequest();
-            CraftRequestGuard guard = GuardOf(conn, player);
-            guard.Skill = s.SkillFor(player, r); // never steadier than the player's practice in this craft
-            if (!guard.Check(ref r, Time.unscaledTimeAsDouble, out string reason))
+            int before = feed.Seq;
+            bool ok = s.Request(player, m.ToRequest(), out string reason);
+            // the operations it recorded: numbered before+1 .. feed.Seq (none when the feed did not move)
+            Answer(conn, m.seq, ok, reason, before + 1, feed.Seq > before ? feed.Seq : 0);
+        }
+
+        /// <summary>
+        /// The answer to a client's request: with a number, it goes after the packet that carries the request's operations
+        /// (at the end of the frame); without one (the 3D work places), a refusal or a note is told as a message.
+        /// </summary>
+        private void Answer(NetworkConnection conn, int seq, bool ok, string reason, int firstOp = 0, int lastOp = 0)
+        {
+            if (seq > 0)
+                answersOut.Add((conn, new CraftAnswer(seq, ok, reason, firstOp, lastOp)));
+            else
+                TellOnce(conn, reason);
+        }
+
+        private void SendAnswers()
+        {
+            for (int i = 0; i < answersOut.Count; i++)
             {
-                Refuse(conn, reason);
+                (NetworkConnection conn, CraftAnswer a) = answersOut[i];
+                if (conn != null && conn.IsActive)
+                    TargetAnswer(conn, a.seq, a.ok, Clip(a.reason, MaxLineLength), a.firstOp, a.lastOp);
+            }
+            answersOut.Clear();
+            if (learntOut.Count == 0)
                 return;
-            }
-            if (!s.Request(player, r, out reason))
-                Refuse(conn, reason);
+            if (journalTo != null && journalTo.IsActive && !journalTo.IsLocalClient)
+                foreach (string line in learntOut)
+                    TargetLearnt(journalTo, Clip(line, MaxLineLength));
+            learntOut.Clear();
         }
 
-        /// <summary>Why a request was refused - a few times a second at most (a held button does not flood the screen).</summary>
-        private void Refuse(NetworkConnection conn, string reason)
+        /// <summary>A refusal (or a note) for a request nobody waits for: told at once, the same words again only after a moment (a held button does not flood the screen).</summary>
+        private void TellOnce(NetworkConnection conn, string reason)
         {
-            if (!string.IsNullOrEmpty(reason) && messageLimiter.TryTake(Time.unscaledTime))
-                TargetMessage(conn, Clip(reason));
-        }
-
-        private CraftRequestGuard GuardOf(NetworkConnection conn, CombatEntity player)
-        {
-            if (!guards.TryGetValue(conn.ClientId, out CraftRequestGuard g))
-            {
-                if (guards.Count > 32)
-                    guards.Clear(); // players come and go: a fresh guard for whoever works here next
-                g = new CraftRequestGuard(conn.ClientId * 7919 + 17, 0);
-                guards[conn.ClientId] = g;
-            }
-            g.Skill = CraftJournal.HandSkill(CraftKnowledge.For(player)?.Data);
-            return g;
+            if (string.IsNullOrEmpty(reason) || conn == null || !conn.IsActive)
+                return;
+            float now = Time.unscaledTime;
+            if (lastTold.TryGetValue(conn.ClientId, out (string text, float at) last) && last.text == reason && now - last.at < RepeatInterval)
+                return;
+            if (lastTold.Count > 64)
+                lastTold.Clear();
+            lastTold[conn.ClientId] = (reason, now);
+            TargetMessage(conn, Clip(reason, MaxMessageLength));
         }
 
         private static bool Allowed(Dictionary<int, float> next, NetworkConnection conn, float interval)
@@ -394,35 +480,34 @@ namespace GameNet
                 return;
             NetworkConnection conn = NetObjects.OwnerOf(player);
             if (conn != null && conn.IsActive && !conn.IsLocalClient)
-                TargetMessage(conn, Clip(text));
+                TargetMessage(conn, Clip(text, MaxMessageLength));
         }
 
-        private static string Clip(string text) => text.Length > MaxMessageLength ? text.Substring(0, MaxMessageLength) : text;
+        private static string Clip(string text, int most) => text == null ? "" : text.Length > most ? text.Substring(0, most) : text;
 
         // ------------------------------------------------------------------ clients
         void ICraftStationNet.SendRequest(CraftRequest r)
         {
             if (!IsClientInitialized || IsServerInitialized)
                 return;
-            if (IsSetting(r.kind))
+            if (CraftRequest.IsSetting(r.kind))
             {
                 // A slider dragged (the air vent, a vat's heat, the oven): only its latest value goes, ten times a second.
-                settings[(long)r.kind << 40 | (long)(r.i0 & 0xFFFFF) << 1 | (r.flag ? 1L : 0L)] = r;
+                r.seq = 0;
+                settings.Put(r);
                 return;
             }
             Forward(r);
         }
 
-        private static bool IsSetting(CraftRequestKind kind) => kind == CraftRequestKind.Damper || kind == CraftRequestKind.VatHeat || kind == CraftRequestKind.Oven;
-
-        private void FlushSettings()
+        /// <summary>Sends the latest value of each setting turned: ten times a second, or at once (<paramref name="now"/>: the hands leave the station).</summary>
+        private void FlushSettings(bool now = false)
         {
-            if (settings.Count == 0 || Time.unscaledTime < nextSetting)
+            if (settings.Count == 0 || !settings.Take(Time.unscaledTimeAsDouble, settingsDue, now))
                 return;
-            nextSetting = Time.unscaledTime + 0.1f;
-            foreach (CraftRequest r in settings.Values)
+            foreach (CraftRequest r in settingsDue)
                 Forward(r);
-            settings.Clear();
+            settingsDue.Clear();
         }
 
         private void Forward(CraftRequest r)
@@ -468,6 +553,7 @@ namespace GameNet
                     ShowMeta(follower.Meta);
                     if (openWhenReady)
                         OpenWindow();
+                    PumpAnswers();
                     break;
                 }
                 case Packet:
@@ -480,6 +566,7 @@ namespace GameNet
                         ShowMeta(follower.Meta);
                     if (r != FollowResult.Waiting)
                         station.MirrorChanged();
+                    PumpAnswers();
                     break;
                 }
                 case Journal:
@@ -490,6 +577,43 @@ namespace GameNet
                     break;
                 }
             }
+        }
+
+        /// <summary>The copy raised an event: while it applies an operation, it is that operation's (for the request's answer).</summary>
+        private void OnCopyEvent(CraftEvent e)
+        {
+            if (follower != null)
+                answers.Raised(follower.Applying, e);
+        }
+
+        /// <summary>The server's answer to one of this machine's requests: raised once the copy shows what the request did.</summary>
+        [TargetRpc]
+        private void TargetAnswer(NetworkConnection conn, int seq, bool ok, string reason, int firstOp, int lastOp)
+        {
+            if (IsServerInitialized || follower == null)
+                return;
+            answers.Arrived(new CraftAnswer(seq, ok, reason, firstOp, lastOp));
+            PumpAnswers();
+        }
+
+        /// <summary>Raises the answers the copy now shows, in the order they came, each with the events its operations raised.</summary>
+        private void PumpAnswers()
+        {
+            if (follower == null || station == null)
+                return;
+            while (answers.Next(follower.State.LastSeq, out CraftAnswer a))
+            {
+                answers.EventsOf(a, answerEvents);
+                station.Answer(a.seq, a.ok, a.reason, answerEvents);
+            }
+        }
+
+        /// <summary>A line the player learnt (from the server's journal): the station's window shows and keeps it - not the inventory's line, which has it already.</summary>
+        [TargetRpc]
+        private void TargetLearnt(NetworkConnection conn, string text)
+        {
+            if (!IsServerInitialized && station != null && !string.IsNullOrEmpty(text))
+                station.ShowLearnt(text);
         }
 
         private void OnCopyReplaced(CraftWorkshop copy)

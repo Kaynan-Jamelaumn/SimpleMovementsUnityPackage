@@ -99,8 +99,10 @@ public class MetalSegment
     public double dish;
     [Tooltip("Diameter of a hole here (an eye, a slot, a socket), mm.")]
     public double hole;
-    [Tooltip("How far a cut on the hardy has gone through (0-1).")]
+    [Tooltip("How far a cut on the hardy or with the hot chisel has gone through (0-1).")]
     public double cut;
+    [Tooltip("The cut is driven down from above (the hot chisel), not up from below (the hardy): the last blow's tool decides.")]
+    public bool cutFromAbove;
     [Tooltip("This segment's carbon above or below the piece's (a bloom is uneven).")]
     public double carbonShift;
     [Tooltip("Grams of slag trapped in it.")]
@@ -133,6 +135,10 @@ public class MetalSegment
     public double clay;
     [Tooltip("Accumulated strain toward a crack (forging too cold, a brittle metal).")]
     public double crackRisk;
+    [Tooltip("How much of a forge weld's seam here is still open (0 none - 1 just folded or stacked): setting blows at welding heat close it; one that cools open is a delamination.")]
+    public double seamOpen;
+    [Tooltip("Flux on this stretch (0-1): molten from a red heat, it takes the scale off and keeps new scale off, so a weld can take.")]
+    public double flux;
     [Tooltip("Wood: bark still on this stretch (0-1).")]
     public double bark;
     public CraftZone edge = new CraftZone();
@@ -206,8 +212,26 @@ public class OreFragment
     public double size = 8;
     [Tooltip("Position on the tray (0-1).")]
     public double x = 0.5, y = 0.5;
+    [Tooltip("How much of its surface each brush has gone over (0-1): a brush takes only so much of the dirt and the rind, however long it scrubs. A fresh break starts at 0.")]
+    public double brushedSoft, brushedStiff, brushedWire;
+    [Tooltip("How much of its rock is the weathered rind on its surface (0-1): what the wire brush knocks off. A lump's comes from its size; the stones a blow breaks it into share what was left of it with their rock - a fresh break has none of its own. -1: kept from before the rind was counted (a lump's share for its size).")]
+    public double rind = -1;
 
     public OreFragment Clone() => (OreFragment)MemberwiseClone();
+
+    /// <summary>The share of its rock that is the weathered rind (0-1): <see cref="rind"/>, or for a stone from before it was kept, the share a lump of its size has.</summary>
+    public double RindShare => rind >= 0 ? CraftMath.Clamp01(rind) : CraftOres.Rind(size);
+
+    /// <summary>How much of its surface <paramref name="brush"/> has gone over (0-1).</summary>
+    public double Brushed(CraftOreBrush brush) => brush == CraftOreBrush.Soft ? brushedSoft : brush == CraftOreBrush.Stiff ? brushedStiff : brushedWire;
+
+    public void SetBrushed(CraftOreBrush brush, double cover)
+    {
+        cover = CraftMath.Clamp01(cover);
+        if (brush == CraftOreBrush.Soft) brushedSoft = cover;
+        else if (brush == CraftOreBrush.Stiff) brushedStiff = cover;
+        else brushedWire = cover;
+    }
 }
 
 /// <summary>An ore lump's state: the deposit it came from, what its mineral holds, its fragments.</summary>
@@ -280,6 +304,8 @@ public class HideCell
     public double damage;
     [Tooltip("A natural flaw (a scar, a brand, a wound).")]
     public bool flaw;
+    [Tooltip("The damage the hide was born with here (its scars, 0-1): the rest of the damage is the work's (0 in saves older than this).")]
+    public double scar;
     [Tooltip("Water in it (0-1).")]
     public double moisture = 0.7;
     [Tooltip("Tannage of the outside and of the core (0-1).")]
@@ -375,6 +401,8 @@ public class WoodState
     public double lastGrit = -1;
     [Tooltip("Wax rubbed in (0-1) and a hard resin film (0-1): sealers besides varnish and oil.")]
     public double wax, resin;
+    [Tooltip("Process hours the last coat of varnish or oil takes to dry (its supply's; 0 = four).")]
+    public double finishHours;
 }
 
 /// <summary>A set of fasteners: kind, count, size and what they are like.</summary>
@@ -383,12 +411,17 @@ public class FastenerState
 {
     public CraftFastenerKind kind = CraftFastenerKind.Rivet;
     [Min(0)] public int count;
+    [Tooltip("Of the set fitted to an item, how many are set into its joints: they stay part of it (its mass and worth count all of the set); the rest are left to set (0 for a loose set and in older saves).")]
+    [Min(0)] public int used;
     [Tooltip("Grams each.")]
     public double massEach = 5;
     [Tooltip("mm.")]
     public double diameter = 5, length = 14;
     [Tooltip("How well they were made (0-1): cast with flaws, cut unevenly.")]
     public double quality = 1;
+
+    /// <summary>How many of the set are still to set (the count less those set into the item).</summary>
+    public int Left => Math.Max(0, count - used);
 }
 
 /// <summary>Which piece fills a role of an assembly (the second of two bracers is index 1).</summary>
@@ -432,6 +465,11 @@ public class JointState
     [Tooltip("Setting a stone: pushes made, how secure it is (0-1), how far it sits tilted (0-1).")]
     public int pushes;
     public double security, tilt;
+    [Tooltip("Fit joints: how much of the gap peening has closed (mm). A slot is closed onto its tang only so far (0 in older saves).")]
+    public double peenClosed;
+    [Tooltip("The hammer's blows that drove, peened or closed it (a rivet's are in its quality) and how well they were struck against the joint's ideal blow (0-1 mean; 0 blows in older saves).")]
+    public int blows;
+    public double blowQuality;
 }
 
 /// <summary>An item being put together: its design, the pieces in each role, the joints.</summary>
@@ -453,6 +491,8 @@ public class AssemblyState
     public double finish;
     [Tooltip("The mastery of whoever finished it (0-1): a master's finishing touches.")]
     public double mastery;
+    [Tooltip("Who finished it (their name; empty in older saves): its maker - the item's record names them, and their journal notes it once it is tried.")]
+    public string maker = "";
 
     public JointState Joint(string id)
     {
@@ -484,7 +524,7 @@ public class AssemblyState
 public class CraftDefect
 {
     public CraftDefectKind kind;
-    [Tooltip("The segment or cell it is at (-1 = the whole piece).")]
+    [Tooltip("The segment or cell it is at (-1 = the whole piece; a gem's tier of facets: -2 - the tier, CraftLapidary.BotchAt).")]
     public int at = -1;
     [Tooltip("How bad (0-1+).")]
     public double severity;
@@ -522,7 +562,7 @@ public class CraftPiece
 {
     public string id = "";
     public CraftPieceKind kind;
-    [Tooltip("What it came from (\"ore:hematite\", \"poured from the crucible\", \"cut from a cow hide\").")]
+    [Tooltip("What it came from, in words for the player (\"a lump of ore\", \"poured from the crucible\", \"rived from an ash blank\"): a taken piece's description.")]
     public string origin = "";
     public double createdAt;
 
@@ -587,6 +627,29 @@ public class CraftPiece
     /// <summary>An exact, independent copy.</summary>
     public CraftPiece Clone() => JsonUtility.FromJson<CraftPiece>(JsonUtility.ToJson(this));
 
+    /// <summary>The ways a piece is made from another, as <see cref="Derived"/> words them ("rived from ...").</summary>
+    private static readonly string[] DerivedFrom = { "rived from ", "split from ", "sawn from ", "cut from ", "sieved from ", "spun from ", "woven from " };
+
+    /// <summary>
+    /// Where a piece made from this one comes from, in words: <paramref name="verb"/> from the first thing this one came
+    /// from, however many cuts lie between ("rived from an ash log" - never "rived from split from an ash log").
+    /// </summary>
+    public string Derived(string verb)
+    {
+        string root = origin ?? "";
+        for (bool cut = true; cut; )
+        {
+            cut = false;
+            foreach (string d in DerivedFrom)
+                if (root.StartsWith(d, StringComparison.OrdinalIgnoreCase))
+                {
+                    root = root.Substring(d.Length);
+                    cut = true;
+                }
+        }
+        return root.Length > 0 ? $"{verb} from {root}" : verb;
+    }
+
     // ------------------------------------------------------------------ metal
     public int SegmentCount => segments.Count;
 
@@ -620,6 +683,50 @@ public class CraftPiece
             if (want <= l) return i;
         }
         return segments.Count - 1;
+    }
+
+    /// <summary>
+    /// Makes a boundary between segments at <paramref name="t"/> (0-1 along the length), so that a cut there is exactly
+    /// there (a saw on its mark): the segment it falls in becomes two, their lengths in proportion, each a copy of it (its
+    /// bend and slag shared by length; its hole kept in both). Defects past it, and the fire's span, move up by one.
+    /// Within <paramref name="snap"/> mm of a boundary that one is used. Returns the segment the cut goes after (-1 when
+    /// <paramref name="t"/> is at an end: there is nothing to cut off).
+    /// </summary>
+    public int InsertBoundary(double t, double snap = 0.5)
+    {
+        double total = Length, want = CraftMath.Clamp01(t) * total;
+        if (segments.Count == 0 || want <= snap || want >= total - snap)
+            return -1;
+        double start = 0;
+        for (int i = 0; i < segments.Count; i++)
+        {
+            MetalSegment s = segments[i];
+            double end = start + s.length;
+            if (want > end + 1e-9)
+            {
+                start = end;
+                continue;
+            }
+            if (want - start <= snap)
+                return i - 1;
+            if (end - want <= snap)
+                return i;
+            double share = (want - start) / Math.Max(1e-9, s.length);
+            MetalSegment far = s.Clone();
+            far.length = s.length * (1 - share);
+            far.bend = s.bend * (1 - share);
+            far.slag = s.slag * (1 - share);
+            s.length *= share;
+            s.bend *= share;
+            s.slag *= share;
+            segments.Insert(i + 1, far);
+            foreach (CraftDefect d in defects)
+                if (d.at > i) d.at++;
+            if (from > i) from++;
+            if (to >= i && to < 9999) to++;
+            return i;
+        }
+        return -1;
     }
 
     /// <summary>Grams of an element in the composition (relative).</summary>
@@ -677,13 +784,28 @@ public class CraftPiece
     /// <summary>Forget the cached profile (after editing the composition list directly).</summary>
     public void CompositionChanged() => compositionVersion++;
 
+    /// <summary>
+    /// How many edges a metal piece is to have: its purpose's - the design part's shape, double-edged 2, single-edged 1,
+    /// none 0 - however the purpose was given (said, cast in the part's mould, fitted to an item, kept through a weld);
+    /// <paramref name="otherwise"/> when it has no purpose with a shape (or is not metal).
+    /// </summary>
+    public int IntendedEdges(CraftRules rules, int otherwise)
+    {
+        if (kind != CraftPieceKind.Metal || string.IsNullOrEmpty(intentDesign) || rules == null)
+            return otherwise;
+        CraftShapeTarget shape = rules.Design(intentDesign)?.Component(intentRole)?.shape;
+        return shape == null ? otherwise : shape.edge == CraftEdgeKind.Double ? 2 : shape.edge == CraftEdgeKind.Single ? 1 : 0;
+    }
+
     /// <summary>Density (g/cm³) of the material.</summary>
     public double Density(CraftRules rules)
     {
         switch (kind)
         {
             case CraftPieceKind.Wood:
-                return rules.Wood(wood.wood)?.density ?? 0.7;
+                // the species' density is seasoned wood's (CraftWoodwork.Seasoned); the water in it weighs too: a green log
+                // in its bark is about half again as heavy as the same log seasoned
+                return (rules.Wood(wood.wood)?.density ?? 0.7) * (1 + Math.Max(0, wood.moisture)) / (1 + CraftWoodwork.Seasoned);
             case CraftPieceKind.Metal:
             case CraftPieceKind.Fasteners:
                 return Profile(rules).Density;
@@ -702,6 +824,14 @@ public class CraftPiece
         return s.Volume(edges) * rho / 1000.0 + s.slag;
     }
 
+    /// <summary>
+    /// g/cm³ of a hide's or a cloth's cell at a moisture (0-1): leather about 0.8 dry and 1.1 soaking wet (raw hide is
+    /// mostly water); woven cloth, measured with the air between its threads, about 0.25 (linen 0.7 mm thick weighs some
+    /// 175 g a square metre, wool 1.6 mm some 400).
+    /// </summary>
+    public static double HideDensity(bool cloth, double moisture) =>
+        cloth ? 0.23 + 0.25 * CraftMath.Clamp01(moisture) : 0.75 + 0.45 * CraftMath.Clamp01(moisture);
+
     /// <summary>Mass (g) of the whole piece.</summary>
     public double Mass(CraftRules rules)
     {
@@ -711,10 +841,13 @@ public class CraftPiece
                 return ore.Mass;
             case CraftPieceKind.Hide:
             {
+                // A cell is Cell Size (cm) square and its thickness (mm) thick: cell² × thickness / 10 cm³. Shrinking draws a
+                // cell in and thickens it, so its mass stays as it was.
+                bool cloth = rules.Hide(hide.hide)?.textile ?? false;
                 double m = 0, cell = rules.Settings.cellSize;
                 foreach (HideCell c in hide.cells)
                     if (c.present)
-                        m += cell * cell * 100 * c.thickness * 0.1 * (0.85 + 0.6 * c.moisture) * (1 - c.shrink) / 1000.0 * (1 + 0.4 * c.oil);
+                        m += cell * cell * c.thickness / 10.0 * HideDensity(cloth, c.moisture) * (1 + 0.4 * c.oil);
                 return m;
             }
             case CraftPieceKind.Fasteners:
@@ -833,7 +966,6 @@ public class CraftPiece
         s.bevelWidthR = W(x => x.bevelWidthR);
         s.fuller = W(x => x.fuller);
         s.dish = W(x => x.dish);
-        s.cut = 0;
         s.carbonShift = W(x => x.carbonShift);
         s.porosity = W(x => x.porosity);
         s.scale = W(x => x.scale);
@@ -848,17 +980,24 @@ public class CraftPiece
         s.chip = W(x => x.chip);
         s.clay = W(x => x.clay);
         s.crackRisk = W(x => x.crackRisk);
-        double slag = 0, bend = 0, hole = 0;
+        s.seamOpen = W(x => x.seamOpen);
+        s.flux = W(x => x.flux);
+        double slag = 0, bend = 0, hole = 0, cut = 0;
+        bool fromAbove = false;
         foreach (var p in parts)
         {
             double share = p.seg.length > 1e-9 ? p.len / p.seg.length : 0;
             slag += p.seg.slag * share;
             bend += p.seg.bend * share;
             hole = Math.Max(hole, share > 0.5 ? p.seg.hole : 0);
+            double c = share >= 0.5 ? p.seg.cut : 0; // a cut half made on the hardy (or with the chisel) stays where it is
+            if (c > cut) { cut = c; fromAbove = p.seg.cutFromAbove; }
         }
         s.slag = slag;
         s.bend = bend;
         s.hole = hole;
+        s.cut = cut;
+        s.cutFromAbove = fromAbove;
         // Zones: the length-weighted mix (pairwise).
         CraftZone e = parts[0].seg.edge.Clone(), b = parts[0].seg.body.Clone();
         double acc = parts[0].len;
@@ -881,6 +1020,26 @@ public class CraftPiece
             if (d.kind == kind && d.at == at)
             {
                 d.severity = Math.Max(d.severity, severity) + Math.Min(d.severity, severity) * 0.3;
+                d.surface |= surface;
+                if (!string.IsNullOrEmpty(cause)) d.cause = cause;
+                return d;
+            }
+        var n = new CraftDefect { kind = kind, at = at, severity = severity, surface = surface, cause = cause ?? "" };
+        defects.Add(n);
+        return n;
+    }
+
+    /// <summary>
+    /// A flaw that is a state the piece goes on being in (rot, an outside closed by too strong a liquor, shrinking), told
+    /// again as long as it lasts: it is as bad as the state is now - it grows as the state worsens, and never stacks on
+    /// itself as <see cref="AddDefect"/> stacks separate harms done at one place.
+    /// </summary>
+    public CraftDefect HoldDefect(CraftDefectKind kind, int at, double severity, bool surface, string cause)
+    {
+        foreach (CraftDefect d in defects)
+            if (d.kind == kind && d.at == at)
+            {
+                d.severity = Math.Max(d.severity, severity);
                 d.surface |= surface;
                 if (!string.IsNullOrEmpty(cause)) d.cause = cause;
                 return d;
@@ -947,5 +1106,143 @@ public class CraftPiece
                 return;
             }
         tags.Add(new CraftVariable(name, value));
+    }
+}
+
+/// <summary>
+/// What materials are worth: one rule for stock, for a worked piece carried off a station and for the materials of a
+/// finished item, so a metal, a wood or a hide is worth the same raw, worked or finished and no cut, fold or trip
+/// through the bag makes more of it:
+/// <list type="bullet">
+/// <item>metal: its grams × its elements' value of a gram × its class's multiplier (a premium steel is worth its
+/// premium as a bar, as a blade and in the sword);</item>
+/// <item>wood: its share by volume of the species' blank (a blank is worth <see cref="CraftWoodDefinition.price"/>),
+/// half that while it is unseasoned (a green log in its bark still has to be rived and seasoned);</item>
+/// <item>an ore lump: its mineral against a lump's usual mineral; a hide: its share of the whole hide, twice that once
+/// tanned through; cloth: its share of the bolt; fibre by weight, yarn by length, a stone by its grade;</item>
+/// <item>fasteners: their metal and the making of each (a buckle more than a rivet).</item>
+/// </list>
+/// </summary>
+public static class CraftValue
+{
+    /// <summary>Unseasoned wood (wetter than <see cref="CraftWoodwork.DryEnough"/>) is worth this share of seasoned wood.</summary>
+    public const double Unseasoned = 0.5;
+    /// <summary>The making of one rivet or stud, and of one buckle, over its metal.</summary>
+    public const double FastenerMaking = 0.1, BuckleMaking = 1;
+
+    /// <summary>
+    /// A metal's value: grams × its elements' value of a gram, and its class's making on its matrix - the base and what is
+    /// alloyed in no dearer than it (<see cref="CraftAlloyProfile.MatrixPricePerGram"/>): × the class's multiplier there.
+    /// A steel's carburizing doubles its iron's worth, a bronze's alloying adds half to its copper; a dear metal alloyed into
+    /// a cheap one counts at its own value, so welding mythril onto iron or melting orichalcum into copper never makes more
+    /// of it.
+    /// </summary>
+    public static double Metal(CraftAlloyProfile profile, double grams)
+    {
+        double all = profile?.PricePerGram ?? 0.01, matrix = profile?.MatrixPricePerGram ?? all, m = profile?.Class?.priceMultiplier ?? 1;
+        return Math.Max(0, grams) * Math.Max(0, all + (m - 1) * matrix);
+    }
+
+    /// <summary>Wood of a species: its share by volume (mm³) of the species' blank, half that while unseasoned.</summary>
+    public static double Wood(CraftWoodDefinition w, double volume, double moisture)
+    {
+        double price = w?.price ?? 1;
+        double blank = w != null ? (double)w.blankLength * w.blankWidth * w.blankThickness : 1000.0 * 40 * 40;
+        return price * Math.Max(0, volume) / Math.Max(1, blank) * (moisture > CraftWoodwork.DryEnough ? Unseasoned : 1);
+    }
+
+    /// <summary>
+    /// The metal a lump of <paramref name="ore"/> gives at most, and what it is worth by <see cref="Metal"/> (its class
+    /// decides): every share of the lump at <paramref name="at"/> of its range - 0 the poorest lump of the poorest deposit,
+    /// 0.5 a usual one, 1 the richest - and the lump's mass with it (80-120 % of a usual lump's). Its metals count, and the
+    /// phosphorus that goes into iron; rock, sulfur (roasted off) and slag do not, nor does what the furnace loses.
+    /// </summary>
+    public static double OreMetal(CraftRules rules, CraftOreDefinition ore, double at, out CraftAlloyProfile profile, out double grams)
+    {
+        profile = null;
+        grams = 0;
+        if (rules == null || ore?.yields == null)
+            return 0;
+        at = CraftMath.Clamp01(at);
+        double mineral = ore.lumpMass * (0.8 + 0.4 * at) * CraftMath.Lerp(ore.mineralMin, ore.mineralMax, at);
+        var p = new CraftPiece { kind = CraftPieceKind.Metal };
+        foreach (CraftOreYield y in ore.yields)
+        {
+            CraftElement e = rules.Element(y?.element);
+            if (e == null || e.kind == CraftElementKind.Impurity && y.element != "phosphorus") continue;
+            double g = mineral * CraftMath.Lerp(y.min, y.max, at) * (0.925 + 0.15 * at) * (y.element == "phosphorus" ? 0.75 : 1);
+            if (g > 0) p.composition.Add(new CraftAmount(y.element, g));
+        }
+        p.CompositionChanged();
+        foreach (CraftAmount a in p.composition) grams += a.grams;
+        if (grams <= 0)
+            return 0;
+        profile = p.Profile(rules);
+        return Metal(profile, grams);
+    }
+
+    public static double OreMetal(CraftRules rules, CraftOreDefinition ore, double at) => OreMetal(rules, ore, at, out _, out _);
+
+    /// <summary>The cells a whole hide of the piece's animal has (the one it was cut from: hides of one seed are alike).</summary>
+    public static int WholeHideCells(CraftRules rules, HideState h)
+    {
+        CraftPiece whole = CraftLeather.NewHide(rules, h.hide, h.seed);
+        int n = 0;
+        if (whole != null)
+            foreach (HideCell c in whole.hide.cells)
+                if (c.present) n++;
+        return n;
+    }
+
+    /// <summary>What a piece is worth on its own (an assembly's parts are counted by whoever carries them).</summary>
+    public static double Of(CraftRules rules, CraftPiece p)
+    {
+        if (rules == null || p == null)
+            return 0;
+        switch (p.kind)
+        {
+            case CraftPieceKind.Metal:
+            {
+                double slag = 0;
+                foreach (MetalSegment s in p.segments) slag += s.slag;
+                return Metal(p.Profile(rules), p.Mass(rules) - slag);
+            }
+            case CraftPieceKind.Fasteners:
+                return Metal(p.Profile(rules), p.Mass(rules)) + p.fasteners.count * (p.fasteners.kind == CraftFastenerKind.Buckle ? BuckleMaking : FastenerMaking);
+            case CraftPieceKind.Ore:
+            {
+                CraftOreDefinition o = rules.Ore(p.ore.ore);
+                double usual = o != null ? o.lumpMass * (o.mineralMin + o.mineralMax) * 0.5 : 500;
+                return (o?.price ?? 1) * p.ore.MineralMass / Math.Max(1, usual);
+            }
+            case CraftPieceKind.Hide:
+            {
+                CraftHideDefinition h = rules.Hide(p.hide.hide);
+                int cells = 0;
+                foreach (HideCell c in p.hide.cells) if (c.present) cells++;
+                double share = h != null ? cells / (double)Math.Max(1, WholeHideCells(rules, p.hide)) : 0.5;
+                // cloth comes finished: nothing to tan (its cells read as tanned through) - and it is worth its cells, a
+                // length woven longer than a bolt more than a bolt (cut in two, its halves are worth the whole); a piece
+                // of hide is never more than the whole hide it came from
+                return h != null && h.textile ? h.price * share : (h?.price ?? 5) * Math.Min(1, share) * (1 + CraftLeather.MeanTannage(p.hide));
+            }
+            case CraftPieceKind.Wood:
+            {
+                double volume = 0;
+                foreach (MetalSegment s in p.segments) volume += s.Volume(0);
+                return Wood(rules.Wood(p.wood.wood), volume, p.wood.moisture);
+            }
+            case CraftPieceKind.Fibre:
+            {
+                CraftSupplyDefinition s = rules.Supply(p.fibre.fibre);
+                return (s?.price ?? 0.5) * p.fibre.grams / Math.Max(1, s?.gramsPerItem ?? 100) * (1 + CraftFibre.Prep(p.fibre));
+            }
+            case CraftPieceKind.Yarn:
+                return (rules.Supply(CraftFibre.ThreadOf(rules, p))?.price ?? 0.5) * p.yarn.length / CraftFibre.MetresPerThread;
+            case CraftPieceKind.Gem:
+                return CraftLapidary.Grade(rules, p).Value;
+            default:
+                return 0;
+        }
     }
 }

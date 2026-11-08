@@ -53,6 +53,8 @@ dungeon objects, `DuelChallengeTarget` on players (relayed to the server, where 
   sends the open/closed state to every client (late joiners included). A client's copy of a networked door ignores direct
   `Interact()` calls. A door (any `IReplicatedInteractable`) without them changes on the server only: the client logs a
   warning naming it the first time it is used.
+- **Ore seams** (`OreDeposit`): the server breaks the lumps off; with a `NetworkObject` + `NetInteractable` every client
+  sees the seam as it is (worked out, its loose stones gathered, grown back), late joiners included.
 - **Replicated state** for your own interactables: implement `IReplicatedInteractable` (`ReplicatedState` read on the
   server, `ApplyReplicatedState` on clients) and put `NetInteractable` + `NetworkObject` on the root.
 - Non-owner copies of a player (and every player on a dedicated server) do not target or read input.

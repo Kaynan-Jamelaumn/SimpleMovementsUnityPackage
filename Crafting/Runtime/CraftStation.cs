@@ -12,7 +12,7 @@ public interface ICraftStationNet
 {
     /// <summary>True where the station's rules run (the server).</summary>
     bool RunsStationRules { get; }
-    /// <summary>Client: sends what the player did to the server.</summary>
+    /// <summary>Client: sends what the player did to the server (its <see cref="CraftRequest.seq"/> asks for an answer: <see cref="CraftStation.Answer"/>).</summary>
     void SendRequest(CraftRequest request);
     /// <summary>Client: the player starts (true) or stops working here (the window opened or closed).</summary>
     void SendTending(bool tending);
@@ -45,7 +45,12 @@ public interface ICraftStationNet
 /// <item><b>Network sessions</b>: with a NetworkObject and a <c>NetCraftStation</c>, the server runs the workshop and
 /// decides everything (materials taken, items given, what is learnt); every client keeps a copy that follows the
 /// server's (<see cref="IsMirror"/>) so the fire, the sparks and the work show the same everywhere, and its player's
-/// actions go to the server as requests. Without one, only the server's (the host's) player can work here.</item>
+/// actions go to the server as requests, each answered (<see cref="Answered"/>) once the copy shows what it did. Without
+/// one, only the server's (the host's) player can work here.</item>
+/// <item><b>Real hands</b>: every request of every player - offline, the host's, a client's - is bounded by that
+/// player's <see cref="CraftRequestGuard"/> (no faster than real hands, never steadier than their practice; what the
+/// station then refuses is given back), except at a test station, where nobody's hands are and only a player on another
+/// machine is held to the pace of requests. Every request's shape is checked at every station.</item>
 /// </list>
 /// </summary>
 [DisallowMultipleComponent]
@@ -129,12 +134,21 @@ public class CraftStation : MonoBehaviour, IInteractable
     private float conditionsTimer, readTimer;
     private int version, freeLump;
     private readonly HashSet<string> inspected = new HashSet<string>();
+    /// <summary>Items tried while their maker was not in the world: their journal notes it when they take it (the server's own).</summary>
+    private readonly HashSet<string> untold = new HashSet<string>();
     private readonly HashSet<string> workedThisVisit = new HashSet<string>();
     private readonly Dictionary<string, int> cracksAtQuench = new Dictionary<string, int>();
     private readonly Dictionary<string, float> heatReadAt = new Dictionary<string, float>();
     private readonly List<string> chargedOres = new List<string>();
     private readonly Dictionary<string, int> chargedDeposits = new Dictionary<string, int>();
     private int metaVersion;
+    private readonly Dictionary<CombatEntity, CraftRequestGuard> guards = new Dictionary<CombatEntity, CraftRequestGuard>();
+    private readonly Dictionary<CombatEntity, CraftHandsOnMode> byHand = new Dictionary<CombatEntity, CraftHandsOnMode>();
+    private readonly Dictionary<CombatEntity, (string text, float at)> told = new Dictionary<CombatEntity, (string, float)>();
+    private readonly List<CraftEvent> answerEvents = new List<CraftEvent>();
+
+    /// <summary>Seconds before the same refusal (or note) is told again to a player at a 3D work place; different words are told at once.</summary>
+    public const float RepeatInterval = 1.5f;
 
     /// <summary>Every station in the loaded scenes.</summary>
     public static IReadOnlyList<CraftStation> All => all;
@@ -147,6 +161,20 @@ public class CraftStation : MonoBehaviour, IInteractable
     public event Action WorkshopReplaced;
     /// <summary>A message for this machine's player at the station (a refusal from the server, what was taken): the window shows it.</summary>
     public event Action<string> LocalMessage;
+    /// <summary>
+    /// A network client: the station's answer (ok, and why) to one of this machine's requests - by its
+    /// <see cref="CraftRequest.seq"/> - raised once the copy of the workshop shows what the request did. While it is raised
+    /// <see cref="AnswerEvents"/> holds the events the request's own operations raised.
+    /// </summary>
+    public event Action<int, bool, string> Answered;
+    /// <summary>A network client: something this machine's player learnt working here (the server's journal said so) - the window shows it.</summary>
+    public event Action<string> Learnt;
+    /// <summary>
+    /// A line for this machine's player's "What happened" from the hands at a 3D work place (<see cref="CraftHandsOn"/>):
+    /// what it told them there while the window stood aside - a refusal (<c>refused</c>: dimmed), what a request did. The
+    /// window keeps it in its log (the workshop's own events and the station's messages it logs by itself).
+    /// </summary>
+    public event Action<string, bool> Logged;
 
     public ICraftStationNet Net { get; set; }
     /// <summary>
@@ -294,6 +322,35 @@ public class CraftStation : MonoBehaviour, IInteractable
         inspected.Clear();
     }
 
+    /// <summary>Inside <see cref="Answered"/>: the events the answered request's own operations raised on the copy (a blow's ring, a solder's flash).</summary>
+    public IReadOnlyList<CraftEvent> AnswerEvents => answerEvents;
+
+    /// <summary>
+    /// Client: the server's answer to request <paramref name="seq"/> (the network side calls this once the copy shows its
+    /// operations); <paramref name="events"/> = what those operations raised on the copy.
+    /// </summary>
+    public void Answer(int seq, bool ok, string reason, IList<CraftEvent> events = null)
+    {
+        answerEvents.Clear();
+        if (events != null) answerEvents.AddRange(events);
+        try { Answered?.Invoke(seq, ok, reason ?? ""); }
+        finally { answerEvents.Clear(); }
+    }
+
+    /// <summary>Client: a line of what this machine's player learnt here (from the server's journal): the window shows and keeps it.</summary>
+    public void ShowLearnt(string text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            Learnt?.Invoke(text);
+    }
+
+    /// <summary>Keeps <paramref name="text"/> in the window's "What happened" for this machine's player (<see cref="Logged"/>), and shows it nowhere else.</summary>
+    public void Log(string text, bool refused = false)
+    {
+        if (!string.IsNullOrEmpty(text))
+            Logged?.Invoke(text, refused);
+    }
+
     /// <summary>A message for this machine's player (from the server): in the inventory's message line and the window.</summary>
     public void ShowLocalMessage(string text)
     {
@@ -339,7 +396,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (logEvents)
             Debug.Log($"[Crafting] {DisplayName}: {e.Kind} {e.Piece} {e.Id} {e.Text}", this);
         if (tender != null && RulesHere)
-            CraftKnowledge.For(tender)?.Observe(e, workshop.Piece(e.Piece));
+            CraftKnowledge.For(tender)?.Observe(e, workshop.Piece(e.Piece), Instruments);
         WorkshopEvent?.Invoke(e);
     }
 
@@ -405,6 +462,9 @@ public class CraftStation : MonoBehaviour, IInteractable
             workedThisVisit.Clear();
             metaVersion++;
         }
+        // the hands are at the station from now: what fills from nothing (the loom) starts filling
+        if (!testStation)
+            GuardOf(player).Touch(Time.unscaledTimeAsDouble);
         Touch();
     }
 
@@ -418,6 +478,7 @@ public class CraftStation : MonoBehaviour, IInteractable
             Net?.SendTending(false);
             return;
         }
+        byHand.Remove(player); // a 3D work place is put down with the visit
         if (player != tender)
             return;
         tender = null;
@@ -428,25 +489,80 @@ public class CraftStation : MonoBehaviour, IInteractable
     }
 
     // ------------------------------------------------------------------ requests
-    /// <summary>Asks the station to do something for <paramref name="player"/> (here, or through the network).</summary>
+    /// <summary>
+    /// Asks the station to do something for <paramref name="player"/> (here, or through the network). False = refused, with
+    /// the reason. True = done (where the rules run) - with a reason when the player's guard granted it only in part - or,
+    /// on a network client, sent: the server's answer comes later (<see cref="Answered"/>, for a request with a
+    /// <see cref="CraftRequest.seq"/>). Where the rules run, the request's shape is checked first, at every station
+    /// (<see cref="CraftRequestGuard.WellFormed(in CraftRequest, out string)"/>); then the player's guard bounds it - not
+    /// at a test station, where only a player on another machine is held to the pace of requests - and what the guard
+    /// took for work the station then refuses is given back (<see cref="CraftRequestGuard.Refund"/>).
+    /// </summary>
     public bool Request(CombatEntity player, CraftRequest r, out string reason)
     {
         reason = "";
         if (!RulesHere)
         {
-            if (Net != null)
+            if (Net == null)
             {
-                Net.SendRequest(r);
-                return true;
+                reason = "This station is not set up for multiplayer (it needs a NetCraftStation): only the host can work here.";
+                return false;
             }
-            reason = "This station is not set up for multiplayer (it needs a NetCraftStation): only the host can work here.";
-            return false;
+            // Checked here, so that it is never sent at all: an item the server cannot name, a request too big to carry.
+            if (r.item != null && string.IsNullOrEmpty(ItemDatabase.Id(r.item)))
+            {
+                reason = $"{r.item.Name} is not in the Item Database: it cannot be used in a network session.";
+                return false;
+            }
+            CraftRequestGuard.Fit(ref r, out string cut);
+            if (!CraftRequestGuard.WellFormed(r, out reason))
+                return false;
+            Net.SendRequest(r);
+            reason = cut;
+            return true;
         }
         CraftWorkshop w = EnsureWorkshop();
+        // The shape of what reaches the workshop, whoever sent it and wherever (a test station too): a drawn path too long
+        // keeps its first part; ids, numbers and lists the workshop cannot take are refused.
+        CraftRequestGuard.Fit(ref r, out string trimmed);
+        if (!CraftRequestGuard.WellFormed(r, out reason))
+            return false;
+        string only = testStation ? null : CraftRequestGuard.TestStationOnly(r, w); // (an item nothing has gone into may be put aside anywhere)
+        if (only != null)
+        {
+            reason = only;
+            return false;
+        }
+        // A fold or a stack laid by hand at a real station leaves its seam to the blows that follow (only a test station's
+        // quick buttons weld at once).
+        if (!testStation && (r.kind == CraftRequestKind.Fold || r.kind == CraftRequestKind.Weld))
+            r.flag = true;
         // The craft this is, and how practised the player is at it: a practised hand does more with each action.
         CraftDiscipline? craft = CraftMastery.OfRequest(Rules, w, r);
         double practice = craft.HasValue ? Mastery(player, craft.Value) : GeneralSkill(player);
+        // No faster than real hands, never steadier than this practice. A test station's quick buttons send whole bundles,
+        // so nobody's hands are checked there - but a player on another machine sends no faster than the pace of requests.
+        string note = "";
+        CraftRequestGuard guard = null;
+        double now = Time.unscaledTimeAsDouble;
+        if (player != null && !testStation)
+        {
+            guard = GuardOf(player);
+            guard.Settings = MasterySettings;
+            guard.Skill = practice;
+            if (!guard.Check(ref r, now, out note, w))
+            {
+                reason = note;
+                return false;
+            }
+        }
+        else if (player != null && !CardTable.IsLocalPlayer(player) && !GuardOf(player).Paced(now, out reason))
+            return false;
+        if (note.Length == 0)
+            note = trimmed; // a stroke too long to take in at once: what counted
         ByPractice(ref r, practice);
+        // what it teaches, judged on the piece as it is before (a skein counted again, a stone named again teach nothing)
+        double xp = craft.HasValue ? CraftMastery.WorkExperience(r, w.Piece(r.piece)) : 0;
         bool ok;
         switch (r.kind)
         {
@@ -463,14 +579,15 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.SetIntent: ok = w.SetIntent(r.piece, r.id, r.other, out reason); break;
             case CraftRequestKind.AddFuel: ok = AddFuel(player, r.id, Math.Max(1, r.count), r.flag, out reason); break;
             case CraftRequestKind.Bellows:
-                if (!(r.flag ? Has(CraftTools.Furnace) : Has(CraftTools.Forge))) { reason = r.flag ? "There is no furnace here." : "There is no forge here."; return false; }
-                w.Bellows(r.a > 0 ? r.a : 1, r.flag);
-                ok = true;
+                ok = r.flag ? Has(CraftTools.Furnace) : Has(CraftTools.Forge);
+                if (ok) w.Bellows(r.a > 0 ? r.a : 1, r.flag);
+                else reason = r.flag ? "There is no furnace here." : "There is no forge here.";
                 break;
             case CraftRequestKind.Damper: w.SetDamper(r.a, r.flag); ok = true; break;
             case CraftRequestKind.Oven: ok = w.SetOven(r.a, out reason); break;
-            case CraftRequestKind.Crush: ok = w.CrushOre(r.piece, r.i0, r.a, out reason); if (ok) Handled(player, r.piece); break;
-            case CraftRequestKind.DiscardFragment: ok = w.DiscardFragment(r.piece, r.i0, out reason); break;
+            // The ore bench: a stone is named by its place on the bench, and i2 the layout it was aimed at (0 = not checked).
+            case CraftRequestKind.Crush: ok = w.CrushOre(r.piece, r.i0, r.a, out reason, r.i2); if (ok) Handled(player, r.piece); break;
+            case CraftRequestKind.DiscardFragment: ok = w.DiscardFragment(r.piece, r.i0, out reason, r.i2); break;
             case CraftRequestKind.Wash: ok = w.WashOre(r.piece, r.a, r.b, r.c, out reason); if (ok) Handled(player, r.piece); break;
             case CraftRequestKind.Sieve:
             {
@@ -478,7 +595,7 @@ public class CraftStation : MonoBehaviour, IInteractable
                 ok = reason == "" || fines != null;
                 break;
             }
-            case CraftRequestKind.Flux: ok = Flux(player, r.id, Math.Max(1, r.count), r.i0, r.piece, out reason, r.a > 0 ? r.a : 1); break;
+            case CraftRequestKind.Flux: ok = Flux(player, r.id, Math.Max(1, r.count), r.i0, r.piece, out reason, r.a > 0 ? r.a : 1, r.points); break;
             case CraftRequestKind.TapSlag: ok = w.TapSlag(out reason, r.a > 0 ? r.a : 1); break;
             case CraftRequestKind.ExtractBloom:
             {
@@ -489,27 +606,44 @@ public class CraftStation : MonoBehaviour, IInteractable
             }
             case CraftRequestKind.StirMelt: ok = w.StirMelt(r.a > 0 ? r.a : 1, out reason); break;
             case CraftRequestKind.Skim: ok = w.SkimDross(r.a > 0 ? r.a : 1, out reason); break;
-            case CraftRequestKind.Pour: ok = w.Pour(r.id, r.a, r.b, r.i0, out reason, r.c, r.d, r.i1 > 0 ? r.i1 / 1000.0 : 1) != null; break;
+            // A pour: i1 the share of the mould it brought, i2 the metal lost on the floor (thousandths of a mould each);
+            // flag: knock a frozen melt out as a cake.
+            case CraftRequestKind.Pour:
+                ok = (r.flag ? w.KnockOut(out reason) : w.Pour(r.id, r.a, r.b, r.i0, out reason, r.c, r.d, r.i1 > 0 ? r.i1 / 1000.0 : 1, r.i2 / 1000.0)) != null;
+                break;
             case CraftRequestKind.TakeMelt:
             {
-                string cast = w.TakeMelt(r.id, r.a, r.b, out reason, r.c, r.d, r.i1 > 0 ? r.i1 / 1000.0 : 1);
+                // flag: lift the last of the metal (a bead too small to pour) off the bottom with the tongs
+                string cast = r.flag ? w.LiftBead(out reason) : w.TakeMelt(r.id, r.a, r.b, out reason, r.c, r.d, r.i1 > 0 ? r.i1 / 1000.0 : 1, r.i0, r.i2 / 1000.0);
                 ok = cast != null;
-                if (ok) Smelted(player, cast);
+                if (ok && cast.Length > 0) Smelted(player, cast);
                 break;
             }
             case CraftRequestKind.Strike:
                 ok = w.Strike(r.piece, r.a, (CraftStrikeTool)r.i0, (CraftStrikeFace)r.i1, r.b, r.c, out reason);
                 if (ok) WorkedMetal(player, r.piece);
                 break;
-            case CraftRequestKind.Fold: ok = w.Fold(r.piece, out reason, r.b > 0 ? r.b : 1); break;
-            case CraftRequestKind.Weld: ok = w.Weld(r.piece, r.other, out reason, r.b > 0 ? r.b : 1); break;
-            case CraftRequestKind.Split: ok = w.SplitPiece(r.piece, r.a, out reason) != null; break;
+            case CraftRequestKind.Fold: ok = w.Fold(r.piece, out reason, r.b > 0 ? r.b : 1, r.flag); break;
+            case CraftRequestKind.Weld: ok = w.Weld(r.piece, r.other, out reason, r.b > 0 ? r.b : 1, r.flag); break;
+            case CraftRequestKind.Split:
+                // A cut in one go is the quick bench's: at a real station wood is sawn stroke by stroke (SawCut), where the
+                // hands' wander and squareness leave their mark on the ends; metal is cut with the hot chisel's blows.
+                ok = testStation || w.Piece(r.piece)?.kind != CraftPieceKind.Wood;
+                if (ok) ok = w.SplitPiece(r.piece, r.a, out reason) != null;
+                else reason = "Wood is sawn through stroke by stroke: mark it and saw it (Woodshop → Saw, or Carve).";
+                break;
             case CraftRequestKind.FormFastener: ok = w.FormFastener(r.piece, (CraftFastenerKind)r.i0, out reason) != null; break;
             case CraftRequestKind.Agitate: ok = w.Agitate(r.piece, (CraftQuenchMotion)r.i0, out reason, r.a > 0 ? r.a : -1); break;
+            case CraftRequestKind.FillTank: ok = FillTank(player, r.id, out reason); break;
             case CraftRequestKind.Clay:
-                ok = HaveSupply(player, FirstOfKind(CraftSupplyKind.Clay), 1, out reason) && w.ApplyClay(r.piece, r.i0, r.i1, r.a, out reason, r.points) &&
-                     UseSupply(player, FirstOfKind(CraftSupplyKind.Clay), 1, out reason);
+            {
+                // Clay that goes on is taken from the bag; wiping it off costs nothing.
+                bool goesOn = w.ClayGoesOn(r.piece, r.i0, r.i1, r.a, r.points);
+                string clay = FirstOfKind(CraftSupplyKind.Clay);
+                ok = (!goesOn || HaveSupply(player, clay, 1, out reason)) && w.ApplyClay(r.piece, r.i0, r.i1, r.a, out reason, r.points) &&
+                     (!goesOn || UseSupply(player, clay, 1, out reason));
                 break;
+            }
             case CraftRequestKind.Descale: ok = w.Descale(r.piece, r.i0, r.i1, r.id, r.a, r.b * Pace(player, r), out reason); break;
             case CraftRequestKind.Grind:
                 ok = w.Grind(r.piece, r.i0, r.i1, (CraftSurfaceSide)r.i2, r.id, r.a, r.b, r.c * Pace(player, r), out reason);
@@ -522,19 +656,20 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.Polish: ok = w.Polish(r.piece, r.i0, r.i1, r.id, r.a, r.b * Pace(player, r), out reason); break;
             case CraftRequestKind.Coat: ok = HaveSupply(player, r.id, 1, out reason) && w.Coat(r.piece, r.id, out reason) && UseSupply(player, r.id, 1, out reason); break;
             // The woodshop.
-            case CraftRequestKind.Rive: ok = w.Rive(r.piece, r.a, r.b, out reason) != null; break;
+            case CraftRequestKind.Rive: ok = w.Rive(r.piece, r.a, r.b, out reason, r.c > 0 ? r.c : 0.5) != null; break;
             case CraftRequestKind.SawCut: ok = w.SawCut(r.piece, r.a, r.b, r.c, out reason) != null; break;
-            case CraftRequestKind.BendWood: ok = w.BendWood(r.piece, r.i0, r.i1, r.a, r.b, r.flag, out reason); break;
+            case CraftRequestKind.RipCut: ok = w.RipCut(r.piece, r.a, r.b, r.c, r.d, r.i0 / 1000.0, out reason); break;
+            case CraftRequestKind.BendWood: ok = w.BendWood(r.piece, r.i0, r.i1, r.a, r.b, r.flag, out reason, r.c); break;
             case CraftRequestKind.StackWood: ok = w.StackWood(r.piece, r.a, r.b, r.c, out reason); break;
+            case CraftRequestKind.StackCover: ok = w.SetStackCover(r.a, out reason); break;
             case CraftRequestKind.SandWood: ok = w.SandWood(r.piece, r.i0, r.i1, r.a, r.b * Pace(player, r) / Math.Max(0.1, Rules.Settings.handWorkPace), r.c, out reason); break;
-            case CraftRequestKind.Varnish:
-                ok = HaveSupply(player, r.id, 1, out reason) && w.Varnish(r.piece, r.id, r.i0, r.i1, r.a, r.b, out reason) && UseSupply(player, r.id, 1, out reason);
-                break;
+            case CraftRequestKind.Varnish: ok = Brush(player, r, out reason); break;
             // The woodshop's logs.
             case CraftRequestKind.DebarkWood: ok = w.DebarkWood(r.piece, r.i0, r.i1, r.a, r.b, r.c, out reason); break;
             case CraftRequestKind.SplitLog: ok = w.SplitLog(r.piece, r.a, r.b, r.c, Math.Max(1, r.i0), out reason) != null; break;
-            // The tailor's: spinning a hank of fibre into thread (fibre from the inventory, thread back into it).
-            case CraftRequestKind.Spin: ok = Spin(player, r.id, r.a, r.b, out reason); break;
+            // The tailor's: spinning fibre from the bag (laid on the station as a batch, a bobbin spun from it).
+            case CraftRequestKind.Spin: ok = Spin(player, r.id, r.a, r.b, r.c, out reason); break;
+            case CraftRequestKind.JoinYarn: ok = w.JoinYarn(r.piece, r.other, out reason); break;
             // The fibre bench and the wheel: fibre into yarn, yarn into thread.
             case CraftRequestKind.CleanFibre: ok = w.CleanFibre(r.piece, r.a, r.b, out reason); break;
             case CraftRequestKind.ScourFibre:
@@ -559,8 +694,9 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.TestGem: ok = TestGem(r, out reason); break;
             case CraftRequestKind.IdentifyGem: ok = IdentifyGem(player, r.piece, r.id, out reason); break;
             case CraftRequestKind.EvaluateGem:
-                if (!HasInstrument(CraftInstruments.Loupe)) { reason = "There is no loupe here."; return false; }
-                ok = w.EvaluateGem(r.piece, r.points, r.a, out reason);
+                ok = HasInstrument(CraftInstruments.Loupe);
+                if (ok) ok = w.EvaluateGem(r.piece, r.points, r.a, out reason);
+                else reason = "There is no loupe here.";
                 break;
             case CraftRequestKind.OrientGem: ok = w.OrientGem(r.piece, r.id, r.a, r.b, r.c, r.d, out reason); break;
             case CraftRequestKind.CleanGem: ok = w.CleanGem(r.piece, r.i0 == 1, r.points, r.a, out reason); break;
@@ -575,7 +711,7 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.FinishJewel: ok = w.FinishJewel(r.piece, r.a, r.b, out reason); break;
             case CraftRequestKind.BrushOre:
                 // Coverage at the window's careful pace (full by hand in 3D).
-                ok = w.BrushOre(r.piece, r.i0, (CraftOreBrush)r.i1, Math.Min(1, r.a * Pace(player, r) / Math.Max(0.1, Rules.Settings.handWorkPace)), out reason);
+                ok = w.BrushOre(r.piece, r.i0, (CraftOreBrush)r.i1, Math.Min(1, r.a * Pace(player, r) / Math.Max(0.1, Rules.Settings.handWorkPace)), out reason, r.i2);
                 if (ok) Handled(player, r.piece);
                 break;
             case CraftRequestKind.Carve:
@@ -585,42 +721,94 @@ public class CraftStation : MonoBehaviour, IInteractable
             case CraftRequestKind.FillVat: ok = FillVat(player, r.i0, r.id, Math.Max(1, r.count), out reason); break;
             case CraftRequestKind.DrainVat: ok = w.DrainVat(r.i0, out reason); break;
             case CraftRequestKind.VatHeat: ok = w.SetVatHeat(r.i0, r.a, out reason); break;
-            case CraftRequestKind.StirVat: ok = w.StirVat(r.i0, out reason); break;
+            case CraftRequestKind.StirVat: ok = w.StirVat(r.i0, out reason, r.a); break;
             case CraftRequestKind.Scrape: ok = w.Scrape(r.piece, r.points, r.flag, r.a, r.b, out reason); break;
             case CraftRequestKind.Stretch: ok = w.Stretch(r.piece, r.a, r.b, r.c, r.d, out reason); break;
             case CraftRequestKind.Stake: ok = w.Stake(r.piece, r.points, r.a, out reason); break;
-            case CraftRequestKind.Condition: ok = HaveSupply(player, r.id, 1, out reason) && w.Condition(r.piece, r.id, r.points, r.a, out reason) && UseSupply(player, r.id, 1, out reason); break;
-            case CraftRequestKind.Dye: ok = HaveSupply(player, r.id, 1, out reason) && w.Dye(r.piece, r.id, r.points, r.a, out reason) && UseSupply(player, r.id, 1, out reason); break;
+            case CraftRequestKind.Condition:
+            case CraftRequestKind.Dye: ok = FinishLeather(player, r, out reason); break;
             case CraftRequestKind.Slick: ok = w.Slick(r.piece, r.points, r.a, out reason); break;
             case CraftRequestKind.Skive: ok = w.Skive(r.piece, r.points, r.a, out reason); break;
             case CraftRequestKind.Cut: ok = w.CutPattern(r.piece, r.id, r.i0, r.i1, r.i2, r.a, out reason) != null; break;
             case CraftRequestKind.StartAssembly:
-                if (!Makes(Rules.Design(r.id))) { reason = "That is not made here."; return false; }
-                ok = w.StartAssembly(r.id, out reason) != null;
+                ok = Makes(Rules.Design(r.id));
+                if (ok) ok = w.StartAssembly(r.id, out reason) != null;
+                else reason = "That is not made here.";
                 break;
             case CraftRequestKind.Attach: ok = Attach(player, r, out reason); break;
             case CraftRequestKind.Detach: ok = w.Detach(r.piece, r.id, r.i0, out reason); break;
-            case CraftRequestKind.JointWork: ok = w.JointWork(r.piece, r.id, (CraftJointWork)r.i0, Math.Max(0, r.count), r.a, r.b, out reason); break;
+            case CraftRequestKind.JointWork:
+                // the needle's pull (flag) pierces as it draws, and counts its stitches pulled past the cut (i2)
+                ok = w.JointWork(r.piece, r.id, (CraftJointWork)r.i0, Math.Max(0, r.count), r.a, r.b, out reason, r.flag, r.c, r.d, r.flag ? r.i2 : -1);
+                break;
             case CraftRequestKind.Finish: ok = Finish(player, r.piece, out reason); break;
             case CraftRequestKind.Routine: ok = Routine(player, r, out reason); break;
             case CraftRequestKind.Inspect: ok = Inspect(player, r.piece, out reason); break;
+            case CraftRequestKind.InspectItem: ok = InspectItem(player, r.item != null ? r.item : ItemDatabase.Item(r.itemId), out reason); break;
             case CraftRequestKind.Assay: ok = Assay(player, r.piece, out reason); break;
             case CraftRequestKind.Suspend: w.Suspend(); ok = true; break;
             case CraftRequestKind.Resume: w.Resume(); ok = true; break;
             case CraftRequestKind.Wait:
-                if (!testStation) { reason = "Time passes as it will: leave it and come back."; return false; }
-                w.RunSteps((int)Math.Round(Math.Min(1800, Math.Max(0, r.a)) / Rules.Settings.stepSeconds));
-                ok = true;
+                ok = testStation;
+                if (ok) w.RunSteps((int)Math.Round(Math.Min(1800, Math.Max(0, r.a)) / Rules.Settings.stepSeconds));
+                else reason = "Time passes as it will: leave it and come back.";
+                break;
+            case CraftRequestKind.HandsOn:
+                // at a 3D work place from now (or no longer): its work claims the full pace of the hands
+                ok = player != null;
+                if (!ok) reason = "Nobody is working here.";
+                else if (r.flag) byHand[player] = Enum.IsDefined(typeof(CraftHandsOnMode), r.i0) ? (CraftHandsOnMode)r.i0 : CraftHandsOnMode.None;
+                else byHand.Remove(player);
                 break;
             default: ok = false; break;
         }
         if (ok)
         {
-            Practice(player, craft, r);
+            Practice(player, craft, r, xp);
             Touch();
+            reason = note; // what the guard let through only in part
         }
+        else
+            guard?.Refund(); // the station said no: what the guard took for it is given back, so the retry is not held back
         return ok;
     }
+
+    // ------------------------------------------------------------------ the players' hands
+    /// <summary>
+    /// The bounds on what <paramref name="player"/>'s hands do here (<see cref="CraftRequestGuard"/>): one per player, kept
+    /// while they are in the session, the same for a player offline, the host and a network client.
+    /// </summary>
+    private CraftRequestGuard GuardOf(CombatEntity player)
+    {
+        if (guards.TryGetValue(player, out CraftRequestGuard g))
+            return g;
+        List<CombatEntity> gone = null;
+        foreach (CombatEntity k in guards.Keys)
+            if (k == null) (gone ??= new List<CombatEntity>()).Add(k); // players that are gone
+        if (gone != null)
+            foreach (CombatEntity k in gone) ForgetPlayer(k);
+        g = new CraftRequestGuard(unchecked(player.GetInstanceID() * 7919 + 17), 0);
+        guards[player] = g;
+        return g;
+    }
+
+    /// <summary>The player left the session (a server: their connection went): their guard and their 3D work go with them.</summary>
+    public void ForgetPlayer(CombatEntity player)
+    {
+        if (ReferenceEquals(player, null))
+            return;
+        guards.Remove(player);
+        byHand.Remove(player);
+        told.Remove(player);
+        pots.Forget(player); // their open pots of oil, wax, dye and varnish go with them
+    }
+
+    /// <summary>Is <paramref name="player"/> working at a 3D work place here (the full pace of the hands)?</summary>
+    public bool WorkingByHand(CombatEntity player) => player != null && byHand.ContainsKey(player);
+
+    /// <summary>Is <paramref name="player"/> at the 3D work place where <paramref name="kind"/> is worked (<see cref="CraftHandsOn.WorkedAt"/>)?</summary>
+    public bool WorkingByHand(CombatEntity player, CraftRequestKind kind) =>
+        player != null && byHand.TryGetValue(player, out CraftHandsOnMode at) && CraftHandsOn.WorkedAt(at, kind);
 
     // ------------------------------------------------------------------ practice
     private CraftMasterySettings MasterySettings => Rules?.Settings?.mastery;
@@ -641,12 +829,11 @@ public class CraftStation : MonoBehaviour, IInteractable
     /// <summary>What a practised hand does with one action (see <see cref="CraftMastery.ByPractice"/>).</summary>
     private void ByPractice(ref CraftRequest r, double m) => CraftMastery.ByPractice(ref r, m, MasterySettings);
 
-    /// <summary>Work done teaches its craft (a little at a time: small work comes only so fast).</summary>
-    private void Practice(CombatEntity player, CraftDiscipline? craft, in CraftRequest r)
+    /// <summary>Work done teaches its craft (a little at a time: small work comes only so fast) - <paramref name="xp"/>, judged before it was done.</summary>
+    private void Practice(CombatEntity player, CraftDiscipline? craft, in CraftRequest r, double xp)
     {
         if (player == null || !craft.HasValue)
             return;
-        double xp = CraftMastery.WorkExperience(r);
         if (r.kind == CraftRequestKind.IdentifyGem && !(workshop.Piece(r.piece)?.gem.identified ?? false))
             xp *= 0.25; // a wrong name teaches less
         if (xp > 0)
@@ -676,25 +863,44 @@ public class CraftStation : MonoBehaviour, IInteractable
 
     /// <summary>
     /// How much work a second of the hands does here (<see cref="CraftSimulationSettings.handWorkPace"/>): full by
-    /// hand in 3D (<c>d</c> = 1 on the request), a careful share of it from the window's drawings - more of it the more
-    /// practised the player is (their journal, kept where the rules run).
+    /// hand in 3D (<c>d</c> = 1 on the request, while the station knows the player is at the 3D work place where that
+    /// work is done: <see cref="CraftRequestKind.HandsOn"/>), a careful share of it from the window's drawings - more of
+    /// it the more practised the player is (their journal, kept where the rules run).
     /// </summary>
     private double Pace(CombatEntity player, in CraftRequest r)
     {
         CraftSimulationSettings s = Rules.Settings;
-        if (r.d >= 0.5f)
+        if (r.d >= 0.5f && WorkingByHand(player, r.kind))
             return s.handWorkPace;
         double skill = SkillFor(player, r);
         return s.handWorkPace * (s.windowPaceNovice + (s.windowPaceMaster - s.windowPaceNovice) * CraftMath.Clamp01(skill));
     }
 
-    /// <summary><see cref="Request"/>, telling the player why not.</summary>
+    /// <summary>
+    /// <see cref="Request"/>, telling the player why not (or what counted of work granted only in part) - the same words
+    /// again only after <see cref="RepeatInterval"/> seconds, different ones at once, so that a hammer swung or bellows
+    /// pumped faster than the guard allows at a 3D work place does not flood the screen.
+    /// </summary>
     public bool RequestAndTell(CombatEntity player, CraftRequest r)
     {
         bool ok = Request(player, r, out string reason);
-        if (!ok && !string.IsNullOrEmpty(reason))
+        if (!string.IsNullOrEmpty(reason) && !ToldLately(player, reason))
             Tell(player, reason);
         return ok;
+    }
+
+    /// <summary>Were these words told to <paramref name="player"/> less than <see cref="RepeatInterval"/> seconds ago? If not, they are now.</summary>
+    private bool ToldLately(CombatEntity player, string text)
+    {
+        if (player == null)
+            return false;
+        float now = Time.unscaledTime;
+        if (told.TryGetValue(player, out (string text, float at) last) && last.text == text && now - last.at < RepeatInterval)
+            return true;
+        if (told.Count > 16)
+            told.Clear(); // players come and go
+        told[player] = (text, now);
+        return false;
     }
 
     // ------------------------------------------------------------------ bringing things in
@@ -796,6 +1002,11 @@ public class CraftStation : MonoBehaviour, IInteractable
         return true;
     }
 
+    /// <summary>
+    /// Moves a piece to <c>location</c>: into the fire <c>a</c> deep - only segments <c>i0</c> to <c>i1</c> of it when
+    /// <c>flag</c> says a stretch was given (without it an <c>i1</c> of 0 means the whole piece, so a stretch of only the
+    /// first segment needs the flag) - into vat <c>i2</c>, into the tank at the angle <c>b</c>.
+    /// </summary>
     private bool Move(CombatEntity player, CraftRequest r, out string reason)
     {
         CraftPiece p = workshop.Piece(r.piece);
@@ -807,9 +1018,16 @@ public class CraftStation : MonoBehaviour, IInteractable
             if (!chargedOres.Contains(p.ore.ore)) chargedOres.Add(p.ore.ore);
             chargedDeposits[p.ore.ore] = p.ore.deposit;
         }
-        bool ok = workshop.MovePiece(r.piece, r.location, out reason, r.a > 0 ? r.a : 1, r.i0, r.i1 > 0 ? r.i1 : 9999, r.i2, r.b);
-        if (ok && wasQuench && r.location != CraftLocation.Quench && p != null && player != null && p.kind == CraftPieceKind.Metal)
+        // A stretch of it (the forge's span: segments i0 to i1) when flag says one was given; without the flag an end of 0
+        // still means the whole piece (to its last segment), as before.
+        int to = r.flag ? r.i1 : r.i1 > 0 ? r.i1 : 9999;
+        bool ok = workshop.MovePiece(r.piece, r.location, out reason, r.a > 0 ? r.a : 1, r.i0, to, r.i2, r.b);
+        // Lifted out of a hardening quench, the journal learns how it went; a dip to cool it teaches nothing about quenching.
+        if (ok && wasQuench && r.location != CraftLocation.Quench && p != null && player != null && p.kind == CraftPieceKind.Metal
+            && p.Tag(CraftThermal.QuenchHardeningTag) > 0.5)
             QuenchLearnt(player, p);
+        else if (ok && wasQuench && r.location != CraftLocation.Quench && p != null)
+            cracksAtQuench.Remove(p.id);
         return ok;
     }
 
@@ -865,14 +1083,16 @@ public class CraftStation : MonoBehaviour, IInteractable
             reason = "There is no such piece here.";
             return false;
         }
-        if ((p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Fasteners) && p.MaxTemperature > 120)
-        {
-            reason = "It is too hot to carry: let it cool, or quench it.";
+        // Not from inside a working place (taken out first, as the work there needs), nor too hot to carry.
+        if (!CraftWorkshop.CanTake(p, out reason))
             return false;
-        }
         bool finished = p.kind == CraftPieceKind.Assembly && p.assembly.finished;
         CraftItemReport report = finished ? CraftEvaluator.Item(Rules, workshop, p) : null;
         List<string> procedure = finished ? CraftJournal.Procedure(workshop, p, CraftKnowledge.For(player)?.Data) : null;
+        // its maker is whoever finished it (an item finished before makers were kept: whoever takes it)
+        string maker = finished && !string.IsNullOrEmpty(p.assembly.maker) ? p.assembly.maker : MakerName(player);
+        // tried while its maker was away, and its maker takes it: their journal notes it now
+        bool tellMaker = finished && untold.Contains(id) && player != null && MakerName(player) == maker;
         List<CraftPiece> taken = workshop.RemovePiece(id, out reason);
         if (taken == null || taken.Count == 0)
             return false;
@@ -880,15 +1100,18 @@ public class CraftStation : MonoBehaviour, IInteractable
         List<CraftPiece> parts = taken.GetRange(1, taken.Count - 1);
         CraftJournalData known = player != null ? CraftKnowledge.For(player)?.Data : null;
         ItemSO item = finished
-            ? CraftItems.Finished(Rules, report, piece, parts, MakerName(player), procedure, IsInspected(id), known)
+            ? CraftItems.Finished(Rules, report, piece, parts, maker, procedure, IsInspected(id), known)
             : CraftItems.PieceItem(Rules, piece, parts, known);
         if (inspected.Remove(id))
             metaVersion++;
+        untold.Remove(id);
         if (item == null)
         {
             reason = "It could not be taken.";
             return false;
         }
+        if (tellMaker)
+            NoteMade(player, report, procedure);
         Give(player, item, 1);
         if (finished && player != null)
             Tell(player, $"Took {item.Name}.");
@@ -896,11 +1119,14 @@ public class CraftStation : MonoBehaviour, IInteractable
         return true;
     }
 
-    /// <summary>Throws a piece away (scrap). On a test station it simply goes.</summary>
+    /// <summary>
+    /// Throws a piece away (scrap): at a test station anything simply goes; at any other station only an item nothing has
+    /// gone into yet is put aside (<see cref="CraftWorkshop.PutAside"/>) - the rest is taken, not thrown away.
+    /// </summary>
     public bool ScrapPiece(CombatEntity player, string id, out string reason)
     {
-        List<CraftPiece> taken = workshop.RemovePiece(id, out reason);
-        if (taken == null)
+        bool ok = testStation ? workshop.RemovePiece(id, out reason) != null : workshop.PutAside(id, out reason);
+        if (!ok)
             return false;
         Touch();
         return true;
@@ -968,6 +1194,8 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (s != null) return string.IsNullOrEmpty(s.item) ? s.Name : s.item;
         CraftTanningAgent a = Rules.Agent(id);
         if (a != null) return string.IsNullOrEmpty(a.item) ? null : a.item;
+        CraftQuenchant q = Rules.Quenchant(id);
+        if (q != null) return string.IsNullOrEmpty(q.item) ? null : q.item;
         return id;
     }
 
@@ -980,6 +1208,9 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (Rules.Fuel(id) != null && FreeFuel) { count = -1; return null; }
         CraftTanningAgent agent = Rules.Agent(id);
         if (agent != null && (agent.kind == CraftAgentKind.Water && waterSource || string.IsNullOrEmpty(agent.item))) { count = -1; return null; }
+        // A quenchant with no item (water from the well) fills the tank for nothing.
+        CraftQuenchant quenchant = agent == null && Rules.Supply(id) == null ? Rules.Quenchant(id) : null;
+        if (quenchant != null && string.IsNullOrEmpty(quenchant.item)) { count = -1; return null; }
         string itemName = ItemNameOf(id);
         foreach (ItemSO s in FreeSupplies())
             if (Matches(s, id, itemName)) { count = -1; return s; }
@@ -994,18 +1225,44 @@ public class CraftStation : MonoBehaviour, IInteractable
                     return so;
                 }
             }
-        // Firewood: any plank, log or wooden blank in the bag burns.
+        // Firewood: any plank, log or wooden blank in the bag burns - what is named as firewood first, then the cheapest
+        // (CraftFuel.BurnOrder), never a dear blank while a cheap one is left.
         if (inv != null && Rules.Fuel(id) is CraftFuel fuel && fuel.burnsAnyWood)
+        {
+            ItemSO best = null;
+            double first = double.MaxValue;
             foreach (InventoryItem it in inv.GetBagItems())
             {
                 ItemSO so = it.itemScriptableObject;
-                if (so != null && IsWood(so))
+                if (so == null || so == best || !IsWood(so)) continue;
+                double order = CraftFuel.BurnOrder(so.Name, so.Price);
+                if (order < first)
                 {
-                    count = inv.GetItemCount(so);
-                    return so;
+                    first = order;
+                    best = so;
                 }
             }
+            if (best != null)
+            {
+                count = inv.GetItemCount(best);
+                return best;
+            }
+        }
         return null;
+    }
+
+    /// <summary>
+    /// The item a fire that burns any wood takes for <paramref name="fuelId"/> when the player has none of the fuel's own
+    /// (a plank burnt as firewood: "Pine plank blank"), so the window can say what goes on the fire; null when the fuel's
+    /// own item, or free fuel, is used.
+    /// </summary>
+    public string BurntAs(CombatEntity player, string fuelId)
+    {
+        CraftFuel fuel = Rules.Fuel(fuelId);
+        if (fuel == null || !fuel.burnsAnyWood)
+            return null;
+        ItemSO item = FindSupply(player, fuelId, out int count);
+        return item != null && count > 0 && !Matches(item, fuelId, ItemNameOf(fuelId)) ? item.Name : null;
     }
 
     private static readonly string[] WoodWords = { "wood", "firewood", "plank", "planks", "log", "logs", "timber", "lumber", "billet", "branch", "branches", "stick", "sticks", "kindling", "board", "boards", "offcut", "offcuts", "twig", "twigs" };
@@ -1115,7 +1372,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         FindSupply(player, id, out int have);
         if (have < 0 || have >= count)
             return true;
-        reason = $"You have no {ItemNameOf(id) ?? id}.";
+        reason = have > 0 ? $"You have {have} {ItemNameOf(id) ?? id}: {count} are needed." : $"You have no {ItemNameOf(id) ?? id}.";
         return false;
     }
 
@@ -1137,6 +1394,51 @@ public class CraftStation : MonoBehaviour, IInteractable
     }
 
     private string FirstOfKind(CraftSupplyKind kind) => Rules.FirstSupply(kind)?.id;
+
+    /// <summary>
+    /// The pots each player has open here - a flask of oil, a cake of wax, a jar of dye, a pot of varnish: how much of an
+    /// item is left in each. One pot of each supply, whichever bench draws from it (the beeswax that waxed a hide waxes a
+    /// bow stave too); a use draws from it, and the next item is opened (used up) only when it will not cover the use.
+    /// </summary>
+    private readonly CraftOpenPots<CombatEntity> pots = new CraftOpenPots<CombatEntity>();
+
+    /// <summary>The open pot of <paramref name="supply"/>: players who are gone have taken theirs with them.</summary>
+    private double PotLeft(CombatEntity player, string supply)
+    {
+        pots.Prune(who => !ReferenceEquals(who, null) && who == null);
+        return pots.Left(player, supply);
+    }
+
+    /// <summary>
+    /// A stroke of the brush (or of a wax cake) at the finishing bench: the workshop lays it, paid from the player's open
+    /// pot of that finish (<see cref="pots"/>, shared with the leather's oils and waxes) - <see cref="CraftWoodwork.BrushUse"/>
+    /// of an item a stroke, a new item opened when the pot will not cover it. A free finish costs nothing.
+    /// </summary>
+    private bool Brush(CombatEntity player, CraftRequest r, out string reason)
+    {
+        reason = "";
+        CraftPiece p = workshop.Piece(r.piece);
+        int n = p != null ? p.segments.Count : 0;
+        double share = n > 0 ? (Math.Min(n - 1, Math.Max(r.i0, r.i1)) - Math.Max(0, Math.Min(r.i0, r.i1)) + 1) / (double)n : 1;
+        double use = CraftWoodwork.BrushUse(share, r.b);
+        FindSupply(player, r.id, out int have);
+        double left = PotLeft(player, r.id);
+        int open = have < 0 ? 0 : pots.ToOpen(player, r.id, use);
+        if (have >= 0 && open > have)
+        {
+            string item = ItemNameOf(r.id) ?? r.id;
+            reason = left > 0.02 ? $"What is left of the {item} you opened will not cover that stroke, and you have no more: make a shorter one." : $"You have no {item}.";
+            return false;
+        }
+        if (!workshop.Varnish(r.piece, r.id, r.i0, r.i1, r.a, r.b, out reason))
+            return false;
+        if (have < 0)
+            return true; // free here
+        if (open > 0 && !UseSupply(player, r.id, open, out reason))
+            return false;
+        pots.Use(player, r.id, use);
+        return true;
+    }
 
     public bool AddFuel(CombatEntity player, string fuelId, int count, bool furnace, out string reason)
     {
@@ -1171,13 +1473,35 @@ public class CraftStation : MonoBehaviour, IInteractable
         return have.Count > 0 ? $" You do have {string.Join(", ", have)}." : " The fire takes charcoal, coal, coke, or firewood (any wood: planks, logs, offcuts).";
     }
 
-    private bool Flux(CombatEntity player, string id, int count, int where, string piece, out string reason, double coverage = 1)
+    private bool Flux(CombatEntity player, string id, int count, int where, string piece, out string reason, double coverage = 1, List<float> perSegment = null)
     {
         if (!HaveSupply(player, id, count, out reason))
             return false;
-        if (!workshop.AddFlux(id, count, where, out reason, piece, coverage))
+        // On a piece (2): sprinkled stretch by stretch where the hand covered it.
+        if (where >= 2 ? !workshop.FluxPiece(id, count, piece, out reason, coverage, perSegment) : !workshop.AddFlux(id, count, where, out reason, piece, coverage))
             return false;
         return UseSupply(player, id, count, out reason);
+    }
+
+    /// <summary>Fills the quench tank with one of the station's quenchants (<see cref="Quenchants"/>), its item used up (water is free).</summary>
+    private bool FillTank(CombatEntity player, string quenchant, out string reason)
+    {
+        reason = "";
+        if (!Has(CraftTools.QuenchTank))
+        {
+            reason = "There is no quench tank here.";
+            return false;
+        }
+        bool offered = false;
+        foreach (string q in Quenchants)
+            offered |= string.Equals(q, quenchant, StringComparison.OrdinalIgnoreCase);
+        if (!offered || Rules.Quenchant(quenchant) == null)
+        {
+            reason = "The tank is not filled with that here.";
+            return false;
+        }
+        string id = Rules.Quenchant(quenchant).id;
+        return HaveSupply(player, id, 1, out reason) && workshop.FillTank(id, out reason) && UseSupply(player, id, 1, out reason);
     }
 
     private bool FillVat(CombatEntity player, int vat, string agent, int doses, out string reason)
@@ -1190,19 +1514,66 @@ public class CraftStation : MonoBehaviour, IInteractable
         return UseSupply(player, agent, doses, out reason);
     }
 
+    /// <summary>
+    /// Oil, wax or dye worked into leather: what the leather takes up (<see cref="CraftLeather.Uptake"/>, in cell-loads; one
+    /// item covers <see cref="CraftSupplyDefinition.cellsPerItem"/> cells) comes out of the player's open pot of it
+    /// (<see cref="pots"/>, shared with the finishing bench's oils and waxes), a new item opened whenever that will not
+    /// cover it - so a careful stroke and a scribble over the whole hide cost by what they cover, and a stroke that takes
+    /// nothing in costs nothing.
+    /// </summary>
+    private bool FinishLeather(CombatEntity player, CraftRequest r, out string reason)
+    {
+        bool dye = r.kind == CraftRequestKind.Dye;
+        CraftSupplyDefinition s = Rules.Supply(r.id);
+        CraftPiece p = workshop.Piece(r.piece);
+        if (s == null || p == null || p.kind != CraftPieceKind.Hide)
+            return dye ? workshop.Dye(r.piece, r.id, r.points, r.a, out reason) : workshop.Condition(r.piece, r.id, r.points, r.a, out reason); // it says why not
+        double use = CraftLeather.Uptake(p.hide, s, r.points, r.a) / Math.Max(0.1, s.cellsPerItem); // in items
+        FindSupply(player, s.id, out int have);
+        double left = PotLeft(player, s.id);
+        int open = have < 0 ? 0 : pots.ToOpen(player, s.id, use);
+        if (have >= 0 && open > have)
+        {
+            string item = ItemNameOf(s.id) ?? s.Name;
+            reason = have > 0 ? $"That stroke would take {open} {item}: you have {have}. Work it in a little at a time."
+                : left > 0.02 ? $"What is left of the {item} you opened will not cover that stroke, and you have no more: make a shorter one."
+                : $"You have no {item}.";
+            return false;
+        }
+        if (!(dye ? workshop.Dye(r.piece, r.id, r.points, r.a, out reason) : workshop.Condition(r.piece, r.id, r.points, r.a, out reason)))
+            return false;
+        if (have < 0)
+            return true; // free here
+        if (open > 0 && !UseSupply(player, s.id, open, out reason))
+            return false;
+        pots.Use(player, s.id, use);
+        return true;
+    }
+
     private bool Attach(CombatEntity player, CraftRequest r, out string reason)
     {
         CraftPiece asm = workshop.Piece(r.piece);
-        CraftComponentSpec spec = asm != null ? Rules.Design(asm.assembly.design)?.Component(r.id) : null;
+        CraftDesign design = asm != null && asm.kind == CraftPieceKind.Assembly ? Rules.Design(asm.assembly.design) : null;
+        CraftComponentSpec spec = design?.Component(r.id);
         if (spec != null && spec.supply)
         {
-            // Thread and padding come from the inventory: the one chosen (r.other), else the first of its kind.
-            CraftSupplyDefinition chosen = Rules.Supply(r.other);
-            CraftSupplyDefinition s = chosen != null && chosen.kind == spec.supplyKind ? chosen : Rules.FirstSupply(spec.supplyKind);
-            int n = Math.Max(1, r.count);
+            // Thread and padding come from the inventory: the one chosen (r.other), else the first of its kind the player has.
+            CraftSupplyDefinition s = Rules.Supply(r.other);
+            if (s != null && s.kind != spec.supplyKind || s == null && !string.IsNullOrEmpty(r.other))
+            {
+                reason = $"That is not {spec.Name.ToLowerInvariant()}.";
+                return false;
+            }
+            s ??= SupplyOfKind(player, spec.supplyKind);
+            // never more than the item still takes (what is added is not taken back out)
+            int room = CraftAssembly.SupplyRoom(design, asm, spec.role);
+            if (room <= 0)
+                return workshop.Attach(r.piece, r.id, 0, null, out reason, 1, s?.strength ?? 0, s?.id); // it says why not
+            int n = Math.Min(Math.Max(1, r.count), room);
             if (s != null && !HaveSupply(player, s.id, n, out reason))
                 return false;
-            if (!workshop.Attach(r.piece, r.id, 0, null, out reason, n, s?.strength ?? 0))
+            // named, so the item weighs and is worth what went into it
+            if (!workshop.Attach(r.piece, r.id, 0, null, out reason, n, s?.strength ?? 0, s?.id))
                 return false;
             return s == null || UseSupply(player, s.id, n, out reason);
         }
@@ -1210,23 +1581,26 @@ public class CraftStation : MonoBehaviour, IInteractable
     }
 
     /// <summary>
-    /// Spins a hank of <paramref name="fibre"/> into thread: an even draft (<paramref name="evenness"/>) with the right
-    /// twist (<paramref name="twist"/>, 0.5 is right) gives fine thread, a lumpy one coarse yarn (see <see cref="CraftTextiles.Spun"/>).
+    /// Spins <paramref name="fibre"/> from the bag: one item of it is laid on the station as a batch, as it comes (raw:
+    /// greasy, dirty, tangled), and a bobbin of yarn (<see cref="CraftFibre.BobbinGrams"/> of it) is spun from the batch
+    /// with the hands' draft (<paramref name="evenness"/>, <paramref name="twist"/>, <paramref name="fineness"/>) - the same
+    /// as spinning a batch from the fibre bench (<see cref="CraftFibre.Spin"/>); the rest of the batch stays on the bench
+    /// for the next bobbins. In one request, so a network client never waits for the batch to appear before it spins.
     /// </summary>
-    private bool Spin(CombatEntity player, string fibre, double evenness, double twist, out string reason)
+    private bool Spin(CombatEntity player, string fibre, double evenness, double twist, double fineness, out string reason)
     {
         reason = "";
         if (!Has(CraftTools.SpinningWheel)) { reason = "There is no spinning wheel here."; return false; }
         CraftSupplyDefinition f = Rules.Supply(fibre);
         if (f == null || f.kind != CraftSupplyKind.Fibre) { reason = "That cannot be spun."; return false; }
-        // spun straight from the bag, the fibre is raw: it never spins fine (prepare a batch at the fibre bench for that)
-        string thread = CraftTextiles.Spun(Rules, f, evenness, twist, CraftTextiles.RawPrep(Rules, f.id));
-        if (string.IsNullOrEmpty(thread)) { reason = "Nothing spins from it."; return false; }
+        if ((f.spinsInto == null || f.spinsInto.Count == 0) && string.IsNullOrEmpty(f.weavesInto)) { reason = "Nothing spins from it."; return false; } // its yarn would reel into no thread and weave into no cloth
+        CraftPiece batch = CraftFibre.NewFibre(Rules, f.id);
+        if (batch == null) { reason = "That cannot be spun."; return false; }
         if (!HaveSupply(player, f.id, 1, out reason) || !UseSupply(player, f.id, 1, out reason))
             return false;
-        Give(player, FindSupply(player, thread, out _) ?? CraftItems.Stock(Rules, CraftStockKind.Supply, thread), 1);
-        Tell(player, $"Spun into {Rules.Supply(thread)?.Name.ToLowerInvariant() ?? thread}.");
-        return true;
+        string id = workshop.AddPiece(batch);
+        // The batch stays on the bench whatever happens to the spinning (nothing taken from the bag is lost).
+        return workshop.SpinFibre(id, evenness, twist, fineness, CraftFibre.BobbinGrams, out reason) != null;
     }
 
     // ------------------------------------------------------------------ fibre, yarn and gems
@@ -1282,12 +1656,30 @@ public class CraftStation : MonoBehaviour, IInteractable
         _ => CraftInstruments.Loupe,
     };
 
+    /// <summary>An instrument in words ("set of hardness points", "balance"): the station window lists them so, and refusals name the one missing.</summary>
+    public static string InstrumentName(CraftInstruments i) => i switch
+    {
+        CraftInstruments.Thermometer => "pyrometer",
+        CraftInstruments.Calipers => "calipers",
+        CraftInstruments.Scale => "balance", // weighed in air and in water, it reads a stone's specific gravity too
+        CraftInstruments.Loupe => "loupe",
+        CraftInstruments.Magnet => "magnet",
+        CraftInstruments.TestFile => "test file",
+        CraftInstruments.Assay => "assay kit",
+        CraftInstruments.StreakPlate => "streak plate",
+        CraftInstruments.Refractometer => "refractometer",
+        CraftInstruments.HardnessPoints => "set of hardness points",
+        CraftInstruments.MoistureMeter => "moisture meter",
+        CraftInstruments.Dichroscope => "dichroscope",
+        _ => i.ToString().ToLowerInvariant(),
+    };
+
     private bool TestGem(CraftRequest r, out string reason)
     {
         var test = (CraftGemTest)r.i0;
         if (!HasInstrument(InstrumentFor(test)))
         {
-            reason = $"There is no {InstrumentFor(test).ToString().ToLowerInvariant()} here.";
+            reason = $"There is no {InstrumentName(InstrumentFor(test))} here.";
             return false;
         }
         return workshop.TestGem(r.piece, test, r.a, r.b, out reason);
@@ -1303,16 +1695,20 @@ public class CraftStation : MonoBehaviour, IInteractable
         return true;
     }
 
-    /// <summary>Polishes a stone: the compound comes from the inventory (one for each stone, the first time it is polished).</summary>
+    /// <summary>
+    /// Polishes a stone: the compound comes from the inventory - one charges the lap for the stone, the first time it is
+    /// polished with it; another compound (one the player has, or it is refused) charges the lap afresh
+    /// (<see cref="GemState.compound"/>). Passes with the compound the lap is charged with need nothing more.
+    /// </summary>
     private bool PolishGem(CombatEntity player, CraftRequest r, out string reason)
     {
         CraftPiece p = workshop.Piece(r.piece);
-        bool first = p != null && p.kind == CraftPieceKind.Gem && p.gem.polish <= 0;
-        if (first && !HaveSupply(player, r.id, 1, out reason))
+        bool charge = p != null && p.kind == CraftPieceKind.Gem && CraftLapidary.ChargesLap(p.gem, r.id);
+        if (charge && !HaveSupply(player, r.id, 1, out reason))
             return false;
         if (!workshop.PolishGem(r.piece, r.id, Math.Max(1, r.count), r.a, r.b, out reason, r.points))
             return false;
-        return !first || UseSupply(player, r.id, 1, out reason);
+        return !charge || UseSupply(player, r.id, 1, out reason);
     }
 
     // ------------------------------------------------------------------ finishing and testing
@@ -1321,17 +1717,74 @@ public class CraftStation : MonoBehaviour, IInteractable
         CraftPiece asm = workshop.Piece(id);
         CraftDesign design = asm != null && asm.kind == CraftPieceKind.Assembly ? Rules.Design(asm.assembly.design) : null;
         CraftDiscipline craft = CraftMastery.OfDesign(design);
-        // the finisher's practice goes into it: a master's finishing touches
-        if (!workshop.Finish(id, out reason, Mastery(player, craft)))
+        // the finisher's practice goes into it - a master's finishing touches - and they are its maker
+        if (!workshop.Finish(id, out reason, Mastery(player, craft), MakerName(player)))
             return false;
         if (player != null && asm != null)
         {
             CraftItemReport report = CraftEvaluator.Item(Rules, workshop, asm);
             CraftKnowledge k = CraftKnowledge.For(player);
-            k?.Made(report, CraftJournal.Procedure(workshop, asm, k?.Data));
-            k?.Practised(craft, CraftMastery.ItemExperience(design, report.Quality, MasterySettings), false, true, MasterySettings);
+            // each one of a design already made teaches less (the journal's note of the design)
+            int made = k != null && design != null ? CraftJournal.DesignNote(k.Data, design.id)?.timesMade ?? 0 : 0;
+            k?.Practised(craft, CraftMastery.ItemExperience(design, report.Quality, MasterySettings, made), false, true, MasterySettings);
+            // How good it is shows when it is tried (here, or later from the bag): only then does the journal note it. A
+            // jewel is buffed and looked over as it is finished (the jeweller's Inspect & finish); a test station shows all.
+            if (testStation || design?.kind == CraftDesignKind.Jewelry)
+                Tried(player, asm, report);
         }
         return true;
+    }
+
+    /// <summary>
+    /// A finished item on the bench is tried, the first time: its numbers are known from now on (here, and on the item
+    /// when it is taken), and its maker's journal notes it as made - by the name they know it by - wherever they are in
+    /// the world; whoever tries it only learns what it is. A maker away hears of it when they take it.
+    /// </summary>
+    private void Tried(CombatEntity player, CraftPiece asm, CraftItemReport report)
+    {
+        if (!inspected.Add(asm.id))
+            return;
+        metaVersion++;
+        CombatEntity maker = MakerOf(asm.assembly.maker, player);
+        CraftKnowledge k = maker != null ? CraftKnowledge.For(maker) : null;
+        if (k == null)
+        {
+            untold.Add(asm.id);
+            return;
+        }
+        NoteMade(maker, report, CraftJournal.Procedure(workshop, asm, k.Data));
+    }
+
+    /// <summary>The journal of <paramref name="maker"/> notes the item as made, by the name they know it by.</summary>
+    private void NoteMade(CombatEntity maker, CraftItemReport report, List<string> procedure)
+    {
+        CraftKnowledge k = maker != null ? CraftKnowledge.For(maker) : null;
+        if (k == null || report == null)
+            return;
+        report.Name = CraftEvaluator.KnownName(Rules, report, k.Data);
+        k.Made(report, procedure);
+    }
+
+    /// <summary>
+    /// The player who made an item (<paramref name="maker"/>: their name; empty for an item whose maker was never kept - then
+    /// whoever is at it, <paramref name="at"/>), when they are in the world; else null.
+    /// </summary>
+    private static CombatEntity MakerOf(string maker, CombatEntity at)
+    {
+        if (string.IsNullOrEmpty(maker) || at != null && MakerName(at) == maker)
+            return at;
+        foreach (CombatEntity p in CombatEntity.Players)
+            if (p != null && MakerName(p) == maker)
+                return p;
+        return null;
+    }
+
+    /// <summary>The first supply of a kind the player has (or that is free here), else the first of its kind.</summary>
+    private CraftSupplyDefinition SupplyOfKind(CombatEntity player, CraftSupplyKind kind)
+    {
+        foreach (CraftSupplyDefinition s in Rules.Supplies)
+            if (s.kind == kind && SupplyAvailable(player, s.id) != 0) return s;
+        return Rules.FirstSupply(kind);
     }
 
     /// <summary>
@@ -1347,10 +1800,57 @@ public class CraftStation : MonoBehaviour, IInteractable
             reason = "Only a finished item can be tried.";
             return false;
         }
-        if (inspected.Add(id))
-            metaVersion++;
         CraftItemReport report = CraftEvaluator.Item(Rules, workshop, asm);
-        Tell(player, $"{report.Name}: {report.Tier} work.");
+        CraftJournalData known = player != null ? CraftKnowledge.For(player)?.Data : null;
+        string name = CraftEvaluator.KnownName(Rules, report, known);
+        Tried(player, asm, report);
+        Tell(player, $"{name}: {report.Tier} work.");
+        return true;
+    }
+
+    /// <summary>
+    /// Tries a finished item the player carries in the bag (the final inspection, made later): its numbers show on it from
+    /// now on, on every machine, and its maker's journal notes it as made (the maker in the world; whoever else tries it only
+    /// learns what it is). At a bench where such things are made (or a test station).
+    /// </summary>
+    private bool InspectItem(CombatEntity player, ItemSO item, out string reason)
+    {
+        reason = "";
+        CraftedItemRecord rec = (item as ICraftedItem)?.Record;
+        if (rec == null)
+        {
+            reason = "Only a finished item can be tried.";
+            return false;
+        }
+        CraftDesign d = Rules.Design(rec.designId);
+        if (d == null || !testStation && !Makes(d))
+        {
+            reason = "It is not tried here: take it to a bench where such things are made.";
+            return false;
+        }
+        InventoryManager inv = player != null ? InventoryManager.For(player) : null;
+        if (inv == null || inv.GetItemCount(item) <= 0)
+        {
+            reason = "It is not in your bag.";
+            return false;
+        }
+        if (rec.inspected)
+        {
+            reason = "It has been tried: what it is shows on it.";
+            return false;
+        }
+        CraftItems.Try((ICraftedItem)item);
+        // its maker's journal notes it - wherever they are in the world - from what the item remembers (its name as it was
+        // known when it was taken): someone else's work tried here only shows what it is
+        CombatEntity maker = MakerOf(rec.maker, player);
+        CraftKnowledge k = maker != null ? CraftKnowledge.For(maker) : null;
+        if (k != null)
+        {
+            var report = new CraftItemReport { Design = d, Name = rec.name, Quality = rec.quality, Tier = rec.tier, Assembly = rec.assembly };
+            report.Notes.AddRange(rec.notes);
+            k.Made(report, rec.procedure);
+        }
+        Tell(player, $"{rec.name}: {rec.tier} work.");
         return true;
     }
 
@@ -1439,6 +1939,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         public int version = 1;
         public CraftWorkshopState workshop;
         public List<string> inspected = new List<string>();
+        public List<string> untold = new List<string>();
         public int freeLump;
     }
 
@@ -1461,7 +1962,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         try
         {
             CraftWorkshopState s = workshop.Capture(false);
-            var save = new StationSave { workshop = s, inspected = new List<string>(inspected), freeLump = freeLump };
+            var save = new StationSave { workshop = s, inspected = new List<string>(inspected), untold = new List<string>(untold), freeLump = freeLump };
             string path = SavePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllText(path, JsonUtility.ToJson(save));
@@ -1490,6 +1991,8 @@ public class CraftStation : MonoBehaviour, IInteractable
             SetWorkshop(w);
             inspected.Clear();
             if (save.inspected != null) inspected.UnionWith(save.inspected);
+            untold.Clear();
+            if (save.untold != null) untold.UnionWith(save.untold);
             freeLump = save.freeLump;
             metaVersion++;
         }
@@ -1519,6 +2022,7 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (!RulesHere)
             return;
         inspected.Clear();
+        untold.Clear();
         metaVersion++;
         SetWorkshop(NewWorkshop());
     }
@@ -1581,10 +2085,27 @@ public class CraftStation : MonoBehaviour, IInteractable
             errors.Add($"Unknown quenchant '{quenchMedium}'.");
         foreach (string q in quenchants)
             if (Rules.Quenchant(q) == null) errors.Add($"Unknown quenchant '{q}'.");
+        if (Has(CraftTools.QuenchTank))
+        {
+            // the tank's quenchants all harsh (water, brine): a blade of hardening steel cracks in every one of them
+            bool gentle = false;
+            foreach (string q in Quenchants)
+                gentle |= Rules.Quenchant(q) != null && CraftThermal.CrackHarshness(Rules.Quenchant(q)) < CraftThermal.HarshQuench;
+            if (!gentle)
+                warnings.Add("The quench tank can only be filled with harsh quenchants (water, brine): a blade of hardening steel cracks in them. Add 'oil' to the Quenchants.");
+        }
         if (Has(CraftTools.Vats) && vats <= 0)
             warnings.Add("A tannery without vats: hides cannot be limed or tanned.");
         if (Has(CraftTools.Forge) && !Has(CraftTools.Anvil))
             warnings.Add("A forge without an anvil: metal can be heated but not forged.");
+        CraftStationVisuals look = GetComponentInChildren<CraftStationVisuals>();
+        if (look != null)
+        {
+            var unmodelled = new List<CraftHandsOnMode>();
+            look.UnmodelledPlaces(unmodelled);
+            foreach (CraftHandsOnMode place in unmodelled)
+                warnings.Add($"Craft Station Visuals: the point of the {place} work place is set, but no 'Worked by hand' model for it - the 3D work place is built there among your own models (what stands right there is hidden by where it stands). Set its model to hide exactly that.");
+        }
         if ((Has(CraftTools.Forge) || Has(CraftTools.Furnace)) && !FreeFuel)
             warnings.Add("No free fuel: players need fuel items (Charcoal, Coal, Firewood) to light the fire.");
         foreach (string e in Rules.CompileErrors) errors.Add("Rules: " + e);

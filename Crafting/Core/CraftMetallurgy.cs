@@ -38,6 +38,12 @@ public sealed class CraftAlloyProfile
     public ElementType Affinity = ElementType.None;
     public double AffinityStrength;
     public double PricePerGram = 0.01;
+    /// <summary>
+    /// The value of a gram of the metal's matrix: its base and what is alloyed in no dearer than the base (iron and carbon
+    /// in a steel, copper in a bronze; not the mythril in a mythril steel) - what a class's making premium multiplies
+    /// (<see cref="CraftValue.Metal"/>), so a dear metal alloyed into a cheap one is never worth more than itself.
+    /// </summary>
+    public double MatrixPricePerGram = 0.01;
     public CraftMaterialClass Class;
 
     public string ClassName => Class != null ? Class.Name : BaseElement != null ? $"{BaseElement.Name} alloy" : "Unknown metal";
@@ -99,6 +105,11 @@ public static class CraftMetallurgy
         }
         p.Density = inv > 0 ? 1.0 / inv : b.density;
         p.PricePerGram = price;
+        double matrix = 0;
+        for (int i = 0; i < n; i++)
+            if (f[i] > 0 && rules.Elements[i].pricePerGram <= b.pricePerGram + 1e-12)
+                matrix += f[i] * rules.Elements[i].pricePerGram;
+        p.MatrixPricePerGram = matrix;
         Color color = cw > 0 ? new Color((float)(cr / cw), (float)(cg / cw), (float)(cb / cw)) : b.color;
 
         // Properties: the base's, the other metals mixed in by mass, then the effects of what is alloyed in.
@@ -162,6 +173,9 @@ public static class CraftMetallurgy
             p.CriticalTemperature = p.Recrystallization + 150;
             p.MartensiteStart = p.Recrystallization;
         }
+        // The forging range ends short of where the metal burns, whatever its base (an alloy melts lower than its base).
+        p.HotWorkMax = Math.Min(p.HotWorkMax, p.BurnTemperature - 40);
+        p.HotWorkMin = Math.Min(p.HotWorkMin, p.HotWorkMax);
 
         // Affinities: the strongest (fantasy metals carry theirs even in small amounts).
         double strongest = 0;
@@ -203,6 +217,24 @@ public static class CraftMetallurgy
             if (el != baseIndex)
                 v += e.At(f[el]);
         return v;
+    }
+
+    /// <summary>
+    /// The element that adds the most to <paramref name="property"/> in this metal (its id; "" when none adds to it) -
+    /// what makes it hot-short (sulfur, copper in iron) or cold-short (phosphorus in iron, sulfur in copper).
+    /// </summary>
+    public static string MainEffect(CraftRules rules, CraftAlloyProfile p, CraftProperty property)
+    {
+        if (rules == null || p == null || p.Base < 0)
+            return "";
+        var by = new double[rules.ElementCount];
+        foreach (var (el, e) in rules.EffectsOn(p.Base, property))
+            if (el != p.Base && el >= 0 && el < by.Length)
+                by[el] += e.At(p.F(el));
+        int best = -1;
+        for (int i = 0; i < by.Length; i++)
+            if (by[i] > 1e-9 && (best < 0 || by[i] > by[best])) best = i;
+        return best >= 0 ? rules.Elements[best].id : "";
     }
 
     /// <summary>The name of a composition: the first material class (by priority) it falls into.</summary>
@@ -359,53 +391,55 @@ public static class CraftMetallurgy
     }
 
     // ------------------------------------------------------------------ what heat looks like
-    private static readonly (double t, Color c)[] HeatStops =
+    /// <summary>The heat at which hot metal starts to glow where it can be seen (°C): by day, and in the dark.</summary>
+    public const double GlowByDay = 540, GlowInTheDark = 470;
+
+    /// <summary>The glows in order: each up to its heat (°C), its name and its colour (one source for the words and the drawing).</summary>
+    private static readonly (double below, string name, Color color)[] Glows =
     {
-        (480, new Color(0.15f, 0.02f, 0.01f)),
-        (550, new Color(0.45f, 0.04f, 0.02f)),
-        (630, new Color(0.62f, 0.07f, 0.03f)),
-        (700, new Color(0.75f, 0.12f, 0.04f)),
-        (780, new Color(0.88f, 0.2f, 0.05f)),
-        (850, new Color(0.97f, 0.32f, 0.07f)),
-        (920, new Color(1f, 0.46f, 0.1f)),
-        (1000, new Color(1f, 0.64f, 0.2f)),
-        (1100, new Color(1f, 0.82f, 0.42f)),
-        (1200, new Color(1f, 0.93f, 0.7f)),
-        (1300, new Color(1f, 0.98f, 0.92f)),
+        (600, "a faint blood red", new Color(0.45f, 0.04f, 0.02f)),
+        (680, "dark cherry red", new Color(0.62f, 0.07f, 0.03f)),
+        (760, "medium cherry red", new Color(0.75f, 0.12f, 0.04f)),
+        (830, "cherry red", new Color(0.88f, 0.2f, 0.05f)),
+        (900, "bright cherry red", new Color(0.97f, 0.32f, 0.07f)),
+        (970, "orange", new Color(1f, 0.46f, 0.1f)),
+        (1060, "yellow-orange", new Color(1f, 0.64f, 0.2f)),
+        (1150, "yellow", new Color(1f, 0.82f, 0.42f)),
+        (1260, "light yellow", new Color(1f, 0.93f, 0.7f)),
+        (double.MaxValue, "white, throwing sparks", new Color(1f, 0.98f, 0.92f)),
     };
 
-    /// <summary>The colour hot metal glows at (alpha = how bright; clear below 480 °C).</summary>
-    public static Color HeatColor(double celsius)
+    /// <summary>The middle of glow <paramref name="i"/>'s heats (the white glow: from where it starts).</summary>
+    private static double GlowMiddle(int i) => i >= Glows.Length - 1 ? Glows[i - 1].below + 40 : ((i > 0 ? Glows[i - 1].below : GlowByDay) + Glows[i].below) * 0.5;
+
+    /// <summary>
+    /// The colour hot metal glows at (alpha = how bright; clear while it is black heat). It follows the words of
+    /// <see cref="HeatName"/>: nothing shows below <see cref="GlowByDay"/> (<see cref="GlowInTheDark"/> in the dark),
+    /// then a faint blood red, the cherry reds, orange, yellow and white - brighter sooner in the dark.
+    /// </summary>
+    public static Color HeatColor(double celsius, bool dark = false)
     {
-        if (celsius < HeatStops[0].t)
+        double start = dark ? GlowInTheDark : GlowByDay;
+        if (!(celsius >= start))
             return Color.clear;
-        for (int i = 1; i < HeatStops.Length; i++)
-            if (celsius <= HeatStops[i].t)
-            {
-                float k = (float)((celsius - HeatStops[i - 1].t) / (HeatStops[i].t - HeatStops[i - 1].t));
-                Color c = Color.Lerp(HeatStops[i - 1].c, HeatStops[i].c, k);
-                c.a = Mathf.Clamp01((float)((celsius - 480) / 500));
-                return c;
-            }
-        Color w = HeatStops[HeatStops.Length - 1].c;
-        w.a = 1f;
-        return w;
+        // The glow it is in, as the words name it; the colour flows from one glow's into the next between their middles.
+        int i = 0;
+        while (i < Glows.Length - 1 && celsius >= Glows[i].below) i++;
+        int lo = celsius < GlowMiddle(i) ? i - 1 : i, hi = lo + 1;
+        Color c = lo < 0 ? Glows[0].color : hi >= Glows.Length ? Glows[Glows.Length - 1].color
+            : Color.Lerp(Glows[lo].color, Glows[hi].color, (float)((celsius - GlowMiddle(lo)) / (GlowMiddle(hi) - GlowMiddle(lo))));
+        // A glow just showing is faint; it is full by a bright cherry red (sooner to the eye in the dark).
+        c.a = Mathf.Clamp01((float)(0.15 + (celsius - start) / (dark ? 300 : 360)));
+        return c;
     }
 
     /// <summary>What the glow looks like in words (in the dark some heats show that do not show by day).</summary>
     public static string HeatName(double celsius, bool dark)
     {
-        if (celsius < (dark ? 470 : 540)) return celsius > 200 ? "black heat" : "";
-        if (celsius < 600) return "a faint blood red";
-        if (celsius < 680) return "dark cherry red";
-        if (celsius < 760) return "medium cherry red";
-        if (celsius < 830) return "cherry red";
-        if (celsius < 900) return "bright cherry red";
-        if (celsius < 970) return "orange";
-        if (celsius < 1060) return "yellow-orange";
-        if (celsius < 1150) return "yellow";
-        if (celsius < 1260) return "light yellow";
-        return "white, throwing sparks";
+        if (celsius < (dark ? GlowInTheDark : GlowByDay)) return celsius > 200 ? "black heat" : "";
+        foreach (var g in Glows)
+            if (celsius < g.below) return g.name;
+        return Glows[Glows.Length - 1].name;
     }
 
     /// <summary>The oxide colour bright steel takes at a temperature (temper colours; clear below 200 °C).</summary>

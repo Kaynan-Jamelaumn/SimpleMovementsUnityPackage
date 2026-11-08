@@ -154,10 +154,12 @@ public class CraftFurnaceState
     public List<CraftAmount> bloom = new List<CraftAmount>();
     [Tooltip("Slag trapped in the bloom (g), how unevenly carbon went into it, and where it would start to melt (°C).")]
     public double bloomSlag, bloomSpread, bloomSolidus;
-    [Tooltip("Liquid metal at the bottom (by element): copper, tin, lead, silver, gold, cast iron.")]
+    [Tooltip("Metal at the bottom (by element): copper, tin, lead, silver, gold, cast iron. A flux that waits for its ore (an arcane flux) is kept here too, as \"#flux:<id>\": it is not metal.")]
     public List<CraftAmount> pool = new List<CraftAmount>();
     [Tooltip("Sulfur in the liquid: a matte, not a metal, until it is roasted.")]
     public double matte;
+    [Tooltip("Metal that went up the shaft as fumes (g): what boils at the heat its ore gives it up (zinc), or at the furnace's heat.")]
+    public double fumes;
 
     public double BloomMass
     {
@@ -169,15 +171,20 @@ public class CraftFurnaceState
         }
     }
 
+    /// <summary>The metal at the bottom (g): the pool's elements, not the fluxes kept with it (<see cref="IsFlux"/>).</summary>
     public double PoolMass
     {
         get
         {
             double m = 0;
-            foreach (CraftAmount a in pool) m += a.grams;
+            foreach (CraftAmount a in pool)
+                if (!IsFlux(a)) m += a.grams;
             return m;
         }
     }
+
+    /// <summary>A flux waiting in the furnace for its ore (kept in the pool's list as "#flux:id"), not metal.</summary>
+    public static bool IsFlux(CraftAmount a) => a != null && a.element != null && a.element.StartsWith("#", StringComparison.Ordinal);
 }
 
 /// <summary>The crucible: its melt, temperature, dross, gas, flux cover and how well it is mixed.</summary>
@@ -188,6 +195,8 @@ public class CraftCrucibleState
     public double temperature = 18;
     [Tooltip("Oxide skin on the melt (g).")]
     public double dross;
+    [Tooltip("Rock and impurities of ore cemented in the crucible (g): a crust floating on the melt, skimmed off with the dross - it takes no metal with it.")]
+    public double slag;
     [Tooltip("Gas dissolved (0-1): rises when overheated and held; porosity in the casting.")]
     public double gas;
     [Tooltip("Flux cover (borax, charcoal): less oxidation and less loss of what boils off (0-1).")]
@@ -222,8 +231,14 @@ public class CraftQuenchState
 [Serializable]
 public class CraftOvenState
 {
+    /// <summary>The oven's dial (°C): a tempering oven, from the lowest temper to the start of an anneal - not a furnace.</summary>
+    public const double DialMin = 100, DialMax = 650;
+
     public double setpoint;
     public double temperature = 18;
+
+    /// <summary>A setting as the dial takes it: 0 or less is off, anything else within <see cref="DialMin"/>..<see cref="DialMax"/>.</summary>
+    public static double Dial(double celsius) => !(celsius > 0) ? 0 : Math.Max(DialMin, Math.Min(DialMax, celsius));
 }
 
 /// <summary>A vat: what is in it, how strong, how warm.</summary>
@@ -333,6 +348,13 @@ public sealed partial class CraftWorkshop
     private string NewId() => $"{Id}-{++sequence}";
 
     /// <summary>
+    /// The id the next piece an operation creates will take (<see cref="Create"/>), not yet taken: what an operation that
+    /// seeds a new piece's flaws by its id uses before it is created (a casting), as a copy applying the recorded
+    /// operation - which carries the id - does.
+    /// </summary>
+    internal string NextId => $"{Id}-{sequence + 1}";
+
+    /// <summary>
     /// Drops all but the last <paramref name="keepLast"/> operations of the history (long sessions at a station). The
     /// state is untouched; only replaying from the start is no longer possible.
     /// </summary>
@@ -368,6 +390,21 @@ public sealed partial class CraftWorkshop
         EventRaised?.Invoke(e);
     }
 
+    /// <summary>
+    /// A flaw the work made on <paramref name="p"/> (<see cref="CraftPiece.AddDefect"/>; <paramref name="hold"/>: a state it
+    /// goes on being in, <see cref="CraftPiece.HoldDefect"/>). The first time a flaw of its kind shows on the piece it is
+    /// told: a <see cref="CraftEventKind.Defect"/> event whose id is the kind and whose text is <paramref name="seen"/> -
+    /// what the eyes, nose and hands notice - and the journal learns what that mistake teaches.
+    /// </summary>
+    internal CraftDefect Flaw(CraftPiece p, CraftDefectKind kind, int at, double severity, bool surface, string cause, string seen, bool hold = false)
+    {
+        bool fresh = !p.HasDefect(kind);
+        CraftDefect d = hold ? p.HoldDefect(kind, at, severity, surface, cause) : p.AddDefect(kind, at, severity, surface, cause);
+        if (fresh)
+            Raise(CraftEventKind.Defect, p.id, kind.ToString(), seen ?? "");
+        return d;
+    }
+
     /// <summary>Applies an operation (live and in replays).</summary>
     private void Apply(CraftOperation op)
     {
@@ -391,7 +428,7 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.SetDamper:
                 (op.i0 == 1 ? Furnace.fire : Forge).damper = CraftMath.Clamp01(op.a);
                 break;
-            case CraftOpKind.SetOven: Oven.setpoint = Math.Max(0, op.a); break;
+            case CraftOpKind.SetOven: Oven.setpoint = CraftOvenState.Dial(op.a); break;
             case CraftOpKind.CrushOre: CraftOres.Crush(this, Piece(op.piece), op.i0, op.a); break;
             case CraftOpKind.DiscardFragment: CraftOres.Discard(this, Piece(op.piece), op.i0); break;
             case CraftOpKind.WashOre: CraftOres.Wash(this, Piece(op.piece), op.a, op.b, op.c); break;
@@ -404,11 +441,12 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.Pour: ApplyPour(op); break;
             case CraftOpKind.TakeMelt: ApplyTakeMelt(op); break;
             case CraftOpKind.Strike: CraftForging.Strike(this, Piece(op.piece), op); break;
-            case CraftOpKind.Fold: CraftForging.Fold(this, Piece(op.piece), op.a, op.b); break;
+            case CraftOpKind.Fold: CraftForging.Fold(this, Piece(op.piece), op.a, op.b, op.flag); break;
             case CraftOpKind.Weld: ApplyWeld(op); break;
             case CraftOpKind.FormFastener: ApplyFormFastener(op); break;
             case CraftOpKind.SplitPiece: ApplySplit(op); break;
             case CraftOpKind.Agitate: ApplyAgitate(op); break;
+            case CraftOpKind.FillTank: ApplyFillTank(op); break;
             case CraftOpKind.ApplyClay: CraftSurface.ApplyClay(this, Piece(op.piece), op.i0, op.i1, op.a, op.points); break;
             case CraftOpKind.Descale: CraftSurface.Descale(this, Piece(op.piece), op); break;
             case CraftOpKind.Grind: CraftSurface.Grind(this, Piece(op.piece), op); break;
@@ -420,7 +458,8 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.FillVat: ApplyFillVat(op); break;
             case CraftOpKind.DrainVat: ApplyDrainVat(op); break;
             case CraftOpKind.SetVatHeat: if (op.i0 >= 0 && op.i0 < Vats.Count) Vats[op.i0].heat = CraftMath.Clamp01(op.a); break;
-            case CraftOpKind.StirVat: if (op.i0 >= 0 && op.i0 < Vats.Count) Vats[op.i0].stirred = 1; break;
+            // a stir never leaves the liquor less mixed than it was (a sloppy one after a steady one mixes no worse)
+            case CraftOpKind.StirVat: if (op.i0 >= 0 && op.i0 < Vats.Count) Vats[op.i0].stirred = Math.Max(Vats[op.i0].stirred, StirredBy(op.a)); break;
             case CraftOpKind.Stretch: CraftLeather.Stretch(this, Piece(op.piece), op); break;
             case CraftOpKind.Stake: CraftLeather.Stake(this, Piece(op.piece), op); break;
             case CraftOpKind.Condition: CraftLeather.Condition(this, Piece(op.piece), op); break;
@@ -438,12 +477,14 @@ public sealed partial class CraftWorkshop
             case CraftOpKind.BrushOre: CraftOres.Brush(this, Piece(op.piece), op); break;
             case CraftOpKind.Rive: CraftWoodwork.Rive(this, Piece(op.piece), op); break;
             case CraftOpKind.SawCut: CraftWoodwork.SawCut(this, Piece(op.piece), op); break;
+            case CraftOpKind.RipCut: CraftWoodwork.RipCut(this, Piece(op.piece), op); break;
             case CraftOpKind.BendWood: CraftWoodwork.Bend(this, Piece(op.piece), op); break;
             case CraftOpKind.StackWood: CraftWoodwork.Stack(this, Piece(op.piece), op); break;
             case CraftOpKind.SandWood: CraftWoodwork.Sand(this, Piece(op.piece), op); break;
             case CraftOpKind.Varnish: CraftWoodwork.Varnish(this, Piece(op.piece), op); break;
             case CraftOpKind.DebarkWood: CraftWoodwork.Debark(this, Piece(op.piece), op); break;
             case CraftOpKind.SplitLog: CraftWoodwork.SplitLog(this, Piece(op.piece), op); break;
+            case CraftOpKind.JoinYarn: CraftFibre.Join(this, Piece(op.piece), Piece(op.other), op); break;
             default: ApplyMore(op); break;
         }
     }
@@ -560,6 +601,74 @@ public sealed partial class CraftWorkshop
         return list;
     }
 
+    /// <summary>
+    /// The pieces as the station window lists them: every piece on the station, each assembly followed by the parts fitted
+    /// to it (<c>depth</c> 1, and the parts of a fitted assembly deeper) - so a fitted blade or head can still be picked for
+    /// the work that finishes it in place.
+    /// </summary>
+    public void ListPieces(List<(CraftPiece piece, int depth)> into)
+    {
+        into.Clear();
+        foreach (CraftPiece p in pieces)
+        {
+            if (p.location == CraftLocation.Assembled) continue;
+            into.Add((p, 0));
+            ListFitted(p, 1, into);
+        }
+    }
+
+    private void ListFitted(CraftPiece assembly, int depth, List<(CraftPiece piece, int depth)> into)
+    {
+        if (assembly.kind != CraftPieceKind.Assembly || depth > 4)
+            return;
+        foreach (CraftPiece c in Components(assembly))
+        {
+            if (c.location != CraftLocation.Assembled) continue;
+            into.Add((c, depth));
+            ListFitted(c, depth + 1, into);
+        }
+    }
+
+    /// <summary>
+    /// Can <paramref name="p"/> be taken off the station into the bag now? Not while it is fitted or melting, nor from
+    /// inside a working place - the furnace (ore smelts there, metal comes out with the tongs), the quench tank, the oven, the ashes, a vat, the
+    /// steam box: it is taken out first, as the work there needs (a quench lifted out is a quench learnt) - nor while it
+    /// is too hot to carry. <paramref name="reason"/> says why not.
+    /// </summary>
+    public static bool CanTake(CraftPiece p, out string reason)
+    {
+        reason = "";
+        if (p == null)
+        {
+            reason = "There is no such piece here.";
+            return false;
+        }
+        switch (p.location)
+        {
+            case CraftLocation.Assembled: reason = "It is part of an assembly: take it off first."; return false;
+            case CraftLocation.Melt: reason = "It is in the crucible: lift it out with the tongs first."; return false;
+            case CraftLocation.Furnace:
+                reason = p.kind == CraftPieceKind.Ore ? "It is part of the furnace's charge: it smelts there." : "It is in the furnace: lift it out with the tongs first.";
+                return false;
+            case CraftLocation.Quench: reason = "It is in the tank: lift it out first."; return false;
+            case CraftLocation.Oven: reason = "It is in the oven: take it out first."; return false;
+            case CraftLocation.Ashes: reason = "It is buried in the ashes: dig it out first."; return false;
+            case CraftLocation.Vat: reason = "It is soaking in a vat: take it out first."; return false;
+            case CraftLocation.Steam: reason = "It is in the steam box: take it out first."; return false;
+        }
+        if ((p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Fasteners) && p.MaxTemperature > 120)
+        {
+            reason = "It is too hot to carry: let it cool, or quench it.";
+            return false;
+        }
+        if (p.kind == CraftPieceKind.Ore && p.ore.temperature > 120)
+        {
+            reason = "It is too hot to carry: let it cool on the bench.";
+            return false;
+        }
+        return true;
+    }
+
     /// <summary>A piece created by an operation (it takes the id the operation carries, so replays create the same).</summary>
     internal CraftPiece Create(CraftOperation op, CraftPieceKind kind, string origin)
     {
@@ -602,6 +711,9 @@ public sealed partial class CraftWorkshop
         // once it melts it is part of the melt.
         if (p.location == CraftLocation.Melt && to != CraftLocation.Air && to != CraftLocation.Melt)
             return Refuse("Lift it out of the crucible first.", out reason, id);
+        // Ore charged into the furnace is part of the burning charge: it smelts there, it is not fished out again.
+        if (p.kind == CraftPieceKind.Ore && p.location == CraftLocation.Furnace && to != CraftLocation.Furnace)
+            return Refuse("It is part of the furnace's charge now: it smelts there.", out reason, id);
         if (!CanGo(p, to, vat, out reason))
             return Refuse(reason, out reason, id);
         Record(new CraftOperation
@@ -624,12 +736,15 @@ public sealed partial class CraftWorkshop
                 if (!metal && p.kind != CraftPieceKind.Wood) { reason = "That does not belong in the fire."; return false; }
                 return true;
             case CraftLocation.Furnace:
+                // Ore to smelt; metal to melt down, roast (a matte) or cupel (lead carrying silver) - it comes out with the tongs.
                 if (!Has(CraftTools.Furnace)) { reason = "There is no furnace here."; return false; }
-                if (p.kind != CraftPieceKind.Ore && !(metal && p.bloom)) { reason = "Only ore is charged into the furnace."; return false; }
+                if (p.kind == CraftPieceKind.Fasteners) { reason = "Melt fasteners down in the crucible."; return false; }
+                if (p.kind != CraftPieceKind.Ore && p.kind != CraftPieceKind.Metal) { reason = "Only ore, and metal to melt down, roast or cupel, go into the furnace."; return false; }
                 return true;
             case CraftLocation.Melt:
                 if (!Has(CraftTools.Crucible)) { reason = "There is no crucible here."; return false; }
-                if (!metal && p.kind != CraftPieceKind.Ore) { reason = "Only metal (or an ore to cement) goes into the crucible."; return false; }
+                if (p.kind == CraftPieceKind.Ore) return CraftSmelting.CrucibleTakes(Rules, p, out reason);
+                if (!metal) { reason = "Only metal (or an ore to cement) goes into the crucible."; return false; }
                 return true;
             case CraftLocation.Quench:
                 if (!Has(CraftTools.QuenchTank)) { reason = "There is no quench tank here."; return false; }
@@ -661,10 +776,24 @@ public sealed partial class CraftWorkshop
             case CraftLocation.Frame:
                 if (!Has(CraftTools.Frame)) { reason = "There is no stretching frame here."; return false; }
                 if (p.kind != CraftPieceKind.Hide || CraftTextiles.IsCloth(Rules, p)) { reason = "Only hides are laced in the frame."; return false; }
+                foreach (CraftPiece q in pieces)
+                    if (q != p && q.location == CraftLocation.Frame)
+                    {
+                        reason = "The frame already holds a hide: take it down first.";
+                        return false;
+                    }
                 return true;
             case CraftLocation.Rack:
                 if (!Has(CraftTools.Rack)) { reason = "There is no drying rack here."; return false; }
                 if (p.kind != CraftPieceKind.Hide && p.kind != CraftPieceKind.Wood) { reason = "The rack is for hides."; return false; }
+                if (p.kind == CraftPieceKind.Hide)
+                {
+                    // it hangs so many hides side by side, each where it can be seen, staked and taken down
+                    int hung = 0;
+                    foreach (CraftPiece q in pieces)
+                        if (q != p && q.kind == CraftPieceKind.Hide && q.location == CraftLocation.Rack) hung++;
+                    if (hung >= CraftLeather.RackHides) { reason = "The rack is full: take a hide down first."; return false; }
+                }
                 return true;
             case CraftLocation.Steam:
                 if (!Has(CraftTools.SteamBox)) { reason = "There is no steam box here."; return false; }
@@ -695,8 +824,13 @@ public sealed partial class CraftWorkshop
         {
             p.entryAngle = op.b;
             p.motion = CraftQuenchMotion.Still;
-            p.Record(Elapsed, op.kind, $"Quenched in {Rules.Quenchant(Quench.medium)?.Name ?? Quench.medium}", p.MaxTemperature);
-            CraftThermal.OnQuenchEntry(this, p);
+            if (was != CraftLocation.Quench)
+            {
+                // With austenite the quench turns, it is quenched (it hardens); without, it is only dipped to cool it.
+                string medium = Rules.Quenchant(Quench.medium)?.Name ?? Quench.medium;
+                p.Record(Elapsed, op.kind, CraftThermal.Hardening(Rules, p, Quench.temperature) ? $"Quenched in {medium}" : $"Dipped in {medium} to cool", p.MaxTemperature);
+                CraftThermal.OnQuenchEntry(this, p);
+            }
         }
         else if (to == CraftLocation.Melt)
         {
@@ -704,10 +838,13 @@ public sealed partial class CraftWorkshop
         }
         else if (to != was)
             p.Record(Elapsed, op.kind, $"Moved to {to}");
+        // Hot metal buried in the ashes warms them (as far as the ash box gets: a cold bar warms nothing).
         if (to == CraftLocation.Ashes && was != CraftLocation.Ashes)
-            AshTemperature = Math.Max(AshTemperature, Rules.Settings.ashTemperature);
+            AshTemperature = Math.Max(AshTemperature, Math.Min(Rules.Settings.ashTemperature, p.MaxTemperature));
         if (to == CraftLocation.Vat)
             CraftLeather.OnEnterVat(this, p);
+        if (to == CraftLocation.Frame && was != CraftLocation.Frame)
+            CraftLeather.OnLaced(this, p); // laced in afresh: its sides start slack
         Raise(CraftEventKind.PieceMoved, p.id, to.ToString(), "");
     }
 
@@ -726,8 +863,9 @@ public sealed partial class CraftWorkshop
         CraftPiece p = Piece(op.piece);
         if (p == null)
             return;
+        // The other face up; which face ran hotter stays as it is (faceBias is face 1's against face 0's): from now on the
+        // other face lies in the coals and evens it out.
         p.faceUp = 1 - p.faceUp;
-        p.faceBias = -p.faceBias * 0.5;
     }
 
     /// <summary>Says what the piece is meant to become (a design's part): guides only, it is judged by what it is.</summary>
@@ -750,9 +888,7 @@ public sealed partial class CraftWorkshop
             return;
         p.intentDesign = op.id;
         p.intentRole = op.id2;
-        CraftComponentSpec spec = Rules.Design(op.id)?.Component(op.id2);
-        if (spec != null && spec.shape != null && p.kind == CraftPieceKind.Metal)
-            p.edges = spec.shape.edge == CraftEdgeKind.Double ? 2 : spec.shape.edge == CraftEdgeKind.Single ? 1 : 0;
+        p.edges = p.IntendedEdges(Rules, p.edges);
     }
 
     // ------------------------------------------------------------------ fires
@@ -788,7 +924,7 @@ public sealed partial class CraftWorkshop
         fire.smoke = fire.smoke * (1 - w) + f.smoke * w;
         fire.fuel = total;
         fire.lit = true;
-        Raise(CraftEventKind.FuelAdded, "", f.id, f.Name, op.i1);
+        Raise(CraftEventKind.FuelAdded, "", f.id, $"{CraftText.Capital(f.Name.ToLowerInvariant())} goes {(op.i0 == 1 ? "into the furnace" : "on the forge fire")}{(op.i1 > 1 ? $" ({op.i1} shovels)" : "")}.", op.i1);
     }
 
     /// <summary>One pump of the bellows (0-1) on the forge or the furnace.</summary>
@@ -804,15 +940,16 @@ public sealed partial class CraftWorkshop
         Record(new CraftOperation { kind = CraftOpKind.SetDamper, a = (float)open, i0 = furnace ? 1 : 0 });
     }
 
-    /// <summary>The oven's setting (°C; 0 = off).</summary>
+    /// <summary>The oven's setting (°C; 0 = off), held to its dial (<see cref="CraftOvenState.Dial"/>: a tempering heat at most).</summary>
     public bool SetOven(double celsius, out string reason)
     {
         reason = "";
         if (!Has(CraftTools.Oven))
             return Refuse("There is no oven here.", out reason);
+        celsius = CraftOvenState.Dial(celsius);
         if (Math.Abs(celsius - Oven.setpoint) < 0.5)
             return true;
-        Record(new CraftOperation { kind = CraftOpKind.SetOven, a = (float)Math.Max(0, celsius) });
+        Record(new CraftOperation { kind = CraftOpKind.SetOven, a = (float)celsius });
         return true;
     }
 
@@ -900,6 +1037,7 @@ public sealed partial class CraftWorkshop
                     break;
                 case CraftPieceKind.Ore:
                     if (p.location == CraftLocation.Furnace) CraftSmelting.StepOre(this, p, dt);
+                    else if (p.location != CraftLocation.Melt) CraftSmelting.CoolOre(this, p, dt); // lifted out of the crucible: it cools on the bench
                     break;
                 case CraftPieceKind.Hide:
                     CraftLeather.StepHide(this, p, dt);

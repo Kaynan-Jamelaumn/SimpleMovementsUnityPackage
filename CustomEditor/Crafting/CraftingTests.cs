@@ -796,7 +796,8 @@ namespace CraftingSystem.Tests
                 Assert.IsTrue(w.File(haft, 9, 11, CraftSurfaceSide.Tang, "rasp", 0, 0.8, 20, out string fw), fw); // round the end down
             Assert.AreEqual(CraftLocation.Assembled, w.Piece(haft).location, why);
             Assert.IsFalse(w.Finish(asm, out why), "the head is not wedged yet");
-            Assert.IsTrue(w.JointWork(asm, "head_haft", CraftJointWork.Wedge, 7, 0.8, 0, out why), why);
+            // four good blows (the wedge's ideal, 0.7 of a full blow: a request's force is 4 × it) drive it home
+            Assert.IsTrue(w.JointWork(asm, "head_haft", CraftJointWork.Wedge, 4, 4 * 0.7, 0, out why), why);
             Assert.IsTrue(w.Finish(asm, out why), why);
             Assert.IsNull(w.RemovePiece(head, out why), "a fitted part comes off only by taking the item apart");
             List<CraftPiece> taken = w.RemovePiece(asm, out why);
@@ -871,16 +872,24 @@ namespace CraftingSystem.Tests
             string strap = w.CutPattern(hide, "long_strap", 1, 3, 0, 0.9, out string why);
             Assert.IsNotNull(strap, why);
             string buckle = w.AddPiece(CraftDefaults.FastenerSet(w.Rules, CraftFastenerKind.Buckle, 1, 30, Metal("Brass")));
+            string rivet = w.AddPiece(CraftDefaults.FastenerSet(w.Rules, CraftFastenerKind.Rivet, 2, 5, Metal("Mild steel")));
             string asm = w.StartAssembly("belt", out why);
             Assert.IsFalse(w.Attach(asm, "strap", 0, hide, out why), "the rest of the hide was not cut to the belt pattern");
             Assert.IsTrue(w.Attach(asm, "strap", 0, strap, out why), why);
             Assert.IsTrue(w.Attach(asm, "buckle", 0, buckle, out why), why);
+            Assert.IsTrue(w.Attach(asm, "rivets", 0, rivet, out why), why);
             CraftJointSpec joint = w.Rules.Design("belt").Joint("buckle");
-            if (!w.Finish(asm, out why))
-            {
-                Assert.IsTrue(w.JointWork(asm, "buckle", CraftJointWork.Punch, 4, 0.1, 0.1, out why), why);
-                Assert.IsTrue(w.JointWork(asm, "buckle", CraftJointWork.Stitch, 4, 0.6, 0.1, out why), why);
-            }
+            Assert.IsFalse(w.Finish(asm, out why), "the buckle is not on yet");
+            // the belt has no thread: its buckle is riveted on, through a punched hole
+            Assert.IsFalse(w.JointWork(asm, "buckle", CraftJointWork.Stitch, 4, 0.6, 0.1, out why));
+            StringAssert.Contains("rivet the buckle on", why);
+            Assert.IsFalse(w.JointWork(asm, "buckle", CraftJointWork.Rivet, 1, 2.4, 0, out why));
+            StringAssert.Contains("Punch a hole", why);
+            Assert.IsTrue(w.JointWork(asm, "buckle", CraftJointWork.Punch, 4, 0.1, 0.1, out why), why);
+            Assert.AreEqual(1, w.Piece(asm).assembly.Joint("buckle").holes, "one hole for its one rivet");
+            Assert.IsTrue(w.JointWork(asm, "buckle", CraftJointWork.Rivet, 1, 2.4, 0, out why), why);
+            Assert.AreEqual(1, w.Piece(rivet).fasteners.Left, "the rivet came from the set");
+            Assert.AreEqual(2, w.Piece(rivet).fasteners.count, "and, set, it is part of the item: the set counts it still");
             Assert.IsTrue(w.Finish(asm, out why), why + " " + joint?.kind);
             CraftItemReport item = CraftEvaluator.Item(w.Rules, w, w.Piece(asm));
             Assert.Greater(item.Defense, 0);
@@ -916,7 +925,7 @@ namespace CraftingSystem.Tests
                 string asm = w.StartAssembly("hatchet", out _);
                 w.Attach(asm, "head", 0, head, out _);
                 w.Attach(asm, "haft", 0, haft, out _);
-                w.JointWork(asm, "head_haft", CraftJointWork.Wedge, 7, 0.8, 0, out _);
+                w.JointWork(asm, "head_haft", CraftJointWork.Wedge, 4, 4 * 0.7, 0, out _); // driven home with good blows
                 Assert.IsTrue(w.Finish(asm, out string why), why);
                 return CraftEvaluator.Item(w.Rules, w, w.Piece(asm));
             }
@@ -1368,6 +1377,7 @@ namespace CraftingSystem.Tests
             string sanded = Blank(), rough = Blank(), damp = Blank();
             int n = w.Piece(sanded).segments.Count - 1;
             Assert.IsTrue(w.SandWood(sanded, 0, n, 0.4, 10, 1, out string why), why);
+            Assert.IsTrue(w.SandWood(sanded, 0, n, 0.65, 10, 1, out why), why); // through the grits: a paper clears only the one before's scratches
             Assert.IsTrue(w.SandWood(sanded, 0, n, 0.9, 10, 1, out why), why);
             Assert.Less(w.Piece(sanded).segments.Average(g => g.rough), 20, "sanded fine along the grain it is smooth");
             w.Piece(damp).wood.moisture = 0.3;

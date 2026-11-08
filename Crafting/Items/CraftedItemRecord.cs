@@ -18,6 +18,8 @@ public class CraftedItemRecord
     [Tooltip("0-1 and its tier (Crude ... Masterwork).")]
     public float quality;
     public string tier = "";
+    [Tooltip("How well it was put together (0-1, the evaluation's assembly): the journal learns from a loose one once it is tried (1 in older saves).")]
+    public float assembly = 1f;
     public string material = "";
     [Tooltip("Has it been tested (bent, struck, its edge tried): its numbers and quality are known.")]
     public bool inspected;
@@ -88,7 +90,7 @@ public static class CraftedTooltip
         if (r.inspected)
             lines.Add($"<color=#ffcc61>{r.tier} work</color> <color=#9aa0a6>({r.quality * 100:0}%){by}</color>");
         else
-            lines.Add($"<color=#9aa0a6>Not yet tried: how good it is will show in use, or at a bench{by}</color>");
+            lines.Add($"<color=#9aa0a6>Not yet tried: try it at a bench where such things are made to know how good it is{by}</color>");
         if (r.parts.Count > 0)
             lines.Add($"<color=#9aa0a6>{string.Join("; ", r.parts)}</color>");
         if (r.inspected)

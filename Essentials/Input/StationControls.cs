@@ -27,13 +27,19 @@ public enum StationControl
     FaceEdge,
     /// <summary>Feed the fire.</summary>
     FeedFire,
+    /// <summary>Less of what the hand adjusts at the work place: the air vent closed, the angle lower, a lighter press, the stone turned back (as the wheel down).</summary>
     VentClose,
+    /// <summary>More of what the hand adjusts: the air vent opened, the angle steeper, a harder press, the stone turned on (as the wheel up).</summary>
     VentOpen,
     /// <summary>Done: tip the mortar into the vessel.</summary>
     Confirm,
     /// <summary>In the station's window: work this area with the hands, in 3D.</summary>
     ByHand,
     Choice1, Choice2, Choice3, Choice4, Choice5, Choice6, Choice7, Choice8, Choice9, Choice10,
+    /// <summary>The previous of the work place's choices (the list the number keys pick from: the side, the face, the entry, the stone...).</summary>
+    PrevChoice,
+    /// <summary>The next of the work place's choices.</summary>
+    NextChoice,
 }
 
 /// <summary>
@@ -44,6 +50,12 @@ public enum StationControl
 /// hint by the key actually bound (<see cref="Key"/>), and quiet while the game is paused.
 /// <para>While the hands are at work the player's gameplay keys are off (<see cref="BeginHandsOn"/>), so the keys of
 /// the anvil never also jump, dash, open the inventory or cast an ability.</para>
+/// <para>A key means one thing at every work place: <see cref="StationControl.NextTool"/> the next tool in hand (the
+/// hammer's, the wheel or file, the stone, the brush, the knife's cut); the number keys and
+/// <see cref="StationControl.PrevChoice"/> / <see cref="StationControl.NextChoice"/> (the d-pad's left / right) the work
+/// place's list of choices (the side, the face, the entry, the stone); Less / More (<see cref="StationControl.VentClose"/>
+/// / <see cref="StationControl.VentOpen"/>, the d-pad's down / up) and the wheel adjust what is in hand (the air vent, the
+/// angle, the press, the depth, the stone turned); <see cref="StationControl.TurnOver"/> turns it over.</para>
 /// </summary>
 public static class StationControls
 {
@@ -70,8 +82,8 @@ public static class StationControls
         Button("StationFire", "Into the fire and out", "<Keyboard>/r", "<Gamepad>/buttonWest"),
         Button("StationFaceEdge", "Strike on face / edge", "<Keyboard>/f", "<Gamepad>/leftShoulder"),
         Button("StationFeedFire", "Feed the fire", "<Keyboard>/f", "<Gamepad>/leftShoulder"),
-        Button("StationVentClose", "Close the air vent", "<Keyboard>/leftBracket", "<Gamepad>/dpad/down"),
-        Button("StationVentOpen", "Open the air vent", "<Keyboard>/rightBracket", "<Gamepad>/dpad/up"),
+        Button("StationVentClose", "Less (air vent, angle, pressure)", "<Keyboard>/leftBracket", "<Gamepad>/dpad/down"),
+        Button("StationVentOpen", "More (air vent, angle, pressure)", "<Keyboard>/rightBracket", "<Gamepad>/dpad/up"),
         Button("StationConfirm", "Done (tip it in)", "<Keyboard>/enter", "<Keyboard>/numpadEnter", "<Gamepad>/start"),
         Button("StationByHand", "Work it by hand (3D)", "<Keyboard>/h", "<Gamepad>/leftStickPress"),
         Button("StationChoice1", "Choice 1", "<Keyboard>/1"),
@@ -84,6 +96,8 @@ public static class StationControls
         Button("StationChoice8", "Choice 8", "<Keyboard>/8"),
         Button("StationChoice9", "Choice 9", "<Keyboard>/9"),
         Button("StationChoice10", "Choice 10", "<Keyboard>/0"),
+        Button("StationPrevChoice", "Previous choice", "<Keyboard>/comma", "<Gamepad>/dpad/left"),
+        Button("StationNextChoice", "Next choice", "<Keyboard>/period", "<Gamepad>/dpad/right"),
     };
 
     private static GlobalInputBinding[] bindings;
@@ -153,6 +167,38 @@ public static class StationControls
 
     /// <summary>The scroll this frame (up is positive).</summary>
     public static float Scroll => Get(StationControl.Scroll)?.ReadVector2().y ?? 0f;
+
+    /// <summary>-1, 0 or +1: the previous or the next of the work place's choices pressed this frame.</summary>
+    public static int ChoiceStep => (Pressed(StationControl.NextChoice) ? 1 : 0) - (Pressed(StationControl.PrevChoice) ? 1 : 0);
+
+    /// <summary>
+    /// -1, 0 or +1: less or more of what the hand adjusts at the work place this frame - the Less / More keys (the d-pad's
+    /// down / up on a gamepad) or a notch of the wheel (up is more). The same at every work place.
+    /// </summary>
+    public static int AdjustStep
+    {
+        get
+        {
+            int step = (Pressed(StationControl.VentOpen) ? 1 : 0) - (Pressed(StationControl.VentClose) ? 1 : 0);
+            float wheel = Scroll;
+            if (wheel > 0.01f) step++;
+            else if (wheel < -0.01f) step--;
+            return Mathf.Clamp(step, -1, 1);
+        }
+    }
+
+    private static bool Pad => InputDeviceTracker.Current == InputDeviceTracker.Kind.Gamepad;
+
+    /// <summary>
+    /// The keys that pick among the first <paramref name="count"/> choices, as hints write them: "1-7 or , ." with a
+    /// keyboard, only the previous / next keys with a gamepad (it has no number keys).
+    /// </summary>
+    public static string ChoiceKeys(int count) =>
+        Pad || count < 1 ? $"{K(StationControl.PrevChoice)} {K(StationControl.NextChoice)}" : $"{Choices(Mathf.Min(count, 10))} or {K(StationControl.PrevChoice)} {K(StationControl.NextChoice)}";
+
+    /// <summary>The keys that adjust what is in hand, as hints write them: "the wheel or [ ]" with a mouse, the d-pad's down / up with a gamepad.</summary>
+    public static string AdjustKeys =>
+        Pad ? $"{K(StationControl.VentClose)} {K(StationControl.VentOpen)}" : $"{K(StationControl.Scroll)} or {K(StationControl.VentClose)} {K(StationControl.VentOpen)}";
 
     /// <summary>
     /// Where the hand is on the screen (pixels): the pointer, or - with a gamepad - a pointer the stick moves (from the

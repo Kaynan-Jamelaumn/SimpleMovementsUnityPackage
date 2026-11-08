@@ -88,8 +88,12 @@ public static class CraftLook
             {
                 CraftWoodDefinition w = rules.Wood(p.wood.wood);
                 CraftComponentSpec spec = rules.Design(p.intentDesign)?.Component(p.intentRole);
-                if (spec == null && p.wood.log) return $"{w?.Name ?? "Wood"} log{(p.wood.bark > 0.3 ? "" : ", debarked")}";
-                return $"{w?.Name ?? "Wood"} {(spec != null ? spec.Name.ToLowerInvariant() : "blank")}";
+                // a plank wood's name says plank ("Linden plank"): its log is a "Linden log", its blank a "Linden plank"
+                string species = w?.Name ?? "Wood";
+                bool plank = species.EndsWith(" plank", StringComparison.OrdinalIgnoreCase);
+                if (plank) species = species.Substring(0, species.Length - " plank".Length);
+                if (spec == null && p.wood.log) return $"{species} log{(p.wood.bark > 0.3 ? "" : ", debarked")}";
+                return $"{species} {(spec != null ? spec.Name.ToLowerInvariant() : plank ? "plank" : "blank")}";
             }
             case CraftPieceKind.Fibre:
             {
@@ -142,6 +146,15 @@ public static class CraftLook
         }
     }
 
+    /// <summary>What the player calls a stone (a finished jewel's): the name they gave it, its name if they know it by sight, else what it looks like.</summary>
+    public static string StoneName(CraftRules rules, CraftPiece p, CraftJournalData d)
+    {
+        if (p == null || p.kind != CraftPieceKind.Gem)
+            return "stone";
+        CraftGemDefinition def = rules.Gem(p.gem.gem), named = rules.Gem(p.gem.identifiedAs);
+        return named != null ? named.Name : def != null && CraftJournal.KnowsGem(d, def.id) ? def.Name : def != null ? Unnamed(def.observation) : "stone";
+    }
+
     /// <summary>An observation without its article and clauses ("a heavy, rust-red rock that ..." → "heavy, rust-red rock").</summary>
     private static string Unnamed(string observation)
     {
@@ -155,23 +168,50 @@ public static class CraftLook
         return semi > 0 ? s.Substring(0, semi) : s;
     }
 
+    /// <summary>
+    /// A metal's observation as a name ("a soft, bright metal that crackles when bent" → "soft, bright metal"): without its
+    /// article, cut at a clause ("that ...") or at the first comma past its noun - the comma between the adjectives before
+    /// the noun stays, so an unknown tin bar is a "Bar of soft, bright metal", never a "Bar of soft".
+    /// </summary>
     private static string Short(string observation)
     {
         if (string.IsNullOrEmpty(observation)) return "metal";
         string s = observation.StartsWith("a ") ? observation.Substring(2) : observation.StartsWith("an ") ? observation.Substring(3) : observation;
-        int cut = s.IndexOfAny(new[] { ',', ';' });
-        if (cut > 0) s = s.Substring(0, cut);
         int that = s.IndexOf(" that ", StringComparison.Ordinal);
         if (that > 0) s = s.Substring(0, that);
-        return s;
+        int noun = NounEnd(s);
+        int cut = noun < s.Length ? s.IndexOfAny(new[] { ',', ';' }, noun) : -1;
+        if (cut > 0) s = s.Substring(0, cut);
+        return s.Trim();
     }
 
-    /// <summary>"bar", "bloom", "ingot", "plate", "blade", "rod" - by its intent and its shape.</summary>
+    /// <summary>The words that end the noun phrase of a metal's observation ("metal", "iron", "lump"...).</summary>
+    private static readonly string[] MetalNouns = { "metal", "iron", "steel", "bronze", "brass", "gold", "silver", "copper", "tin", "lead", "alloy", "lump", "rock" };
+
+    /// <summary>Where the first noun of an observation ends (its length when it names none: then no comma is cut at).</summary>
+    private static int NounEnd(string s)
+    {
+        int start = 0;
+        foreach (string word in s.Split(' '))
+        {
+            string w = word.TrimEnd(',', ';', '.');
+            if (Array.IndexOf(MetalNouns, w) >= 0)
+                return start + w.Length;
+            start += word.Length + 1; // the word and the space after it
+        }
+        return s.Length;
+    }
+
+    /// <summary>
+    /// "bar", "bloom", "ingot", "plate", "blade", "rod" - by its intent and its shape: what it is meant for first (a bloom
+    /// forged into a dagger's blade is the blade), then a bloom while it is one (not yet hammered sound:
+    /// <see cref="CraftForging.Consolidated"/>).
+    /// </summary>
     public static string ShapeWord(CraftRules rules, CraftPiece p)
     {
-        if (p.bloom) return "bloom";
         CraftComponentSpec spec = rules.Design(p.intentDesign)?.Component(p.intentRole);
         if (spec != null) return spec.Name.ToLowerInvariant();
+        if (Bloom(rules, p)) return "bloom";
         if (p.segments.Count == 0) return "piece";
         double l = p.Length, w = 0, t = 0;
         foreach (MetalSegment s in p.segments) { w += s.width; t += s.thickness; }
@@ -186,9 +226,12 @@ public static class CraftLook
         return "bar";
     }
 
+    /// <summary>Is it a bloom still - drawn from the furnace and not yet hammered sound (<see cref="CraftForging.Consolidated"/>)?</summary>
+    public static bool Bloom(CraftRules rules, CraftPiece p) => p != null && p.bloom && !CraftForging.Consolidated(rules, p);
+
     // ------------------------------------------------------------------ pieces
     /// <summary>What can be seen and felt of a piece (no numbers unless an instrument or <paramref name="reveal"/>).</summary>
-    public static List<string> Describe(CraftRules rules, CraftPiece p, CraftJournalData d, CraftInstruments tools, bool dark, bool reveal)
+    public static List<string> Describe(CraftRules rules, CraftPiece p, CraftJournalData d, CraftInstruments tools, bool dark, bool reveal, CraftWorkshop ws = null)
     {
         var lines = new List<string>();
         if (p == null)
@@ -205,7 +248,7 @@ public static class CraftLook
             case CraftPieceKind.Gem: Gem(rules, p, d, tools, lines); break;
             default: Metal(rules, p, d, tools, dark, lines); break;
         }
-        Measured(rules, p, tools, lines);
+        Measured(rules, p, tools, lines, ws);
         // Flaws, one line per kind: the worst of them, and where.
         var seen = new List<CraftDefectKind>();
         foreach (CraftDefect def in p.defects)
@@ -232,6 +275,26 @@ public static class CraftLook
         return lines;
     }
 
+    /// <summary>
+    /// The share of the piece's length that is bare from an abrasive (no scale, ground or polished:
+    /// <see cref="CraftSurface.GroundPolish"/> and up), and those stretches' scratches (µm) and polish, by length.
+    /// </summary>
+    private static double BareSurface(CraftPiece p, out double rough, out double polish)
+    {
+        double bare = 0, all = 0, sum = 0, shine = 0;
+        foreach (MetalSegment s in p.segments)
+        {
+            all += s.length;
+            if (s.scale > 0.02 || s.polish < CraftSurface.GroundPolish - 1e-6) continue;
+            bare += s.length;
+            sum += s.rough * s.length;
+            shine += s.polish * s.length;
+        }
+        rough = bare > 0 ? sum / bare : 0;
+        polish = bare > 0 ? shine / bare : 0;
+        return all > 0 ? bare / all : 0;
+    }
+
     /// <summary>Hidden flaws a loupe finds on the surface (a raw core only shows on a cut edge; pores under the skin never).</summary>
     private static bool Visible(CraftDefectKind k) => k != CraftDefectKind.CaseHardened && k != CraftDefectKind.Porosity;
 
@@ -240,28 +303,41 @@ public static class CraftLook
         CraftAlloyProfile prof = p.Profile(rules);
         CraftPieceReport r = CraftEvaluator.Piece(rules, p);
         string metal = MetalName(rules, prof, d);
-        if (p.bloom)
+        if (Bloom(rules, p))
             lines.Add(r.Porosity > 0.1 ? "A spongy, cindery lump, full of holes and dark slag." : "A rough, lumpy bar with streaks of slag in it.");
         else if (p.cast && r.Roughness > 40)
             lines.Add("A rough casting, still marked by the mould.");
-        lines.Add($"It is {(prof.Class != null && CraftJournal.KnowsClass(d, rules, prof.Class) ? metal : Short(metal))}.");
+        // known by name, the metal's name; unknown, what it looks like ("It is a soft, bright metal." - what its sparks or its
+        // sound tell, the observation's clause, waits for the wheel or the hammer)
+        lines.Add($"It is {(prof.Class != null && CraftJournal.KnowsClass(d, rules, prof.Class) ? metal : CraftText.A(Short(metal)) + " " + Short(metal))}.");
         // Heat: the glow, by region.
         Glow(rules, p, d, (tools & CraftInstruments.Thermometer) != 0, dark, lines);
-        // The surface.
+        // The surface: scale; else, where most of it is bare from an abrasive, its scratches in the Grind area's own words
+        // (CraftSurface.FinishOf - brighter where a buff brightened it); else forged or cast grey.
+        double bare = BareSurface(p, out double bareRough, out double barePolish);
+        CraftSurface.Finish finish = CraftSurface.FinishOf(bareRough, barePolish);
+        bool ground = r.Scale <= 0.02 && bare >= 0.5;
         if (r.Scale > 0.08) lines.Add("A thick black scale covers it, flaking in places.");
         else if (r.Scale > 0.02) lines.Add("It is dark with scale.");
-        else if (r.Polish > 0.8) lines.Add("It is polished bright as a mirror.");
-        else if (r.Polish > 0.4) lines.Add("It is clean and bright.");
-        else if (r.Scale <= 0.02 && r.Temperature < 300) lines.Add("It is grey and dull.");
-        if (r.Roughness > 45 && r.Scale < 0.05) lines.Add(p.cast && !Did(p, CraftOpKind.Strike) ? "Its surface is rough and sandy from the mould." : "Its surface is rough with hammer marks.");
-        else if (r.Roughness > 15 && r.Polish > 0.3) lines.Add("Scratches run across it.");
+        else if (ground && finish == CraftSurface.Finish.Mirror) lines.Add("It is polished bright as a mirror.");
+        else if (ground && finish == CraftSurface.Finish.Bright) lines.Add("It is polished bright.");
+        else if (ground && finish == CraftSurface.Finish.SmoothGrey) lines.Add("It has a smooth grey finish.");
+        else if (ground && finish == CraftSurface.Finish.FineScratches) lines.Add("It is ground clean and grey.");
+        else if (r.Temperature < 300) lines.Add(ground ? "It is ground grey and dull." : "It is grey and dull.");
+        if (ground && finish == CraftSurface.Finish.CoarseScratches) lines.Add("Coarse scratches run across it.");
+        else if (ground && finish == CraftSurface.Finish.FineScratches) lines.Add("Fine scratches run across it.");
+        else if (r.Scale < 0.05 && CraftSurface.FinishOf(ground ? bareRough : r.Roughness) == CraftSurface.Finish.Rough)
+            lines.Add(p.cast && !Did(p, CraftOpKind.Strike) ? "Its surface is rough and sandy from the mould." : "Its surface is rough with hammer marks.");
+        if (r.Streaks > CraftSmelting.Streaky)
+            lines.Add("Streaks of a different colour run through the metal: it was cast from a melt not stirred even, and it is weak where they meet.");
         double film = 0;
-        foreach (MetalSegment s in p.segments) if (s.polish > 0.4) film = Math.Max(film, s.temperFilm);
+        foreach (MetalSegment s in p.segments) if (s.polish >= CraftSurface.FilmPolish - 1e-9) film = Math.Max(film, s.temperFilm); // bare steel, as it is drawn
         string tc = CraftMetallurgy.TemperName(film);
         if (!string.IsNullOrEmpty(tc) && prof.Steel) lines.Add($"The bright steel has taken {tc} colours.");
         if (p.Tag("etched") > 0.2 && p.contrast > 0.15) lines.Add("Etched, it shows a pattern of light and dark layers.");
         if (p.Tag("etched") > 0.2 && HamonLike(p)) lines.Add("Etched, a misty line runs along it where the hard edge meets the softer spine.");
         if (r.Coating > 0.3) lines.Add("It has a thin protective coat.");
+        Smithing(p, tools, lines);
         // Shape.
         double bend = Math.Abs(r.Bend);
         CraftShapeTarget target = rules.Design(p.intentDesign)?.Component(p.intentRole)?.shape;
@@ -284,11 +360,17 @@ public static class CraftLook
         // The edge.
         if (r.HasEdge)
         {
-            if (r.Sharpness < 0.2) lines.Add("The edge is blunt: light glints along it.");
-            else if (r.Sharpness < 0.5) lines.Add("The edge is sharp enough to cut, not keen.");
-            else if (r.Sharpness < 0.8) lines.Add("The edge is keen.");
-            else lines.Add("The edge is razor-keen: it catches on a fingernail and shows no line of light.");
-            if (r.Burr > 0.3) lines.Add("A wire burr runs along one side of the edge.");
+            // By the stone's own ladder (CraftSurface.KeenStep) and its burr (BurrShows: where the stone draws one).
+            switch (CraftSurface.KeenStep(r.Sharpness))
+            {
+                case 0: lines.Add("The edge is blunt: light glints along it."); break;
+                case 1: lines.Add("The edge is sharp enough to cut, not keen."); break;
+                case 2: lines.Add("The edge is keen."); break;
+                default: lines.Add("The edge is razor-keen: it catches on a fingernail and shows no line of light."); break;
+            }
+            double burr = 0;
+            foreach (MetalSegment s in p.segments) if (CraftSurface.HasEdge(s)) burr = Math.Max(burr, s.burr);
+            if (burr > CraftSurface.BurrShows) lines.Add("A wire burr runs along one side of the edge.");
             if (r.Chip > 0.15) lines.Add("The edge is nicked and chipped.");
             if (r.Symmetry < 0.7) lines.Add("The bevels do not match from side to side.");
         }
@@ -306,6 +388,34 @@ public static class CraftLook
             lines.Add(Magnet(rules, p));
         if ((tools & CraftInstruments.TestFile) != 0 && r.Temperature < 300)
             lines.Add(FileTest(r.EdgeHardness > 0 ? Math.Max(r.EdgeHardness, r.BodyHardness) : r.BodyHardness));
+    }
+
+    /// <summary>What the smith put on it and the fire left: clay on the spine, flux, a weld's seam not yet set, one face hotter.</summary>
+    private static void Smithing(CraftPiece p, CraftInstruments tools, List<string> lines)
+    {
+        int n = p.segments.Count, clayed = 0, fluxed = 0;
+        double clay = 0;
+        foreach (MetalSegment s in p.segments)
+        {
+            if (s.clay > 0.05) { clayed++; clay += s.clay; }
+            if (s.flux > 0.05) fluxed++;
+        }
+        if (clayed > 0)
+        {
+            clay /= clayed;
+            string coat = (tools & CraftInstruments.Calipers) != 0 ? $"a coat of clay {clay:0.#} mm thick" : clay < 1 ? "a thin wash of clay" : clay < 3 ? "a coat of clay" : "a thick coat of clay";
+            lines.Add($"{CraftText.Capital(coat)} is caked {(clayed * 3 >= n * 2 ? "along its spine" : "on part of its spine")}: a wire brush or the wheel takes it off.");
+        }
+        if (fluxed > 0)
+            lines.Add(fluxed * 4 >= n * 3 ? "A glassy skin of molten flux covers it." : "A glassy skin of flux covers part of it; the rest is bare.");
+        else if (p.MaxTemperature > 600 && Did(p, CraftOpKind.AddFlux))
+            lines.Add("The flux on it has burnt off.");
+        double open = CraftForging.SeamOpen(p);
+        if (open > 0)
+            lines.Add(open > 0.6 ? "A seam runs along it, not yet welded: strike it shut at welding heat." : "Its seam is not welded shut in places yet: strike them at welding heat.");
+        // faceBias is face 1's lead over face 0's: the face down in the coals is face 1 while face 0 is up.
+        if (p.location == CraftLocation.Fire && Math.Abs(p.faceBias) > 0.15 && (p.faceBias > 0) == (p.faceUp == 0))
+            lines.Add("The face down in the coals glows brighter than the face up: turn it.");
     }
 
     private static bool HamonLike(CraftPiece p)
@@ -337,7 +447,8 @@ public static class CraftLook
         int hottest = 0;
         for (int i = 0; i < p.segments.Count; i++)
         {
-            double t = p.segments[i].Temperature;
+            // by the same measure as the hottest heat: the hotter of a stretch's zones (in the fire the thin edge runs ahead)
+            double t = Math.Max(p.segments[i].edge.temp, p.segments[i].body.temp);
             if (t >= hot - 1e-9) hottest = i;
             cold = Math.Min(cold, t);
         }
@@ -395,7 +506,11 @@ public static class CraftLook
         _ => "",
     };
 
-    private static void Measured(CraftRules rules, CraftPiece p, CraftInstruments tools, List<string> lines)
+    /// <summary>
+    /// What the instruments read (calipers, the balance, the moisture meter); an item being assembled is weighed with the
+    /// parts fitted to it (<paramref name="ws"/>: the workshop it is in - without it, it is not weighed).
+    /// </summary>
+    private static void Measured(CraftRules rules, CraftPiece p, CraftInstruments tools, List<string> lines, CraftWorkshop ws = null)
     {
         var sb = new StringBuilder();
         if ((tools & CraftInstruments.Calipers) != 0 && p.segments.Count > 0)
@@ -404,16 +519,53 @@ public static class CraftLook
             foreach (MetalSegment s in p.segments) { w += s.width * s.length; t += s.thickness * s.length; l += s.length; }
             sb.Append($"Calipers: {CraftText.Length(p.Length)} long, {CraftText.Length(w / l)} wide, {CraftText.Length(t / l)} thick. ");
         }
-        if ((tools & CraftInstruments.Scale) != 0)
+        if ((tools & CraftInstruments.Scale) != 0 && p.kind == CraftPieceKind.Assembly)
+        {
+            if (ws != null)
+                sb.Append($"Balance: {CraftText.Mass(AssembledMass(rules, ws, p))} with its parts. ");
+        }
+        else if ((tools & CraftInstruments.Scale) != 0)
             sb.Append(p.kind == CraftPieceKind.Gem ? $"Balance: {p.gem.carats:0.00} ct. " : $"Balance: {CraftText.Mass(p.Mass(rules))}. ");
         if ((tools & CraftInstruments.MoistureMeter) != 0 && p.kind == CraftPieceKind.Wood)
             sb.Append($"Moisture meter: {p.wood.moisture * 100:0} %. ");
         if ((tools & CraftInstruments.Calipers) != 0 && p.kind == CraftPieceKind.Gem && p.gem.girdle > 0)
             sb.Append($"Girdle: {p.gem.girdle:0.00} mm. ");
+        if ((tools & CraftInstruments.Calipers) != 0 && p.kind == CraftPieceKind.Hide)
+        {
+            // a hide or a cut part: how thick it is, and how much that varies over it
+            double lo = double.MaxValue, hi = 0, sum = 0;
+            int n = 0;
+            foreach (HideCell c in p.hide.cells)
+                if (c.present)
+                {
+                    double t = CraftLeather.CellThickness(c);
+                    lo = Math.Min(lo, t);
+                    hi = Math.Max(hi, t);
+                    sum += t;
+                    n++;
+                }
+            if (n > 0)
+                sb.Append(hi - lo < 0.15 ? $"Calipers: {sum / n:0.0} mm thick. " : $"Calipers: {sum / n:0.0} mm thick ({lo:0.0}-{hi:0.0} mm). ");
+        }
         if (sb.Length > 0)
             lines.Add(sb.ToString().Trim());
         else if (p.kind == CraftPieceKind.Metal || p.kind == CraftPieceKind.Wood)
             lines.Add($"About {Rough(p.Length)} long; it weighs about {RoughMass(p.Mass(rules))}.");
+    }
+
+    /// <summary>
+    /// What an item being assembled weighs: its parts (and theirs, an assembly fitted to it) and the supplies that went into
+    /// it (<see cref="CraftAssembly.SuppliesMass"/>), as the balance reads them - what the finished item will weigh.
+    /// </summary>
+    public static double AssembledMass(CraftRules rules, CraftWorkshop ws, CraftPiece asm, int depth = 0)
+    {
+        double m = 0;
+        if (ws == null || asm == null || depth > 8)
+            return m;
+        foreach (CraftPiece c in ws.Components(asm))
+            m += c.kind == CraftPieceKind.Assembly ? AssembledMass(rules, ws, c, depth + 1) : c.Mass(rules);
+        // and what went into it besides its parts: the batting quilted in, the thread in its seams
+        return m + CraftAssembly.SuppliesMass(rules, asm);
     }
 
     private static string Rough(double mm) => mm >= 1000 ? $"{Math.Round(mm / 100) / 10:0.#} m" : mm >= 100 ? $"{Math.Round(mm / 50) * 5:0} cm" : $"{Math.Round(mm / 10):0} cm";
@@ -483,12 +635,38 @@ public static class CraftLook
         }
         if (dirt > mass * 0.05) lines.Add("It is caked in dirt and clay.");
         else if (p.ore.moisture > 0.3) lines.Add("It is wet.");
-        if (p.ore.roasted > 0.3) lines.Add("It has been roasted: it is crumbly and has lost its smell.");
+        if (p.ore.roasted >= CraftSmelting.RoastedEnough) lines.Add("It has been roasted: it is crumbly and has lost its smell.");
+        else if (p.ore.roasted > 0.3) lines.Add("It is partly roasted: crumbly at the surface, but it still smells of sulfur - unroasted, it gives a matte.");
+        if (p.ore.temperature > 120) lines.Add(p.ore.temperature > 500 ? "It glows: it is far too hot to touch." : "Heat shimmers off it: it is too hot to touch.");
         if (o.magnetic && (tools & CraftInstruments.Magnet) != 0) lines.Add("The magnet pulls at it.");
         if ((tools & CraftInstruments.StreakPlate) != 0) lines.Add($"On the streak plate it leaves a {o.streak} streak.");
-        if (o.density > 6) lines.Add("It is very heavy in the hand.");
-        else if (o.density < 4.2) lines.Add("It is light for a stone.");
+        // its heft is the lump's own (its mineral, rock and dirt together), against ordinary rock's 2.7: gold-bearing quartz
+        // weighs like quartz, a rich galena or magnetite lump a quarter more, a fallen star twice as much
+        double bulk = BulkDensity(o, p.ore);
+        if (bulk > 5) lines.Add("It is very heavy in the hand.");
+        else if (bulk > 3.4) lines.Add("It is heavy for a stone.");
+        else if (bulk < 2.5) lines.Add("It is light for a stone.");
     }
+
+    /// <summary>
+    /// How dense a lump is (g/cm³), as it weighs in the hand: its fragments' mineral at the ore's density, its rock at its
+    /// gangue's (quartz 2.65, clay 2.6, limestone 2.7) and its dirt at 1.8. Ordinary rock is about 2.7.
+    /// </summary>
+    public static double BulkDensity(CraftOreDefinition o, OreState ore)
+    {
+        double rock = o == null ? 2.65 : o.gangue == CraftGangue.Clay ? 2.6 : o.gangue == CraftGangue.Limestone ? 2.7 : 2.65;
+        double mineral = Math.Max(0.5, o?.density ?? 2.65), mass = 0, volume = 0;
+        if (ore?.fragments != null)
+            foreach (OreFragment f in ore.fragments)
+            {
+                mass += f.mass;
+                volume += f.mass * (f.mineral / mineral + f.gangue / rock + f.dirt / 1.8);
+            }
+        return volume > 1e-9 ? mass / volume : mineral;
+    }
+
+    /// <summary>A cloth whose weave is less sound than this on average (its cells' grain: <see cref="CraftFibre.Weave"/>) is called loose and weak.</summary>
+    public const double LooseWeave = 0.65;
 
     private static void Hide(CraftRules rules, CraftPiece p, CraftJournalData d, List<string> lines)
     {
@@ -497,10 +675,16 @@ public static class CraftLook
         if (def != null && def.textile)
         {
             if (!string.IsNullOrEmpty(def.description)) lines.Add(CraftText.Capital(def.description));
+            // the weave as it was woven (CraftFibre.Weave: the yarn's soundness and each row's beat), and its flaws
+            double sound = 0, flawed = 0, cells = 0;
+            foreach (HideCell c in h.cells)
+                if (c.present) { sound += c.grain; flawed += c.damage; cells++; }
+            if (cells > 0 && sound / cells < LooseWeave) lines.Add("The weave is loose and weak: a poor yarn, or rows beaten unevenly.");
+            if (cells > 0 && flawed / cells > 0.05) lines.Add("Slubs and loose picks flaw it here and there.");
             if (!string.IsNullOrEmpty(h.pattern))
             {
                 lines.Add(CraftTextiles.OnGrain(h) ? "It was cut along the grain: it hangs straight." : "It was cut across the grain: it will stretch and pucker.");
-                lines.Add(h.cutQuality > 0.85 ? "Its edges are cut clean." : h.cutQuality > 0.6 ? "Its edges are a little ragged." : "Its edges are ragged and fraying.");
+                lines.Add(h.cutQuality > CraftLeather.CleanCut ? "Its edges are cut clean." : h.cutQuality > CraftLeather.RaggedCut ? "Its edges are a little ragged." : "Its edges are ragged and fraying.");
             }
             return;
         }
@@ -519,9 +703,10 @@ public static class CraftLook
             else if (flesh > 0.08) lines.Add("Patches of flesh remain here and there.");
             else lines.Add("The flesh side is scraped clean.");
         }
-        double fullHair = Math.Max(0.05, rules.Hide(h.hide)?.hair ?? 1);
-        if (hair > fullHair * 0.6) lines.Add(hairLoose > 0.7 ? "The hair comes away at a touch." : "It still has its hair.");
-        else if (hair > fullHair * 0.1) lines.Add(hairLoose > 0.7 ? "Loose tufts of hair remain." : "Tufts of hair remain.");
+        // the hair by the work's own measure (CraftLeather.HairLeft: what the path's Unhair step and the evaluator read)
+        double hairLeft = CraftLeather.HairLeft(def, hair);
+        if (hairLeft > 0.5) lines.Add(hairLoose > 0.7 ? "The hair comes away at a touch." : "It still has its hair.");
+        else if (hairLeft > 0) lines.Add(hairLoose > 0.7 ? "Loose tufts of hair remain." : "Tufts of hair remain.");
         if (r.Tannage > 0.6) lines.Add(r.CoreTannage < 0.4 ? "It is tanned on the outside." : "It is tanned through.");
         else if (r.Tannage > 0.2) lines.Add("It has taken some colour from the tanning.");
         if (r.Moisture > 0.6 && r.Tannage < 0.05 && h.hoursRaw < 12) lines.Add("It is fresh and wet.");
@@ -534,10 +719,27 @@ public static class CraftLook
         if (r.WaterResistance > 0.6) lines.Add("Water beads on it.");
         double dye = 0;
         foreach (HideCell c in h.cells) if (c.present) dye += c.dye;
-        if (dye / n > 0.1) lines.Add(r.DyeEvenness < 0.7 ? "The dye is patchy." : "It is evenly dyed.");
+        if (dye / n > 0.1) lines.Add(r.DyeEvenness < CraftEvaluator.PatchyDye ? "The dye is patchy." : "It is evenly dyed.");
         if (r.Shrink > 0.1) lines.Add("It has shrunk and puckered.");
+        else if (r.Puckered > 0.02) lines.Add("It dried puckered: it was not stretched as it dried.");
+        if (r.Distortion > 0.05) lines.Add("It dried out of square: the frame pulled it unevenly.");
         if (r.Damage > 0.15) lines.Add("It is scarred and holed in places.");
-        if (h.tensionN + h.tensionE + h.tensionS + h.tensionW > 0.1 && p.location == CraftLocation.Frame) lines.Add("It is laced taut in the frame.");
+        if (r.Slicked > 0.5) lines.Add("Its grain is slicked to a gloss.");
+        if (!string.IsNullOrEmpty(h.pattern))
+        {
+            // a cut part: how cleanly it was cut, and whether its edges were burnished
+            lines.Add(h.cutQuality > CraftLeather.CleanCut ? "Its edges are cut clean." : h.cutQuality > CraftLeather.RaggedCut ? "Its edges are cut a little ragged." : "Its edges are cut ragged.");
+            lines.Add(h.edgeFinish > 0.6 ? "Its edges are burnished smooth." : h.edgeFinish > 0.2 ? "Its edges are partly burnished." : "Its edges are raw and unburnished.");
+        }
+        if (p.location == CraftLocation.Frame)
+        {
+            // by each side's pull on what its edge can take, as the frame's gauges show it
+            double[] pull = CraftLeather.Pulls(rules, h);
+            double most = Math.Max(Math.Max(pull[0], pull[1]), Math.Max(pull[2], pull[3]));
+            lines.Add(most > CraftLeather.OverdrawnFrom ? "It is laced overtight in the frame: an edge will thin as it dries."
+                : CraftLeather.Unevenness(pull) > CraftLeather.UnevenFrom ? "It is laced unevenly in the frame."
+                : CraftLeather.Flatness(pull) >= 1 ? "It is laced taut in the frame." : "It is laced slack in the frame.");
+        }
     }
 
     private static void Wood(CraftRules rules, CraftPiece p, List<string> lines)
@@ -547,7 +749,7 @@ public static class CraftLook
         WoodState ws = p.wood;
         lines.Add(ws.runout < 0.12 ? "The grain runs straight along it, end to end." : ws.runout < 0.35 ? "The grain runs a little off its length." : "The grain runs out of its sides: it will break along it.");
         if (ws.moisture > 0.25) lines.Add("It is green and heavy with water.");
-        else if (ws.moisture > 0.17) lines.Add("It is still damp.");
+        else if (ws.moisture > CraftWoodwork.DryEnough) lines.Add("It is still damp: season it before it goes into a fit.");
         double t = CraftWoodwork.MeanTemperature(p);
         if (p.location == CraftLocation.Steam) lines.Add(ws.steamed >= 1 ? "It has steamed through: it should bend now." : ws.steamed > 0.4 ? "It is softening in the steam." : "It is heating in the steam.");
         else if (CraftWoodwork.Plasticity(p) > 0.3) lines.Add(t > 80 ? "It is hot and limp from the steam: bend it now." : "It is cooling and stiffening.");
@@ -564,9 +766,10 @@ public static class CraftLook
         else if (ws.bark > 0.05) lines.Add("Patches of bark are left on it.");
         if (ws.gouged > 0.1) lines.Add("The drawknife has gouged into it.");
         if (ws.rot > 0.1) lines.Add("Under the bark the sapwood is soft with rot and beetle.");
-        if (ws.lastGrit >= 0 && ws.finish <= 0.1) lines.Add(ws.lastGrit > 0.8 ? "It is sanded smooth as silk." : ws.lastGrit > 0.45 ? "It is sanded smooth." : "It is sanded with a coarse paper.");
+        if (ws.lastGrit >= 0 && ws.finish <= 0.1) lines.Add(ws.lastGrit >= CraftWoodwork.FineGrit ? "It is sanded smooth as silk." : ws.lastGrit > 0.45 ? "It is sanded smooth." : "It is sanded with a coarse paper.");
         if (ws.resin > 0.3) lines.Add("A hard amber film of resin seals it.");
         if (ws.wax > 0.3) lines.Add("It has a soft wax sheen.");
+        if (ws.oil > 0.2 && ws.finish <= 0.1) lines.Add(ws.finishWet > 0.3 ? "The oil in its grain is still tacky." : "Oil has soaked into its grain and hardened.");
         double hole = 0;
         foreach (MetalSegment s in p.segments) hole = Math.Max(hole, s.hole);
         if (hole > 0) lines.Add("A slot has been cut into it.");
@@ -706,44 +909,128 @@ public static class CraftLook
     }
 
     // ------------------------------------------------------------------ the workshop
+    /// <summary>
+    /// A fire (the forge's or the furnace's) in words: how hot it glows (the colour words of
+    /// <see cref="CraftMetallurgy.HeatName"/>, so firewood's orange is not coke's white), what its flame does
+    /// (<see cref="Flame"/>), its fuel and its air.
+    /// </summary>
     public static string Fire(CraftFireState f, bool thermometer, bool furnace)
     {
         if (f.fuel <= 0 && f.level < 0.03)
             return f.lit ? "Only cold ashes are left." : furnace ? "The furnace is cold." : "The forge is cold.";
-        string flames = f.level > 0.85 ? "roars white-hot" : f.level > 0.6 ? "burns bright yellow" : f.level > 0.35 ? "glows orange" : f.level > 0.1 ? "glows a dull red" : "smoulders";
+        string heat = CraftMetallurgy.HeatName(f.temperature, false);
+        string glow = heat.Length == 0 || heat == "black heat" ? (f.level > 0.1 ? "burns without a glow yet" : "smoulders") : $"glows {heat}";
         string fuel = f.fuel > 6 ? "plenty of fuel" : f.fuel > 2 ? "the fuel is burning down" : "it is nearly out of fuel";
         string air = f.damper < 0.2 ? " The air vent is choked." : f.air > 0.4 ? " The bellows make it roar." : "";
-        return $"The {(furnace ? "furnace" : "fire")} {flames}{(thermometer ? $" ({CraftText.Celsius(f.temperature)})" : "")}; {fuel}.{air}";
+        return $"The {(furnace ? "furnace" : "fire")} {glow}{(thermometer ? $" ({CraftText.Celsius(f.temperature)})" : "")}, with {Flame(f)}; {fuel}.{air}";
     }
 
-    public static string Crucible(CraftRules rules, CraftCrucibleState c, CraftJournalData d, bool thermometer)
+    /// <summary>
+    /// The flame by how oxidising the fire is (<see cref="CraftFireState.Oxidizing"/>), at the furnace's own thresholds:
+    /// smoky and reducing (ore gives up its metal, steel does not scale), clear (sulfides roast), an oxidising blast (lead
+    /// goes into a cupel, a matte's sulfur burns - and little metal comes).
+    /// </summary>
+    public static string Flame(CraftFireState f)
     {
-        if (c.Mass <= 0.5)
-            return "The crucible is empty.";
+        double ox = f.Oxidizing;
+        return ox <= CraftSmelting.RoastAir ? "a smoky, reducing flame" : ox <= CraftSmelting.CupelAir ? "a clear flame" : "an oxidising blast";
+    }
+
+    /// <summary>
+    /// The quench's warning for a blade of hardening steel about to go into a harsh quenchant (water, brine:
+    /// <see cref="CraftThermal.HarshFor"/>): it may crack - fill the tank with a gentler one the station keeps
+    /// (<paramref name="offered"/>: oil), or clay the spine and leave the edge thick. "" when none is due.
+    /// </summary>
+    public static string HarshQuench(CraftRules rules, CraftPiece p, CraftQuenchant tank, IEnumerable<string> offered)
+    {
+        if (!CraftThermal.HarshFor(rules, p, tank))
+            return "";
+        string gentle = null;
+        if (offered != null)
+            foreach (string id in offered)
+            {
+                CraftQuenchant q = rules.Quenchant(id);
+                if (q != null && CraftThermal.CrackHarshness(q) < CraftThermal.HarshQuench) { gentle = q.Name.ToLowerInvariant(); break; }
+            }
+        bool clayed = false;
+        foreach (MetalSegment s in p.segments) clayed |= s.clay > 0.5;
+        string spine = clayed ? "leave its edge thick" : "clay its spine and leave its edge thick";
+        return $"{CraftText.Capital((tank?.Name ?? "water").ToLowerInvariant())} is a harsh quench for this steel: a blade may crack in it - "
+               + (gentle != null ? $"fill the tank with {gentle}, which hardens it whole, or {spine}." : $"{spine}.");
+    }
+
+    /// <summary>
+    /// The crucible in words: the melt's state (solid, slushy, sluggish, glaring and taking up gas, or bright and fluid),
+    /// what boils off, the gas it holds, dross, slag, its cover and streaks. With the workshop (<paramref name="ws"/>), a
+    /// solid charge still lying in the melt is said: it chills the melt, which takes up no gas until it has all run.
+    /// </summary>
+    public static string Crucible(CraftRules rules, CraftCrucibleState c, CraftJournalData d, bool thermometer, CraftWorkshop ws = null)
+    {
+        if (c.Mass <= CraftSmelting.EmptyCrucible)
+            return c.slag + c.dross > 5 ? $"Only a crust of {(c.slag >= c.dross ? "slag" : "dross")} is left in the crucible: scrape it out with the skimmer before the next melt." : "The crucible is empty.";
         CraftAlloyProfile p = CraftSmelting.MeltProfile(rules, c);
         double superheat = c.temperature - p.Liquidus;
         var sb = new StringBuilder();
-        if (c.temperature < p.Solidus) sb.Append("The metal in the crucible is still solid.");
+        if (c.temperature < p.Solidus) sb.Append("The metal in the crucible is solid.");
         else if (superheat < 0) sb.Append("It is slushy: melting, not yet liquid.");
-        else if (superheat < 25) sb.Append("The melt is sluggish.");
-        else if (superheat < 150) sb.Append("The melt is bright and fluid.");
-        else sb.Append("The melt is glaring and runs like water.");
+        else if (CraftSmelting.Fill(rules, p, superheat) < CraftSmelting.FullFill) sb.Append("The melt is sluggish: poured now, it would freeze before it filled a mould.");
+        else if (CraftSmelting.GasChange(superheat, c.cover) > 0)
+            sb.Append(CraftSmelting.ChargeUnmelted(ws) ? "The melt is glaring, but the solid metal still in it chills it: it takes up no gas until that has run too."
+                : "The melt is glaring and runs like water: held this hot, it takes up gas.");
+        else sb.Append("The melt is bright and fluid.");
         if (thermometer) sb.Append($" ({CraftText.Celsius(c.temperature)})");
+        if (superheat >= 0)
+            foreach (CraftAmount a in c.melt)
+            {
+                CraftElement e = rules.Element(a.element);
+                if (e != null && a.grams > 0.5 && c.temperature > e.boilingPoint)
+                {
+                    sb.Append($" White fumes and green-white flames: the {e.Name.ToLowerInvariant()} is burning off{(c.cover > 0.3 ? "" : " - a cover keeps most of it")}.");
+                    break;
+                }
+            }
+        if (c.gas > 0.3) sb.Append(" It spits and bubbles: it has taken up gas (held just above melting, under a cover, it settles).");
+        else if (c.gas > CraftSmelting.PoreGas && superheat >= 0) sb.Append(" Fine bubbles rise through it: it holds gas, and would cast with pores (held just above melting, under a cover, it settles).");
         if (c.dross > 5) sb.Append(" A skin of dross floats on it.");
+        if (c.slag > 5) sb.Append(" The ore's rock floats on it as slag: skim it off.");
         if (c.cover > 0.3) sb.Append(" A glassy cover of flux lies over it.");
-        if (c.mixed < 0.7) sb.Append(" Streaks of different colour swirl in it.");
+        if (c.mixed < 1 - CraftSmelting.Streaky) sb.Append(" Streaks of different colour swirl in it: stir it even, or it casts streaky and weak.");
         return sb.ToString();
     }
 
-    public static string Furnace(CraftRules rules, CraftFurnaceState f, bool thermometer)
+    /// <summary>
+    /// The furnace in words: its fire and flame, what the flame does to the charge, the slag and the fine ore choking the
+    /// draft (<paramref name="fines"/>: the share of the charge that is fines, <see cref="CraftSmelting.FinesInCharge"/>),
+    /// the metal at the bottom, the matte, the bloom, a cupel.
+    /// </summary>
+    public static string Furnace(CraftRules rules, CraftFurnaceState f, bool thermometer, double fines = 0)
     {
         var sb = new StringBuilder(Fire(f.fire, thermometer, true));
+        if (f.fire.fuel > 0 || f.fire.level >= 0.03)
+        {
+            double ox = f.fire.Oxidizing;
+            sb.Append(ox <= CraftSmelting.RoastAir ? " Ore gives up its metal in it." : ox <= CraftSmelting.CupelAir ? " Sulfide ore roasts in it; metal comes only slowly."
+                : " It roasts sulfides and drives lead into a cupel, but gives little metal.");
+        }
         if (f.slag > rules.Settings.slagCapacity * 0.6) sb.Append(" Slag is building up: the draft labours.");
         else if (f.slag > 200) sb.Append(" Slag drips down through the charge.");
-        if (f.PoolMass > 20) sb.Append(" Liquid metal glows at the bottom.");
-        if (f.cupel > 0 && f.PoolMass > 0) sb.Append(" The cupel darkens as it soaks up the oxide.");
+        if (fines > FinesChoke) sb.Append(" Fine ore packs the charge: the draft labours through it (sieve the fines off, and charge lumps).");
+        double metal = f.PoolMass;
+        if (metal >= CraftSmelting.PourMinimum)
+            sb.Append(CraftSmelting.PoolLiquid(rules, f) ? " Liquid metal glows at the bottom." : " Metal has frozen at the bottom: the furnace is too cold to run it.");
+        else if (metal >= CraftSmelting.BeadMinimum)
+            sb.Append(" A bead of metal lies at the bottom: too little to pour - lift it out with the tongs.");
+        if (f.matte > 1) sb.Append(" A dull matte lies under the slag: an oxidising blast roasts its sulfur away.");
+        if (f.BloomMass >= CraftSmelting.BloomMinimum) sb.Append(" A spongy bloom has grown at the bottom.");
+        else if (f.BloomMass >= 1) sb.Append(" A little iron has gathered at the bottom.");
+        if (f.cupel > 0)
+            sb.Append(metal > 0 && CraftSmelting.Grams(f.pool, "lead") > 0.01 && f.fire.Oxidizing > CraftSmelting.CupelAir && f.fire.temperature > 900
+                ? " The cupel darkens as it soaks up the oxide." : " A bone-ash cupel lies in the hearth.");
         return sb.ToString();
     }
+
+    /// <summary>A charge this much fines (by mass) is said to choke the draft.</summary>
+    public const double FinesChoke = 0.15;
 
     public static string Quench(CraftRules rules, CraftQuenchState q, bool thermometer)
     {
@@ -757,11 +1044,17 @@ public static class CraftLook
         if (v.volume <= 0.01)
             return "Empty.";
         CraftTanningAgent a = rules.Agent(v.agent);
-        string strength = v.strength > 0.6 ? "strong" : v.strength > 0.3 ? "medium" : v.strength > 0.05 ? "weak" : "spent";
-        string temp = v.temperature > 85 ? "simmering" : v.temperature > 50 ? "hot" : v.temperature > 30 ? "warm" : "cool";
+        string strength = VatStrength(v.strength);
+        string temp = VatHeat(v.temperature);
         string kind = a?.observation ?? v.agent;
         return a != null && a.kind == CraftAgentKind.Water
             ? $"Water, {temp}{(thermometer ? $" ({CraftText.Celsius(v.temperature)})" : "")}."
             : $"{CraftText.Capital(kind)}: {strength}{(reveal ? $" ({v.strength * 100:0}%)" : "")}, {temp}{(thermometer ? $" ({CraftText.Celsius(v.temperature)})" : "")}.";
     }
+
+    /// <summary>How warm a vat's liquor feels to the hand, without a thermometer (the same words wherever a vat is shown).</summary>
+    public static string VatHeat(double celsius) => celsius > 85 ? "simmering" : celsius > 50 ? "hot" : celsius > 30 ? "warm" : "cool";
+
+    /// <summary>How strong a vat's liquor is to the tanner's taste and eye (0-1 strength: strong, medium, weak, spent), wherever a vat is worded.</summary>
+    public static string VatStrength(double strength) => strength > 0.6 ? "strong" : strength > 0.3 ? "medium" : strength > 0.05 ? "weak" : "spent";
 }

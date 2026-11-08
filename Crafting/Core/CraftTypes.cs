@@ -152,6 +152,11 @@ public enum CraftOpKind
     CleanGem,
     GrindGem,
     WeaveCloth,
+    /// <summary>The quench tank emptied and filled again with a quenchant (<c>id</c>): fresh and at the room's heat.</summary>
+    FillTank,
+    JoinYarn,
+    /// <summary>A board ripped to a taper along a marked line (the woodshop's saw).</summary>
+    RipCut,
 }
 
 /// <summary>A defect a piece can carry. Visible or hidden, recoverable or not (<see cref="CraftDefect"/>). Serialized as numbers: add at the END.</summary>
@@ -241,6 +246,8 @@ public enum CraftStrikeTool
     Dishing,
     /// <summary>On the face of the anvil, struck to straighten a bend or a warp.</summary>
     Straighten,
+    /// <summary>A hot chisel held on the bar and struck: it cuts down through it where it stands (the hardy cuts from below).</summary>
+    Chisel,
 }
 
 /// <summary>Which part of a bar's cross-section a grinder, file, stone or whetstone works. Serialized as numbers: add at the END.</summary>
@@ -322,6 +329,20 @@ public enum CraftSupplyKind
     Solder,
     /// <summary>A scouring agent (soap, washing soda) that lifts grease from fibre.</summary>
     Detergent,
+}
+
+/// <summary>Where a flux does its work (a flux can do several). Serialized as a number: add new uses as new bits.</summary>
+[Flags]
+public enum CraftFluxUse
+{
+    None = 0,
+    /// <summary>In the bloomery's charge: it makes the slag run and keeps the iron out of it (limestone).</summary>
+    Furnace = 1,
+    /// <summary>Over a melt in the crucible: it keeps the air off and gathers the dross (borax).</summary>
+    Cover = 2,
+    /// <summary>On hot metal to be welded: it melts the scale off so the faces can join (borax, sand).</summary>
+    Weld = 4,
+    Any = Furnace | Cover | Weld,
 }
 
 /// <summary>What a joint of a design is. Serialized as numbers: add at the END.</summary>

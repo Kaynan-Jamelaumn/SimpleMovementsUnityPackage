@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 /// <summary>A metal (by its name) the player has worked.</summary>
@@ -159,7 +160,7 @@ public static class CraftJournal
     public static readonly Dictionary<string, string> Insights = new Dictionary<string, string>
     {
         ["burning"] = "Steel heated to a sparkling white burns: its grain falls apart and nothing brings it back. Forge below a yellow heat.",
-        ["quench_crack"] = "A hard quench cracks high-carbon steel: the faster the medium, the higher the carbon, the thinner the edge and the more abrupt the shape, the likelier. Oil is gentler than water, water than brine.",
+        ["quench_crack"] = "A hard quench cracks high-carbon steel: the faster the medium, the higher the carbon, the thinner the edge and the more abrupt the shape, the likelier. Oil is gentler than water, water than brine: fill the tank with oil to harden a blade; in water, leave its edge thick and clay its spine.",
         ["untempered"] = "Steel straight from the quench is glass-hard and brittle. Heat it gently again (temper it) and it gives up a little hardness for a lot of toughness.",
         ["temper_colours"] = "On bright steel, heat paints colours: pale straw, straw, bronze, purple, blue. They tell the tempering heat.",
         ["magnet"] = "Steel stops sticking to a magnet at a cherry-red heat: that is the heat to harden it from.",
@@ -169,6 +170,7 @@ public static class CraftJournal
         ["scale_pits"] = "Scale left on the metal is hammered into it as pits. Brush it off, or keep the fire reducing.",
         ["grind_heat"] = "Pressed too hard on the wheel, a thin edge overheats and loses its temper: it turns blue and goes soft. Cool it often, press lightly.",
         ["file_skate"] = "A file skates on hardened steel: file and shape before hardening.",
+        ["stone_angle"] = "On the whetstone, hold the blade at its bevel's own angle or a little steeper: held lower, the stone only rubs the bevel's shoulder and never reaches the edge.",
         ["wrong_flux"] = "Without flux, a forge weld does not take; without lime, a bloomery's slag eats the iron.",
         ["sulfur"] = "Iron with sulfur in it (from a coal fire, or an unroasted ore) tears at forging heat. Charcoal is cleaner; roast sulfide ores first.",
         ["phosphorus"] = "Iron from bog ore is hard but brittle in the cold: it is full of phosphorus.",
@@ -215,14 +217,18 @@ public static class CraftJournal
         return $"You know {g.Name} now: refractive index about {g.refractiveIndex:0.00}, specific gravity {g.specificGravity:0.0#}, hardness {g.hardness:0.#}{(g.cleavage >= CraftCleavage.Good ? ", and it cleaves" : "")}.";
     }
 
-    /// <summary>Learns an insight (returns the line to tell the player, or null if already known).</summary>
-    public static string Learn(CraftJournalData d, string id, CraftMasterySettings s = null)
+    /// <summary>
+    /// Learns an insight (returns the line to tell the player, or null if already known). It is practice in the craft it
+    /// was learnt in: <paramref name="craft"/> (the item's, for a lesson an item teaches), else the insight's own
+    /// (<see cref="CraftMastery.OfInsight"/>).
+    /// </summary>
+    public static string Learn(CraftJournalData d, string id, CraftMasterySettings s = null, CraftDiscipline? craft = null)
     {
         if (d == null || string.IsNullOrEmpty(id) || d.insights.Contains(id) || !Insights.TryGetValue(id, out string text))
             return null;
         d.insights.Add(id);
         // understood, it is practised a little
-        CraftMastery.Note(d.mastery, CraftMastery.OfInsight(id), true).xp += (float)CraftMastery.InsightExperience(s);
+        CraftMastery.Note(d.mastery, craft ?? CraftMastery.OfInsight(id), true).xp += (float)CraftMastery.InsightExperience(s);
         return "Insight: " + text;
     }
 
@@ -422,25 +428,37 @@ public static class CraftJournal
         d.experiments.Add(e);
         if (d.experiments.Count > CraftJournalData.MaxExperiments)
             d.experiments.RemoveRange(0, d.experiments.Count - CraftJournalData.MaxExperiments);
+        // what the finished item shows of how it was made: a badly fitted part (practice in the item's own craft), a steel
+        // left coarse-grained (the inspection names it: CraftEvaluator.CoarseGrain)
         if (r.Assembly < 0.5)
         {
-            string s = Learn(d, "loose_joint");
+            string s = Learn(d, "loose_joint", null, CraftMastery.OfDesign(r.Design));
+            if (s != null) learnt.Add(s);
+        }
+        if (r.CoarseGrained)
+        {
+            string s = Learn(d, "normalise");
             if (s != null) learnt.Add(s);
         }
         return learnt;
     }
 
-    /// <summary>The steps of a piece (and an assembly's parts), in the player's words with what they could know.</summary>
+    /// <summary>
+    /// The steps of a piece (and an assembly's parts), in the player's words with what they could know: a record's heats
+    /// by the glow (or, below it, by the hand) and a vat by its strength and warmth (<see cref="Worded"/>) - the numbers the
+    /// record keeps are for the test station.
+    /// </summary>
     public static List<string> Procedure(CraftWorkshop ws, CraftPiece p, CraftJournalData d)
     {
         var lines = new List<string>();
         if (p == null)
             return lines;
+        CraftRules rules = ws?.Rules;
         void Add(CraftPiece q, string prefix)
         {
             foreach (CraftRecordEntry e in q.record)
             {
-                string text = e.text;
+                string text = Worded(e, d, rules);
                 if (e.kind == CraftOpKind.Strike || e.kind == CraftOpKind.Grind || e.kind == CraftOpKind.File || e.kind == CraftOpKind.Sharpen || e.kind == CraftOpKind.Scrape)
                     text += e.count > 1 ? $" ×{e.count}" : "";
                 if (e.kind == CraftOpKind.Strike && e.max > 0)
@@ -455,17 +473,62 @@ public static class CraftJournal
         return lines;
     }
 
-    /// <summary>What an event teaches (an insight to learn), if anything.</summary>
-    public static string InsightOf(CraftEvent e, CraftPiece p)
+    private static readonly Regex Degrees = new Regex(@"(?:\bat )?(-?\d+) °C");
+    private static readonly Regex Strength = new Regex(@"(\d+)% strength");
+
+    /// <summary>
+    /// A record line in the player's words: each heat in it ("at 1183 °C") by its glow, as the journal knows it
+    /// (<see cref="HeatWords"/>: "at yellow", with the heats once learnt from the thermometer), below a glow by the hand
+    /// ("cold", "hot"); a vat's (put into one, hardened in one) by its strength and warmth as the tannery words them
+    /// (<see cref="CraftLook.VatStrength"/>, <see cref="CraftLook.VatHeat"/>).
+    /// </summary>
+    public static string Worded(CraftRecordEntry e, CraftJournalData d, CraftRules rules)
+    {
+        string text = e?.text ?? "";
+        if (text.IndexOf("°C", StringComparison.Ordinal) < 0 && text.IndexOf("% strength", StringComparison.Ordinal) < 0)
+            return text;
+        bool vat = e.kind == CraftOpKind.SetVatHeat || text.IndexOf("% strength", StringComparison.Ordinal) >= 0;
+        text = Strength.Replace(text, m => CraftLook.VatStrength(int.Parse(m.Groups[1].Value) / 100.0));
+        return Degrees.Replace(text, m =>
+        {
+            double t = int.Parse(m.Groups[1].Value);
+            bool at = m.Value.StartsWith("at ", StringComparison.Ordinal);
+            if (vat)
+                return at ? $"({CraftLook.VatHeat(t)})" : CraftLook.VatHeat(t);
+            string glow = CraftMetallurgy.HeatName(t, false);
+            if (string.IsNullOrEmpty(glow))
+                return t > 60 ? "hot" : "cold";
+            return (at ? "at " : "") + (glow == "black heat" ? "a black heat" : rules != null ? HeatWords(d, rules, glow) : glow);
+        });
+    }
+
+    /// <summary>
+    /// What an event teaches (an insight to learn), if anything: a crack by its cause (its id, <see cref="CraftForging.CrackId"/>),
+    /// a flaw by its kind (a <see cref="CraftEventKind.Defect"/>'s id), steel passing the magnet's heat where there is a
+    /// magnet in <paramref name="kit"/> (the station's instruments), leather dried stiff, and the notes the work tells.
+    /// </summary>
+    public static string InsightOf(CraftEvent e, CraftPiece p, CraftInstruments kit = CraftInstruments.All)
     {
         switch (e.Kind)
         {
             case CraftEventKind.Burning: return "burning";
-            case CraftEventKind.Cracked: return p != null && p.location == CraftLocation.Quench ? "quench_crack" : e.Text.Contains("crumbles") ? (p != null && p.bloom ? "slag" : "cast_iron") : "cold_forging";
+            case CraftEventKind.Cracked: return CrackInsight(e.Id);
+            case CraftEventKind.Defect: return DefectInsight(e.Id);
+            case CraftEventKind.MagnetLost: return (kit & CraftInstruments.Magnet) != 0 ? "magnet" : null;
+            case CraftEventKind.Dried: return e.Id == "stiff" ? "stiff_leather" : null;
             case CraftEventKind.Note:
+                if (e.Id.StartsWith(CraftSmelting.FumesId, StringComparison.Ordinal))
+                    return e.Id == CraftSmelting.FumesId + "zinc" ? "cementation" : null; // zinc boils away before copper melts
                 switch (e.Id)
                 {
+                    case "temper_colours": return "temper_colours";
+                    case "unfluxed": return "wrong_flux";
+                    case "alum": return "alum";
+                    case "blotch": return "blotch";
+                    case "warp": return "warp";
                     case "skate": return "file_skate";
+                    case "temper_drawn": return "grind_heat";
+                    case "shoulder": return "stone_angle";
                     case "blick": return "cupel";
                     case "gouged": return "drawknife";
                     case "skipped_grit": return "grits";
@@ -483,6 +546,37 @@ public static class CraftJournal
                     case "skipped_pick": return "weaving_beat";
                 }
                 return null;
+            default: return null;
+        }
+    }
+
+    /// <summary>What a crack teaches, by its cause (the event's id after <see cref="CraftForging.CrackId"/>); a metal hot- or cold-short by another element than sulfur or phosphorus teaches none of these.</summary>
+    private static string CrackInsight(string id)
+    {
+        switch (id)
+        {
+            case CraftForging.CrackId + "burnt": return "burning";
+            case CraftForging.CrackId + "castiron": return "cast_iron";
+            case CraftForging.CrackId + "bloom": return "slag";
+            case CraftForging.CrackId + "sulfur": return "sulfur";
+            case CraftForging.CrackId + "phosphorus": return "phosphorus";
+            case CraftForging.CrackId + "cold": case CraftForging.CrackId + "overworked": return "cold_forging";
+            case CraftForging.CrackId + "hardening": return "quench_crack";
+            default: return null;
+        }
+    }
+
+    /// <summary>What a flaw teaches the first time it shows on a piece (a <see cref="CraftEventKind.Defect"/> event: its id is the kind).</summary>
+    private static string DefectInsight(string kind)
+    {
+        switch (kind)
+        {
+            case nameof(CraftDefectKind.ScalePit): return "scale_pits";
+            case nameof(CraftDefectKind.Burnt): return "burning";
+            case nameof(CraftDefectKind.CaseHardened): return "case_hardened";
+            case nameof(CraftDefectKind.Rot): return "rot";
+            case nameof(CraftDefectKind.Shrunk): return "shrink";
+            case nameof(CraftDefectKind.Blotch): return "blotch";
             default: return null;
         }
     }

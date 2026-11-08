@@ -1,12 +1,16 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// What a crafting station looks and sounds like in the world, read from its workshop: the forge's coals glowing with
 /// the fire's heat (and roaring with the bellows), flames and smoke, the furnace's glow, sparks off the anvil when hot
-/// metal is struck and off the wheel when steel is ground, steam (or an oil flare) when hot metal goes into the tank,
-/// the ring of a cold blow and the thud of a hot one, the ping of a crack. Built from primitives at the points you set
-/// (Auto Build), or driving the lights, renderers and particle systems you assign.
+/// metal is struck, off the wheel when steel is ground and out of the fire when it burns, steam (or an oil flare) when
+/// hot metal goes into the tank, the ring of a cold blow and the thud of a hot one, the ping of a crack. Built from
+/// primitives at the points you set (Auto Build), or driving the lights, renderers and particle systems you assign.
+/// <para>It also says where each work place worked by hand in 3D (<see cref="CraftHandsOn"/>) stands - the points of the
+/// station's own anvil, wheel, tank, whetstone, carving bench, ore bench and mould - and which of the station's own models
+/// stand there: those are hidden while the hands work at that place (it brings its own), never its effects.</para>
 /// </summary>
 [AddComponentMenu("SimpleMovements/Crafting/Craft Station Visuals")]
 public class CraftStationVisuals : MonoBehaviour
@@ -23,6 +27,18 @@ public class CraftStationVisuals : MonoBehaviour
     [SerializeField] private Transform furnacePoint;
     [SerializeField] private Transform grinderPoint;
     [SerializeField] private Transform vatPoint;
+    [Tooltip("Where the whetstone is worked by hand in 3D (its stone sits on this point). Empty: in front of the station, on the player's side.")]
+    [SerializeField] private Transform whetstonePoint;
+    [Tooltip("Where wood is carved by hand in 3D (the blank lies on this point). Empty: in front of the station, on the player's side.")]
+    [SerializeField] private Transform carvingPoint;
+    [Tooltip("Where ore is brushed by hand in 3D (the stone lies on this point). Empty: in front of the station, on the player's side.")]
+    [SerializeField] private Transform oreBenchPoint;
+    [Tooltip("Where moulds are poured by hand in 3D (the mould's sand is level with this point). Empty: in front of the station, on the player's side.")]
+    [SerializeField] private Transform mouldPoint;
+
+    [Header("Worked by hand")]
+    [Tooltip("The station's own model of each work place worked by hand in 3D (its anvil, its wheel, its tank...): its mesh renderers are hidden while the hands work there, where the 3D work place brings its own. Particle systems and these visuals' own effects are never hidden.")]
+    [SerializeField] private WorkPlaceModel[] workPlaceModels = new WorkPlaceModel[0];
 
     [Header("Glow")]
     [Tooltip("The forge's coal bed (its material's emission follows the fire). Auto Build makes one.")]
@@ -39,6 +55,8 @@ public class CraftStationVisuals : MonoBehaviour
     [SerializeField] private ParticleSystem grinderSparks;
     [SerializeField] private ParticleSystem quenchSteam;
     [SerializeField] private ParticleSystem furnaceSmoke;
+    [Tooltip("The sparks metal throws as it burns in the fire or the furnace (moved to where it burns). Auto Build makes one.")]
+    [SerializeField] private ParticleSystem burnSparks;
 
     [Header("Sounds")]
     [SerializeField] private AudioSource oneShotSource;
@@ -52,8 +70,24 @@ public class CraftStationVisuals : MonoBehaviour
     [SerializeField] private AudioClip bellowsPuff;
     [SerializeField] private AudioClip pour;
 
+    /// <summary>A work place worked by hand and the station's own model of it (hidden while the hands work there).</summary>
+    [Serializable]
+    public struct WorkPlaceModel
+    {
+        public CraftHandsOnMode place;
+        public Transform model;
+
+        public WorkPlaceModel(CraftHandsOnMode place, Transform model)
+        {
+            this.place = place;
+            this.model = model;
+        }
+    }
+
     private CraftStation subscribed;
     private bool built;
+    /// <summary>What Auto Build made (the effects): never hidden with a work place's model.</summary>
+    private Transform builtRoot;
     private float steamBurst;
     private static readonly Color Ember = new Color(1f, 0.42f, 0.12f);
 
@@ -88,6 +122,7 @@ public class CraftStationVisuals : MonoBehaviour
         if (station == null)
             return;
         Transform root = AlchemyVesselParts.Group("Craft Visuals", transform);
+        builtRoot = root;
         if (station.Has(CraftTools.Forge))
         {
             Transform f = AlchemyVesselParts.Group("Forge", root);
@@ -128,6 +163,13 @@ public class CraftStationVisuals : MonoBehaviour
             fu.position = PointOr(furnacePoint, 4);
             if (furnaceLight == null) furnaceLight = NewLight("Furnace Light", fu, 0.4f, 7f);
             if (furnaceSmoke == null) furnaceSmoke = AlchemyVesselParts.Particles("Furnace Smoke", fu, new Color(0.25f, 0.23f, 0.2f, 0.5f), 0.25f, 4f, 0.7f, 0.5f, -0.02f);
+        }
+        if ((station.Has(CraftTools.Forge) || station.Has(CraftTools.Furnace)) && burnSparks == null)
+        {
+            // Bright, crackling sparks out of the coals where the metal burns (placed there when it does).
+            Transform b = AlchemyVesselParts.Group("Burning", root);
+            b.position = station.Has(CraftTools.Forge) ? PointOr(forgePoint, 0) : PointOr(furnacePoint, 4);
+            burnSparks = AlchemyVesselParts.Particles("Burning Sparks", b, new Color(1f, 0.92f, 0.65f, 1f), 0.08f, 0.7f, 1.8f, 0.014f, 0.45f, 200);
         }
         if (oneShotSource == null)
         {
@@ -217,12 +259,25 @@ public class CraftStationVisuals : MonoBehaviour
                 Play(pour);
                 break;
             case CraftEventKind.Burning:
-                Burst(anvilSparks, 30);
+            {
+                // It burns where it is heated: in the forge's coals, or in the furnace.
+                CraftPiece p = station.Workshop?.Piece(e.Piece);
+                bool furnace = p != null ? p.location == CraftLocation.Furnace : !station.Has(CraftTools.Forge);
+                if (burnSparks == null)
+                    break;
+                burnSparks.transform.position = (furnace ? PointOr(furnacePoint, 4) : PointOr(forgePoint, 0)) + Vector3.up * 0.04f;
+                Burst(burnSparks, 30);
                 break;
+            }
         }
     }
 
-    /// <summary>Where the work place of <paramref name="tool"/> is (the hands-on views stand there).</summary>
+    /// <summary>
+    /// Where the work of <paramref name="tool"/> is: its point, or - with none set - the station's row in front of it
+    /// where Auto Build puts the effects (the forge, the anvil, the tank, the wheel, the furnace). The whetstone, the
+    /// assembly (carving) bench, the ore bench and the crucible's mould have only the points they are given
+    /// (<see cref="HandsOnPoint"/>); without one, this is the station's own position.
+    /// </summary>
     public Vector3 PointFor(CraftTools tool)
     {
         switch (tool)
@@ -231,24 +286,128 @@ public class CraftStationVisuals : MonoBehaviour
             case CraftTools.Anvil: return PointOr(anvilPoint, 1);
             case CraftTools.QuenchTank: return PointOr(quenchPoint, 2);
             case CraftTools.Grinder: return PointOr(grinderPoint, 3);
-            case CraftTools.Whetstone: return PointOr(grinderPoint, 3) + transform.right * 0.6f;
-            case CraftTools.OreBench: return PointOr(anvilPoint, 1) - transform.right * 0.7f; // beside the anvil, clear of it
             case CraftTools.Furnace: return PointOr(furnacePoint, 4);
-            case CraftTools.Crucible: return station != null && station.Has(CraftTools.Furnace) ? PointOr(furnacePoint, 4) : PointOr(forgePoint, 0);
-            default: return PointOr(anvilPoint, 1);
+            case CraftTools.Whetstone: return whetstonePoint != null ? whetstonePoint.position : transform.position;
+            case CraftTools.AssemblyBench: return carvingPoint != null ? carvingPoint.position : transform.position;
+            case CraftTools.OreBench: return oreBenchPoint != null ? oreBenchPoint.position : transform.position;
+            case CraftTools.Crucible: return mouldPoint != null ? mouldPoint.position : transform.position;
+            default: return transform.position;
         }
     }
 
-    /// <summary>The way the station faces (the side players stand on is behind it).</summary>
+    /// <summary>
+    /// The station's own point for the work place <paramref name="place"/> worked by hand: the anvil's, the forge's, the
+    /// wheel's, the tank's, the whetstone's, the carving bench's, the ore bench's, the mould's - false when none is set
+    /// (the forge, the anvil and the tank then stand in the row their effects use: <see cref="PointFor"/>).
+    /// </summary>
+    public bool HandsOnPoint(CraftHandsOnMode place, out Vector3 point)
+    {
+        Transform t = place switch
+        {
+            CraftHandsOnMode.Hammer => anvilPoint,
+            CraftHandsOnMode.Bellows => forgePoint,
+            CraftHandsOnMode.Grind => grinderPoint,
+            CraftHandsOnMode.Sharpen => whetstonePoint,
+            CraftHandsOnMode.Quench => quenchPoint,
+            CraftHandsOnMode.Pour => mouldPoint,
+            CraftHandsOnMode.Carve => carvingPoint,
+            CraftHandsOnMode.Brush => oreBenchPoint,
+            _ => null,
+        };
+        point = t != null ? t.position : Vector3.zero;
+        return t != null;
+    }
+
+    /// <summary>
+    /// Hides the station's own model of <paramref name="place"/> while it is worked by hand (its mesh renderers that show,
+    /// none of its particles), adding each to <paramref name="hidden"/> to be shown again by <see cref="ShowAgain"/>.
+    /// </summary>
+    public void HideModel(CraftHandsOnMode place, List<Renderer> hidden)
+    {
+        if (workPlaceModels == null)
+            return;
+        foreach (WorkPlaceModel w in workPlaceModels)
+        {
+            if (w.place != place || w.model == null) continue;
+            foreach (MeshRenderer r in w.model.GetComponentsInChildren<MeshRenderer>())
+                if (r != null && r.enabled && !r.forceRenderingOff && !IsEffect(r))
+                {
+                    r.forceRenderingOff = true;
+                    hidden.Add(r);
+                }
+        }
+    }
+
+    /// <summary>Is the station's own model of <paramref name="place"/> set (<see cref="workPlaceModels"/>, Worked by hand)?</summary>
+    public bool HasModel(CraftHandsOnMode place)
+    {
+        if (workPlaceModels != null)
+            foreach (WorkPlaceModel w in workPlaceModels)
+                if (w.place == place && w.model != null)
+                    return true;
+        return false;
+    }
+
+    /// <summary>
+    /// For a work place whose own model is not set (<see cref="HasModel"/>): hides the station's mesh renderers that stand
+    /// right where the 3D work place is built - their middle inside <paramref name="area"/> (world), none bigger than a few
+    /// times it (an anvil, a wheel, a tank on the spot; never the smithy round it), never these visuals' effects - adding
+    /// each to <paramref name="hidden"/> to be shown again by <see cref="ShowAgain"/>.
+    /// </summary>
+    public void HideOverlapping(Bounds area, List<Renderer> hidden)
+    {
+        Transform top = station != null ? station.transform : transform;
+        float most = area.size.magnitude * 3f;
+        foreach (MeshRenderer r in top.GetComponentsInChildren<MeshRenderer>())
+        {
+            if (r == null || !r.enabled || r.forceRenderingOff || IsEffect(r)) continue;
+            Bounds b = r.bounds;
+            if (!area.Contains(b.center) || b.size.magnitude > most) continue;
+            r.forceRenderingOff = true;
+            hidden.Add(r);
+        }
+    }
+
+    /// <summary>
+    /// The work places worked by hand whose point is set but whose own model is not (<see cref="HasModel"/>): the 3D work
+    /// place is built there, among the station's own models - the inspector says so.
+    /// </summary>
+    public void UnmodelledPlaces(List<CraftHandsOnMode> into)
+    {
+        foreach (CraftHandsOnMode place in new[] { CraftHandsOnMode.Hammer, CraftHandsOnMode.Grind, CraftHandsOnMode.Sharpen, CraftHandsOnMode.Quench, CraftHandsOnMode.Pour, CraftHandsOnMode.Carve, CraftHandsOnMode.Brush })
+            if (HandsOnPoint(place, out _) && !HasModel(place))
+                into.Add(place);
+    }
+
+    /// <summary>The glow and effects these visuals drive (the coal bed, the furnace's mouth, what Auto Build made): they stay.</summary>
+    private bool IsEffect(Renderer r) => r == forgeCoals || r == furnaceMouth || builtRoot != null && r.transform.IsChildOf(builtRoot);
+
+    /// <summary>Shows again what <see cref="HideModel"/> hid (those still there), and forgets them.</summary>
+    public static void ShowAgain(List<Renderer> hidden)
+    {
+        foreach (Renderer r in hidden)
+            if (r != null) r.forceRenderingOff = false;
+        hidden.Clear();
+    }
+
+    /// <summary>The way the station faces; its work places are seen from whichever side the player stands on.</summary>
     public Vector3 Front => transform.forward;
     public Vector3 Right => transform.right;
 
-    /// <summary>A burst of sparks off the wheel where the blade touches it (the hands-on wheel).</summary>
+    /// <summary>
+    /// A burst of sparks off the wheel where the blade touches it (the hands-on wheel), thrown from <paramref name="at"/>
+    /// (world) - the grinder's sparks themselves stay where they are, so the window's grinding still throws them off the
+    /// station's own wheel.
+    /// </summary>
     public void GrindSparks(Vector3 at, int count)
     {
-        if (grinderSparks == null) return;
-        grinderSparks.transform.position = at;
-        Burst(grinderSparks, count);
+        if (grinderSparks == null || count <= 0) return;
+        ParticleSystem.MainModule main = grinderSparks.main;
+        Transform space = main.simulationSpace == ParticleSystemSimulationSpace.World ? null
+            : main.simulationSpace == ParticleSystemSimulationSpace.Custom && main.customSimulationSpace != null ? main.customSimulationSpace : grinderSparks.transform;
+        var emit = new ParticleSystem.EmitParams { position = space != null ? space.InverseTransformPoint(at) : at, applyShapeToPosition = true };
+        if (!grinderSparks.isPlaying) grinderSparks.Play();
+        grinderSparks.Emit(emit, count);
     }
 
     /// <summary>The bellows were worked (the window calls this for the puff of air).</summary>

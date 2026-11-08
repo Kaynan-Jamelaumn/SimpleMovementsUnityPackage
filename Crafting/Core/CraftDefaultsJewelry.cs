@@ -103,6 +103,13 @@ public static partial class CraftDefaults
         return s;
     }
 
+    /// <summary>A solder with the heat it flows at (°C).</summary>
+    private static CraftSupplyDefinition Solder(CraftSupplyDefinition s, float flowsAt)
+    {
+        s.flowTemperature = flowsAt;
+        return s;
+    }
+
     private static List<CraftSupplyDefinition> WorkshopSupplies() => new List<CraftSupplyDefinition>
     {
         // The lapidary's laps.
@@ -111,15 +118,15 @@ public static partial class CraftDefaults
         Compound("alumina", "Alumina", "Alumina Polish", 9, 5, "Fine aluminium oxide: topaz, corundum."),
         Compound("diamond_paste", "Diamond paste", "Diamond Paste", 10, 20, "Diamond dust in oil: it polishes anything - diamond itself."),
         // The jeweller's.
-        Supply("silver_solder", "Silver solder", CraftSupplyKind.Solder, "Silver Solder", 1, 3, "Hard silver solder: flows a little below the silver itself."),
-        Supply("gold_solder", "Gold solder", CraftSupplyKind.Solder, "Gold Solder", 1.2f, 12, "Gold solder that matches the colour of the gold."),
+        Solder(Supply("silver_solder", "Silver solder", CraftSupplyKind.Solder, "Silver Solder", 1, 3, "Hard silver solder: flows a little below the silver itself."), 745),
+        Solder(Supply("gold_solder", "Gold solder", CraftSupplyKind.Solder, "Gold Solder", 1.2f, 12, "Gold solder that matches the colour of the gold."), 760),
         // The fibre bench.
         Supply("soap", "Soft soap", CraftSupplyKind.Detergent, "Soft Soap", 1, 0.5f, "Lifts grease from fleece in warm water."),
         Supply("washing_soda", "Washing soda", CraftSupplyKind.Detergent, "Washing Soda", 1.3f, 0.6f, "Strong: it scours fast, hot water and all."),
         Supply("fullers_earth", "Fuller's earth", CraftSupplyKind.Detergent, "Fuller's Earth", 0.8f, 0.4f, "A clay that soaks up grease; gentle on wool."),
         // The woodshop's sealers.
-        Supply("pine_resin", "Pine resin sealer", CraftSupplyKind.Varnish, "Pine Resin Sealer", 1.1f, 2, "Resin cooked in oil: a hard, amber film that stands wear and wet."),
-        Supply("tung_oil", "Tung oil", CraftSupplyKind.Oil, "Tung Oil", 1.15f, 3, "Soaks in and hardens: it keeps water out of the grain without a film."),
+        Dries(Supply("pine_resin", "Pine resin sealer", CraftSupplyKind.Varnish, "Pine Resin Sealer", 1.1f, 2, "Resin cooked in oil: a hard, amber film that stands wear and wet.", new Color(0.78f, 0.45f, 0.12f)), 5),
+        Dries(Supply("tung_oil", "Tung oil", CraftSupplyKind.Oil, "Tung Oil", 1.15f, 3, "Soaks in and hardens: it keeps water out of the grain without a film.", new Color(0.88f, 0.7f, 0.35f)), 6),
     };
 
     /// <summary>How each raw fibre comes: its staple, grease, dirt and short fibre, whether it felts, and what one item weighs.</summary>

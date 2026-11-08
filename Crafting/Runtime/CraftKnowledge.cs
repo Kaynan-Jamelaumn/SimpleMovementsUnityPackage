@@ -78,10 +78,13 @@ public class CraftKnowledge : MonoBehaviour
     private static void ResetStatics() => local = null;
 
     // ------------------------------------------------------------------ learning
-    /// <summary>Something happened at the station the player is working: learn what it teaches.</summary>
-    public void Observe(CraftEvent e, CraftPiece piece)
+    /// <summary>
+    /// Something happened at the station the player is working: learn what it teaches (<paramref name="kit"/>: the
+    /// station's instruments - steel passing the magnet's heat teaches only where there is a magnet to show it).
+    /// </summary>
+    public void Observe(CraftEvent e, CraftPiece piece, CraftInstruments kit = CraftInstruments.All)
     {
-        string insight = CraftJournal.InsightOf(e, piece);
+        string insight = CraftJournal.InsightOf(e, piece, kit);
         if (insight != null)
             Report(CraftJournal.Learn(Data, insight, MasterySettings));
     }
@@ -119,8 +122,12 @@ public class CraftKnowledge : MonoBehaviour
     /// Practice in <paramref name="craft"/>: <paramref name="xp"/> experience (small work - <paramref name="work"/> - only so
     /// fast; a finished item always counts). Tells the player when they reach a new rank.
     /// </summary>
-    public void Practised(CraftDiscipline craft, double xp, bool work, bool finishedOne = false, CraftMasterySettings settings = null) =>
-        Report(CraftMastery.Practise(Data.mastery, craft, xp, work, Time.unscaledTimeAsDouble, finishedOne, settings), true);
+    public void Practised(CraftDiscipline craft, double xp, bool work, bool finishedOne = false, CraftMasterySettings settings = null)
+    {
+        // marked changed only when the practice really moved (past the minute's allowance small work adds nothing)
+        string line = CraftMastery.Practise(Data.mastery, craft, xp, work, Time.unscaledTimeAsDouble, out bool changed, finishedOne, settings);
+        Report(line, changed);
+    }
 
     /// <summary>How practised the player is at <paramref name="craft"/> (0 novice - 1 complete mastery).</summary>
     public double Mastery(CraftDiscipline craft, CraftMasterySettings settings = null) => CraftMastery.Of(Data.mastery, craft, settings);
@@ -171,6 +178,9 @@ public class CraftKnowledge : MonoBehaviour
     }
 
     public string Export() => Data.ToJson();
+
+    /// <summary>The journal as JSON, pretty (to read) or compact (<paramref name="pretty"/> false: to send).</summary>
+    public string Export(bool pretty) => Data.ToJson(pretty);
 
     // ------------------------------------------------------------------ saving
     /// <summary>
