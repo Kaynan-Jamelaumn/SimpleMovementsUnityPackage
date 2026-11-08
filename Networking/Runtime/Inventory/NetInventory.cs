@@ -286,7 +286,8 @@ namespace GameNet
             Vector3 at = PlayerPosition;
             Scene scene = PlayerScene;
             float max = maxStorageDistance * maxStorageDistance;
-            inventory.CloseStorageIf(s => !alive || !s.isActiveAndEnabled || s.gameObject.scene != scene || (s.transform.position - at).sqrMagnitude > max);
+            // ... or that the player may no longer open (a room whose stay ended).
+            inventory.CloseStorageIf(s => !alive || !s.isActiveAndEnabled || s.gameObject.scene != scene || (s.transform.position - at).sqrMagnitude > max || s.Denied(inventory) != null);
         }
 
         // ------------------------------------------------------------------ server: requests

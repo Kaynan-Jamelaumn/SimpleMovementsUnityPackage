@@ -153,6 +153,67 @@ public sealed class SoilGrid
     public float Fertility(int i) => SoilChemistry.Fertility(Values, i * Stride);
     public float AvailableWater(int i) => SoilChemistry.Available(Get(i, SoilChannel.Moisture), Get(i, SoilChannel.WaterRetention));
 
+    // ---------------------------------------------------------------- what a cell can give (kept until it changes)
+    // Every plant reaching a cell works out, each step, how much of each nutrient the cell's pH lets through and where its
+    // water starts and ends; crowded plants share their cells, so the same sums were done again and again. Each cell
+    // keeps them with the very value they were worked out from (its pH, its water retention): when that value is
+    // different - whoever changed it, the weather, a plant drinking, a tool - they are worked out again. Keyed by the value
+    // itself rather than by a change counter, they can never be stale: the field's counter only follows actions, and
+    // nothing at all counts a plant drinking.
+    private float[] sharePh, shares, waterKey, waterWilt, waterSpan, waterCapacity;
+
+    /// <summary>
+    /// The share of each nutrient plants can take up at cell <paramref name="i"/>'s pH (0-1, as
+    /// <see cref="SoilChemistry.Availability"/>): read <see cref="Shares"/> from the returned offset, one per nutrient.
+    /// </summary>
+    public int NutrientShares(int i)
+    {
+        if (shares == null)
+        {
+            shares = new float[Count * SoilChannels.NutrientCount];
+            sharePh = Fill(Count, float.NaN);
+        }
+        float ph = Values[i * Stride + (int)SoilChannel.Ph];
+        int o = i * SoilChannels.NutrientCount;
+        if (sharePh[i] != ph) // NaN (never worked out) is different from everything
+        {
+            for (int n = 0; n < SoilChannels.NutrientCount; n++) shares[o + n] = SoilChemistry.Availability((Nutrient)n, ph);
+            sharePh[i] = ph;
+        }
+        return o;
+    }
+
+    /// <summary>What <see cref="NutrientShares"/> fills.</summary>
+    public float[] Shares => shares;
+
+    /// <summary>
+    /// Cell <paramref name="i"/>'s water figures: the moisture at its wilting point, the moisture between wilting point and
+    /// field capacity (at least 0.05, as <see cref="SoilChemistry.Available"/> divides by it) and the millimetres it holds
+    /// when saturated.
+    /// </summary>
+    public void WaterBudget(int i, out float wilt, out float span, out float capacityMm)
+    {
+        if (waterKey == null)
+        {
+            waterKey = Fill(Count, float.NaN);
+            waterWilt = new float[Count];
+            waterSpan = new float[Count];
+            waterCapacity = new float[Count];
+        }
+        float retention = Values[i * Stride + (int)SoilChannel.WaterRetention];
+        if (waterKey[i] != retention)
+        {
+            float wp = SoilChemistry.WiltingPoint(retention);
+            waterWilt[i] = wp;
+            waterSpan[i] = Mathf.Max(0.05f, SoilChemistry.FieldCapacity(retention) - wp);
+            waterCapacity[i] = SoilChemistry.CapacityMm(retention);
+            waterKey[i] = retention;
+        }
+        wilt = waterWilt[i];
+        span = waterSpan[i];
+        capacityMm = waterCapacity[i];
+    }
+
     // ---------------------------------------------------------------- time
     /// <summary>Adds the weather of a span to the field's totals (rain mm reaching open ground, drying mm, warm hours).</summary>
     public void Accumulate(float rainMm, float evapMm, float warmHours)
@@ -554,7 +615,28 @@ public sealed class SoilGrid
     }
 
     // ---------------------------------------------------------------- saving
-    private const int SaveVersion = 1;
+    /// <summary>
+    /// 2: also what covers each cell (greenhouses, shade, cold frames), so a garden caught up from its save while its
+    /// structures are away (hidden with their realm, not loaded yet) still lives under them. 1: the soil alone (still
+    /// read). The irrigation is not saved: it is the layout's (made again by its bake).
+    /// </summary>
+    private const int SaveVersion = 2;
+
+    /// <summary>A cell open to the sky (nothing covers it).</summary>
+    public bool Open(int i) => CoverRain[i] == 1f && CoverEvap[i] == 1f && CoverLight[i] == 1f && CoverWarmth[i] == 0f && CoverFrost[i] == 0f;
+
+    /// <summary>Uncovers every cell (open sky).</summary>
+    public void ClearCovers()
+    {
+        for (int i = 0; i < Count; i++)
+        {
+            CoverRain[i] = 1f;
+            CoverEvap[i] = 1f;
+            CoverLight[i] = 1f;
+            CoverWarmth[i] = 0f;
+            CoverFrost[i] = 0f;
+        }
+    }
 
     public void Write(BinaryWriter w)
     {
@@ -565,7 +647,7 @@ public sealed class SoilGrid
         w.Write(RainTotal);
         w.Write(EvapTotal);
         w.Write(WarmTotal);
-        int n = Count;
+        int n = Count, covered = 0;
         for (int i = 0; i < n; i++)
         {
             if (!Inside[i]) continue;
@@ -582,14 +664,30 @@ public sealed class SoilGrid
                 w.Write(PendingItem[i * PendingSlots + k]);
                 w.Write(PendingAmount[i * PendingSlots + k]);
             }
+            if (!Open(i)) covered++;
+        }
+        // The covered cells only (most are open to the sky).
+        w.Write(covered);
+        for (int i = 0; i < n; i++)
+        {
+            if (!Inside[i] || Open(i)) continue;
+            w.Write(i);
+            w.Write(CoverRain[i]);
+            w.Write(CoverEvap[i]);
+            w.Write(CoverLight[i]);
+            w.Write(CoverWarmth[i]);
+            w.Write(CoverFrost[i]);
         }
     }
 
-    /// <summary>Reads what <see cref="Write"/> wrote into this grid; false (and nothing changed) when it does not fit.</summary>
+    /// <summary>
+    /// Reads what <see cref="Write"/> wrote into this grid; false when it does not fit (another shape). A save of version 1
+    /// leaves the covers as they are (open sky until the structures are looked at).
+    /// </summary>
     public bool Read(BinaryReader r)
     {
         int version = r.ReadInt32();
-        if (version != SaveVersion) return false;
+        if (version < 1 || version > SaveVersion) return false;
         int w = r.ReadInt32(), h = r.ReadInt32(), stride = r.ReadInt32();
         if (w != Width || h != Height || stride != Stride) return false;
         double rain = r.ReadDouble(), evap = r.ReadDouble(), warm = r.ReadDouble();
@@ -611,6 +709,22 @@ public sealed class SoilGrid
             {
                 PendingItem[i * PendingSlots + k] = r.ReadUInt16();
                 PendingAmount[i * PendingSlots + k] = r.ReadSingle();
+            }
+        }
+        if (version >= 2)
+        {
+            ClearCovers();
+            int covered = r.ReadInt32();
+            if (covered < 0 || covered > n) throw new InvalidDataException("broken covers");
+            for (int k = 0; k < covered; k++)
+            {
+                int i = r.ReadInt32();
+                if (i < 0 || i >= n) throw new InvalidDataException("broken covers");
+                CoverRain[i] = r.ReadSingle();
+                CoverEvap[i] = r.ReadSingle();
+                CoverLight[i] = r.ReadSingle();
+                CoverWarmth[i] = r.ReadSingle();
+                CoverFrost[i] = r.ReadSingle();
             }
         }
         Array.Copy(values, Values, values.Length);

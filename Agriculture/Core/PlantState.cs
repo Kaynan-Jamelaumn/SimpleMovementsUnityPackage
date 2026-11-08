@@ -122,6 +122,8 @@ public class PlantState
     public float flushTimer;
     /// <summary>Flowers still to open in this flush.</summary>
     public int flowersLeft;
+    /// <summary>Flowers of this flush, opened and still to open (they open evenly through the flowering).</summary>
+    public int flowersTotal;
     public int harvests;
     /// <summary>Hours the leaves stay wet (rain, watering over the leaves).</summary>
     public float leafWet;
@@ -146,6 +148,8 @@ public class PlantState
     [NonSerialized] public float[] rootWeights;
     [NonSerialized] public float rootRadius = -1f;
     [NonSerialized] public int bucket = -1;
+    /// <summary>What it last saw of its soil and neighbours, for the quiet stretches of a catch-up.</summary>
+    [NonSerialized] public PlantSurroundings surroundings;
 
     public bool Alive => stage != PlantStage.Dead;
     public bool IsSeed => stage == PlantStage.Seed || stage == PlantStage.Germination;

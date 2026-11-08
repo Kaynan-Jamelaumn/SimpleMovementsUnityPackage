@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using FishNet.Object;
 using FishNet.Object.Synchronizing;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace GameNet
 {
@@ -24,6 +25,10 @@ namespace GameNet
 
         private CurrencyWallet hooked;
         private readonly HashSet<string> warnedUnknown = new HashSet<string>();
+        /// <summary>Owner: balances of currencies not loaded here yet (a later scene brings them): shown as soon as they are.</summary>
+        private readonly HashSet<string> notLoaded = new HashSet<string>();
+        private float nextNotLoadedLook;
+        private bool listening;
 
         /// <summary>The wallet this component networks.</summary>
         public CurrencyWallet Wallet => wallet;
@@ -63,6 +68,7 @@ namespace GameNet
         {
             Unhook();
             balances.OnChange -= OnBalancesChanged;
+            StopListening();
         }
 
         private void Unhook()
@@ -109,6 +115,33 @@ namespace GameNet
         {
             base.OnStopClient();
             balances.OnChange -= OnBalancesChanged;
+            StopListening();
+            notLoaded.Clear();
+        }
+
+        private void StopListening()
+        {
+            if (listening) SceneManager.sceneLoaded -= OnSceneLoaded;
+            listening = false;
+        }
+
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyNotLoaded();
+
+        // A currency can also load without a scene (a prefab or an asset loaded later): looked for now and then.
+        private void Update()
+        {
+            if (notLoaded.Count == 0 || Time.unscaledTime < nextNotLoadedLook) return;
+            nextNotLoadedLook = Time.unscaledTime + 2f;
+            ApplyNotLoaded();
+        }
+
+        /// <summary>The balances the server sent for currencies that were not loaded here: shown once they are.</summary>
+        private void ApplyNotLoaded()
+        {
+            if (notLoaded.Count == 0) return;
+            foreach (string key in new List<string>(notLoaded))
+                if (CurrencyDefinition.FindByKey(key) != null && balances.TryGetValue(key, out int value))
+                    Apply(key, value);
         }
 
         private void OnBalancesChanged(SyncDictionaryOperation op, string key, int value, bool asServer)
@@ -124,10 +157,18 @@ namespace GameNet
             CurrencyDefinition currency = CurrencyDefinition.FindByKey(key);
             if (currency == null)
             {
+                // Not loaded here yet (the server loaded its scene first): kept, and shown as soon as it loads.
+                if (!string.IsNullOrEmpty(key) && notLoaded.Add(key) && !listening)
+                {
+                    SceneManager.sceneLoaded += OnSceneLoaded;
+                    listening = true;
+                }
                 if (warnedUnknown.Add(key ?? ""))
-                    Debug.LogWarning($"[Net] The server sent a balance of currency '{key}', which is not loaded here (keep currency asset names the same on every build).", this);
+                    Debug.Log($"[Net] The server sent a balance of currency '{key}', which is not loaded here yet: it is shown when it loads (if it never does, keep currency asset names the same on every build).", this);
                 return;
             }
+            notLoaded.Remove(key);
+            if (notLoaded.Count == 0) StopListening();
             CurrencyWallet w = EnsureWallet();
             if (w != null)
                 w.ApplyReplicatedBalance(currency, value);

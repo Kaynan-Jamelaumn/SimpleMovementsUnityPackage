@@ -1841,6 +1841,114 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         return remaining;
     }
 
+    /// <summary>
+    /// Gives back a stack exactly as it was kept (a chest's slot, things held for a player): <paramref name="quantity"/>
+    /// units with each unit's uses left (<paramref name="durabilities"/>, in the order <see cref="InventoryItem.DurabilityList"/>
+    /// keeps them, the last one in use), the uses left of the unit in use (<paramref name="durability"/>; 0 or less: as the
+    /// list says) and the rounds loaded (<paramref name="loadedRounds"/>; -1: not loaded yet). A stack whose own state goes
+    /// beyond its units' list - the unit in use half used, rounds loaded - goes whole into empty slots (never into another
+    /// stack, whose state it would mix with its own); any other fills existing stacks first, like <see cref="AddItem"/>, each
+    /// unit keeping its own list entry (<see cref="IsPlainKeptStack"/>). Returns how many could NOT be given (0 = all), with those units'
+    /// uses left (<paramref name="leftDurabilities"/>) and whether the unit in use is still among them
+    /// (<paramref name="leftKeepsUnitInUse"/>: then the durability and rounds are still theirs).
+    /// </summary>
+    public int AddKeptStack(ItemSO item, int quantity, IList<int> durabilities, float durability, int loadedRounds,
+                            out List<int> leftDurabilities, out bool leftKeepsUnitInUse)
+    {
+        var pool = durabilities != null ? new List<int>(durabilities) : new List<int>();
+        leftDurabilities = pool;
+        leftKeepsUnitInUse = true;
+        if (item == null || quantity <= 0)
+            return Mathf.Max(0, quantity);
+        if (IsPlainKeptStack(item, durability, loadedRounds))
+        {
+            // Nothing beyond its units' list: added like anything else, into the stacks the player already has first. AddItem
+            // moves each unit's list entry with it (its uses left, or the code of its quality), as a harvest does.
+            int notAdded = AddItem(item, quantity, durabilities);
+            int used = Mathf.Min(quantity - notAdded, pool.Count);
+            leftDurabilities = pool.GetRange(0, pool.Count - used);
+            leftKeepsUnitInUse = notAdded == quantity;
+            return notAdded;
+        }
+        if (!IsAuthoritative)
+            return WarnClientMutation(nameof(AddKeptStack), quantity); // the server adds it; the snapshot shows it
+        if (itemPrefab == null)
+        {
+            Debug.LogError("[Inventory] Cannot add items: Item Prefab is not assigned.", this);
+            return quantity;
+        }
+        int stackMax = Mathf.Max(1, item.StackMax);
+        int remaining = quantity, added = 0;
+        bool first = true;
+        while (remaining > 0)
+        {
+            int n = Mathf.Min(stackMax, remaining);
+            // This stack's units are the last ones of the list (the first stack has the unit in use), in their order.
+            int k = Mathf.Min(n, pool.Count);
+            List<int> chunk = pool.GetRange(pool.Count - k, k);
+            if (!PlaceKeptStack(item, n, chunk, first ? durability : 0f, first ? loadedRounds : -1))
+                break;
+            pool.RemoveRange(pool.Count - k, k);
+            remaining -= n;
+            added += n;
+            first = false;
+        }
+        leftDurabilities = pool;
+        leftKeepsUnitInUse = first;
+        if (added > 0)
+        {
+            InventoryUtils.UpdatePlayerWeight(player, item.Weight * added);
+            NotifyInventoryChanged();
+        }
+        return remaining;
+    }
+
+    /// <summary>
+    /// A kept stack with nothing of its own beyond its units' list: no rounds loaded, and the unit in use as its list says
+    /// (0 or less) or as new. Every unit's list entry - its uses left, or the code of its quality (a harvested piece, a
+    /// potion) - moves with it when <see cref="AddItem"/> joins it to a stack the player has, so nothing is lost. A chest
+    /// keeps the uses left of every stack's unit in use, a new one's too (never 0: <see cref="InventoryItem.StartingDurability"/>),
+    /// so "as new" is what tells; a crop held at a lease's end keeps only its codes (0).
+    /// </summary>
+    private static bool IsPlainKeptStack(ItemSO item, float durability, int loadedRounds)
+    {
+        if (loadedRounds >= 0)
+            return false;
+        return durability <= 0f || durability == InventoryItem.StartingDurability(item);
+    }
+
+    /// <summary>One kept stack in an empty slot (the grid where it fits, else the hotbar; or the first empty slot), with its data.</summary>
+    private bool PlaceKeptStack(ItemSO item, int n, List<int> uses, float durability, int loadedRounds)
+    {
+        InventorySlot slot = null;
+        bool rotated = false;
+        if (gridActive && grid != null && grid.FindSpace(item, out InventorySlot anchor, out bool turned))
+        {
+            slot = anchor;
+            rotated = turned;
+        }
+        else
+            foreach (GameObject go in gridActive ? (HotbarSlots ?? Array.Empty<GameObject>()) : StorageSlots)
+                if (go != null && go.TryGetComponent(out InventorySlot s) && s.SlotType == SlotType.Common && s.heldItem == null)
+                {
+                    slot = s;
+                    break;
+                }
+        if (slot == null)
+            return false;
+        // CreateStack takes its units from the end of the list it is given: handed over reversed, they keep their order.
+        var pool = new List<int>(uses);
+        pool.Reverse();
+        InventoryItem created = CreateStack(slot, item, n, pool, rotated);
+        if (created == null)
+            return false;
+        if (durability > 0f)
+            created.durability = durability;
+        created.loadedRounds = loadedRounds;
+        created.RefreshUI();
+        return true;
+    }
+
     /// <summary>A new stack in <paramref name="slot"/> (a grid cell: at that place, turned when <paramref name="rotated"/>). Durabilities are taken from <paramref name="durabilityPool"/>.</summary>
     private InventoryItem CreateStack(InventorySlot slot, ItemSO item, int n, List<int> durabilityPool, bool rotated)
     {
@@ -1951,6 +2059,13 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
                 return false;
             case InventoryNetRole.RemoteCopy:
                 return false;
+        }
+        string denied = storage.Denied(this);
+        if (denied != null)
+        {
+            reason = denied;
+            ShowMessage(reason);
+            return false;
         }
         if (storage.IsUsedByOther(this))
         {

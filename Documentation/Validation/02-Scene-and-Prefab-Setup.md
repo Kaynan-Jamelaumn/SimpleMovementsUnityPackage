@@ -63,7 +63,7 @@ The first scene of a multiplayer build: Fish-Net's NetworkManager with the packa
 | Network World | A root object *Network World* with a `NetworkObject` | Required | Create Network World |
 | | Its observer ignores the manager's conditions (seen by every client) | Required | Set Ignore Manager |
 | | Relays `NetHubWorld`, `NetWorldChunks` | Required | Add Relay |
-| | Relays `NetDuels`, `NetTrading`, `NetSocial`, `NetPortals` | Recommended | Add Relay |
+| | Relays `NetDuels`, `NetTrading`, `NetSocial`, `NetPortals`, `NetHousing` | Recommended | Add Relay |
 | | Every scene NetworkObject has a scene id | Required | Assign Ids (saves the scene) |
 | Build | First scene in Build Settings | Required | Make It The First Scene |
 | | City, World and Dungeon Instance scenes in the build | Required | Add The Ones Found |

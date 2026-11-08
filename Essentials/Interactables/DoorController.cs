@@ -35,6 +35,10 @@ public class DoorController : Interactable, IReplicatedInteractable
     {
         if (!NetAuthority.RunsRules(gameObject))
             return; // a client's copy of a networked door: the server decides
+        // A Lockable Door on this door decides who may open it (it drives this controller itself): interacting with the
+        // controller directly would go round the lock.
+        if (GetComponent<LockableDoor>() != null)
+            return;
         if (isOpen)
             CloseDoor();
         else

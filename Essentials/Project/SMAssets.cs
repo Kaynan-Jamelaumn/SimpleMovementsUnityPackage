@@ -7,7 +7,7 @@ using UnityEngine;
 /// <para>Everything generated goes under <c>Assets/Resources/SimpleMovements/</c>, one folder per kind of asset:</para>
 /// <code>
 /// Resources/SimpleMovements/
-///   Settings/      Combat, Absorption, Hub World, Elemental, Injury settings, Alchemy, Harvest and Agriculture Databases
+///   Settings/      Combat, Absorption, Hub World, Elemental, Injury, Housing settings, Alchemy, Harvest and Agriculture Databases
 ///   Databases/     Ability, Trait, Item and Item Category databases, Character Catalog
 ///   Economy/       Default currency
 ///   Characters/    Races/, Classes/, Traits/
@@ -132,7 +132,7 @@ public static class SMAssets
         switch (name)
         {
             case "CombatSettings": case "AbsorptionSettings": case "HubWorldSettings": case "ElementalSystem": case "InjurySettings":
-            case "AlchemyDatabase": case "HarvestDatabase": case "AgricultureDatabase": return Settings;
+            case "AlchemyDatabase": case "HarvestDatabase": case "AgricultureDatabase": case "HousingSettings": return Settings;
             case "AbilityDatabase": case "TraitDatabase": case "ItemDatabase": case "ItemCategoryDatabase": case "CharacterCatalog": return Databases;
             case "DefaultCurrency": return Economy;
             case "ItemDropManager": return ItemDrops;

@@ -256,7 +256,7 @@ namespace GameNet.EditorTools
         internal static readonly string[] GlobalRelayComponents =
         {
             "GameNet.NetHubWorld", "GameNet.NetDuels", "GameNet.NetTrading", "GameNet.NetWorldChunks", "GameNet.NetSocial",
-            "GameNet.NetPortals",
+            "GameNet.NetPortals", "GameNet.NetHousing",
         };
 
         /// <summary>

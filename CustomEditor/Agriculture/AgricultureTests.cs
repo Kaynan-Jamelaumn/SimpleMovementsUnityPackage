@@ -626,6 +626,13 @@ namespace AgricultureSystem.Tests
             int c = Cell(g, Vector2.zero);
             g.Apply(c, cat.AmendmentIndex("compost"), cat.Amendment("compost"), 2f, false);
             g.AddWater(c, 8f, cat.Settings.Water(WaterSourceKind.Rain));
+            // Under glass (what a greenhouse gave it): kept with the soil, so a garden caught up from its save still lives under it.
+            g.CoverRain[c] = 0f;
+            g.CoverEvap[c] = 0.4f;
+            g.CoverLight[c] = 0.8f;
+            g.CoverWarmth[c] = 6f;
+            g.CoverFrost[c] = 0.7f;
+            int open = Cell(g, new Vector2(1.5f, 1.5f));
             byte[] bytes;
             using (var ms = new MemoryStream())
             {
@@ -637,8 +644,371 @@ namespace AgricultureSystem.Tests
             for (int ch = 0; ch < SoilGrid.Stride; ch++) Assert.AreEqual(g.Get(c, (SoilChannel)ch), back.Get(c, (SoilChannel)ch), 1e-5f, ((SoilChannel)ch).ToString());
             Assert.AreEqual(g.PendingTop(c, out float a), back.PendingTop(c, out float b));
             Assert.AreEqual(a, b, 1e-5f);
+            Assert.AreEqual(0f, back.CoverRain[c], "no rain under the glass");
+            Assert.AreEqual(0.4f, back.CoverEvap[c], 1e-6f);
+            Assert.AreEqual(0.8f, back.CoverLight[c], 1e-6f);
+            Assert.AreEqual(6f, back.CoverWarmth[c], 1e-6f, "its warmth");
+            Assert.AreEqual(0.7f, back.CoverFrost[c], 1e-6f, "its frost protection");
+            Assert.IsTrue(back.Open(open), "a cell nothing covers stays open to the sky");
             SoilGrid other = Plot(SoilType.OrganicRich, 6f, 6f).CreateGrid();
             using (var r = new BinaryReader(new MemoryStream(bytes))) Assert.IsFalse(other.Read(r), "a save of another shape is refused");
+        }
+
+        // ------------------------------------------------------------------ sleeping gardens
+        /// <summary>A sown plot of a species (as the trial plot sows it) with its weather started.</summary>
+        private static FieldState Sown(AgriCatalog cat, string species, int count, double start, int seed = 4242)
+        {
+            PlantSpeciesData sp = cat.Species(species);
+            float gap = Mathf.Max(0.5f, sp.spacing);
+            SoilLayout layout = Plot(SoilType.OrganicRich, Mathf.Max(6f, count * gap + 2f), Mathf.Max(4f, gap * 2f + 2f));
+            layout.baseSoil.tilth = 0.8f;
+            layout.baseSoil.ph = (sp.phLow + sp.phHigh) * 0.5f;
+            SoilGrid g = layout.CreateGrid();
+            layout.Bake(g, start);
+            var f = new FieldState(g, cat, seed);
+            f.TickEnvironment(start, new CityClimateSource(cat.Settings));
+            var date = new AgriDate(start, cat.Settings);
+            for (int i = 0; i < count; i++)
+                f.Add(new PlantState
+                {
+                    species = sp.id, position = new Vector2(-(count - 1) * gap * 0.5f + i * gap, 0f), depthCm = sp.depthCm, covered = !sp.surfaceSown,
+                    planted = start, last = start, genes = PlantGenes.Wild, viability = 0.95f, plantedMoon = date.Moon, lastSeason = date.Season,
+                });
+            return f;
+        }
+
+        private static (float nitrogen, float moisture, float potassium) SoilAverage(FieldState f, AgriSettings s)
+        {
+            double n = 0, m = 0, k = 0;
+            int cells = 0;
+            for (int i = 0; i < f.Grid.Count; i++)
+            {
+                if (!f.Grid.Inside[i]) continue;
+                f.Grid.Advance(i, f.EnvTime, s);
+                n += f.Grid.Get(i, SoilChannel.Nitrogen);
+                m += f.Grid.Get(i, SoilChannel.Moisture);
+                k += f.Grid.Get(i, SoilChannel.Potassium);
+                cells++;
+            }
+            return ((float)(n / cells), (float)(m / cells), (float)(k / cells));
+        }
+
+        [Test]
+        public void AGardenAsleepForWeeksWakesAsIfWatchedHourByHour()
+        {
+            AgriCatalog cat = Catalog();
+            AgriSettings s = cat.Settings;
+            double start = 8.0 + 24.0 * 2.0;
+            foreach ((string species, int days) in new[] { ("lavender", 45), ("carrot", 20), ("wheat", 20) })
+            {
+                double end = start + days * 24.0;
+                // Plants come up and flower by chance: several gardens of each, compared together.
+                var wa = new List<PlantState>();
+                var sa = new List<PlantState>();
+                foreach (int seed in new[] { 4242, 1717, 9001 })
+                {
+                    (FieldState watched, FieldState slept) = WatchedAndSlept(cat, species, 10, start, end, seed);
+                    Assert.AreEqual(end, slept.EnvTime, 1e-6, $"{species}: its weather reached the present");
+                    foreach (PlantState p in slept.Plants) Assert.AreEqual(end, p.last, 1e-6, $"{species}: every plant reached the present");
+                    var a = SoilAverage(watched, s);
+                    var b = SoilAverage(slept, s);
+                    Assert.AreEqual(a.nitrogen, b.nitrogen, Mathf.Max(1f, a.nitrogen * 0.05f), $"{species}: nitrogen");
+                    Assert.AreEqual(a.potassium, b.potassium, Mathf.Max(1f, a.potassium * 0.05f), $"{species}: potassium");
+                    Assert.AreEqual(a.moisture, b.moisture, 0.03f, $"{species}: moisture");
+                    wa.AddRange(watched.Plants.Where(p => p.Alive));
+                    sa.AddRange(slept.Plants.Where(p => p.Alive));
+                }
+                Assert.AreEqual(wa.Count, sa.Count, 8, $"{species}: about as many alive (seeds come up by chance)");
+                if (wa.Count > 0 && sa.Count > 0)
+                {
+                    Assert.AreEqual(wa.Average(p => p.size), sa.Average(p => p.size), Mathf.Max(0.05f, wa.Average(p => p.size) * 0.1f), $"{species}: size");
+                    Assert.AreEqual(wa.Average(p => (int)p.stage), sa.Average(p => (int)p.stage), 0.75, $"{species}: stage");
+                    Assert.AreEqual(wa.Average(p => p.health), sa.Average(p => p.health), 0.15, $"{species}: health");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The same garden watched hour by hour (the weather and every plant, the trial plot's way) and asleep the whole
+        /// time, then woken (brought up to date in one go).
+        /// </summary>
+        private static (FieldState watched, FieldState slept) WatchedAndSlept(AgriCatalog cat, string species, int count, double start, double end, int seed)
+        {
+            AgriSettings s = cat.Settings;
+            FieldState watched = Sown(cat, species, count, start, seed);
+            var climate = new CityClimateSource(s);
+            var scratch = new PlantScratch();
+            for (double t = start + 1.0; t <= end + 1e-9; t += 1.0)
+            {
+                watched.TickEnvironment(t, climate);
+                foreach (PlantState p in watched.Plants.ToArray()) PlantSim.Advance(watched, p, t, scratch, climate);
+                watched.SweepDead(s.deadPlantDays * 24f);
+            }
+            FieldState slept = Sown(cat, species, count, start, seed);
+            Assert.IsTrue(new FieldCatchUp(slept, climate, null, end).Run(), $"{species}: done");
+            return (watched, slept);
+        }
+
+        [Test]
+        public void AGardenAsleepRipensItsProduceAsIfWatched()
+        {
+            // Flowers open by how far the flowering has come, not one a step: an hour-by-hour garden and one caught up in
+            // longer steps make as many pieces, and they ripen, overripen and rot alike.
+            AgriCatalog cat = Catalog();
+            int summer = cat.Settings.daysPerSeason;
+            foreach ((string species, int sowDay, int days) in new[] { ("tomato", summer, 20), ("chamomile", 2, 16) })
+            {
+                double start = 8.0 + 24.0 * sowDay, end = start + days * 24.0;
+                int[] w = new int[3], z = new int[3];
+                foreach (int seed in new[] { 4242, 12161, 20080, 27999 })
+                {
+                    (FieldState watched, FieldState slept) = WatchedAndSlept(cat, species, 10, start, end, seed);
+                    Pieces(watched, w);
+                    Pieces(slept, z);
+                }
+                Assert.Greater(w[1], 10, $"{species}: the watched gardens have ripe produce to compare");
+                string[] what = { "pieces made", "ripe pieces", "overripe or rotten pieces" };
+                for (int k = 0; k < 3; k++)
+                    Assert.AreEqual(w[k], z[k], Mathf.Max(6f, w[k] * 0.2f), $"{species}: {what[k]}");
+            }
+        }
+
+        /// <summary>Adds up a garden's produce: pieces made so far, pieces ripe (mature, not yet overripe), pieces overripe or rotten.</summary>
+        private static void Pieces(FieldState f, int[] into)
+        {
+            foreach (PlantState p in f.Plants)
+            {
+                into[0] += Mathf.Max(0, p.nextFruitId - 1);
+                foreach (FruitState fr in p.fruits)
+                {
+                    if (fr.stage >= ProduceStage.Overripe) into[2]++;
+                    else if (fr.stage >= ProduceStage.Mature) into[1]++;
+                }
+            }
+        }
+
+        [Test]
+        public void ACatchUpSpreadOverFramesEndsTheSameAsAllAtOnce()
+        {
+            AgriCatalog cat = Catalog();
+            double start = 8.0 + 24.0 * 2.0, end = start + 24.0 * 10.0;
+            var climate = new CityClimateSource(cat.Settings);
+            FieldState once = Sown(cat, "carrot", 6, start), spread = Sown(cat, "carrot", 6, start);
+            Assert.IsTrue(new FieldCatchUp(once, climate, null, end).Run());
+            var job = new FieldCatchUp(spread, climate, null, end);
+            int slices = 0, steps = 0;
+            while (!job.Run(() => ++steps % 5 == 0)) slices++;
+            Assert.Greater(slices, 10, "it stopped and went on many times");
+            Assert.AreEqual(once.EnvTime, spread.EnvTime, 1e-9);
+            Assert.AreEqual(once.Plants.Count, spread.Plants.Count);
+            for (int i = 0; i < once.Plants.Count; i++)
+            {
+                Assert.AreEqual(once.Plants[i].stage, spread.Plants[i].stage);
+                Assert.AreEqual(once.Plants[i].size, spread.Plants[i].size, 1e-5f);
+                Assert.AreEqual(once.Plants[i].health, spread.Plants[i].health, 1e-5f);
+            }
+        }
+
+        [Test]
+        public void ACatchUpFollowsTheSeasons()
+        {
+            AgriCatalog cat = Catalog();
+            AgriSettings s = cat.Settings;
+            double start = 8.0 + 24.0 * 2.0;
+            double end = start + 24.0 * (s.YearDays + 4); // a whole year asleep
+            FieldState f = Sown(cat, "lavender", 4, start);
+            var job = new FieldCatchUp(f, new CityClimateSource(s), null, end);
+            Assert.IsTrue(job.Run());
+            Assert.AreEqual(new AgriDate(end, s).Season, new AgriDate(f.EnvTime, s).Season);
+            Assert.GreaterOrEqual(job.WeatherSteps, (int)((end - start) / s.maxStepHours) - 1, "the weather of every step");
+            PlantState anyAlive = f.Plants.FirstOrDefault(p => p.Alive);
+            Assert.IsNotNull(anyAlive, "a perennial lives through a year of rain alone");
+            Assert.GreaterOrEqual(anyAlive.years, 1, "and counts the year");
+        }
+
+        // ------------------------------------------------------------------ catching up lightly
+        /// <summary>The built-in content with the catch-up's shortcuts on or off (each is a switch in the settings).</summary>
+        private static AgriCatalog Shortcuts(bool bare, bool quiet, bool cells)
+        {
+            AgriCatalog cat = Catalog();
+            cat.Settings.fastForwardBareGardens = bare;
+            cat.Settings.quietSteps = quiet;
+            cat.Settings.cacheCellValues = cells;
+            return cat;
+        }
+
+        /// <summary>A 10 x 7 m plot sown in rows, one species a row (a row goes on below when it is full).</summary>
+        private static FieldState Rows(AgriCatalog cat, double start, int seed, params (string species, int count)[] rows)
+        {
+            SoilLayout layout = Plot(SoilType.OrganicRich, 10f, 7f);
+            layout.baseSoil.tilth = 0.8f;
+            var f = new FieldState(Bake(layout, start), cat, seed);
+            f.TickEnvironment(start, new CityClimateSource(cat.Settings));
+            var date = new AgriDate(start, cat.Settings);
+            float x = -4.6f, y = -3.2f, rowGap = 0f;
+            foreach ((string species, int count) in rows)
+            {
+                PlantSpeciesData sp = cat.Species(species);
+                float gap = Mathf.Max(0.5f, sp.spacing);
+                x = -4.6f;
+                y += rowGap * 0.5f + gap * 0.5f;
+                for (int i = 0; i < count; i++)
+                {
+                    if (x > 4.6f)
+                    {
+                        x = -4.6f;
+                        y += gap;
+                    }
+                    Assert.IsTrue(f.Grid.TryIndex(new Vector2(x, y), out _), $"{species} {i} is on the plot");
+                    f.Add(new PlantState
+                    {
+                        species = sp.id, position = new Vector2(x, y), depthCm = sp.depthCm, covered = !sp.surfaceSown, planted = start, last = start,
+                        genes = PlantGenes.Wild, viability = 0.95f, plantedMoon = date.Moon, lastSeason = date.Season,
+                    });
+                    x += gap;
+                }
+                rowGap = gap;
+            }
+            return f;
+        }
+
+        /// <summary>
+        /// The same garden caught up from <paramref name="from"/> to <paramref name="to"/> with the shortcuts of
+        /// <paramref name="on"/>, after living until <paramref name="from"/> without them.
+        /// </summary>
+        private static (FieldState field, FieldCatchUp job) CaughtUp(AgriCatalog on, double sown, double from, double to, int seed, params (string, int)[] rows)
+        {
+            AgriSettings s = on.Settings;
+            bool bare = s.fastForwardBareGardens, quiet = s.quietSteps, cells = s.cacheCellValues;
+            s.fastForwardBareGardens = s.quietSteps = s.cacheCellValues = false;
+            FieldState f = Rows(on, sown, seed, rows);
+            if (from > sown) Assert.IsTrue(new FieldCatchUp(f, new CityClimateSource(s), null, from).Run());
+            s.fastForwardBareGardens = bare;
+            s.quietSteps = quiet;
+            s.cacheCellValues = cells;
+            var job = new FieldCatchUp(f, new CityClimateSource(s), null, to);
+            Assert.IsTrue(job.Run());
+            f.Grid.AdvanceAll(f.EnvTime, s);
+            return (f, job);
+        }
+
+        /// <summary>The soil's averages over the plot (every cell brought to the end first): moisture, N, P, K, organic matter, pH.</summary>
+        private static float[] SoilTotals(FieldState f)
+        {
+            var channels = new[] { SoilChannel.Moisture, SoilChannel.Nitrogen, SoilChannel.Phosphorus, SoilChannel.Potassium, SoilChannel.OrganicMatter, SoilChannel.Ph };
+            var sums = new double[channels.Length];
+            int cells = 0;
+            for (int i = 0; i < f.Grid.Count; i++)
+            {
+                if (!f.Grid.Inside[i]) continue;
+                cells++;
+                for (int c = 0; c < channels.Length; c++) sums[c] += f.Grid.Get(i, channels[c]);
+            }
+            return sums.Select(v => (float)(v / cells)).ToArray();
+        }
+
+        [Test]
+        public void ABareGardenCatchesUpInLongStepsToTheSameSoil()
+        {
+            // Nothing living on it: the soil is lazy, so long steps replay the same weather sample by sample - and with
+            // dead plants waiting to be gone, they go at the same time.
+            double start = 8.0 + 24.0 * 2.0, end = start + 24.0 * 40.0;
+            foreach (bool withDead in new[] { false, true })
+            {
+                var r = new FieldState[2];
+                var jobs = new FieldCatchUp[2];
+                for (int k = 0; k < 2; k++)
+                {
+                    AgriCatalog cat = Shortcuts(k == 1, false, false);
+                    FieldState f = Rows(cat, start, 99, ("tomato", withDead ? 4 : 0));
+                    foreach (PlantState p in f.Plants) PlantSim.Die(p, false);
+                    jobs[k] = new FieldCatchUp(f, new CityClimateSource(cat.Settings), null, end);
+                    Assert.IsTrue(jobs[k].Run());
+                    r[k] = f;
+                }
+                Assert.Less(jobs[1].WeatherSteps * 10, jobs[0].WeatherSteps, "far fewer steps");
+                Assert.Greater(jobs[1].BareHours, 24.0 * 39.0, "nearly all of it in long steps");
+                Assert.AreEqual(r[0].Grid.RainTotal, r[1].Grid.RainTotal, 1e-9, "the same rain");
+                Assert.AreEqual(r[0].Grid.EvapTotal, r[1].Grid.EvapTotal, 1e-9, "the same drying");
+                Assert.AreEqual(r[0].Grid.WarmTotal, r[1].Grid.WarmTotal, 1e-9, "the same warmth");
+                Assert.AreEqual(r[0].SoilTemperature, r[1].SoilTemperature, 1e-6f);
+                Assert.AreEqual(r[0].EnvTime, r[1].EnvTime, 1e-9);
+                Assert.AreEqual(r[0].Plants.Count, r[1].Plants.Count, "the dead are gone alike");
+                Assert.AreEqual(0, r[1].Plants.Count, "and gone by now");
+                for (int k = 0; k < 2; k++) r[k].Grid.AdvanceAll(end, r[k].Settings);
+                float[] a = SoilTotals(r[0]), b = SoilTotals(r[1]);
+                for (int c = 0; c < a.Length; c++) Assert.AreEqual(a[c], b[c], Mathf.Abs(a[c]) * 1e-5f + 1e-6f, $"soil {c}");
+            }
+        }
+
+        [Test]
+        public void CachedCellValuesChangeNothing()
+        {
+            // What a cell can feed at its pH and its water figures, kept until they change: the garden grows exactly the
+            // same, to the last digit.
+            double start = 8.0 + 24.0 * 14.0, end = start + 24.0 * 12.0;
+            FieldState a = CaughtUp(Shortcuts(false, false, false), start, start, end, 31, ("tomato", 8), ("bean", 8), ("cabbage", 6)).field;
+            FieldState b = CaughtUp(Shortcuts(false, false, true), start, start, end, 31, ("tomato", 8), ("bean", 8), ("cabbage", 6)).field;
+            CollectionAssert.AreEqual(SoilTotals(a), SoilTotals(b), "the soil");
+            Assert.AreEqual(a.Plants.Count, b.Plants.Count);
+            for (int i = 0; i < a.Plants.Count; i++)
+            {
+                PlantState p = a.Plants[i], q = b.Plants[i];
+                Assert.AreEqual(p.stage, q.stage);
+                Assert.AreEqual(p.health, q.health);
+                Assert.AreEqual(p.size, q.size);
+                Assert.AreEqual(p.Quality, q.Quality);
+                Assert.AreEqual(p.nextFruitId, q.nextFruitId);
+            }
+        }
+
+        [Test]
+        public void QuietStepsEndAsTheEveryStepLook()
+        {
+            // In a quiet stretch a plant goes on with what it last saw of its soil and neighbours; the weather - frost,
+            // warmth, ripening - still comes every step. Through a winter's rest, a summer crop, a frost spell over ripe
+            // fruit and a year of perennials, it ends as the garden that looked every step: the same stages and produce,
+            // the same plants alive, and its numbers within noise.
+            int season = Catalog().Settings.daysPerSeason;
+            double day = 24.0;
+            var gardens = new (string name, double sown, double from, double to, (string, int)[] rows)[]
+            {
+                ("resting through winter", 8.0 + day * 2, 8.0 + day * (3 * season + 1), 8.0 + day * (4 * season + 4), new[] { ("apple", 3), ("grape", 3), ("strawberry", 8), ("lavender", 8) }),
+                ("a summer crop", 8.0 + day * season, 8.0 + day * season, 8.0 + day * (season + 20), new[] { ("tomato", 10), ("bean", 10), ("carrot", 10) }),
+                ("frost over ripe fruit", 8.0 + day * (season + 4), 8.0 + day * (season + 4), 8.0 + day * (3 * season + 6), new[] { ("tomato", 10), ("cabbage", 8), ("potato", 6) }),
+                ("perennials over a year", 8.0 + day * 2, 8.0 + day * 2, 8.0 + day * (4 * season + 6), new[] { ("lavender", 8), ("comfrey", 4), ("strawberry", 8), ("apple", 2) }),
+            };
+            int quietSteps = 0;
+            foreach (var g in gardens)
+                foreach (int seed in new[] { 4242, 1717 })
+                {
+                    (FieldState a, FieldCatchUp ja) = CaughtUp(Shortcuts(false, false, false), g.sown, g.from, g.to, seed, g.rows);
+                    (FieldState b, FieldCatchUp jb) = CaughtUp(Shortcuts(false, true, true), g.sown, g.from, g.to, seed, g.rows);
+                    string what = $"{g.name} ({seed})";
+                    Assert.AreEqual(ja.PlantSteps, jb.PlantSteps, $"{what}: the same steps");
+                    quietSteps += jb.QuietPlantSteps;
+                    float[] sa = SoilTotals(a), sb = SoilTotals(b);
+                    for (int c = 0; c < sa.Length; c++) Assert.AreEqual(sa[c], sb[c], Mathf.Abs(sa[c]) * 0.001f + 1e-4f, $"{what}: soil {c}");
+                    Assert.AreEqual(a.Plants.Count, b.Plants.Count, $"{what}: the same plants");
+                    for (int i = 0; i < a.Plants.Count; i++)
+                    {
+                        PlantState p = a.Plants[i], q = b.Plants[i];
+                        string who = $"{what}: {p.species} {p.id}";
+                        Assert.AreEqual(p.id, q.id, who);
+                        Assert.AreEqual(p.stage, q.stage, $"{who}: stage");
+                        Assert.AreEqual(p.dormant, q.dormant, $"{who}: rest");
+                        Assert.AreEqual(p.years, q.years, $"{who}: years");
+                        Assert.AreEqual(p.nextFruitId, q.nextFruitId, $"{who}: produce made");
+                        Assert.AreEqual(p.fruits.Count, q.fruits.Count, $"{who}: produce on it");
+                        for (int k = 0; k < p.fruits.Count; k++) Assert.AreEqual(p.fruits[k].stage, q.fruits[k].stage, $"{who}: produce {k} ripeness");
+                        Assert.AreEqual(p.health, q.health, 0.005f, $"{who}: health");
+                        Assert.AreEqual(p.size, q.size, 0.005f, $"{who}: size");
+                        Assert.AreEqual(p.Quality, q.Quality, 0.005f, $"{who}: quality");
+                        Assert.AreEqual(p.chill, q.chill, 0.01f, $"{who}: cold gathered");
+                        Assert.AreEqual(p.Symptom(PlantSymptom.FrostBitten), q.Symptom(PlantSymptom.FrostBitten), 0.005f, $"{who}: frost");
+                    }
+                }
+            Assert.Greater(quietSteps, 200, "quiet stretches were found");
         }
     }
 
@@ -749,6 +1119,27 @@ namespace AgricultureSystem.Tests
             Assert.IsTrue(client.ImportVisual(server.ExportVisual(true, false)));
             Assert.AreEqual(server.State.Grid.Get(c, SoilChannel.Moisture), client.State.Grid.Get(c, SoilChannel.Moisture), 0.01f);
             Assert.AreEqual(1, client.State.Plants.Count, "a soil-only picture leaves the plants as they were");
+        }
+
+        [Test]
+        public void ASaveIsWrittenWholeAndKeepsTheCopyBeforeIt()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "AgricultureSaveTest_" + System.Guid.NewGuid().ToString("N"));
+            string path = Path.Combine(dir, "Fields", "garden.bin");
+            try
+            {
+                FarmClock.WriteWhole(path, new byte[] { 1, 2, 3 });
+                CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, File.ReadAllBytes(path), "the first save");
+                FarmClock.WriteWhole(path, new byte[] { 4, 5 });
+                CollectionAssert.AreEqual(new byte[] { 4, 5 }, File.ReadAllBytes(path), "the new save");
+                CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, File.ReadAllBytes(path + ".bak"), "the copy before it is kept");
+                Assert.IsFalse(File.Exists(path + ".tmp"), "nothing is left aside");
+                CollectionAssert.AreEqual(new[] { path, path + ".tmp", path + ".bak" }, FarmClock.CopiesOf(path), "read newest first");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch (System.Exception) { }
+            }
         }
 
         [Test]

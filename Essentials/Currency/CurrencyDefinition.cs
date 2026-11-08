@@ -28,6 +28,9 @@ public class CurrencyDefinition : ScriptableObject
     [SerializeField, Min(0)] private int startingAmount = 100;
     [Tooltip("Most a wallet can hold (sales that would go over it are refused).")]
     [SerializeField, Min(1)] private int maxAmount = 999999999;
+    [Tooltip("Players keep their balance between sessions (saved where the rules run - offline, the server - per player: " +
+             "see WalletSaves). Off: every session starts at the Starting Amount. Coin-item currencies are items and never saved here.")]
+    [SerializeField] private bool keepBetweenSessions = true;
 
     [Header("Coins As Items (optional)")]
     [Tooltip("Empty: the currency is a number on the wallet. Set: the currency IS this item in the inventory - the balance is how " +
@@ -84,6 +87,8 @@ public class CurrencyDefinition : ScriptableObject
     public Color Color => color;
     public int StartingAmount => startingAmount;
     public int MaxAmount => Mathf.Max(1, maxAmount);
+    /// <summary>Is a player's balance kept between sessions (a number currency with Keep Between Sessions)?</summary>
+    public bool KeepBetweenSessions => keepBetweenSessions && backingItem == null;
     public ItemSO BackingItem => backingItem;
     /// <summary>Is the currency an item in the inventory (see <see cref="BackingItem"/>)?</summary>
     public bool IsItemBacked => backingItem != null;

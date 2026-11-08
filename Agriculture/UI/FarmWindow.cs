@@ -58,6 +58,9 @@ public class FarmWindow : MonoBehaviour, IExclusivePanel
 
     public string PanelName => soilField != null ? "Field: " + soilField.DisplayName : "Field";
     public static bool IsOpen => instance != null && instance.soilField != null && instance.canvas.gameObject.activeSelf;
+
+    /// <summary>The window is open on this field.</summary>
+    public static bool IsShowing(SoilField f) => f != null && IsOpen && instance.soilField == f;
     private AgriSettings Settings => AgricultureDatabase.Instance.Settings;
 
     // ------------------------------------------------------------------ opening

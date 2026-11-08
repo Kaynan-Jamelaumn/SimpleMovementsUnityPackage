@@ -121,6 +121,32 @@ public class AgriSettings
     [Tooltip("Real minutes in a game day when no Day Night Cycle is in the game (otherwise it decides).")]
     [Min(0.5f)] public float dayLengthMinutes = 24f;
 
+    [Header("Sleeping gardens")]
+    [Tooltip("A garden with no player near sleeps: it is saved and not simulated; when someone comes near it is brought up to date with the weather that fell meanwhile, hour by hour (where the rules run: offline or the server).")]
+    public bool sleepWhenAlone = true;
+    [Tooltip("Metres from a garden's outline within which a player wakes it. Keep it above the fields' Draw Distance, so a garden is awake before anyone sees it.")]
+    [Min(1f)] public float wakeRadius = 120f;
+    [Tooltip("Metres from a garden's outline: with no player this near for Sleep Delay, it falls asleep.")]
+    [Min(1f)] public float sleepRadius = 150f;
+    [Tooltip("Real seconds with no player near before a garden falls asleep.")]
+    [Range(0f, 600f)] public float sleepDelaySeconds = 20f;
+    [Tooltip("A sleeping garden is also freed from memory (loaded again from its save when it wakes). Needs Save Fields; gardens that are not saved stay in memory.")]
+    public bool unloadWhenAsleep = true;
+    [Tooltip("Game hours a sleeping garden may lag behind before it is brought up to date in the background: an abandoned garden keeps living, and waking is quick.")]
+    [Min(1f)] public float maintenanceLagHours = 72f;
+    [Tooltip("Real milliseconds a frame for bringing gardens up to date (waking ones first, then the background).")]
+    [Range(0.25f, 20f)] public float catchUpMillisPerFrame = 2f;
+
+    [Header("Catching up")]
+    [Tooltip("A garden with no living plant (empty, or only the dead) catches up in long steps: its soil is worked out only when something touches it, so only the weather is replayed - the same weather, sample by sample, and the same result.")]
+    public bool fastForwardBareGardens = true;
+    [Tooltip("While a garden catches up, a plant looks at its soil and its neighbours again only every Quiet Hours while nothing they could change happens (no rain, no work on the soil, no pests or diseases near, its stage and roots the same, its water well within what it likes). The weather, frost and ripening still come every step, so the result stays the same.")]
+    public bool quietSteps = true;
+    [Tooltip("Longest a plant goes on with what it last saw of its soil and neighbours during a quiet stretch, game hours.")]
+    [Range(1f, 24f)] public float quietHours = 6f;
+    [Tooltip("Each soil cell keeps what it can feed at its pH and its water figures until they change, so plants sharing cells do not work them out again.")]
+    public bool cacheCellValues = true;
+
     [Header("Calendar")]
     [Tooltip("Game days in a season (four seasons make a year).")]
     [Range(1, 120)] public int daysPerSeason = 12;

@@ -116,6 +116,12 @@ public sealed class FieldState
     public int NextId = 1;
     /// <summary>Changes when a plant is added, removed or changes visibly.</summary>
     public int PlantVersion;
+    /// <summary>
+    /// Changes when a plant is added or removed, comes up, dies, rests or wakes, or catches or loses pests or a disease:
+    /// what its neighbours are to a plant. A plant goes on with what it last saw of them (a quiet stretch of a catch-up)
+    /// only while this is unchanged.
+    /// </summary>
+    public int QuietEpoch;
 
     // The weather it has had.
     public double EnvTime = -1.0;
@@ -172,7 +178,9 @@ public sealed class FieldState
         p.bucket = b;
         (buckets[b] ??= new List<PlantState>()).Add(p);
         p.rootRadius = -1f;
+        p.surroundings = null;
         PlantVersion++;
+        QuietEpoch++;
         return p;
     }
 
@@ -183,9 +191,26 @@ public sealed class FieldState
         if (p.bucket >= 0 && p.bucket < buckets.Length) buckets[p.bucket]?.Remove(p);
         p.bucket = -1;
         PlantVersion++;
+        QuietEpoch++;
     }
 
     public PlantState Find(int id) => byId.TryGetValue(id, out PlantState p) ? p : null;
+
+    /// <summary>The dead that have lain longer than <paramref name="limitHours"/> are gone (how many).</summary>
+    public int SweepDead(float limitHours)
+    {
+        int removed = 0;
+        for (int i = Plants.Count - 1; i >= 0; i--)
+        {
+            PlantState p = Plants[i];
+            if (p != null && !p.Alive && p.deadHours > limitHours)
+            {
+                Remove(p);
+                removed++;
+            }
+        }
+        return removed;
+    }
 
     /// <summary>The plants within <paramref name="radius"/> of a point (dead ones too; not <paramref name="except"/>).</summary>
     public void Near(Vector2 p, float radius, List<PlantState> into, PlantState except = null)

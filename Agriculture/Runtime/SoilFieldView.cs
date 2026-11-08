@@ -162,7 +162,8 @@ public class SoilFieldView : MonoBehaviour
         int n = g.Count;
         int slice = changed ? Mathf.Min(n, 2048) : Mathf.Min(n, 256);
         double now = FarmClock.Now;
-        bool advance = near && field.RulesHere && !field.Mirror;
+        // Never while the field is being brought up to date: its cells move with its plants then, step by step.
+        bool advance = near && field.RulesHere && !field.Mirror && !field.CatchingUp;
         AgriSettings s = field.Settings;
         for (int k = 0; k < slice; k++)
         {
@@ -190,7 +191,7 @@ public class SoilFieldView : MonoBehaviour
     // ---------------------------------------------------------------- frame
     private void LateUpdate()
     {
-        if (field == null || field.State == null) return;
+        if (field == null || !field.Loaded) return;
         if (mesh == null) BuildSoil();
         // Hidden with its realm (the city while the local player is away): RealmScene switches renderers off.
         if (soilRenderer != null && !soilRenderer.enabled && field.showSoil) return;

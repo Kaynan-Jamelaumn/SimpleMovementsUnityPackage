@@ -78,13 +78,20 @@ eight days by default ([chapter 03](03-Soil-Water-and-Weather.md)).
 
 ## Saving
 
-Where the rules run (offline, or the server), under `persistentDataPath/Agriculture/`:
+Where the rules run (offline, or the server), with the world that is open — `persistentDataPath/Worlds/<world>/Agriculture/`
+(the world the World Store keeps: `offline`, `online` or the `-world <id>` of the command line; worlds never share a
+garden or a clock, and nothing is kept while the world is open in another window of the game):
 
-* `Fields/<scene>_<field id>.bin` — each field's soil (every cell), plants and weather history, compressed; saved every
-  *Autosave Minutes* when changed and when the game quits. A field whose layout changed in the editor starts its soil
-  afresh from the new layout (its plants are kept).
-* `Skills/<player>.json`, `Notebook/<player>.json` — each player's skills and notes.
+* `Fields/<scene>_<field id>.bin` — each field's soil (every cell), what covers it, its plants and its weather,
+  compressed; saved every *Autosave Minutes* when changed, when it falls asleep, when the world closes and when the game
+  quits. A save is written whole (aside, then swapped in, the previous copy kept as `.bak`); a save that cannot be read
+  is never written over — the last whole copy is used, else the garden refuses work until it is mended. A field whose
+  layout changed in the editor starts its soil afresh from the new layout (its plants are kept).
 * `clock.json` — the farm clock.
+
+Saves from before worlds were kept apart (`persistentDataPath/Agriculture/Fields` and `clock.json`) are copied into
+each world the first time it keeps farming; those old files are no longer written. Each player's skills and notes stay
+under `persistentDataPath/Agriculture/` (`Skills/<player>.json`, `Notebook/<player>.json`).
 
 **Forget its save** in the Soil Field inspector (Play mode) or the context menu **Agriculture ▸ Forget The Saved Field**
 starts a field afresh.

@@ -107,6 +107,13 @@ public sealed class LegacyInteractableTarget : IInteractable
             reason = "No inventory";
             return false;
         }
+        // A chest that is not this player's (a rented room's): its owner's hook says why (the server checks again).
+        string denied = storage != null && !interactor.Inventory.IsStorageOpened ? storage.Denied(interactor.Inventory) : null;
+        if (denied != null)
+        {
+            reason = denied;
+            return false;
+        }
         return true;
     }
 

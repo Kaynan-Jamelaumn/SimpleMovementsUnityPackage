@@ -335,6 +335,7 @@ namespace SimpleMovements.Setup
             ["GameNet.NetWorldChunks"] = (SetupLevel.Required, "The open world's shared state: removed trees and rocks, the weather clock."),
             ["GameNet.NetSocial"] = (SetupLevel.Recommended, "Parties, guilds, fame, levels and inspecting other players. Without it party colours, nameplates and invites do not work online."),
             ["GameNet.NetPortals"] = (SetupLevel.Recommended, "The free player slots of dungeon portals shown when a player selects one."),
+            ["GameNet.NetHousing"] = (SetupLevel.Recommended, "Houses and inn rooms to rent: requests to the server's housing office, each player's own view, who may use which doors, chests, beds and gardens, the doors' state."),
         };
 
         private static SetupRequirement ComponentOnManager(string typeName, SetupLevel level, string why)

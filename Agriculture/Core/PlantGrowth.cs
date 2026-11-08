@@ -609,7 +609,16 @@ public static class PlantSim
         float n = Mathf.Lerp(pr.countMin, pr.countMax, quality) * p.genes.Factor(GeneTrait.FruitQuantity) * (0.45f + 0.55f * Mathf.Clamp01(p.size)) *
                   support * (1f + p.pruneBoost * 0.2f) * (1f - p.deadWood * 0.4f) * (0.85f + 0.3f * rng.Next());
         p.flowersLeft = Mathf.Clamp(Mathf.RoundToInt(n), 0, pr.countMax * 2);
+        p.flowersTotal = p.flowersLeft;
     }
+
+    /// <summary>
+    /// How many flowers of the flush should be open at <paramref name="progress"/> through the flowering: the first at once,
+    /// the rest evenly until the end. It depends on the progress alone, never on how long the steps are, so a garden
+    /// stepped hour by hour and one caught up in longer steps open the same flowers by the same time.
+    /// </summary>
+    public static int FlowersOpenBy(int total, float progress) =>
+        progress >= 1f ? total : Mathf.Clamp(Mathf.CeilToInt(total * progress - 1e-4f), 0, total);
 
     private static void Flowering(PlantState p, PlantSpeciesData d, AgriSettings s, float dt, float tDev, ref AgriRandom rng)
     {
@@ -618,8 +627,11 @@ public static class PlantSim
         p.progress = Mathf.Min(1f, p.progress + dt / hours * Mathf.Max(0.3f, tDev));
         if (p.flowersLeft > 0 && !p.bolted)
         {
-            float remaining = Mathf.Max(0.001f, 1f - before);
-            int open = p.progress >= 1f ? p.flowersLeft : Mathf.Min(p.flowersLeft, Mathf.CeilToInt(p.flowersLeft * Mathf.Min(1f, (p.progress - before) / remaining) - 1e-3f));
+            // A flush saved before its size was kept: as many as opened so far at this pace, plus those still to open.
+            if (p.flowersTotal < p.flowersLeft)
+                p.flowersTotal = Mathf.Min(100000, Mathf.RoundToInt(p.flowersLeft / Mathf.Max(0.001f, 1f - before)));
+            int opened = p.flowersTotal - p.flowersLeft;
+            int open = p.progress >= 1f ? p.flowersLeft : Mathf.Clamp(FlowersOpenBy(p.flowersTotal, p.progress) - opened, 0, p.flowersLeft);
             for (int i = 0; i < open; i++) NewPiece(p, ref rng, 0f);
             p.flowersLeft -= open;
         }

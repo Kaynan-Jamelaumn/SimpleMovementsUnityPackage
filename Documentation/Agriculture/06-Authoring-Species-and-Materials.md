@@ -8,7 +8,10 @@
 shows what it holds, its problems, and buttons to make **Species Assets**, **Soil Material Assets** and **Item Assets**.
 
 * **Settings** — the rules: time (*Growth Speed*, *Tick Hours*, *Max Step Hours*, *Plants Per Frame*, *Environment
-  Step Hours*, *Day Length Minutes*), the calendar (*Days Per Season* 12, *Lunar Cycle Days* 8, *Start Season*, *Start
+  Step Hours*, *Day Length Minutes*), sleeping gardens (*Sleep When Alone*, *Wake Radius*, *Sleep Radius*, *Sleep
+  Delay Seconds*, *Unload When Asleep*, *Maintenance Lag Hours*, *Catch Up Millis Per Frame*:
+  [chapter 07](07-Scripting-Editor-Multiplayer.md#sleeping-gardens)), catching up (*Fast Forward Bare Gardens*, *Quiet
+  Steps*, *Quiet Hours*, *Cache Cell Values*: [chapter 07](07-Scripting-Editor-Multiplayer.md#how-it-stays-light)), the calendar (*Days Per Season* 12, *Lunar Cycle Days* 8, *Start Season*, *Start
   Hour*), the city's *Climate* (per season, [chapter 03](03-Soil-Water-and-Weather.md)), *Use World Weather* and
   *Seasons On World Weather*, the soil (*Evaporation*, *Leaching*, *Mineralization* multipliers), plants (*Water Use*,
   *Nutrient Use*, *Stress Damage*, *Dead Plant Days*), *Pest Pressure*, *Disease Pressure*, *Spread*, *Pollinators*,

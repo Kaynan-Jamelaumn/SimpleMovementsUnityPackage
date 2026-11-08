@@ -44,9 +44,10 @@ public static class SMHelpMenu
             "PROJECT\n" +
             "• Project Setup: settings and databases in Resources. Input: check / complete the Input Actions asset, saved key bindings.\n\n" +
             "CHARACTERS AND ITEMS\n" +
-            "• Player, Inventory, Mobs, NPC, Social (targeting, parties, guilds).\n\n" +
+            "• Player, Inventory, Mobs, NPC, Social (targeting, parties, guilds), Alchemy, Crafting, Harvesting, Agriculture (soil fields, gardens).\n\n" +
             "WORLD\n" +
-            "• Hub World, Weather (day / night, weather conditions), Dungeon, Scene (menus, character creation, realm music).\n\n" +
+            "• Hub World, Weather (day / night, weather conditions), Dungeon, Scene (menus, character creation, realm music), Minigames, " +
+            "Housing (houses with land and gardens, inns, the rental market).\n\n" +
             "MULTIPLAYER\n" +
             "• Network: bootstrap scene, networked prefabs, relays, builds, running locally.\n\n" +
             "Where things go: a tool that makes or changes one kind of thing is in that thing's section; Validate only checks; Auto-Assign only " +

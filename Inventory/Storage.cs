@@ -20,6 +20,39 @@ public class Storage : MonoBehaviour
     /// <summary>The inventory that has this storage open right now, or null.</summary>
     public InventoryManager User { get; private set; }
 
+    /// <summary>
+    /// Asked before a storage opens for an inventory (where the rules run: the real check; on a client: its prompt) - a
+    /// refusal ("Not your room.") or null when it may. Null hook: anyone may (one at a time). Housing installs it for the
+    /// chests of rented rooms and houses.
+    /// </summary>
+    public static System.Func<Storage, InventoryManager, string> AccessCheck;
+
+    /// <summary>Raised where the rules run when a user closed a storage (its contents are back in <see cref="items"/>).</summary>
+    public static event System.Action<Storage> AnyReleased;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        AccessCheck = null;
+        AnyReleased = null;
+    }
+
+    /// <summary>The access hook's refusal for <paramref name="inventory"/>, or null.</summary>
+    public string Denied(InventoryManager inventory)
+    {
+        System.Func<Storage, InventoryManager, string> check = AccessCheck;
+        if (check == null) return null;
+        try
+        {
+            return check(this, inventory);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e, this);
+            return "You cannot open this now.";
+        }
+    }
+
     void Start()
     {
         int itemsToAdd = size - items.Count;
@@ -76,7 +109,9 @@ public class Storage : MonoBehaviour
     /// <summary><paramref name="inventory"/> closed the storage.</summary>
     public void Release(InventoryManager inventory)
     {
-        if (User == inventory)
-            User = null;
+        if (User != inventory)
+            return;
+        User = null;
+        AnyReleased?.Invoke(this);
     }
 }

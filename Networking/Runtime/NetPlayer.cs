@@ -18,6 +18,9 @@ namespace GameNet
     /// cameras, AudioListener, PlayerMovementView, the emote wheel, screen-space canvases under the player, the
     /// interaction prompt) plus anything listed in <see cref="ownerOnly"/> / <see cref="ownerOnlyObjects"/>. They are
     /// switched off in Awake whenever a network session runs and switched back on for the owner only.
+    /// <para>The player's lasting key (<see cref="PlayerKeys"/>) comes from the character the server accepted for this
+    /// spawn, one live session per character. Player objects are never pooled: the server destroys them when they despawn,
+    /// whatever their NetworkObject's despawn type says, so no identity is carried from one player to the next.</para>
     /// </remarks>
     [DefaultExecutionOrder(-2000)]
     [DisallowMultipleComponent]
@@ -101,11 +104,21 @@ namespace GameNet
         {
             base.OnStopNetwork();
             all.Remove(this);
+            StopWaiting(); // a character it waited for is no longer wanted
         }
 
         public override void OnStartServer()
         {
             base.OnStartServer();
+            // A player object is never pooled: a copy taken from a pool would carry one player's accepted character - their
+            // key, so their house and their kept money - into the next player's spawn. Whatever the prefab says, it is
+            // destroyed when it despawns, and nothing of an earlier spawn is kept.
+            if (NetworkObject != null)
+                NetworkObject.SetDefaultDespawnType(DespawnType.Destroy);
+            ForgetCharacter();
+            // The network layer's resolver goes in only when no other is installed: a game's own (real accounts) stays.
+            if (PlayerKeys.Resolver == null)
+                PlayerKeys.Resolver = ResolveKey;
             GameObject mover = PlayerLocator.MovableRoot(Entity);
             if (mover != null && mover.GetComponent<LagCompensated>() == null)
                 mover.AddComponent<LagCompensated>();

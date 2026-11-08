@@ -33,7 +33,6 @@ public class SoilFieldEditor : Editor
     // Unity's move/rotate/scale gizmo is hidden while a field tool is on and a field is the selected object (it sits at
     // the field's middle, under the brush) - decided from shared state alone, so no inspector can leave it hidden.
     private static int liveEditors;
-    private static bool gizmoHidden, toolsWereHidden;
     private static bool snap = true;
     private static float snapStep = 0.25f;
     private static bool outlineFold, baseFold = true, sectionsFold = true, paintFold, variationFold, settingsFold, runtimeFold = true;
@@ -89,17 +88,8 @@ public class SoilFieldEditor : Editor
     {
         GameObject go = Selection.activeGameObject;
         bool want = liveEditors > 0 && tool != Tool.Select && go != null && go.GetComponent<SoilField>() != null;
-        if (want && !gizmoHidden)
-        {
-            toolsWereHidden = Tools.hidden;
-            Tools.hidden = true;
-            gizmoHidden = true;
-        }
-        else if (!want && gizmoHidden)
-        {
-            Tools.hidden = toolsWereHidden;
-            gizmoHidden = false;
-        }
+        // One shared owner of Tools.hidden for every ground-area inspector: they can hide and give it back in any order.
+        GroundAreaHandles.HideTransformTool(typeof(SoilFieldEditor), want);
     }
 
     private void OnUndo()
@@ -632,6 +622,24 @@ public class SoilFieldEditor : Editor
         runtimeFold = EditorGUILayout.BeginFoldoutHeaderGroup(runtimeFold, "Play mode");
         if (runtimeFold)
         {
+            string sleep = field.Asleep
+                ? (field.Waking ? "waking up: catching up" : field.CatchingUp ? "asleep, catching up in the background" : field.Loaded ? "asleep (in memory)" : "asleep (saved, not in memory)")
+                : field.CatchingUp ? "catching up after a jump of the clock" : field.Loaded || field.RulesHere ? "awake" : "not watched here (nobody of this machine is near)";
+            if (field.Unreadable) sleep += " · its save cannot be read (it is not written over)";
+            double lag = field.LivedTo >= 0.0 ? FarmClock.Now - field.LivedTo : 0.0;
+            EditorGUILayout.LabelField($"{sleep} · lived to {(field.LivedTo >= 0.0 ? $"{lag:0.#} h ago" : "now")}", EditorStyles.miniLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(!field.RulesHere || field.Asleep))
+                    if (GUILayout.Button(new GUIContent("Sleep now", "Saved, no longer simulated or drawn (as when nobody is near). It wakes again within a second while a player is within Wake Radius."))) field.FallAsleep();
+                using (new EditorGUI.DisabledScope(!field.RulesHere || (!field.Asleep && !field.CatchingUp)))
+                    if (GUILayout.Button(new GUIContent("Wake now", "Loaded and brought up to date (as when a player comes near)."))) field.WakeUp();
+            }
+            if (!field.Loaded)
+            {
+                EditorGUILayout.EndFoldoutHeaderGroup();
+                return; // nothing in memory to show (reading it would load it, or make a client's copy)
+            }
             FieldState st = field.State;
             int alive = 0, seeds = 0;
             foreach (PlantState p in st.Plants)

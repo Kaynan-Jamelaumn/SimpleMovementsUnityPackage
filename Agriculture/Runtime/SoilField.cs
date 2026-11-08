@@ -29,8 +29,10 @@ public interface ISoilFieldNet
 /// <list type="bullet">
 /// <item>Cheap: soil cells are only worked out when touched; plants are data drawn in batches (no GameObject per
 /// plant), updated about once a game hour by the <see cref="FarmDirector"/> within a per-frame budget.</item>
-/// <item>Saved where the rules run (offline, the server) under persistentDataPath/Agriculture/Fields, by scene and field
-/// id: soil, plants and weather history. Changing the layout in the editor starts the soil afresh (plants are kept).</item>
+/// <item>Saved where the rules run (offline, the server) with the world that is open (Worlds/&lt;world&gt;/Agriculture/Fields,
+/// see <see cref="FarmClock.SaveFolder"/>), by scene and field id: soil, covers, plants and weather. A save is written
+/// whole (aside, then swapped in, the previous copy kept as a backup), and one that cannot be read is never written over.
+/// Changing the layout in the editor starts the soil afresh (plants are kept).</item>
 /// <item>Interactable: a trigger over the field (Ignore Raycast layer) makes it a target of the Player Interactor.</item>
 /// </list>
 /// </summary>
@@ -88,6 +90,27 @@ public class SoilField : MonoBehaviour, IInteractable
     private float heightStep;
     private Vector2 heightOrigin;
     private float boundingRadius;
+    // Sleeping (where the rules run): nobody near - saved, not simulated, perhaps freed from memory.
+    private bool asleep, waking, started;
+    private FieldCatchUp catchUp;
+    private double sleptAt = -1.0;
+    /// <summary>The world the garden was read from (<see cref="FarmClock.World"/>) and its folder (null: not kept): saved only there.</summary>
+    private int stateWorld = -1;
+    private string stateFolder;
+    /// <summary>No copy of the save could be read: it is never written over, and the garden refuses work.</summary>
+    private bool unreadable;
+    /// <summary>Real seconds before a save that failed is tried again.</summary>
+    private float retryAt;
+
+    /// <summary>
+    /// Asked before every piece of work on any field and for its prompt (offline, the server, and a client's prompt):
+    /// the field, the player and the work - a refusal ("Not your garden.") or null when they may. Null hook: everyone may.
+    /// Housing installs it for gardens that belong to a rented plot.
+    /// </summary>
+    public static Func<SoilField, CombatEntity, FarmActionKind, string> AccessCheck;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => AccessCheck = null;
 
     public ISoilFieldNet Net { get; set; }
     /// <summary>A network client's copy, filled by the server's snapshots (no rules run here).</summary>
@@ -121,6 +144,35 @@ public class SoilField : MonoBehaviour, IInteractable
     public IAgriClimateSource Climate => climate ??= MakeClimate();
     public SoilFieldView View => view;
 
+    /// <summary>Sleeping: nobody near (or hidden). Saved, not simulated, not drawn; brought up to date when it wakes.</summary>
+    public bool Asleep => asleep;
+    /// <summary>Being brought up to date (waking, after a jump of the clock, or in the background while asleep).</summary>
+    public bool CatchingUp => catchUp != null;
+    /// <summary>Its soil and plants are in memory.</summary>
+    public bool Loaded => state != null;
+    /// <summary>Simulated now: awake, up to date, its rules here.</summary>
+    public bool Simulated => !asleep && catchUp == null && state != null && RulesHere && !Mirror;
+    /// <summary>The game hour the garden has lived to (-1 when not known: never saved).</summary>
+    public double LivedTo => state != null ? state.EnvTime : sleptAt;
+    /// <summary>The Farm Director's note of when a player was last near (real seconds).</summary>
+    internal float LastNearAt { get; set; }
+    /// <summary>The catch-up under way ends in waking (someone is near), not in sleeping again.</summary>
+    internal bool Waking => waking && catchUp != null;
+    /// <summary>The Farm Director's note of how far the nearest player was at its last look (metres; large: nobody near).</summary>
+    internal float NearestPlayerSeen { get; set; } = float.MaxValue;
+    /// <summary>No copy of its save could be read: left as it is (never written over), it refuses work until it is mended.</summary>
+    public bool Unreadable => unreadable;
+
+    /// <summary>The middle of the field's box in the world, on the field's plane (no ground sampling).</summary>
+    public Vector3 CentreWorld
+    {
+        get
+        {
+            Rect r = layout != null ? layout.Bounds() : default;
+            return transform.position + transform.rotation * new Vector3(r.center.x, 0f, r.center.y);
+        }
+    }
+
     // ------------------------------------------------------------------ lifecycle
     private void Reset()
     {
@@ -132,23 +184,41 @@ public class SoilField : MonoBehaviour, IInteractable
     {
         if (!Application.isPlaying) return;
         FarmDirector.Register(this);
-        EnsureState();
+        LastNearAt = Time.unscaledTime;
         EnsureTrigger();
-        if (view == null)
+        if (!RulesHere) return; // a network client: drawn once the server's picture comes (when its player is near)
+        if (!started)
         {
-            var go = new GameObject("Soil Field View");
-            go.transform.SetParent(transform, false);
-            go.layer = gameObject.layer;
-            view = go.AddComponent<SoilFieldView>();
-            view.Bind(this);
+            started = true;
+            if (Settings.sleepWhenAlone && CanUnload)
+            {
+                // It starts asleep (nothing loaded): woken - loaded and brought up to date - when a player comes near.
+                asleep = true;
+                sleptAt = PeekLivedTo();
+                return;
+            }
         }
+        // Asleep (hidden with its realm, or nobody was near): it stays asleep until a player comes near - the Farm Director
+        // wakes the nearest gardens first, a few at a time - not every garden of the realm at once in this frame.
+        if (asleep) return;
+        EnsureState();
+        EnsureView();
     }
 
     private void OnDisable()
     {
         if (!Application.isPlaying) return;
+        // Hidden (offline: the city while the player is away) or going away: it sleeps - saved, and brought up to date,
+        // with the weather that fell meanwhile, when it is back.
+        if (RulesHere && !Mirror) FallAsleep();
+        else SaveIfDirty(true);
+    }
+
+    private void OnDestroy()
+    {
+        if (!Application.isPlaying) return;
         FarmDirector.Unregister(this);
-        SaveIfDirty(true);
+        catchUp = null;
     }
 
     private void OnValidate()
@@ -156,41 +226,75 @@ public class SoilField : MonoBehaviour, IInteractable
         if (string.IsNullOrEmpty(fieldId)) fieldId = Guid.NewGuid().ToString("N").Substring(0, 12);
     }
 
-    /// <summary>Makes the field's soil from its layout (and its save) the first time it is needed.</summary>
+    /// <summary>
+    /// Makes the field's soil from its layout (and its save) the first time it is needed. An awake garden read from a
+    /// save that lags the clock is brought up to date in lockstep before it is simulated (see <see cref="CatchingUp"/>).
+    /// </summary>
     public void EnsureState()
     {
         if (state != null) return;
         layout ??= new SoilLayout();
-        SoilGrid g = layout.CreateGrid();
-        layout.Bake(g, Application.isPlaying ? FarmClock.Now : 0.0);
-        state = new FieldState(g, AgricultureDatabase.Instance, AgriMath.Hash(FieldId));
+        state = Fresh();
         Rect b = layout.Bounds();
         boundingRadius = Mathf.Max(b.width, b.height) * 0.5f + 0.5f;
+        outerRadius = 0f;
         coversDirty = true;
-        if (Application.isPlaying && RulesHere && saveToDisk && Settings.saveFields) Load();
+        unreadable = false;
+        stateWorld = -1;
+        stateFolder = null;
+        if (Application.isPlaying && RulesHere && saveToDisk && Settings.saveFields)
+        {
+            // The open world's garden: it is saved back into that world only.
+            stateWorld = FarmClock.World;
+            stateFolder = FarmClock.SaveFolder;
+            if (stateFolder != null) Load();
+        }
         // Made on a network client: not this machine's own field (its save was not loaded) - it is made again, and its
         // save loaded, once the rules run here; until then it is never saved.
         if (Application.isPlaying && !RulesHere) reloadWhenRulesHere = true;
         soilSeen = state.Grid.Version;
         plantsSeen = state.PlantVersion;
+        // Read awake from a save that lags the clock (another world opened, the field was made again, a garden that never
+        // sleeps came into play): it catches up as after a jump of the clock, weather and plants step by step - not the
+        // whole gap in one plain tick, all its rain at once and then each plant through it. A sleeping one does as it wakes.
+        CatchUpAfterJump();
     }
 
-    /// <summary>Starts the field afresh from its layout (no plants, the designed soil). Editor tools and tests.</summary>
+    /// <summary>The field as its layout makes it (the designed soil, no plants).</summary>
+    private FieldState Fresh()
+    {
+        SoilGrid g = layout.CreateGrid();
+        layout.Bake(g, Application.isPlaying ? FarmClock.Now : 0.0);
+        return new FieldState(g, AgricultureDatabase.Instance, AgriMath.Hash(FieldId));
+    }
+
+    /// <summary>Makes the field again from its layout and its save (without one: the designed soil, no plants). Editor tools and tests.</summary>
     public void Rebuild()
     {
         state = null;
         heights = null;
+        catchUp = null;
+        waking = false;
         EnsureState();
-        view?.Rebuild();
+        if (!asleep)
+        {
+            view?.Rebuild();
+            EnsureView();
+        }
         Changed?.Invoke();
     }
 
-    private IAgriClimateSource MakeClimate()
-    {
-        if (useWorldWeather && Settings.useWorldWeather && WeatherSystem.Instance != null && WeatherSystem.Instance.gameObject.scene == gameObject.scene)
-            return new WorldWeatherSource(this);
-        return new CityClimateSource(Settings);
-    }
+    private IAgriClimateSource MakeClimate() => WorldWeatherHere ? new WorldWeatherSource(this) : new CityClimateSource(Settings);
+
+    /// <summary>Does the field follow the world's weather now (its scene's Weather System is here)?</summary>
+    private bool WorldWeatherHere =>
+        useWorldWeather && Settings.useWorldWeather && WeatherSystem.Instance != null && WeatherSystem.Instance.gameObject.scene == gameObject.scene;
+
+    /// <summary>
+    /// The climate was chosen before the scene's Weather System was enabled (a field read while its scene loads), or that
+    /// Weather System is gone: it is chosen again at its next use.
+    /// </summary>
+    private bool ClimateStale => climate is WorldWeatherSource ? WeatherSystem.Instance == null : climate is CityClimateSource && WorldWeatherHere;
 
     /// <summary>The Farm Director calls this every frame: covers, weather, saving, change notices.</summary>
     public void Tick(double now)
@@ -201,13 +305,24 @@ public class SoilField : MonoBehaviour, IInteractable
             reloadWhenRulesHere = false;
             Rebuild();
         }
+        if (state == null && !RulesHere) return; // a network client's garden nobody of this machine is near
+        if (asleep || catchUp != null) return; // sleeping, or being brought up to date (the Farm Director runs that)
+        if (state == null && RulesHere && !Mirror && Settings.sleepWhenAlone && CanUnload)
+        {
+            // The rules run here again with nothing loaded (a session ended, another world opened): it starts asleep, as
+            // at the start - woken when a player comes near, not every garden loaded in this frame.
+            asleep = true;
+            sleptAt = PeekLivedTo();
+            return;
+        }
         EnsureState();
+        if (catchUp != null) return; // just read from a save that lags the clock: it catches up first
         if (coversDirty) ApplyCovers();
         if (RulesHere && !Mirror)
         {
             if (state.EnvTime < 0.0 || now - state.EnvTime >= Settings.environmentStepHours)
             {
-                if (WeatherSystem.Instance == null && climate is WorldWeatherSource) climate = null;
+                if (ClimateStale) climate = null;
                 state.TickEnvironment(now, Climate);
             }
             if (dirty && saveToDisk && Settings.saveFields)
@@ -230,12 +345,358 @@ public class SoilField : MonoBehaviour, IInteractable
     public void Sweep(double now)
     {
         if (state == null || Mirror) return;
-        float limit = Settings.deadPlantDays * 24f;
-        for (int i = state.Plants.Count - 1; i >= 0; i--)
+        state.SweepDead(Settings.deadPlantDays * 24f);
+    }
+
+    // ------------------------------------------------------------------ sleeping and waking
+    /// <summary>Its garden is kept on disk in the open world (so it may be freed from memory once saved).</summary>
+    private bool CanUnload => saveToDisk && Settings.saveFields && !unreadable && FarmClock.SaveFolder != null;
+
+    /// <summary>
+    /// Nobody near (or hidden): the garden is brought up to the present when it is nearly there, saved, and no longer
+    /// simulated or drawn; with Unload When Asleep it is also freed from memory - only once its save is written (a save
+    /// that failed keeps it in memory, and it is tried again). Its life goes on - it is caught up, hour by hour with the
+    /// weather that fell, when it wakes, and in the background when it lags too far behind. Only where the rules run.
+    /// </summary>
+    public void FallAsleep()
+    {
+        if (!Application.isPlaying || !RulesHere || Mirror || reloadWhenRulesHere) return;
+        if (asleep)
         {
-            PlantState p = state.Plants[i];
-            if (p != null && !p.Alive && p.deadHours > limit) state.Remove(p);
+            waking = false; // a wake under way (hidden again before it ended) goes on in the background instead
+            SettleAsleep(true);
+            return;
         }
+        asleep = true;
+        waking = false; // a catch-up under way goes on in the background, then the garden is saved and freed
+        FarmWindow.Close(this);
+        DropView();
+        if (state == null) return;
+        if (catchUp != null)
+        {
+            // What it is now is saved at once (the catch-up goes on from there; it saves again when it ends).
+            if (CanUnload) Save();
+            return;
+        }
+        CoversForCatchUp();
+        if (FarmClock.Now - state.EnvTime <= Settings.maxStepHours) BringUpToDate(FarmClock.Now);
+        if (CanUnload && Save() && Settings.unloadWhenAsleep) Unload();
+    }
+
+    /// <summary>
+    /// A sleeping garden still in memory: saved if it changed (a save that failed is tried again after a while) and freed
+    /// with Unload When Asleep. The Farm Director calls it now and then; <paramref name="now"/>: without waiting for a retry.
+    /// </summary>
+    internal void SettleAsleep(bool now = false)
+    {
+        if (!asleep || catchUp != null || state == null || !Application.isPlaying || !RulesHere || Mirror || reloadWhenRulesHere) return;
+        if (!now && Time.unscaledTime < retryAt) return;
+        if (dirty && CanUnload && !Save()) return;
+        if (Settings.unloadWhenAsleep) Unload();
+    }
+
+    /// <summary>
+    /// A player came near (or it is shown again): loaded, brought up to date - at once for a few hours, over frames for
+    /// longer (it refuses work meanwhile: "The garden is waking up.") - then simulated and drawn. Only where the rules run.
+    /// </summary>
+    public void WakeUp()
+    {
+        if (!Application.isPlaying || !RulesHere || Mirror || !isActiveAndEnabled) return; // a hidden field sleeps on
+        if (!asleep && catchUp == null) return;
+        EnsureState();
+        if (catchUp != null)
+        {
+            waking = true; // the background work under way becomes the waking
+            return;
+        }
+        CoversForCatchUp();
+        if (state.EnvTime >= 0.0 && FarmClock.Now - state.EnvTime > Settings.maxStepHours)
+        {
+            catchUp = NewCatchUp();
+            waking = true;
+            return;
+        }
+        BringUpToDate(FarmClock.Now);
+        FinishWaking();
+    }
+
+    private void FinishWaking()
+    {
+        asleep = false;
+        waking = false;
+        catchUp = null;
+        coversDirty = true;
+        LastNearAt = Time.unscaledTime;
+        EnsureView();
+        // The change notice goes out at the next tick: the window, the view and the clients' pictures are refreshed.
+        soilSeen = -1;
+        plantsSeen = -1;
+    }
+
+    /// <summary>The Farm Director works on the catch-up under way; true when it finished (or there was none).</summary>
+    internal bool RunCatchUp(Func<bool> outOfTime)
+    {
+        if (catchUp == null) return true;
+        if (state == null || !ReferenceEquals(catchUp.Field, state))
+        {
+            // The field was made again meanwhile (rebuilt, reloaded): start over from what it is now.
+            catchUp = state != null ? NewCatchUp() : null;
+            if (catchUp == null) return true;
+        }
+        if (catchUp.WeatherSteps == 0)
+        {
+            // Not begun yet: the covers over it, and its weather, as they are now - a structure or the scene's Weather
+            // System shown with it may have been enabled after it was read (a scene that loads a garden awake).
+            CoversForCatchUp();
+            if (ClimateStale)
+            {
+                climate = null;
+                catchUp = NewCatchUp();
+            }
+        }
+        double now = FarmClock.Now;
+        catchUp.Target = now;
+        catchUp.LiveNow = now;
+        if (!catchUp.Run(outOfTime)) return false;
+        catchUp = null;
+        dirty = true;
+        if (waking && isActiveAndEnabled) FinishWaking();
+        else
+        {
+            // Nobody waits for it (or it was hidden meanwhile): it sleeps on, saved, and freed once saved.
+            waking = false;
+            asleep = true;
+            if (CanUnload && Save() && Settings.unloadWhenAsleep) Unload();
+        }
+        return true;
+    }
+
+    /// <summary>The Farm Director: a sleeping garden that lags behind is brought up to date in the background.</summary>
+    internal void BeginBackgroundCatchUp()
+    {
+        if (!asleep || catchUp != null || !RulesHere || Mirror || reloadWhenRulesHere) return;
+        EnsureState();
+        if (state.EnvTime < 0.0) return;
+        CoversForCatchUp();
+        catchUp = NewCatchUp();
+        waking = false;
+    }
+
+    /// <summary>
+    /// The clock is ahead of an awake garden by more than a step - it jumped (sleep, a skip: the Farm Director calls
+    /// this), or the garden was just read from a save that lags it: it catches up in lockstep, not plant by plant.
+    /// </summary>
+    internal void CatchUpAfterJump()
+    {
+        if (!Application.isPlaying || asleep || catchUp != null || state == null || !RulesHere || Mirror || state.EnvTime < 0.0) return;
+        if (FarmClock.Now - state.EnvTime <= Settings.maxStepHours) return;
+        CoversForCatchUp();
+        catchUp = NewCatchUp();
+        waking = true;
+    }
+
+    private FieldCatchUp NewCatchUp() => new FieldCatchUp(state, Climate, new CityClimateSource(Settings), FarmClock.Now);
+
+    /// <summary>
+    /// Before a catch-up: the covers of the structures over the field, when they are here (the field is shown, so are they).
+    /// A field hidden with its realm keeps the covers it was saved with - its greenhouse is hidden with it, not gone.
+    /// </summary>
+    private void CoversForCatchUp()
+    {
+        if (state != null && coversDirty && isActiveAndEnabled) ApplyCovers();
+    }
+
+    /// <summary>Brings the field to <paramref name="target"/> at once (a gap of a few hours).</summary>
+    private void BringUpToDate(double target)
+    {
+        if (state == null || state.EnvTime < 0.0 || target <= state.EnvTime) return;
+        new FieldCatchUp(state, Climate, new CityClimateSource(Settings), target).Run();
+    }
+
+    /// <summary>Frees the soil and plants from memory - only when they are saved (a field not saved stays in memory).</summary>
+    private void Unload()
+    {
+        if (state == null || !CanUnload || reloadWhenRulesHere || dirty) return;
+        sleptAt = state.EnvTime;
+        state = null;
+        heights = null;
+    }
+
+    /// <summary>The game hour a saved garden had lived to, read from the start of its save (-1 without one).</summary>
+    private double PeekLivedTo()
+    {
+        string path = SavePath;
+        if (path == null) return -1.0;
+        foreach (string copy in FarmClock.CopiesOf(path))
+        {
+            try
+            {
+                if (!File.Exists(copy)) continue;
+                using (FileStream file = File.OpenRead(copy))
+                using (var zip = new GZipStream(file, CompressionMode.Decompress))
+                using (var r = new BinaryReader(zip))
+                {
+                    int version;
+                    if (r.ReadInt32() != SaveMagic || (version = r.ReadInt32()) < 2 || version > SaveVersion) continue;
+                    r.ReadInt32();
+                    int count = r.ReadInt32();
+                    if (count < 0 || count > 100000) continue;
+                    for (int i = 0; i < count; i++) r.ReadString();
+                    return r.ReadDouble();
+                }
+            }
+            catch (Exception)
+            {
+                // the next copy
+            }
+        }
+        return -1.0;
+    }
+
+    /// <summary>
+    /// Another world opened (a session started or ended): what the garden held was the old world's (saved into it as it
+    /// closed). The new world's garden is read when it is needed - at once for an awake garden (brought up to the new
+    /// world's clock in lockstep first when its save lags it), when it wakes for a sleeping one; on a network client, the
+    /// server's picture comes instead.
+    /// </summary>
+    internal void ChangeWorld()
+    {
+        if (Mirror) return; // the server's picture on a client: the network side gives the field back (ClearMirror)
+        bool had = state != null;
+        catchUp = null;
+        waking = false;
+        state = null;
+        heights = null;
+        dirty = false;
+        saveTimer = 0f;
+        unreadable = false;
+        stateWorld = -1;
+        stateFolder = null;
+        sleptAt = -1.0;
+        if (!Application.isPlaying) return;
+        if (had) FarmWindow.Close(this);
+        if (!RulesHere)
+        {
+            // A network client: the server's picture is drawn when its player is near; a garden never sleeps here.
+            DropView();
+            asleep = false;
+            return;
+        }
+        reloadWhenRulesHere = false;
+        if (asleep)
+        {
+            sleptAt = PeekLivedTo();
+            return;
+        }
+        if (!had && view == null) return; // nothing of it was in use: it starts asleep at its next tick
+        EnsureState();
+        view?.Rebuild();
+        EnsureView();
+        soilSeen = -1;
+        plantsSeen = -1;
+        Changed?.Invoke();
+    }
+
+    /// <summary>The world the garden was read from is written one last time before it closes: the garden is saved into it.</summary>
+    internal void SaveForClosingWorld()
+    {
+        if (state == null || Mirror || reloadWhenRulesHere || stateFolder == null) return;
+        if (!dirty && catchUp == null && state.Grid.Version == soilSeen && state.PlantVersion == plantsSeen) return; // saved as it is
+        Save();
+    }
+
+    private void EnsureView()
+    {
+        // Drawn only where someone looks: never on a dedicated server.
+        if (view != null || !Application.isPlaying || !GameNet.NetAuthority.HasLocalPlayer || !isActiveAndEnabled || asleep) return;
+        var go = new GameObject("Soil Field View");
+        go.transform.SetParent(transform, false);
+        go.layer = gameObject.layer;
+        view = go.AddComponent<SoilFieldView>();
+        view.Bind(this);
+    }
+
+    private void DropView()
+    {
+        if (view == null) return;
+        Destroy(view.gameObject);
+        view = null;
+    }
+
+    /// <summary>
+    /// Picks the ripe produce of every plant - for someone leaving the garden (a tenant whose lease ended: their crop is
+    /// theirs, not the next tenant's). The field is brought up to the present first (loaded if it slept), then each
+    /// mature, ripe or overripe piece (and each plant whose whole crop is ready) is harvested as a careful worker with a
+    /// sickle and a shovel would. Where the rules run; the items picked (agricultural ids with their per-copy codes). The
+    /// garden is saved before they are given (they are not picked twice after a crash); a garden whose save cannot be read
+    /// gives nothing.
+    /// </summary>
+    public List<FarmItemChange> PickRipe(string forName)
+    {
+        var items = new List<FarmItemChange>();
+        if (!Application.isPlaying || !RulesHere || Mirror || reloadWhenRulesHere) return items;
+        EnsureState();
+        if (unreadable) return items;
+        CoversForCatchUp();
+        if (catchUp != null && !ReferenceEquals(catchUp.Field, state)) catchUp = null; // the field was made again meanwhile
+        if (catchUp != null)
+        {
+            catchUp.Target = FarmClock.Now;
+            catchUp.LiveNow = FarmClock.Now;
+            catchUp.Run();
+            catchUp = null;
+            if (waking && isActiveAndEnabled) FinishWaking();
+            waking = false;
+        }
+        else if (state.EnvTime >= 0.0 && FarmClock.Now > state.EnvTime)
+            new FieldCatchUp(state, Climate, new CityClimateSource(Settings), FarmClock.Now).Run();
+        var worker = new FarmWorker { key = 0, name = forName ?? "" };
+        worker.tools.Add(new FarmToolProfile { id = "agri:tool/sickle", kind = FarmToolKind.Sickle, quality = 0.6f, speed = 1f, edge = 1f });
+        worker.tools.Add(new FarmToolProfile { id = "agri:tool/shovel", kind = FarmToolKind.Shovel, quality = 0.6f, speed = 1f, edge = 1f });
+        double now = FarmClock.Now;
+        foreach (PlantState p in state.Plants.ToArray())
+        {
+            if (p == null || !p.Alive || !p.Emerged) continue;
+            p.data ??= state.Catalog?.Species(p.species);
+            if (p.data == null) continue;
+            ProduceSpec pr = p.data.Produce;
+            if (PlantSim.OnePiece(pr) || (pr.wholePlant && pr.part == ProducePart.Grain))
+            {
+                bool ready = p.stage == PlantStage.HarvestReady || p.stage == PlantStage.Overripe ||
+                             (p.fruits.Count > 0 && p.fruits[0].stage >= ProduceStage.Mature && p.fruits[0].stage != ProduceStage.Rotten);
+                if (ready) Collect(FarmActions.Perform(state, new FarmRequest { kind = FarmActionKind.Harvest, spot = p.position, plant = p.id }, worker, now, Climate), items);
+                continue;
+            }
+            foreach (FruitState fr in p.fruits.ToArray())
+                if (fr.stage >= ProduceStage.Mature && fr.stage != ProduceStage.Rotten)
+                    Collect(FarmActions.Perform(state, new FarmRequest { kind = FarmActionKind.Harvest, spot = p.position, plant = p.id, piece = fr.id }, worker, now, Climate), items);
+        }
+        dirty = true;
+        // Saved now, awake or not: the picked crop is the leaving tenant's from this moment.
+        if (CanUnload && Save() && asleep && Settings.unloadWhenAsleep) Unload();
+        return items;
+    }
+
+    private static void Collect(FarmResult r, List<FarmItemChange> into)
+    {
+        if (r == null || !r.ok || r.give == null) return;
+        foreach (FarmItemChange g in r.give)
+            if (g != null && g.count > 0) into.Add(g);
+    }
+
+    /// <summary>
+    /// A network client stops watching the garden (nobody of this machine near it): its picture and its drawing are
+    /// freed. A field this machine made before the session (its own) is saved first.
+    /// </summary>
+    public void ForgetPicture()
+    {
+        if (RulesHere) return;
+        if (!Mirror && !reloadWhenRulesHere && state != null) Save();
+        FarmWindow.Close(this);
+        DropView();
+        state = null;
+        heights = null;
+        reloadWhenRulesHere = true;
     }
 
     // ------------------------------------------------------------------ geometry
@@ -368,25 +829,57 @@ public class SoilField : MonoBehaviour, IInteractable
     /// <summary>Does a request where the rules run (offline, or the server for any player).</summary>
     public FarmResult PerformHere(FarmRequest request, CombatEntity player)
     {
-        EnsureState();
         FarmResult result;
+        string denied;
         if (Mirror) result = FarmResult.Fail("This field follows the server.");
         else if (player == null) result = FarmResult.Fail("Nobody to do it.");
-        else if ((Local(player.transform.position) - request.spot).magnitude > Settings.workRange + 0.75f || !PlantInReach(request.plant, player))
-            result = FarmResult.Fail("That is out of reach.");
+        else if ((denied = Denied(player, request.kind)) != null) result = FarmResult.Fail(denied);
+        // The spot is checked before anything is loaded: a request from afar never wakes a sleeping garden.
+        else if ((Local(player.transform.position) - request.spot).magnitude > Settings.workRange + 0.75f) result = FarmResult.Fail("That is out of reach.");
+        else if (unreadable) result = FarmResult.Fail(UnreadableText);
+        else if (asleep || catchUp != null)
+        {
+            WakeUp();
+            result = FarmResult.Fail("The garden is waking up.");
+        }
         else
         {
-            AgriKnowledge k = AgriKnowledge.For(player);
-            FarmWorker worker = AgriToolkit.WorkerFor(player, k, request.kind == FarmActionKind.Sow ? AgriIds.Seed(request.item ?? "") : null);
-            result = FarmActions.Perform(state, request, worker, FarmClock.Now, Climate);
-            if (result != null && result.ok) AgriToolkit.Apply(player, k, worker, result, this);
-            dirty = true;
+            EnsureState();
+            if (catchUp != null) result = FarmResult.Fail("The garden is waking up."); // just read from a save that lags the clock
+            else if (unreadable || !PlantInReach(request.plant, player))
+                result = FarmResult.Fail(unreadable ? UnreadableText : "That is out of reach.");
+            else
+            {
+                AgriKnowledge k = AgriKnowledge.For(player);
+                FarmWorker worker = AgriToolkit.WorkerFor(player, k, request.kind == FarmActionKind.Sow ? AgriIds.Seed(request.item ?? "") : null);
+                result = FarmActions.Perform(state, request, worker, FarmClock.Now, Climate);
+                if (result != null && result.ok) AgriToolkit.Apply(player, k, worker, result, this);
+                dirty = true;
+            }
         }
         // The answer names its request: a client matches it to what it is waiting for.
         if (result != null) result.seq = request.seq;
         Answered?.Invoke(player, result);
         if (!CardTable.IsLocalPlayer(player)) Net?.SendResult(player, result);
         return result;
+    }
+
+    private const string UnreadableText = "This garden's save cannot be read: it is left as it is.";
+
+    /// <summary>The access hook's refusal for this player and work, or null (no hook: anyone may).</summary>
+    public string Denied(CombatEntity player, FarmActionKind kind)
+    {
+        Func<SoilField, CombatEntity, FarmActionKind, string> check = AccessCheck;
+        if (check == null) return null;
+        try
+        {
+            return check(this, player, kind);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e, this);
+            return "You cannot work this soil now.";
+        }
     }
 
     /// <summary>
@@ -435,7 +928,36 @@ public class SoilField : MonoBehaviour, IInteractable
     public string InteractionName => DisplayName;
     public string InteractionVerb => "Tend";
     public Transform InteractionPoint => interactionPoint != null ? interactionPoint : transform;
-    public float InteractionRange => boundingRadius + Settings.workRange + extraReach;
+    public float InteractionRange => Radius + Settings.workRange + extraReach;
+
+    /// <summary>Half the size of the field's box, metres (from the layout: known while the field sleeps).</summary>
+    public float Radius
+    {
+        get
+        {
+            if (boundingRadius <= 0f && layout != null)
+            {
+                Rect b = layout.Bounds();
+                boundingRadius = Mathf.Max(b.width, b.height) * 0.5f + 0.5f;
+            }
+            return boundingRadius;
+        }
+    }
+    /// <summary>From the middle of the field's box to its farthest corner, metres (no point of the field is farther).</summary>
+    internal float OuterRadius
+    {
+        get
+        {
+            if (outerRadius <= 0f && layout != null)
+            {
+                Rect b = layout.Bounds();
+                outerRadius = Mathf.Sqrt(b.width * b.width + b.height * b.height) * 0.5f + 0.5f;
+            }
+            return outerRadius;
+        }
+    }
+    private float outerRadius;
+
     public int InteractionPriority => interactionPriority;
     public float HoldDuration => 0f;
     public bool AllowsClick => true;
@@ -449,6 +971,23 @@ public class SoilField : MonoBehaviour, IInteractable
         if (DistanceFromOutline(player.transform.position) > Settings.workRange + extraReach)
         {
             reason = "Too far from the soil";
+            return false;
+        }
+        string denied = Denied(player, FarmActionKind.Inspect);
+        if (denied != null)
+        {
+            reason = denied;
+            return false;
+        }
+        if (unreadable)
+        {
+            reason = UnreadableText;
+            return false;
+        }
+        if (RulesHere && !Mirror && (asleep || catchUp != null))
+        {
+            WakeUp();
+            reason = "The garden is waking up.";
             return false;
         }
         return true;
@@ -475,16 +1014,20 @@ public class SoilField : MonoBehaviour, IInteractable
 
     // ------------------------------------------------------------------ saving
     private const int SaveMagic = 0x31464741; // "AGF1"
-    private const int SaveVersion = 2;
+    /// <summary>3: the weather of the last hour is kept, and the soil is kept in one piece (skipped whole when the layout changed). 2: still read.</summary>
+    private const int SaveVersion = 3;
 
-    public string SavePath
+    /// <summary>
+    /// The field's save in the open world: Worlds/&lt;world&gt;/Agriculture/Fields/&lt;scene&gt;_&lt;field id&gt;.bin (null where nothing
+    /// is kept here: a network client, a world open in another window of the game). Its backup is "&lt;file&gt;.bak".
+    /// </summary>
+    public string SavePath => PathIn(FarmClock.SaveFolder);
+
+    private string PathIn(string folder)
     {
-        get
-        {
-            string scene = gameObject.scene.IsValid() ? gameObject.scene.name : "Scene";
-            string file = SMAssetsEditorSafe(scene + "_" + FieldId);
-            return Path.Combine(Application.persistentDataPath, "Agriculture", "Fields", file + ".bin");
-        }
+        if (folder == null) return null;
+        string scene = gameObject.scene.IsValid() ? gameObject.scene.name : "Scene";
+        return Path.Combine(folder, "Fields", SMAssetsEditorSafe(scene + "_" + FieldId) + ".bin");
     }
 
     private static string SMAssetsEditorSafe(string s)
@@ -500,47 +1043,92 @@ public class SoilField : MonoBehaviour, IInteractable
         Save();
     }
 
-    public void Save()
+    /// <summary>
+    /// Writes the field's save whole - aside first, then swapped in, the previous copy kept as the backup - so a failed or
+    /// torn write never costs the save there was. Only this machine's own field, into the world it was read from, and never
+    /// over a save that could not be read. False when nothing was written: the field then stays in memory, still to be
+    /// saved (it is tried again).
+    /// </summary>
+    public bool Save()
     {
         // Never what a network client was shown: only this machine's own field.
-        if (state == null || Mirror || reloadWhenRulesHere) return;
+        if (state == null || Mirror || reloadWhenRulesHere || unreadable || !saveToDisk || !Settings.saveFields) return false;
+        if (stateFolder == null || stateWorld != FarmClock.World) return false; // not kept, or another world's
         saveTimer = 0f;
-        dirty = false;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(SavePath));
-            using (FileStream file = File.Create(SavePath))
-            using (var zip = new GZipStream(file, System.IO.Compression.CompressionLevel.Fastest))
-            using (var w = new BinaryWriter(zip))
-                Write(w, true);
+            byte[] data;
+            using (var ms = new MemoryStream())
+            {
+                using (var zip = new GZipStream(ms, System.IO.Compression.CompressionLevel.Fastest, true))
+                using (var w = new BinaryWriter(zip))
+                    Write(w, true);
+                data = ms.ToArray();
+            }
+            FarmClock.WriteWhole(PathIn(stateFolder), data);
+            dirty = false;
+            return true;
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"Agriculture: could not save field '{DisplayName}' ({e.Message}).", this);
+            dirty = true;
+            retryAt = Time.unscaledTime + 30f;
+            Debug.LogWarning($"Agriculture: could not save field '{DisplayName}' ({e.Message}). It stays in memory and is tried again.", this);
+            return false;
         }
     }
 
+    /// <summary>
+    /// Reads the field's save into the fresh state: the save itself, else a write that was not swapped in, else the backup
+    /// (a save that cannot be read is then set aside, kept for whoever wants to look at it). When no copy can be read, the
+    /// garden is left as its layout makes it, refuses work and is never saved - nothing is written over the files.
+    /// </summary>
     private void Load()
     {
-        string path = SavePath;
-        if (!File.Exists(path)) return;
-        try
+        string path = PathIn(stateFolder);
+        string[] copies = FarmClock.CopiesOf(path);
+        bool any = false;
+        string problem = null;
+        for (int k = 0; k < copies.Length; k++)
         {
-            using (FileStream file = File.OpenRead(path))
-            using (var zip = new GZipStream(file, CompressionMode.Decompress))
-            using (var r = new BinaryReader(zip))
-                Read(r);
+            if (!File.Exists(copies[k])) continue;
+            any = true;
+            try
+            {
+                using (FileStream file = File.OpenRead(copies[k]))
+                using (var zip = new GZipStream(file, CompressionMode.Decompress))
+                using (var r = new BinaryReader(zip))
+                    Read(r);
+            }
+            catch (Exception e)
+            {
+                problem ??= e.Message;
+                state = Fresh(); // nothing of a copy that could not be read is kept
+                dirty = false;
+                continue;
+            }
+            if (k > 0 && File.Exists(path))
+            {
+                string aside = path + ".unreadable-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                try
+                {
+                    File.Move(path, aside);
+                    Debug.LogWarning($"Agriculture: the save of field '{DisplayName}' could not be read ({problem}): its {(k == 1 ? "last write" : "backup")} was used, and the unreadable file is kept as '{Path.GetFileName(aside)}'.", this);
+                }
+                catch (Exception e)
+                {
+                    unreadable = true;
+                    Debug.LogError($"Agriculture: the save of field '{DisplayName}' could not be read ({problem}) nor set aside ({e.Message}): the garden refuses work and is not saved until it is mended ({path}).", this);
+                }
+            }
+            return;
         }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"Agriculture: could not read the save of field '{DisplayName}' - it starts afresh ({e.Message}).", this);
-            SoilGrid g = layout.CreateGrid();
-            layout.Bake(g, FarmClock.Now);
-            state = new FieldState(g, AgricultureDatabase.Instance, AgriMath.Hash(FieldId));
-        }
+        if (!any) return; // never saved: it starts from its layout
+        unreadable = true;
+        Debug.LogError($"Agriculture: no copy of the save of field '{DisplayName}' can be read ({problem}): the garden is left as its layout makes it, refuses work and is not saved, so nothing is written over it ({path}).", this);
     }
 
-    /// <summary>Everything the field is (soil, plants, weather history), for saves and tests.</summary>
+    /// <summary>Everything the field is (soil, covers, plants, weather), for saves and tests.</summary>
     public void Write(BinaryWriter w, bool full)
     {
         w.Write(SaveMagic);
@@ -555,7 +1143,22 @@ public class SoilField : MonoBehaviour, IInteractable
         w.Write(state.TodayLight);
         w.Write(state.YesterdayLight);
         w.Write(state.LightDay);
-        state.Grid.Write(w);
+        AgriWeather we = state.Weather;
+        w.Write(we.temperature);
+        w.Write(we.humidity);
+        w.Write(we.rain);
+        w.Write(we.clouds);
+        w.Write(we.wind);
+        w.Write(we.light);
+        w.Write(we.day);
+        w.Write(we.storm);
+        // The soil in one piece, so a save whose layout changed can skip it whole.
+        using (var ms = new MemoryStream())
+        {
+            using (var gw = new BinaryWriter(ms, System.Text.Encoding.UTF8, true)) state.Grid.Write(gw);
+            w.Write((int)ms.Length);
+            w.Write(ms.GetBuffer(), 0, (int)ms.Length);
+        }
         w.Write(JsonUtility.ToJson(state.Export()));
     }
 
@@ -563,18 +1166,37 @@ public class SoilField : MonoBehaviour, IInteractable
     {
         if (r.ReadInt32() != SaveMagic) throw new InvalidDataException("not a field save");
         int version = r.ReadInt32();
-        if (version != SaveVersion) throw new InvalidDataException("an older save");
+        if (version < 2 || version > SaveVersion) throw new InvalidDataException($"a save of version {version}");
         int hash = r.ReadInt32();
         int count = r.ReadInt32();
+        if (count < 0 || count > 100000) throw new InvalidDataException("broken materials");
         var ids = new string[count];
         for (int i = 0; i < count; i++) ids[i] = r.ReadString();
         double env = r.ReadDouble();
         float soilT = r.ReadSingle(), wet = r.ReadSingle(), today = r.ReadSingle(), yesterday = r.ReadSingle();
         int lightDay = r.ReadInt32();
+        AgriWeather weather = AgriEnvironment.Climate(Settings, Math.Max(0.0, env)); // a save of version 2: the climate's
+        byte[] soil = null;
+        if (version >= 3)
+        {
+            weather = new AgriWeather
+            {
+                temperature = r.ReadSingle(), humidity = r.ReadSingle(), rain = r.ReadSingle(), clouds = r.ReadSingle(),
+                wind = r.ReadSingle(), light = r.ReadSingle(), day = r.ReadBoolean(), storm = r.ReadBoolean(),
+            };
+            int length = r.ReadInt32();
+            if (length < 0 || length > 256 * 1024 * 1024) throw new InvalidDataException("broken soil");
+            soil = r.ReadBytes(length);
+            if (soil.Length != length) throw new EndOfStreamException("the soil was cut short");
+        }
         bool sameLayout = hash == layout.Hash();
         if (sameLayout)
         {
-            if (!state.Grid.Read(r)) throw new InvalidDataException("the soil does not fit");
+            bool fits;
+            if (soil != null)
+                using (var sr = new BinaryReader(new MemoryStream(soil))) fits = state.Grid.Read(sr);
+            else fits = state.Grid.Read(r);
+            if (!fits) throw new InvalidDataException("the soil does not fit");
             // Materials lying on top are kept by index: map the saved ones to this database's.
             var remap = new ushort[count + 1];
             for (int i = 0; i < count; i++) remap[i + 1] = (ushort)(state.Catalog.AmendmentIndex(ids[i]) + 1);
@@ -587,13 +1209,29 @@ public class SoilField : MonoBehaviour, IInteractable
             state.TodayLight = today;
             state.YesterdayLight = yesterday;
             state.LightDay = lightDay;
+            state.Weather = weather; // the instruments read it before the next weather step
         }
         else
         {
-            // The layout changed in the editor: the soil starts afresh; skip the saved one.
-            var discard = new SoilGrid(state.Grid.Width, state.Grid.Height, state.Grid.CellSize, state.Grid.Origin);
-            try { discard.Read(r); } catch (Exception) { }
+            // The layout changed in the editor: the soil starts afresh; the saved one is skipped.
             Debug.Log($"Agriculture: the layout of field '{DisplayName}' changed - its soil starts afresh, its plants are kept.", this);
+            if (soil == null)
+            {
+                // A save of version 2 keeps its soil cell by cell: it can be skipped only when the cells are the same.
+                try
+                {
+                    var discard = new SoilGrid(state.Grid.Width, state.Grid.Height, state.Grid.CellSize, state.Grid.Origin);
+                    if (!discard.Read(r)) throw new InvalidDataException("another size");
+                    state.Import(JsonUtility.FromJson<PlantStateList>(r.ReadString()));
+                }
+                catch (Exception)
+                {
+                    state = Fresh();
+                    Debug.Log($"Agriculture: the older save of field '{DisplayName}' does not fit its new layout - its plants start afresh too.", this);
+                }
+                dirty = true;
+                return;
+            }
         }
         string json = r.ReadString();
         PlantStateList list = JsonUtility.FromJson<PlantStateList>(json);
@@ -616,7 +1254,8 @@ public class SoilField : MonoBehaviour, IInteractable
         reloadWhenRulesHere = true;
         state = null;
         heights = null;
-        view?.Rebuild();
+        // Drawn again once the rules run here (the field made afresh from this machine's own save).
+        DropView();
         Changed?.Invoke();
     }
 
@@ -712,6 +1351,7 @@ public class SoilField : MonoBehaviour, IInteractable
                 if (r.ReadInt32() != g.Width || r.ReadInt32() != g.Height) return false;
                 Mirror = true;
                 if (Application.isPlaying) FarmClock.FromServer(now);
+                EnsureView();
                 for (int i = 0; (parts & 1) != 0 && i < g.Count; i++)
                 {
                     if (!g.Inside[i]) continue;
@@ -807,7 +1447,10 @@ public class SoilField : MonoBehaviour, IInteractable
     {
         try
         {
-            if (File.Exists(SavePath)) File.Delete(SavePath);
+            string path = SavePath;
+            if (path != null)
+                foreach (string copy in FarmClock.CopiesOf(path))
+                    if (File.Exists(copy)) File.Delete(copy);
         }
         catch (Exception e)
         {

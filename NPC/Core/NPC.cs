@@ -112,6 +112,9 @@ public class NPC : MonoBehaviour, IInteractable, IReplicatedInteractable
 
     public static IReadOnlyList<NPC> All => all;
 
+    /// <summary>How many players it serves at once (0: everyone).</summary>
+    public int MaxPlayersAtOnce => maxPlayersAtOnce;
+
     /// <summary>
     /// Network: opens the windows of remote players' sessions on their machines and sends a client's choices to the server
     /// (installed by the network layer; null offline - everything then happens on this machine as before).

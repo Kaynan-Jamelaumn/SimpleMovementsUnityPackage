@@ -51,6 +51,11 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     public static event Action<CurrencyWallet, CurrencyDefinition, int, int> AnyBalanceChanged;
 
     private readonly Dictionary<CurrencyDefinition, int> itemBalances = new Dictionary<CurrencyDefinition, int>();
+    /// <summary>Set by <see cref="WalletSaves"/> until the player's kept balances are back: nothing is spent or added meanwhile.</summary>
+    internal bool awaitingRestore;
+
+    /// <summary>The wallet waits for the balances kept from the last session (a moment after joining): it refuses changes until then.</summary>
+    public bool AwaitingRestore => awaitingRestore;
     private InventoryManager subscribedInventory;
     private bool warnedClientChange;
 
@@ -94,7 +99,13 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
             }
         }
         if (w == null && create)
+        {
             w = root.gameObject.AddComponent<CurrencyWallet>();
+            // Its kept balances are fetched (or it is locked until they are) before anything can spend from it or pay into
+            // it - not a frame later at its Start.
+            if (w.gameObject.activeInHierarchy)
+                WalletSaves.Track(w);
+        }
         return w;
     }
 
@@ -107,7 +118,13 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
 
     private void OnEnable() => SubscribeInventory();
 
-    private void Start() => SubscribeInventory();
+    private void Start()
+    {
+        SubscribeInventory();
+        WalletSaves.Track(this); // the balances of the last session come back once the player is known
+    }
+
+    private void OnDestroy() => WalletSaves.Untrack(this);
 
     private void OnDisable()
     {
@@ -175,6 +192,8 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     {
         if (RefuseOnReplica(nameof(TrySpend)))
             return false;
+        if (awaitingRestore)
+            return false; // the last session's balances are not back yet
         if (amount < 0)
             return false;
         if (amount == 0)
@@ -205,6 +224,8 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     {
         if (RefuseOnReplica(nameof(TryAdd)))
             return false;
+        if (awaitingRestore)
+            return false; // the last session's balances are not back yet
         if (amount < 0)
             return false;
         if (amount == 0)
@@ -266,7 +287,10 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
     // ------------------------------------------------------------------ internals
     private CurrencyDefinition Resolve(CurrencyDefinition currency) => currency != null ? currency : DefaultCurrency;
 
-    /// <summary>The balance entry of a number currency (created at its starting amount).</summary>
+    /// <summary>
+    /// The balance entry of a number currency, created at its starting amount - or at its kept amount, for a kept currency
+    /// that was not loaded when the last session's balances came back (<see cref="WalletSaves"/>).
+    /// </summary>
     private CurrencyBalance Entry(CurrencyDefinition currency)
     {
         for (int i = 0; i < balances.Count; i++)
@@ -274,6 +298,9 @@ public class CurrencyWallet : MonoBehaviour, ICurrencyAccount
                 return balances[i];
         var e = new CurrencyBalance(currency, currency.IsItemBacked ? 0 : currency.StartingAmount);
         balances.Add(e);
+        // A kept currency the restore had to leave waiting gets its kept amount now, as a change (so the windows, the
+        // owner's client and the saves follow it), before the caller reads or changes the balance.
+        WalletSaves.Added(this, currency);
         return e;
     }
 
