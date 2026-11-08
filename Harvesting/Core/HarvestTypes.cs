@@ -22,6 +22,23 @@ public enum HarvestBodyPlan
     Serpent,
     /// <summary>A shell and many jointed legs: spiders, scorpions, giant beetles, crabs.</summary>
     Arthropod,
+    /// <summary>A shapeless body with a core: slimes, oozes, jellies, blobs.</summary>
+    Amorphous,
+    /// <summary>A domed shell over a soft body, short legs, a head and a tail: turtles, tortoises.</summary>
+    Shelled,
+}
+
+/// <summary>How a region is drawn on the anatomy and the work surfaces.</summary>
+public enum HarvestDrawShape
+{
+    /// <summary>The body plan's drawing of its slot (or a copy of a slot: "head#2").</summary>
+    Slot,
+    /// <summary>An ellipse filling its Draw Box.</summary>
+    Ellipse,
+    /// <summary>A rectangle filling its Draw Box.</summary>
+    Box,
+    /// <summary>Its own outline: the Outline points.</summary>
+    Outline,
 }
 
 /// <summary>The tissues a region of a body is made of. Hits damage them by their form and element; materials are taken from them.</summary>
@@ -109,6 +126,51 @@ public enum HarvestMaterialKind
     Chitin,
     Essence,
     Other,
+}
+
+/// <summary>
+/// What a harvested material is good for. A material may have several uses, or none at all (a spleen: nobody wants it).
+/// <see cref="Auto"/> = worked out from the material (see <see cref="HarvestMaterial.Uses"/>). Serialized as numbers.
+/// </summary>
+[Flags]
+public enum HarvestUse
+{
+    None = 0,
+    /// <summary>Eaten (cooked, or raw when it is safe).</summary>
+    Food = 1 << 0,
+    /// <summary>An alchemy ingredient: it gives substances to a vessel.</summary>
+    Alchemy = 1 << 1,
+    /// <summary>Worked at a crafting station: hides, bone, horn, sinew, scales, chitin, feathers, silk, gut.</summary>
+    Crafting = 1 << 2,
+    /// <summary>Shown off: a skull, horns, antlers, a pelt on the wall, proof of a kill.</summary>
+    Trophy = 1 << 3,
+    /// <summary>Sold for its own sake: a curio, a delicacy, a collector's piece.</summary>
+    Trade = 1 << 4,
+    /// <summary>Worked out from the material (food when edible, alchemy when it gives substances, crafting for hides, bone, sinew...).</summary>
+    Auto = 1 << 7,
+}
+
+/// <summary>How rare a harvested material is (the colour of its name). Serialized as numbers: add at the END.</summary>
+public enum HarvestRarity
+{
+    /// <summary>From its Chance and Tier (see <see cref="HarvestMaterial.Rarity"/>).</summary>
+    Auto,
+    Common,
+    Uncommon,
+    Rare,
+    Exotic,
+    Legendary,
+}
+
+/// <summary>How well a player knows what a material is worth.</summary>
+public enum HarvestValueKnowledge
+{
+    /// <summary>No idea: "worth ?".</summary>
+    Unknown,
+    /// <summary>A rough idea: "worth little", "valuable"...</summary>
+    Estimate,
+    /// <summary>Its price.</summary>
+    Known,
 }
 
 /// <summary>How good a harvested piece is (from its quality, 0-1).</summary>

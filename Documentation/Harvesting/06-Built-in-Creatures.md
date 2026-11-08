@@ -1,6 +1,6 @@
 # 06 — The Built-in Creatures
 
-Twelve creatures come with the package (`HarvestDefaults`), covering every body plan. *Create Creature Anatomy Assets*
+Sixteen creatures come with the package (`HarvestDefaults`), covering every body plan. *Create Creature Anatomy Assets*
 makes editable copies of them. Values are for a typical adult; *spoils* is minutes at 20 °C.
 
 | Creature | Plan | Mob types | Weak points | Notable |
@@ -35,8 +35,16 @@ it; fiddly to skin) and a **tail**.
 | Claws (bear 5+5, wolf 5+4), fangs ×4 | Trophies | Pried loose. |
 | Antlers (deer, 60% — stags), hooves (deer, boar), tusks (boar), horns (sheep, 50% — rams), foot (rabbit) | Trophies | Antlers and horns are sawn off. |
 | Bezoar (bear, 12%), scent gland (wolf, 35%), musk pod (deer, 15%) | Organs | Rare finds: Anatomy 15 / 10 / 15 to notice. |
+| Spleen | Organs | Worth nothing; no use at all. Not every part is worth taking. |
+| Bladder | Organs | Crafting: a waterproof pouch, a float. Soils what is around it when torn. |
+| Brain | Organs | Crafting (enough to tan its own hide) and alchemy (*serene essence*). Spoils in 45 minutes. |
+| Eyes ×2 | Organs | Alchemy (*serene essence*). Must be taken within 20 minutes of death: they cloud. |
+| Tongue, sweetbread | Organs | Food, and they sell well (delicacies). |
+| Blood ×2 | Organs | Alchemy (*sanguine sap*) and food. Needs an **Empty vial** each, within 10 minutes of death (it clots). |
+| Adrenal glands ×2 | Organs | Hidden (Anatomy 12 to notice), fragile, valuable: alchemy (*berserker essence*), and they sell. |
 
-The rabbit gives only its pelt, a saddle, legs and a foot; the sheep has no claws or fat.
+The rabbit gives only its pelt, a saddle, legs and a foot; the sheep has no claws or fat. The bear, wolf, deer, boar and
+sheep all have the organs above, from the worthless spleen to the prized adrenal glands.
 
 ## Drake
 
@@ -53,7 +61,8 @@ haunch and tail; the ribs, legs and wings are bare and the belly's scales are so
 | Leg sinew, back sinew, skull, femurs | Tendons, Bones | |
 | Heart | Organs | *Draconic ichor*. |
 | Fire gland | Organs | Organ Harvesting 20; *ember spirit*. |
-| Heartstone | Organs | Rare (25%), Anatomy 20: *wyrmblood essence*, worth 200. |
+| Heartstone | Organs | Rare (25%), Anatomy 20: *wyrmblood essence*, worth 200. Legendary. |
+| Drake eyes ×2 | Organs | Alchemy (*salamander essence*), worth 35; within 30 minutes of death. |
 | Horns, claws, fangs | Trophies | Horns sawn off. |
 
 ## Troll
@@ -70,6 +79,11 @@ you can spare the hide).
 | Regenerating heart | Organs | Organ Harvesting 10; *vital essence*, worth 120. |
 | Troll liver | Organs | |
 | Tusks, claws | Trophies | |
+
+
+**Troll blood ×4** (Organs): a curiosity worth 1 a vial — it will not clot — taken into an *Empty vial* within 30 minutes
+of death. When a script makes the discovery `troll_regeneration` (`HarvestDefaults.Discoveries.TrollRegeneration`), it
+becomes an alchemy ingredient (*restorative essence*) worth 45 a vial, for everyone. The **troll spleen** is worth nothing.
 
 ## Eagle
 
@@ -94,6 +108,7 @@ A fish: **head** (×1.5), **back**, **belly**, **tail**, **fins**.
 | Fish fillet | Butchering | No hide to take off first. Spoils 30. Food. |
 | Roe | Organs | Half of them carry it; food; *albumen*. |
 | Fish bones | Bones | |
+| Swim bladder | Organs | Crafting (the clearest glue) and trade; worth 3. |
 
 ## Giant spider
 
@@ -109,6 +124,7 @@ weak spot), **left and right legs** (×0.6, armour 0.3). No hide.
 | Spider heart | Organs | |
 | Spider leg meat | Butchering | Food (if you dare). |
 | Egg sac | Organs | Rare (30%), Anatomy 10, worth 60. |
+| Book lungs | Organs | Worthless: no known use. |
 
 ## Giant serpent
 
@@ -121,3 +137,57 @@ One long body: **head** (×1.8), **neck** (×1.4), **body**, **tail**.
 | Venom gland | Organs | Organ Harvesting 5; *venom*. |
 | Serpent fangs | Trophies | |
 | Serpent vertebrae | Bones | |
+| Musk gland ×2 | Organs | Rare (40%), Anatomy 8: alchemy (*esters*) and trade — hunters cover their scent with it. |
+
+## Slime
+
+Amorphous: a **body** of gel round a **core** (×2.2, its weak point: strike the core).
+
+| Material | Method | Notes |
+|---|---|---|
+| Slime membrane | Skinning | A plain hide (never the tannery's): crafting — waterproof patches, lantern panes. |
+| Slime gel | Butchering | Scooped out once the membrane is off: alchemy (*kelp gel*) and crafting (glue). |
+| Slime core | Organs | Never rots; alchemy (*mana essence*), worth 25. |
+| Slime pearl | Organs | Exotic: in one slime in twenty, and only noticed with Anatomy 15 — a collector's piece worth 90, with no other use. |
+
+## Giant turtle
+
+Shelled: **head**, **neck** (skin), the **shell** (armour 0.9, +8 defense), the **plastron** under it (armour 0.6), four
+**legs** and a **tail**. Its skin is only on the neck and legs: the tannery's snakeskin.
+
+| Material | Method | Notes |
+|---|---|---|
+| Turtle skin | Skinning | From the neck and legs. |
+| Turtle shell | Trophies | The whole carapace: crafting, a trophy, worth 60. |
+| Turtle scute ×13 | Trophies | Horn plates: tortoiseshell combs and inlay. |
+| Plastron | Trophies | Must come off **before** the meat, fat, heart, liver and eggs can be reached. |
+| Turtle meat, fat | Butchering | Food; the fat gives oil. |
+| Heart, liver | Organs | |
+| Turtle egg ×6 | Organs | Rare: in three turtles in ten, noticed with Anatomy 6 — food, and they sell. |
+| Turtle beak | Trophies | Sawn off. |
+
+## Cerberus
+
+A great black hound with **three heads** (`head`, `head_2`, `head_3`, drawn as copies fanned about the neck): fire-proof
+(0.8), tough (1.2). Its pelt is the tannery's bear hide.
+
+| Material | Method | Notes |
+|---|---|---|
+| Cerberus pelt | Skinning | Coarse black fur. |
+| Meat, sinew, bones, organs | | As the four-legged game — **three skulls**, one from each head. |
+| Cerberus fang ×12 | Trophies | Four from each head. |
+| Hellfire gland ×3 | Organs | One in each throat: Organ Harvesting 15, fragile, bursts into flame; within 25 minutes of death; alchemy (*ember spirit*), worth 70. Exotic. |
+| Claws | Trophies | |
+
+## Hydra
+
+A scaled swamp wyrm with **five necks and five heads** (`neck_2`…`neck_5`, `head_2`…`head_5`, fanned from the shoulders,
+each head on its neck): tough (1.3), regenerating (0.4). Its hide is the tannery's drake hide.
+
+| Material | Method | Notes |
+|---|---|---|
+| Hydra hide | Skinning | Skinning 15. |
+| Meat, sinew, bones, organs | | As the four-legged game — **five skulls**. |
+| Hydra fang ×10 | Trophies | Two from each head. |
+| Hydra venom gland ×5 | Organs | One behind each set of fangs: *venom*. |
+| Hydra heart | Organs | Organ Harvesting 15: it still tries to heal — alchemy (*restorative essence*), worth 150. Exotic (tier 5). |

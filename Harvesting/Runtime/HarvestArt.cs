@@ -74,6 +74,11 @@ public static class HarvestArt
                     list.Add((Band(0.12f), c));
                     break;
                 }
+                if (plan == HarvestBodyPlan.Amorphous)
+                {
+                    list.Add((HarvestDiagram.Ellipse(0.5f, 0.5f, 0.44f, 0.4f, 24), c)); // a membrane: a round sheet
+                    break;
+                }
                 list.Add((HarvestDiagram.P(0.3f, 0.82f, 0.08f, 0.94f, 0.04f, 0.84f, 0.22f, 0.7f, 0.24f, 0.3f, 0.06f, 0.16f, 0.1f, 0.06f, 0.3f, 0.18f,
                     0.44f, 0.12f, 0.5f, 0.02f, 0.56f, 0.12f, 0.7f, 0.18f, 0.9f, 0.06f, 0.94f, 0.16f, 0.76f, 0.3f, 0.78f, 0.7f, 0.96f, 0.84f, 0.92f, 0.94f,
                     0.7f, 0.82f, 0.58f, 0.9f, 0.5f, 0.98f, 0.42f, 0.9f), c));

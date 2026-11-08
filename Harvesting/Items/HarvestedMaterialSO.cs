@@ -55,7 +55,7 @@ public class HarvestedMaterialSO : MaterialSO, IHarvestedItem, IItemInstanceTool
         name = m.Name;
         description = string.IsNullOrWhiteSpace(m.description) ? $"From {(a != null ? HarvestText.Capital(a.Name.ToLowerInvariant()) : "a creature")}." : m.description;
         SetMaterial(HarvestedItemInfo.MaterialKindOf(m.kind), m.tier);
-        price = m.value;
+        price = Mathf.Max(0.01f, m.value); // never exactly 0: a discovery can raise it
         weight = m.weight;
         stackMax = m.kind == HarvestMaterialKind.Hide && !m.countable ? 1 : m.countable ? 20 : 30;
         if (itemIcon != null) icon = itemIcon;

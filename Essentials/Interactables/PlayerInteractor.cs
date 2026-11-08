@@ -557,7 +557,7 @@ public class PlayerInteractor : MonoBehaviour
         if (target == null || p == null)
             return false;
         Vector3 eye = PlayerRoot.position + Vector3.up * eyeHeight;
-        Vector3 aim = TopOf(t, p.position) - Vector3.up * 0.4f;
+        Vector3 aim = SightPoint(t, p.position);
         Vector3 dir = aim - eye;
         float dist = dir.magnitude;
         if (dist < 0.05f)
@@ -619,6 +619,24 @@ public class PlayerInteractor : MonoBehaviour
         if (t is LegacyInteractableTarget l)
             return l.Owner != null ? l.Owner.transform : null;
         return t?.InteractionPoint;
+    }
+
+    /// <summary>
+    /// Where the line of sight looks: 0.4 m below the top of the target's collider - over a counter or a low wall in
+    /// front of a person - but never below the collider's middle. A target shorter than 0.8 m is looked at in its
+    /// middle: aimed 0.4 m below its top, an item lying on the ground (a knife, a hide, a bar) was looked at through the
+    /// ground, which hid it - no prompt, as if it could not be picked up.
+    /// </summary>
+    public static Vector3 SightPoint(Bounds colliderBounds) =>
+        new Vector3(colliderBounds.center.x, Mathf.Max(colliderBounds.max.y - 0.4f, colliderBounds.center.y), colliderBounds.center.z);
+
+    private static Vector3 SightPoint(IInteractable t, Vector3 fallback)
+    {
+        Transform tr = TargetTransform(t);
+        Collider col = tr != null ? tr.GetComponentInChildren<Collider>() : null;
+        if (col == null || !col.enabled)
+            return fallback + Vector3.up * 1.4f; // as before: 0.4 m below the 1.8 m a target without a collider is given
+        return SightPoint(col.bounds);
     }
 
     /// <summary>The top of the target's collider (where the prompt goes), else its point.</summary>

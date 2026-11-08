@@ -771,6 +771,10 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
             reason = plan.refusal;
             return false;
         }
+        // Blood, venom, bile: something to hold it in, one per piece.
+        HarvestMaterial hm = data.materials[material];
+        if (!HarvestContainers.Has(player, hm, ContainersNeeded(hm, units), out reason))
+            return false;
         int key = PlayerKey(player);
         if (pending.TryGetValue(key, out Pending old) && old.material != material)
             carcass.Unlock(old.material, key);
@@ -784,6 +788,23 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
             Net.SendPlan(player, plan);
         Touch(true);
         return true;
+    }
+
+    /// <summary>Containers a start of <paramref name="m"/> needs: one per piece asked for (all that are left when none is named), one for a bulk yield.</summary>
+    private int ContainersNeeded(HarvestMaterial m, List<int> units)
+    {
+        if (m == null || string.IsNullOrWhiteSpace(m.container))
+            return 0;
+        if (!m.countable)
+            return 1;
+        if (units != null && units.Count > 0)
+            return units.Count;
+        int left = 0;
+        int mi = data.MaterialIndex(m.id);
+        if (carcass != null)
+            foreach (HarvestUnit u in carcass.condition.units)
+                if (u.material == mi && !u.taken) left++;
+        return Mathf.Max(1, left);
     }
 
     /// <summary>A server receives a remote player's start (refusals go back as a report).</summary>
@@ -973,6 +994,7 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
             }
             if (item == null)
                 continue;
+            HarvestContainers.Use(player, pm, count); // each piece filled a vial, a jar
             int left = inv != null ? inv.AddItem(item, count, codes) : count;
             bool onGround = false;
             if (left > 0)
@@ -1015,9 +1037,12 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         float best = 0f;
         foreach (HarvestPiece p in o.pieces)
         {
-            string id = data.materials[p.material].id;
-            if (!taken.Contains(id)) taken.Add(id);
+            HarvestMaterial pm = data.materials[p.material];
+            if (!taken.Contains(pm.id)) taken.Add(pm.id);
             best = Mathf.Max(best, p.quality);
+            // Enough of a part taken and the player knows what it fetches.
+            if (HarvestSkills.NotePieces(Settings, k.Data, data.id, pm, p.count))
+                report.learnt.Add($"You know what {pm.Name.ToLowerInvariant()} is worth now: {pm.CurrentValue:0.#} a piece.");
         }
         string log = o.pieces.Count > 0
             ? $"{data.Name}: {report.materialName} ×{o.Count} - {HarvestText.Grade(best)} ({best * 100f:0}%)"

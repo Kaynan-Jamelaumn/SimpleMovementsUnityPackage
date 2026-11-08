@@ -203,6 +203,50 @@ public static class HarvestBuild
         return m;
     }
 
+    /// <summary>A hide that is not leather: it comes off first like a hide, as a plain item (never the tannery's).</summary>
+    public static HarvestMaterial PlainHide(this HarvestMaterial m)
+    {
+        m.plainHide = true;
+        return m;
+    }
+
+    /// <summary>What it is good for (instead of the uses worked out from the material). <see cref="HarvestUse.None"/> = nothing.</summary>
+    public static HarvestMaterial Uses(this HarvestMaterial m, HarvestUse uses)
+    {
+        m.uses = uses & ~HarvestUse.Auto;
+        return m;
+    }
+
+    /// <summary>How rare it is (instead of the rarity worked out from its chance and tier).</summary>
+    public static HarvestMaterial Rarity(this HarvestMaterial m, HarvestRarity rarity)
+    {
+        m.rarity = rarity;
+        return m;
+    }
+
+    /// <summary>The bag must hold a <paramref name="item"/> (by name or id) for each piece taken, used up as it is filled.</summary>
+    public static HarvestMaterial Container(this HarvestMaterial m, string item)
+    {
+        m.container = item ?? "";
+        return m;
+    }
+
+    /// <summary>Only within <paramref name="minutes"/> minutes of death (at 20 °C).</summary>
+    public static HarvestMaterial TakeWithin(this HarvestMaterial m, float minutes)
+    {
+        m.takeWithin = minutes;
+        return m;
+    }
+
+    /// <summary>The discovery <paramref name="key"/> makes it worth <paramref name="value"/> and gives it <paramref name="uses"/>.</summary>
+    public static HarvestMaterial Discovery(this HarvestMaterial m, string key, float value, HarvestUse uses)
+    {
+        m.discovery = key ?? "";
+        m.discoveredValue = value;
+        m.discoveredUses = uses & ~HarvestUse.Auto;
+        return m;
+    }
+
     /// <summary>One piece gives an alchemy vessel <paramref name="amount"/> units of <paramref name="substance"/>.</summary>
     public static HarvestMaterial Alchemy(this HarvestMaterial m, string substance, float amount, float extractability = 0.8f)
     {

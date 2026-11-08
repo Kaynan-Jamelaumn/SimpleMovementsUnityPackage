@@ -50,6 +50,10 @@ public static class HarvestingEditorTools
     [MenuItem(Practice + "Salmon (fish)", false, SMMenu.Harvesting + 8)] private static void PracticeSalmon() => CreatePracticeCarcass("salmon");
     [MenuItem(Practice + "Giant Serpent", false, SMMenu.Harvesting + 9)] private static void PracticeSerpent() => CreatePracticeCarcass("giant_serpent");
     [MenuItem(Practice + "Giant Spider (many legs)", false, SMMenu.Harvesting + 10)] private static void PracticeSpider() => CreatePracticeCarcass("giant_spider");
+    [MenuItem(Practice + "Slime (shapeless)", false, SMMenu.Harvesting + 11)] private static void PracticeSlime() => CreatePracticeCarcass("slime");
+    [MenuItem(Practice + "Giant Turtle (shelled)", false, SMMenu.Harvesting + 12)] private static void PracticeTurtle() => CreatePracticeCarcass("giant_turtle");
+    [MenuItem(Practice + "Cerberus (three heads)", false, SMMenu.Harvesting + 13)] private static void PracticeCerberus() => CreatePracticeCarcass("cerberus");
+    [MenuItem(Practice + "Hydra (five heads)", false, SMMenu.Harvesting + 14)] private static void PracticeHydra() => CreatePracticeCarcass("hydra");
 
     [MenuItem(Menu + "Create Creature Anatomy Assets", false, SMMenu.Harvesting + 20)]
     private static void AnatomiesMenu()
@@ -127,6 +131,10 @@ public static class HarvestingEditorTools
     public static void Validate(HarvestDatabase db, List<string> errors, List<string> warnings)
     {
         db.Validate(errors, warnings);
+        foreach (string container in ContainersNamed(db))
+            if (HarvestContainers.Find(container) == null)
+                warnings.Add($"Materials are taken into '{container}', which no item of the Item Database is called: they cannot be harvested " +
+                             "(Harvesting ▸ Create Tools makes it).");
         foreach (string id in MissingCraftHides())
             warnings.Add($"The Crafting Database has no hide '{id}': those skins become plain hide items, not hides for the tannery " +
                          "(Harvesting ▸ Add Harvested Hides to the Crafting Database).");
@@ -337,6 +345,28 @@ public static class HarvestingEditorTools
                 Part(PrimitiveType.Sphere, "Head", root, new Vector3(3.2f * seg * 0.8f, r, Mathf.Sin(6 * 1.3f) * seg * 0.5f), new Vector3(r * 3f, r * 1.8f, r * 2.4f), Vector3.zero, hide);
                 break;
             }
+            case HarvestBodyPlan.Amorphous:
+            {
+                // A blob slumped on the ground, its core showing through.
+                float r = h * 0.55f;
+                Part(PrimitiveType.Sphere, "Body", root, new Vector3(0f, r * 0.55f, 0f), new Vector3(r * 2.2f, r * 1.2f, r * 2.2f), Vector3.zero, hide);
+                Part(PrimitiveType.Sphere, "Core", root, new Vector3(0f, r * 0.6f, 0f), Vector3.one * r * 0.45f, Vector3.zero, Color.Lerp(hide, Color.white, 0.5f));
+                break;
+            }
+            case HarvestBodyPlan.Shelled:
+            {
+                // On its feet: the domed shell, the head out towards +x, four stubby legs.
+                float r = h * 0.6f;
+                Part(PrimitiveType.Sphere, "Shell", root, new Vector3(0f, r * 0.55f, 0f), new Vector3(r * 2.2f, r * 1.1f, r * 1.8f), Vector3.zero, hair);
+                Part(PrimitiveType.Cube, "Plastron", root, new Vector3(0f, r * 0.12f, 0f), new Vector3(r * 2f, r * 0.12f, r * 1.6f), Vector3.zero, Color.Lerp(hide, Color.white, 0.35f));
+                Part(PrimitiveType.Sphere, "Head", root, new Vector3(r * 1.35f, r * 0.45f, 0f), new Vector3(r * 0.55f, r * 0.45f, r * 0.45f), Vector3.zero, hide);
+                for (int i = 0; i < 4; i++)
+                {
+                    float x = i < 2 ? r * 0.7f : -r * 0.7f, z = (i % 2 == 0 ? 1f : -1f) * r * 0.85f;
+                    Part(PrimitiveType.Capsule, "Leg", root, new Vector3(x, r * 0.15f, z), new Vector3(r * 0.35f, r * 0.2f, r * 0.35f), Vector3.zero, hide);
+                }
+                break;
+            }
             case HarvestBodyPlan.Arthropod:
             {
                 float r = h * 0.45f;
@@ -361,6 +391,15 @@ public static class HarvestingEditorTools
                 }
                 if (a.regions.Any(x => x != null && x.Slot.IndexOf("wing", StringComparison.OrdinalIgnoreCase) >= 0))
                     Part(PrimitiveType.Cube, "Wing", root, new Vector3(0f, r * 1.6f, -r * 0.8f), new Vector3(len * 0.6f, r * 0.06f, len * 0.9f), new Vector3(25f, 0f, 0f), hair);
+                // More heads (a cerberus, a hydra): fanned out beside the first, each on a neck.
+                int heads = a.regions.Count(x => x != null && HarvestDiagram.SlotCopy(x.Slot, out string b, out _) && b == "head");
+                for (int k = 1; k <= heads; k++)
+                {
+                    float side = (k % 2 == 1 ? 1f : -1f) * ((k + 1) / 2) * r * 0.9f;
+                    Vector3 at = new Vector3(len * 0.58f, r * 0.85f, side);
+                    Part(PrimitiveType.Capsule, "Neck", root, (at + new Vector3(len * 0.35f, r, 0f)) * 0.5f, new Vector3(r * 0.45f, len * 0.18f, r * 0.45f), new Vector3(0f, 0f, 70f), hide);
+                    Part(PrimitiveType.Sphere, "Head", root, at, new Vector3(r * 1.3f, r, r), Vector3.zero, hide);
+                }
                 break;
             }
         }
@@ -423,9 +462,59 @@ public static class HarvestingEditorTools
     /// A harvesting tool asset of every preset with a drawn icon and a model, listed in the database. A tool the database
     /// lists by that name, or the one in the Tools folder, is kept (given an icon and a model when it has none).
     /// </summary>
+    /// <summary>The containers the database's materials are taken into ("Empty vial"), each once.</summary>
+    public static List<string> ContainersNamed(HarvestDatabase db)
+    {
+        var names = new List<string>();
+        if (db == null)
+            return names;
+        foreach (HarvestAnatomyData a in db.Anatomies)
+            if (a?.materials != null)
+                foreach (HarvestMaterial m in a.materials)
+                    if (m != null && !string.IsNullOrWhiteSpace(m.container) &&
+                        !names.Exists(n => string.Equals(n, m.container.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        names.Add(m.container.Trim());
+        return names;
+    }
+
+    /// <summary>
+    /// An item for every container the database's materials name that no item of the Item Database is called
+    /// (Items/Harvesting/Containers, with a vial icon), registered in the Item Database so it can be sold and saved.
+    /// </summary>
+    public static List<ItemSO> CreateContainers(HarvestDatabase db)
+    {
+        var made = new List<ItemSO>();
+        foreach (string container in ContainersNamed(db))
+        {
+            if (HarvestContainers.Find(container) != null)
+                continue;
+            string file = SMAssetsEditor.CleanFileName(container);
+            string path = $"{SMAssetsEditor.Folder(SMAssets.HarvestItems + "/Containers")}/{file}.asset";
+            var item = AssetDatabase.LoadAssetAtPath<HarvestContainerSO>(path);
+            if (item == null)
+            {
+                item = ScriptableObject.CreateInstance<HarvestContainerSO>();
+                item.Setup(container, SaveIcon(file, AlchemyArt.Icon(AlchemyArt.Shape.Vial, new Color(0.82f, 0.9f, 0.95f, 0.6f))));
+                ((Object)item).name = file;
+                AssetDatabase.CreateAsset(item, path);
+            }
+            made.Add(item);
+        }
+        if (made.Count > 0)
+        {
+            InjuryEditorTools.RegisterInItemDatabase(made);
+            AssetDatabase.SaveAssets();
+        }
+        return made;
+    }
+
     public static List<HarvestToolSO> CreateTools(HarvestDatabase db, bool select)
     {
         var made = new List<HarvestToolSO>();
+        // The containers blood, venom and bile are taken into, when the project has none of that name.
+        foreach (ItemSO c in CreateContainers(db))
+            Debug.Log($"[Harvesting] Created the container '{c.Name}' (Items/Harvesting/Containers) and added it to the Item Database: " +
+                      "sell it at a merchant or give it as a starting item - blood and venom are taken into it.", c);
         Undo.RecordObject(db, "Create Harvesting Tools");
         foreach (HarvestToolPreset p in Enum.GetValues(typeof(HarvestToolPreset)))
         {
@@ -459,6 +548,8 @@ public static class HarvestingEditorTools
             // Without a model a tool cannot be dropped, nor be loot.
             if (tool.Prefab == null)
                 SetPrefab(tool, SaveToolModel(tool, AssetFile(tool, file)));
+            else
+                RepairGeneratedModel(tool); // made before the pickup box: it could not be picked up from the ground
             if (!db.tools.Contains(tool))
                 db.tools.Add(tool);
             EditorUtility.SetDirty(tool);
@@ -525,6 +616,8 @@ public static class HarvestingEditorTools
             }
             if (item.Prefab == null)
                 SetPrefab(item, SaveModel(a, m, item, AssetFile(item, file)));
+            else
+                RepairGeneratedModel(item);
             db.items.Add(new HarvestItemBinding { anatomy = a.id, material = m.id, item = item });
             EditorUtility.SetDirty(item);
             made.Add(item);
@@ -559,16 +652,98 @@ public static class HarvestingEditorTools
             return null;
         ItemPickable p = existing.GetComponent<ItemPickable>();
         if (p == null || p.itemScriptableObject == item)
-            return existing;
+            return RepairPickup(path, item);
         if (p.itemScriptableObject == null)
         {
             p.itemScriptableObject = item;
             EditorUtility.SetDirty(p);
             PrefabUtility.SavePrefabAsset(existing);
-            return existing;
+            return RepairPickup(path, item);
         }
         free = AssetDatabase.GenerateUniqueAssetPath(path);
         return null;
+    }
+
+    /// <summary>Smallest width, depth and height of a model's pickup box (metres): small enough not to trip over, big enough to aim at.</summary>
+    private const float MinPickupSize = 0.1f;
+
+    /// <summary>
+    /// A Box Collider on <paramref name="root"/> (where its Item Pickable is) around all of its renderers, at least
+    /// <see cref="MinPickupSize"/> each way, so the aiming ray and the interactor's line of sight find the model.
+    /// </summary>
+    private static void FitPickupBox(GameObject root)
+    {
+        BoxCollider box = root.GetComponent<BoxCollider>();
+        if (box == null)
+            box = root.AddComponent<BoxCollider>();
+        Bounds b = default;
+        bool any = false;
+        foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
+        {
+            if (!any) { b = r.bounds; any = true; }
+            else b.Encapsulate(r.bounds);
+        }
+        Vector3 scale = root.transform.lossyScale;
+        Vector3 Local(Vector3 world) => new Vector3(
+            world.x / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
+            world.y / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
+            world.z / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
+        Vector3 size = any ? b.size : Vector3.one * 0.3f;
+        size = new Vector3(Mathf.Max(MinPickupSize, size.x), Mathf.Max(MinPickupSize, size.y), Mathf.Max(MinPickupSize, size.z));
+        box.center = any ? root.transform.InverseTransformPoint(b.center) : new Vector3(0f, 0.15f, 0f);
+        box.size = Local(size);
+    }
+
+    /// <summary>
+    /// Makes the model prefab at <paramref name="path"/> pickable as <paramref name="item"/> when it is not: an Item Pickable
+    /// on its root giving the item, and a pickup box on the root when the root has no collider. Tool models made before
+    /// had their colliders only on their small parts (a 2.5 cm handle, an 8 mm blade), which the aiming ray hardly ever
+    /// hit. Models that are already fine are not touched. Returns the prefab asset.
+    /// </summary>
+    private static GameObject RepairPickup(string path, ItemSO item)
+    {
+        GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (asset == null)
+            return null;
+        ItemPickable p = asset.GetComponent<ItemPickable>();
+        if (p != null && p.itemScriptableObject != null && p.itemScriptableObject != item)
+            return asset; // another item's model: left alone
+        if (p != null && p.itemScriptableObject == item && asset.GetComponent<Collider>() != null)
+            return asset;
+        GameObject contents = PrefabUtility.LoadPrefabContents(path);
+        try
+        {
+            ItemPickable pick = contents.GetComponent<ItemPickable>();
+            if (pick == null)
+            {
+                pick = contents.AddComponent<ItemPickable>();
+                pick.quantity = 1;
+            }
+            pick.itemScriptableObject = item;
+            if (contents.GetComponent<Collider>() == null)
+                FitPickupBox(contents);
+            PrefabUtility.SaveAsPrefabAsset(contents, path);
+            Debug.Log($"[Harvesting] Repaired the model {path}: it can be picked up from the ground now.");
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
+        return AssetDatabase.LoadAssetAtPath<GameObject>(path);
+    }
+
+    /// <summary>
+    /// <see cref="RepairPickup"/> for the model <paramref name="item"/> already has, when it is one this generator made
+    /// (in Items/Harvesting/Models); a prefab of your own is never changed.
+    /// </summary>
+    private static void RepairGeneratedModel(ItemSO item)
+    {
+        if (item == null || item.Prefab == null)
+            return;
+        string path = AssetDatabase.GetAssetPath(item.Prefab);
+        string folder = SMAssets.FolderPath(SMAssets.HarvestItems + "/Models").TrimEnd('/') + "/";
+        if (!string.IsNullOrEmpty(path) && path.Replace('\\', '/').StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+            RepairPickup(path, item);
     }
 
     /// <summary>
@@ -631,9 +806,13 @@ public static class HarvestingEditorTools
                 go.transform.localScale = size;
                 Renderer r = go.GetComponent<Renderer>();
                 if (r != null && mat != null) r.sharedMaterial = mat;
+                // The parts are too small to aim at: the root's pickup box is the tool's one collider.
+                Collider c = go.GetComponent<Collider>();
+                if (c != null) Object.DestroyImmediate(c);
             }
             Part(PrimitiveType.Cylinder, new Vector3(0f, 0.06f, 0f), new Vector3(0.025f, 0.06f, 0.025f), ToolMaterial(folder, "Tool Handle", new Color(0.45f, 0.28f, 0.15f)));
             Part(PrimitiveType.Cube, new Vector3(0f, 0.19f, 0f), new Vector3(0.008f, 0.14f, 0.035f), ToolMaterial(folder, "Tool Steel", new Color(0.78f, 0.8f, 0.84f)));
+            FitPickupBox(root);
             ItemPickable pick = root.AddComponent<ItemPickable>();
             pick.itemScriptableObject = tool;
             pick.quantity = 1;

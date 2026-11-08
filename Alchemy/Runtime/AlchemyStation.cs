@@ -667,9 +667,20 @@ public class AlchemyStation : MonoBehaviour, IInteractable
             inv.RemoveItems(item, count);
         if (player != null)
             AlchemyKnowledge.For(player)?.RecordIngredient(ingredient.AlchemyId, ingredient.AlchemyName, count);
+        if (player != null && !free)
+        {
+            try { IngredientAdded?.Invoke(player, item, count); }
+            catch (Exception e) { Debug.LogException(e, this); }
+        }
         Touch();
         return true;
     }
+
+    /// <summary>
+    /// A player put <c>count</c> of an item into a vessel (where the rules run). Other systems learn from it: harvesting
+    /// tells the player that the part they used is an alchemy ingredient.
+    /// </summary>
+    public static event Action<CombatEntity, ItemSO, int> IngredientAdded;
 
     public bool AddWater(float units, out string reason)
     {

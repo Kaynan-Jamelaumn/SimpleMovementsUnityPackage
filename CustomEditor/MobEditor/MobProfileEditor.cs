@@ -27,6 +27,8 @@ public class MobProfileEditor : Editor
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button(new GUIContent("Apply Preset ▾", "Overwrite every field with a ready-made behaviour (Undo restores it).")))
             ShowPresetMenu();
+        if (GUILayout.Button(new GUIContent("Locomotion Preset ▾", "Overwrite only the Locomotion section with a typical creature's: a hopper, a slime, a frog, a snake, a bird, a bat, a fish, a shark, a crocodile... (Undo restores it).")))
+            ShowLocomotionMenu();
         if (GUILayout.Button(new GUIContent("Find Mobs Using It", "List the mob prefabs whose Mob ▸ Profile is this asset.")))
         {
             users = FindUsers(p);
@@ -60,6 +62,10 @@ public class MobProfileEditor : Editor
                 "DODGING - chance to sidestep telegraphed areas and melee swings, cooldown, distance, invulnerability while dodging.\n\n" +
                 "ABILITIES - randomness of ability choice, how often it re-decides, the automatic basic attack, and the absorb chance " +
                 "multiplier (multiplies MobAbilityController ▸ Absorb Chance Per Kill).\n\n" +
+                "LOCOMOTION - where it lives (Ground; Flying at a cruising altitude, down to fight; Aquatic, suffocating out of water; " +
+                "Amphibious), its speed in each medium and its gait in each: Walk, Hop, Bounce (a slime), Leap, Zigzag, Crawl, Slither on " +
+                "land; Swim, Undulate, Dart, Paddle in water; Flap, Hover, Glide, Flutter in the air. Flyers and swimmers follow the " +
+                "ground's NavMesh (lake and sea beds included) and hold their height above it.\n\n" +
                 "ANIMATION - Animator parameter names (missing parameters are ignored). DEATH / PERFORMANCE - corpse removal, full-rate thinking for bosses.",
                 MessageType.Info);
         }
@@ -107,6 +113,27 @@ public class MobProfileEditor : Editor
                 {
                     Undo.RecordObject(t, "Apply Mob Preset");
                     ((MobProfile)t).ApplyPreset(captured);
+                    EditorUtility.SetDirty(t);
+                }
+            });
+        }
+        menu.ShowAsContext();
+    }
+
+    private void ShowLocomotionMenu()
+    {
+        var menu = new GenericMenu();
+        foreach (MobLocomotion.Preset preset in System.Enum.GetValues(typeof(MobLocomotion.Preset)))
+        {
+            MobLocomotion.Preset captured = preset;
+            menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(preset.ToString())), false, () =>
+            {
+                foreach (Object t in targets)
+                {
+                    Undo.RecordObject(t, "Apply Locomotion Preset");
+                    var profile = (MobProfile)t;
+                    if (profile.locomotion == null) profile.locomotion = new MobLocomotion();
+                    profile.locomotion.Apply(captured);
                     EditorUtility.SetDirty(t);
                 }
             });

@@ -29,8 +29,10 @@ gives is **harvested** — piece by piece, by hand, by players who choose what t
   it gives). Every piece keeps its own quality and its own story ("Cracked in the fight", "Nicked while skinning") and is
   worth what it is.
 * **Creatures are data.** A Creature Anatomy describes a body — its plan (four legs, two legs, wings, fins, a serpent's
-  coils, a spider's shell), its regions and the materials it gives. Twelve are built in (bear, wolf, deer, boar, rabbit,
-  sheep, drake, troll, eagle, salmon, giant spider, giant serpent); new ones reuse every mechanic.
+  coils, a spider's shell, a shapeless slime, a turtle's shell), its regions and the materials it gives; extra heads and
+  necks, and regions drawn in shapes of their own, make any body (a hydra, a cerberus). Sixteen are built in (bear, wolf,
+  deer, boar, rabbit, sheep, drake, troll, eagle, salmon, giant spider, giant serpent, slime, giant turtle, cerberus,
+  hydra); new ones reuse every mechanic.
 * **It joins the rest of the game:** materials go into the inventory (or onto the ground when it is full), hides become
   hides for the crafting system's tannery with every hole where it was, organs and glands are alchemy ingredients, meat
   is food, merchants pay by quality, and the whole system runs server-authoritative in a network session.

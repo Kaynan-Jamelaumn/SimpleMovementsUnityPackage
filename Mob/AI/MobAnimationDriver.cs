@@ -31,7 +31,7 @@ public sealed class MobAnimationDriver
 {
     private readonly MobMovementContext ctx;
     private Animator animator;
-    private int speedHash, speedPercentHash, movingHash, combatHash, moveXHash, moveYHash, stunnedHash;
+    private int speedHash, speedPercentHash, movingHash, combatHash, moveXHash, moveYHash, stunnedHash, flyingHash, swimmingHash, airborneHash;
     private int idleState, movingState, chasingState, patrolState, deathState;
     private bool hasIdle, hasMoving, hasChasing, hasPatrol, hasDeath;
     private int currentLegacy;
@@ -101,6 +101,9 @@ public sealed class MobAnimationDriver
         moveXHash = Animator.StringToHash(p.moveXParameter ?? "");
         moveYHash = Animator.StringToHash(p.moveYParameter ?? "");
         stunnedHash = Animator.StringToHash(p.stunnedBool ?? "");
+        flyingHash = Animator.StringToHash(p.flyingBool ?? "");
+        swimmingHash = Animator.StringToHash(p.swimmingBool ?? "");
+        airborneHash = Animator.StringToHash(p.airborneBool ?? "");
         idleState = Animator.StringToHash("Idle");
         movingState = Animator.StringToHash("Moving");
         chasingState = Animator.StringToHash("Chasing");
@@ -131,7 +134,7 @@ public sealed class MobAnimationDriver
         MobMotor motor = ctx.Motor;
         Vector3 v;
         float run;
-        bool inCombat, stunned;
+        bool inCombat, stunned, flying, swimming, airborne;
         if (replica)
         {
             // Client copy: the server sent the state; the speed is measured from the networked movement.
@@ -139,13 +142,20 @@ public sealed class MobAnimationDriver
             run = Mathf.Max(0.1f, replicated.runSpeed > 0.01f ? replicated.runSpeed : motor.RunSpeed);
             inCombat = replicated.Has(MobReplicaFlags.InCombat);
             stunned = replicated.Has(MobReplicaFlags.Stunned) || ctx.Entity.IsStunned;
+            flying = replicated.Has(MobReplicaFlags.Flying);
+            swimming = replicated.Has(MobReplicaFlags.Swimming);
+            // A hop is seen, not sent: in the air while it rises or falls quickly (and not flying or swimming).
+            airborne = !flying && !swimming && Mathf.Abs(v.y) > 0.6f;
         }
         else
         {
             v = motor.Velocity;
-            run = Mathf.Max(0.1f, motor.RunSpeed);
+            run = Mathf.Max(0.1f, motor.RunPace);
             inCombat = ctx.Brain.InCombat;
             stunned = ctx.Entity.IsStunned;
+            flying = motor.IsFlying;
+            swimming = motor.IsSwimming;
+            airborne = motor.IsAirborne;
         }
         float speed = new Vector2(v.x, v.z).magnitude;
 
@@ -154,6 +164,9 @@ public sealed class MobAnimationDriver
         AnimatorParameterCache.SetBool(animator, movingHash, speed > 0.15f);
         AnimatorParameterCache.SetBool(animator, combatHash, inCombat);
         AnimatorParameterCache.SetBool(animator, stunnedHash, stunned);
+        AnimatorParameterCache.SetBool(animator, flyingHash, flying);
+        AnimatorParameterCache.SetBool(animator, swimmingHash, swimming);
+        AnimatorParameterCache.SetBool(animator, airborneHash, airborne);
 
         Vector3 local = ctx.Transform.InverseTransformDirection(v);
         AnimatorParameterCache.SetFloat(animator, moveXHash, Mathf.Clamp(local.x / run, -1f, 1f), 0.1f);

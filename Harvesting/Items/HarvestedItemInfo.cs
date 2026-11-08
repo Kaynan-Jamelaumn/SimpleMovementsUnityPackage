@@ -32,7 +32,20 @@ public static class HarvestedItemInfo
     public static double QualityOf(InventoryItem instance, int fromTop = 0) => HarvestItemCode.QualityOf(CodeOf(instance, fromTop));
 
     /// <summary>A copy's price factor: a ruined piece fetches a tenth, a pristine one the full price.</summary>
-    public static float ValueFactor(InventoryItem instance, int fromTop = 0) => (float)HarvestItemCode.ValueFactor(QualityOf(instance, fromTop));
+    public static float ValueFactor(InventoryItem instance, int fromTop = 0) =>
+        (float)HarvestItemCode.ValueFactor(QualityOf(instance, fromTop)) * DiscoveryFactor(instance != null ? instance.itemScriptableObject as IHarvestedItem : null);
+
+    /// <summary>
+    /// How much more a piece fetches now that its material's discovery is made (its Discovered Value over its Value; 1
+    /// before, or without one) - pieces harvested before the discovery included.
+    /// </summary>
+    public static float DiscoveryFactor(IHarvestedItem item)
+    {
+        HarvestMaterial m = Material(item, out _);
+        if (m == null || m.discoveredValue <= 0f || !m.Discovered)
+            return 1f;
+        return m.discoveredValue / Mathf.Max(0.01f, m.value);
+    }
 
     /// <summary>The material it is (from the Harvest Database), or null.</summary>
     public static HarvestMaterial Material(IHarvestedItem item, out HarvestAnatomyData anatomy)
@@ -50,8 +63,30 @@ public static class HarvestedItemInfo
         lines.Add($"{HarvestText.KindName(m.kind)} · from {(a != null ? HarvestText.Capital(a.Name.ToLowerInvariant()) : "a creature")}");
         if (m.spoilMinutes > 0f)
             lines.Add($"<color=#9aa0a6>Perishable: on the carcass it starts to turn after about {HarvestText.Minutes(m.spoilMinutes * 0.55)} at 20 °C.</color>");
-        if (m.alchemy != null && m.alchemy.Count > 0)
-            lines.Add("<color=#9aa0a6>An alchemy ingredient.</color>");
+        lines.Add($"<color=#{RarityColour(m.Rarity)}>{m.Rarity}</color>");
+        // What it is good for, as far as this machine's player knows.
+        HarvestSkillData d = HarvestKnowledge.Local != null ? HarvestKnowledge.Local.Data : null;
+        HarvestSettings s = HarvestDatabase.Instance.Settings;
+        string anatomyId = a != null ? a.id : item.AnatomyId;
+        HarvestUse known = d != null ? HarvestSkills.KnownUses(s, d, anatomyId, m) : m.ObviousUses();
+        bool more = d != null ? HarvestSkills.HasUnknownUses(s, d, anatomyId, m) : (m.Uses & ~known) != HarvestUse.None;
+        string uses = known != HarvestUse.None ? "Good for " + HarvestSkills.UsesWords(known) + (more ? " - and maybe more" : "") : more ? "What is it good for? Try it." : "No known use.";
+        lines.Add($"<color=#9aa0a6>{uses}</color>");
+        if (m.Discovered && m.discoveredValue > 0f)
+            lines.Add("<color=#c9b38a>Sought after since a recent discovery.</color>");
+    }
+
+    /// <summary>The colour of a rarity (hex, for rich text): grey, green, blue, purple, orange.</summary>
+    public static string RarityColour(HarvestRarity r)
+    {
+        switch (r)
+        {
+            case HarvestRarity.Uncommon: return "7fd17f";
+            case HarvestRarity.Rare: return "6fa8ff";
+            case HarvestRarity.Exotic: return "c08cff";
+            case HarvestRarity.Legendary: return "ffa64d";
+            default: return "b8bcc2";
+        }
     }
 
     /// <summary>

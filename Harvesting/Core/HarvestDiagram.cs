@@ -21,6 +21,8 @@ public static class HarvestDiagram
             case HarvestBodyPlan.Avian: return 1.5f;
             case HarvestBodyPlan.Fish: return 2.3f;
             case HarvestBodyPlan.Serpent: return 1.5f;
+            case HarvestBodyPlan.Amorphous: return 1.25f;
+            case HarvestBodyPlan.Shelled: return 1.6f;
             default: return 1.1f;
         }
     }
@@ -40,6 +42,10 @@ public static class HarvestDiagram
                 return new[] { "tail", "fins", "back", "belly", "head" };
             case HarvestBodyPlan.Serpent:
                 return new[] { "tail", "body", "neck", "head" };
+            case HarvestBodyPlan.Amorphous:
+                return new[] { "body", "core" };
+            case HarvestBodyPlan.Shelled:
+                return new[] { "tail", "hindleg_r", "foreleg_r", "hindleg_l", "foreleg_l", "neck", "head", "plastron", "shell" };
             default:
                 return new[] { "legs_l", "legs_r", "tail", "abdomen", "thorax", "head" };
         }
@@ -71,7 +77,8 @@ public static class HarvestDiagram
 
     /// <summary>Slots drawn behind the others (the far legs and wing), darker.</summary>
     public static bool IsFarSide(HarvestBodyPlan plan, string slot) =>
-        plan == HarvestBodyPlan.Quadruped && (slot == "foreleg_r" || slot == "hindleg_r" || slot == "wing_r");
+        (plan == HarvestBodyPlan.Quadruped && (slot == "foreleg_r" || slot == "hindleg_r" || slot == "wing_r")) ||
+        (plan == HarvestBodyPlan.Shelled && (slot == "foreleg_r" || slot == "hindleg_r"));
 
     private static List<Vector2[]> Build(HarvestBodyPlan plan, string slot)
     {
@@ -83,6 +90,8 @@ public static class HarvestDiagram
             case HarvestBodyPlan.Avian: Avian(slot, list); break;
             case HarvestBodyPlan.Fish: Fish(slot, list); break;
             case HarvestBodyPlan.Serpent: Serpent(slot, list); break;
+            case HarvestBodyPlan.Amorphous: Amorphous(slot, list); break;
+            case HarvestBodyPlan.Shelled: Shelled(slot, list); break;
             default: Arthropod(slot, list); break;
         }
         return list;
@@ -186,6 +195,230 @@ public static class HarvestDiagram
                 break;
             case "tail": l.Add(P(0.47f, 0.15f, 0.53f, 0.15f, 0.55f, 0.04f, 0.5f, 0f, 0.45f, 0.04f)); break;
         }
+    }
+
+    /// <summary>A slime seen from the side: a blob sitting on the ground, its core floating inside.</summary>
+    private static void Amorphous(string slot, List<Vector2[]> l)
+    {
+        switch (slot)
+        {
+            case "body":
+            {
+                // A drop resting on the ground: round above, flattened where it sits.
+                var pts = new List<Vector2>();
+                for (int i = 0; i < 32; i++)
+                {
+                    double a = Math.PI * 2 * i / 32;
+                    float x = 0.5f + 0.44f * (float)Math.Cos(a), y = 0.44f + 0.4f * (float)Math.Sin(a);
+                    pts.Add(new Vector2(x, Math.Max(0.06f, y)));
+                }
+                l.Add(pts.ToArray());
+                break;
+            }
+            case "core": l.Add(Ellipse(0.52f, 0.5f, 0.1f, 0.12f, 16)); break;
+        }
+    }
+
+    /// <summary>A turtle seen from the side (head to the right): the domed shell over the plastron, stubby legs.</summary>
+    private static void Shelled(string slot, List<Vector2[]> l)
+    {
+        switch (slot)
+        {
+            case "shell":
+            {
+                var pts = new List<Vector2> { new Vector2(0.86f, 0.44f) };
+                for (int i = 0; i <= 20; i++)
+                {
+                    double a = Math.PI * i / 20;
+                    pts.Add(new Vector2(0.5f + 0.37f * (float)Math.Cos(a), 0.44f + 0.48f * (float)Math.Sin(a)));
+                }
+                pts.Add(new Vector2(0.13f, 0.44f));
+                l.Add(pts.ToArray());
+                break;
+            }
+            case "plastron": l.Add(P(0.14f, 0.44f, 0.86f, 0.44f, 0.82f, 0.3f, 0.18f, 0.3f)); break;
+            case "neck": l.Add(P(0.8f, 0.42f, 0.86f, 0.34f, 0.92f, 0.5f, 0.88f, 0.56f)); break;
+            case "head": l.Add(Ellipse(0.94f, 0.53f, 0.055f, 0.06f, 14)); break;
+            case "foreleg_l": l.Add(P(0.66f, 0.33f, 0.76f, 0.33f, 0.79f, 0.08f, 0.68f, 0.05f, 0.64f, 0.12f)); break;
+            case "foreleg_r": l.Add(Shift(P(0.66f, 0.33f, 0.76f, 0.33f, 0.79f, 0.08f, 0.68f, 0.05f, 0.64f, 0.12f), 0.05f, 0.02f)); break;
+            case "hindleg_l": l.Add(P(0.24f, 0.33f, 0.34f, 0.33f, 0.36f, 0.12f, 0.31f, 0.05f, 0.2f, 0.08f)); break;
+            case "hindleg_r": l.Add(Shift(P(0.24f, 0.33f, 0.34f, 0.33f, 0.36f, 0.12f, 0.31f, 0.05f, 0.2f, 0.08f), -0.05f, 0.02f)); break;
+            case "tail": l.Add(P(0.15f, 0.4f, 0.15f, 0.33f, 0.04f, 0.3f)); break;
+        }
+    }
+
+    // ------------------------------------------------------------------ the regions of one creature
+    /// <summary>
+    /// The drawing of one region of <paramref name="a"/>: its own shape (an ellipse, a box, an outline), a copy of a slot
+    /// ("head#2": another head, fanned beside the first), or the plan's drawing of its slot. Empty when it has none.
+    /// </summary>
+    public static List<Vector2[]> RegionShape(HarvestAnatomyData a, HarvestRegion r)
+    {
+        if (a == null || r == null)
+            return new List<Vector2[]>();
+        switch (r.drawShape)
+        {
+            case HarvestDrawShape.Ellipse:
+                return new List<Vector2[]> { Ellipse(r.drawBox.center.x, r.drawBox.center.y, Math.Max(0.005f, r.drawBox.width * 0.5f), Math.Max(0.005f, r.drawBox.height * 0.5f), 20) };
+            case HarvestDrawShape.Box:
+                return new List<Vector2[]> { P(r.drawBox.xMin, r.drawBox.yMin, r.drawBox.xMax, r.drawBox.yMin, r.drawBox.xMax, r.drawBox.yMax, r.drawBox.xMin, r.drawBox.yMax) };
+            case HarvestDrawShape.Outline:
+                if (r.outline != null && r.outline.Count >= 3)
+                    return new List<Vector2[]> { r.outline.ToArray() };
+                break;
+        }
+        if (SlotCopy(r.Slot, out string baseSlot, out int n))
+            return Copy(a.plan, baseSlot, n, r.copyPivot, r.copyAngle);
+        return Shape(a.plan, r.Slot);
+    }
+
+    /// <summary>Is <paramref name="slot"/> a copy of another ("head#2" → "head", 2)?</summary>
+    public static bool SlotCopy(string slot, out string baseSlot, out int n)
+    {
+        baseSlot = slot;
+        n = 1;
+        if (string.IsNullOrEmpty(slot))
+            return false;
+        int hash = slot.LastIndexOf('#');
+        if (hash <= 0 || hash == slot.Length - 1 || !int.TryParse(slot.Substring(hash + 1), out n) || n < 2)
+        {
+            n = 1;
+            return false;
+        }
+        baseSlot = slot.Substring(0, hash).Trim().ToLowerInvariant();
+        return true;
+    }
+
+    /// <summary>
+    /// The <paramref name="n"/>th copy of <paramref name="baseSlot"/>: its drawing turned about a pivot - #2 up by the angle,
+    /// #3 down, #4 up twice as far... - and a little smaller. The pivot: the one given, else heads about the middle of
+    /// the neck and necks about the shoulder (a quadruped, a biped), else the slot's own middle (and shifted aside).
+    /// </summary>
+    private static List<Vector2[]> Copy(HarvestBodyPlan plan, string baseSlot, int n, Vector2 pivot, float angle)
+    {
+        var copies = new List<Vector2[]>();
+        List<Vector2[]> source = Shape(plan, baseSlot);
+        if (source.Count == 0)
+            return copies;
+        int step = n / 2;
+        float sign = n % 2 == 0 ? 1f : -1f;
+        float deg = (angle != 0f ? angle : 22f) * step * sign;
+        bool auto = pivot.x == 0f && pivot.y == 0f;
+        Vector2 at = auto ? AutoPivot(plan, baseSlot) : pivot;
+        bool inPlace = auto && float.IsNaN(at.x);
+        if (inPlace)
+            at = Middle(source[0]);
+        double rad = deg * Math.PI / 180.0;
+        float cos = (float)Math.Cos(rad), sin = (float)Math.Sin(rad);
+        foreach (Vector2[] poly in source)
+        {
+            var c = new Vector2[poly.Length];
+            Vector2 mid = Middle(poly);
+            for (int i = 0; i < poly.Length; i++)
+            {
+                Vector2 p = mid + (poly[i] - mid) * 0.92f; // a little smaller than the first
+                Vector2 d = p - at;
+                p = at + new Vector2(d.x * cos - d.y * sin, d.x * sin + d.y * cos);
+                if (inPlace)
+                    p += new Vector2(0f, 0.07f * step * sign); // nothing to turn about: side by side
+                c[i] = new Vector2(Math.Max(0f, Math.Min(1f, p.x)), Math.Max(0f, Math.Min(1f, p.y)));
+            }
+            copies.Add(c);
+        }
+        return copies;
+    }
+
+    /// <summary>The usual pivot of a copied slot (NaN = none: the copy is set beside the first).</summary>
+    private static Vector2 AutoPivot(HarvestBodyPlan plan, string baseSlot)
+    {
+        switch (plan)
+        {
+            case HarvestBodyPlan.Quadruped:
+                if (baseSlot == "head") return Centre(plan, "neck");
+                if (baseSlot == "neck") return new Vector2(0.78f, 0.66f);
+                if (baseSlot == "tail") return new Vector2(0.12f, 0.66f);
+                break;
+            case HarvestBodyPlan.Biped:
+                if (baseSlot == "head") return new Vector2(0.5f, 0.84f);
+                if (baseSlot == "neck") return new Vector2(0.5f, 0.8f);
+                if (baseSlot == "arm_l") return new Vector2(0.7f, 0.79f);
+                if (baseSlot == "arm_r") return new Vector2(0.3f, 0.79f);
+                break;
+            case HarvestBodyPlan.Serpent:
+                if (baseSlot == "head" || baseSlot == "neck") return SerpentSpine(0.76f);
+                break;
+            case HarvestBodyPlan.Shelled:
+                if (baseSlot == "head") return new Vector2(0.84f, 0.42f);
+                if (baseSlot == "neck") return new Vector2(0.8f, 0.42f);
+                break;
+        }
+        return new Vector2(float.NaN, float.NaN);
+    }
+
+    /// <summary>The middle of a region's drawing (where its weak point and wounds are marked).</summary>
+    public static Vector2 RegionCentre(HarvestAnatomyData a, HarvestRegion r)
+    {
+        List<Vector2[]> s = RegionShape(a, r);
+        return s.Count > 0 ? Middle(s[0]) : new Vector2(0.5f, 0.5f);
+    }
+
+    /// <summary>Is the region drawn behind (the far side, darker): its slot's far side, or Draw Behind.</summary>
+    public static bool RegionFar(HarvestAnatomyData a, HarvestRegion r)
+    {
+        if (a == null || r == null)
+            return false;
+        if (r.drawBehind)
+            return true;
+        if (r.drawShape != HarvestDrawShape.Slot)
+            return false;
+        string slot = SlotCopy(r.Slot, out string baseSlot, out _) ? baseSlot : r.Slot;
+        return IsFarSide(a.plan, slot);
+    }
+
+    /// <summary>
+    /// The whole creature drawn back to front: the regions Drawn Behind, then the plan's slots in its order (each slot by
+    /// the first region naming it, its copies right after it), then regions with a shape of their own. Each entry is a
+    /// region (its index in <c>a.regions</c>) and its polygons.
+    /// </summary>
+    public static List<KeyValuePair<int, List<Vector2[]>>> Drawing(HarvestAnatomyData a)
+    {
+        var l = new List<KeyValuePair<int, List<Vector2[]>>>();
+        if (a?.regions == null)
+            return l;
+        var done = new HashSet<int>();
+        void Add(int i)
+        {
+            if (i < 0 || !done.Add(i))
+                return;
+            List<Vector2[]> s = RegionShape(a, a.regions[i]);
+            if (s.Count > 0)
+                l.Add(new KeyValuePair<int, List<Vector2[]>>(i, s));
+        }
+        for (int i = 0; i < a.regions.Count; i++)
+            if (a.regions[i] != null && a.regions[i].drawBehind)
+                Add(i);
+        foreach (string slot in Slots(a.plan))
+        {
+            for (int i = 0; i < a.regions.Count; i++)
+            {
+                HarvestRegion r = a.regions[i];
+                if (r != null && r.drawShape == HarvestDrawShape.Slot && string.Equals(r.Slot, slot, StringComparison.OrdinalIgnoreCase))
+                {
+                    Add(i);
+                    break;
+                }
+            }
+            for (int i = 0; i < a.regions.Count; i++)
+            {
+                HarvestRegion r = a.regions[i];
+                if (r != null && r.drawShape == HarvestDrawShape.Slot && SlotCopy(r.Slot, out string b, out _) && string.Equals(b, slot, StringComparison.OrdinalIgnoreCase))
+                    Add(i);
+            }
+        }
+        for (int i = 0; i < a.regions.Count; i++)
+            if (a.regions[i] != null && a.regions[i].drawShape != HarvestDrawShape.Slot)
+                Add(i);
+        return l;
     }
 
     /// <summary>A band of the serpent's S-shaped body from <paramref name="t0"/> to <paramref name="t1"/> (0 the tail tip .. 1 the snout).</summary>
@@ -305,6 +538,16 @@ public static class HarvestDiagram
             case HarvestBodyPlan.Fish:
                 l.Add(new CutLine("the belly", P(0.84f, 0.42f, 0.55f, 0.36f, 0.2f, 0.45f), new HarvestZone(0.2f, 0.8f, HarvestZoneKind.Gut)));
                 break;
+            case HarvestBodyPlan.Amorphous:
+                // Its skin is a membrane: one cut over the top, the core right under the middle of it.
+                l.Add(new CutLine("the membrane", P(0.12f, 0.6f, 0.3f, 0.78f, 0.5f, 0.84f, 0.7f, 0.78f, 0.88f, 0.6f), new HarvestZone(0.35f, 0.65f, HarvestZoneKind.Gut)));
+                break;
+            case HarvestBodyPlan.Shelled:
+                // Only the neck, the legs and the tail are skin: the shell is plate.
+                l.Add(new CutLine("the neck", P(0.97f, 0.5f, 0.9f, 0.48f, 0.83f, 0.42f), new HarvestZone(0f, 0.25f, HarvestZoneKind.Fiddly)));
+                l.Add(new CutLine("the foreleg", P(0.72f, 0.07f, 0.71f, 0.2f, 0.7f, 0.33f), new HarvestZone(0f, 0.25f, HarvestZoneKind.Fiddly)));
+                l.Add(new CutLine("the hind leg", P(0.27f, 0.07f, 0.28f, 0.2f, 0.29f, 0.33f), new HarvestZone(0f, 0.25f, HarvestZoneKind.Fiddly)));
+                break;
         }
         return l;
     }
@@ -327,6 +570,8 @@ public static class HarvestDiagram
             case HarvestBodyPlan.Fish: return Ellipse(0.5f, 0.5f, 0.47f, 0.3f, 28);
             case HarvestBodyPlan.Serpent: return Ellipse(0.5f, 0.5f, 0.48f, 0.2f, 28);
             case HarvestBodyPlan.Arthropod: return Ellipse(0.5f, 0.48f, 0.3f, 0.45f, 28);
+            case HarvestBodyPlan.Amorphous: return Ellipse(0.5f, 0.45f, 0.36f, 0.3f, 28);
+            case HarvestBodyPlan.Shelled: return Ellipse(0.5f, 0.52f, 0.36f, 0.24f, 28);
             default: return Ellipse(0.5f, 0.5f, 0.47f, 0.4f, 28);
         }
     }

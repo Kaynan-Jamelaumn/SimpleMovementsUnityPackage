@@ -16,6 +16,7 @@ public static class HarvestDefaults
     public static List<HarvestAnatomyData> Anatomies() => new List<HarvestAnatomyData>
     {
         Bear(), Wolf(), Deer(), Boar(), Rabbit(), Sheep(), Drake(), Troll(), Eagle(), Salmon(), GiantSpider(), GiantSerpent(),
+        Slime(), GiantTurtle(), Cerberus(), Hydra(),
     };
 
     /// <summary>A built-in anatomy by id (a fresh copy), or null.</summary>
@@ -217,6 +218,234 @@ public static class HarvestDefaults
             .Spoils(12f).Worth(value * 2f, 1f, 5f).Hazard().Tint(Gut).Describe("Tripe, or a waterskin once cleaned."));
         a.materials.Add(Material("intestines", $"{prefix} intestines", HarvestMaterialKind.Organ, HarvestMethod.Organs, "intestines").From(belly).Count().Hard(0.45f)
             .Spoils(10f).Worth(value * 1.5f, 2f, 5f).Hazard().Tint(Gut).Describe("Casings and catgut. Taking them out guts the carcass: its meat keeps longer."));
+        MoreOrgans(a, prefix, value, chest, belly);
+    }
+
+    /// <summary>
+    /// The rest of a body's parts, from the worthless to the prized, so a player learns which are worth the trouble: the
+    /// spleen (nobody wants it), the bladder (a waterproof pouch), the brain (enough to tan its own hide; it must be
+    /// taken fresh), the eyes (cloud within minutes), the tongue and the sweetbread (delicacies), the blood (an empty vial
+    /// a portion, before it clots) and the adrenal glands (hidden, fragile, and worth a lot to an alchemist).
+    /// </summary>
+    private static void MoreOrgans(HarvestAnatomyData a, string prefix, float value, string chest, string belly, string head = "head")
+    {
+        a.materials.Add(Material("spleen", $"{prefix} spleen", HarvestMaterialKind.Organ, HarvestMethod.Organs, "spleen").From(belly).Count().Hard(0.45f)
+            .Spoils(15f).Worth(value * 0.05f, 0.3f, 3f).Uses(HarvestUse.None).Tint(new Color(0.38f, 0.12f, 0.2f))
+            .Describe("Dark and spongy. Nobody has found a use for it."));
+        a.materials.Add(Material("bladder", $"{prefix} bladder", HarvestMaterialKind.Organ, HarvestMethod.Organs, "bladder").From(belly).Count().Hard(0.55f)
+            .Spoils(30f).Worth(value * 1f, 0.1f, 4f).Hazard().Uses(HarvestUse.Crafting).Tint(new Color(0.9f, 0.82f, 0.6f))
+            .Describe("Cleaned and dried: a waterproof pouch, a float. Torn, it soils what is around it."));
+        a.materials.Add(Material("brain", $"{prefix} brain", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From(head).Count().Hard(0.65f, 5)
+            .Needs(HarvestMethods.Hide).Spoils(45f).Worth(value * 1.5f, 0.4f, 7f).Fragile().Uses(HarvestUse.Crafting | HarvestUse.Alchemy)
+            .Alchemy("serene_essence", 0.6f, 0.6f).Tint(new Color(0.92f, 0.78f, 0.75f))
+            .Describe("Every animal has just enough brain to tan its own hide. It turns to mush within the hour."));
+        a.materials.Add(Material("eyes", $"{prefix} eye", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From(head, 2).Count().Hard(0.6f)
+            .Spoils(60f).TakeWithin(20f).Worth(value * 0.6f, 0.02f, 4f).Fragile().Uses(HarvestUse.Alchemy)
+            .Alchemy("serene_essence", 0.3f, 0.7f).Tint(new Color(0.25f, 0.2f, 0.18f)).Describe("They cloud within minutes of death."));
+        a.materials.Add(Material("tongue", $"{prefix} tongue", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From(head).Count().Hard(0.4f)
+            .Spoils(25f).Worth(value * 1.2f, 0.3f, 4f).Food(14f).Uses(HarvestUse.Food | HarvestUse.Trade).Tint(new Color(0.78f, 0.45f, 0.5f))
+            .Describe("Slow-cooked, a delicacy."));
+        a.materials.Add(Material("sweetbread", $"{prefix} sweetbread", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From(chest).Count().Hard(0.55f)
+            .Spoils(15f).Worth(value * 2.5f, 0.2f, 5f).Food(16f).Uses(HarvestUse.Food | HarvestUse.Trade).Tint(new Color(0.95f, 0.85f, 0.8f))
+            .Describe("A small pale gland by the heart. Cooks pay well for it."));
+        a.materials.Add(Material("blood", $"{prefix} blood", HarvestMaterialKind.Other, HarvestMethod.Organs, "gland").From(chest, 2).Count().Hard(0.35f)
+            .Spoils(20f).TakeWithin(10f).Container(Containers.Vial).Worth(value * 1f, 0.25f, 4f).Uses(HarvestUse.Alchemy | HarvestUse.Food)
+            .Alchemy("sanguine_sap", 1f, 0.9f).Tint(new Color(0.5f, 0.05f, 0.08f))
+            .Describe("Drained into a vial before it clots: black pudding, or a base for blood draughts."));
+        a.materials.Add(Material("adrenals", $"{prefix} adrenal gland", HarvestMaterialKind.Gland, HarvestMethod.Organs, "gland").From(belly, 2).Count().Hard(0.75f, 10)
+            .Rare(1f, 12).Spoils(20f).Worth(value * 7f, 0.01f, 10f, 2).Fragile().Uses(HarvestUse.Alchemy | HarvestUse.Trade)
+            .Alchemy("berserker_essence", 0.6f, 0.7f).Tint(new Color(0.85f, 0.6f, 0.25f))
+            .Describe("Two tiny glands on the kidneys, easy to miss: the fury of the fight, for an alchemist."));
+    }
+
+    // ================================================================== unusual bodies
+    /// <summary>The regions of a shapeless creature (a slime, an ooze): its body, and the core floating in it (its weak point).</summary>
+    public static List<HarvestRegion> AmorphousRegions() => new List<HarvestRegion>
+    {
+        Region("body", 0.6f, 1.6f, 0f, 0f, 0.4f).Pelt(0.1f, 0.1f, 0.8f, 0.8f).Band(0f, 1f)
+            .Parts("Body", "Torso", "Chest", "Belly", "Back", "Head", "UpperTorso", "LowerTorso").Named("Body (the gel)"),
+        Region("core", 0f, 0.2f, 0f, 0f, 1f).Band(0.35f, 0.65f, 0.35f, 0.65f).Weak(2.2f).React(HarvestRegionReaction.Stagger)
+            .Parts("Core", "Nucleus", "Heart"),
+    };
+
+    /// <summary>The regions of a turtle seen from the side (head to the right): head, neck, the domed shell, the plastron under it, four legs, a tail.</summary>
+    public static List<HarvestRegion> ShelledRegions() => new List<HarvestRegion>
+    {
+        Region("head", 1f, 0.2f, 0.9f, 0.1f, 0.1f).Pelt(0.4f, 0f, 0.2f, 0.15f).Band(0.3f, 0.75f, 0.9f, 1f).Weak(1.6f).React(HarvestRegionReaction.Stagger).Fiddly()
+            .Parts("Head", "Skull", "Jaw", "Beak", "Eyes"),
+        Region("neck", 1f, 0.6f, 0.5f, 0.4f, 0f).Pelt(0.38f, 0.15f, 0.24f, 0.15f).Band(0.3f, 0.6f, 0.8f, 0.92f).Weak(1.5f).Parts("Neck", "Throat"),
+        Region("shell", 0f, 0.2f, 1f, 0f, 0f).Armor(0.9f).Defense(8f).Band(0.45f, 1f, 0.1f, 0.88f)
+            .Parts("Shell", "Carapace", "Back", "Body", "Torso", "UpperTorso", "Chest").Named("Shell (the carapace)"),
+        Region("plastron", 0f, 1.8f, 0.6f, 0.2f, 1f).Armor(0.6f).Band(0.25f, 0.45f, 0.15f, 0.85f)
+            .Parts("Plastron", "Belly", "Abdomen", "LowerTorso", "Stomach").Named("Plastron (the belly shell)"),
+        Region("foreleg_l", 1f, 0.6f, 0.6f, 0.8f, 0f).Pelt(0f, 0.3f, 0.3f, 0.2f).Band(0f, 0.33f, 0.6f, 0.82f).Side(BodySide.Left, 0f).Mult(0.7f)
+            .React(HarvestRegionReaction.Slow).Fiddly().Parts("LeftForeleg", "LeftFrontLeg", "LeftArm", "Forelegs", "Legs"),
+        Region("foreleg_r", 1f, 0.6f, 0.6f, 0.8f, 0f).Pelt(0.7f, 0.3f, 0.3f, 0.2f).Band(0f, 0.33f, 0.6f, 0.82f).Side(BodySide.Right, 0f).Mult(0.7f)
+            .React(HarvestRegionReaction.Slow).Fiddly().Parts("RightForeleg", "RightFrontLeg", "RightArm", "Forelegs", "Legs"),
+        Region("hindleg_l", 1f, 0.7f, 0.6f, 0.8f, 0f).Pelt(0f, 0.6f, 0.3f, 0.2f).Band(0f, 0.33f, 0.15f, 0.38f).Side(BodySide.Left, 0f).Mult(0.7f)
+            .React(HarvestRegionReaction.Slow).Fiddly().Parts("LeftHindleg", "LeftHindLeg", "LeftLeg", "Hindlegs", "Legs"),
+        Region("hindleg_r", 1f, 0.7f, 0.6f, 0.8f, 0f).Pelt(0.7f, 0.6f, 0.3f, 0.2f).Band(0f, 0.33f, 0.15f, 0.38f).Side(BodySide.Right, 0f).Mult(0.7f)
+            .React(HarvestRegionReaction.Slow).Fiddly().Parts("RightHindleg", "RightHindLeg", "RightLeg", "Hindlegs", "Legs"),
+        Region("tail", 1f, 0.1f, 0.3f, 0.2f, 0f).Pelt(0.42f, 0.85f, 0.16f, 0.15f).Band(0.28f, 0.42f, 0f, 0.15f).Mult(0.5f).Fiddly().Parts("Tail"),
+    };
+
+    /// <summary>
+    /// <paramref name="count"/> - 1 more copies of region <paramref name="baseId"/>, drawn as copies of its slot ("head#2",
+    /// "head#3"...) and hit as their own body parts (<paramref name="partPrefix"/>2, 3...). <paramref name="pivot"/>: what the
+    /// copies turn about (zero = automatic). On the hide, the first and its copies share <paramref name="peltBand"/> side by side.
+    /// </summary>
+    private static void MoreOf(HarvestAnatomyData a, string baseId, int count, string partPrefix, Rect peltBand, Vector2 pivot = default)
+    {
+        HarvestRegion first = a.Region(baseId);
+        if (first == null || count < 2)
+            return;
+        float w = peltBand.width / count;
+        first.pelt = new Rect(peltBand.x, peltBand.y, w, peltBand.height);
+        for (int n = 2; n <= count; n++)
+        {
+            HarvestRegion r = first.Clone();
+            r.id = $"{baseId}_{n}";
+            r.displayName = $"{first.Name} {n}";
+            r.slot = $"{first.Slot}#{n}";
+            r.copyPivot = pivot;
+            r.bodyParts = new List<string> { partPrefix + n, $"{partPrefix}_{n}" };
+            r.pelt = new Rect(peltBand.x + w * (n - 1), peltBand.y, w, peltBand.height);
+            a.regions.Add(r);
+        }
+    }
+
+    /// <summary>A slime: a sack of gel round a core. No bones, no meat: its membrane, its gel, its core - and now and then a pearl.</summary>
+    public static HarvestAnatomyData Slime()
+    {
+        HarvestAnatomyData a = New("slime", "Slime", HarvestBodyPlan.Amorphous, 40f, 0.8f, 6, 6,
+            "A quivering sack of gel round a glowing core. Strike the core.", "Slime", "Ooze", "Jelly", "Blob");
+        a.hideColor = new Color(0.45f, 0.75f, 0.5f);
+        a.hairColor = new Color(0.55f, 0.85f, 0.6f);
+        a.meatColor = new Color(0.4f, 0.7f, 0.45f);
+        a.regions = AmorphousRegions();
+        a.materials.Add(Material("membrane", "Slime membrane", HarvestMaterialKind.Hide, HarvestMethod.Skinning).From("body").Yield(1f, 1f, "sheet").Hard(0.5f)
+            .Spoils(240f).Worth(6f, 0.6f, 8f).PlainHide().Uses(HarvestUse.Crafting).Tint(new Color(0.6f, 0.9f, 0.65f))
+            .Describe("A tough, clear film: waterproof patches, the panes of a lantern."));
+        a.materials.Add(Material("gel", "Slime gel", HarvestMaterialKind.Other, HarvestMethod.Butchering, "fat").From("body").Yield(4f, 8f, "dollop").Hard(0.25f)
+            .Needs(HarvestMethods.Hide).Spoils(180f).Worth(0.8f, 0.5f, 3f).Uses(HarvestUse.Alchemy | HarvestUse.Crafting).Alchemy("kelp_gel", 1.5f, 0.9f)
+            .Tint(new Color(0.5f, 0.85f, 0.55f)).Describe("Scooped out once the membrane is off. Dries into a strong glue."));
+        a.materials.Add(Material("core", "Slime core", HarvestMaterialKind.Essence, HarvestMethod.Organs, "gland").From("core").Count().Hard(0.6f)
+            .Worth(25f, 0.3f, 12f, 2).Uses(HarvestUse.Alchemy | HarvestUse.Trade).Alchemy("mana_essence", 2f, 0.6f).Tint(new Color(0.75f, 1f, 0.6f))
+            .Describe("Still faintly glowing. Never rots."));
+        a.materials.Add(Material("pearl", "Slime pearl", HarvestMaterialKind.Other, HarvestMethod.Organs, "gland").From("core").Count().Rare(0.05f, 15).Hard(0.5f)
+            .Worth(90f, 0.02f, 15f, 3).Uses(HarvestUse.Trade).Tint(new Color(0.95f, 0.95f, 0.85f))
+            .Describe("A smooth bead the core grows round whatever it cannot digest. Collectors pay well."));
+        return a;
+    }
+
+    /// <summary>A giant turtle: a shell to cut away, horn scutes, meat and eggs under the plastron. Its skin is only on the neck and legs.</summary>
+    public static HarvestAnatomyData GiantTurtle()
+    {
+        HarvestAnatomyData a = New("giant_turtle", "Giant turtle", HarvestBodyPlan.Shelled, 220f, 0.9f, 5, 18,
+            "An armoured grazer: the plastron must come off before anything inside can be reached.", "Turtle", "Tortoise", "Terrapin");
+        a.hideColor = new Color(0.45f, 0.5f, 0.35f);
+        a.hairColor = new Color(0.38f, 0.42f, 0.3f);
+        a.meatColor = new Color(0.62f, 0.32f, 0.28f);
+        a.toughness = 1.2f;
+        a.regions = ShelledRegions();
+        a.materials.Add(Material("skin", "Turtle skin", HarvestMaterialKind.Hide, HarvestMethod.Skinning).From("neck").From("foreleg_l", 1, 0.3f).From("foreleg_r", 1, 0.3f)
+            .Yield(1f, 1f, "skin").Hard(0.6f).Spoils(150f).Worth(8f, 1f, 8f).Tannery("snake").Tint(new Color(0.45f, 0.5f, 0.35f))
+            .Describe("Leathery and pebbled, off the neck and legs: a long strip of scaled leather."));
+        a.materials.Add(Material("shell", "Turtle shell", HarvestMaterialKind.Chitin, HarvestMethod.Trophies, "plate").From("shell").Count().Hard(0.7f, 5)
+            .Worth(60f, 12f, 16f, 3).Uses(HarvestUse.Crafting | HarvestUse.Trophy | HarvestUse.Trade).Tint(new Color(0.5f, 0.45f, 0.3f))
+            .Describe("The whole carapace: a shield, a cradle, a trophy."));
+        a.materials.Add(Material("scutes", "Turtle scute", HarvestMaterialKind.Scales, HarvestMethod.Trophies, "scale").From("shell", 13).Count().Hard(0.45f)
+            .Worth(4f, 0.05f, 4f).Uses(HarvestUse.Crafting | HarvestUse.Trade).Tint(new Color(0.6f, 0.45f, 0.25f))
+            .Describe("Horn plates off the shell: tortoiseshell combs, inlay, spectacles."));
+        a.materials.Add(Material("plastron", "Plastron", HarvestMaterialKind.Chitin, HarvestMethod.Trophies, "plate").From("plastron").Count().Hard(0.65f)
+            .Worth(25f, 6f, 10f, 2).Uses(HarvestUse.Crafting).Tint(new Color(0.85f, 0.78f, 0.55f)).Describe("The belly shell. Off it comes before anything inside."));
+        a.materials.Add(Material("meat", "Turtle meat", HarvestMaterialKind.Meat, HarvestMethod.Butchering, "cut").From("plastron").From("hindleg_l", 1, 0.2f).From("hindleg_r", 1, 0.2f)
+            .Yield(6f, 10f, "portion").Hard(0.4f).Needs("plastron").Spoils(40f).Worth(3f, 1f, 5f).Food(24f).Tint(a.meatColor).Describe("Seven kinds of meat in one, they say."));
+        a.materials.Add(Material("fat", "Turtle fat", HarvestMaterialKind.Fat, HarvestMethod.Butchering, "fat").From("plastron").Yield(1f, 2f, "slab").Hard(0.3f)
+            .Needs("plastron").Spoils(80f).Worth(2f, 0.8f, 3f).Food(10f).Tint(Fat).Alchemy("oil", 2f, 0.6f));
+        a.materials.Add(Material("heart", "Turtle heart", HarvestMaterialKind.Organ, HarvestMethod.Organs, "heart").From("plastron").Count().Hard(0.5f)
+            .Needs("plastron").Spoils(25f).Worth(6f, 0.2f, 6f).Tint(Red).Alchemy("vital_essence", 1f, 0.5f).Describe("It beats long after death: slow, patient."));
+        a.materials.Add(Material("liver", "Turtle liver", HarvestMaterialKind.Organ, HarvestMethod.Organs, "liver").From("plastron").Count().Hard(0.5f)
+            .Needs("plastron").Spoils(18f).Worth(4f, 0.8f, 5f).Food(16f).Tint(Liver));
+        a.materials.Add(Material("eggs", "Turtle egg", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From("plastron", 6).Count().Rare(0.3f, 6).Hard(0.5f)
+            .Needs("plastron").Spoils(120f).Worth(5f, 0.08f, 4f).Fragile().Food(8f).Uses(HarvestUse.Food | HarvestUse.Trade).Tint(new Color(0.95f, 0.93f, 0.85f))
+            .Describe("A clutch of leathery eggs, ready to lay."));
+        a.materials.Add(Material("beak", "Turtle beak", HarvestMaterialKind.Horn, HarvestMethod.Trophies, "beak").From("head").Count().Hard(0.5f)
+            .Worth(5f, 0.1f, 4f).Tint(new Color(0.3f, 0.28f, 0.22f)));
+        return a;
+    }
+
+    /// <summary>A cerberus: a great black hound with three heads - three skulls, a dozen fangs, and a hellfire gland in each throat.</summary>
+    public static HarvestAnatomyData Cerberus()
+    {
+        HarvestAnatomyData a = New("cerberus", "Cerberus", HarvestBodyPlan.Quadruped, 180f, 1.3f, 12, 16,
+            "A three-headed hound from below. Each head breathes its own fire.", "Cerberus", "Hellhound");
+        a.hideColor = new Color(0.16f, 0.13f, 0.12f);
+        a.hairColor = new Color(0.1f, 0.08f, 0.08f);
+        a.meatColor = new Color(0.55f, 0.18f, 0.15f);
+        a.toughness = 1.2f;
+        a.resistances.Add(new HarvestElementResistance { element = ElementType.Fire, resist = 0.8f });
+        a.regions = QuadrupedRegions();
+        MoreOf(a, "head", 3, "Head", new Rect(0.08f, 0f, 0.84f, 0.13f));
+        a.materials.Add(Material("pelt", "Cerberus pelt", HarvestMaterialKind.Hide, HarvestMethod.Skinning).From("back").Yield(1f, 1f, "pelt").Hard(0.6f, 10).Spoils(140f)
+            .Worth(70f, 10f, 20f, 3).Tannery("bear").Tint(a.hairColor).Describe("Coarse black fur that never quite cools."));
+        QuadrupedMeat(a, "Cerberus", 20f, 2.5f);
+        QuadrupedTendons(a, "Cerberus", 6f);
+        QuadrupedBones(a, "Cerberus", 6f);
+        a.Material("skull").From("head_2").From("head_3"); // three heads, three skulls
+        Organs(a, "Cerberus", 3f, gallValue: 30f);
+        Claws(a, "claws", "Cerberus claw", 5, 5, 8f, 0.5f);
+        a.materials.Add(Material("fangs", "Cerberus fang", HarvestMaterialKind.Tooth, HarvestMethod.Trophies, "fang").From("head", 4).From("head_2", 4).From("head_3", 4)
+            .Count().Hard(0.55f).Worth(10f, 0.04f, 6f, 2).Tint(Ivory));
+        a.materials.Add(Material("hellfire_gland", "Hellfire gland", HarvestMaterialKind.Gland, HarvestMethod.Organs, "gland").From("head").From("head_2").From("head_3")
+            .Count().Hard(0.8f, 15).Spoils(40f).TakeWithin(25f).Worth(70f, 0.4f, 18f, 4).Fragile().Hazard().Uses(HarvestUse.Alchemy | HarvestUse.Trade)
+            .Alchemy("ember_spirit", 2f, 0.8f).Tint(new Color(1f, 0.35f, 0.1f))
+            .Describe("One in each throat. It goes cold within half an hour of death; burst, it burns what is around it."));
+        return a;
+    }
+
+    /// <summary>A hydra: a scaled body with five necks, five heads, five venom glands - and a heart that will not stop trying to heal.</summary>
+    public static HarvestAnatomyData Hydra()
+    {
+        HarvestAnatomyData a = New("hydra", "Hydra", HarvestBodyPlan.Quadruped, 900f, 2.4f, 10, 14,
+            "A many-headed swamp wyrm. Cut a neck and two grow back - unless the stump is burned.", "Hydra");
+        a.hideColor = new Color(0.25f, 0.35f, 0.3f);
+        a.hairColor = new Color(0.2f, 0.3f, 0.26f);
+        a.meatColor = new Color(0.5f, 0.25f, 0.22f);
+        a.toughness = 1.3f;
+        a.regeneration = 0.4f;
+        a.regions = QuadrupedRegions();
+        a.Region("neck").Weak(1.3f);
+        // Five necks fanned from the shoulders, each with its head: necks and heads turn about the same point, so every
+        // head stays on its own neck.
+        var shoulder = new Vector2(0.78f, 0.66f);
+        MoreOf(a, "neck", 5, "Neck", new Rect(0f, 0.11f, 1f, 0.11f), shoulder);
+        MoreOf(a, "head", 5, "Head", new Rect(0f, 0f, 1f, 0.11f), shoulder);
+        a.materials.Add(Material("hide", "Hydra hide", HarvestMaterialKind.Hide, HarvestMethod.Skinning).From("back").Yield(1f, 1f, "hide").Hard(0.7f, 15).Spoils(200f)
+            .Worth(90f, 25f, 24f, 3).Tannery("drake").Tint(a.hideColor).Describe("Scaled and slick: armour that sheds water and blades alike."));
+        QuadrupedMeat(a, "Hydra", 40f, 1.8f);
+        QuadrupedTendons(a, "Hydra", 8f);
+        QuadrupedBones(a, "Hydra", 7f);
+        a.Material("skull").From("head_2").From("head_3").From("head_4").From("head_5");
+        Organs(a, "Hydra", 4f);
+        a.materials.Add(Material("fangs", "Hydra fang", HarvestMaterialKind.Tooth, HarvestMethod.Trophies, "fang").From("head", 2).From("head_2", 2).From("head_3", 2)
+            .From("head_4", 2).From("head_5", 2).Count().Hard(0.55f).Worth(14f, 0.06f, 7f, 2).Tint(Ivory));
+        a.materials.Add(Material("venom_gland", "Hydra venom gland", HarvestMaterialKind.Gland, HarvestMethod.Organs, "venom").From("head").From("head_2").From("head_3")
+            .From("head_4").From("head_5").Count().Hard(0.7f, 10).Spoils(40f).Worth(30f, 0.1f, 12f, 3).Fragile().Hazard().Tint(Venom).Alchemy("venom", 2f, 0.8f)
+            .Describe("One behind each set of fangs."));
+        // Its heart is no ordinary one: it still tries to heal.
+        HarvestMaterial heart = a.Material("heart").Hard(0.65f, 15).Spoils(90f).Worth(150f, 4f, 26f, 5).Uses(HarvestUse.Alchemy | HarvestUse.Trade)
+            .Tint(new Color(0.35f, 0.5f, 0.3f)).Describe("It still tries to grow back what was cut away.");
+        heart.alchemy.Clear();
+        heart.Alchemy("restorative_essence", 3f, 0.5f);
+        heart.edible = false;
+        return a;
+    }
+
+    /// <summary>The containers built-in materials are taken into (Harvesting ▸ Create Tools makes the items when the project has none).</summary>
+    public static class Containers
+    {
+        public const string Vial = "Empty vial";
     }
 
     private static void Claws(HarvestAnatomyData a, string id, string name, int front, int hind, float value, float difficulty = 0.45f)
@@ -397,9 +626,12 @@ public static class HarvestDefaults
             .Spoils(40f).Worth(80f, 1f, 20f, 4).Fragile().Hazard().Tint(new Color(1f, 0.45f, 0.15f)).Alchemy("ember_spirit", 3f, 0.8f)
             .Describe("The sac of oil a drake breathes fire with. Burst, it burns what is around it."));
         a.materials.Add(Material("heartstone", "Heartstone", HarvestMaterialKind.Essence, HarvestMethod.Organs, "gland").From("ribs").Count().Rare(0.25f, 20)
-            .Hard(0.6f).Worth(200f, 0.3f, 30f, 5).Tint(new Color(1f, 0.3f, 0.25f)).Alchemy("wyrmblood_essence", 2f, 0.4f).Describe("A crystal grown around an old drake's heart, glowing faintly."));
+            .Hard(0.6f).Worth(200f, 0.3f, 30f, 5).Rarity(HarvestRarity.Legendary).Tint(new Color(1f, 0.3f, 0.25f)).Alchemy("wyrmblood_essence", 2f, 0.4f).Describe("A crystal grown around an old drake's heart, glowing faintly."));
         a.materials.Add(Material("horns", "Drake horn", HarvestMaterialKind.Horn, HarvestMethod.Trophies, "horn").From("head", 2).Count().Hard(0.55f)
             .Worth(30f, 1.5f, 12f, 3).Tint(new Color(0.3f, 0.26f, 0.22f)));
+        a.materials.Add(Material("eyes", "Drake eye", HarvestMaterialKind.Organ, HarvestMethod.Organs, "gland").From("head", 2).Count().Hard(0.7f, 10)
+            .Spoils(90f).TakeWithin(30f).Worth(35f, 0.1f, 12f, 3).Fragile().Uses(HarvestUse.Alchemy | HarvestUse.Trade)
+            .Alchemy("salamander_essence", 1f, 0.6f).Tint(new Color(0.95f, 0.65f, 0.15f)).Describe("Slit-pupilled, still warm. Fire-seers grind them."));
         Claws(a, "claws", "Drake claw", 4, 4, 12f, 0.55f);
         a.materials.Add(Material("fangs", "Drake fang", HarvestMaterialKind.Tooth, HarvestMethod.Trophies, "fang").From("head", 4).Count().Hard(0.6f)
             .Worth(15f, 0.1f, 8f, 3).Tint(Ivory));
@@ -437,6 +669,12 @@ public static class HarvestDefaults
             .Worth(12f, 0.3f, 8f, 2).Tint(Ivory));
         a.materials.Add(Material("claws", "Troll claw", HarvestMaterialKind.Claw, HarvestMethod.Trophies, "claw").From("arm_l", 5).From("arm_r", 5).Count().Hard(0.45f)
             .Worth(6f, 0.05f, 5f, 2).Tint(Horn));
+        a.materials.Add(Material("blood", "Troll blood", HarvestMaterialKind.Other, HarvestMethod.Organs, "gland").From("chest", 4).Count().Hard(0.35f)
+            .Spoils(60f).TakeWithin(30f).Container(Containers.Vial).Worth(1f, 0.25f, 5f, 2).Uses(HarvestUse.Trade)
+            .Discovery(Discoveries.TrollRegeneration, 45f, HarvestUse.Alchemy).Alchemy("restorative_essence", 1.2f, 0.6f).Tint(new Color(0.3f, 0.4f, 0.25f))
+            .Describe("Thick and greenish, and it will not clot. A curiosity - unless someone learns what it can do."));
+        a.materials.Add(Material("spleen", "Troll spleen", HarvestMaterialKind.Organ, HarvestMethod.Organs, "spleen").From("belly").Count().Hard(0.45f)
+            .Spoils(30f).Worth(0.2f, 1f, 3f).Uses(HarvestUse.None).Tint(new Color(0.3f, 0.2f, 0.2f)).Describe("Huge, and worth nothing."));
         return a;
     }
 
@@ -480,6 +718,9 @@ public static class HarvestDefaults
             .Spoils(20f).Worth(8f, 0.2f, 6f).Fragile().Food(12f).Tint(new Color(1f, 0.45f, 0.25f)).Alchemy("albumen", 1.5f, 0.9f).Describe("A delicacy, and bait."));
         a.materials.Add(Material("bones", "Fish bones", HarvestMaterialKind.Bone, HarvestMethod.Bones, "spine").From("back").Count().Hard(0.35f)
             .Worth(1f, 0.05f, 3f).Tint(Ivory).Describe("Needles and glue."));
+        a.materials.Add(Material("swim_bladder", "Swim bladder", HarvestMaterialKind.Organ, HarvestMethod.Organs, "bladder").From("belly").Count().Hard(0.45f)
+            .Spoils(40f).Worth(3f, 0.02f, 4f).Uses(HarvestUse.Crafting | HarvestUse.Trade).Tint(new Color(0.95f, 0.92f, 0.85f))
+            .Describe("A thin silvery bag. Boiled down, it makes the clearest glue there is."));
         return a;
     }
 
@@ -505,6 +746,9 @@ public static class HarvestDefaults
             .Yield(2f, 4f).Hard(0.4f).Spoils(30f).Worth(2f, 0.5f, 4f).Food(14f).Tint(a.meatColor).Describe("Tastes like crab. Mostly."));
         a.materials.Add(Material("egg_sac", "Egg sac", HarvestMaterialKind.Gland, HarvestMethod.Organs, "gland").From("abdomen").Count().Rare(0.3f, 10).Hard(0.65f)
             .Spoils(60f).Worth(60f, 1f, 16f, 3).Fragile().Hazard().Tint(new Color(0.85f, 0.85f, 0.7f)).Describe("Hundreds of eggs in silk. Break it and they spill everywhere."));
+        a.materials.Add(Material("book_lungs", "Book lungs", HarvestMaterialKind.Organ, HarvestMethod.Organs, "lungs").From("abdomen").Count().Hard(0.5f)
+            .Spoils(20f).Worth(0.3f, 0.2f, 3f).Uses(HarvestUse.None).Tint(new Color(0.75f, 0.7f, 0.6f))
+            .Describe("Leaf upon leaf of grey tissue, like the pages of a wet book. Worthless - as far as anyone knows."));
         return a;
     }
 
@@ -526,6 +770,16 @@ public static class HarvestDefaults
             .Worth(10f, 0.02f, 6f, 2).Tint(Ivory));
         a.materials.Add(Material("vertebrae", "Serpent vertebrae", HarvestMaterialKind.Bone, HarvestMethod.Bones, "spine").From("body").Count().Hard(0.45f)
             .Needs(HarvestMethods.Hide).Worth(6f, 0.5f, 6f).Tint(Ivory).Describe("Hundreds of small bones: beads, chimes, charms."));
+        a.materials.Add(Material("musk_gland", "Serpent musk gland", HarvestMaterialKind.Gland, HarvestMethod.Organs, "gland").From("tail", 2).Count().Rare(0.4f, 8)
+            .Hard(0.6f).Spoils(40f).Worth(18f, 0.03f, 10f, 2).Fragile().Uses(HarvestUse.Alchemy | HarvestUse.Trade).Alchemy("esters", 1f, 0.7f)
+            .Tint(new Color(0.6f, 0.55f, 0.3f)).Describe("Two small sacs by the vent, sharp-smelling. Hunters use it to cover their scent."));
         return a;
+    }
+
+    /// <summary>The discoveries built-in materials name (HarvestDiscoveries.Unlock(key) from a recipe, a quest, a scholar).</summary>
+    public static class Discoveries
+    {
+        /// <summary>Troll blood, a curiosity, becomes an alchemy ingredient worth 45 a vial (a regeneration tonic).</summary>
+        public const string TrollRegeneration = "troll_regeneration";
     }
 }

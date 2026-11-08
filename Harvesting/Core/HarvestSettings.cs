@@ -165,6 +165,12 @@ public class HarvestSettings
     [Min(0f)] public float characterXpShare = 0.25f;
     [Tooltip("Harvests of a species until its anatomy is fully known (names, values, rare finds).")]
     [Min(1)] public int harvestsToKnowSpecies = 6;
+    [Tooltip("Pieces of a material a player takes before they know its price (selling one to a merchant tells them at once).")]
+    [Min(1)] public int piecesToKnowValue = 5;
+    [Tooltip("Anatomy level at which a player can guess roughly what any part is worth (\"valuable\", \"worth little\").")]
+    [Min(0)] public int anatomyToEstimateValue = 8;
+    [Tooltip("Anatomy level at which a player knows what every part is good for (food, alchemy, crafting...) without trying it.")]
+    [Min(0)] public int anatomyToSenseUses = 30;
 
     [Header("Minigames")]
     [Tooltip("Scales every margin (tolerances, bands): 1.2 = 20% easier.")]

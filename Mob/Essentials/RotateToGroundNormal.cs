@@ -22,10 +22,25 @@ public class RotateToGroundNormal : MonoBehaviour
     /// rotation comes from the server (which already aligned it), and turning it here would fight the network transform.
     /// A component on a child model keeps aligning it locally (presentation only).
     /// </summary>
+    private MobMovementStateMachine machine;
+    private bool machineLooked;
+
     private void Update()
     {
         if (transform.parent == null && GameNet.NetAuthority.IsClientOnly && !GameNet.NetAuthority.RunsRules(gameObject))
             return;
+        if (!machineLooked)
+        {
+            machineLooked = true;
+            machine = GetComponentInParent<MobMovementStateMachine>();
+        }
+        // Flying or swimming, the body is level: the ground far below (or the lake bed) is not what it stands on.
+        if (machine != null && machine.IsOffTheGround)
+        {
+            Quaternion level = Quaternion.FromToRotation(transform.up, Vector3.up) * transform.rotation;
+            transform.rotation = Quaternion.Slerp(transform.rotation, level, Time.deltaTime * rotationSpeed);
+            return;
+        }
         /// <summary>
         /// Casts a ray downward from the GameObject's position to detect the ground.
         /// </summary>

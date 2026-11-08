@@ -380,6 +380,25 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         gameObject.SetActive(false);
     }
 
+    /// <summary>
+    /// Off the ground: flying or swimming, on any machine (the AI's motor where it runs, the server's state on a client's
+    /// copy). Ground alignment and the body's motion use it.
+    /// </summary>
+    public bool IsOffTheGround
+    {
+        get
+        {
+            if (context == null)
+                return false;
+            if (replicaActive)
+                return replicaState.Has(MobReplicaFlags.Flying) || replicaState.Has(MobReplicaFlags.Swimming);
+            return context.Motor.IsFlying || context.Motor.IsSwimming;
+        }
+    }
+
+    /// <summary>Flying, on any machine (see <see cref="IsOffTheGround"/>).</summary>
+    public bool IsFlying => context != null && (replicaActive ? replicaState.Has(MobReplicaFlags.Flying) : context.Motor.IsFlying);
+
     /// <summary>The state clients need to show this mob (server side; see <see cref="MobReplicaState"/>).</summary>
     public MobReplicaState CaptureReplicaState()
     {
@@ -397,7 +416,11 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         if (CurrentStateKey == EMobMovementState.Dead || (mob != null && mob.IsDead) || (e != null && e.IsDead))
             flags |= MobReplicaFlags.Dead;
         MobMotor motor = context.Motor;
-        return MobReplicaState.Create(CurrentStateKey, flags, motor.SpeedFor(MobMoveMode.Walk), motor.RunSpeed);
+        if (motor.IsFlying)
+            flags |= MobReplicaFlags.Flying;
+        if (motor.IsSwimming)
+            flags |= MobReplicaFlags.Swimming;
+        return MobReplicaState.Create(CurrentStateKey, flags, motor.PaceIn(MobMoveMode.Walk), motor.RunPace);
     }
 
     /// <summary>

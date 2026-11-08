@@ -22,6 +22,8 @@ public class MobDeadState : MobMovementState
         Context.Perception.Unsubscribe();
         Context.Animation.OnDeath();
 
+        // A flyer's body falls, a swimmer's floats up: a carcass must be within reach (decided before the agent goes off).
+        Motor.BeginCorpseSettle();
         NavMeshAgent agent = Context.NavMeshAgentReference;
         if (agent != null && agent.enabled)
         {
@@ -50,5 +52,5 @@ public class MobDeadState : MobMovementState
         disabledColliders.Clear();
     }
 
-    protected override void OnUpdate(float dt) { }
+    protected override void OnUpdate(float dt) => Motor.SettleCorpse(dt);
 }

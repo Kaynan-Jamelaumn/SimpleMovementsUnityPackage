@@ -69,7 +69,7 @@ public class HarvestedFoodSO : ConsumableSO, IHarvestedItem, IItemInstanceToolti
         name = m.Name;
         description = string.IsNullOrWhiteSpace(m.description) ? $"From {(a != null ? HarvestText.Capital(a.Name.ToLowerInvariant()) : "a creature")}." : m.description;
         itemType = ItemType.Food;
-        price = m.value;
+        price = Mathf.Max(0.01f, m.value); // never exactly 0: a discovery can raise it
         weight = m.weight;
         stackMax = 20;
         if (itemIcon != null) icon = itemIcon;
@@ -98,6 +98,9 @@ public class HarvestedFoodSO : ConsumableSO, IHarvestedItem, IItemInstanceToolti
     {
         int code = HarvestedItemInfo.CodeOf(instance);
         base.UseItem(player, statusController, instance);
+        // Eaten: the player learns it is food (an organ they did not know was).
+        if (player != null)
+            HarvestKnowledge.For(player.transform)?.LearnUse(this, HarvestUse.Food);
         if (statusController == null || statusController.HpManager == null || !HarvestItemCode.TryDecode(code, out double q, out HarvestMarks marks))
             return;
         if ((marks & Sickening) == 0)

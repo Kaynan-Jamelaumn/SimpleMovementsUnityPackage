@@ -2,6 +2,19 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>What a player knows of one material of a species: how many pieces they took, its price, what it is good for.</summary>
+[Serializable]
+public class HarvestMaterialNote
+{
+    public string id = "";
+    /// <summary>Pieces taken.</summary>
+    public int pieces;
+    /// <summary>Its price is known (sold to a merchant, or enough taken).</summary>
+    public bool appraised;
+    /// <summary>The uses the player found by trying it (eating, brewing, selling, working it), as <see cref="HarvestUse"/> flags.</summary>
+    public int uses;
+}
+
 /// <summary>What a player knows of one species: how often they harvested it and what they have found in it.</summary>
 [Serializable]
 public class HarvestSpeciesNote
@@ -12,6 +25,21 @@ public class HarvestSpeciesNote
     public float bestQuality;
     /// <summary>Materials of it the player has taken (they are named and valued from then on).</summary>
     public List<string> known = new List<string>();
+    /// <summary>What the player knows of each of its materials (pieces taken, price, uses found).</summary>
+    public List<HarvestMaterialNote> materials = new List<HarvestMaterialNote>();
+
+    public HarvestMaterialNote Material(string materialId, bool add = false)
+    {
+        materials ??= new List<HarvestMaterialNote>();
+        foreach (HarvestMaterialNote n in materials)
+            if (n != null && string.Equals(n.id, materialId, StringComparison.OrdinalIgnoreCase))
+                return n;
+        if (!add || string.IsNullOrEmpty(materialId))
+            return null;
+        var note = new HarvestMaterialNote { id = materialId };
+        materials.Add(note);
+        return note;
+    }
 }
 
 /// <summary>
@@ -28,6 +56,11 @@ public class HarvestSkillData
     public int pieces;
     /// <summary>The last results, newest last ("Bear pelt - Fine (82%)").</summary>
     public List<string> log = new List<string>();
+    /// <summary>
+    /// The world's discoveries (<see cref="HarvestDiscoveries"/>) as the server last sent them with these skills. Filled only
+    /// on the copy sent to a network client; a saved file keeps none (the world saves its own).
+    /// </summary>
+    public List<string> discoveries = new List<string>();
 
     public float Xp(HarvestSkill s)
     {
@@ -73,8 +106,13 @@ public class HarvestSkillData
             d.xp ??= new List<float>();
             d.species ??= new List<HarvestSpeciesNote>();
             d.log ??= new List<string>();
+            d.discoveries ??= new List<string>();
             foreach (HarvestSpeciesNote n in d.species)
-                if (n != null) n.known ??= new List<string>();
+                if (n != null)
+                {
+                    n.known ??= new List<string>();
+                    n.materials ??= new List<HarvestMaterialNote>();
+                }
             return d;
         }
         catch (Exception)
@@ -239,6 +277,116 @@ public static class HarvestSkills
             return true;
         HarvestSpeciesNote n = d?.Species(anatomyId);
         return n != null && n.known.Contains(m.id);
+    }
+
+    // ------------------------------------------------------------------ what a material is worth and good for
+    /// <summary>
+    /// How well the player knows what <paramref name="m"/> is worth. <b>Known</b> (its price): sold to a merchant, Pieces
+    /// To Know Value pieces taken, or the species well known (familiarity a half). <b>Estimate</b> (a rough word): taken at
+    /// least once, or Anatomy at Anatomy To Estimate Value. Otherwise <b>Unknown</b>: "worth ?". So a player learns by
+    /// trying which parts are worth the trouble.
+    /// </summary>
+    public static HarvestValueKnowledge ValueKnowledge(HarvestSettings s, HarvestSkillData d, string anatomyId, HarvestMaterial m)
+    {
+        if (m == null)
+            return HarvestValueKnowledge.Unknown;
+        HarvestSpeciesNote species = d?.Species(anatomyId);
+        HarvestMaterialNote n = species?.Material(m.id);
+        if (n != null && (n.appraised || n.pieces >= Math.Max(1, s.piecesToKnowValue)))
+            return HarvestValueKnowledge.Known;
+        if (Familiarity(s, d, anatomyId) >= 0.5)
+            return HarvestValueKnowledge.Known;
+        if ((n != null && n.pieces > 0) || (species != null && species.known.Contains(m.id)))
+            return HarvestValueKnowledge.Estimate;
+        if (Level(s, d, HarvestSkill.Anatomy) >= s.anatomyToEstimateValue)
+            return HarvestValueKnowledge.Estimate;
+        return HarvestValueKnowledge.Unknown;
+    }
+
+    /// <summary>
+    /// The uses of <paramref name="m"/> the player knows: the obvious ones (meat is food, a hide is for crafting, a skull a
+    /// trophy), those its discovery made known to all, those they found by trying it, and - with Anatomy at Anatomy To
+    /// Sense Uses - every one (a trained eye knows a gall bladder is worth a lot to an alchemist).
+    /// </summary>
+    public static HarvestUse KnownUses(HarvestSettings s, HarvestSkillData d, string anatomyId, HarvestMaterial m)
+    {
+        if (m == null)
+            return HarvestUse.None;
+        HarvestUse all = m.Uses;
+        if (Level(s, d, HarvestSkill.Anatomy) >= s.anatomyToSenseUses)
+            return all;
+        HarvestMaterialNote n = d?.Species(anatomyId)?.Material(m.id);
+        HarvestUse tried = n != null ? (HarvestUse)n.uses : HarvestUse.None;
+        return all & (m.ObviousUses() | tried);
+    }
+
+    /// <summary>Uses the player has not found yet (they show as "something else?" when it has any).</summary>
+    public static bool HasUnknownUses(HarvestSettings s, HarvestSkillData d, string anatomyId, HarvestMaterial m) =>
+        m != null && (m.Uses & ~KnownUses(s, d, anatomyId, m)) != HarvestUse.None;
+
+    /// <summary>The player took <paramref name="pieces"/> of <paramref name="m"/>. Returns true when they now know its price for the first time.</summary>
+    public static bool NotePieces(HarvestSettings s, HarvestSkillData d, string anatomyId, HarvestMaterial m, int pieces)
+    {
+        if (d == null || m == null || pieces <= 0)
+            return false;
+        HarvestMaterialNote n = d.Species(anatomyId, true)?.Material(m.id, true);
+        if (n == null)
+            return false;
+        bool before = n.appraised || n.pieces >= Math.Max(1, s.piecesToKnowValue);
+        n.pieces += pieces;
+        return !before && n.pieces >= Math.Max(1, s.piecesToKnowValue);
+    }
+
+    /// <summary>
+    /// The player used <paramref name="m"/> as <paramref name="use"/> (ate it, put it in a vessel, sold it...). Returns the
+    /// uses they learnt by it (none when they knew them), so the game can tell them ("Bear liver: food.").
+    /// </summary>
+    public static HarvestUse LearnUse(HarvestSkillData d, string anatomyId, HarvestMaterial m, HarvestUse use)
+    {
+        if (d == null || m == null)
+            return HarvestUse.None;
+        HarvestUse real = use & m.Uses;
+        HarvestMaterialNote n = d.Species(anatomyId, true)?.Material(m.id, true);
+        if (n == null || real == HarvestUse.None)
+            return HarvestUse.None;
+        HarvestUse fresh = real & ~(HarvestUse)n.uses & ~m.ObviousUses();
+        n.uses |= (int)real;
+        return fresh;
+    }
+
+    /// <summary>The player learnt the price of <paramref name="m"/> (a merchant paid for it). Returns true when it is new to them.</summary>
+    public static bool Appraise(HarvestSkillData d, string anatomyId, HarvestMaterial m)
+    {
+        if (d == null || m == null)
+            return false;
+        HarvestMaterialNote n = d.Species(anatomyId, true)?.Material(m.id, true);
+        if (n == null || n.appraised)
+            return false;
+        n.appraised = true;
+        return true;
+    }
+
+    /// <summary>A rough word for a price per piece: "worth nothing", "worth little", "worth something", "valuable", "very valuable", "a fortune".</summary>
+    public static string ValueWord(float value)
+    {
+        if (value < 0.25f) return "worth nothing";
+        if (value < 2f) return "worth little";
+        if (value < 8f) return "worth something";
+        if (value < 25f) return "valuable";
+        if (value < 80f) return "very valuable";
+        return "worth a fortune";
+    }
+
+    /// <summary>The uses as words: "food, alchemy" ("no known use" when none).</summary>
+    public static string UsesWords(HarvestUse u)
+    {
+        var l = new List<string>();
+        if ((u & HarvestUse.Food) != 0) l.Add("food");
+        if ((u & HarvestUse.Alchemy) != 0) l.Add("alchemy");
+        if ((u & HarvestUse.Crafting) != 0) l.Add("crafting");
+        if ((u & HarvestUse.Trophy) != 0) l.Add("a trophy");
+        if ((u & HarvestUse.Trade) != 0) l.Add("trade");
+        return l.Count == 0 ? "no known use" : string.Join(", ", l);
     }
 
     /// <summary>

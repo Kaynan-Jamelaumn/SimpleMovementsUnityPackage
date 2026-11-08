@@ -10,6 +10,7 @@ Mobs use the same combat core and abilities as the player.
 | [03 — Combat & Abilities](03-Combat-and-Abilities.md) | The basic attack, ability slots, how abilities are chosen, group combat, dodging, absorption |
 | [04 — Animation, Death & Spawning](04-Animation-Death-Spawning.md) | Animator parameters, death and corpse removal, spawning on the terrain and in dungeons, summons |
 | [05 — Troubleshooting](05-Troubleshooting.md) | Symptoms → causes → fixes |
+| [06 — Locomotion](06-Locomotion.md) | Flying, swimming and amphibious mobs, speeds in each medium, gaits (hop, slime bounce, leap, zigzag, crawl, slither, swim, dart, glide, flutter...), where each habitat may go |
 
 ## A mob at a glance
 
@@ -27,7 +28,7 @@ flowchart LR
     MAC --> PR
     MSM --> P["MobPerception<br/>sight, hearing, memory"]
     MSM --> B["MobBrain<br/>who is enemy / threat / ally,<br/>what to do next"]
-    MSM --> MO["MobMotor<br/>NavMesh movement"]
+    MSM --> MO["MobMotor<br/>NavMesh movement,<br/>locomotion (habitat, gait)"]
     MSM --> SEL["MobAbilitySelector<br/>which ability now"]
     SEL --> MAB
     MO --> NAV

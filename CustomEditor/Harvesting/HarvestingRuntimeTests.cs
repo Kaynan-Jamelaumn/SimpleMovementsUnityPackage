@@ -244,6 +244,25 @@ namespace HarvestingSystem.Tests
                 }
             }
         }
+
+        [Test]
+        public void AToolLyingOnTheGround_IsLookedAtAboveTheGround_SoThePlayerSeesAndCanPickItUp()
+        {
+            // A harvesting tool's pickup box on flat ground (y = 0): 10 cm wide, 26 cm tall. Looked at 0.4 m below its top,
+            // the line of sight aimed 14 cm under the ground and the ground hid it: no prompt, as if not interactable.
+            var knife = new Bounds(new Vector3(2f, 0.13f, 0f), new Vector3(0.1f, 0.26f, 0.1f));
+            Vector3 aim = PlayerInteractor.SightPoint(knife);
+            Assert.That(aim.y, Is.GreaterThan(0f), "the sight point of a small item on the ground is above the ground");
+            Assert.That(aim.y, Is.EqualTo(knife.center.y).Within(1e-5f), "a small item is looked at in its middle");
+
+            // A hide lying flat (3 cm thick) and a stock bar too.
+            var hide = new Bounds(new Vector3(1.5f, 0.015f, 0f), new Vector3(0.6f, 0.03f, 0.45f));
+            Assert.That(PlayerInteractor.SightPoint(hide).y, Is.GreaterThan(0f));
+
+            // A person or a door is still looked at 0.4 m below the top (over a counter in front of them).
+            var person = new Bounds(new Vector3(0f, 0.9f, 3f), new Vector3(0.5f, 1.8f, 0.5f));
+            Assert.That(PlayerInteractor.SightPoint(person).y, Is.EqualTo(1.4f).Within(1e-5f));
+        }
     }
 }
 #endif

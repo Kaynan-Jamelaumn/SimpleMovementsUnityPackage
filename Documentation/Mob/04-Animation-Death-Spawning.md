@@ -22,6 +22,9 @@
 | Alert Trigger | `Alert` | trigger | Notices an enemy |
 | Dodge Trigger | `Dodge` | trigger | Dodging |
 | Stunned Bool | `Stunned` | bool | Stunned |
+| Flying Bool | `IsFlying` | bool | Flying ([06](06-Locomotion.md)) |
+| Swimming Bool | `IsSwimming` | bool | Swimming |
+| Airborne Bool | `IsAirborne` | bool | In the air mid-hop, bounce or leap |
 | Death Trigger | `Die` | trigger | Death |
 
 **Old controllers** with states named `Idle`, `Moving`, `Chasing`, `Patrol` (and `Death` / `Die`) keep working: *Cross Fade Legacy States* (on by default in the profile) cross-fades to them.
@@ -33,7 +36,8 @@ Animator.
 
 1. Health reaches 0 → the **Dead** state: the `Die` trigger plays, the AI stops, `Mob.Died` is raised (with the
    killer), spawners count the kill.
-2. With *Disable Colliders On Death* the corpse stops blocking.
+2. With *Disable Colliders On Death* the corpse stops blocking. A flyer killed in the air falls to the ground, a swimmer
+   killed in water floats up to the surface ([06 §7](06-Locomotion.md#7-death)).
 3. After *Destroy Delay* seconds (profile, or `MobStatusController ▸ Destroy Delay` when 0 or more) the mob is removed —
    unless it is a **harvestable creature**: then its body stays as a carcass that players harvest, and is removed when it
    is empty or left alone long enough (see [Harvesting 01](../Harvesting/01-Overview-and-Setup.md#loot-and-corpse-removal)).
@@ -57,7 +61,9 @@ and removes them when the player leaves (kills are remembered until the respawn 
 | Spawn Weight, Rarity Level | How common it is |
 | Pack settings | Pack animals spawn in groups |
 
-The chunk's NavMesh must be built before mobs appear. Details: [Terrain 15 — World Portals and Mobs](../Terrain/15-Portals-and-Mobs.md).
+The chunk's NavMesh must be built before mobs appear. Each mob is placed by its profile's **habitat**: aquatic mobs
+only in water deep enough to swim in, amphibious and flying mobs on land or over water, ground mobs on land
+([06 §8](06-Locomotion.md#8-spawning)). Details: [Terrain 15 — World Portals and Mobs](../Terrain/15-Portals-and-Mobs.md).
 
 ### In dungeons
 

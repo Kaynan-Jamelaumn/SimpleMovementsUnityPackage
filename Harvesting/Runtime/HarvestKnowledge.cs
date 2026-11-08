@@ -117,6 +117,44 @@ public class HarvestKnowledge : MonoBehaviour
         Changed?.Invoke();
     }
 
+    // ------------------------------------------------------------------ what parts are good for
+    /// <summary>
+    /// The player used the harvested <paramref name="item"/> as <paramref name="use"/> - ate it, put it in a vessel, sold
+    /// it - and learns that it is good for that (when it is). Tells them what is new ("Bear liver: alchemy.").
+    /// Returns the uses learnt.
+    /// </summary>
+    public HarvestUse LearnUse(ItemSO item, HarvestUse use)
+    {
+        HarvestMaterial m = HarvestedItemInfo.Material(item as IHarvestedItem, out HarvestAnatomyData a);
+        if (m == null || a == null)
+            return HarvestUse.None;
+        HarvestUse fresh = HarvestSkills.LearnUse(Data, a.id, m, use);
+        if (fresh != HarvestUse.None)
+        {
+            MarkDirty();
+            Tell($"{m.Name}: good for {HarvestSkills.UsesWords(fresh)}.");
+        }
+        return fresh;
+    }
+
+    /// <summary>A merchant paid for the harvested <paramref name="item"/>: the player knows its price from now on.</summary>
+    public bool Appraised(ItemSO item)
+    {
+        HarvestMaterial m = HarvestedItemInfo.Material(item as IHarvestedItem, out HarvestAnatomyData a);
+        if (m == null || a == null || !HarvestSkills.Appraise(Data, a.id, m))
+            return false;
+        MarkDirty();
+        Tell($"You know what {m.Name.ToLowerInvariant()} fetches now: {m.CurrentValue:0.#} a piece.");
+        return true;
+    }
+
+    private void Tell(string text)
+    {
+        Learnt?.Invoke(text);
+        if (showMessages)
+            InventoryManager.For(this)?.ShowMessage(text, InventoryFeedback.Kind.Info);
+    }
+
     /// <summary>Forgets everything (debug, a new character).</summary>
     public void ResetSkills()
     {
@@ -134,7 +172,15 @@ public class HarvestKnowledge : MonoBehaviour
         return true;
     }
 
-    public string Export() => Data.ToJson();
+    /// <summary>The skills as JSON for this player's machine, with the world's discoveries (a network client follows them).</summary>
+    public string Export()
+    {
+        HarvestSkillData d = Data;
+        d.discoveries = new List<string>(HarvestDiscoveries.Keys);
+        string json = d.ToJson();
+        d.discoveries.Clear(); // the saved file keeps none: the world saves its own
+        return json;
+    }
 
     // ------------------------------------------------------------------ saving
     /// <summary>A client of a network session: the skills are the server's, never read from or written to this machine's disk.</summary>
@@ -146,6 +192,8 @@ public class HarvestKnowledge : MonoBehaviour
         if (string.IsNullOrEmpty(json))
             return;
         data = HarvestSkillData.FromJson(json);
+        if (FollowsServer)
+            HarvestDiscoveries.SetAll(data.discoveries); // the server's world
         dirty = false;
         Changed?.Invoke();
     }

@@ -2,7 +2,7 @@
 
 ## Two-minute setup
 
-Nothing is required: with no setup at all, the twelve built-in creatures are used and any mob whose type or name
+Nothing is required: with no setup at all, the sixteen built-in creatures are used and any mob whose type or name
 matches one of them (a mob of type *Bear*, a mob called *Grey Wolf*) becomes harvestable by itself.
 
 1. **The rules (optional).** *Tools ▸ SimpleMovements ▸ Harvesting ▸ Create Harvest Database* creates
@@ -16,7 +16,10 @@ matches one of them (a mob of type *Bear*, a mob called *Grey Wolf*) becomes har
 3. **Tools.** *Harvesting ▸ Create Tools* makes eight harvesting tools with icons (skinning knife, butcher's knife,
    cleaver, hunting knife, lancet, bone saw, fleshing scraper, pliers) in `Items/Harvesting/Tools`. Give some to the
    player — starting items, a merchant, loot. Without them the player works with whatever blades they carry, or bare
-   hands (which can only pull and pry: a hide cannot be opened without a blade).
+   hands (which can only pull and pry: a hide cannot be opened without a blade). Each tool also gets a model prefab in
+   `Items/Harvesting/Models` that can be dropped into a scene and picked up; it has one pickup box on its root. Tool
+   models made by an older version had colliders only on their tiny handle and blade and could not be picked up from
+   the ground: run *Create Tools* again and it repairs them (your own prefabs are never changed).
 4. **Try it.** *Harvesting ▸ Create Practice Carcass ▸ Bear* (or a wolf, a deer, a drake, a troll, an eagle, a salmon, a
    giant serpent, a giant spider) puts a body built from primitives at the Scene view's pivot: a carcass from the start,
    with a couple of wounds, that is laid out fresh each time it is emptied. Press Play, walk up to it and press

@@ -171,6 +171,13 @@ public class MobProfile : ScriptableObject
     [Tooltip("How far it runs when fleeing (metres).")]
     [Min(3f)] public float fleeDistance = 25f;
 
+    // ------------------------------------------------------------------ locomotion
+    [Header("Locomotion (where it lives and how it moves)")]
+    [Tooltip("Ground, flying, aquatic or amphibious; its speed and its gait in each medium (walk, hop, slime bounce, leap, " +
+             "zigzag, crawl, slither; swim, undulate, dart, paddle; flap, hover, glide, flutter). Start from a preset: " +
+             "the Locomotion Preset button at the top of this profile.")]
+    public MobLocomotion locomotion = new MobLocomotion();
+
     // ------------------------------------------------------------------ combat
     [Header("Combat")]
     [Tooltip("How it positions itself. Auto = from its abilities.")]
@@ -261,6 +268,12 @@ public class MobProfile : ScriptableObject
     public string dodgeTrigger = "Dodge";
     [Tooltip("Bool true while stunned.")]
     public string stunnedBool = "Stunned";
+    [Tooltip("Bool true while flying (Locomotion: Flying, not landed).")]
+    public string flyingBool = "IsFlying";
+    [Tooltip("Bool true while swimming (in water deeper than it wades).")]
+    public string swimmingBool = "IsSwimming";
+    [Tooltip("Bool true in the air in the middle of a hop, a slime's bounce or a leap.")]
+    public string airborneBool = "IsAirborne";
     [Tooltip("Trigger on death.")]
     public string deathTrigger = "Die";
     [Tooltip("Also cross-fade to Animator states named like the old states (Idle, Moving, Chasing, Patrol) - keeps old mob controllers working.")]
@@ -297,7 +310,8 @@ public class MobProfile : ScriptableObject
         return $"{temper}; {react}{flee}.\n" +
                $"Sees {sightRange:0}m in a {fieldOfView:0}° cone (feels {closeSenseRadius:0}m around), remembers {memoryDuration:0}s, reacts in {reactionTime:0.##}s.\n" +
                $"Style {combatStyle}, aggressiveness {aggressiveness * 100f:0}%, dodges {dodgeChance * 100f:0}% of telegraphs (every {dodgeCooldown:0.#}s).\n" +
-               $"Leash {(leashDistance > 0f ? leashDistance.ToString("0") + "m" : "none")}, wanders {wanderRadius:0}m, calls for help within {callForHelpRadius:0}m.";
+               $"Leash {(leashDistance > 0f ? leashDistance.ToString("0") + "m" : "none")}, wanders {wanderRadius:0}m, calls for help within {callForHelpRadius:0}m.\n" +
+               (locomotion ?? new MobLocomotion()).Describe();
     }
 
     public float RandomIdleTime()
@@ -311,6 +325,7 @@ public class MobProfile : ScriptableObject
     {
         MobProfile p = Instantiate(this);
         p.fears = new List<string>(fears);
+        p.locomotion = (locomotion ?? new MobLocomotion()).Clone();
         p.hideFlags = HideFlags.DontSave;
         return p;
     }
@@ -332,6 +347,7 @@ public class MobProfile : ScriptableObject
             warnings.Add($"{name}: Close Sense Radius is larger than Sight Range.");
         if (fieldOfView < 60f)
             warnings.Add($"{name}: a {fieldOfView}° field of view is very narrow.");
+        (locomotion ?? new MobLocomotion()).Validate(name, errors, warnings);
     }
 
     // ------------------------------------------------------------------ legacy & presets

@@ -90,10 +90,10 @@ HarvestOutcome outcome = HarvestResolver.Resolve(bear, rules, carcass, result, m
 |---|---|
 | **Create Harvest Database** | The project's database (also *Project Setup ▸ Create Harvest Database (Resources)*). |
 | **Make Selected Mob Harvestable** | A Harvestable Creature (and a NetCarcass for network prefabs) on the selected mobs or mob prefabs; says which creature each one is. |
-| **Create Practice Carcass ▸ …** | A practice body of a bear, wolf, deer, drake, troll, eagle, salmon, giant serpent or giant spider at the Scene view's pivot. |
+| **Create Practice Carcass ▸ …** | A practice body of a bear, wolf, deer, drake, troll, eagle, salmon, giant serpent, giant spider, slime, giant turtle, cerberus or hydra at the Scene view's pivot. |
 | **Create Creature Anatomy Assets** | Editable copies of the built-in creatures, registered in the database. |
-| **Create Tools** | The eight harvesting tools, with drawn icons. |
-| **Create Items** | An item asset (with its icon) for every material of every creature, bound in the database. |
+| **Create Tools** | The eight harvesting tools, with drawn icons and pickable model prefabs. Run again, it repairs older tool models that could not be picked up from the ground (a pickup box on the root). |
+| **Create Items** | An item asset (with its icon) for every material of every creature, bound in the database; older generated models without a pickup collider are repaired. |
 | **Validate Harvest Database** | Logs every problem: each creature, the item bindings, the hides the tannery lacks, the substances alchemy does not know. |
 | **Add Harvested Hides to the Crafting Database** | Adds the built-in hides the creatures give that the project's Crafting Database lacks. |
 | **Help** | Opens this documentation. |

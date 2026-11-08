@@ -150,8 +150,19 @@ public static class MerchantTransactions
     {
         MerchantTransactionResult result = request.Type == MerchantTransactionType.Buy ? ExecuteBuy(request) : ExecuteSell(request);
         request.Merchant?.OnTransaction(result);
+        if (result.Status == MerchantTransactionStatus.Success || result.Status == MerchantTransactionStatus.PartialSuccess)
+        {
+            try { Completed?.Invoke(request, result); }
+            catch (Exception e) { Debug.LogException(e); }
+        }
         return result;
     }
+
+    /// <summary>
+    /// A purchase or a sale went through (where the rules run: single player, the server), with what was asked and what
+    /// happened. Other systems learn from it: harvesting tells a player what a part they sold is worth.
+    /// </summary>
+    public static event Action<MerchantTransactionRequest, MerchantTransactionResult> Completed;
 
     // ------------------------------------------------------------------ buy
     private static MerchantTransactionResult CheckBuy(in MerchantTransactionRequest r, out MerchantStockSlot slot, out InventoryManager inventory,

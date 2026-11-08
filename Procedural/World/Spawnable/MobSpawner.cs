@@ -77,6 +77,13 @@ public class MobSpawner : ChunkSpawnerBase
         public int AgentTypeId, AreaMask;
         public float Radius;
         public bool HasAgent;
+        /// <summary>Where the mob lives (its profile's Locomotion): an aquatic mob spawns only in water, a ground mob only on land.</summary>
+        public MobHabitat Habitat;
+        /// <summary>The shallowest water an aquatic mob is spawned in (metres).</summary>
+        public float MinSwimDepth;
+
+        public bool LivesOnLand => Habitat != MobHabitat.Aquatic;
+        public bool LivesInWater => Habitat != MobHabitat.Ground;
     }
 
     private static readonly Dictionary<GameObject, AgentInfo> AgentInfos = new Dictionary<GameObject, AgentInfo>();
@@ -158,14 +165,14 @@ public class MobSpawner : ChunkSpawnerBase
             for (int i = 0; i < samples; i++)
             {
                 float x = Origin.x + (i + 0.5f) * Span / samples, z = Origin.y + (j + 0.5f) * Span / samples;
-                if (LoadedTerrain.WaterAt(x, z, out _) != WaterBodyType.None)
-                    continue;
+                bool water = LoadedTerrain.WaterAt(x, z, out _) != WaterBodyType.None;
                 Biome biome = LoadedTerrain.BiomeAt(x, z);
                 if (!settings.IsBiomeAllowed(biome))
                     continue;
                 foreach (SpawnableMob type in settings.prefabs)
                 {
-                    if (type != null && type.mobPrefab != null && type.CanSpawnInBiome(biome))
+                    // Water counts for the mobs that live in it (fish, crocodiles, birds over a lake), land for the others.
+                    if (type != null && type.mobPrefab != null && type.CanSpawnInBiome(biome) && FitsHabitat(type, water))
                     {
                         suitable++;
                         break;
@@ -292,10 +299,11 @@ public class MobSpawner : ChunkSpawnerBase
                 lastRejection = SpawnRejection.Biome;
                 continue;
             }
-            SpawnableMob type = PickType(biome, isDay, new Vector3(x, 0f, z));
+            bool overWater = LoadedTerrain.WaterAt(x, z, out _) != WaterBodyType.None;
+            SpawnableMob type = PickType(biome, isDay, new Vector3(x, 0f, z), overWater);
             if (type == null)
             {
-                lastRejection = SpawnRejection.Biome;
+                lastRejection = overWater ? SpawnRejection.Water : SpawnRejection.Biome;
                 continue;
             }
             if (!TryGetSpot(type, x, z, biome, settings.minDistanceBetweenMobs, out Vector3 spot))
@@ -338,12 +346,15 @@ public class MobSpawner : ChunkSpawnerBase
         return settings.retryingSpawnTime;
     }
 
-    /// <summary>A weighted pick among the types that may live in <paramref name="biome"/> and still fit their limit.</summary>
-    private SpawnableMob PickType(Biome biome, bool? isDay, Vector3 at)
+    /// <summary>
+    /// A weighted pick among the types that may live in <paramref name="biome"/>, still fit their limit and live where the
+    /// point is (<paramref name="overWater"/>: in water - fish, amphibians, flyers; on land - all but the aquatic).
+    /// </summary>
+    private SpawnableMob PickType(Biome biome, bool? isDay, Vector3 at, bool overWater = false)
     {
         float total = 0f;
         foreach (SpawnableMob type in settings.prefabs)
-            if (type != null && CanSpawnType(type))
+            if (type != null && CanSpawnType(type) && FitsHabitat(type, overWater))
                 total += WorldSpawnHooks.ApplyMobWeight(type, at, type.WeightAt(biome, settings, isDay));
         if (total <= 0f)
             return null;
@@ -351,7 +362,7 @@ public class MobSpawner : ChunkSpawnerBase
         SpawnableMob last = null;
         foreach (SpawnableMob type in settings.prefabs)
         {
-            if (type == null || !CanSpawnType(type))
+            if (type == null || !CanSpawnType(type) || !FitsHabitat(type, overWater))
                 continue;
             float w = WorldSpawnHooks.ApplyMobWeight(type, at, type.WeightAt(biome, settings, isDay));
             if (w <= 0f)
@@ -362,6 +373,15 @@ public class MobSpawner : ChunkSpawnerBase
             pick -= w;
         }
         return last;
+    }
+
+    /// <summary>Does <paramref name="type"/> live in water (<paramref name="water"/>) or on land, by its profile's habitat?</summary>
+    private static bool FitsHabitat(SpawnableMob type, bool water)
+    {
+        if (type == null || type.mobPrefab == null)
+            return false;
+        AgentInfo info = GetAgentInfo(type.mobPrefab);
+        return water ? info.LivesInWater : info.LivesOnLand;
     }
 
     private bool CanSpawnType(SpawnableMob type)
@@ -383,7 +403,7 @@ public class MobSpawner : ChunkSpawnerBase
         {
             Radius = agent.Radius,
             MaxSlope = Mathf.Min(settings.maxSlope, type.maxSpawnSlope),
-            AllowWater = false,
+            AllowWater = agent.LivesInWater,
             ObjectClearance = settings.objectClearance,
             ForbiddenBiomes = settings.globalForbiddenBiomes,
             RequireNavMesh = Terrain != null && Terrain.bakeNavMesh,
@@ -400,8 +420,9 @@ public class MobSpawner : ChunkSpawnerBase
                 rules.MinHeight = type.minPreferredHeight - tolerance;
                 rules.MaxHeight = type.maxPreferredHeight + tolerance;
             }
-            else if (biome != null && biome.maxHeight > biome.minHeight)
+            else if (biome != null && biome.maxHeight > biome.minHeight && agent.Habitat != MobHabitat.Aquatic)
             {
+                // The biome's band is the height of its land: a lake bed lies below it.
                 rules.LimitHeight = true;
                 rules.MinHeight = biome.minHeight - tolerance;
                 rules.MaxHeight = biome.maxHeight + tolerance;
@@ -412,6 +433,13 @@ public class MobSpawner : ChunkSpawnerBase
         if (rejection != SpawnRejection.None)
         {
             lastRejection = rejection;
+            return false;
+        }
+        // An aquatic mob only where the water is deep enough to swim in.
+        if (agent.Habitat == MobHabitat.Aquatic &&
+            (LoadedTerrain.WaterAt(spot.x, spot.z, out float surface) == WaterBodyType.None || float.IsNaN(surface) || surface - spot.y < agent.MinSwimDepth))
+        {
+            lastRejection = SpawnRejection.Water;
             return false;
         }
         if (settings.IsInSafeZone(spot) || InRuntimeSafeZone(spot) || WorldAreas.Has(WorldAreaRules.NoMobs, spot.x, spot.z))
@@ -643,6 +671,10 @@ public class MobSpawner : ChunkSpawnerBase
         {
             info = new AgentInfo { AgentTypeId = 0, AreaMask = NavMesh.AllAreas, Radius = SpawnGround.FootprintRadius(prefab, 0.5f) };
         }
+        Mob mob = prefab.GetComponentInChildren<Mob>(true);
+        MobLocomotion loco = mob != null && mob.ProfileAsset != null ? mob.ProfileAsset.locomotion : null;
+        info.Habitat = loco != null ? loco.habitat : MobHabitat.Ground;
+        info.MinSwimDepth = loco != null ? loco.minSwimDepth : 0.7f;
         AgentInfos[prefab] = info;
         return info;
     }

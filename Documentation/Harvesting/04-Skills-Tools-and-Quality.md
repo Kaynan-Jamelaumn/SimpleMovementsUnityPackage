@@ -47,9 +47,29 @@ less than 35% (*Failure Share*: mistakes teach too). Anatomy gets 30% of it (*An
 time a species is harvested. A quarter of it (*Character Xp Share*) goes to the character's own experience. Levels need
 20 xp for the first and 8% more for each after (*Xp First Level*, *Xp Growth*).
 
-**Species.** Each player keeps a note per species: harvests, best quality, the materials they have taken. The window
-shows what a material is worth once the player has taken it from that species, and what every one is worth after three
-harvests of the species: half of *Harvests To Know Species* (6), when it is fully known.
+**Species.** Each player keeps a note per species: harvests, best quality, the materials they have taken, and for each
+material what they know of it (below).
+
+## What parts are worth and good for
+
+Not every part is worth the trouble — a spleen is worth nothing, a gall bladder a small fortune — and a player learns
+which is which by experience. The carcass window shows, for each part, its **rarity** (the colour of its name), what the
+player knows of its **worth** and of its **uses**:
+
+| Worth shown | When |
+|---|---|
+| *worth ?* | Nothing known yet |
+| a rough word — *worth nothing*, *worth little*, *worth something*, *valuable*, *very valuable*, *worth a fortune* | They took one, or their Anatomy is at least *Anatomy To Estimate Value* (8) |
+| *worth up to N each* | They sold one to a merchant, took *Pieces To Know Value* (5), or know the species well (3 harvests: half of *Harvests To Know Species*) |
+
+**Uses** (food, alchemy, crafting, a trophy, trade): the obvious ones are always shown — meat is food, a hide or a bone
+is for crafting, a skull a trophy. The others the player finds **by trying the part**: eating it (food), putting it in an
+alchemy vessel (alchemy), selling it to a merchant (trade, and its exact price). Until then the window says *What is it
+good for? Try it* — or *No known use* for a part that truly has none. With Anatomy at *Anatomy To Sense Uses* (30) a
+player knows every part's uses at a glance. A world **discovery** ([05](05-Authoring-Creatures.md#materials)) makes its
+new uses known to everyone, and its new price applies at once.
+
+The item's tooltip shows the same: its rarity and what the player knows it is good for.
 
 **Rare finds** (a bezoar, a musk pod, a heartstone, an egg sac) are only in some creatures (their *Chance*, rolled once
 per creature; elites have them twice as often, old ones ×1.2, ancient ones ×1.5, and the creature's *Rare Finds*

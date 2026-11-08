@@ -71,13 +71,13 @@ public static class HarvestInspectView
         {
             HarvestRegion r = a.regions[i];
             if (r == null) continue;
-            foreach (Vector2[] poly in HarvestDiagram.Shape(a.plan, r.Slot))
+            foreach (Vector2[] poly in HarvestDiagram.RegionShape(a, r))
             {
                 Vector2[] mapped = HarvestPlanner.Map(poly, box).ToArray();
                 if (!HarvestDiagram.Contains(mapped, p)) continue;
                 Rect b = HarvestDiagram.Bounds(new[] { mapped });
                 // Near-side parts over far-side ones; the smallest of overlapping shapes.
-                float area = b.width * b.height * (HarvestDiagram.IsFarSide(a.plan, r.Slot) ? 4f : 1f);
+                float area = b.width * b.height * (HarvestDiagram.RegionFar(a, r) ? 4f : 1f);
                 if (area < bestArea) { bestArea = area; best = i; }
             }
         }
@@ -93,23 +93,20 @@ public static class HarvestInspectView
         if (k != null)
             foreach (HarvestWound w in k.wounds)
                 if (w.region >= 0 && w.region < wounds.Length) wounds[w.region]++;
-        foreach (string slot in HarvestDiagram.Slots(a.plan))
+        foreach (KeyValuePair<int, List<Vector2[]>> drawn in HarvestDiagram.Drawing(a))
         {
-            int ri = -1;
-            for (int i = 0; i < a.regions.Count; i++)
-                if (a.regions[i] != null && string.Equals(a.regions[i].Slot, slot, System.StringComparison.OrdinalIgnoreCase)) { ri = i; break; }
-            if (ri < 0) continue;
+            int ri = drawn.Key;
             float v = Value(a, k, ri, layer);
             Color fill = v < 0f ? None : Color.Lerp(HarvestText.ConditionColor(v), a.hideColor, 0.2f);
             HarvestRegionState st = k != null && ri < k.regions.Count ? k.regions[ri] : null;
             if (st != null && (layer == HarvestInspectLayer.Meat || layer == HarvestInspectLayer.Organs || layer == HarvestInspectLayer.Overall) &&
                 (st.contamination > 0.3f || st.poison > 0.12f || st.taint > 0.12f))
                 fill = Color.Lerp(fill, Soil, 0.45f);
-            bool far = HarvestDiagram.IsFarSide(a.plan, slot);
+            bool far = HarvestDiagram.RegionFar(a, a.regions[ri]);
             if (far) fill = Color.Lerp(fill, Color.black, 0.35f);
             bool on = lit != null && lit.Contains(ri);
             if (lit != null && lit.Count > 0 && !on) fill = Color.Lerp(fill, new Color(0.08f, 0.08f, 0.1f), 0.35f);
-            foreach (Vector2[] poly in HarvestDiagram.Shape(a.plan, slot))
+            foreach (Vector2[] poly in drawn.Value)
             {
                 List<Vector2> m = HarvestPlanner.Map(poly, box);
                 c.Polygon(m, fill);
@@ -122,8 +119,8 @@ public static class HarvestInspectView
         {
             HarvestRegion r = a.regions[i];
             if (r == null) continue;
-            bool far = HarvestDiagram.IsFarSide(a.plan, r.Slot);
-            Vector2 at = HarvestPlanner.Map(HarvestDiagram.Centre(a.plan, r.Slot), box);
+            bool far = HarvestDiagram.RegionFar(a, r);
+            Vector2 at = HarvestPlanner.Map(HarvestDiagram.RegionCentre(a, r), box);
             if (r.weakPoint && !far)
             {
                 c.Ring(at.x, at.y, 9f, 2f, new Color(1f, 0.45f, 0.3f, 0.95f));

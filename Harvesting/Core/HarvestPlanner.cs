@@ -253,12 +253,12 @@ public static class HarvestPlanner
             int ri = x.a.RegionIndex(src.region);
             if (ri < 0 || lit.Contains(ri)) continue;
             lit.Add(ri);
-            foreach (Vector2[] poly in HarvestDiagram.Shape(x.a.plan, x.a.regions[ri].Slot)) shapes.Add((ri, Map(poly, r).ToArray()));
+            foreach (Vector2[] poly in HarvestDiagram.RegionShape(x.a, x.a.regions[ri])) shapes.Add((ri, Map(poly, r).ToArray()));
         }
         BodyScene(x, st, r, false, lit);
         foreach ((int ri, Vector2[] poly) in shapes)
         {
-            bool far = HarvestDiagram.IsFarSide(x.a.plan, x.a.regions[ri].Slot);
+            bool far = HarvestDiagram.RegionFar(x.a, x.a.regions[ri]);
             st.scene.Add(new HarvestSceneShape(poly, far ? Color.Lerp(x.a.hideColor, Color.black, 0.35f) : x.a.hideColor, new Color(1f, 0.92f, 0.6f), 2.5f) { faint = far });
         }
         Grid(st, r, 26, 14, p =>
@@ -280,7 +280,7 @@ public static class HarvestPlanner
     {
         HarvestRegion reg = x.a.regions[u.region];
         Rect r = Fit(HarvestDiagram.Aspect(x.a.plan), WorkArea);
-        Vector2[] shape = Largest(HarvestDiagram.Shape(x.a.plan, reg.Slot));
+        Vector2[] shape = Largest(HarvestDiagram.RegionShape(x.a, reg));
         string name = HarvestCondition.UnitName(x.a, u);
         HarvestStageSpec cut = Stage(x, HarvestStageKind.Trace, $"Cut around the {name}", "Follow its edge from the green dot all the way round.",
             HarvestToolKind.Fine | HarvestToolKind.Skinning, 0f, u.index);
@@ -321,7 +321,7 @@ public static class HarvestPlanner
         foreach (int ri in regions)
         {
             HarvestRegion reg = x.a.regions[ri];
-            Vector2[] shape = Largest(HarvestDiagram.Shape(x.a.plan, reg.Slot));
+            Vector2[] shape = Largest(HarvestDiagram.RegionShape(x.a, reg));
             if (shape == null) continue;
             var path = new HarvestPath { name = $"the seam around the {reg.Name.ToLowerInvariant()}" };
             path.points = Map(StartAtTop(shape), r);
@@ -350,7 +350,7 @@ public static class HarvestPlanner
             int ri = x.a.RegionIndex(src.region);
             if (ri < 0) continue;
             lit.Add(ri);
-            foreach (Vector2[] poly in HarvestDiagram.Shape(x.a.plan, x.a.regions[ri].Slot)) shapes.Add(Map(poly, r).ToArray());
+            foreach (Vector2[] poly in HarvestDiagram.RegionShape(x.a, x.a.regions[ri])) shapes.Add(Map(poly, r).ToArray());
         }
         BodyScene(x, st, r, true, lit);
         Grid(st, r, 26, 14, p =>
@@ -393,10 +393,10 @@ public static class HarvestPlanner
         for (int i = 0; i < x.a.regions.Count; i++)
         {
             HarvestRegion reg = x.a.regions[i];
-            if (i == own || reg == null || HarvestDiagram.IsFarSide(x.a.plan, reg.Slot)) continue;
+            if (i == own || reg == null || HarvestDiagram.RegionFar(x.a, reg)) continue;
             bool limb = reg.tendon >= 0.6f;
             if (ownLimb ? limb || reg.bone < 0.5f : !limb) continue;
-            foreach (Vector2[] poly in HarvestDiagram.Shape(x.a.plan, reg.Slot)) limbs.Add(Map(poly, r).ToArray());
+            foreach (Vector2[] poly in HarvestDiagram.RegionShape(x.a, reg)) limbs.Add(Map(poly, r).ToArray());
         }
         var zones = new List<HarvestZone>();
         if (limbs.Count == 0)
@@ -775,11 +775,29 @@ public static class HarvestPlanner
     }
 
     /// <summary>Where every organ still in the body that the player can tell is there lies (its outline on the surface).</summary>
+    /// <summary>
+    /// Where each organ to take lies in the open cavity. Organs with a place of their own (heart, lungs, liver, kidneys...)
+    /// go there first; glands, and shapes without a place, then take the free spot nearest the usual place of a gland that
+    /// lies inside the cavity and covers no other organ - so a body with many glands (brain, eyes, sweetbread, adrenals, a
+    /// musk gland...) still shows each on its own, inside the drawing.
+    /// </summary>
     private static Dictionary<HarvestUnit, List<Vector2[]>> OrganLayout(Ctx x, Rect r)
     {
         var layout = new Dictionary<HarvestUnit, List<Vector2[]>>();
         var seen = new Dictionary<string, int>();
-        int free = 0;
+        var placed = new List<KeyValuePair<Vector2, Vector2>>();
+        var later = new List<KeyValuePair<HarvestUnit, string>>();
+        Vector2[] cavity = HarvestDiagram.Cavity(x.a.plan);
+
+        void Put(HarvestUnit u, string shape, Vector2 c, Vector2 half)
+        {
+            var polys = new List<Vector2[]>();
+            foreach (Vector2[] poly in HarvestDiagram.OrganOutline(shape == "venom" ? "gland" : shape, c, half, x.c.condition.seed + u.material * 13 + u.index))
+                polys.Add(Map(poly, r).ToArray());
+            layout[u] = polys;
+            placed.Add(new KeyValuePair<Vector2, Vector2>(c, half));
+        }
+
         foreach (HarvestUnit u in x.c.condition.units)
         {
             HarvestMaterial m = x.a.materials[u.material];
@@ -787,20 +805,66 @@ public static class HarvestPlanner
             string shape = m.Shape == "organ" ? "liver" : m.Shape;
             seen.TryGetValue(shape, out int n);
             seen[shape] = n + 1;
-            Vector2 c, half;
-            if (!HarvestDiagram.OrganSpot(x.a.plan, shape, n, out c, out half))
+            if (shape != "gland" && HarvestDiagram.OrganSpot(x.a.plan, shape, n, out Vector2 c, out Vector2 half))
+                Put(u, shape, c, half);
+            else
+                later.Add(new KeyValuePair<HarvestUnit, string>(u, shape));
+        }
+
+        HarvestDiagram.OrganSpot(x.a.plan, "gland", 0, out Vector2 usual, out _);
+        int free = 0;
+        foreach (KeyValuePair<HarvestUnit, string> l in later)
+        {
+            Vector2 half = new Vector2(0.035f, 0.035f);
+            if (!FreeOrganSpot(cavity, placed, usual, half, out Vector2 c))
             {
-                // A shape without its own place: around the middle.
+                // Nowhere free (a cavity crowded past reason): around the middle, still on the drawing.
                 double ang = free++ * 2.4;
                 c = new Vector2(0.5f + 0.22f * (float)Math.Cos(ang), 0.5f + 0.18f * (float)Math.Sin(ang));
-                half = new Vector2(0.04f, 0.04f);
             }
-            var polys = new List<Vector2[]>();
-            foreach (Vector2[] poly in HarvestDiagram.OrganOutline(shape == "venom" ? "gland" : shape, c, half, x.c.condition.seed + u.material * 13 + u.index))
-                polys.Add(Map(poly, r).ToArray());
-            layout[u] = polys;
+            Put(l.Key, l.Value, c, half);
         }
         return layout;
+    }
+
+    /// <summary>
+    /// The free spot nearest <paramref name="preferred"/> for an organ of half-size <paramref name="half"/>: inside the
+    /// cavity (all four corners) and clear of every organ already placed. False when there is none.
+    /// </summary>
+    private static bool FreeOrganSpot(Vector2[] cavity, List<KeyValuePair<Vector2, Vector2>> placed, Vector2 preferred, Vector2 half, out Vector2 spot)
+    {
+        spot = preferred;
+        bool found = false;
+        float best = float.MaxValue;
+        const int columns = 24, rows = 16;
+        for (int j = 0; j <= rows; j++)
+        {
+            for (int i = 0; i <= columns; i++)
+            {
+                var c = new Vector2(0.04f + 0.92f * i / columns, 0.04f + 0.92f * j / rows);
+                float d = (c - preferred).sqrMagnitude;
+                if (d >= best)
+                    continue;
+                if (!HarvestDiagram.Contains(cavity, new Vector2(c.x - half.x, c.y - half.y)) || !HarvestDiagram.Contains(cavity, new Vector2(c.x + half.x, c.y - half.y)) ||
+                    !HarvestDiagram.Contains(cavity, new Vector2(c.x - half.x, c.y + half.y)) || !HarvestDiagram.Contains(cavity, new Vector2(c.x + half.x, c.y + half.y)))
+                    continue;
+                bool clear = true;
+                foreach (KeyValuePair<Vector2, Vector2> p in placed)
+                {
+                    if (Math.Abs(c.x - p.Key.x) < half.x + p.Value.x + 0.012f && Math.Abs(c.y - p.Key.y) < half.y + p.Value.y + 0.012f)
+                    {
+                        clear = false;
+                        break;
+                    }
+                }
+                if (!clear)
+                    continue;
+                best = d;
+                spot = c;
+                found = true;
+            }
+        }
+        return found;
     }
 
     // ------------------------------------------------------------------ trophies
@@ -931,19 +995,16 @@ public static class HarvestPlanner
     /// </summary>
     private static void BodyScene(Ctx x, HarvestStageSpec st, Rect r, bool skinned, List<int> lit)
     {
-        foreach (string slot in HarvestDiagram.Slots(x.a.plan))
+        foreach (KeyValuePair<int, List<Vector2[]>> drawn in HarvestDiagram.Drawing(x.a))
         {
-            int ri = -1;
-            for (int i = 0; i < x.a.regions.Count; i++)
-                if (x.a.regions[i] != null && string.Equals(x.a.regions[i].Slot, slot, StringComparison.OrdinalIgnoreCase)) { ri = i; break; }
-            if (ri < 0) continue;
+            int ri = drawn.Key;
             Color c = skinned ? x.a.meatColor : x.a.hairColor;
             if (skinned) c = Color.Lerp(new Color(0.3f, 0.12f, 0.1f), c, 0.4f + 0.6f * x.c.condition.regions[ri].meat);
-            bool far = HarvestDiagram.IsFarSide(x.a.plan, slot);
+            bool far = HarvestDiagram.RegionFar(x.a, x.a.regions[ri]);
             if (far) c = Color.Lerp(c, Color.black, 0.35f);
             bool on = lit != null && lit.Contains(ri);
             if (lit != null && lit.Count > 0 && !on) c = Color.Lerp(c, new Color(0.1f, 0.1f, 0.12f), 0.45f);
-            foreach (Vector2[] poly in HarvestDiagram.Shape(x.a.plan, slot))
+            foreach (Vector2[] poly in drawn.Value)
                 st.scene.Add(new HarvestSceneShape(Map(poly, r), c, on ? new Color(1f, 0.92f, 0.6f) : Line, on ? 2.5f : 1.2f) { faint = far });
         }
     }

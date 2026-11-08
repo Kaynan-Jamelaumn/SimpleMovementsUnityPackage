@@ -60,6 +60,23 @@ public class HarvestRegion
     [Tooltip("Body part hits go to when this one is severed.")]
     public string redirectWhenSevered = "";
 
+    [Header("Drawing (optional: unusual bodies)")]
+    [Tooltip("Slot: the body plan's drawing of its slot; a slot \"head#2\" draws a second head beside the first (a cerberus, a hydra), " +
+             "\"neck#3\" a third neck. Ellipse / Box: a shape filling Draw Box. Outline: its own Outline points. " +
+             "The drawing is in the plan's box: x right, y UP, 0..1.")]
+    public HarvestDrawShape drawShape = HarvestDrawShape.Slot;
+    [Tooltip("Ellipse / Box: where it is drawn (x, y of its lower left corner, width, height; 0..1 of the plan's drawing, y up).")]
+    public Rect drawBox = new Rect(0.4f, 0.4f, 0.2f, 0.2f);
+    [Tooltip("Outline: the points of its outline (0..1 of the plan's drawing, y up), at least three.")]
+    public List<Vector2> outline = new List<Vector2>();
+    [Tooltip("Drawn behind the plan's own regions (a far-side limb, a head behind the others), darker.")]
+    public bool drawBehind;
+    [Tooltip("A copy of a slot (\"head#2\"): the point it turns about, in the plan's drawing (0,0 = automatic: heads about the neck, " +
+             "necks about the shoulder - so a hydra's necks fan out from its shoulders with their heads).")]
+    public Vector2 copyPivot;
+    [Tooltip("A copy of a slot: degrees between copies (0 = 22°). Copies go up and down in turn: #2 up, #3 down, #4 further up...")]
+    public float copyAngle;
+
     [Header("Hitbox (optional)")]
     [Tooltip("A bone of the model to put a hitbox on when the mob plays (a trigger sphere: exact hit locations), on a mob that " +
              "uses its anatomy's body parts and has no hitboxes of its own. Empty = none (the height and length bands decide).")]
@@ -102,6 +119,7 @@ public class HarvestRegion
     {
         var c = (HarvestRegion)MemberwiseClone();
         c.bodyParts = bodyParts != null ? new List<string>(bodyParts) : new List<string>();
+        c.outline = outline != null ? new List<Vector2>(outline) : new List<Vector2>();
         return c;
     }
 }
@@ -202,6 +220,9 @@ public class HarvestMaterial
     [Tooltip("Hides: the Crafting Database hide it becomes (cow, deer, boar, wolf, bear, rabbit, drake, troll, snake): a raw hide piece for the tannery, " +
              "with every hole, burn and tear where it was. Empty = a plain hide item.")]
     public string craftHide = "";
+    [Tooltip("A hide that is not leather (a slime's membrane, a jelly's skin): it still comes off first like a hide, and becomes a plain " +
+             "item, never a hide for the tannery.")]
+    public bool plainHide;
     [Tooltip("Ruptured, it spoils what is around it (gut, bladder, gall bladder).")]
     public bool hazard;
     [Tooltip("One slip and it is lost (glands, egg sacs): narrow margins, heavy damage.")]
@@ -216,6 +237,32 @@ public class HarvestMaterial
     [Header("Alchemy")]
     [Tooltip("What one piece gives an alchemy vessel (Alchemy Database substances). Empty = not an alchemy ingredient.")]
     public List<HarvestAlchemyRelease> alchemy = new List<HarvestAlchemyRelease>();
+
+    [Header("What it is good for")]
+    [Tooltip("What it is used for: Food, Alchemy, Crafting, Trophy, Trade. Auto = worked out from the material (food when edible, " +
+             "alchemy when it gives substances, crafting for hides, scales, feathers, bone, sinew, horn and chitin, a trophy for skulls, " +
+             "horns, antlers, tusks, claws and fangs, trade when it is worth more than its weight in meat). Clear every flag for " +
+             "something nobody wants. Players learn the uses that are not obvious by trying them (eating, brewing, selling).")]
+    public HarvestUse uses = HarvestUse.Auto;
+    [Tooltip("How rare it is (the colour of its name). Auto = from its Chance and Tier.")]
+    public HarvestRarity rarity = HarvestRarity.Auto;
+
+    [Header("More requirements")]
+    [Tooltip("An item the player's bag must hold to take it, one used up per piece: blood or venom needs an empty vial, bile a jar. " +
+             "The item's name or Item Database id. Empty = none.")]
+    public string container = "";
+    [Tooltip("It can only be taken this many minutes after death (at 20 °C; cold gives longer): an eye clouds, venom sours, a fire gland " +
+             "goes cold. 0 = until it spoils.")]
+    [Min(0f)] public float takeWithin;
+
+    [Header("Discovery")]
+    [Tooltip("A discovery that changes what it is worth or good for, made for the whole world from a script (a recipe found, a " +
+             "scholar's research, a quest): HarvestDiscoveries.Unlock(\"<this key>\"). Empty = none.")]
+    public string discovery = "";
+    [Tooltip("Its price per perfect piece once the discovery is made (0 = unchanged). Pieces already harvested are worth it too.")]
+    [Min(0f)] public float discoveredValue;
+    [Tooltip("The uses it gains once the discovery is made (everyone knows them then).")]
+    public HarvestUse discoveredUses = HarvestUse.None;
 
     public string Name => string.IsNullOrWhiteSpace(displayName) ? HarvestNames.FromId(id) : displayName;
 
@@ -279,6 +326,107 @@ public class HarvestMaterial
 
     /// <summary>Is it eaten (food) rather than used (a material)?</summary>
     public bool IsFood => edible && (kind == HarvestMaterialKind.Meat || kind == HarvestMaterialKind.Fat || kind == HarvestMaterialKind.Organ);
+
+    /// <summary>Has its discovery been made (see <see cref="HarvestDiscoveries"/>)?</summary>
+    public bool Discovered => !string.IsNullOrWhiteSpace(discovery) && HarvestDiscoveries.IsUnlocked(discovery);
+
+    /// <summary>The price of one perfect piece now: its Discovered Value once its discovery is made, else its Value.</summary>
+    public float CurrentValue => Discovered && discoveredValue > 0f ? discoveredValue : value;
+
+    /// <summary>What it is good for: its own uses (or the ones worked out for Auto), plus those its discovery gave it.</summary>
+    public HarvestUse Uses
+    {
+        get
+        {
+            HarvestUse u = (uses & HarvestUse.Auto) != 0 ? AutoUses() | (uses & ~HarvestUse.Auto) : uses;
+            if (Discovered)
+                u |= discoveredUses;
+            return u & ~HarvestUse.Auto;
+        }
+    }
+
+    /// <summary>
+    /// The uses of an Auto material: food when edible; alchemy when it gives substances; crafting for hides, scales,
+    /// feathers, bone, sinew, horn, chitin and the gut (casings, catgut); a trophy for skulls, horns, antlers, tusks,
+    /// claws and fangs; trade for a valuable organ, gland or curio (worth 15 or more a piece).
+    /// </summary>
+    public HarvestUse AutoUses()
+    {
+        HarvestUse u = HarvestUse.None;
+        if (edible)
+            u |= HarvestUse.Food;
+        if (alchemy != null && alchemy.Count > 0)
+            u |= HarvestUse.Alchemy;
+        string sh = Shape;
+        switch (kind)
+        {
+            case HarvestMaterialKind.Hide:
+            case HarvestMaterialKind.Scales:
+            case HarvestMaterialKind.Feathers:
+            case HarvestMaterialKind.Tendon:
+            case HarvestMaterialKind.Chitin:
+                u |= HarvestUse.Crafting;
+                break;
+            case HarvestMaterialKind.Bone:
+                u |= HarvestUse.Crafting;
+                if (sh == "skull") u |= HarvestUse.Trophy;
+                break;
+            case HarvestMaterialKind.Horn:
+                u |= HarvestUse.Crafting | HarvestUse.Trophy;
+                break;
+            case HarvestMaterialKind.Claw:
+            case HarvestMaterialKind.Tooth:
+                u |= HarvestUse.Trophy | HarvestUse.Crafting;
+                break;
+            case HarvestMaterialKind.Fat:
+                u |= HarvestUse.Crafting; // tallow, oil
+                break;
+        }
+        if (sh == "intestines" || sh == "stomach" || sh == "bladder")
+            u |= HarvestUse.Crafting; // catgut, casings, waterskins
+        if ((kind == HarvestMaterialKind.Organ || kind == HarvestMaterialKind.Gland || kind == HarvestMaterialKind.Essence || kind == HarvestMaterialKind.Other) && value >= 15f)
+            u |= HarvestUse.Trade;
+        return u;
+    }
+
+    /// <summary>
+    /// How rare it is: its own, or for Auto from how likely a creature has it (Chance) and its Tier - Legendary at 2 % or
+    /// less, Exotic at 10 % or tier 4, Rare at 30 % or tier 3, Uncommon when not every creature has it or tier 2, else
+    /// Common.
+    /// </summary>
+    public HarvestRarity Rarity
+    {
+        get
+        {
+            if (rarity != HarvestRarity.Auto)
+                return rarity;
+            if (chance <= 0.02f) return HarvestRarity.Legendary;
+            if (chance <= 0.1f || tier >= 4) return HarvestRarity.Exotic;
+            if (chance <= 0.3f || tier == 3) return HarvestRarity.Rare;
+            if (chance < 1f || tier == 2) return HarvestRarity.Uncommon;
+            return HarvestRarity.Common;
+        }
+    }
+
+    /// <summary>
+    /// The uses anyone can see at a glance: meat is food, a hide or a bone is for crafting, a skull or horns a trophy. The
+    /// others (an organ's medicine, a gland's worth to an alchemist, a curio's price) players learn by trying.
+    /// </summary>
+    public HarvestUse ObviousUses()
+    {
+        HarvestUse all = Uses;
+        HarvestUse obvious = HarvestUse.None;
+        if (kind == HarvestMaterialKind.Meat || kind == HarvestMaterialKind.Fat)
+            obvious |= all & HarvestUse.Food;
+        if (kind == HarvestMaterialKind.Hide || kind == HarvestMaterialKind.Scales || kind == HarvestMaterialKind.Feathers || kind == HarvestMaterialKind.Bone ||
+            kind == HarvestMaterialKind.Tendon || kind == HarvestMaterialKind.Horn || kind == HarvestMaterialKind.Chitin || kind == HarvestMaterialKind.Claw ||
+            kind == HarvestMaterialKind.Tooth || kind == HarvestMaterialKind.Fat)
+            obvious |= all & HarvestUse.Crafting;
+        obvious |= all & HarvestUse.Trophy;
+        if (Discovered)
+            obvious |= discoveredUses & all;
+        return obvious;
+    }
 
     public HarvestMaterial Clone()
     {
@@ -557,7 +705,15 @@ public class HarvestAnatomyData
                         if (m.countable && s.units <= 0) warnings.Add($"{where}: no pieces from '{s.region}'.");
                     }
                 if (!m.countable && m.yield.y <= 0f) warnings.Add($"{where}: it yields nothing (Yield max 0).");
-                if (m.kind == HarvestMaterialKind.Hide && HarvestCarcass.IsHide(m) && string.IsNullOrWhiteSpace(m.craftHide))
+                if (m.takeWithin > 0f && m.spoilMinutes > 0f && m.takeWithin >= m.spoilMinutes)
+                    warnings.Add($"{where}: Take Within ({m.takeWithin:0.#} min) is not shorter than Spoil Minutes ({m.spoilMinutes:0.#}): it spoils first, so the limit never matters.");
+                if (m.discoveredValue > 0f && string.IsNullOrWhiteSpace(m.discovery))
+                    warnings.Add($"{where}: a Discovered Value but no Discovery key: it never applies.");
+                if (!string.IsNullOrWhiteSpace(m.discovery) && m.discoveredValue <= 0f && m.discoveredUses == HarvestUse.None)
+                    warnings.Add($"{where}: its discovery '{m.discovery}' changes nothing (no Discovered Value or Uses).");
+                if (m.discoveredValue > 0f && m.value <= 0f)
+                    warnings.Add($"{where}: a Value of 0 cannot be raised by its discovery (pieces are priced Value × the discovered ratio): give it a small Value.");
+                if (m.kind == HarvestMaterialKind.Hide && HarvestCarcass.IsHide(m) && string.IsNullOrWhiteSpace(m.craftHide) && !m.plainHide)
                     warnings.Add($"{where}: no Crafting hide: it becomes a plain hide item, not a hide for the tannery.");
                 if (hides > 1 && HarvestCarcass.TakesHideOff(this, m))
                     warnings.Add($"{where}: more than one hide is skinned from this creature (taking any of them takes the hide off).");

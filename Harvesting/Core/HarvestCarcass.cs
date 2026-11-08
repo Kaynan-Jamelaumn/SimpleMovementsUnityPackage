@@ -520,6 +520,11 @@ public class HarvestCarcass
             reason = "It has spoiled.";
             return HarvestAvailability.Spoiled;
         }
+        if (TooLate(m))
+        {
+            reason = $"Too late: it must be taken within {m.takeWithin:0.#} minutes of death.";
+            return HarvestAvailability.Spoiled;
+        }
         if (m.requires != null)
             foreach (string q in m.requires)
             {
@@ -559,6 +564,9 @@ public class HarvestCarcass
         }
         return HarvestAvailability.Available;
     }
+
+    /// <summary>Is it past the minutes after death <paramref name="m"/> can be taken in (its Take Within; cold gives longer)?</summary>
+    public bool TooLate(HarvestMaterial m) => m != null && m.takeWithin > 0f && clock > m.takeWithin;
 
     /// <summary>"Destroyed in the fight: burned, pierced."</summary>
     public string DestroyedReason(HarvestAnatomyData a, int material)

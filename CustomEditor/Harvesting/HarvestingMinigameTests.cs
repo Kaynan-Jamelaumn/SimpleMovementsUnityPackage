@@ -73,6 +73,16 @@ namespace HarvestingSystem.Tests
                 for (int m = 0; m < a.materials.Count; m++)
                 {
                     string what = $"{a.id}/{a.materials[m].id}";
+                    // What must come out first (a turtle's plastron before its meat) is taken.
+                    foreach (string req in a.materials[m].requires)
+                    {
+                        int ri = a.MaterialIndex(req);
+                        if (ri < 0) continue;
+                        foreach (HarvestUnit u in c.condition.units)
+                            if (u.material == ri) u.taken = true;
+                        if (!a.materials[ri].countable)
+                            c.taken.Add(new HarvestTaken { material = ri, share = 1f });
+                    }
                     HarvestAvailability av = c.Availability(a, w.settings, m, w.skills, 1, out string why);
                     if (av == HarvestAvailability.Missing) continue;
                     Assert.AreEqual(HarvestAvailability.Available, av, $"{what}: {why}");

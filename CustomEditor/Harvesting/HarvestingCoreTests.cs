@@ -64,7 +64,7 @@ namespace HarvestingSystem.Tests
                 Assert.IsEmpty(errors, a.id + ": " + string.Join(" | ", errors));
                 Assert.IsEmpty(warnings, a.id + ": " + string.Join(" | ", warnings));
                 foreach (HarvestRegion r in a.regions)
-                    Assert.IsNotEmpty(HarvestDiagram.Shape(a.plan, r.Slot), $"{a.id}/{r.id} has a drawing");
+                    Assert.IsNotEmpty(HarvestDiagram.RegionShape(a, r), $"{a.id}/{r.id} has a drawing");
             }
         }
 

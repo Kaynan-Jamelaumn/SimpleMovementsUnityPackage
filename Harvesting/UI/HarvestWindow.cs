@@ -885,7 +885,7 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
         HarvestMaterial m = a.materials[i];
         if (av == HarvestAvailability.Hidden)
             return $"<color=#b8a8e0><b>Something unusual</b></color>\n<size=12><color=#9aa0a6>{why}</color></size>";
-        string name = $"<b>{m.Name}</b>";
+        string name = $"<b><color=#{HarvestedItemInfo.RarityColour(m.Rarity)}>{m.Name}</color></b>";
         if (m.countable)
         {
             int left = k.UnitsLeft(Settings, i), total = 0;
@@ -903,7 +903,7 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
             }
             case HarvestAvailability.Taken: state = "<color=#7a7f88>taken</color>"; break;
             case HarvestAvailability.Destroyed: state = $"<color=#f0a090>{why}</color>"; break;
-            case HarvestAvailability.Spoiled: state = "<color=#a08a60>spoiled</color>"; break;
+            case HarvestAvailability.Spoiled: state = k.TooLate(m) ? "<color=#a08a60>too late: it had to be taken soon after death</color>" : "<color=#a08a60>spoiled</color>"; break;
             case HarvestAvailability.NeedsHide: state = "<color=#ffcc61>the hide must come off first</color>"; break;
             case HarvestAvailability.Busy: state = "<color=#8ccfff>someone is working on it</color>"; break;
             default: state = $"<color=#ffcc61>{why}</color>"; break;
@@ -972,9 +972,31 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
             sb.Append($"<color=#f0a090>{why}</color>\n");
         int level = HarvestSkills.Level(Settings, skills, m.Skill);
         sb.Append($"<color=#9aa0a6>{HarvestText.SkillName(m.Skill)} {level}{(m.minSkill > 0 ? $" (needs {m.minSkill})" : "")} · difficulty {HarvestText.Bar(m.difficulty, 5)}");
-        if (HarvestSkills.Familiarity(Settings, skills, a.id) >= 0.5 || (skills.Species(a.id)?.known.Contains(m.id) ?? false))
-            sb.Append($" · worth up to {m.value:0.#} each");
         sb.Append("</color>\n");
+        // What the player knows it is worth and good for: they learn by taking, selling, eating and brewing it.
+        sb.Append($"<color=#{HarvestedItemInfo.RarityColour(m.Rarity)}>{m.Rarity}</color> <color=#9aa0a6>·</color> ");
+        switch (HarvestSkills.ValueKnowledge(Settings, skills, a.id, m))
+        {
+            case HarvestValueKnowledge.Known: sb.Append($"<color=#9aa0a6>worth up to {m.CurrentValue:0.#} each</color>"); break;
+            case HarvestValueKnowledge.Estimate: sb.Append($"<color=#9aa0a6>{HarvestSkills.ValueWord(m.CurrentValue)}, you think</color>"); break;
+            default: sb.Append("<color=#9aa0a6>worth ? (sell one, or take a few, to find out)</color>"); break;
+        }
+        sb.Append('\n');
+        HarvestUse knownUses = HarvestSkills.KnownUses(Settings, skills, a.id, m);
+        bool moreUses = HarvestSkills.HasUnknownUses(Settings, skills, a.id, m);
+        if (knownUses != HarvestUse.None)
+            sb.Append($"<color=#9aa0a6>Good for {HarvestSkills.UsesWords(knownUses)}{(moreUses ? " - and maybe more" : "")}.</color>\n");
+        else
+            sb.Append(moreUses ? "<color=#9aa0a6>What is it good for? Try it: eat it, brew with it, sell it.</color>\n"
+                : "<color=#9aa0a6>No known use.</color>\n");
+        if (!string.IsNullOrWhiteSpace(m.container))
+        {
+            int have = HarvestContainers.Count(player, m);
+            sb.Append(have > 0 ? $"<color=#9aa0a6>Taken into {m.container.Trim().ToLowerInvariant()}s: {have} carried.</color>\n"
+                : $"<color=#ffcc61>Needs {m.container.Trim().ToLowerInvariant()}s to hold it: you have none.</color>\n");
+        }
+        if (m.takeWithin > 0f && k != null && !k.TooLate(m))
+            sb.Append($"<color=#9aa0a6>Only within {m.takeWithin:0.#} minutes of death ({HarvestText.Minutes(Math.Max(0.0, m.takeWithin - k.clock))} left).</color>\n");
         if (av == HarvestAvailability.Available)
         {
             HarvestPlan p = working && plan != null && workMaterial == selected ? plan : DetailsPlan();

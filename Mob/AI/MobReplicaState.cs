@@ -15,6 +15,10 @@ public enum MobReplicaFlags : byte
     Dead = 1 << 2,
     /// <summary>Running away.</summary>
     Fleeing = 1 << 3,
+    /// <summary>Flying (its height comes with its position; this picks the flying animations).</summary>
+    Flying = 1 << 4,
+    /// <summary>Swimming.</summary>
+    Swimming = 1 << 5,
 }
 
 /// <summary>
