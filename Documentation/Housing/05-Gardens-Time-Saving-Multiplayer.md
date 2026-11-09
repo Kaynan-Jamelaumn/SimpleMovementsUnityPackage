@@ -150,6 +150,25 @@ HousingDirector.SaveNow();
   pays and takes, then records it; what the world must follow comes out as `Events`.
 * `HousingSettings.Override(settings)` uses specific settings (tests, bootstrap scripts).
 
+## How it stays light
+
+* **Lookups by index.** The books keep each player's order and leases, and each house's offers, in indexes kept up to
+  date at the few places that change them (rebuilt when a save loads), so a clearing and a window look up only what they
+  need instead of searching every order and every house. Renewal notices due before a clearing are found in one pass.
+* **Long jumps over several frames.** A sleep or a skip on game time can make days of clearings due at once; at most
+  *Clearing Budget Ms* (4) of them run per frame, in order, with exactly the result of running them all at once. Until
+  they are done the housing office refuses changes ("catching up with the time that passed"); windows still show.
+* **One build per desk.** What every player at a realtor sees alike (the houses, their prices, sizes, sales) is made once
+  per change of the books and shared; each player's view adds only their own lease, offers and order.
+
+Measured on the rules alone (one core, a realtor's listings and two orders per house):
+
+| City | One clearing | Price lookups for every house | A 30-day jump, at once |
+|---|---|---|---|
+| 200 houses | 0.97 → 0.70 ms | 1.1 → 0.4 ms | 98 → 66 ms |
+| 800 houses | 8.5 → 2.3 ms | 11 → 1.0 ms | 778 → 366 ms |
+| 1 600 houses | 31 → 5.1 ms | 37 → 2.6 ms | 3.5 s → 0.6 s (spread over frames by the budget) |
+
 ## Tests
 
 **Window ▸ General ▸ Test Runner ▸ Edit Mode**:
@@ -170,8 +189,9 @@ HousingDirector.SaveNow();
   whatever the house asks then, and an order held for one house holds up no other rent; a renewal never rests on an
   offer being taken back; too much held stops new orders but not one that stands; a tenant who wins another house at
   their lease end hands theirs to nobody; every lease renews on its own under Max Houses, and a player below the limit
-  keeps their house; a house given up at the house limit comes free with its backers held, a hold outlasts an unloaded
-  scene, a house coming free asks only what stands behind it, offers for a let house start at its base rent, and the
+  keeps their house; a house given up at the house limit comes free with its backers held, and so does one whose tenant
+  stops renewing or moves out after its notice; a hold outlasts an unloaded scene, and a held order cannot take its
+  house back before it is offered; a house coming free asks only what stands behind it, offers for a let house start at its base rent, and the
   price that takes a house at its lease end is public; a lone unwanted house does not drag its neighbours down; newcomers wait; moving and Max Houses;
   terms fixed with the deposit; leases stay on the clearings when
   Tick Hours changes; a tenant sees their lease while its house is not loaded; the rent account holds a whole renewal;

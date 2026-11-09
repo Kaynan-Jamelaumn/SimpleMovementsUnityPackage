@@ -21,6 +21,42 @@ public sealed class PlantScratch
     /// <summary>Set when a growing step filled <see cref="needs"/> (clear it before a step to know).</summary>
     public bool stepped;
     public float growth;
+    /// <summary>
+    /// Set by a catch-up (<see cref="AgriSettings.quietSteps"/>): in a quiet stretch a plant goes on with what it last saw
+    /// of its soil and its neighbours (<see cref="PlantSurroundings"/>) instead of looking again every step.
+    /// </summary>
+    public bool quiet;
+    /// <summary>Steps that went on with what the plant last saw (for tools and tests).</summary>
+    public int kept;
+}
+
+/// <summary>
+/// What a growing plant last saw of its root zone and its neighbours, with what it was seen under (the time, the rain so
+/// far, the soil's and the plants' change counters, the plant's own stage) - kept for the quiet stretches of a catch-up,
+/// never saved. Looking again is the dearest part of a step (every root cell brought up to date and read, the
+/// neighbours within five metres); in a quiet stretch it changes too little to matter, while everything the weather
+/// decides (warmth, frost, light, development, ripening, pests' and diseases' chances) is still worked out every step.
+/// </summary>
+public sealed class PlantSurroundings
+{
+    public double time, rain;
+    public int soilVersion, epoch;
+    public PlantStage stage;
+    public bool dormant;
+    /// <summary>Nothing it saw is near a line where a little change would matter (water, pests and diseases next door).</summary>
+    public bool calm;
+    /// <summary>The cell it stands in, and that cell's moisture and its water between wilting point and field capacity then.</summary>
+    public int cell;
+    public float cellMoisture, cellSpan;
+    public float sumW, avail, ph, salinity, compaction, tilth, stones, magic, pathogens, affinity;
+    public readonly float[] conc = new float[SoilChannels.NutrientCount];
+    public float shade, crowd, growthMul, inhibit, pollinatorBoost;
+    public readonly float[] repel = new float[8], suppression = new float[8], pestPressure = new float[8], diseasePressure = new float[6];
+    /// <summary>How well the soil meets each nutrient need, for the stage it was worked out at.</summary>
+    public bool needsKept;
+    public PlantStage needsStage;
+    public float macro, second, micro, toxicity;
+    public readonly float[] sufficiency = new float[SoilChannels.NutrientCount];
 }
 
 /// <summary>The needs a growing plant's growth is limited by (what <see cref="PlantScratch.needs"/> holds).</summary>
@@ -93,10 +129,14 @@ public static class PlantSim
         int steps = Math.Max(1, Math.Min(64, (int)Math.Ceiling(gap / Math.Max(0.25, s.maxStepHours))));
         double dt = gap / steps;
         int before = VisualKey(p);
+        sc ??= new PlantScratch();
         for (int k = 0; k < steps; k++)
         {
             double t = p.last + dt;
-            Step(f, p, t, (float)dt, s, sc ?? new PlantScratch(), src);
+            int mood = sc.quiet ? Mood(p) : 0;
+            Step(f, p, t, (float)dt, s, sc, src);
+            // Its neighbours go on with what they saw of it only while it is the same to them.
+            if (sc.quiet && Mood(p) != mood) f.QuietEpoch++;
             p.last = t;
         }
         p.last = now;
@@ -125,12 +165,31 @@ public static class PlantSim
         return f.EnvTime >= 0.0 && f.EnvTime - t <= 2.0 ? f.Weather : AgriEnvironment.Climate(s, t);
     }
 
+    /// <summary>What a plant is to its neighbours: there, come up, resting, carrying pests or a disease.</summary>
+    private static int Mood(PlantState p)
+    {
+        int m = (p.Alive ? 1 : 0) | (p.Emerged ? 2 : 0) | (p.dormant ? 4 : 0);
+        for (int k = 0; k < 8; k++) if (p.pests[k] >= 0.01f) { m |= 8; break; }
+        for (int k = 0; k < 6; k++) if (p.diseases[k] >= 0.01f) { m |= 16; break; }
+        return m;
+    }
+
+    /// <summary>The reach of a plant's roots now (they follow its size).</summary>
+    private static float RootReach(PlantState p)
+    {
+        PlantSpeciesData d = p.data;
+        return p.IsSeed || d == null ? 0.05f : Mathf.Max(0.05f, d.rootRadius * (0.25f + 0.75f * p.size) * Mathf.Sqrt(p.genes.Factor(GeneTrait.MaxSize)));
+    }
+
+    /// <summary>The root cells found last are still right for a reach (they are found again once it grew a fifth).</summary>
+    private static bool RootsFit(PlantState p, float radius) =>
+        p.rootCells != null && p.rootRadius > 0f && Mathf.Abs(radius - p.rootRadius) < Mathf.Max(0.04f, p.rootRadius * 0.2f);
+
     /// <summary>The root zone's cells and weights, rebuilt as the plant grows.</summary>
     public static void EnsureRoots(SoilGrid g, PlantState p, PlantScratch sc)
     {
-        PlantSpeciesData d = p.data;
-        float radius = p.IsSeed || d == null ? 0.05f : Mathf.Max(0.05f, d.rootRadius * (0.25f + 0.75f * p.size) * Mathf.Sqrt(p.genes.Factor(GeneTrait.MaxSize)));
-        if (p.rootCells != null && p.rootRadius > 0f && Mathf.Abs(radius - p.rootRadius) < Mathf.Max(0.04f, p.rootRadius * 0.2f))
+        float radius = RootReach(p);
+        if (RootsFit(p, radius))
             return;
         g.CellsInRadius(p.position, radius, sc.cells, sc.weights);
         p.rootCells = sc.cells.ToArray();
@@ -162,45 +221,76 @@ public static class PlantSim
         p.ageDays += dt / 24f;
 
         // ---------------------------------------------------------------- the root zone
-        EnsureRoots(g, p, sc);
-        float sumW = 0f, avail = 0f, ph = 0f, sal = 0f, comp = 0f, tilth = 0f, stones = 0f, magic = 0f, path = 0f;
-        Array.Clear(sc.conc, 0, sc.conc.Length);
-        float[] v = g.Values;
-        for (int k = 0; k < p.rootCells.Length; k++)
+        float sumW = 0f, avail = 0f, ph = 0f, sal = 0f, comp = 0f, tilth = 0f, stones = 0f, magic = 0f, path = 0f, affinity = 0.7f;
+        PlantSurroundings seen = sc.quiet ? StillSeen(f, p, t, s, cell) : null;
+        if (seen != null)
         {
-            int c = p.rootCells[k];
-            float wgt = p.rootWeights[k];
-            g.Advance(c, t, s);
-            int o = c * SoilGrid.Stride;
-            float cph = v[o + (int)SoilChannel.Ph];
-            avail += wgt * SoilChemistry.Available(v[o + (int)SoilChannel.Moisture], v[o + (int)SoilChannel.WaterRetention]);
-            ph += wgt * cph;
-            sal += wgt * v[o + (int)SoilChannel.Salinity];
-            comp += wgt * v[o + (int)SoilChannel.Compaction];
-            tilth += wgt * v[o + (int)SoilChannel.Tilth];
-            stones += wgt * v[o + (int)SoilChannel.Stones];
-            magic += wgt * v[o + (int)SoilChannel.MagicEssence];
-            path += wgt * v[o + (int)SoilChannel.Pathogens];
-            // Plants feed well at the pH they are made for, whatever the chemistry says (acid lovers in sour soil).
-            float adapt = 0.75f * AgriMath.Band(cph, d.phMin, d.phLow, d.phHigh, d.phMax);
-            for (int n = 0; n < SoilChannels.NutrientCount; n++)
-                sc.conc[n] += wgt * v[o + 1 + n] * Mathf.Max(SoilChemistry.Availability((Nutrient)n, cph), adapt);
-            sumW += wgt;
+            // A quiet stretch: what it saw a few hours ago is still what it would see.
+            sumW = seen.sumW; avail = seen.avail; ph = seen.ph; sal = seen.salinity; comp = seen.compaction; tilth = seen.tilth;
+            stones = seen.stones; magic = seen.magic; path = seen.pathogens; affinity = seen.affinity;
+            Array.Copy(seen.conc, sc.conc, sc.conc.Length);
+            sc.kept++;
         }
-        if (sumW <= 0f)
+        else
         {
-            p.last = t;
-            return;
-        }
-        float inv = 1f / sumW;
-        avail *= inv; ph *= inv; sal *= inv; comp *= inv; tilth *= inv; stones *= inv; magic *= inv; path *= inv;
-        for (int n = 0; n < SoilChannels.NutrientCount; n++) sc.conc[n] *= inv;
-        float affinity = 0.7f;
-        if (cell >= 0)
-        {
-            SoilChemistry.TypeMix(v, cell * SoilGrid.Stride, g.TypeAt(cell), sc.mix);
-            affinity = 0f;
-            for (int k = 0; k < SoilTypes.Count; k++) affinity += sc.mix[k] * d.SoilAffinity((SoilType)k);
+            EnsureRoots(g, p, sc);
+            Array.Clear(sc.conc, 0, sc.conc.Length);
+            float[] v = g.Values;
+            bool kept = s.cacheCellValues;
+            for (int k = 0; k < p.rootCells.Length; k++)
+            {
+                int c = p.rootCells[k];
+                float wgt = p.rootWeights[k];
+                g.Advance(c, t, s);
+                int o = c * SoilGrid.Stride;
+                float cph = v[o + (int)SoilChannel.Ph];
+                if (kept)
+                {
+                    g.WaterBudget(c, out float wp, out float span, out _);
+                    avail += wgt * ((v[o + (int)SoilChannel.Moisture] - wp) / span);
+                }
+                else
+                {
+                    avail += wgt * SoilChemistry.Available(v[o + (int)SoilChannel.Moisture], v[o + (int)SoilChannel.WaterRetention]);
+                }
+                ph += wgt * cph;
+                sal += wgt * v[o + (int)SoilChannel.Salinity];
+                comp += wgt * v[o + (int)SoilChannel.Compaction];
+                tilth += wgt * v[o + (int)SoilChannel.Tilth];
+                stones += wgt * v[o + (int)SoilChannel.Stones];
+                magic += wgt * v[o + (int)SoilChannel.MagicEssence];
+                path += wgt * v[o + (int)SoilChannel.Pathogens];
+                // Plants feed well at the pH they are made for, whatever the chemistry says (acid lovers in sour soil).
+                float adapt = 0.75f * AgriMath.Band(cph, d.phMin, d.phLow, d.phHigh, d.phMax);
+                if (kept)
+                {
+                    int so = g.NutrientShares(c);
+                    float[] shares = g.Shares;
+                    for (int n = 0; n < SoilChannels.NutrientCount; n++)
+                        sc.conc[n] += wgt * v[o + 1 + n] * Mathf.Max(shares[so + n], adapt);
+                }
+                else
+                {
+                    for (int n = 0; n < SoilChannels.NutrientCount; n++)
+                        sc.conc[n] += wgt * v[o + 1 + n] * Mathf.Max(SoilChemistry.Availability((Nutrient)n, cph), adapt);
+                }
+                sumW += wgt;
+            }
+            if (sumW <= 0f)
+            {
+                p.surroundings = null;
+                p.last = t;
+                return;
+            }
+            float inv = 1f / sumW;
+            avail *= inv; ph *= inv; sal *= inv; comp *= inv; tilth *= inv; stones *= inv; magic *= inv; path *= inv;
+            for (int n = 0; n < SoilChannels.NutrientCount; n++) sc.conc[n] *= inv;
+            if (cell >= 0)
+            {
+                SoilChemistry.TypeMix(v, cell * SoilGrid.Stride, g.TypeAt(cell), sc.mix);
+                affinity = 0f;
+                for (int k = 0; k < SoilTypes.Count; k++) affinity += sc.mix[k] * d.SoilAffinity((SoilType)k);
+            }
         }
 
         if (p.IsSeed)
@@ -234,7 +324,21 @@ public static class PlantSim
         p.flushTimer = Mathf.Max(0f, p.flushTimer - dt);
 
         // ---------------------------------------------------------------- neighbours and light
-        Neighbourhood(f, p, d, t, sc, out float shade, out float crowd, out float growthMul, out float inhibit, out float pollinatorBoost);
+        float shade, crowd, growthMul, inhibit, pollinatorBoost;
+        if (seen != null)
+        {
+            shade = seen.shade; crowd = seen.crowd; growthMul = seen.growthMul; inhibit = seen.inhibit; pollinatorBoost = seen.pollinatorBoost;
+            Array.Copy(seen.repel, sc.repel, 8);
+            Array.Copy(seen.suppression, sc.suppression, 8);
+            Array.Copy(seen.pestPressure, sc.pestPressure, 8);
+            Array.Copy(seen.diseasePressure, sc.diseasePressure, 6);
+        }
+        else
+        {
+            Neighbourhood(f, p, d, t, sc, out shade, out crowd, out growthMul, out inhibit, out pollinatorBoost);
+            if (sc.quiet)
+                seen = Remember(f, p, d, t, cell, sumW, avail, ph, sal, comp, tilth, stones, magic, path, affinity, shade, crowd, growthMul, inhibit, pollinatorBoost, sc);
+        }
         // Light relative to an open, clear sky at this hour (1 = full sun): clouds, cover and taller neighbours take from it.
         float lightNow = w.light * coverLight * (1f - Mathf.Min(0.9f, shade));
         float clearSky = AgriEnvironment.Sunlight(date.Hour, date.Sunrise, date.Sunset, 0f);
@@ -257,7 +361,14 @@ public static class PlantSim
 
         float macro = 1f, second = 1f, micro = 1f, toxicity = 0f;
         float eff = p.genes.Factor(GeneTrait.NutrientEfficiency);
-        for (int n = 0; n < SoilChannels.NutrientCount; n++)
+        // The same soil and the same stage meet the nutrient needs the same way: worked out once for a quiet stretch.
+        bool needsSeen = seen != null && seen.needsKept && seen.needsStage == p.stage;
+        if (needsSeen)
+        {
+            macro = seen.macro; second = seen.second; micro = seen.micro; toxicity = seen.toxicity;
+            Array.Copy(seen.sufficiency, sc.sufficiency, sc.sufficiency.Length);
+        }
+        else for (int n = 0; n < SoilChannels.NutrientCount; n++)
         {
             var nut = (Nutrient)n;
             float need = d.Need(nut) * Emphasis(nut, p.stage, d) * eff;
@@ -271,6 +382,13 @@ public static class PlantSim
             if (n < 3) macro = Mathf.Min(macro, suff);
             else if (n < 6) second = Mathf.Min(second, suff);
             else micro = Mathf.Min(micro, suff);
+        }
+        if (seen != null && !needsSeen)
+        {
+            seen.needsKept = true;
+            seen.needsStage = p.stage;
+            seen.macro = macro; seen.second = second; seen.micro = micro; seen.toxicity = toxicity;
+            Array.Copy(sc.sufficiency, seen.sufficiency, sc.sufficiency.Length);
         }
         float fN = macro * Mathf.Pow(second, 0.5f) * Mathf.Pow(micro, 0.3f) * (1f - Mathf.Min(0.6f, toxicity * 0.3f));
         float fPh = Mathf.Lerp(0.15f, 1f, AgriMath.Band(ph, d.phMin, d.phLow, d.phHigh, d.phMax));
@@ -470,6 +588,82 @@ public static class PlantSim
         }
         p.pruneBoost *= AgriMath.Decay(1f / 240f, dt);
         p.wounds *= AgriMath.Decay(0.02f, dt);
+    }
+
+    // ---------------------------------------------------------------- quiet stretches of a catch-up
+    /// <summary>
+    /// How far the water within the plant's reach (0-1 between wilting point and field capacity) may have moved since it
+    /// last looked before it looks again - about a fiftieth: a sunny summer day dries soil by several times that, a winter
+    /// one hardly at all. Every need is a smooth function of the water, so a plant that saw it a fiftieth off grows the
+    /// same to within noise.
+    /// </summary>
+    public const float QuietWaterDrift = 0.02f;
+
+    /// <summary>
+    /// What the plant last saw, when it may go on with it at <paramref name="t"/>: seen calm, not too long ago, no rain
+    /// since (the running total of rain is the same), no work on the soil (its change counter), its neighbours the same to
+    /// it (none came up, died, rested or woke, caught or lost pests or a disease), no helpers released, its own stage and
+    /// rest the same, its roots not outgrown, and the water of the cell it stands in - the one cell brought up to date to
+    /// know - moved less than <see cref="QuietWaterDrift"/>. Otherwise null: it looks again.
+    /// </summary>
+    private static PlantSurroundings StillSeen(FieldState f, PlantState p, double t, AgriSettings s, int cell)
+    {
+        PlantSurroundings k = p.surroundings;
+        if (k == null || p.IsSeed || !k.calm || cell < 0 || cell != k.cell) return null;
+        double age = t - k.time;
+        if (age <= 0.0 || age >= s.quietHours - 1e-6) return null;
+        SoilGrid g = f.Grid;
+        if (k.rain != g.RainTotal || k.soilVersion != g.Version || k.epoch != f.QuietEpoch) return null;
+        if (k.stage != p.stage || k.dormant != p.dormant || f.Beneficials.Count > 0) return null;
+        if (!RootsFit(p, RootReach(p))) return null;
+        g.Advance(cell, t, s);
+        if (Mathf.Abs(g.Get(cell, SoilChannel.Moisture) - k.cellMoisture) > QuietWaterDrift * k.cellSpan) return null;
+        return k;
+    }
+
+    /// <summary>Keeps what a plant has just seen of its soil and its neighbours, and whether it is calm enough to go on with.</summary>
+    private static PlantSurroundings Remember(FieldState f, PlantState p, PlantSpeciesData d, double t, int cell, float sumW, float avail, float ph,
+        float sal, float comp, float tilth, float stones, float magic, float path, float affinity, float shade, float crowd, float growthMul,
+        float inhibit, float pollinatorBoost, PlantScratch sc)
+    {
+        PlantSurroundings k = p.surroundings ??= new PlantSurroundings();
+        SoilGrid g = f.Grid;
+        k.time = t;
+        k.rain = g.RainTotal;
+        k.soilVersion = g.Version;
+        k.epoch = f.QuietEpoch;
+        k.stage = p.stage;
+        k.dormant = p.dormant;
+        k.cell = cell;
+        k.needsKept = false;
+        k.sumW = sumW; k.avail = avail; k.ph = ph; k.salinity = sal; k.compaction = comp; k.tilth = tilth; k.stones = stones;
+        k.magic = magic; k.pathogens = path; k.affinity = affinity;
+        Array.Copy(sc.conc, k.conc, k.conc.Length);
+        k.shade = shade; k.crowd = crowd; k.growthMul = growthMul; k.inhibit = inhibit; k.pollinatorBoost = pollinatorBoost;
+        Array.Copy(sc.repel, k.repel, 8);
+        Array.Copy(sc.suppression, k.suppression, 8);
+        Array.Copy(sc.pestPressure, k.pestPressure, 8);
+        Array.Copy(sc.diseasePressure, k.diseasePressure, 6);
+        bool calm = cell >= 0;
+        if (calm)
+        {
+            float retention = g.Get(cell, SoilChannel.WaterRetention);
+            k.cellMoisture = g.Get(cell, SoilChannel.Moisture);
+            k.cellSpan = Mathf.Max(0.05f, SoilChemistry.FieldCapacity(retention) - SoilChemistry.WiltingPoint(retention));
+        }
+
+        // Calm: no pests or diseases next door that could spread while it is not looking, and its water clear of the
+        // lines where something changes at once rather than smoothly - wilting damage starting, and the wet soil slugs
+        // and snails come out on.
+        for (int i = 0; i < 8 && calm; i++) if (sc.pestPressure[i] >= 1e-3f) calm = false;
+        for (int i = 0; i < 6 && calm; i++) if (sc.diseasePressure[i] > 0f) calm = false;
+        float drought = AgriMath.Clamp01(d.droughtTolerance + p.genes.DroughtShift);
+        float edge = 0.25f * (1f - 0.7f * drought) + 0.02f;
+        if (avail < edge + 2f * QuietWaterDrift) calm = false;
+        if ((d.PestSusceptibility(PestKind.Slugs) > 0f || d.PestSusceptibility(PestKind.Snails) > 0f) && Mathf.Abs(avail - 0.95f) < 2f * QuietWaterDrift)
+            calm = false;
+        k.calm = calm;
+        return k;
     }
 
     private static float Ln(float x) => (float)Math.Log(Mathf.Max(0.001f, x));
@@ -894,9 +1088,17 @@ public static class PlantSim
             for (int k = 0; k < cells.Length; k++)
             {
                 int o = cells[k] * SoilGrid.Stride;
-                float ret = v[o + (int)SoilChannel.WaterRetention];
-                float cap = SoilChemistry.CapacityMm(ret);
-                float wp = SoilChemistry.WiltingPoint(ret);
+                float cap, wp;
+                if (s.cacheCellValues)
+                {
+                    g.WaterBudget(cells[k], out wp, out _, out cap);
+                }
+                else
+                {
+                    float ret = v[o + (int)SoilChannel.WaterRetention];
+                    cap = SoilChemistry.CapacityMm(ret);
+                    wp = SoilChemistry.WiltingPoint(ret);
+                }
                 float m = v[o + (int)SoilChannel.Moisture];
                 float litres = Mathf.Max(0f, m - wp) * cap * cellArea;
                 float want = demand * weights[k] / sumW;

@@ -29,7 +29,8 @@ term (week or month, as the house allows) and an **offer per day**.
   a house takes from being known to come free to being offered, so no offer can be pulled out of the way of a house
   that comes free. A change that takes back nothing beyond the change already waiting keeps its time.
 * **It can be held for a house.** When a tenant's rent is fixed above the house's base rent — or a house is shown
-  coming free, or comes free because its tenant won another house — at a price above its base rent, that price rests
+  coming free (at its notice, or later, when its tenant stops renewing or wins another house), or comes free because its
+  tenant won another house at its lease end — at a price above its base rent, that price rests
   on the best offer for the house from someone free to take it; that offer's order is **held** for the house until the
   house is offered (its lease end — and its first clearing, if the tenant then leaves). Until then the order wins no
   other house: at the house's lease end it is tried for that house alone, and at its first clearing for that house
@@ -126,12 +127,12 @@ offers at 1.3–1.9 × the asking rent on houses with sitting tenants tried ever
 
 | What the alts did | Honest tenants paid (per day; 88–94 without alts) | What the alts were made to take |
 |---|---|---|
-| Dropped every house the moment it was shown coming free | 100–105 | 101–150 houses in 150 days, paying 142 000–246 000 |
-| Added a cheap free house to win at once when a house they pushed came free | 101–104 | 123–156 houses, paying 218 000–320 000 (held: the cheap house was no way out) |
-| Withdrew just before the tenants' renewals were fixed | 90–92 | next to nothing — and they moved no rent |
-| Got more held for them than allowed, to stop counting | 88–92 | the houses that came free (their orders still counted) — and they moved no rent |
+| Dropped every house the moment it was shown coming free | 101–105 | 116–144 houses in 150 days, paying 154 000–245 000 |
+| Added a cheap free house to win at once when a house they pushed came free | 102–105 | 123–158 houses, paying 190 000–332 000 (held: the cheap house was no way out) |
+| Withdrew just before the tenants' renewals were fixed | 89–91 | next to nothing — and they moved no rent |
+| Got more held for them than allowed, to stop counting | 85–90 | the houses that came free (their orders still counted) — and they moved no rent |
 
-Where alts' offers moved rents they paid for it many times over — 140 000–320 000 against about 270 000 of rent for
+Where alts' offers moved rents they paid for it many times over — 150 000–330 000 against about 270 000 of rent for
 the whole city in that time, for houses they did not want; where they found a way not to pay, they moved nothing.
 
 ### Why pay-what-you-offer

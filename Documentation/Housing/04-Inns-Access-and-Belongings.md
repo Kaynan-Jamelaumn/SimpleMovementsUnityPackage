@@ -88,8 +88,9 @@ count and each copy's data (durability, loaded rounds) — and **held** for the 
 * It can be **claimed at any innkeeper or realtor**, in their window ("Kept for you: Room 3, The Gilded Goose — 14
   items"). What fits goes into the player's inventory, each stack exactly as it was kept (a worn tool comes back
   worn, a weapon with the rounds it had loaded); the rest stays held. Like anything picked up, it fills the stacks the
-  player already carries first — each unit keeps its own wear or quality, as in a harvest; only a stack whose unit in
-  use is half used, or a weapon with rounds loaded, needs free room of its own, so its state never mixes with another's.
+  player already carries first — things as good as new, and pieces that each keep their own quality (a harvest, potions
+  of a strength); a stack with a state of its own (a half-used or worn unit of something that counts its uses, a weapon
+  with rounds loaded) needs free room of its own, so it comes back exactly as it was and never mixes with another.
 * The first 3 days are free (*Free Days*); after that a claim costs the *Fee* (0 by default: always free). A claim
   pays the fee the window showed: if it changed meanwhile (the free days ran out), the claim is refused ("The fee
   changed: look again."). A claim that could take only part of a bundle pays once: the rest is free.

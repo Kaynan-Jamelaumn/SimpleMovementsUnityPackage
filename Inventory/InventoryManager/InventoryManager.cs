@@ -1845,10 +1845,10 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     /// Gives back a stack exactly as it was kept (a chest's slot, things held for a player): <paramref name="quantity"/>
     /// units with each unit's uses left (<paramref name="durabilities"/>, in the order <see cref="InventoryItem.DurabilityList"/>
     /// keeps them, the last one in use), the uses left of the unit in use (<paramref name="durability"/>; 0 or less: as the
-    /// list says) and the rounds loaded (<paramref name="loadedRounds"/>; -1: not loaded yet). A stack whose own state goes
-    /// beyond its units' list - the unit in use half used, rounds loaded - goes whole into empty slots (never into another
-    /// stack, whose state it would mix with its own); any other fills existing stacks first, like <see cref="AddItem"/>, each
-    /// unit keeping its own list entry (<see cref="IsPlainKeptStack"/>). Returns how many could NOT be given (0 = all), with those units'
+    /// list says) and the rounds loaded (<paramref name="loadedRounds"/>; -1: not loaded yet). A stack with a state of its
+    /// own - its unit in use half used, a worn unit among copies that count uses, rounds loaded - goes whole into empty
+    /// slots (never into another stack, whose state it would mix with its own); any other fills existing stacks first, like
+    /// <see cref="AddItem"/>, each copy keeping its own value (<see cref="IsPlainKeptStack"/>). Returns how many could NOT be given (0 = all), with those units'
     /// uses left (<paramref name="leftDurabilities"/>) and whether the unit in use is still among them
     /// (<paramref name="leftKeepsUnitInUse"/>: then the durability and rounds are still theirs).
     /// </summary>
@@ -1860,7 +1860,7 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         leftKeepsUnitInUse = true;
         if (item == null || quantity <= 0)
             return Mathf.Max(0, quantity);
-        if (IsPlainKeptStack(item, durability, loadedRounds))
+        if (IsPlainKeptStack(item, pool, durability, loadedRounds))
         {
             // Nothing beyond its units' list: added like anything else, into the stacks the player already has first. AddItem
             // moves each unit's list entry with it (its uses left, or the code of its quality), as a harvest does.
@@ -1904,17 +1904,28 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
     }
 
     /// <summary>
-    /// A kept stack with nothing of its own beyond its units' list: no rounds loaded, and the unit in use as its list says
-    /// (0 or less) or as new. Every unit's list entry - its uses left, or the code of its quality (a harvested piece, a
-    /// potion) - moves with it when <see cref="AddItem"/> joins it to a stack the player has, so nothing is lost. A chest
-    /// keeps the uses left of every stack's unit in use, a new one's too (never 0: <see cref="InventoryItem.StartingDurability"/>),
+    /// A kept stack that <see cref="AddItem"/> can give as it is: no rounds loaded, the unit in use as its list says (0 or
+    /// less) or as new, and - for an item that counts uses - every unit in the list as new too (a new stack takes its unit
+    /// in use from the list, so a worn unit there would become the unit in use: such a stack keeps its own slot, exactly as
+    /// it was). An item whose copies each keep a value of their own (a harvested piece's quality, a potion's strength:
+    /// <see cref="ItemSO.MaxDurability"/> 1 or less) moves each copy's value with it, so it may join any stack. A chest keeps
+    /// the uses left of every stack's unit in use, a new one's too (never 0: <see cref="InventoryItem.StartingDurability"/>),
     /// so "as new" is what tells; a crop held at a lease's end keeps only its codes (0).
     /// </summary>
-    private static bool IsPlainKeptStack(ItemSO item, float durability, int loadedRounds)
+    private static bool IsPlainKeptStack(ItemSO item, List<int> list, float durability, int loadedRounds)
     {
         if (loadedRounds >= 0)
             return false;
-        return durability <= 0f || durability == InventoryItem.StartingDurability(item);
+        float fresh = InventoryItem.StartingDurability(item);
+        if (durability > 0f && durability != fresh)
+            return false;
+        if (item.MaxDurability <= 1)
+            return true;
+        int freshUses = Mathf.RoundToInt(fresh);
+        foreach (int u in list)
+            if (u != freshUses)
+                return false;
+        return true;
     }
 
     /// <summary>One kept stack in an empty slot (the grid where it fits, else the hotbar; or the first empty slot), with its data.</summary>

@@ -96,6 +96,7 @@ the clock, the books, the chests and the doors, and saves.
 | Currency | (project default) | The money of rents, deposits and refunds |
 | Vacant Doors Open | on | Doors of a house nobody rents open for anyone, so players can look round it before they bid |
 | Save Delay Seconds | 2 | Real seconds between a change and the world's save, wallets included (also saved when the world closes, on quit and on pause) |
+| Clearing Budget Ms | 4 | Real milliseconds a frame may spend on the market's clearings: a long jump of the clock is cleared over a few frames instead of freezing one; requests wait meanwhile (0: all at once) |
 | Ground Layers | nothing | Layers that may lie on a plot without counting as standing on it (ground, roads, decals) |
 | Intrusion Warn Area | 0.05 m² | An object covering this much of a plot is a warning; 1 m² or more an error |
 

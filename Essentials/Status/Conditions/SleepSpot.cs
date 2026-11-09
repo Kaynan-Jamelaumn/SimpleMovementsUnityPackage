@@ -28,6 +28,31 @@ public class SleepSpot : MonoBehaviour, IInteractable
 
     private readonly System.Collections.Generic.List<CombatEntity> occupants = new System.Collections.Generic.List<CombatEntity>();
 
+    /// <summary>
+    /// Asked before anyone sleeps here (where the rules run: the real check; on a client: the prompt): a refusal ("Not
+    /// your room.") or null when they may. Null hook: anyone may. Housing installs it for the beds of rented rooms.
+    /// </summary>
+    public static System.Func<SleepSpot, CombatEntity, string> AccessCheck;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => AccessCheck = null;
+
+    /// <summary>The access hook's refusal for <paramref name="sleeper"/>, or null.</summary>
+    public string Denied(CombatEntity sleeper)
+    {
+        System.Func<SleepSpot, CombatEntity, string> check = AccessCheck;
+        if (check == null) return null;
+        try
+        {
+            return check(this, sleeper);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e, this);
+            return "You cannot sleep here now.";
+        }
+    }
+
     public SleepSpotKind Kind => kind;
     /// <summary>Is there room for one more sleeper?</summary>
     public bool IsFree
@@ -73,6 +98,8 @@ public class SleepSpot : MonoBehaviour, IInteractable
         if (sleep == null)
             return false;
         if (sleep.IsSleeping) return false;
+        string denied = Denied(CombatEntity.Resolve(interactor.PlayerObject));
+        if (denied != null) { reason = denied; return false; }
         if (!IsFree) { reason = "Occupied"; return false; }
         return sleep.CanSleepNow(out reason);
     }
@@ -81,6 +108,8 @@ public class SleepSpot : MonoBehaviour, IInteractable
     {
         SleepManager sleep = SleepOf(interactor);
         if (sleep == null || !IsFree)
+            return;
+        if (Denied(CombatEntity.Resolve(interactor.PlayerObject)) != null)
             return;
         sleep.StartSleeping(QualityFor(sleep), this);
     }
