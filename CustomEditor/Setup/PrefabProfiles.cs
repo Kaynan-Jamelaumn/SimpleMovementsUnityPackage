@@ -726,6 +726,18 @@ namespace SimpleMovements.Setup
                     NetworkSetupMenu.CreateWorldItemPrefab();
                     return true;
                 }, fixesAsset: true));
+            p.Add(SetupRequirement.Make("Multiplayer", "Animal carcass prefab exists", SetupLevel.Optional)
+                .Explain("Not needed by this item: a farm animal butchered in a network session is laid out as the networked prefab Resources/AnimalCarcass, " +
+                         "so every player sees its carcass (without it the butcher's table answers that it is not set up).",
+                         "Tools ▸ SimpleMovements ▸ Network ▸ Create Animal Carcass Prefab.")
+                .Checks(_ =>
+                {
+                    List<string> lacks = AnimalValidation.CarcassPrefabLacks(out GameObject carcass);
+                    if (lacks == null)
+                        return SetupResult.Missing("Missing: farm animals cannot be butchered in a network session.");
+                    return lacks.Count == 0 ? SetupResult.Ok("Found.", carcass) : SetupResult.Wrong("It has no " + string.Join(", ", lacks) + ".", carcass);
+                })
+                .Fixes("Create It", _ => AnimalValidation.EnsureCarcassPrefab(), fixesAsset: true));
             p.Add(Networked("Pickup / Loot", "the item", SetupLevel.Optional,
                 "Not needed: the carrier shows items whose prefab is not networked. Make it networked only for items with their own network behaviour (a physics loot drop that must move the same everywhere).",
                 "Network ▸ Make Selected Prefab Networked ▸ Pickup or Loot Drop."));

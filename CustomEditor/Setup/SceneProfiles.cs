@@ -286,6 +286,18 @@ namespace SimpleMovements.Setup
                     NetworkSetupMenu.CreateWorldItemPrefab();
                     return true;
                 }));
+            p.Add(SetupRequirement.Make("Project", "Networked animal carcass (Resources/AnimalCarcass)", SetupLevel.Recommended)
+                .Explain("A farm animal butchered in a network session is laid out as this network prefab, so every player sees its carcass and its owner works it " +
+                         "through the server. Without it the butcher's table answers that it is not set up (offline nothing is needed).",
+                         "Tools ▸ SimpleMovements ▸ Network ▸ Create Animal Carcass Prefab.")
+                .Checks(_ =>
+                {
+                    List<string> lacks = AnimalValidation.CarcassPrefabLacks(out GameObject carcass);
+                    if (lacks == null)
+                        return SetupResult.Missing("Missing: in a network session no farm animal can be butchered.");
+                    return lacks.Count == 0 ? SetupResult.Ok("Found.", carcass) : SetupResult.Wrong("It has no " + string.Join(", ", lacks) + ".", carcass);
+                })
+                .Fixes("Create It", _ => AnimalValidation.EnsureCarcassPrefab()));
             p.Add(SetupUtil.ResourcesAsset<ItemDatabase>("Project", "Item Database", ItemDatabase.ResourcesName, SetupLevel.Recommended,
                 "Items travel over the network as stable ids from this database (inventories, drops, merchants, trading).",
                 () => { NetworkSetupMenu.BuildItemDatabase(); return true; }));
@@ -336,6 +348,7 @@ namespace SimpleMovements.Setup
             ["GameNet.NetSocial"] = (SetupLevel.Recommended, "Parties, guilds, fame, levels and inspecting other players. Without it party colours, nameplates and invites do not work online."),
             ["GameNet.NetPortals"] = (SetupLevel.Recommended, "The free player slots of dungeon portals shown when a player selects one."),
             ["GameNet.NetHousing"] = (SetupLevel.Recommended, "Houses and inn rooms to rent: requests to the server's housing office, each player's own view, who may use which doors, chests, beds and gardens, the doors' state."),
+            ["GameNet.NetAnimals"] = (SetupLevel.Recommended, "Animal husbandry: requests to the server, which keeps every animal and pen, and each player's picture of the pens near them."),
         };
 
         private static SetupRequirement ComponentOnManager(string typeName, SetupLevel level, string why)

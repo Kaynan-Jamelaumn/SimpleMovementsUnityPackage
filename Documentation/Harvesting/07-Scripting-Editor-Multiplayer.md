@@ -13,6 +13,8 @@
 | `AnyHarvested` *(static event)* | Where the rules run (offline, the server): a harvest gave **any** player what the report says — hook quests, achievements and logs here. |
 | `WorkerFor(player)`, `PlanFor(player, material, units)` | Who works and with what (skills, tools); the plan of a material's work. |
 | `Begin`, `Cancel`, `CancelAll`, `Release(key)`, `Submit`, `StripHide` | The work, as the window drives it (on a network client they become requests to the server). |
+| `LayOut(anatomy, body, carcassMinutes, spoiledMinutes)` | Where the rules run: makes this object a carcass now, with no mob dying (see below). |
+| `AccessCheck` *(static)*, `Denied(player)` | Who may work a carcass: a hook asked before a player opens it, starts working it or hacks its hide off — a refusal, or null when they may (null hook: anyone). `Denied` asks it for this carcass. |
 | `Remove(delay)` | Removes the carcass (network-despawned in a session). |
 | `RulesHere`, `Net` | Whether this machine runs the rules (offline or the server); the network side. |
 | `All`, `FindFor(entity)`, `PlayerKey(player)` | Every harvestable creature; the database creature for a mob; how players are known in locks. |
@@ -26,6 +28,63 @@ HarvestableCreature.AnyHarvested += (creature, player, report) =>
         if (p.Grade >= HarvestGrade.Good) quests.Progress(player, "wolf_pelts", p.count);
 };
 ```
+
+### Laying out a body from code
+
+A carcass does not need a mob: `LayOut` turns any object with a Harvestable Creature into the carcass of a body you
+made — an animal that died in its pen, a hunter's kill brought home, a quest's body. Where the rules run only (offline,
+the server); place the object first (it measures the temperature where it lies).
+
+```csharp
+HarvestAnatomyData cow = HarvestDatabase.Instance.Anatomy("cow");           // the database's own: clients find it by id
+HarvestCondition body = HarvestCondition.Create(cow, seed: 1234, sizeScale: 0.9f);
+body.rearing = 1.1f;                                                          // well raised: x the quality of every piece
+body.cause = "Slaughtered";                                                   // the carcass window says so
+foreach (HarvestRegionState r in body.regions) r.meat = Mathf.Min(r.meat, 0.6f);   // lean: fewer, poorer portions
+var go = new GameObject("Carcass of Daisy");
+go.transform.position = spot;
+go.AddComponent<HarvestableCreature>().LayOut(cow, body, carcassMinutes: 120f, spoiledMinutes: 30f);
+```
+
+* `body` must be of that anatomy (its regions); `HarvestCondition.Create` makes a fresh one from a seed (the same seed,
+  the same body: rare finds, horns). Change its regions (`meat`, `poison`, `taint`, `contamination`), its pieces and its
+  pelt cells (`damage`) as you like — they can only make it worse — and its **`rearing`** (0.3-1.5, 1 = as wild; 0 counts
+  as 1) and **`cause`** (how it died, in words).
+* `carcassMinutes`: how long it stays unworked (0: the component's, else the database's). `spoiledMinutes`: minutes at
+  20 °C it has already lain dead — its meat, organs and hide start that far spoiled (its stay is not shortened).
+* False, and nothing changed, on a network client, without an anatomy or a body of it, while a living combat entity
+  holds the component, or when it is a carcass already.
+* In a network session the object must be a spawned network object with a **NetCarcass** (a prefab with a
+  NetworkObject, a Harvestable Creature and a NetCarcass): lay it out, then `GameNet.NetSpawn.Spawn` it — the spawn sends
+  every client the carcass at once. Clients find its anatomy from the carcass's anatomy id.
+* **Mark such an object as a body laid out from code** with a component of yours that implements the empty marker
+  interface `IHarvestLaidOutBody` (Animal Husbandry's *Animal Carcass Look* does). The Harvestable Creature's inspector
+  then skips its anatomy, combat entity and body part checks: the body gets its anatomy when it is laid out and is never
+  hit, so a prefab made for it is not flagged for lacking them.
+
+**Who may work it.** `HarvestableCreature.AccessCheck` is asked before a player opens a carcass (`CanInteract`,
+`Interact`), starts working it (`Begin`) or hacks its hide off (`StripHide`) — where the rules run, which is where it is
+enforced; the player is told why. A network client usually cannot know (the prompt may still show): the server refuses.
+Chain it, so rules from other systems keep working:
+
+```csharp
+var previous = HarvestableCreature.AccessCheck;
+HarvestableCreature.AccessCheck = (creature, player) =>
+{
+    string why = previous?.Invoke(creature, player);
+    if (!string.IsNullOrEmpty(why)) return why;   // the rules before it refuse first
+    return InTheArena(creature) && !IsChampion(player) ? "Only the champion may skin it." : null;
+};
+```
+
+**Animal Husbandry** uses both: *Butcher* in a pen's window lays out a dead or slaughtered animal's remains
+(`AnimalCarcass.LayOut`), its body made from how it lived and died — rearing (from its lifelong welfare, nutrition,
+health and hygiene), the cause of death, lean meat, poison, taint, a soiled gut, a hide worn by a filthy life or poor
+keeping and flawed by parasites — at the fence corner farthest from the feeder and trough, 0.8 m outside. Offline it is
+a new object; in a session it is the network prefab *Resources/SimpleMovements/Networking/AnimalCarcass* (*Network ▸
+Create Animal Carcass Prefab*: NetworkObject, Harvestable Creature, NetCarcass and an *Animal Carcass Look* that draws the
+animal lying on its side on every machine and marks the body as laid out from code). Its rule makes every farm animal's
+carcass its **owner's only**, whatever the land. See the Animals documentation for the rest.
 
 ### The rules (`Harvesting/Core`, plain C#)
 
@@ -79,6 +138,7 @@ HarvestOutcome outcome = HarvestResolver.Resolve(bear, rules, carcass, result, m
 | **Alchemy** | Materials with alchemy releases are `IAlchemyIngredient`s: organs, glands and fat go into vessels and give their substances. |
 | **Food** | Edible materials are consumables (`HarvestedFoodSO`): one copy per bite, sating by quality; spoiled or poisoned ones hardly. |
 | **Weather** | The carcass spoils at the Weather System's temperature where it lies. |
+| **Animal Husbandry** | Farm animals are butchered here: their carcasses are laid out from code (`LayOut`) with how they were raised (`rearing`) and how they died (`cause`), and only their owner may work them (`AccessCheck`). The six farm anatomies are built in. |
 | **Experience** | A share of the harvesting experience goes to the character's `ExperienceManager`. |
 | **Interaction** | The carcass is an `IInteractable` (verb *Harvest*); the window is an `IExclusivePanel` of the inventory. |
 
@@ -100,7 +160,8 @@ HarvestOutcome outcome = HarvestResolver.Resolve(bear, rules, carcass, result, m
 
 Inspectors: the **Harvest Database** (summary, problems, buttons for the assets above), a **Creature Anatomy** (*Start
 From*, a drawing of the body by tissue, its weak points and materials, its problems), a **Harvestable Creature** (a
-creature popup, its problems, the network hint, and in Play mode its live state with *Open Carcass Window* and *Kill*).
+creature popup, its problems — none for a body laid out from code, `IHarvestLaidOutBody` — the network hint, and in Play
+mode its live state with *Open Carcass Window* and *Kill*).
 The **Project Validator** checks the database and offers to add missing hides to the Crafting Database; *Make Selected
 Prefab Networked ▸ Mob* adds a NetCarcass to harvestable mobs, and the network prefab check reports one that has none.
 
@@ -144,6 +205,11 @@ sequenceDiagram
   stages and pieces, every measure 0-1, the server's tools, the hide's size, rushed work made rough).
 * **Players who walk away, die or leave** free what they were working on (checked every second); their window closes.
 * **Skills** are kept and saved by the server, which sends each player their own after every harvest.
+* **Who may work a carcass** (`AccessCheck`) is decided by the server: its check of a client's interaction, of every
+  start of work and of hacking the hide off refuses and says why. A client may not know who owns a carcass (an animal's
+  owner key never leaves the server), so its prompt may still show.
+* **A body laid out from code** (`LayOut`, a farm animal's carcass) carries its anatomy only in its condition: clients
+  find the anatomy there by its id, so every machine needs the same Harvest Database creatures.
 
 ## Tests
 
@@ -155,6 +221,7 @@ sequenceDiagram
 | `HarvestingMinigameTests` | Every built-in material can be planned, inside the work surface, the same way every time; skill and tools widen the margins; no blade, no cut; plans follow the chosen pieces; hidden finds are not drawn; each game played by scripted hands (careful hands do clean work; careless ones tear, spill, snap, splinter and crack); the server's check of a result; careful play is never taken for rushing. |
 | `HarvestingNetworkTests` | The carcass reaches clients whole and keeps in step; the server's plan reaches the client and holds what it plays; both sides plan the same; results, reports and skills survive JSON. |
 | `HarvestingRuntimeTests` | Every material is an item made from its id; pieces keep their quality and marks; skinned hides become tannery hides of the right size; body parts come from the anatomy and lead back to it; materials feed substances alchemy knows; each tool preset does best what it is made for. |
+| `HarvestRearingTests` | How an animal was raised scales the quality of every piece (a body that names no rearing, or an older save's 0, is judged as before; never below ×0.3); the farm anatomies validate with no errors or warnings, name no mob types, have pelts the size of their tannery hides and plan every material; a farm animal's remains show in its carcass (lean, tainted, a soiled gut) and a neglected cow's tannery hide is worse than a well-raised one's; the carcass lies outside the fence away from the feeder and the trough; only its owner may work it; the hours it lay dead spoil it. |
 
 ## Known limitations
 
@@ -164,3 +231,7 @@ sequenceDiagram
   carry no value and count as unknown quality (60%, *Good*). A player-to-player trade keeps them.
 * The practice carcass's body and the generated icons are placeholders built from primitives: give creatures your own
   models (any mob is harvestable) and bind item assets with your own icons (*Create Items*).
+* Carcasses are not saved — a farm animal's neither: its record is removed once its carcass is laid out (so nothing can
+  be butchered twice), and a restart (or leaving it past its *Carcass Minutes*) loses what was not yet harvested.
+* A farm animal's poisoned or tainted pieces carry the usual marks, whose story reads "…in the fight"; the carcass window
+  says how it died, and that the taint is an illness's.

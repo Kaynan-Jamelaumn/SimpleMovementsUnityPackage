@@ -30,9 +30,14 @@ gives is **harvested** — piece by piece, by hand, by players who choose what t
   worth what it is.
 * **Creatures are data.** A Creature Anatomy describes a body — its plan (four legs, two legs, wings, fins, a serpent's
   coils, a spider's shell, a shapeless slime, a turtle's shell), its regions and the materials it gives; extra heads and
-  necks, and regions drawn in shapes of their own, make any body (a hydra, a cerberus). Sixteen are built in (bear, wolf,
-  deer, boar, rabbit, sheep, drake, troll, eagle, salmon, giant spider, giant serpent, slime, giant turtle, cerberus,
-  hydra); new ones reuse every mechanic.
+  necks, and regions drawn in shapes of their own, make any body (a hydra, a cerberus). Twenty-two are built in: sixteen
+  creatures of the wild (bear, wolf, deer, boar, rabbit, sheep, drake, troll, eagle, salmon, giant spider, giant serpent,
+  slime, giant turtle, cerberus, hydra) and six farm animals (cow, horse, goat, pig, chicken, duck); new ones reuse every
+  mechanic.
+* **Farm animals are butchered here too.** Animal Husbandry lays a dead or slaughtered animal out by its pen as a
+  carcass that tells how it died and how it was raised: a well-kept animal's pieces are better, a neglected, starved or
+  sick one's worse — lean meat, tainted or poisoned flesh, a soiled gut, a worn and flawed hide. Only its owner may work
+  it ([07 — Scripting](07-Scripting-Editor-Multiplayer.md#laying-out-a-body-from-code)).
 * **It joins the rest of the game:** materials go into the inventory (or onto the ground when it is full), hides become
   hides for the crafting system's tannery with every hole where it was, organs and glands are alchemy ingredients, meat
   is food, merchants pay by quality, and the whole system runs server-authoritative in a network session.
@@ -44,8 +49,8 @@ gives is **harvested** — piece by piece, by hand, by players who choose what t
 | [03 — The Work](03-The-Work.md) | The seven minigames (controls, gauges, what goes wrong), the work of every kind of material, the order of work, partial harvesting and coming back later |
 | [04 — Skills, Tools and Quality](04-Skills-Tools-and-Quality.md) | The skills and their techniques, experience, species knowledge and rare finds, the tools, how quality and yields are worked out, spoiling |
 | [05 — Authoring Creatures](05-Authoring-Creatures.md) | Creature Anatomy assets field by field, the bear and the wolf explained, making a new creature, the Harvest Database's rules |
-| [06 — The Built-in Creatures](06-Built-in-Creatures.md) | Every built-in creature: its body, weak points and materials |
-| [07 — Scripting, Editor Tools, Multiplayer and Tests](07-Scripting-Editor-Multiplayer.md) | The API, how it ties into the inventory, loot, merchants, crafting and alchemy, the menus and inspectors, the network component, the Edit Mode tests |
+| [06 — The Built-in Creatures](06-Built-in-Creatures.md) | Every built-in creature, the farm animals included: its body, weak points and materials |
+| [07 — Scripting, Editor Tools, Multiplayer and Tests](07-Scripting-Editor-Multiplayer.md) | The API (laying out a body from code, the access check, how it was raised), how it ties into the inventory, loot, merchants, crafting, alchemy and Animal Husbandry, the menus and inspectors, the network component, the Edit Mode tests |
 
 ```mermaid
 flowchart LR

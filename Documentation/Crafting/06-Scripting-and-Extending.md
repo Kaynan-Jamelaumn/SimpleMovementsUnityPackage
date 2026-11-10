@@ -183,6 +183,9 @@ the asymmetry × 1000, CleaveGem's `i0` 1 for nick-and-snap, PolishGem's `points
 `points` the rows' beats and `i1` how many); a PutItem with no item and a fibre id lays a batch of that fibre on the
 fibre bench. A project item that is a fibre by its name ("Raw Wool", "Wool", "Fleece", "Flax", "Cotton bale") is laid
 down as a batch at a fibre bench or a wheel, and the wheel spins a batch lying on the station even when none is picked.
+An item whose copies differ in quality implements `ICraftFibreQuality` (`float FibreQuality(int code)`: 0-1, below 0
+unknown): each copy laid down makes a batch shaped by it (`CraftFibre.Grade`: quality 0.6 is the supply's typical batch,
+1 has half its dirt and short fibre, 0 three quarters more). Animal husbandry's wool does, from each fleece's quality.
 
 **The timing bar** (`CraftTimingBar`, settings `CraftTimingSettings` at `Rules.Settings.timing`): build one, add
 `CraftTimingTarget`s (`ideal`, `size`, `best`) or call `NewTargets(seed, round, safe)`, `Tick(dt)` it and `Hit(hands)`

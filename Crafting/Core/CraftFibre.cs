@@ -2,6 +2,16 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// An item whose copies are raw fibre of differing quality (a fine fleece from a well kept sheep, a matted one): a copy put
+/// into a workshop as loose fibre makes a batch shaped by its quality (see <see cref="CraftFibre.Grade"/>).
+/// </summary>
+public interface ICraftFibreQuality
+{
+    /// <summary>The quality (0-1) of the copy with this per-copy code; below 0: unknown (the supply's typical batch).</summary>
+    float FibreQuality(int code);
+}
+
 /// <summary>A batch of loose fibre's state: how dirty, greasy, tangled and aligned it is, how much is short or knotted.</summary>
 [Serializable]
 public class FibreState
@@ -145,6 +155,21 @@ public static class CraftFibre
         p.fibre.tangle = 0.8;
         p.fibre.alignment = 0.1;
         return p;
+    }
+
+    /// <summary>
+    /// A batch made from a copy of known quality (0-1; below 0: unknown, the supply's typical batch): a fine fleece comes
+    /// cleaner and sounder, a poor one dirtier and with more short, broken fibre. Quality 0.6 is the supply's typical batch;
+    /// 1 has half its dirt and short fibre, 0 three quarters more.
+    /// </summary>
+    public static void Grade(CraftPiece p, float quality)
+    {
+        if (p == null || p.kind != CraftPieceKind.Fibre || quality < 0f || float.IsNaN(quality))
+            return;
+        double q = Math.Min(1.0, quality);
+        double f = 1.0 + (0.6 - q) * 1.25;
+        p.fibre.dirt = Math.Max(0, Math.Min(1, p.fibre.dirt * f));
+        p.fibre.shortFibre = Math.Max(0, Math.Min(1, p.fibre.shortFibre * f));
     }
 
     /// <summary>Wet fibre dries in the air (slower in damp air).</summary>

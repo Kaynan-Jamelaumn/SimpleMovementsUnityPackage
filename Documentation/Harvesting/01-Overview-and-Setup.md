@@ -64,8 +64,9 @@ flowchart TD
    go into the inventory; what does not fit is dropped by the carcass.
 7. **Partial harvesting.** Take only the pelt and the claws and leave — the rest stays on the body, spoiling. Several
    players can work one carcass at once, each on a different material (a material being worked shows *someone is working
-   on it*). A carcass is removed after *Carcass Minutes* (30 by default) without work — at least *Keep After Work* (5)
-   minutes after the last harvest — or a few seconds after nothing worth taking is left on it.
+   on it*). A carcass is removed after *Carcass Minutes* (30 by default; a farm animal's: the Animal Rules' *Carcass
+   Minutes*, 120) without work — at least *Keep After Work* (5) minutes after the last harvest — or a few seconds after
+   nothing worth taking is left on it.
 
 ## The carcass window
 
@@ -91,8 +92,10 @@ flowchart TD
   temperature and how fast it spoils there, whether it was gutted, and how long it stays. **Skills** opens the player's
   skills: each skill's level and progress, its techniques (learnt ones ticked), the species they know and their last
   harvests.
-* **Left** — the creature's description, its wounds (newest first: what, where, with what; with Anatomy's *Read the
-  Body* technique, what each did inside: "the heart was pierced"), and the log of this carcass's harvests.
+* **Left** — the creature's description; for a farm animal's carcass, how it died (*Slaughtered*, *Died of infection
+  (Severe)*, *Starved to death*) and how it was raised (*Well raised* / *Poorly kept*: everything it gives is the better
+  or the worse for it); its wounds (newest first: what, where, with what; with Anatomy's *Read the Body* technique, what
+  each did inside: "the heart was pierced"), and the log of this carcass's harvests.
 * **Middle** — the work surface. While nothing is worked: the body and the inspection layers, with the part under the
   pointer described below it (each tissue's condition as a bar, its marks, soiling, poison, burns). While a material is
   worked: the current stage, its title (*Stage 2 of 3 · Separate the hide*), the instruction, the tool used and how fit

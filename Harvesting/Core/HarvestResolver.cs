@@ -56,6 +56,8 @@ public static class HarvestResolver
     private readonly struct Factors
     {
         public readonly double fresh, freshFactor, toolFitness, toolFactor, skill, bonus, precision;
+        /// <summary>How the creature was raised (<see cref="HarvestCondition.rearing"/>, 0.3-1.5; 1 for a wild one): × every piece's quality, before the bonuses.</summary>
+        public readonly double rearing;
         public readonly HarvestMarks harvestMarks, timeMarks;
         /// <summary>A tool far from right for some stage: the work is rough.</summary>
         public readonly bool wrongTool;
@@ -90,6 +92,7 @@ public static class HarvestResolver
             bonus = s.skillQualityBonus * skill + (HarvestSkills.Knows(s, skills, HarvestSkills.HuntersKnowledge) ? 0.02 : 0);
             HarvestCondition k = c.condition;
             if (k.elite) bonus += 0.04;
+            rearing = HarvestCondition.RearingFactor(k.rearing);
             flawlessPelts = HarvestSkills.Knows(s, skills, HarvestSkills.FlawlessPelts);
             primeCuts = HarvestSkills.Knows(s, skills, HarvestSkills.PrimeCuts);
             noWaste = HarvestSkills.Knows(s, skills, HarvestSkills.NoWaste);
@@ -192,7 +195,7 @@ public static class HarvestResolver
             integrity = w > 0 ? wi / w : 0;
         }
         double flawless = f.flawlessPelts ? 0.05 : 0.0;
-        double q = Math.Pow(integrity, 1.15) * (0.85 + 0.15 * edge) * f.freshFactor * f.toolFactor * AgeQuality(k.age, m.kind) + f.bonus + flawless;
+        double q = Math.Pow(integrity, 1.15) * (0.85 + 0.15 * edge) * f.freshFactor * f.toolFactor * AgeQuality(k.age, m.kind) * f.rearing + f.bonus + flawless;
         HarvestMarks marks = (cellMarks & (HarvestCarcass.Relevant(m.kind) | HarvestMarksInfo.Harvest)) | f.harvestMarks | f.timeMarks;
         if (edge < 0.6) marks |= HarvestMarks.Rough;
 
@@ -281,7 +284,7 @@ public static class HarvestResolver
         int count = Count(yield, k.seed, mi, c.tasks);
 
         double q = (0.7 + 0.3 * combat) * (1 - 0.5 * damage) * (0.75 + 0.25 * precision) * (1 - Math.Min(0.8, contamination * 0.8)) * (1 - Math.Min(0.5, burn * 0.5))
-                   * (1 - Math.Min(0.6, taint * 0.6)) * f.freshFactor * f.toolFactor * AgeQuality(k.age, m.kind) + f.bonus + (butchering && f.primeCuts ? 0.03 : 0);
+                   * (1 - Math.Min(0.6, taint * 0.6)) * f.freshFactor * f.toolFactor * AgeQuality(k.age, m.kind) * f.rearing + f.bonus + (butchering && f.primeCuts ? 0.03 : 0);
         HarvestMarks marks = c.CombatMarks(a, mi) | f.harvestMarks | f.timeMarks;
         if (poison > 0.12 || (marks & HarvestMarks.Poisoned) != 0)
         {
@@ -339,7 +342,7 @@ public static class HarvestResolver
                 n++;
             }
             precision = n > 0 ? precision / n : 0;
-            double q = u.integrity * (1 - damage) * (0.8 + 0.2 * precision) * f.freshFactor * f.toolFactor * age + f.bonus;
+            double q = u.integrity * (1 - damage) * (0.8 + 0.2 * precision) * f.freshFactor * f.toolFactor * age * f.rearing + f.bonus;
             HarvestMarks marks = (u.marks & HarvestCarcass.Relevant(m.kind)) | (own & HarvestMarksInfo.Harvest) | f.timeMarks;
             if (f.wrongTool) marks |= HarvestMarks.Rough;
             switch (m.method)

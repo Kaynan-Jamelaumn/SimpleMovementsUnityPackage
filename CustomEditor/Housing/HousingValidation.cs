@@ -347,6 +347,62 @@ public static class HousingValidation
             }
         }
 
+        // Animal pens: like gardens - on the land, off the house, clear of the zones, the gardens and each other (an animal
+        // pen next to a garden, never over it).
+        List<AnimalPen> penList = HousingEditors.PensOf(p);
+        var penOutlines = new List<List<Vector2>>(penList.Count);
+        foreach (AnimalPen pen in penList)
+        {
+            if (pen.outline == null || pen.outline.Count < 3)
+            {
+                penOutlines.Add(null);
+                Add(into, W, $"The animal pen '{pen.name}' has no proper outline.", pen);
+                continue;
+            }
+            List<Vector2> local = HousingEditors.Convert(pen.outline, pen.transform, p.transform);
+            bool simple = HousingGeometry.IsSimple(local);
+            penOutlines.Add(simple ? local : null);
+            if (!simple)
+            {
+                Add(into, W, $"The animal pen '{pen.name}' has an outline that crosses itself.", pen);
+                continue;
+            }
+            if (landSimple)
+            {
+                float outside = HousingGeometry.OutsideShare(land, local);
+                if (outside > OutsideSlack) Add(into, W, $"The animal pen '{pen.name}' reaches outside the land ({outside * 100f:0}% of it).", pen);
+            }
+            if (houseSimple)
+            {
+                float under = HousingGeometry.SharedArea(house, local);
+                if (under > HousingGeometry.DefaultOverlapArea) Add(into, W, $"The animal pen '{pen.name}' lies under the house ({under:0.#} m²).", pen);
+            }
+            if (p.zones != null)
+                for (int j = 0; j < p.zones.Count; j++)
+                {
+                    PropertyZone z = p.zones[j];
+                    if (z == null || z.outline == null || z.outline.Count < 3 || !HousingGeometry.IsSimple(z.outline)) continue;
+                    float shared = HousingGeometry.SharedArea(z.outline, local);
+                    if (shared > HousingGeometry.DefaultOverlapArea)
+                        Add(into, W, $"The zone '{ZoneName(z, j)}' lies over the animal pen '{pen.name}' ({shared:0.#} m²): that ground counts twice in the rent.", pen);
+                }
+            for (int g = 0; g < gardenFields.Count; g++)
+            {
+                if (gardenOutlines[g] == null) continue;
+                float shared = HousingGeometry.SharedArea(gardenOutlines[g], local);
+                if (shared > HousingGeometry.DefaultOverlapArea)
+                    Add(into, W, $"The animal pen '{pen.name}' lies over the garden '{gardenFields[g].name}' ({shared:0.#} m²): animals and plants may not share ground.", pen);
+            }
+        }
+        for (int i = 0; i < penList.Count; i++)
+            for (int j = i + 1; j < penList.Count; j++)
+            {
+                if (penOutlines[i] == null || penOutlines[j] == null) continue;
+                float shared = HousingGeometry.SharedArea(penOutlines[i], penOutlines[j]);
+                if (shared > HousingGeometry.DefaultOverlapArea)
+                    Add(into, W, $"The animal pens '{penList[i].name}' and '{penList[j].name}' overlap by {shared:0.#} m².", penList[j]);
+            }
+
         // Chests: an id each, listed once, none rolling random items, none missing from the list; all on the land.
         var listed = new HashSet<Storage>();
         if (p.chests != null)

@@ -707,6 +707,16 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
         var sb = new StringBuilder();
         if (!string.IsNullOrEmpty(a.description))
             sb.Append($"<color=#9aa0a6>{a.description}</color>\n\n");
+        // How it died and how it was raised (a farm animal's carcass says; a hunted creature's says nothing).
+        if (c != null && !string.IsNullOrWhiteSpace(c.cause))
+            sb.Append($"<b>{HarvestText.Capital(c.cause.Trim().TrimEnd('.'))}.</b>\n");
+        string reared = c != null ? HarvestCondition.RearingWord(c.rearing) : "";
+        if (reared.Length > 0)
+            sb.Append(HarvestCondition.RearingFactor(c.rearing) >= 1.0
+                ? $"<color=#8fd68f>{reared}: everything it gives is the better for it.</color>\n"
+                : $"<color=#f0a090>{reared}: everything it gives is the worse for it.</color>\n");
+        if (c != null && (!string.IsNullOrWhiteSpace(c.cause) || reared.Length > 0))
+            sb.Append('\n');
         bool read = HarvestSkills.Knows(Settings, skills, HarvestSkills.ReadTheBody);
         if (c == null || c.wounds.Count == 0)
             sb.Append("No wounds: an unmarked body.\n");
@@ -729,7 +739,10 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
         }
         if (k != null)
         {
-            if (k.Soiled) sb.Append("\n<color=#b8c870>A gut was torn: the cavity is soiled (the meat spoils faster).</color>\n");
+            if (k.Soiled)
+                sb.Append(c != null && !string.IsNullOrWhiteSpace(c.cause)
+                    ? "\n<color=#b8c870>The cavity is soiled (the meat spoils faster).</color>\n"
+                    : "\n<color=#b8c870>A gut was torn: the cavity is soiled (the meat spoils faster).</color>\n");
             if (!k.hideOff && HarvestCarcass.HasHide(a)) sb.Append("\n<color=#9aa0a6>The hide is on: skin it (or hack it off) before the meat, bones and tendons.</color>\n");
         }
         return sb.ToString();
@@ -778,9 +791,13 @@ public class HarvestWindow : MonoBehaviour, IExclusivePanel
         sb.Append('\n');
         string marks = HarvestMarksInfo.Describe(st.marks | c.HideMarks(r) | st.CoverMarks(), HarvestMarksInfo.Combat);
         if (marks.Length > 0) sb.Append($"<color=#c9b38a>{HarvestText.Capital(marks)}.</color>\n");
-        if (st.contamination > 0.3f) sb.Append("<color=#b8c870>Soiled by a torn gut.</color>\n");
+        if (st.contamination > 0.3f)
+            sb.Append(string.IsNullOrWhiteSpace(c.cause) ? "<color=#b8c870>Soiled by a torn gut.</color>\n" : "<color=#b8c870>Soiled by its gut.</color>\n");
         if (st.poison > 0.12f) sb.Append("<color=#b8c870>Poisoned: its meat is not fit to eat.</color>\n");
-        if (st.taint > 0.12f) sb.Append("<color=#b8a8e0>Tainted by dark magic: its meat is not fit to eat.</color>\n");
+        if (st.taint > 0.12f)
+            sb.Append(string.IsNullOrWhiteSpace(c.cause)
+                ? "<color=#b8a8e0>Tainted by dark magic: its meat is not fit to eat.</color>\n"
+                : "<color=#b8a8e0>Tainted by illness: its meat is not fit to eat.</color>\n");
         if (st.burn > 0.3f) sb.Append("<color=#f0a090>Charred.</color>\n");
         return sb.ToString();
     }

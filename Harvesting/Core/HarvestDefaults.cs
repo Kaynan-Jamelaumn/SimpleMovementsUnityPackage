@@ -6,17 +6,19 @@ using static HarvestBuild;
 /// <summary>
 /// The built-in creatures and their anatomies: bear, wolf, deer, boar, rabbit and sheep (four-legged), a drake (four legs
 /// and wings, scaled, fire-proof), a troll (two-legged, regenerating), an eagle (winged), a salmon (a fish), a giant
-/// spider (a shell and eight legs) and a giant serpent. Each describes only its body - regions, tissues, weak points and
-/// what it gives - and reuses every mechanic. A Harvest Database starts from these; copies are handed out, so nothing
-/// edits the built-in content.
+/// spider (a shell and eight legs) and a giant serpent - and the farm animals of Animal Husbandry (cow, horse, goat, pig,
+/// chicken, duck: <c>HarvestDefaultsFarm.cs</c>). Each describes only its body - regions, tissues, weak points and what
+/// it gives - and reuses every mechanic. A Harvest Database starts from these; copies are handed out, so nothing edits
+/// the built-in content.
 /// </summary>
-public static class HarvestDefaults
+public static partial class HarvestDefaults
 {
     /// <summary>Every built-in anatomy (fresh copies).</summary>
     public static List<HarvestAnatomyData> Anatomies() => new List<HarvestAnatomyData>
     {
         Bear(), Wolf(), Deer(), Boar(), Rabbit(), Sheep(), Drake(), Troll(), Eagle(), Salmon(), GiantSpider(), GiantSerpent(),
         Slime(), GiantTurtle(), Cerberus(), Hydra(),
+        Cow(), Horse(), Goat(), Pig(), Chicken(), Duck(),
     };
 
     /// <summary>A built-in anatomy by id (a fresh copy), or null.</summary>

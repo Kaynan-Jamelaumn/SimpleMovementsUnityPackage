@@ -37,6 +37,13 @@ public interface IHarvestNet
 }
 
 /// <summary>
+/// On the object of a <see cref="HarvestableCreature"/> whose body another system lays out from code at runtime
+/// (<see cref="HarvestableCreature.LayOut"/>: a farm animal's carcass), never a mob: it is given its anatomy then and is
+/// never hit, so its checks ask for no anatomy, combat entity or weak points beforehand.
+/// </summary>
+public interface IHarvestLaidOutBody { }
+
+/// <summary>
 /// A creature whose body can be harvested. While it lives, every hit marks its body where it landed and by what dealt
 /// it (<see cref="HarvestCondition"/>): a slash cuts the hide and the tendons there, an arrow through the chest ruins
 /// the heart, a mace breaks the skull and cracks the teeth, fire burns the pelt, poison spoils the meat, an explosion
@@ -109,6 +116,16 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
     /// <summary>The server's plan of the work a player on this network client started (the window plays it).</summary>
     public event Action<CombatEntity, HarvestPlan> Planned;
 
+    /// <summary>
+    /// Asked before a player opens a carcass, starts working it or hacks its hide off: the creature and the player - a
+    /// refusal ("This carcass is not yours.") or null (or empty) when they may. Null hook: anyone may. It is enforced
+    /// where the rules run (offline, the server: <see cref="Interact"/>, <see cref="Begin"/>, <see cref="StripHide"/>),
+    /// and the player is told why; the prompt asks it too, so on a network client it may still show what only the
+    /// server can refuse. A game's own rule keeps the previous delegate and calls it first (Animal Husbandry's carcasses
+    /// are their owner's only).
+    /// </summary>
+    public static Func<HarvestableCreature, CombatEntity, string> AccessCheck;
+
     /// <summary>The network side (set by <c>NetCarcass</c>).</summary>
     public IHarvestNet Net { get; set; }
 
@@ -138,6 +155,7 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
     private readonly Dictionary<int, Pending> pending = new Dictionary<int, Pending>();
     private int version;
     private float bodyBack = -1f, bodyFront = 1f;
+    private bool warnedAnatomy;
 
     // ------------------------------------------------------------------ what it is
     public HarvestSettings Settings => HarvestDatabase.Instance.Settings;
@@ -175,6 +193,25 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
     {
         all.Clear();
         AnyHarvested = null;
+        AccessCheck = null;
+    }
+
+    /// <summary>The access hook's refusal for this player (<see cref="AccessCheck"/>), or null when they may work this carcass.</summary>
+    public string Denied(CombatEntity player)
+    {
+        Func<HarvestableCreature, CombatEntity, string> check = AccessCheck;
+        if (check == null)
+            return null;
+        try
+        {
+            string why = check(this, player);
+            return string.IsNullOrEmpty(why) ? null : why;
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e, this);
+            return "You cannot work on this carcass now.";
+        }
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -249,6 +286,50 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         pending.Clear();
         StartCoroutine(MakeCarcass());
         Touch(true);
+    }
+
+    /// <summary>
+    /// Where the rules run (offline, the server): this object becomes the carcass of <paramref name="body"/> now, with no
+    /// mob dying - an animal that died in its pen, a body a script lays out. <paramref name="body"/> is made from
+    /// <paramref name="a"/> (<see cref="HarvestCondition.Create"/>, changed as wanted: lean meat, poison, a damaged hide,
+    /// <see cref="HarvestCondition.rearing"/> and <see cref="HarvestCondition.cause"/>); a network client finds the anatomy
+    /// from the body's anatomy id, so <paramref name="a"/> should be the Harvest Database's own. <paramref name="carcassMinutes"/>:
+    /// how long it stays unworked (0: as set on the component, else the database's). <paramref name="spoiledMinutes"/>:
+    /// minutes at 20 °C it has already lain dead - its meat, organs and hide have begun to spoil (its stay is not shortened).
+    /// Place the object first (its temperature is measured where it lies). False, and nothing changed, on a network client,
+    /// without an anatomy or a body of it, while a combat entity on it is alive, and when it is a carcass already.
+    /// </summary>
+    public bool LayOut(HarvestAnatomyData a, HarvestCondition body, float carcassMinutes = 0f, float spoiledMinutes = 0f)
+    {
+        if (!RulesHere || a == null || body == null || carcass != null || a.regions == null || body.regions == null || body.regions.Count != a.regions.Count)
+            return false;
+        if (string.IsNullOrEmpty(body.anatomy))
+            body.anatomy = a.id;
+        else if (!string.Equals(body.anatomy, a.id, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (entity == null)
+            entity = CombatEntity.Resolve(gameObject);
+        if (entity != null && !entity.IsDead)
+            return false;
+        data = a;
+        anatomyId = a.id;
+        condition = body;
+        seed = body.seed;
+        if (carcassMinutes > 0f)
+            this.carcassMinutes = carcassMinutes;
+        carcass = HarvestCarcass.From(data, condition);
+        carcass.temperature = Temperature();
+        if (spoiledMinutes > 0f)
+        {
+            // As if it had lain that long at 20 °C (a torn gut speeds the meat). Its age - its stay - starts now.
+            carcass.clock = spoiledMinutes;
+            carcass.meatClock = spoiledMinutes * (carcass.Soiled ? Settings.soiledSpoilFactor : 1f);
+        }
+        removing = false;
+        pending.Clear();
+        StartCoroutine(MakeCarcass());
+        Touch(true);
+        return true;
     }
 
     private bool hooked;
@@ -710,6 +791,18 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         }
         if (c == null)
             return;
+        // A body laid out by a script (a farm animal's carcass) names its anatomy only in its condition: a client finds it there.
+        if (data == null && c.condition != null && !string.IsNullOrWhiteSpace(c.condition.anatomy))
+        {
+            data = HarvestDatabase.Instance.Anatomy(c.condition.anatomy);
+            if (data != null)
+                anatomyId = data.id;
+            else if (!warnedAnatomy)
+            {
+                warnedAnatomy = true;
+                Debug.LogWarning($"[Harvesting] {name}: the server's carcass is a '{c.condition.anatomy}', which this machine's Harvest Database does not know: it cannot be harvested here.", this);
+            }
+        }
         bool first = carcass == null;
         carcass = c;
         tickBuffer = 0f;
@@ -763,6 +856,12 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         if (carcass == null)
         {
             reason = "It is still alive.";
+            return false;
+        }
+        string denied = Denied(player);
+        if (denied != null)
+        {
+            reason = denied;
             return false;
         }
         HarvestPlan plan = PlanFor(player, material, units);
@@ -945,6 +1044,12 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
             Deliver(player, HarvestReport.Refused("", "the hide", carcass == null ? "It is still alive." : "The hide is already off."));
             return;
         }
+        string denied = Denied(player);
+        if (denied != null)
+        {
+            Deliver(player, HarvestReport.Refused("", "the hide", denied));
+            return;
+        }
         // Any material that waits for the hide (or the hide itself) carries the request.
         int key = PlayerKey(player);
         string material = "";
@@ -1117,7 +1222,17 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         reason = "";
         if (carcass == null || data == null || removing)
             return false;
-        return PlayerOf(interactor) != null;
+        CombatEntity player = PlayerOf(interactor);
+        if (player == null)
+            return false;
+        // Where the rules run this refuses (the server's check of a client's interaction says why); a client may not know.
+        string denied = Denied(player);
+        if (denied != null)
+        {
+            reason = denied;
+            return false;
+        }
+        return true;
     }
 
     public void Interact(PlayerInteractor interactor)
@@ -1125,6 +1240,12 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         CombatEntity player = PlayerOf(interactor);
         if (player == null || carcass == null)
             return;
+        string denied = Denied(player);
+        if (denied != null)
+        {
+            Tell(player, denied);
+            return;
+        }
         if (CardTable.IsLocalPlayer(player))
         {
             HarvestWindow.Show(this, player);
@@ -1145,9 +1266,11 @@ public class HarvestableCreature : MonoBehaviour, IInteractable, IDeathRemovalHa
         interactor != null && interactor.PlayerObject != null ? CombatEntity.Resolve(interactor.PlayerObject) : null;
 
     // ------------------------------------------------------------------ checking
-    /// <summary>Configuration problems (the inspector lists them).</summary>
+    /// <summary>Configuration problems (the inspector lists them). A body laid out from code (<see cref="IHarvestLaidOutBody"/>) has none to set up.</summary>
     public void Validate(List<string> errors, List<string> warnings)
     {
+        if (TryGetComponent(out IHarvestLaidOutBody _))
+            return;
         if (data == null && (anatomy == null || anatomy.data == null))
         {
             HarvestAnatomyData found = !string.IsNullOrWhiteSpace(anatomyId) ? HarvestDatabase.Instance.Anatomy(anatomyId) : FindForPrefab();

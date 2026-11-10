@@ -188,6 +188,14 @@ public class HarvestCondition
     public float sizeScale = 1f;
     public HarvestAge age = HarvestAge.Adult;
     public bool elite;
+    /// <summary>
+    /// How it was raised: the quality of every piece it gives is multiplied by this (1 = as a wild animal; less for a
+    /// neglected or sick one, up to about 1.15 for one kept well; counted within 0.3-1.5). 0, from older saves, counts as 1.
+    /// The farm's butchering sets it (Animal Husbandry); a hunted creature keeps 1.
+    /// </summary>
+    public float rearing = 1f;
+    /// <summary>How it died, in words ("Slaughtered", "Died of infection (Severe)"): the carcass window shows it. Empty: not told.</summary>
+    public string cause = "";
     public List<HarvestRegionState> regions = new List<HarvestRegionState>();
     public List<HarvestUnit> units = new List<HarvestUnit>();
     /// <summary>Indices of the materials this creature does not have (rare finds that are not there).</summary>
@@ -312,6 +320,19 @@ public class HarvestCondition
                 if (r >= 0) n[r]++;
             }
         return n;
+    }
+
+    // ------------------------------------------------------------------ how it was raised
+    /// <summary>The rearing factor the pieces are judged by: <see cref="rearing"/> within 0.3-1.5, and 1 when it is not set (0 or less).</summary>
+    public static double RearingFactor(float rearing) => rearing > 0f ? HarvestMath.Clamp(rearing, 0.3, 1.5) : 1.0;
+
+    /// <summary>A word for how it was raised: "Well raised" (1.05 and more), "Poorly kept" (0.8 and less), else "" (nothing to say).</summary>
+    public static string RearingWord(float rearing)
+    {
+        float r = (float)RearingFactor(rearing); // compared as floats: 1.05f and 0.8f themselves count
+        if (r >= 1.05f) return "Well raised";
+        if (r <= 0.8f) return "Poorly kept";
+        return "";
     }
 
     // ------------------------------------------------------------------ lookups

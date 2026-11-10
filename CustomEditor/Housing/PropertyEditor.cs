@@ -30,6 +30,7 @@ public class PropertyEditor : Editor
     public static readonly Color ZoneLine = new Color(0.35f, 0.6f, 1f, 0.9f);
     public static readonly Color ZoneFill = new Color(0.35f, 0.6f, 1f, 0.14f);
     public static readonly Color GardenLine = new Color(0.62f, 0.42f, 0.2f, 1f);
+    public static readonly Color PenLine = new Color(0.86f, 0.74f, 0.36f, 1f);
 
     private static readonly GUIContent[] ToolNames =
     {
@@ -371,6 +372,8 @@ public class PropertyEditor : Editor
                 if (z != null && z.outline != null && z.outline.Count >= 3) taken.Add(z.outline);
         foreach (SoilField f in HousingEditors.GardensOf(p))
             if (f.layout != null && f.layout.outline != null && f.layout.outline.Count >= 3) taken.Add(HousingEditors.Convert(f.layout.outline, f.transform, p.transform));
+        foreach (AnimalPen pen in HousingEditors.PensOf(p))
+            if (pen.outline != null && pen.outline.Count >= 3) taken.Add(HousingEditors.Convert(pen.outline, pen.transform, p.transform));
         Vector2 near = p.house != null && p.house.Count >= 3 ? GroundAreaHandles.Centre(p.house) : GroundAreaHandles.Centre(p.land);
         Vector2 centre = GroundAreaHandles.Centre(p.land), size = new Vector2(2f, 2f);
         bool found = false;
@@ -451,6 +454,30 @@ public class PropertyEditor : Editor
             {
                 serializedObject.ApplyModifiedProperties();
                 HousingEditors.AddGarden(p);
+                Changed(p);
+                serializedObject.Update();
+            }
+        }
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button(new GUIContent("+ Pasture", "An Animal Pen (a pasture: grazers, grass) on a free spot of the land, clear of the house, the gardens, the zones and the other pens.")))
+            {
+                serializedObject.ApplyModifiedProperties();
+                HousingEditors.AddPen(p, AnimalHabitatKind.Pasture);
+                Changed(p);
+                serializedObject.Update();
+            }
+            if (GUILayout.Button(new GUIContent("+ Coop", "An Animal Pen for poultry (a coop) on a free spot of the land.")))
+            {
+                serializedObject.ApplyModifiedProperties();
+                HousingEditors.AddPen(p, AnimalHabitatKind.Coop);
+                Changed(p);
+                serializedObject.Update();
+            }
+            if (GUILayout.Button(new GUIContent("+ Sty", "An Animal Pen for pigs (a sty) on a free spot of the land.")))
+            {
+                serializedObject.ApplyModifiedProperties();
+                HousingEditors.AddPen(p, AnimalHabitatKind.Sty);
                 Changed(p);
                 serializedObject.Update();
             }
@@ -689,6 +716,18 @@ public class PropertyEditor : Editor
             {
                 GroundAreaHandles.DrawOutline(f.layout.outline, GardenLine, 2.5f, 0.08f);
                 if (primary && i < gardenLabels.Count) GroundAreaHandles.Label(GroundAreaHandles.Centre(f.layout.outline), gardenLabels[i], 0.12f);
+            }
+        }
+        // Its animal pens (straw), each in its own pen's space.
+        if (p.pens == null) return;
+        foreach (AnimalPen pen in p.pens)
+        {
+            if (pen == null || pen.outline == null || pen.outline.Count < 2) continue;
+            Transform pt = pen.transform;
+            using (new Handles.DrawingScope(Matrix4x4.TRS(pt.position, pt.rotation, Vector3.one)))
+            {
+                GroundAreaHandles.DrawOutline(pen.outline, PenLine, 2.5f, 0.09f);
+                if (primary) GroundAreaHandles.Label(GroundAreaHandles.Centre(pen.outline), $"{pen.DisplayName}\n{pen.kind} · {pen.Area:0.#} m²", 0.13f);
             }
         }
     }

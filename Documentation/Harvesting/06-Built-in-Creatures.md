@@ -1,7 +1,8 @@
 # 06 — The Built-in Creatures
 
-Sixteen creatures come with the package (`HarvestDefaults`), covering every body plan. *Create Creature Anatomy Assets*
-makes editable copies of them. Values are for a typical adult; *spoils* is minutes at 20 °C.
+Twenty-two creatures come with the package (`HarvestDefaults`; the farm animals in `HarvestDefaultsFarm.cs`), covering
+every body plan. *Create Creature Anatomy Assets* makes editable copies of them. Values are for a typical adult;
+*spoils* is minutes at 20 °C.
 
 | Creature | Plan | Mob types | Weak points | Notable |
 |---|---|---|---|---|
@@ -17,6 +18,12 @@ makes editable copies of them. Values are for a typical adult; *spoils* is minut
 | **Salmon** | Fish | Fish, Salmon, Trout, Carp, Pike, Bass, Cod | Head ×1.5 | Scales scraped off, a fillet, roe (half of them), fish bones |
 | **Giant spider** | Shell and legs | Spider, Arachnid, Broodmother, Crawler | Head ×1.4, abdomen ×1.3 | A shell (armour 0.15-0.5) of chitin plates, venom and silk glands, a rare egg sac |
 | **Giant serpent** | Serpent | Snake, Serpent, Viper, Python, Cobra, Asp, Basilisk | Head ×1.8, neck ×1.4 | Snakeskin (tannery: snakeskin), a venom gland, fangs, vertebrae |
+| **Cow** | Four legs | — (farm) | Head, neck, ribs | A great hide (tannery: cow hide), a lot of beef, tallow, horns (70%: polled breeds have none), hooves |
+| **Horse** | Four legs | — (farm) | Head, neck, ribs | A big hide (tannery: cow hide), lean meat, long sinews, hooves |
+| **Goat** | Four legs | — (farm) | Head, neck, ribs | A goatskin (tannery: deer hide), goat meat, horns (both sexes), hooves |
+| **Pig** | Four legs | — (farm) | Head, neck, ribs | A pigskin (tannery: boar hide), pork, plenty of lard, hooves; no tusks |
+| **Chicken** | Wings | — (farm) | Head ×1.6, neck ×1.4 | Feathers (its hide), breast and legs, a wishbone, the giblets |
+| **Duck** | Wings | — (farm) | Head ×1.6, neck ×1.4 | Feathers and down (its hide), breast and legs, duck fat, a wishbone, the giblets |
 
 ## Four-legged game: bear, wolf, deer, boar, rabbit, sheep
 
@@ -45,6 +52,29 @@ it; fiddly to skin) and a **tail**.
 
 The rabbit gives only its pelt, a saddle, legs and a foot; the sheep has no claws or fat. The bear, wolf, deer, boar and
 sheep all have the organs above, from the worthless spleen to the prized adrenal glands.
+
+## Farm animals: cow, horse, goat, pig, chicken, duck
+
+The animals of Animal Husbandry's pens, butchered when one dies or its owner slaughters it (*Butcher* in the pen's
+window lays the carcass out by the fence). They name **no mob types**: no mob is ever taken for one — a wild pig is still
+a boar, a wild goat still the sheep's — only the species that name them by id use them. Each is built like the game
+animal whose body it shares, so it works the same: the cow like the bear, the horse like the deer, the goat like the
+sheep, the pig like the boar, the birds like the eagle.
+
+| Creature | Mass, height | Pelt | What it gives |
+|---|---|---|---|
+| **Cow** | 600 kg, 1.4 m | 13×18 (the tannery's cow hide) | *Cow hide* (worth 18); *beef* cuts — haunch, backstrap, shoulder, ribs, neck meat, shanks — about 40 portions; *beef tallow* (oil); leg and back sinew; the six bones; the organs of the four-legged game (heart to adrenal glands); *cow horn* ×2 (70%); a *hoof* from each leg. Toughness 1.1. |
+| **Horse** | 500 kg, 1.6 m | 13×18 (cow hide) | *Horse hide*; *horse* cuts, about 34 portions; sinew worth more than most; the bones and organs; hooves. |
+| **Goat** | 50 kg, 0.8 m | 8×10 (deer hide) | *Goatskin*; *goat* cuts, about 6 portions; sinew, bones, organs; *goat horn* ×2 (billies and nannies both); hooves. |
+| **Pig** | 110 kg, 0.9 m | 9×12 (boar hide) | *Pigskin*; *pork* cuts, about 13 portions; *lard* (oil); sinew, bones, organs; hooves. No tusks. Toughness 1.1. |
+| **Chicken** | 2.5 kg, 0.45 m | 8×8 (no tannery hide) | *Chicken feathers* (plucked over the whole bird: its hide, 10-20); *chicken breast* and *chicken legs* (food); a *wishbone*; the giblets — *heart*, *liver*, *gizzard* (food). |
+| **Duck** | 3 kg, 0.4 m | 8×8 | *Duck feathers and down* (worth more); *duck breast* and *duck legs*; *duck fat* (oil); a *wishbone*; the giblets. |
+
+A bird's giblets soil nothing when torn (no gut or gall to spill). What a farm animal gives is judged like any
+creature's — the work, freshness, tools and skill — and then by **how it was raised** (see
+[04 — Quality](04-Skills-Tools-and-Quality.md#quality)): its carcass carries the rearing factor and the cause of death,
+lean meat if it went hungry, poison, the taint of an infection or worms, a soiled gut from a digestive illness, and a
+hide worn by a filthy life or poor keeping and flawed by parasites.
 
 ## Drake
 

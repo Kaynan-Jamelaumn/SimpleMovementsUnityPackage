@@ -12,7 +12,7 @@
 /// Project Setup ▸               ┐ project assets and input
 /// Input ▸                       ┘
 /// ─────────────
-/// Player ▸ Inventory ▸ Mobs ▸ NPC ▸ Social ▸ Alchemy ▸ Crafting ▸ Harvesting ▸ Agriculture ▸ characters and items
+/// Player ▸ Inventory ▸ Mobs ▸ NPC ▸ Social ▸ Alchemy ▸ Crafting ▸ Harvesting ▸ Agriculture ▸ Animals ▸ characters and items
 /// ─────────────
 /// Hub World ▸ Weather ▸ Dungeon ▸ Scene ▸ Minigames ▸ Housing ▸   the world and scenes
 /// ─────────────
@@ -50,6 +50,7 @@ public static class SMMenu
     public const int Crafting = 206;
     public const int Harvesting = 207;
     public const int Agriculture = 208;
+    public const int Animals = 209;
 
     // ---------------------------------------------------------------- world
     public const int HubWorld = 300;

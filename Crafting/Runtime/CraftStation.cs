@@ -942,8 +942,11 @@ public class CraftStation : MonoBehaviour, IInteractable
                 // A fibre item of the project's own (not a crafting stock item): it becomes a batch of that fibre.
                 string fibre = FibreOf(item);
                 if (fibre == null) break;
-                if (!free && (inv == null || !TakeOne(inv, item, out _))) { if (done == 0) reason = $"You have no {item.Name}."; break; }
+                int fibreCode = 0;
+                if (!free && (inv == null || !TakeCopy(inv, item, out fibreCode))) { if (done == 0) reason = $"You have no {item.Name}."; break; }
                 piece = CraftFibre.NewFibre(Rules, fibre);
+                // A copy of known quality (a fleece from a well kept sheep) makes a cleaner, sounder batch, a poor one a worse.
+                if (!free && item is ICraftFibreQuality graded) CraftFibre.Grade(piece, graded.FibreQuality(fibreCode));
             }
             else if (item is CraftPieceItemSO pi)
             {
@@ -983,6 +986,23 @@ public class CraftStation : MonoBehaviour, IInteractable
         if (done > 0)
             Touch();
         return done > 0;
+    }
+
+    /// <summary>
+    /// Removes one copy of a project item (a fleece), reading the value it kept: the top copy of one stack, read and taken
+    /// from that same stack, so the value read is the copy's that is used up.
+    /// </summary>
+    private static bool TakeCopy(InventoryManager inv, ItemSO item, out int code)
+    {
+        code = 0;
+        if (inv == null || item == null) return false;
+        List<InventoryItem> stacks = inv.FindStacks(item);
+        InventoryItem stack = null;
+        foreach (InventoryItem s in stacks)
+            if (s != null && s.stackCurrent > 0) { stack = s; break; }
+        if (stack == null) return false;
+        code = CraftStockItemSO.CodeOf(stack);
+        return inv.ConsumeItem(stack, 1) > 0;
     }
 
     /// <summary>Removes one copy of a stock item, reading the value it kept (ore deposit, hide animal).</summary>

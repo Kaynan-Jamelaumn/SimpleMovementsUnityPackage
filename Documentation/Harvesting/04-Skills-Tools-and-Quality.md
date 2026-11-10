@@ -121,10 +121,13 @@ Every piece gets a **quality** (0-100%) and a **grade**: *Ruined* (under 15%), *
 | **The tools** | Their fitness (a little directly, mostly through the work's margins); the wrong tool makes it *rough*. |
 | **The skill** | Up to +6% at the top (*Skill Quality Bonus*), +2% with Hunter's Knowledge, +5% on hides with Flawless Pelts. |
 | **The creature** | Age (young: tender meat, small trophies; old and ancient: tougher meat, finer horns and claws), elites +4%. |
-| **Soiling, poison, taint, burns** | Meat and organs from a soiled cavity (a torn gut) or a poisoned, tainted or charred region are worse, and marked so; poisoned ones are *Poor* at best. |
+| **How it was raised** | A farm animal's *rearing* (`HarvestCondition.rearing`, counted within 0.3-1.5; 1 for every creature of the wild, and for a body that names none): × the quality of every piece, before the skill's bonus. A well-kept animal (Animal Husbandry: about 1.1) gives better pieces than any wild one; a neglected, starved or sick one (down to 0.3) much worse ones. |
+| **Soiling, poison, taint, burns** | Meat and organs from a soiled cavity (a torn gut) or a poisoned, tainted or charred region are worse, and marked so; poisoned ones are *Poor* at best. A farm animal's illness taints, poisons or soils its body the same way. |
 
 A hide's quality is the condition of all its cells (holes, burns, tears, nicks) and how cleanly it was opened. The flesh
-left on it does not lower its grade: it goes with it to the tannery, where it has to be fleshed off on the beam.
+left on it does not lower its grade: it goes with it to the tannery, where it has to be fleshed off on the beam. A hide
+that becomes a tannery hide is judged by its cells alone, so how a farm animal was raised reaches it through them: Animal
+Husbandry wears the cells of a poorly kept animal's hide (and of a filthy one's) and flaws them where parasites were.
 
 **Yield** (how many pieces of a bulk material — meat, fat, feathers): the material's yield × the creature's size (steeply:
 size^2.4; a young one ×0.7, an old one ×1.05, an ancient one ×1.15) × the condition of its meat × how much was taken ×
@@ -140,7 +143,8 @@ nicked while skinning.*"
 A material with *Spoil Minutes* spoils: that many real minutes at 20 °C, twice as fast for every 10 °C warmer, half as
 fast for every 10 °C colder, not at all at 0 °C or below (*Doubling Degrees*, *Freezing Point*). The temperature is the
 Weather System's where the carcass lies. Bones, claws, horns and teeth never spoil. Gutting slows the meat (×0.6), a
-torn gut hastens it (×1.5). Below 45% freshness a piece is *starting to turn* and comes out marked *spoiling*; at 5% it
+torn gut hastens it (×1.5). A farm animal laid out hours after it died starts that far spoiled (its game hours dead, in
+real minutes, at the temperature where it lies); its stay starts when it is laid out. Below 45% freshness a piece is *starting to turn* and comes out marked *spoiling*; at 5% it
 comes out *spoiled*; once it is gone completely the material can no longer be taken. The window says how long each material keeps (*turns in 12 min*, *frozen*).
 
 Spoiled or poisoned food is still food — eating it is not a good idea: food is less filling the worse its quality, and

@@ -3,7 +3,8 @@
 **Spoilers.** This is the built-in content (`Alchemy/Core/AlchemyDefaults.cs`), what *Create Alchemy Database* copies into
 your project: **65 ingredients, 99 substances, 54 authored reactions (101 once the rules add the breakdowns, clashes and ways back),
 44 outcomes, 3 filters, 4 fuels and 6 vessels**. Players are meant to discover it; designers can read it here, change it,
-or replace it.
+or replace it. With Animal Husbandry in the project, three veterinary outcomes join them at start - no new substance or
+reaction, see [§7](#7-veterinary-medicines-animal-husbandry).
 
 All numbers below were measured with the simulation (iron cauldron unless said, 20 °C indoors, seed 1) — run them
 yourself in the Alchemy Lab ([07](07-Editor-Tools-and-Testing.md)). "Fire 24 %" is a burner setting; a manual fire is
@@ -820,3 +821,88 @@ Measured (Iron Cauldron, 20 °C):
 * **Titan**: 2 Grain Spirit + 3 ground Giantcap, fire 15 % → **Potent 79 %** at 4:00.
 * **Broth**: 2 Spring Water + 3 ground Wild Barley, boiling (fire 40 %), 5:00 → **Superior 99 %**; 2 Goat Milk + 1 Honey,
   fire 25 % (74 °C), stirred → 35 %.
+
+---
+
+## 7. Veterinary medicines (Animal Husbandry)
+
+With the Animals system in the project, the alchemy has three more outcomes: a **Vermifuge**, an **Antiseptic Wash** and
+an **Electrolyte Drench**, the medicines a keeper brews for sick livestock (what each cures:
+`Documentation/Animals/04-Care-Welfare-and-Health.md`). They are an extension pack of the Alchemy Database made by
+`Animals/Runtime/AnimalAlchemy.cs`:
+
+* **Installed on every machine before the first scene loads** (`AnimalAlchemy.EnsureInstalled()`, which the Animals
+  validators and tests call too): every machine of a network session has the same rules, as the stations' mirrors need.
+* **No new substance, no new reaction.** Each outcome is a name for a liquid the existing ingredients already make - until
+  now a Cloudy Infusion or a Murky Mixture. They are tried after every potion and material (priorities 43-47: below Soft
+  Soap's 50 and the meads' 52) and before the failures (Spoiled Mixture 40, Cloudy Infusion 30), so nothing that is a
+  potion or a material today changes. Measured over every built-in ingredient alone and with Rock Salt, Honey, Wormwood,
+  Oak Gall, Grain Spirit or Vinegar, in water and in spirit, at three fire settings (13 632 samples): only failures became
+  veterinary medicines; every documented recipe (antidote, willowbark draught, healing salve, soft soap, mead...) keeps its
+  outcome, tier and quality at every moment (`CustomEditor/Animals/AnimalAlchemyTests.cs`).
+* **The built-in database** (made in memory) takes the pack among its extensions. **A project's Alchemy Database asset is
+  never changed**: while playing, a database made in memory holds the asset and the pack and takes its place as
+  `AlchemyDatabase.Instance`; in the editor outside play mode the asset is left as it is (its tools work on the asset; the
+  veterinary outcomes still count as existing for the validators). Changes made to the asset during play reach the game
+  from the next play.
+* **A station whose Database field is set brews with that database alone**, even when it holds the project's own asset:
+  the pack is not in it. Leave the field empty (the project's database, with the pack), or add
+  `AnimalAlchemy.VetOutcomes(rules)` to that database. The Animals validator warns about such a station in the open scenes.
+* **The project's own wins**: an outcome with the same id in your database is kept and the pack's is not added - copy
+  `AnimalAlchemy.VetOutcomes(rules)` into your database to tune them. An outcome whose substances your database lacks (no
+  absinthin: no vermifuge) is not added either; the plain remedies sold by the vet's merchant (wormwood, vinegar, charcoal,
+  lavender) still treat its conditions.
+
+| Priority | Outcome (id) | Kind | Requires | Strength from | Effects (drunk by a person) |
+|---|---|---|---|---|---|
+| 47 | Vermifuge (`vet_vermifuge`) | Potion | Absinthin is the main raw compound, Absinthin at least 2% of the liquid, pH 6–10, not Antitoxin at least 0.5% of the liquid | Absinthin (full at 12 %) | −5 health, −3 sanity |
+| 45 | Antiseptic Wash (`vet_antiseptic`) | Potion | Tannin is the main raw compound, Tannin at least 3% of the liquid, Grain Spirit at least 35% of the liquid, pH 3–9 | Tannin (full at 30 %) | −8 health |
+| 43 | Electrolyte Drench (`vet_electrolytes`) | Potion | Brine is the main reagent compound, Sugars is the main raw compound, Brine 2–14% and Sugars 2–16% of the liquid, pH 5.5–8.5, Grain Spirit at most 10% of the liquid | Brine (full at 8 %) | −2 health, −2 sanity |
+
+All three also need: Active matter ≤ 2 % of the dissolved matter (a potion on its way stays what it becomes), Residue
+matter ≤ 20 % (a spoiled brew stays spoiled), Toxicity ≤ 0.04 (nothing poisonous: below what taints a healing draught)
+and Contaminant ≤ 0.015 (made with muddy water, filter it first). Tiers as every potion: Weak, Standard from 35 %, Potent
+from 65 %, Superior from 90 %. A Standard bottle is worth 20, 18 and 8.
+
+Measured (iron cauldron, 20 °C, seed 1). What the veterinarian says of each is in quotes - a hint, never a recipe.
+
+**Vermifuge** - *"Wormwood steeped in warm water - never in vinegar, which turns it into something else."*
+
+* 2 Spring Water + 3 ground Wormwood, fire 20 % (64 °C): **Vermifuge (Potent) 72 %** from 1:00 - ground, the herb gives
+  up all its absinthin at once. The drifting herb clouds it (purity 55 %): pour it through **filter paper** → 83 %; fine
+  it first with an Egg Yolk (the white binds the tannin into lees), then filter → 85-86 %.
+* Whole wormwood gives up its tannin first: a Cloudy Infusion at 1:00, 41 % at 2:00, **Potent 73 %** at 5:00. Steeped cold
+  (no fire): 43 % at 5:00, Potent at 10:00. Warmth only makes it quicker; boiling does it no harm.
+* 3 Spring Water + 2 ground Wormwood → Vermifuge 42 % (diluted). 2 Grain Spirit + 3 ground Wormwood, fire 10 % → Potent 83 %.
+* With 1 Vinegar (pH 4.4) the same wormwood turns to antitoxin → **Antidote** 56 % at 5:00, as before. With a Potash
+  (pH 13.5) it is no drench: a Cloudy Infusion. In Muddy Water: a Cloudy Infusion until it is filtered (then Potent 82 %).
+
+**Electrolyte Drench** - *"A pinch of salt and a spoon of honey in clean water."*
+
+* 3 Spring Water + 1 Honey + 1 Rock Salt, no fire, stirred: **Electrolyte Drench (Potent) 70 %** within 0:20 (7 bottles).
+  Boiled, it is the same (68 %).
+* 4 Spring Water → 56 %. 2 Seawater + 1 Honey → Potent 69 % (seawater is salt enough).
+* 2 Rock Salt: too salty (a Murky Mixture); 2 Honey: too sweet (a Cloudy Infusion); Goat Milk for the honey: not sweet
+  enough; a Sourfruit in it (pH 3.8): no drench; Muddy Water: a Murky Mixture until filtered (then Potent 70 %).
+* Its strength is the salt's and the honey counts against its purity: a drench is Potent at best.
+
+**Antiseptic Wash** - *"Oak gall or willow bark steeped in strong spirit."*
+
+* 2 Grain Spirit + 2 ground Oak Gall, no fire: **Antiseptic Wash (Potent) 83 %** at 0:30. With 3 galls → **Superior
+  100 %**. Whole galls: 50 % at 1:00, Potent 83 % at 5:00.
+* 2 Grain Spirit + 1 Spring Water + 2 ground galls → 51 % (46 % spirit). 1 Grain Spirit + 2 Spring Water: the spirit is
+  too weak (it needs 35 % of the liquid) - a Cloudy Infusion.
+* 2 Grain Spirit + 3 ground Willow Bark → 39 % (its salicin counts against the purity; in warm vinegar the bark would
+  make a willowbark draught instead).
+* Heated past 78 °C the spirit boils away: the wash concentrates (Superior at 1:00-2:00 at fire 40 %), then the spirit is
+  gone - a Plain Liquid by 5:00.
+* Alum, the dyers' astringent, barely dissolves in spirit (0.4 %) and adds nothing; in water it crystallises out of a
+  brew bottled cold.
+
+**For the animals** the bottles are medicines (`Animals/Core/AnimalDefaultsCare.cs`): the Vermifuge is a drench against
+worms (2 doses a bottle; again within 24 game hours of the last dose that did its good, it does no more good and is an
+overdose), the Antiseptic Wash is rubbed into wounds, rotting hooves and infected skin (3 doses a bottle; not on a herd
+at once), the Electrolyte Drench gives back water to a parched or scouring animal (2 doses a bottle). Every bottle keeps
+the strength and purity it was bottled at, and its quality scales the dose from ×0.4 (worthless) to ×2 (perfect); a
+bottle without them (a merchant's) counts as its tier's typical quality (Weak 20 %, Standard 50 %, Potent 75 %, Superior
+95 %). Players can drink them, but they do a person no good.

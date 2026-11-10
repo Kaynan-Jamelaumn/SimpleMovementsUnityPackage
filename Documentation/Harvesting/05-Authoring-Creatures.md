@@ -25,7 +25,7 @@ Organs*), with its weak points ringed, lists the weak points and the materials b
 | **Id** | Stable id (`bear`, `giant_spider`): item ids and saves use it (`harvest:bear/claws`). |
 | **Display Name**, **Description** | Shown to players. |
 | **Plan** | How the body is built: *Quadruped* (four legs, a horizontal body — add wings as regions `wing_l`/`wing_r`), *Biped* (two legs, upright), *Avian* (wings, two legs), *Fish* (fins and a tail), *Serpent* (one long body), *Arthropod* (a shell and many legs). It decides how the body and its organs are drawn, how the hide is opened, and how hits are located along it. |
-| **Mob Types** | Words of mob types or names it is used for (Bear, Grizzly). |
+| **Mob Types** | Words of mob types or names it is used for (Bear, Grizzly). Empty: no mob is ever taken for it — only what names it by id uses it (the farm animals: Animal Husbandry's species name their anatomy, so a wild pig stays a boar). As an asset with no Mob Profiles either, it warns so. |
 | **Mass**, **Reference Height** | A typical adult. Yields scale with a mob's size against this height. |
 | **Pelt Size** | Cells of its hide laid flat, head up (across × along). For a hide that becomes a tannery hide, the crafting hide's *Height* × *Width* (the tannery lays hides with the spine across). |
 | **Hide / Hair / Meat Color** | The drawings' colours. |
@@ -173,7 +173,7 @@ built-in rules and creatures are used.
 
 | Section | Settings |
 |---|---|
-| **Creatures** | *Anatomies* (Creature Anatomy assets), *Include Built In* (the twelve built-in creatures for the ids no asset gives). |
+| **Creatures** | *Anatomies* (Creature Anatomy assets), *Include Built In* (the built-in creatures, the farm animals included, for the ids no asset gives). |
 | **Items** | *Items*: an item asset given for a material (by creature and material id) instead of the item made at runtime (*Harvesting ▸ Create Items* fills it). *Tools*: the harvesting tool assets (*Create Tools*). |
 | **Combat damage** | *Severity Per Health* (2.5), *Critical Multiplier* (1.25), *Area Meat Multiplier* (1.6), *Area Spread* (0.4), *Periodic Scale* (0.5), *Count Overkill*, *Max Severity* (2), *Max Wounds* (32), and the *Forms* and *Elements* tables (what each does to each tissue, how it marks the hide, what marks it leaves). |
 | **Carcass and spoiling** | *Carcass Minutes* (30), *Keep After Work Minutes* (5), *Remove When Empty*, *Default Temperature* (18 °C), *Doubling Degrees* (10), *Freezing Point* (0 °C), *Gutted Spoil Factor* (0.6), *Soiled Spoil Factor* (1.5), *Spoiling Below* (0.45). |

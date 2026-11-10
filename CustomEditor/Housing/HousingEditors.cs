@@ -464,6 +464,8 @@ public static class HousingEditors
                 if (z != null && z.outline != null && z.outline.Count >= 3) taken.Add(z.outline);
         foreach (SoilField f in GardensOf(p))
             if (f.layout != null && f.layout.outline != null && f.layout.outline.Count >= 3) taken.Add(Convert(f.layout.outline, f.transform, p.transform));
+        foreach (AnimalPen pen in PensOf(p))
+            if (pen.outline != null && pen.outline.Count >= 3) taken.Add(Convert(pen.outline, pen.transform, p.transform));
         foreach (LockableDoor d in p.GetComponentsInChildren<LockableDoor>(true)) taken.Add(HousingGeometry.Rectangle(p.Local(d.transform.position), new Vector2(1.5f, 1.5f)));
         if (p.doors != null)
             foreach (LockableDoor d in p.doors)
@@ -502,6 +504,88 @@ public static class HousingEditors
         f.layout = new SoilLayout { seed = UnityEngine.Random.Range(1, int.MaxValue) };
         f.layout.outline = HousingGeometry.Rectangle(Vector2.zero, size);
         return f;
+    }
+
+    /// <summary>The property's animal pens: those listed, and (with Include Children) those among its children.</summary>
+    public static List<AnimalPen> PensOf(Property p)
+    {
+        var list = new List<AnimalPen>();
+        if (p == null) return list;
+        if (p.pens != null)
+            foreach (AnimalPen a in p.pens)
+                if (a != null && !list.Contains(a)) list.Add(a);
+        if (p.includeChildren)
+            foreach (AnimalPen a in p.GetComponentsInChildren<AnimalPen>(true))
+                if (!list.Contains(a) && a.GetComponentInParent<Property>(true) == p) list.Add(a);
+        return list;
+    }
+
+    /// <summary>
+    /// An animal pen for the property, placed like a garden: an Animal Pen child on a free spot of the land (clear of the
+    /// house, its zones, its gardens, its other pens and its doors), as big as its kind usually is when that fits, smaller
+    /// when not. Undoable; listed in its Pens.
+    /// </summary>
+    public static AnimalPen AddPen(Property p, AnimalHabitatKind kind)
+    {
+        if (p == null) return null;
+        var taken = new List<List<Vector2>>();
+        if (p.house != null && p.house.Count >= 3) taken.Add(p.house);
+        if (p.zones != null)
+            foreach (PropertyZone z in p.zones)
+                if (z != null && z.outline != null && z.outline.Count >= 3) taken.Add(z.outline);
+        foreach (SoilField f in GardensOf(p))
+            if (f.layout != null && f.layout.outline != null && f.layout.outline.Count >= 3) taken.Add(Convert(f.layout.outline, f.transform, p.transform));
+        foreach (AnimalPen other in PensOf(p))
+            if (other.outline != null && other.outline.Count >= 3) taken.Add(Convert(other.outline, other.transform, p.transform));
+        foreach (LockableDoor d in p.GetComponentsInChildren<LockableDoor>(true)) taken.Add(HousingGeometry.Rectangle(p.Local(d.transform.position), new Vector2(1.5f, 1.5f)));
+
+        Vector2[] sizes = AnimalPenSizes(kind);
+        Vector2 near = p.house != null && p.house.Count >= 3 ? GroundAreaHandles.Centre(p.house) : GroundAreaHandles.Centre(p.land);
+        Vector2 size = sizes[sizes.Length - 1], centre = GroundAreaHandles.Centre(p.land);
+        bool found = false;
+        foreach (Vector2 s in sizes)
+        {
+            if (!FreeSpot(p.land, s, taken, 0.5f, near, out Vector2 c)) continue;
+            size = s;
+            centre = c;
+            found = true;
+            break;
+        }
+        string label = UniqueChildName(p.transform, kind == AnimalHabitatKind.Pasture ? "Pasture" : kind.ToString());
+        var go = new GameObject(label);
+        go.transform.SetParent(p.transform, false);
+        go.transform.localPosition = new Vector3(centre.x, 0f, centre.y);
+        AnimalPen pen = go.AddComponent<AnimalPen>();
+        pen.kind = kind;
+        pen.DisplayName = label;
+        pen.outline = HousingGeometry.Rectangle(Vector2.zero, size);
+        pen.feederPoint = new Vector2(-size.x * 0.5f + 0.7f, size.y * 0.5f - 0.5f);
+        pen.troughPoint = new Vector2(size.x * 0.5f - 0.8f, size.y * 0.5f - 0.5f);
+        // Stations sized to the pen: a pasture's herd drinks buckets a day, a coop's a few cups.
+        float area = size.x * size.y;
+        pen.feederCapacity = Mathf.Max(40f, Mathf.Round(area * 2.5f));
+        pen.waterCapacity = Mathf.Max(20f, Mathf.Round(area * 4f));
+        pen.troughSurface = Mathf.Clamp(area / 40f, 0.4f, 2f);
+        Undo.RegisterCreatedObjectUndo(go, "Add Animal Pen");
+        Undo.RecordObject(p, "Add Animal Pen");
+        if (p.pens == null) p.pens = new List<AnimalPen>();
+        if (!p.pens.Contains(pen)) p.pens.Add(pen);
+        EditorUtility.SetDirty(p);
+        if (found) Debug.Log($"[Housing] Made a {size.x:0.#} × {size.y:0.#} m {kind.ToString().ToLowerInvariant()} on the land of '{p.DisplayName}', clear of its house, garden and zones. Shape it with its Animal Pen inspector.", pen);
+        else Debug.LogWarning($"[Housing] No free spot on the land of '{p.DisplayName}' for an animal pen: put a {size.x:0.#} × {size.y:0.#} m one in the middle of the land. Move it or make the land bigger.", pen);
+        return pen;
+    }
+
+    /// <summary>The sizes tried for a new pen of a kind, the usual first (a pasture is roomy, a coop or a hutch small).</summary>
+    public static Vector2[] AnimalPenSizes(AnimalHabitatKind kind)
+    {
+        switch (kind)
+        {
+            case AnimalHabitatKind.Pasture: return new[] { new Vector2(8f, 6f), new Vector2(6f, 6f), new Vector2(6f, 4f), new Vector2(4f, 4f), new Vector2(3f, 3f) };
+            case AnimalHabitatKind.Coop:
+            case AnimalHabitatKind.Hutch: return new[] { new Vector2(4f, 3f), new Vector2(3f, 3f), new Vector2(3f, 2f), new Vector2(2f, 2f) };
+            default: return new[] { new Vector2(6f, 4f), new Vector2(4f, 4f), new Vector2(4f, 3f), new Vector2(3f, 3f), new Vector2(2f, 2f) };
+        }
     }
 
     /// <summary>Gives the property's gardens what a network session needs (Agriculture's Make Networked); one line per garden.</summary>

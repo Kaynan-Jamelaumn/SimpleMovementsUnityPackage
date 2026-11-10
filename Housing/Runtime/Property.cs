@@ -87,7 +87,9 @@ public class Property : MonoBehaviour
     public List<SleepSpot> beds = new List<SleepSpot>();
     [Tooltip("Its doors (locked to everyone else).")]
     public List<LockableDoor> doors = new List<LockableDoor>();
-    [Tooltip("Also take the Soil Fields, chests, beds and doors among its children that are not listed.")]
+    [Tooltip("Its animal pens (Animal Pens on the land, next to the gardens: a pasture, a coop, a sty...). Children inside the land are found by themselves.")]
+    public List<AnimalPen> pens = new List<AnimalPen>();
+    [Tooltip("Also take the Soil Fields, animal pens, chests, beds and doors among its children that are not listed.")]
     public bool includeChildren = true;
     [Tooltip("Its house models kept inside a prefab (not its children): their colliders are its own, not something standing on its land.")]
     public List<GameObject> parts = new List<GameObject>();
@@ -154,9 +156,12 @@ public class Property : MonoBehaviour
         chests.RemoveAll(x => x == null || x.storage == null || UnderOther(x.storage));
         beds.RemoveAll(x => x == null || UnderOther(x));
         doors.RemoveAll(x => x == null || UnderOther(x));
+        pens.RemoveAll(x => x == null || UnderOther(x));
         if (!includeChildren) return;
         foreach (SoilField f in GetComponentsInChildren<SoilField>(true))
             if (!gardens.Contains(f)) gardens.Add(f);
+        foreach (AnimalPen a in GetComponentsInChildren<AnimalPen>(true))
+            if (!pens.Contains(a)) pens.Add(a);
         foreach (Storage s in GetComponentsInChildren<Storage>(true))
         {
             bool listed = false;
@@ -174,6 +179,7 @@ public class Property : MonoBehaviour
         chests.RemoveAll(x => x == null || x.storage == null || UnderOther(x.storage));
         beds.RemoveAll(x => x == null || UnderOther(x));
         doors.RemoveAll(x => x == null || UnderOther(x));
+        pens.RemoveAll(x => x == null || UnderOther(x));
     }
 
     /// <summary>Does the thing lie under another property (nested in it, or moved there)?</summary>
@@ -245,10 +251,22 @@ public class Property : MonoBehaviour
         }
     }
 
+    /// <summary>The animal pens' area (their outlines), square metres: pens are pasture land.</summary>
+    public float PenArea
+    {
+        get
+        {
+            float a = 0f;
+            foreach (AnimalPen pen in pens)
+                if (pen != null) a += pen.Area;
+            return a;
+        }
+    }
+
     /// <summary>The area of the zones of one use, square metres.</summary>
     public float ZoneArea(LandUse use)
     {
-        float a = use == LandUse.Garden ? GardenArea : 0f;
+        float a = use == LandUse.Garden ? GardenArea : use == LandUse.Pasture ? PenArea : 0f;
         foreach (PropertyZone z in zones)
             if (z != null && z.use == use) a += HousingGeometry.Area(z.outline);
         return a;
@@ -276,6 +294,8 @@ public class Property : MonoBehaviour
         };
         foreach (PropertyZone z in zones)
             if (z != null) f.zoneArea[(int)z.use] += HousingGeometry.Area(z.outline);
+        // Its animal pens are pasture land (priced and listed as such).
+        f.zoneArea[(int)LandUse.Pasture] += PenArea;
         return f;
     }
 

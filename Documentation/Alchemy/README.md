@@ -24,7 +24,10 @@ frost, mana, speed, breath, salamander, antidote, sleep, pain relief, lavender, 
 bloodmoss, stormcall, starfrost, shadows, dragonheart, ginger, spiced mead, rosewater, wakefulness, restoration, phoenix,
 featherfall, vitriol, berserker, panacea, blessed, gillweed, fireward...), with reversible reactions, competing and dependent reactions, alternative
 pathways and branches,
-3 filters, 4 fuels, 6 vessels.
+3 filters, 4 fuels, 6 vessels. With Animal Husbandry in the project, three veterinary outcomes join them at start (a
+vermifuge, an antiseptic wash and an electrolyte drench, from `Animals/Runtime/AnimalAlchemy.cs`): names for liquids the
+existing ingredients already make, with no new substance or reaction, so no existing brew changes
+([05 §7](05-Default-Chemistry.md#7-veterinary-medicines-animal-husbandry)).
 
 | Chapter | What it covers |
 |---|---|
@@ -32,7 +35,7 @@ pathways and branches,
 | [02 — Simulation Rules](02-Simulation-Rules.md) | The mixture's state, the step, extraction (grind levels, evenness, pH), solubility, saturation and crystals, reactions and thermal / pH stability, the fire, baths, boiling, evaporation and distillation, stirring, layers and density, acidity, compatibility and contamination, filtering / decanting / skimming, vessels, conditions, reproducibility, saving |
 | [03 — Authoring Content](03-Authoring-Content.md) | Properties, substances, reactions, outcomes, ingredients, forms, filters, fuels, vessels, condition sources, content packs — all without code |
 | [04 — Discovery and the Journal](04-Discovery-and-Journal.md) | What players know and how they learn it; failed experiments; reproducing a discovery |
-| [05 — The Default Chemistry](05-Default-Chemistry.md) | **Spoilers**: every built-in ingredient, substance, reaction, outcome, filter, fuel and vessel, with measured example procedures |
+| [05 — The Default Chemistry](05-Default-Chemistry.md) | **Spoilers**: every built-in ingredient, substance, reaction, outcome, filter, fuel and vessel, with measured example procedures; the veterinary medicines of Animal Husbandry |
 | [06 — Scripting and Extending](06-Scripting-and-Extending.md) | `AlchemyBrew` and `AlchemyStation` APIs, the minigame components, events, custom conditions and condition sources, saving, networking hook |
 | [07 — Editor Tools and Testing](07-Editor-Tools-and-Testing.md) | Menus, inspectors, the Alchemy Lab (timeline and outcome map), Edit Mode tests |
 

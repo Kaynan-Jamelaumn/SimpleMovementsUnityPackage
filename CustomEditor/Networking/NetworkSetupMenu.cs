@@ -84,6 +84,7 @@ namespace GameNet.EditorTools
             EditorSceneManager.SaveScene(scene, BootstrapPath);
             AssignSceneIds(scene); // the objects were added while the scene had no name: Fish-Net could not id them
             CreateWorldItemPrefab();
+            CreateAnimalCarcassPrefab();
             EnsureBuildScene(BootstrapPath, 0);
             EditorUtility.DisplayDialog("Network - Bootstrap scene",
                 $"Saved {BootstrapPath} as the first scene of the build.\n\n" +
@@ -256,7 +257,7 @@ namespace GameNet.EditorTools
         internal static readonly string[] GlobalRelayComponents =
         {
             "GameNet.NetHubWorld", "GameNet.NetDuels", "GameNet.NetTrading", "GameNet.NetWorldChunks", "GameNet.NetSocial",
-            "GameNet.NetPortals", "GameNet.NetHousing",
+            "GameNet.NetPortals", "GameNet.NetHousing", "GameNet.NetAnimals",
         };
 
         /// <summary>
@@ -364,6 +365,49 @@ namespace GameNet.EditorTools
                     Debug.LogWarning("[Net] GameNet.NetWorldItem was not found: the prefab has only a NetworkObject.");
                 PrefabUtility.SaveAsPrefabAsset(go, WorldItemPrefabPath);
                 Debug.Log($"[Net] Created {WorldItemPrefabPath}.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+#else
+            Debug.LogWarning("[Net] Install Fish-Net first.");
+#endif
+        }
+
+        private static string AnimalCarcassPrefabPath => SMAssets.AssetPath(SMAssets.Networking, AnimalCarcass.PrefabName + ".prefab");
+
+        /// <summary>
+        /// Creates Resources/SimpleMovements/Networking/AnimalCarcass.prefab: the networked carcass of a butchered farm
+        /// animal (a NetworkObject, a Harvestable Creature with its NetCarcass, and the Animal Carcass Look that draws the
+        /// animal lying on its side on every machine). Animal Husbandry's Butcher lays it out at the pen and spawns it on the
+        /// server; without it, butchering in a network session answers that the butcher's table is not set up. Its own call
+        /// (not part of Create World Item Prefab, which stops early in a project that has its carrier already).
+        /// </summary>
+        [MenuItem(SMMenu.Root + "Network/Create Animal Carcass Prefab", false, SMMenu.Network + 13)]
+        public static void CreateAnimalCarcassPrefab()
+        {
+#if FISHNET
+            GameObject existing = SMAssets.Load<GameObject>(SMAssets.Networking, AnimalCarcass.PrefabName);
+            if (existing != null)
+            {
+                Debug.Log($"[Net] {AssetDatabase.GetAssetPath(existing)} already exists.", existing);
+                return;
+            }
+            SMAssetsEditor.Folder(SMAssets.Networking);
+            var go = new GameObject(AnimalCarcass.PrefabName);
+            try
+            {
+                go.AddComponent<NetworkObject>();
+                go.AddComponent<HarvestableCreature>();
+                var missing = new List<string>();
+                AddByName(go, new[] { "GameNet.NetCarcass" }, null, missing);
+                if (missing.Count > 0)
+                    Debug.LogWarning("[Net] GameNet.NetCarcass was not found: the animal carcass prefab cannot be harvested by clients.");
+                go.AddComponent<AnimalCarcassLook>();
+                PrefabUtility.SaveAsPrefabAsset(go, AnimalCarcassPrefabPath);
+                SMAssets.ClearCache();
+                Debug.Log($"[Net] Created {AnimalCarcassPrefabPath}.");
             }
             finally
             {
