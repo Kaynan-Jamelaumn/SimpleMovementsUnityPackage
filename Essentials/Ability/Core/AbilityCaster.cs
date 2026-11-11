@@ -562,7 +562,18 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
     {
         float now = Time.time;
         AbilityDefinition def = s.ability;
-        var cast = new AbilityCastInstance(this, Entity, s, def, s.modifiers);
+        // A held key charges the cast: the charge is checked against the ability's rules and what the caster can pay, and its multipliers go
+        // into the cast's numbers (a cast that is not charged is exactly what it was).
+        AbilityStats castStats = s.Stats;
+        float charge = AbilityCharging.Resolve(this, s, request.charge, out ChargeProfile chargeProfile);
+        if (charge > 0f)
+        {
+            AbilityStats charged = AbilityCharging.Apply(castStats, chargeProfile, charge);
+            if (CombatRules.IsVisualOnly(Entity) || HasResources(def, charged)) castStats = charged;
+            else charge = 0f; // it cannot be paid at this charge: an ordinary cast
+        }
+        var cast = new AbilityCastInstance(this, Entity, s, def, s.modifiers, castStats);
+        cast.Charge = charge;
         cast.Target = request.target != null ? request.target : DefaultTarget;
         if (cast.Target != null && CombatRules.AreSeparated(Entity, cast.Target))
             cast.Target = null;

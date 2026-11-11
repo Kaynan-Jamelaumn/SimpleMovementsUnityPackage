@@ -28,6 +28,8 @@ namespace GameNet
         public uint viewTick;
         /// <summary>How far into <see cref="viewTick"/> the client was (0-100).</summary>
         public byte viewPercent;
+        /// <summary>How charged the owner says the cast is, 0-100 (a held key, see ChargeProfile). The server keeps what the ability's rules allow.</summary>
+        public byte charge;
     }
 
     /// <summary>The owner's current crosshair while an ability that follows it until release winds up (client to server).</summary>

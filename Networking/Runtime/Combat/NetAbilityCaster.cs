@@ -366,6 +366,7 @@ namespace GameNet
                 hasDirection = request.hasDirection,
                 viewTick = view.Tick,
                 viewPercent = view.PercentAsByte,
+                charge = (byte)Mathf.Clamp(Mathf.RoundToInt(request.charge * 100f), 0, 100),
             };
             pendingUntil[slotIndex] = now + PendingSeconds;
             lastSentAimPoint = request.point;
@@ -444,6 +445,7 @@ namespace GameNet
                 RpcCastRejected(conn, req.slot, req.seq, CastFailReason.NoTarget);
                 return;
             }
+            request.charge = PlausibleCharge(slot, s, Mathf.Clamp(req.charge, (byte)0, (byte)100) / 100f);
             remoteAim = request;
             hasRemoteAim = true;
             remoteAimTime = Time.unscaledTime;
@@ -510,6 +512,23 @@ namespace GameNet
                 request.target = null;
             Vector3 origin = caster.Entity != null ? caster.Entity.Position : caster.transform.position;
             return AbilityNetMath.SanitizeRequest(ref request, origin, MaxAimDistance);
+        }
+
+        // The server cannot see the key, so it bounds the charge a client claims: the ability must have been ready for that long (the time a
+        // player could have held the key since the slot's last cast request). A client that claims more gets what that time allows.
+        private readonly Dictionary<int, float> lastCastRequest = new Dictionary<int, float>();
+
+        private float PlausibleCharge(int slotIndex, AbilitySlot s, float claimed)
+        {
+            float now = Time.unscaledTime;
+            lastCastRequest.TryGetValue(slotIndex, out float previous);
+            lastCastRequest[slotIndex] = now;
+            if (claimed <= 0f) return 0f;
+            ChargeProfile p = AbilityCharging.ProfileOf(caster, s);
+            if (p == null) return 0f;
+            float possible = previous > 0f ? now - previous : float.MaxValue; // the first request of the slot: nothing to bound it by
+            float allowed = p.Fraction(possible + 0.25f); // a quarter second of latency forgiven
+            return Mathf.Min(claimed, allowed);
         }
 
         private static void ReportView(NetworkConnection conn, uint tick, byte percent)

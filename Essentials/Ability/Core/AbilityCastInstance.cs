@@ -12,6 +12,11 @@ public struct CastRequest
     /// <summary>Aim direction (Direction abilities).</summary>
     public Vector3 direction;
     public bool hasDirection;
+    /// <summary>
+    /// How charged the cast is (0-1: the key was held, see <see cref="ChargeProfile"/>). 0 = an ordinary cast. A client states it; the server
+    /// checks it against the ability's charge rules and keeps what it can allow.
+    /// </summary>
+    public float charge;
 
     public static CastRequest AtTarget(CombatEntity target) => new CastRequest { target = target };
 
@@ -122,6 +127,8 @@ public sealed class AbilityCastInstance
     /// does changes gameplay: hits only play their feedback, no cost is paid, no noise or AI hazard is made.
     /// </summary>
     public bool Cosmetic { get; internal set; }
+    /// <summary>How charged this cast was when it began (0 = not charged; see <see cref="ChargeProfile"/>). Its multipliers are already in <see cref="Stats"/>.</summary>
+    public float Charge { get; internal set; }
     /// <summary>
     /// Seed of the cast's cosmetic randomness (projectile spreads and rains): the server picks it and sends it with the
     /// cast, so the projectiles every client shows fly where the server's fly.

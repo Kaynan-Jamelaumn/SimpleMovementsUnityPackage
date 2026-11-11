@@ -193,6 +193,9 @@ public static class AbilityAbsorption
         CombatEntity player = PlayerSide(killer);
         if (player == null && settings.onlyPlayerKills)
             return;
+        // A killer whose kills roll no absorption at all (an AbsorptionGate rule, e.g. a Rune Magic setting).
+        if (player != null && AbsorptionGate.SuppressesRolls(player))
+            return;
 
         if (caster is IAbsorptionTable table)
         {
@@ -367,11 +370,12 @@ public static class AbilityAbsorption
         if (GameNet.NetAuthority.IsClientOnly)
             return;
         AbsorptionSettings settings = AbsorptionSettings.Instance;
-        if (settings.delivery == AbsorbDelivery.Instant && player != null)
+        if (settings.delivery == AbsorbDelivery.Instant && player != null && !AbsorptionGate.Blocks(player, grant))
         {
             TryGrant(grant, player);
             return;
         }
+        // A pickup - also when the killer can never take the ability (e.g. a Rune Magic user): the others can.
         AbilityPickup.Spawn(grant, position, settings, sceneOf);
     }
 

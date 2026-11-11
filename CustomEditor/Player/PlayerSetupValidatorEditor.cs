@@ -108,7 +108,7 @@ public class PlayerSetupValidatorEditor : Editor
         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
         foreach (Check c in PlayerSetupValidator.Checks)
         {
-            if (c.importance != imp)
+            if (c.importance != imp || !PlayerSetupValidator.Applies(go, c))
                 continue;
             bool has = PlayerSetupValidator.Has(go, c);
             using (new EditorGUILayout.HorizontalScope())
@@ -136,6 +136,14 @@ public class PlayerSetupValidatorEditor : Editor
 
     private static void Add(GameObject go, Check c)
     {
+        // A system that needs more than Add Component (its network part, a second script) adds its own way.
+        if (c.add != null)
+        {
+            Undo.RegisterFullObjectHierarchyUndo(go, "Add " + c.Name);
+            c.add(go);
+            MarkDirty(go);
+            return;
+        }
         if (c.byStatusWizard && go.GetComponent<PlayerStatusController>() != null)
         {
             RunStatusWizard(go);
@@ -153,8 +161,15 @@ public class PlayerSetupValidatorEditor : Editor
         Undo.SetCurrentGroupName("Add Player Scripts");
         int group = Undo.GetCurrentGroup();
         foreach (Check c in PlayerSetupValidator.Missing(go, imp))
-            if (!c.byStatusWizard)
+        {
+            if (c.add != null)
+            {
+                Undo.RegisterFullObjectHierarchyUndo(go, "Add " + c.Name);
+                c.add(go);
+            }
+            else if (!c.byStatusWizard)
                 Undo.AddComponent(go, c.type);
+        }
         if (go.GetComponent<PlayerStatusController>() != null && PlayerSetupValidator.Missing(go, imp).Exists(c => c.byStatusWizard))
             RunStatusWizard(go);
         AutoAssign(go);

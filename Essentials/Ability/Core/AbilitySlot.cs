@@ -57,6 +57,12 @@ public class AbilitySlot
     [NonSerialized] public AbilityGrant Grant;
     /// <summary>Where the ability comes from: the character's own skills, a trait / race / class, or an item (scoped stats).</summary>
     [NonSerialized] public AbilitySlotSource Source = AbilitySlotSource.Skill;
+    /// <summary>
+    /// What the ability costs and risks besides its own mana, stamina and health (e.g. a rune spell draws Rune Energy and
+    /// strains the soul), or null for an ordinary ability. Attached by the system that put the ability here; cleared when the
+    /// slot's ability is replaced (<see cref="Set"/>).
+    /// </summary>
+    [NonSerialized] public ICastable Castable;
 
     /// <summary>Raised when the phase changes (slot, previous, new).</summary>
     public event Action<AbilitySlot, AbilityPhase, AbilityPhase> PhaseChanged;
@@ -194,6 +200,7 @@ public class AbilitySlot
     public void Set(AbilityDefinition newAbility, AbilityModifierSet newModifiers)
     {
         ability = newAbility;
+        Castable = null;
         modifiers = newModifiers != null ? newModifiers.Clone() : new AbilityModifierSet();
         statsValid = false;
         charges = -1;

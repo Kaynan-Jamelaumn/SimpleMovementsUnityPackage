@@ -34,6 +34,18 @@ public class PlayerSetupValidator : MonoBehaviour
         public bool inChildren;
         /// <summary>Created by the Player Status Controller's setup wizard (status managers, experience, traits, dash, roll).</summary>
         public bool byStatusWizard;
+        /// <summary>
+        /// Does this check apply to this player? Null = always. A system that is switched off in its own settings, or a network module on a
+        /// prefab that is not networked, says no: the script is then neither listed nor reported.
+        /// </summary>
+        public Func<GameObject, bool> applies;
+        /// <summary>
+        /// How the validator adds the script, when a plain Add Component is not enough (a system that also needs its network part). The
+        /// action is given the player's root and must not use Undo (it runs on prefab contents too); null = Add Component.
+        /// </summary>
+        public Action<GameObject> add;
+        /// <summary>The Scene &amp; Prefab Setup window's group for it (empty = chosen from its type).</summary>
+        public string group = "";
 
         public string Name => type != null ? type.Name : "?";
     }
@@ -44,8 +56,46 @@ public class PlayerSetupValidator : MonoBehaviour
     private static Check C(Type t, Importance i, string purpose, bool inChildren = false, bool wizard = false) =>
         new Check { type = t, importance = i, purpose = purpose, inChildren = inChildren, byStatusWizard = wizard };
 
-    /// <summary>Every script checked, in the order they are listed.</summary>
-    public static readonly Check[] Checks =
+    /// <summary>Scripts of other systems that register themselves (see <see cref="Register"/>); listed after the built-in ones.</summary>
+    private static readonly List<Check> registered = new List<Check>();
+    private static Check[] all;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        registered.Clear();
+        all = null;
+    }
+
+    /// <summary>
+    /// Lets a system say which scripts its players need (an editor tool calls it once when the editor loads): the validator, the Add
+    /// buttons and the Scene &amp; Prefab Setup window then list it like the built-in ones. A script already registered (same type) is replaced.
+    /// </summary>
+    public static void Register(Check check)
+    {
+        if (check?.type == null)
+            return;
+        registered.RemoveAll(c => c.type == check.type);
+        registered.Add(check);
+        all = null;
+    }
+
+    /// <summary>Every script checked, in the order they are listed: the built-in ones, then the registered ones.</summary>
+    public static IReadOnlyList<Check> Checks
+    {
+        get
+        {
+            if (all == null)
+            {
+                var list = new List<Check>(Builtin);
+                list.AddRange(registered);
+                all = list.ToArray();
+            }
+            return all;
+        }
+    }
+
+    private static readonly Check[] Builtin =
     {
         // Required
         C(typeof(CharacterController), Importance.Required, "Moves the player and collides with the world."),
@@ -90,6 +140,7 @@ public class PlayerSetupValidator : MonoBehaviour
         // Optional
         C(typeof(AbilitiesStateMachine), Importance.Optional, "Ability keys."),
         C(typeof(PlayerAbilityController), Importance.Optional, "Ability slots (also receives abilities absorbed from mobs)."),
+        C(typeof(AbilityCharger), Importance.Optional, "Hold-to-charge abilities: list the abilities that can be charged by holding their key (Rune Magic spells are made chargeable by Rune Magic itself, which adds this when needed)."),
         C(typeof(CharacterBody), Importance.Optional, "Height: scales the model and the CharacterController. Needed by size powers (Giant, Shrink): without it they change the Height stat but nothing scales."),
         C(typeof(BodyPartController), Importance.Optional, "Head / torso / arm / leg damage (then add hitboxes)."),
         C(typeof(PlayerStartItemController), Importance.Optional, "Starting items per class."),
@@ -107,7 +158,32 @@ public class PlayerSetupValidator : MonoBehaviour
                                                    "Add it to build them in the editor (Build Status UI / Build Abilities UI) and customise them.", true),
         C(typeof(CharacterAppearance), Importance.Automatic, "The look from character creation (body type, hair, face; placeholder body when the model has none). " +
                                                              "On the model (the Animator's object); add it to set up your own hair / body options.", true),
+        // The journals of the crafting, alchemy and harvesting systems: each is added to the player the first time they use a station or a carcass.
+        C(typeof(CraftKnowledge), Importance.Automatic, "The smithing and leatherworking journal (metals named, ores known, heat colours, insights, what was made), saved per character. " +
+                                                        "Added the first time the player uses a crafting station; add it to change where it saves."),
+        C(typeof(AlchemyKnowledge), Importance.Automatic, "The alchemy journal (ingredients known, recipes found, brews made), saved per character. " +
+                                                          "Added the first time the player uses an alchemy station; add it to change where it saves."),
+        C(typeof(HarvestKnowledge), Importance.Automatic, "The harvesting journal (what was learnt from carcasses and plants), saved per character. " +
+                                                          "Added the first time the player harvests; add it to change where it saves."),
     };
+
+    /// <summary>Does <paramref name="check"/> apply to this player (see <see cref="Check.applies"/>)? A failing predicate counts as yes.</summary>
+    public static bool Applies(GameObject root, Check check)
+    {
+        if (check == null)
+            return false;
+        if (check.applies == null)
+            return true;
+        try
+        {
+            return check.applies(root);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            return true;
+        }
+    }
 
     /// <summary>Is the script on the player (or one of its children when the check allows it)?</summary>
     public static bool Has(GameObject root, Check check)
@@ -124,7 +200,7 @@ public class PlayerSetupValidator : MonoBehaviour
     {
         var list = new List<Check>();
         foreach (Check c in Checks)
-            if (c.importance == importance && !Has(root, c))
+            if (c.importance == importance && Applies(root, c) && !Has(root, c))
                 list.Add(c);
         return list;
     }

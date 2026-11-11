@@ -199,7 +199,11 @@ public class HudAbilityBar : MonoBehaviour
         public string Describe()
         {
             AbilitySlot s = Slot;
-            return s != null && s.ability != null ? s.ability.Describe(s.modifiers) : "";
+            if (s == null || s.ability == null) return "";
+            string d = s.ability.Describe(s.modifiers);
+            // A slot with costs of its own (a rune spell) adds them: energy, strain...
+            string extra = s.Castable != null ? s.Castable.Describe() : "";
+            return string.IsNullOrEmpty(extra) ? d : d + "\n" + extra;
         }
     }
 

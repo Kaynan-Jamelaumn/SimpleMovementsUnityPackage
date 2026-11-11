@@ -234,11 +234,15 @@ public class AbilityPickup : MonoBehaviour
 
     /// <summary>
     /// The nearest living player who can take this pickup. In a network session only players in the pickup's own scene
-    /// count: a server holds the City, the World and every dungeon run at overlapping coordinates.
+    /// count: a server holds the City, the World and every dungeon run at overlapping coordinates. Players an
+    /// <see cref="AbsorptionGate"/> rule keeps out of absorption (e.g. Rune Magic users) never count, so the pickup flies
+    /// to and is taken by someone who can absorb it.
     /// </summary>
     private CombatEntity NearestPlayer(out float distance)
     {
-        if (!GameNet.NetAuthority.IsNetworked)
+        bool networked = GameNet.NetAuthority.IsNetworked;
+        bool gated = AbsorptionGate.HasBlockRules;
+        if (!networked && !gated)
             return CombatEntity.NearestPlayer(transform.position, out distance);
         CombatEntity best = null;
         float bestSqr = float.MaxValue;
@@ -247,7 +251,9 @@ public class AbilityPickup : MonoBehaviour
         for (int i = 0; i < players.Count; i++)
         {
             CombatEntity p = players[i];
-            if (p == null || p.IsDead || p.gameObject.scene != gameObject.scene)
+            if (p == null || p.IsDead || (networked && p.gameObject.scene != gameObject.scene))
+                continue;
+            if (gated && AbsorptionGate.Blocks(p, grant))
                 continue;
             float d = (p.Position - at).sqrMagnitude;
             if (d < bestSqr)

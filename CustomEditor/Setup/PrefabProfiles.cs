@@ -29,6 +29,8 @@ namespace SimpleMovements.Setup
         {
             if (c.importance == Importance.Automatic)
                 return "Added automatically at runtime";
+            if (!string.IsNullOrEmpty(c.group))
+                return c.group;
             Type t = c.type;
             if (t == typeof(CharacterController) || t == typeof(PlayerMovementModel) || t == typeof(PlayerMovementController) || t == typeof(MovementStateMachine) ||
                 t == typeof(AvailabilityStateMachine) || t == typeof(PlayerDashModel) || t == typeof(PlayerRollModel))
@@ -364,6 +366,8 @@ namespace SimpleMovements.Setup
                 .Explain(c.purpose + (automatic ? " Added at runtime when missing: add it only to change its settings." : ""), how)
                 .Checks(ctx =>
                 {
+                    if (!PlayerSetupValidator.Applies(ctx.Root, c))
+                        return SetupResult.Skip("Not needed here (the system is off, or the prefab is not networked).");
                     if (PlayerSetupValidator.Has(ctx.Root, c))
                     {
                         Component comp = ctx.Root.GetComponent(c.type);
@@ -375,6 +379,13 @@ namespace SimpleMovements.Setup
                 })
                 .Fixes(automatic ? "Add (to change settings)" : c.byStatusWizard ? "Run Status Setup Wizard" : "Add", ctx =>
                 {
+                    if (c.add != null)
+                    {
+                        // A system that adds its scripts its own way (its network part too); it never uses Undo: this also runs on prefab contents.
+                        c.add(ctx.Root);
+                        ctx.Dirty(ctx.Root);
+                        return true;
+                    }
                     if (c.byStatusWizard && ctx.Root.GetComponentInChildren<PlayerStatusController>(true) != null)
                     {
                         RunStatusWizard(ctx);

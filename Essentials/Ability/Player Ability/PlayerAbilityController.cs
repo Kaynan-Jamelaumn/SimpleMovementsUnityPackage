@@ -66,6 +66,13 @@ public class PlayerAbilityController : AbilityCaster
     /// </summary>
     public bool LocalInputEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Optional: asked with the slot index when the player's input wants to cast it (before anything else is checked). Return true
+    /// to take the input (the cast does not start now: the owner of the hook starts it later with <see cref="TryCastFromInput"/>),
+    /// false to let the cast go on as usual. Null = nothing between the input and the cast.
+    /// </summary>
+    public Func<int, bool> PreCast;
+
     /// <summary>Supplies the current aim of a cast from somewhere other than this machine's camera.</summary>
     public delegate bool AimProvider(AbilityCastInstance cast, out CastRequest request);
 
@@ -167,6 +174,7 @@ public class PlayerAbilityController : AbilityCaster
     {
         base.Awake();
         AbilityReceived += RecordAbsorbedLevel;
+        CastInterrupted += NotifyCastableInterrupted;
         if (animator == null)
         {
             PlayerAnimationModel model = GetComponentInChildren<PlayerAnimationModel>();
@@ -242,6 +250,23 @@ public class PlayerAbilityController : AbilityCaster
     protected override bool CanUseSlotForGrant(int index) => machineBySlot.ContainsKey(index);
 
     // ------------------------------------------------------------------ input
+    /// <summary>Asks every system that took a pre-cast hook (<c>PreCast +=</c>), in the order they were added; true as soon as one takes the input.</summary>
+    private bool RunPreCast(int slotIndex)
+    {
+        Func<int, bool> hooks = PreCast;
+        if (hooks == null)
+            return false;
+        Delegate[] list = hooks.GetInvocationList();
+        for (int i = 0; i < list.Length; i++)
+            if (((Func<int, bool>)list[i])(slotIndex))
+                return true;
+        return false;
+    }
+
+    /// <summary>The input action of the key that casts slot <paramref name="slotIndex"/> (null when no key does: a slot cast from a button).</summary>
+    public InputAction InputOfSlot(int slotIndex) =>
+        machineBySlot.TryGetValue(slotIndex, out AbilityStateMachine m) && m != null ? m.InputAction : null;
+
     /// <summary>
     /// Casts slot <paramref name="slotIndex"/> from player input: aims with the camera, or starts/confirms the
     /// click-to-confirm preview. Returns true if something started.
@@ -253,6 +278,10 @@ public class PlayerAbilityController : AbilityCaster
         AbilitySlot s = GetSlot(slotIndex);
         if (s == null || s.ability == null)
             return false;
+        // A system that has something to do before a cast (the Spelling System's key sequence) takes the input; it submits the
+        // cast itself afterwards (and then returns false from here, so this goes on as usual).
+        if (RunPreCast(slotIndex))
+            return true;
         if (targetingSlot == slotIndex)
             return ConfirmTargeting();
         if (s.ability.targeting.playerConfirmsTarget)
@@ -424,6 +453,45 @@ public class PlayerAbilityController : AbilityCaster
             transform.rotation = Quaternion.LookRotation(d, Vector3.up);
     }
 
+    // ------------------------------------------------------------------ castables (spells with costs of their own)
+    // A slot may hold an ICastable (a rune spell): what its casts need and do beyond the ability's own mana / stamina / health.
+    // The hooks below are the only places the ability pipeline asks it; the cast itself is the ordinary one.
+    protected override bool HasResources(AbilityDefinition def, in AbilityStats s)
+    {
+        if (!base.HasResources(def, s))
+            return false;
+        AbilitySlot slot = GetSlot(IndexOf(def));
+        return slot == null || slot.Castable == null || slot.Castable.HasResources(this);
+    }
+
+    protected override CastFailReason CheckExtra(AbilitySlot slot, in CastRequest request)
+    {
+        CastFailReason extra = base.CheckExtra(slot, request);
+        if (extra != CastFailReason.None)
+            return extra;
+        return slot != null && slot.Castable != null && !slot.Castable.CanStart(this) ? CastFailReason.NotEnoughResource : CastFailReason.None;
+    }
+
+    protected override void PayCost(AbilityCastInstance c)
+    {
+        base.PayCost(c);
+        if (!c.Cosmetic && c.Slot != null && c.Slot.Castable != null)
+            c.Slot.Castable.OnCastStarted(c);
+    }
+
+    protected override void OnCastReleased(AbilityCastInstance cast)
+    {
+        base.OnCastReleased(cast);
+        if (!cast.Cosmetic && cast.Slot != null && cast.Slot.Castable != null)
+            cast.Slot.Castable.OnCastReleased(cast);
+    }
+
+    private void NotifyCastableInterrupted(AbilityCastInstance cast, CastInterruptReason reason)
+    {
+        if (!cast.Cosmetic && cast.Slot != null && cast.Slot.Castable != null)
+            cast.Slot.Castable.OnCastInterrupted(cast, reason);
+    }
+
     // ------------------------------------------------------------------ click-to-confirm
     private void BeginTargeting(int slot)
     {
@@ -570,10 +638,13 @@ public class PlayerAbilityController : AbilityCaster
     /// <summary>
     /// Also refuses a new absorbed ability when the character's absorption milestones are full (one ability per milestone
     /// level reached, see <see cref="AbsorptionMilestones"/>). A stronger copy of an ability it already holds is still accepted.
+    /// Characters an <see cref="AbsorptionGate"/> rule keeps out of absorption (e.g. Rune Magic users) refuse every grant.
     /// </summary>
     public override bool CanReceive(AbilityGrant grant)
     {
         if (!base.CanReceive(grant))
+            return false;
+        if (AbsorptionGate.Blocks(Entity, grant))
             return false;
         AbsorptionMilestones m = AbsorptionMilestones.For(this);
         if (m == null || !m.enabled || IndexOf(grant.ability) >= 0)
@@ -652,8 +723,8 @@ public class PlayerAbilityController : AbilityCaster
         for (int i = 0; i < data.Count; i++)
         {
             AbilityGrant grant = AbilityGrant.FromSaveData(data[i]);
-            if (grant == null)
-                continue;
+            if (grant == null || AbsorptionGate.Blocks(Entity, grant))
+                continue; // unknown ability, or a character that may not hold absorbed abilities (e.g. a Rune Magic user)
             int slot = data[i].slot;
             if (slot >= 0 && slot < slots.Count && CanUseSlotForGrant(slot))
                 GrantInto(slot, grant);
