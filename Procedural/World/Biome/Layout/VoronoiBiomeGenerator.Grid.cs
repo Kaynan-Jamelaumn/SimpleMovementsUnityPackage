@@ -172,6 +172,7 @@ public static partial class VoronoiBiomeGenerator
         public int[] BiomeIndex;        // per point: index into Biomes
         public int[] FirstPoint;        // per biome: index of its first point
         public int[] PointCounts;       // per biome: how many points it has here
+        public float[] SlackFactors;    // per biome: (float)Math.Log(Max(1, PointCounts)) - GetBiomeBlend's smoothing slack per unit of softness
         private PairBandTable pairBands;  // RequiredSlopeSafeBlendDistance for every pair of Biomes, made on first use
 
         private sealed class PairBandTable
@@ -225,6 +226,9 @@ public static partial class VoronoiBiomeGenerator
             hood.Biomes = biomes.ToArray();
             hood.FirstPoint = first.ToArray();
             hood.PointCounts = counts.ToArray();
+            hood.SlackFactors = new float[hood.PointCounts.Length];
+            for (int i = 0; i < hood.SlackFactors.Length; i++)
+                hood.SlackFactors[i] = (float)System.Math.Log(Mathf.Max(1, hood.PointCounts[i]));
             return hood;
         }
     }

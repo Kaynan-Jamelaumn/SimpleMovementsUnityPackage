@@ -68,7 +68,7 @@ namespace ProceduralDungeon
 
         private bool AnyPlayerHere()
         {
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
                 if (p != null && p.IsAlive && dungeon.FloorAt(p.transform.position) == floor)
                     return true;
             return false;
@@ -82,7 +82,7 @@ namespace ProceduralDungeon
             {
                 flipEnds = Time.time + duration;
                 floating.Clear();
-                foreach (CombatEntity p in CombatEntity.Players)
+                foreach (CombatEntity p in DungeonPlayers.Each)
                     if (p != null && p.IsAlive && p.PlayerMovement != null && dungeon.FloorAt(p.transform.position) == floor)
                         floating[p] = p.transform.position.y + floatHeight;
                 foreach (Rigidbody rb in GetComponentsInChildren<Rigidbody>())

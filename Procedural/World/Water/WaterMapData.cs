@@ -53,6 +53,28 @@ public sealed class WaterMapData
 
     public readonly int Size;
 
+    /// <summary>
+    /// True once <see cref="SetSummary"/> was called (the water step does, on its worker thread): <see cref="WetCells"/>,
+    /// <see cref="LowestBed"/>, <see cref="HighestSurface"/> and <see cref="HasWetness"/> then say about the whole map
+    /// what would otherwise take a scan of every cell. False for a map filled by hand - scan it instead.
+    /// </summary>
+    public bool HasSummary { get; private set; }
+
+    /// <summary>How many cells have water (<see cref="IsWet"/>). Valid with <see cref="HasSummary"/>.</summary>
+    public int WetCells { get; private set; }
+
+    /// <summary>The lowest terrain height under a wet cell (float.MaxValue when none is wet). Valid with <see cref="HasSummary"/>.</summary>
+    public float LowestBed { get; private set; }
+
+    /// <summary>The highest water surface of a wet cell (float.MinValue when none is wet). Valid with <see cref="HasSummary"/>.</summary>
+    public float HighestSurface { get; private set; }
+
+    /// <summary>
+    /// True when some cell's wetness is enough to show (its <see cref="WetnessTexel"/> isn't 0); false means a
+    /// wetness texture of this map would be all zeros. Valid with <see cref="HasSummary"/>.
+    /// </summary>
+    public bool HasWetness { get; private set; }
+
     public WaterMapData(int size)
     {
         Size = size;
@@ -65,4 +87,77 @@ public sealed class WaterMapData
     }
 
     public bool IsWet(int x, int y) => Type[x, y] != WaterBodyType.None;
+
+    /// <summary>Records what a scan of the finished map gives (see <see cref="HasSummary"/>).</summary>
+    public void SetSummary(int wetCells, float lowestBed, float highestSurface, bool hasWetness)
+    {
+        WetCells = wetCells;
+        LowestBed = lowestBed;
+        HighestSurface = highestSurface;
+        HasWetness = hasWetness;
+        HasSummary = true;
+    }
+
+    /// <summary>A wetness value as the byte the chunk's wetness texture stores for it.</summary>
+    public static byte WetnessTexel(float wetness)
+    {
+        return (byte)Mathf.RoundToInt(Mathf.Clamp01(wetness) * 255f);
+    }
+
+    /// <summary>
+    /// The whole map's wetness as the bytes of the chunk's wetness texture (one per cell, row by row), or null
+    /// when they would all be 0. For a worker thread, so the main thread only has to upload them.
+    /// </summary>
+    public byte[] WetnessTexels()
+    {
+        if (HasSummary && !HasWetness)
+            return null;
+        int size = Size;
+        var texels = new byte[size * size];
+        bool any = false;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                byte texel = WetnessTexel(Wetness[x, y]);
+                texels[y * size + x] = texel;
+                any |= texel != 0;
+            }
+        }
+        return any ? texels : null;
+    }
+
+    /// <summary>A map with no water at all yet: every cell dry, with no water level near it (NaN) and no wetness.</summary>
+    public static WaterMapData CreateDry(int size)
+    {
+        var map = new WaterMapData(size);
+        for (int x = 0; x < size; x++)
+        {
+            for (int y = 0; y < size; y++)
+            {
+                map.Surface[x, y] = float.NaN;
+                map.ShoreLevel[x, y] = float.NaN;
+            }
+        }
+        return map;
+    }
+
+    // One all-dry map per size, shared by every chunk that has no water and none near it.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, WaterMapData> DryMaps =
+        new System.Collections.Concurrent.ConcurrentDictionary<int, WaterMapData>();
+
+    /// <summary>
+    /// The map of a chunk with no water in or near it: the same values a map built for it holds (every cell dry,
+    /// no level, no flow, no wetness), as one instance shared by all such chunks instead of a megabyte of arrays
+    /// each. It is only ever read - don't write to a map you were given.
+    /// </summary>
+    public static WaterMapData Dry(int size)
+    {
+        return DryMaps.GetOrAdd(size, s =>
+        {
+            WaterMapData map = CreateDry(s);
+            map.SetSummary(0, float.MaxValue, float.MinValue, false);
+            return map;
+        });
+    }
 }

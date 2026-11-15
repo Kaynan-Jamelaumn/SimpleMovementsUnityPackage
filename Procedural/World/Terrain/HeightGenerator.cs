@@ -194,11 +194,15 @@ public static class HeightGenerator
         Action<int> row = y =>
         {
             float worldPosY = paddedOrigin.y + y;
+            // One list for the whole row (refilled at every cell) instead of a new one per cell.
+            List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+            try
+            {
             for (int x = 0; x < paddedSize; x++)
             {
                 float worldPosX = paddedOrigin.x + x;
 
-                List<VoronoiBiomeGenerator.BiomeWeight> blend = sampler.GetBlend(worldPosX, worldPosY);
+                sampler.GetBlend(worldPosX, worldPosY, blend);
                 float height = sampler.LandHeight(blend, worldPosX, worldPosY, out float relief);
                 height = sampler.ShapeLand(worldPosX, worldPosY, height, relief, out float landSide);
 
@@ -228,6 +232,11 @@ public static class HeightGenerator
                     height = water.ApplyPreErosion(x, y, worldPosX, worldPosY, height);
 
                 paddedHeights[x, y] = height;
+            }
+            }
+            finally
+            {
+                VoronoiBiomeGenerator.BlendLists.Return(blend);
             }
         };
 

@@ -25,7 +25,7 @@ namespace ProceduralDungeon
         {
             if (Time.time < readyAt)
                 return;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive || (sneakOver && p.IsSneaking))
                     continue;

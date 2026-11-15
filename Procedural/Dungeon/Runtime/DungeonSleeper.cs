@@ -66,7 +66,7 @@ namespace ProceduralDungeon
             if (Time.time < nextCheck)
                 return;
             nextCheck = Time.time + 0.2f;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;

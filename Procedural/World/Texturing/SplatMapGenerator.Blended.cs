@@ -98,6 +98,28 @@ public static partial class SplatMapGenerator
         return pixels;
     }
 
+    /// <summary>
+    /// How many of a chunk's splat maps (<see cref="GenerateSplatPixels"/>) hold anything: every map after that many
+    /// is all zeros (none of its four biomes is in the chunk). At least 1. The package terrain shader reads an all-zero
+    /// map as "none of these biomes here", exactly as it reads a map that isn't there, so such maps needn't be uploaded.
+    /// </summary>
+    public static int UsedSplatMaps(Color32[][] pixels)
+    {
+        if (pixels == null)
+            return 0;
+        for (int map = pixels.Length - 1; map > 0; map--)
+        {
+            Color32[] layer = pixels[map];
+            for (int i = 0; i < layer.Length; i++)
+            {
+                Color32 pixel = layer[i];
+                if ((pixel.r | pixel.g | pixel.b | pixel.a) != 0)
+                    return map + 1;
+            }
+        }
+        return Mathf.Min(1, pixels.Length);
+    }
+
     /// <summary>Splat map textures from <see cref="GenerateSplatPixels"/> (main thread only).</summary>
     public static Texture2D[] CreateSplatTextures(Color32[][] pixels, int size)
     {
@@ -148,8 +170,20 @@ public static partial class SplatMapGenerator
 
         Parallel.For(0, chunkSize, y =>
         {
-            for (int x = 0; x < chunkSize; x++)
-                FillBlendSlots(sampler.GetTextureBlend(worldOrigin.x + x, worldOrigin.y + y), indices, data, x, y);
+            // One list for the whole row, refilled at every pixel.
+            List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+            try
+            {
+                for (int x = 0; x < chunkSize; x++)
+                {
+                    sampler.GetTextureBlend(worldOrigin.x + x, worldOrigin.y + y, blend);
+                    FillBlendSlots(blend, indices, data, x, y);
+                }
+            }
+            finally
+            {
+                VoronoiBiomeGenerator.BlendLists.Return(blend);
+            }
         });
         return data;
     }

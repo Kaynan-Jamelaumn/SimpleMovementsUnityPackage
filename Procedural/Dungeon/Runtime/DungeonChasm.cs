@@ -47,7 +47,7 @@ namespace ProceduralDungeon
             if (recordSafe)
                 nextSafeCheck = Time.time + 0.25f;
             float baseY = dungeon.Layout.Floors[floor].Spec.BaseY;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;

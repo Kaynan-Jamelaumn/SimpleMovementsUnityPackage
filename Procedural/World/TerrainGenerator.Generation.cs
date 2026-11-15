@@ -42,8 +42,8 @@ public partial class TerrainGenerator : MonoBehaviour
     /// <summary>
     /// Generates the biome map and, when <paramref name="computeSplatBlend"/> is set, the chunk's per-pixel
     /// splat blend in the same pass (see <see cref="SplatBlendData"/>) - so that work happens here on the
-    /// worker thread instead of on the main thread, and, with ocean or volcanic biomes (where the biome map
-    /// is the top entry of the same blend), each blend is looked up once instead of twice.
+    /// worker thread instead of on the main thread, and each cell's biome layout is looked up once for both
+    /// (see <see cref="TerrainHeightSampler.GetTextureBlendAndBiome"/>) instead of once for each.
     /// </summary>
     public Biome[,] GenerateBiomeMap(Vector2 globalOffset, float[,] heightMap, bool computeSplatBlend, out SplatBlendData splatBlend)
     {
@@ -53,27 +53,32 @@ public partial class TerrainGenerator : MonoBehaviour
 
         splatBlend = computeSplatBlend ? new SplatBlendData(ChunkSize, SplatTexturesPerPixel) : null;
         SplatBiomeIndex splatIndices = computeSplatBlend ? new SplatBiomeIndex(SplatMapGenerator.BiomeIndexMap(this), SplatIndexByBiome) : null;
-        // With ocean/volcanic biomes, a cell's biome is the top of its texture blend (see SampleBiome).
-        bool shareBlend = computeSplatBlend && sampler.HasSpecialBiomes;
 
         // Rows are independent: on a worker thread, other workers help (see TerrainWorkerPool.For).
         SplatBlendData blendData = splatBlend;
         System.Action<int> row = y =>
         {
-            for (int x = 0; x < ChunkSize; x++)
+            if (!computeSplatBlend)
             {
-                float worldX = globalOffset.x + x, worldY = globalOffset.y + y;
-                if (shareBlend)
-                {
-                    List<VoronoiBiomeGenerator.BiomeWeight> blend = sampler.GetTextureBlend(worldX, worldY);
-                    biomeMap[x, y] = blend.Count > 0 ? blend[0].Biome : null;
-                    SplatMapGenerator.FillBlendSlots(blend, splatIndices, blendData, x, y);
-                    continue;
-                }
+                for (int x = 0; x < ChunkSize; x++)
+                    biomeMap[x, y] = sampler.SampleBiome(globalOffset.x + x, globalOffset.y + y);
+                return;
+            }
 
-                biomeMap[x, y] = sampler.SampleBiome(worldX, worldY);
-                if (computeSplatBlend)
-                    SplatMapGenerator.FillBlendSlots(sampler.GetTextureBlend(worldX, worldY), splatIndices, blendData, x, y);
+            // One list for the whole row, refilled at every cell: the cell's biome and its splat slots both come from it.
+            List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+            try
+            {
+                for (int x = 0; x < ChunkSize; x++)
+                {
+                    float worldX = globalOffset.x + x, worldY = globalOffset.y + y;
+                    biomeMap[x, y] = sampler.GetTextureBlendAndBiome(worldX, worldY, blend);
+                    SplatMapGenerator.FillBlendSlots(blend, splatIndices, blendData, x, y);
+                }
+            }
+            finally
+            {
+                VoronoiBiomeGenerator.BlendLists.Return(blend);
             }
         };
 

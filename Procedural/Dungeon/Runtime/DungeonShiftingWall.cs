@@ -19,7 +19,7 @@ namespace ProceduralDungeon
         {
             get
             {
-                foreach (CombatEntity e in CombatEntity.All)
+                foreach (CombatEntity e in DungeonPlayers.EachCombatant)
                 {
                     if (e == null || !e.IsAlive)
                         continue;

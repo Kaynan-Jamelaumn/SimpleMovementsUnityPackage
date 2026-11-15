@@ -55,7 +55,7 @@ namespace ProceduralDungeon
 
         private void Update()
         {
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;

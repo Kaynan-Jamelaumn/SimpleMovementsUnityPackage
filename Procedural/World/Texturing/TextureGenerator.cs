@@ -87,7 +87,13 @@ public class TextureGenerator
     /// computed on a worker thread by <see cref="SplatMapGenerator.GenerateSplatPixels"/>), and the texturing
     /// settings. Null if no usable shader was found. Free it with <see cref="ReleaseChunkMaterial"/>.
     /// </summary>
-    public static Material CreateChunkMaterial(Color32[][] splatPixels, int splatSize, TerrainGenerator terrainGenerator, bool shouldUseHDRPShader)
+    /// <param name="usedSplatMaps">
+    /// How many of the splat maps hold anything (<see cref="SplatMapGenerator.UsedSplatMaps"/>; 0 = not known, use
+    /// them all). The package shader is only given those: it reads an all-zero map as nothing, so leaving the
+    /// trailing empty ones out draws the same with less texture memory and fewer reads per pixel. Other shaders
+    /// always get every map.
+    /// </param>
+    public static Material CreateChunkMaterial(Color32[][] splatPixels, int splatSize, TerrainGenerator terrainGenerator, bool shouldUseHDRPShader, int usedSplatMaps = 0)
     {
         if (splatPixels == null || splatPixels.Length == 0)
             return null;
@@ -106,12 +112,13 @@ public class TextureGenerator
 
         // The package shader reads the weights as plain numbers (linear); project shaders get the sRGB array
         // they always had, so they look exactly as before.
-        Texture2DArray splatMapArray = CreateSplatArray(splatPixels, splatSize, packageShader);
+        int splatMapCount = packageShader && usedSplatMaps > 0 ? Mathf.Min(usedSplatMaps, splatPixels.Length) : splatPixels.Length;
+        Texture2DArray splatMapArray = CreateSplatArray(splatPixels, splatMapCount, splatSize, packageShader);
 
         mat.SetTexture("_TextureArray", textureArray);
         mat.SetTexture("_SplatMaps", splatMapArray);
         mat.SetInt("_TextureArrayLength", biomeTextures.Count);
-        mat.SetInt("_SplatMapCount", splatPixels.Length);
+        mat.SetInt("_SplatMapCount", splatMapCount);
         mat.SetInt("_BiomeCount", terrainGenerator.BiomeDefinitions.Length);
 
         // Set shader enhancement properties only if enabled
@@ -182,28 +189,63 @@ public class TextureGenerator
     /// </summary>
     private static Material CreateMaterial(TerrainGenerator terrainGenerator, bool shouldUseHDRPShader, out bool packageShader)
     {
-        packageShader = false;
-        TerrainShaderMode mode = terrainGenerator.TerrainShader;
-        if (mode == TerrainShaderMode.CustomMaterial && terrainGenerator.CustomTerrainMaterial != null)
-        {
-            Material template = terrainGenerator.CustomTerrainMaterial;
-            packageShader = template.shader != null && template.shader.name == PackageShaderName;
+        Shader shader = ChooseShader(terrainGenerator, shouldUseHDRPShader, out Material template, out packageShader, out string projectShaderName);
+        if (template != null)
             return new Material(template) { name = "Terrain (" + template.name + ")" };
-        }
-
-        Shader package = FindPackageShader(shouldUseHDRPShader);
-        string projectShaderName = "Custom/TerrainSplat" + (shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP");
-        Shader project = Shader.Find(projectShaderName);
-
-        Shader shader = mode == TerrainShaderMode.PackageTriplanar ? (package != null ? package : project) : (project != null ? project : package);
         if (shader == null)
         {
             Debug.LogError("TextureGenerator: no terrain shader found - neither '" + PackageShaderName + "' (URP / Built-in) nor '" + projectShaderName + "'.");
             return null;
         }
 
-        packageShader = shader == package;
         return new Material(shader) { name = "Terrain" };
+    }
+
+    /// <summary>
+    /// The shader a chunk material gets (see <see cref="CreateMaterial"/>): <paramref name="template"/> is the custom
+    /// material to copy instead when that is what the generator is set to; null with no template = none was found.
+    /// </summary>
+    private static Shader ChooseShader(TerrainGenerator terrainGenerator, bool shouldUseHDRPShader, out Material template, out bool packageShader, out string projectShaderName)
+    {
+        packageShader = false;
+        template = null;
+        projectShaderName = "Custom/TerrainSplat" + (shouldUseHDRPShader ? "MapShaderHDRP" : "MapShaderURP");
+        TerrainShaderMode mode = terrainGenerator.TerrainShader;
+        if (mode == TerrainShaderMode.CustomMaterial && terrainGenerator.CustomTerrainMaterial != null)
+        {
+            template = terrainGenerator.CustomTerrainMaterial;
+            packageShader = template.shader != null && template.shader.name == PackageShaderName;
+            return template.shader;
+        }
+
+        Shader package = FindPackageShader(shouldUseHDRPShader);
+        Shader project = Shader.Find(projectShaderName);
+
+        Shader shader = mode == TerrainShaderMode.PackageTriplanar ? (package != null ? package : project) : (project != null ? project : package);
+        if (shader == null)
+            return null;
+
+        packageShader = shader == package;
+        return shader;
+    }
+
+    /// <summary>
+    /// True when the chunk materials <see cref="CreateChunkMaterial"/> makes with these settings use the package
+    /// terrain shader (main thread). That shader reads only positions, normals and the splat UV from the terrain
+    /// mesh, so meshes for it can leave the other channels out (see <see cref="MeshGenerator.GenerateTerrainMesh"/>).
+    /// </summary>
+    public static bool UsesPackageShader(TerrainGenerator terrainGenerator, bool shouldUseHDRPShader)
+    {
+        if (terrainGenerator == null)
+            return false;
+        ChooseShader(terrainGenerator, shouldUseHDRPShader, out _, out bool packageShader, out _);
+        return packageShader;
+    }
+
+    /// <summary>True when a material's shader is the package terrain shader.</summary>
+    public static bool IsPackageShader(Material material)
+    {
+        return material != null && material.shader != null && material.shader.name == PackageShaderName;
     }
 
     /// <summary>The package's terrain shader, or null under HDRP (not supported) or if it is missing.</summary>
@@ -289,9 +331,9 @@ public class TextureGenerator
     }
 
     /// <summary>A chunk's splat maps as a texture array, written directly from their pixels.</summary>
-    private static Texture2DArray CreateSplatArray(Color32[][] pixels, int size, bool linear)
+    private static Texture2DArray CreateSplatArray(Color32[][] pixels, int count, int size, bool linear)
     {
-        var array = new Texture2DArray(size, size, pixels.Length, TextureFormat.RGBA32, false, linear)
+        var array = new Texture2DArray(size, size, count, TextureFormat.RGBA32, false, linear)
         {
             name = "Splat Maps",
             // Clamp, not Repeat: the splat map is sampled with a dedicated 0-1 UV that should never
@@ -300,7 +342,7 @@ public class TextureGenerator
             wrapMode = TextureWrapMode.Clamp,
             filterMode = FilterMode.Bilinear,
         };
-        for (int i = 0; i < pixels.Length; i++)
+        for (int i = 0; i < count; i++)
             array.SetPixels32(pixels[i], i);
         // Upload, then drop the CPU copy - nothing reads it back.
         array.Apply(false, true);

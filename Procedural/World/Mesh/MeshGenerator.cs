@@ -20,7 +20,14 @@ public static partial class MeshGenerator
     /// Greater than 0 (distance LOD - see <see cref="TerrainGenerator.DistanceLod"/>): hangs a skirt this deep under
     /// every edge, and places the splat map by height map cell so every level of detail maps it identically.
     /// </param>
-    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0, bool enableDebugging = false, Vector2 globalOffset = default, float[,] wetness = null, float skirtDepth = 0f)
+    /// <param name="splatChannelOnly">
+    /// For a mesh the package terrain shader draws: it places textures by world position and reads wetness from the
+    /// chunk's wetness map, so the texture UV (<see cref="MeshData.uvs"/>) and the vertex colors are left out - less
+    /// to compute, keep and upload. Positions, normals, splat UV and triangles are the same either way, and
+    /// <see cref="AddOptionalChannels"/> adds the two channels later if another shader turns out to draw the mesh.
+    /// </param>
+    public static MeshData GenerateTerrainMesh(TerrainGenerator terrainGenerator, float[,] heightMap, int lod = 0, bool enableDebugging = false, Vector2 globalOffset = default, float[,] wetness = null, float skirtDepth = 0f,
+        bool splatChannelOnly = false)
     {
         // HeightMap is (ChunkSize+1) x (ChunkSize+1) = 242x242
         int mapWidth = heightMap.GetLength(0);
@@ -39,8 +46,8 @@ public static partial class MeshGenerator
         if (enableDebugging)
             Debug.Log($"Mesh dimensions: {meshWidth}x{meshHeight}, LOD Factor: {lodFactor}");
 
-        MeshData meshData = new MeshData(meshWidth, meshHeight, enableDebugging);
-        bool hasWetness = wetness != null && wetness.GetLength(0) == mapWidth && wetness.GetLength(1) == mapHeight;
+        MeshData meshData = new MeshData(meshWidth, meshHeight, enableDebugging, !splatChannelOnly);
+        bool hasWetness = !splatChannelOnly && wetness != null && wetness.GetLength(0) == mapWidth && wetness.GetLength(1) == mapHeight;
         if (hasWetness)
             meshData.colors = new Color[meshData.vertices.Length];
 
@@ -55,7 +62,7 @@ public static partial class MeshGenerator
 
         // Calculate chunk-specific UV variations only if texture variations are enabled
         UVVariationData uvVariation = default;
-        bool useVariations = terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
+        bool useVariations = !splatChannelOnly && terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
 
         if (useVariations)
         {
@@ -90,43 +97,8 @@ public static partial class MeshGenerator
                 );
 
                 // Calculate UV coordinates - with or without variations based on toggle
-                Vector2 finalUV;
-
-                if (useVariations)
-                {
-                    // ENHANCED PATH: Apply all texture variation features
-                    Vector2 baseUV = new Vector2(
-                        (heightMapX * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier,
-                        (heightMapY * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier
-                    );
-
-                    // Apply noise-based UV offset for natural variation
-                    if (terrainGenerator.EnableUVNoise)
-                    {
-                        float worldX = globalOffset.x + heightMapX;
-                        float worldY = globalOffset.y + heightMapY;
-                        Vector2 noiseOffset = CalculateUVNoiseOffset(worldX, worldY, terrainGenerator.UVNoiseScale, terrainGenerator.UVNoiseStrength);
-                        baseUV += noiseOffset;
-                    }
-
-                    // Apply chunk-specific UV rotation to reduce repetition
-                    if (terrainGenerator.EnableUVRotation)
-                    {
-                        baseUV = RotateUV(baseUV, uvVariation.rotationAngle, uvVariation.rotationCenter);
-                    }
-
-                    finalUV = baseUV;
-                }
-                else
-                {
-                    // ORIGINAL PATH: Standard UV calculation without variations
-                    finalUV = new Vector2(
-                        (heightMapX * terrainGenerator.ScaleFactor) * uvScale,
-                        (heightMapY * terrainGenerator.ScaleFactor) * uvScale
-                    );
-                }
-
-                meshData.uvs[vertexIndex] = finalUV;
+                if (!splatChannelOnly)
+                    meshData.uvs[vertexIndex] = TextureUV(terrainGenerator, heightMapX, heightMapY, uvScale, useVariations, uvVariation, globalOffset);
                 if (hasWetness)
                     meshData.colors[vertexIndex] = new Color(wetness[heightMapX, heightMapY], 0f, 0f, 1f);
 
@@ -188,6 +160,109 @@ public static partial class MeshGenerator
         }
 
         return meshData;
+    }
+
+    /// <summary>The texture UV of the grid vertex at height map cell (heightMapX, heightMapY).</summary>
+    private static Vector2 TextureUV(TerrainGenerator terrainGenerator, int heightMapX, int heightMapY, float uvScale, bool useVariations, UVVariationData uvVariation, Vector2 globalOffset)
+    {
+        Vector2 finalUV;
+
+        if (useVariations)
+        {
+            // ENHANCED PATH: Apply all texture variation features
+            Vector2 baseUV = new Vector2(
+                (heightMapX * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier,
+                (heightMapY * terrainGenerator.ScaleFactor) * uvScale * uvVariation.scaleMultiplier
+            );
+
+            // Apply noise-based UV offset for natural variation
+            if (terrainGenerator.EnableUVNoise)
+            {
+                float worldX = globalOffset.x + heightMapX;
+                float worldY = globalOffset.y + heightMapY;
+                Vector2 noiseOffset = CalculateUVNoiseOffset(worldX, worldY, terrainGenerator.UVNoiseScale, terrainGenerator.UVNoiseStrength);
+                baseUV += noiseOffset;
+            }
+
+            // Apply chunk-specific UV rotation to reduce repetition
+            if (terrainGenerator.EnableUVRotation)
+            {
+                baseUV = RotateUV(baseUV, uvVariation.rotationAngle, uvVariation.rotationCenter);
+            }
+
+            finalUV = baseUV;
+        }
+        else
+        {
+            // ORIGINAL PATH: Standard UV calculation without variations
+            finalUV = new Vector2(
+                (heightMapX * terrainGenerator.ScaleFactor) * uvScale,
+                (heightMapY * terrainGenerator.ScaleFactor) * uvScale
+            );
+        }
+
+        return finalUV;
+    }
+
+    /// <summary>
+    /// Gives a mesh built with <see cref="GenerateTerrainMesh"/>'s splatChannelOnly the two channels it was built
+    /// without - the texture UV and the wetness vertex colors - with exactly the values it would have had (pass the
+    /// same height map, level of detail, offset and wetness). Does nothing to a mesh that already has its UVs. For
+    /// the case where a mesh made for the package shader ends up drawn by another one (the terrain's shader setting
+    /// changed while the chunk was being generated, or since it was cached).
+    /// </summary>
+    public static void AddOptionalChannels(MeshData meshData, TerrainGenerator terrainGenerator, float[,] heightMap, int lod, Vector2 globalOffset, float[,] wetness)
+    {
+        if (meshData == null || meshData.uvs != null)
+            return;
+
+        int mapWidth = heightMap.GetLength(0);
+        int mapHeight = heightMap.GetLength(1);
+        int lodFactor = lod > 0 ? lod * 2 : 1;
+        int meshWidth = (mapWidth - 1) / lodFactor;
+        int meshHeight = (mapHeight - 1) / lodFactor;
+        int gridVertices = (meshWidth + 1) * (meshHeight + 1);
+        if (meshData.width != meshWidth || meshData.depth != meshHeight || meshData.vertices.Length < gridVertices)
+            return;   // not this height map's mesh at this level of detail
+
+        bool hasWetness = wetness != null && wetness.GetLength(0) == mapWidth && wetness.GetLength(1) == mapHeight;
+        var uvs = new Vector2[meshData.vertices.Length];
+        Color[] colors = hasWetness ? new Color[meshData.vertices.Length] : null;
+
+        float uvScale = GetTextureScale(terrainGenerator);
+        UVVariationData uvVariation = default;
+        bool useVariations = terrainGenerator.EnableTextureVariations && globalOffset != Vector2.zero;
+        if (useVariations)
+            uvVariation = CalculateUVVariation(terrainGenerator, globalOffset);
+
+        int vertexIndex = 0;
+        for (int y = 0; y <= meshHeight; y++)
+        {
+            for (int x = 0; x <= meshWidth; x++)
+            {
+                int heightMapX = Mathf.Min(x * lodFactor, mapWidth - 1);
+                int heightMapY = Mathf.Min(y * lodFactor, mapHeight - 1);
+                uvs[vertexIndex] = TextureUV(terrainGenerator, heightMapX, heightMapY, uvScale, useVariations, uvVariation, globalOffset);
+                if (hasWetness)
+                    colors[vertexIndex] = new Color(wetness[heightMapX, heightMapY], 0f, 0f, 1f);
+                vertexIndex++;
+            }
+        }
+
+        // Skirt vertices repeat the grid vertex they hang under (see MeshData.AddSkirt).
+        if (meshData.skirtSources != null)
+        {
+            for (int i = 0; i < meshData.skirtSources.Length && gridVertices + i < uvs.Length; i++)
+            {
+                int source = meshData.skirtSources[i];
+                uvs[gridVertices + i] = uvs[source];
+                if (colors != null)
+                    colors[gridVertices + i] = colors[source];
+            }
+        }
+
+        meshData.uvs = uvs;
+        meshData.colors = colors;
     }
 
     /// <summary>

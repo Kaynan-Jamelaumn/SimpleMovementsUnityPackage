@@ -83,6 +83,12 @@ public static class DataStructure
         [Tooltip("The chunk's water mesh data, computed on the worker thread (null when the chunk is dry or water is off).")]
         public WaterMeshData waterMeshData;
 
+        [Tooltip("The chunk's wetness texture bytes (WaterMapData.WetnessTexels), computed on the worker thread. Null when no ground is wet, or when they weren't prepared (they are then worked out from the water map).")]
+        public byte[] wetnessTexels;
+
+        [Tooltip("How many of the splat maps hold anything: the ones after are all zero (SplatMapGenerator.UsedSplatMaps, worked out on the worker thread). 0 = not worked out.")]
+        public int usedSplatMaps;
+
         /// <summary>
         /// Constructor for TerrainData.
         /// </summary>
@@ -116,6 +122,8 @@ public static class DataStructure
             this.placementFields = null;
             this.splatPixels = null;
             this.waterMeshData = null;
+            this.wetnessTexels = null;
+            this.usedSplatMaps = 0;
         }
     }
 

@@ -49,7 +49,7 @@ namespace ProceduralDungeon
             nextShift = Time.time + Random.Range(interval.x, Mathf.Max(interval.x, interval.y));
             Shift();
             if (!first)
-                foreach (CombatEntity p in CombatEntity.Players)
+                foreach (CombatEntity p in DungeonPlayers.Each)
                     if (p != null && p.IsAlive && dungeon.FloorAt(p.transform.position) == floor)
                     {
                         DungeonMessages.Show(this, "Stone grinds in the distance: the walls are shifting.");

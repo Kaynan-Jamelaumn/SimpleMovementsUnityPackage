@@ -136,7 +136,7 @@ namespace ProceduralDungeon
         /// <summary>A character (player or mob) stands in the doorway.</summary>
         private bool Occupied()
         {
-            foreach (CombatEntity e in CombatEntity.All)
+            foreach (CombatEntity e in DungeonPlayers.EachCombatant)
             {
                 if (e == null || !e.IsAlive)
                     continue;

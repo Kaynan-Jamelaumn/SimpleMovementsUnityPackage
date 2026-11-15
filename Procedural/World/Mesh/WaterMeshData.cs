@@ -5,8 +5,8 @@ using UnityEngine;
 /// Data structure for a chunk's water mesh - see <see cref="MeshGenerator.GenerateWaterMesh"/>. Uses the
 /// exact same vertex grid (width/depth/LOD sampling) as <see cref="MeshData"/>, so water vertices always
 /// line up with the terrain mesh underneath, and one submesh per water type (ocean, lake, pond, river,
-/// plus waterfalls - the steep sheets where a river drops) so each type can get its own material. Vertices of dry grid points no quad uses stay in the buffer
-/// unreferenced - a little memory, in exchange for trivially correct indexing.
+/// plus waterfalls - the steep sheets where a river drops) so each type can get its own material. Only the
+/// grid vertices a water quad uses are stored (in grid order); the mesh keeps the bounds of the whole grid.
 /// </summary>
 public class WaterMeshData
 {
@@ -19,16 +19,36 @@ public class WaterMeshData
     public Vector2[] flows;
     public readonly List<int>[] submeshTriangles;
 
-    public WaterMeshData(int width, int depth)
+    // The bounds the mesh is given instead of those of its own vertices (see SetBounds).
+    private Bounds bounds;
+    private bool hasBounds;
+
+    /// <summary>Room for every vertex of a (width + 1) x (depth + 1) grid.</summary>
+    public WaterMeshData(int width, int depth) : this((width + 1) * (depth + 1), null)
     {
-        int count = (width + 1) * (depth + 1);
-        vertices = new Vector3[count];
-        uvs = new Vector2[count];
-        colors = new Color[count];
-        flows = new Vector2[count];
+    }
+
+    /// <summary>Room for <paramref name="vertexCount"/> vertices; <paramref name="submeshQuads"/>: how many quads each submesh will get, when known.</summary>
+    public WaterMeshData(int vertexCount, int[] submeshQuads)
+    {
+        vertices = new Vector3[vertexCount];
+        uvs = new Vector2[vertexCount];
+        colors = new Color[vertexCount];
+        flows = new Vector2[vertexCount];
         submeshTriangles = new List<int>[SubmeshCount];
         for (int i = 0; i < SubmeshCount; i++)
-            submeshTriangles[i] = new List<int>();
+            submeshTriangles[i] = submeshQuads != null ? new List<int>(submeshQuads[i] * 6) : new List<int>();
+    }
+
+    /// <summary>
+    /// The bounds <see cref="BuildMesh"/> gives the mesh. The water mesh used to hold the chunk's whole vertex grid,
+    /// dry corners included, and its bounds were that grid's; with only the used vertices stored, the generator
+    /// passes the grid's bounds here so the mesh is culled and sorted exactly as before.
+    /// </summary>
+    public void SetBounds(Bounds value)
+    {
+        bounds = value;
+        hasBounds = true;
     }
 
     /// <summary>Submesh (and material slot) of a water type: 0 = ocean, 1 = lake, 2 = pond, 3 = river, 4 = waterfall.</summary>
@@ -55,7 +75,10 @@ public class WaterMeshData
         for (int i = 0; i < SubmeshCount; i++)
             mesh.SetTriangles(submeshTriangles[i], i);
         mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
+        if (hasBounds)
+            mesh.bounds = bounds;
+        else
+            mesh.RecalculateBounds();
         return mesh;
     }
 }

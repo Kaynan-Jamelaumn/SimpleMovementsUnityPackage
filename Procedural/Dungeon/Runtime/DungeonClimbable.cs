@@ -37,7 +37,7 @@ namespace ProceduralDungeon
             Bounds b = box.bounds;
             // A client's copy only moves this machine's own player (the others are the server's to move).
             bool replica = DungeonNet.IsReplica(this);
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive || p.Controller == null || p.PlayerMovement == null)
                     continue;

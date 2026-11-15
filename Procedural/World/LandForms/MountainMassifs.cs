@@ -253,11 +253,7 @@ public sealed class MountainMassifs
         if (tile == null || !otherKey.Equals(key))
         {
             if (!Tiles.TryGetValue(key, out Lazy<Tile> entry))
-            {
-                if (tileCount > MaxTiles)
-                    ClearCache();
-                entry = Tiles.GetOrAdd(key, new Lazy<Tile>(() => BuildTile(tx, ty)));
-            }
+                entry = AddTile(key, tx, ty);
             tile = entry.Value;
         }
         otherTile = lastTile;
@@ -267,6 +263,15 @@ public sealed class MountainMassifs
         return tile;
     }
 
+    // Apart from GetTile: the lambda's captured variables are then only allocated for a tile that isn't cached,
+    // not at every lookup (GetTile runs for every terrain cell sampled).
+    private Lazy<Tile> AddTile(TileKey key, int tx, int ty)
+    {
+        if (tileCount > MaxTiles)
+            ClearCache();
+        return Tiles.GetOrAdd(key, new Lazy<Tile>(() => BuildTile(tx, ty)));
+    }
+
     // ------------------------------------------------------------------ building a tile
 
     /// <summary>Which grid nodes are mountain territory (and whose parameters), 8 x 8 nodes at a time.</summary>
@@ -274,15 +279,19 @@ public sealed class MountainMassifs
     {
         var key = new TileKey { Settings = settings, X = mx, Y = my };
         if (!Masks.TryGetValue(key, out Lazy<MaskTile> entry))
-        {
-            if (maskCount > MaxMasks)
-            {
-                Masks.Clear();
-                maskCount = 0;
-            }
-            entry = Masks.GetOrAdd(key, new Lazy<MaskTile>(() => BuildMask(mx, my)));
-        }
+            entry = AddMask(key, mx, my);
         return entry.Value;
+    }
+
+    // Apart from GetMask, like AddTile: nothing is allocated when the mask is cached.
+    private Lazy<MaskTile> AddMask(TileKey key, int mx, int my)
+    {
+        if (maskCount > MaxMasks)
+        {
+            Masks.Clear();
+            maskCount = 0;
+        }
+        return Masks.GetOrAdd(key, new Lazy<MaskTile>(() => BuildMask(mx, my)));
     }
 
     private MaskTile BuildMask(int mx, int my)

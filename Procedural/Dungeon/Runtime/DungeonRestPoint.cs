@@ -28,7 +28,7 @@ namespace ProceduralDungeon
         {
             DungeonRun run = DungeonSession.RunAt(this) ?? DungeonSession.RunOf(player != null ? player.gameObject : null);
             int revived = 0;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null)
                     continue;

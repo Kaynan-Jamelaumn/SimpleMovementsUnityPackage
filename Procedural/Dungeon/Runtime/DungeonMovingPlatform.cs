@@ -55,7 +55,7 @@ namespace ProceduralDungeon
         private void Carry(Vector3 before, Vector3 delta)
         {
             float top = before.y + deckHeight;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive || p.Controller == null || !p.Controller.enabled)
                     continue;

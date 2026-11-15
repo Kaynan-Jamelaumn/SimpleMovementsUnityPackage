@@ -27,6 +27,9 @@ public static partial class MeshGenerator
     {
         if (water == null)
             return null;
+        // A quad needs a wet corner: a map without a wet cell has no water mesh.
+        if (water.HasSummary && water.WetCells == 0)
+            return null;
 
         int mapWidth = heightMap.GetLength(0);
         int mapHeight = heightMap.GetLength(1);
@@ -40,15 +43,70 @@ public static partial class MeshGenerator
         int lastOwnedX = mapWidth - 2;
         int lastOwnedY = mapHeight - 2;
 
-        WaterMeshData meshData = new WaterMeshData(meshWidth, meshHeight);
         // A quad whose wet corners differ in water height by more than this is a waterfall sheet (steeper
         // than ~50 degrees at this vertex spacing); gentler rapids stay river.
         float waterfallRise = 1.2f * lodFactor;
         float scaleFactor = terrainGenerator.ScaleFactor;
         const float uvScale = 1f / 20f;
-        bool anyQuad = false;
 
-        int vertexIndex = 0;
+        // First the quads that carry water, row by row (the order their triangles are listed in), and the grid
+        // vertices they use - so only those vertices are stored, instead of the whole grid for a pond in a corner.
+        int rowLength = meshWidth + 1;
+        int gridVertices = rowLength * (meshHeight + 1);
+        int[] slots = scratchWaterSlots;
+        if (slots == null || slots.Length < gridVertices)
+            scratchWaterSlots = slots = new int[gridVertices];
+        System.Array.Clear(slots, 0, gridVertices);
+        List<int> quads = scratchWaterQuads ?? (scratchWaterQuads = new List<int>());
+        quads.Clear();
+        int[] submeshQuads = new int[WaterMeshData.SubmeshCount];
+
+        for (int y = 0; y < meshHeight; y++)
+        {
+            int heightMapY = Mathf.Min(y * lodFactor, mapHeight - 1);
+            int nextHeightMapY = Mathf.Min((y + 1) * lodFactor, mapHeight - 1);
+            if (nextHeightMapY > lastOwnedY)
+                continue;
+            for (int x = 0; x < meshWidth; x++)
+            {
+                int heightMapX = Mathf.Min(x * lodFactor, mapWidth - 1);
+                int nextHeightMapX = Mathf.Min((x + 1) * lodFactor, mapWidth - 1);
+                if (nextHeightMapX > lastOwnedX)
+                    continue;
+
+                WaterBodyType type = QuadWaterType(
+                    water.Type[heightMapX, heightMapY],
+                    water.Type[nextHeightMapX, heightMapY],
+                    water.Type[heightMapX, nextHeightMapY],
+                    water.Type[nextHeightMapX, nextHeightMapY]);
+                if (type == WaterBodyType.None)
+                    continue;
+                if (IsWaterfall(water, heightMapX, heightMapY, nextHeightMapX, nextHeightMapY, waterfallRise))
+                    type = WaterBodyType.Waterfall;
+
+                int topLeft = y * rowLength + x;
+                int submesh = WaterMeshData.SubmeshIndex(type);
+                quads.Add(topLeft);
+                quads.Add(submesh);
+                submeshQuads[submesh]++;
+                slots[topLeft] = slots[topLeft + 1] = slots[topLeft + rowLength] = slots[topLeft + rowLength + 1] = 1;
+            }
+        }
+
+        if (quads.Count == 0)
+            return null;
+
+        // The used vertices keep their grid order; a slot holds its vertex's number + 1 (0 = not used).
+        int used = 0;
+        for (int i = 0; i < gridVertices; i++)
+        {
+            if (slots[i] != 0)
+                slots[i] = ++used;
+        }
+
+        WaterMeshData meshData = new WaterMeshData(used, submeshQuads);
+        // The mesh's bounds were always those of the whole grid (unused vertices counted too); they still are.
+        Vector3 boundsMin = Vector3.zero, boundsMax = Vector3.zero;
         for (int y = 0; y <= meshHeight; y++)
         {
             for (int x = 0; x <= meshWidth; x++)
@@ -68,7 +126,23 @@ public static partial class MeshGenerator
                     waterHeight = float.IsNaN(shore) ? terrain : Mathf.Min(shore, terrain);
                 }
 
-                meshData.vertices[vertexIndex] = new Vector3(heightMapX * scaleFactor, waterHeight, heightMapY * scaleFactor);
+                Vector3 position = new Vector3(heightMapX * scaleFactor, waterHeight, heightMapY * scaleFactor);
+                if (x == 0 && y == 0)
+                {
+                    boundsMin = boundsMax = position;
+                }
+                else
+                {
+                    boundsMin = Vector3.Min(boundsMin, position);
+                    boundsMax = Vector3.Max(boundsMax, position);
+                }
+
+                int slot = slots[y * rowLength + x];
+                if (slot == 0)
+                    continue;
+                int vertexIndex = slot - 1;
+
+                meshData.vertices[vertexIndex] = position;
                 meshData.uvs[vertexIndex] = new Vector2((globalOffset.x + heightMapX) * uvScale, (globalOffset.y + heightMapY) * uvScale);
                 // For custom water shaders: r = water depth (0-1 over 10 units, 0 at the shoreline, e.g. for
                 // foam/fade), g = water type (0.25 ocean, 0.5 lake, 0.75 pond, 1 river, 0 dry).
@@ -76,50 +150,35 @@ public static partial class MeshGenerator
                 meshData.colors[vertexIndex] = new Color(depth, (int)water.Type[heightMapX, heightMapY] / 4f, 0f, 1f);
                 // Second UV channel: flow direction x speed, for shaders that scroll ripples downstream.
                 meshData.flows[vertexIndex] = new Vector2(water.FlowX[heightMapX, heightMapY], water.FlowY[heightMapX, heightMapY]);
-
-                if (x < meshWidth && y < meshHeight)
-                {
-                    int nextHeightMapX = Mathf.Min((x + 1) * lodFactor, mapWidth - 1);
-                    int nextHeightMapY = Mathf.Min((y + 1) * lodFactor, mapHeight - 1);
-
-                    if (nextHeightMapX <= lastOwnedX && nextHeightMapY <= lastOwnedY)
-                    {
-                        WaterBodyType type = QuadWaterType(
-                            water.Type[heightMapX, heightMapY],
-                            water.Type[nextHeightMapX, heightMapY],
-                            water.Type[heightMapX, nextHeightMapY],
-                            water.Type[nextHeightMapX, nextHeightMapY]);
-
-                        if (type != WaterBodyType.None)
-                        {
-                            if (IsWaterfall(water, heightMapX, heightMapY, nextHeightMapX, nextHeightMapY, waterfallRise))
-                                type = WaterBodyType.Waterfall;
-
-                            int topLeft = y * (meshWidth + 1) + x;
-                            int topRight = topLeft + 1;
-                            int bottomLeft = (y + 1) * (meshWidth + 1) + x;
-                            int bottomRight = bottomLeft + 1;
-
-                            // Same triangulation as the terrain mesh, so the water and terrain surfaces are
-                            // compared triangle-for-triangle and cross along clean straight shorelines.
-                            List<int> triangles = meshData.submeshTriangles[WaterMeshData.SubmeshIndex(type)];
-                            triangles.Add(topLeft);
-                            triangles.Add(bottomLeft);
-                            triangles.Add(topRight);
-                            triangles.Add(topRight);
-                            triangles.Add(bottomLeft);
-                            triangles.Add(bottomRight);
-                            anyQuad = true;
-                        }
-                    }
-                }
-
-                vertexIndex++;
             }
         }
+        meshData.SetBounds(new Bounds((boundsMin + boundsMax) * 0.5f, boundsMax - boundsMin));
 
-        return anyQuad ? meshData : null;
+        for (int q = 0; q < quads.Count; q += 2)
+        {
+            int corner = quads[q];
+            int topLeft = slots[corner] - 1;
+            int topRight = slots[corner + 1] - 1;
+            int bottomLeft = slots[corner + rowLength] - 1;
+            int bottomRight = slots[corner + rowLength + 1] - 1;
+
+            // Same triangulation as the terrain mesh, so the water and terrain surfaces are
+            // compared triangle-for-triangle and cross along clean straight shorelines.
+            List<int> triangles = meshData.submeshTriangles[quads[q + 1]];
+            triangles.Add(topLeft);
+            triangles.Add(bottomLeft);
+            triangles.Add(topRight);
+            triangles.Add(topRight);
+            triangles.Add(bottomLeft);
+            triangles.Add(bottomRight);
+        }
+
+        return meshData;
     }
+
+    // Per-thread working memory for GenerateWaterMesh: which grid vertices are used, and the water quads found.
+    [System.ThreadStatic] private static int[] scratchWaterSlots;
+    [System.ThreadStatic] private static List<int> scratchWaterQuads;
 
     /// <summary>True when the quad's wet corners span more than <paramref name="rise"/> in water height.</summary>
     private static bool IsWaterfall(WaterMapData water, int x0, int y0, int x1, int y1, float rise)

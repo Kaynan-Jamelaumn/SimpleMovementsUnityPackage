@@ -125,8 +125,35 @@ public partial class EndlessTerrain : MonoBehaviour
     // Objects the game removed (see RemovePlacedObject); they stay removed when their chunk is regenerated.
     readonly HashSet<PlacedObjectId> removedObjects = new HashSet<PlacedObjectId>();
     readonly List<TerrainChunk> chunkScratch = new List<TerrainChunk>();
+    // Chunks found out of every viewer's reach this frame (see UpdateVisibleChunks).
+    readonly List<TerrainChunk> leavingScratch = new List<TerrainChunk>();
     readonly List<Vector2Int> offsets = new List<Vector2Int>();
     int offsetsRange = -1;
+    // The most erosion tiles this terrain has asked ErosionTiles to keep (see UpdateVisibleChunks).
+    int erosionTilesReserved;
+    // Whether chunk materials use the package terrain shader, looked up once per frame (see PackageShaderMeshes).
+    int packageShaderFrame = -1;
+    bool packageShaderMeshes;
+
+    /// <summary>
+    /// True when this terrain's chunks are drawn by the package terrain shader, which reads neither the terrain
+    /// mesh's texture UV nor its vertex colors: chunk meshes are then generated without them (see
+    /// <see cref="MeshGenerator.GenerateTerrainMesh"/>). A chunk checks again when its material is made, and gets
+    /// the two channels after all if another shader draws it.
+    /// </summary>
+    internal bool PackageShaderMeshes
+    {
+        get
+        {
+            if (packageShaderFrame != Time.frameCount)
+            {
+                packageShaderFrame = Time.frameCount;
+                packageShaderMeshes = mapGenerator != null && mapGenerator.TerrainTextureBasedOnVoronoiPoints
+                    && TextureGenerator.UsesPackageShader(mapGenerator, shouldUseHDRPShaders);
+            }
+            return packageShaderMeshes;
+        }
+    }
 
     int count = -1;
 
@@ -349,6 +376,15 @@ public partial class EndlessTerrain : MonoBehaviour
 
         Vector2[] points = viewerPoints;
         int viewerCount = Mathf.Min(viewerPointCount, points.Length);
+
+        // Seamless erosion keeps its eroded tiles in a cache: room for the ones of everything loaded here (each
+        // viewer's square of chunks plus the ring of neighbors around it), so none is eroded twice.
+        int erosionTiles = viewerCount * (2 * range + 3) * (2 * range + 3);
+        if (erosionTiles > erosionTilesReserved)
+        {
+            erosionTilesReserved = erosionTiles;
+            ErosionTiles.EnsureCapacity(mapGenerator, erosionTiles);
+        }
         float createDistance = CreateDistance;
         for (int v = 0; v < viewerCount; v++)
         {
@@ -369,11 +405,12 @@ public partial class EndlessTerrain : MonoBehaviour
         chunkScratch.Clear();
         chunkScratch.AddRange(terrainChunkDictionary.Values);
         terrainChunksVisibleLastUpdate.Clear();
+        leavingScratch.Clear();
         foreach (TerrainChunk chunk in chunkScratch)
         {
             if (!IsWithinReachOfAViewer(chunk, points, viewerCount, size, range, unloadDist))
             {
-                UnloadChunk(chunk);
+                leavingScratch.Add(chunk);
                 continue;
             }
 
@@ -381,7 +418,36 @@ public partial class EndlessTerrain : MonoBehaviour
             if (chunk.IsVisible())
                 terrainChunksVisibleLastUpdate.Add(chunk);
         }
+
+        // Chunks out of every viewer's reach are destroyed. Crossing a chunk border puts a whole row of them out of
+        // reach in the same frame, and destroying a chunk hands each of its objects back to the pool - so they go a
+        // few per frame: always at least an eighth of those waiting (none waits more than a few frames), and more
+        // while it has taken under UnloadBudgetMs. A chunk waiting its turn simply stays loaded until then (and
+        // stays for good if a viewer comes back within reach first).
+        if (leavingScratch.Count > 0)
+        {
+            int atLeast = Mathf.Max(1, (leavingScratch.Count + 7) / 8);
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            for (int i = 0; i < leavingScratch.Count; i++)
+            {
+                TerrainChunk chunk = leavingScratch[i];
+                bool spent = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency >= UnloadBudgetMs;
+                if (i < atLeast || !spent)
+                {
+                    UnloadChunk(chunk);
+                    continue;
+                }
+
+                chunk.UpdateTerrainChunk();
+                if (chunk.IsVisible())
+                    terrainChunksVisibleLastUpdate.Add(chunk);
+            }
+            leavingScratch.Clear();
+        }
     }
+
+    // Time (milliseconds) a frame spends destroying chunks that left reach before the rest wait for the next frame.
+    const double UnloadBudgetMs = 1.0;
 
     /// <summary>A chunk stays loaded while some viewer has it within its square of chunks and within the unload distance.</summary>
     static bool IsWithinReachOfAViewer(TerrainChunk chunk, Vector2[] points, int viewerCount, float size, int range, float unloadDist)

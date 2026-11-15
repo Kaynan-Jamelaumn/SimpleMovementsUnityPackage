@@ -103,7 +103,7 @@ namespace ProceduralDungeon
                 dot.Apply();
             }
             TileGrid g = dungeon.Layout.Floors[shownFloor].Grid;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive || !dungeon.WorldToCell(p.transform.position, out int f, out Vector2Int cell) || f != shownFloor)
                     continue;

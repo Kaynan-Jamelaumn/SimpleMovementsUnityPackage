@@ -74,6 +74,21 @@ namespace ProceduralDungeon
             public Dictionary<Vector2Int, MeshBuffers> Chunks;
             /// <summary>The chasm's bottom (built separately: its collider stays out of the NavMesh).</summary>
             public MeshBuffers Void;
+
+            // Working arrays of the square being built, reused for every square of the floor (a floor is meshed on
+            // one thread, one square at a time) instead of being allocated per square.
+            public readonly int[] Cx = new int[4], Cy = new int[4];
+            public readonly Sample[] Samples = new Sample[4];
+            public readonly bool[] Skip = new bool[4], SkipCeiling = new bool[4];
+            public readonly float[] EdgeFloor = new float[4], EdgeCeiling = new float[4], EdgeBottom = new float[4];
+            public readonly Vector3[] FloorCorners = new Vector3[4], CeilingCorners = new Vector3[4];
+            public readonly bool[] RoofOpen = new bool[4], RoofRoofed = new bool[4], RoofSky = new bool[4], RoofHole = new bool[4];
+            public readonly bool[] RoofInterior = new bool[4], RoofStreet = new bool[4];
+            public readonly float[] RoofF = new float[4], RoofC = new float[4], RoofR = new float[4], RoofS = new float[4];
+            public readonly List<List<(Vector2 p, float f, float ce, bool free)>> Polygons = new List<List<(Vector2 p, float f, float ce, bool free)>>();
+            public readonly List<List<(Vector2 p, float f, float ce, bool free)>> PolygonPool = new List<List<(Vector2 p, float f, float ce, bool free)>>();
+            public readonly List<((Vector2 p, float f, float ce, bool free) from, (Vector2 p, float f, float ce, bool free) to)> Cuts =
+                new List<((Vector2 p, float f, float ce, bool free) from, (Vector2 p, float f, float ce, bool free) to)>();
         }
 
         public static FloorMeshData Build(FloorLayout floor, Options options)
@@ -174,6 +189,9 @@ namespace ProceduralDungeon
 
         private static Vector3 CornerPos(Ctx c, int x, int y, float height) => new Vector3((x + 0.5f) * c.Cs, height, (y + 0.5f) * c.Cs);
 
+        /// <summary>Corner k of a square on the ground plane (x, z): the centre of its cell.</summary>
+        private static Vector2 CornerXZ(Ctx c, int[] cx, int[] cy, int k) => new Vector2((cx[k] + 0.5f) * c.Cs, (cy[k] + 0.5f) * c.Cs);
+
         private static float FloorH(Ctx c, int x, int y) => c.G.FloorHeight[x + y * c.G.Width];
 
         private static float CeilH(Ctx c, int x, int y) => c.G.CeilingHeight[x + y * c.G.Width];
@@ -198,9 +216,10 @@ namespace ProceduralDungeon
         private static void BuildSquare(Ctx c, int sx, int sy)
         {
             // Corners in counter-clockwise order (seen from above): 0 (sx,sy), 1 (sx+1,sy), 2 (sx+1,sy+1), 3 (sx,sy+1).
-            var cx = new[] { sx, sx + 1, sx + 1, sx };
-            var cy = new[] { sy, sy, sy + 1, sy + 1 };
-            var s = new Sample[4];
+            int[] cx = c.Cx, cy = c.Cy;
+            cx[0] = sx; cx[1] = sx + 1; cx[2] = sx + 1; cx[3] = sx;
+            cy[0] = sy; cy[1] = sy; cy[2] = sy + 1; cy[3] = sy + 1;
+            Sample[] s = c.Samples;
             bool anyOpen = false, roofed = false;
             for (int k = 0; k < 4; k++)
             {
@@ -282,8 +301,8 @@ namespace ProceduralDungeon
             Vector2 E(int k) => (P(k) + P((k + 1) & 3)) * 0.5f;
             Vector2 M = (P(0) + P(2)) * 0.5f;
 
-            bool[] skip = new bool[4];
-            bool[] skipCeiling = new bool[4];
+            bool[] skip = c.Skip;
+            bool[] skipCeiling = c.SkipCeiling;
             for (int k = 0; k < 4; k++)
             {
                 bool built = s[k] == Sample.Open && !Organic(c, cx[k], cy[k]);
@@ -293,8 +312,8 @@ namespace ProceduralDungeon
             }
 
             float mF = CenterHeight(c, cx, cy, s, false), mC = CenterHeight(c, cx, cy, s, true);
-            var eF = new float[4];
-            var eC = new float[4];
+            float[] eF = c.EdgeFloor;
+            float[] eC = c.EdgeCeiling;
             for (int k = 0; k < 4; k++)
             {
                 eF[k] = EdgeHeight(c, cx, cy, s, k, (k + 1) & 3, false);
@@ -319,8 +338,8 @@ namespace ProceduralDungeon
             {
                 DungeonSurface fs = organic0 ? DungeonSurface.CaveFloor : DungeonSurface.BuiltFloor;
                 DungeonSurface ce = organic0 || outdoor0 ? DungeonSurface.CaveCeiling : DungeonSurface.BuiltCeiling;
-                var f = new Vector3[4];
-                var cl = new Vector3[4];
+                Vector3[] f = c.FloorCorners;
+                Vector3[] cl = c.CeilingCorners;
                 for (int k = 0; k < 4; k++)
                 {
                     f[k] = new Vector3(P(k).x, FloorH(c, cx[k], cy[k]), P(k).y);
@@ -335,7 +354,7 @@ namespace ProceduralDungeon
             }
 
             // Chasm bottoms: per edge midpoint and at the centre (chasm corners only).
-            var eB = new float[4];
+            float[] eB = c.EdgeBottom;
             for (int k = 0; k < 4; k++)
                 eB[k] = BottomHeight(c, cx, cy, s, k, (k + 1) & 3);
             float mB = BottomHeight(c, cx, cy, s, -1, -1);
@@ -391,10 +410,10 @@ namespace ProceduralDungeon
                     open = k;
                 else if (s[n] == Sample.Open && s[k] == Sample.Solid)
                     open = n;
-                BridgeFoot(c, m, cx, cy, s, k, n, P, E(k), M, eF[k], mF, eB[k], mB);
+                BridgeFoot(c, m, cx, cy, s, k, n, E(k), M, eF[k], mF, eB[k], mB);
                 if (open < 0)
                 {
-                    ChasmWall(c, m, cx, cy, s, k, n, P, E(k), M, eF[k], mF, eC[k], mC, eB[k], mB);
+                    ChasmWall(c, m, cx, cy, s, k, n, E(k), M, eF[k], mF, eC[k], mC, eB[k], mB);
                     continue;
                 }
                 bool organic = Organic(c, cx[open], cy[open]);
@@ -416,14 +435,14 @@ namespace ProceduralDungeon
         /// The walls of a chasm on the segment E..M between corners k and n: an island's cliff (or a bridge's edge) down to
         /// the chasm's bottom, or the rock wall from the bottom up to the ceiling.
         /// </summary>
-        private static void ChasmWall(Ctx c, MeshBuffers m, int[] cx, int[] cy, Sample[] s, int k, int n, System.Func<int, Vector2> P,
+        private static void ChasmWall(Ctx c, MeshBuffers m, int[] cx, int[] cy, Sample[] s, int k, int n,
             Vector2 e, Vector2 M, float eF, float mF, float eC, float mC, float eB, float mB)
         {
             int chasm = s[k] == Sample.Chasm ? k : (s[n] == Sample.Chasm ? n : -1);
             if (chasm < 0)
                 return;
             int other = chasm == k ? n : k;
-            Vector2 toChasm = P(chasm) - (P(k) + P(n)) * 0.5f;
+            Vector2 toChasm = CornerXZ(c, cx, cy, chasm) - (CornerXZ(c, cx, cy, k) + CornerXZ(c, cx, cy, n)) * 0.5f;
             var facing = new Vector3(toChasm.x, 0f, toChasm.y);
             if (s[other] == Sample.Open)
             {
@@ -445,7 +464,7 @@ namespace ProceduralDungeon
         /// under the bridge, from the chasm's bottom up to the bridge's deck (without it the island's rock column, or the
         /// rock, would be open under every bridge end).
         /// </summary>
-        private static void BridgeFoot(Ctx c, MeshBuffers m, int[] cx, int[] cy, Sample[] s, int k, int n, System.Func<int, Vector2> P,
+        private static void BridgeFoot(Ctx c, MeshBuffers m, int[] cx, int[] cy, Sample[] s, int k, int n,
             Vector2 e, Vector2 M, float eF, float mF, float eB, float mB)
         {
             bool bk = s[k] == Sample.Open && Flag(c, cx[k], cy[k], CellFlags.Chasm);
@@ -456,7 +475,7 @@ namespace ProceduralDungeon
             bool land = (s[other] == Sample.Open && !Flag(c, cx[other], cy[other], CellFlags.Chasm)) || s[other] == Sample.Solid;
             if (!land)
                 return;
-            Vector2 toBridge = P(bridge) - (P(k) + P(n)) * 0.5f;
+            Vector2 toBridge = CornerXZ(c, cx, cy, bridge) - (CornerXZ(c, cx, cy, k) + CornerXZ(c, cx, cy, n)) * 0.5f;
             var facing = new Vector3(toBridge.x, 0f, toBridge.y);
             m.Quad(new Vector3(e.x, eB - Skirt, e.y), new Vector3(M.x, mB - Skirt, M.y), new Vector3(M.x, mF, M.y), new Vector3(e.x, eF, e.y),
                 s[other] == Sample.Solid || Organic(c, cx[other], cy[other]) ? DungeonSurface.CaveWall : DungeonSurface.BuiltWall, false, facing);
@@ -495,20 +514,22 @@ namespace ProceduralDungeon
             Vector2 M = (P(0) + P(2)) * 0.5f;
 
             // Corner layers: open (walkable), roofed (a building: walls stop at its roof), sky (open cavern above).
-            var open = new bool[4];
-            var roof = new bool[4];
-            var sky = new bool[4];
-            var hole = new bool[4];
-            var F = new float[4];
-            var C = new float[4];
-            var R = new float[4];
-            var S = new float[4];
+            bool[] open = c.RoofOpen;
+            bool[] roof = c.RoofRoofed;
+            bool[] sky = c.RoofSky;
+            bool[] hole = c.RoofHole;
+            float[] F = c.RoofF;
+            float[] C = c.RoofC;
+            float[] R = c.RoofR;
+            float[] S = c.RoofS;
             for (int k = 0; k < 4; k++)
             {
                 open[k] = s[k] == Sample.Open;
                 hole[k] = s[k] == Sample.Hole || s[k] == Sample.Pit;
                 roof[k] = !hole[k] && Flag(c, cx[k], cy[k], CellFlags.Roofed);
                 sky[k] = open[k] || roof[k];
+                // (The arrays are reused: a corner outside the grid has no heights.)
+                F[k] = C[k] = R[k] = S[k] = 0f;
                 if (!g.InBounds(cx[k], cy[k]))
                     continue;
                 int i = cx[k] + cy[k] * g.Width;
@@ -532,8 +553,8 @@ namespace ProceduralDungeon
                 }
                 return n > 0 ? sum / n : 0f;
             }
-            var interior = new bool[4];
-            var street = new bool[4];
+            bool[] interior = c.RoofInterior;
+            bool[] street = c.RoofStreet;
             for (int k = 0; k < 4; k++)
             {
                 interior[k] = open[k] && roof[k];
@@ -648,8 +669,20 @@ namespace ProceduralDungeon
             // Polygons of open ground (counter-clockwise), and the cuts where walls go.
             // Points carry "free": whether both squares sharing the point are natural (so the wall may bulge there -
             // a point shared with a straight built wall must stay put, or a sliver would open between them).
-            var polygons = new List<List<(Vector2 p, float f, float ce, bool free)>>();
-            var cuts = new List<((Vector2 p, float f, float ce, bool free) from, (Vector2 p, float f, float ce, bool free) to)>();
+            // (The lists are the floor's working lists, reused for every natural square.)
+            List<List<(Vector2 p, float f, float ce, bool free)>> polygons = c.Polygons;
+            List<((Vector2 p, float f, float ce, bool free) from, (Vector2 p, float f, float ce, bool free) to)> cuts = c.Cuts;
+            polygons.Clear();
+            cuts.Clear();
+            int polygonsTaken = 0;
+            List<(Vector2 p, float f, float ce, bool free)> NewPolygon()
+            {
+                if (polygonsTaken == c.PolygonPool.Count)
+                    c.PolygonPool.Add(new List<(Vector2 p, float f, float ce, bool free)>(8));
+                List<(Vector2 p, float f, float ce, bool free)> polygon = c.PolygonPool[polygonsTaken++];
+                polygon.Clear();
+                return polygon;
+            }
 
             (Vector2, float, float, bool) Corner(int k) => (new Vector2((cx[k] + 0.5f) * c.Cs, (cy[k] + 0.5f) * c.Cs), FloorH(c, cx[k], cy[k]), CeilH(c, cx[k], cy[k]), false);
             (Vector2, float, float, bool) Edge(int k)
@@ -668,14 +701,17 @@ namespace ProceduralDungeon
                     if (s[k] != Sample.Open)
                         continue;
                     int prev = (k + 3) & 3;
-                    var poly = new List<(Vector2, float, float, bool)> { Corner(k), Edge(k), Edge(prev) };
+                    List<(Vector2 p, float f, float ce, bool free)> poly = NewPolygon();
+                    poly.Add(Corner(k));
+                    poly.Add(Edge(k));
+                    poly.Add(Edge(prev));
                     polygons.Add(poly);
                     cuts.Add((Edge(k), Edge(prev)));
                 }
             }
             else
             {
-                var poly = new List<(Vector2, float, float, bool)>();
+                List<(Vector2 p, float f, float ce, bool free)> poly = NewPolygon();
                 int firstEdge = -1;
                 for (int k = 0; k < 4; k++)
                 {

@@ -85,6 +85,10 @@ public partial class EndlessTerrain : MonoBehaviour
         Dictionary<GameObject, int> objectIndices;
         bool objectsReady;
         Material terrainMaterial;
+        // Between the steps of applying the chunk's data (see OnTerrainDataReceived): the uploaded mesh that isn't
+        // shown yet, and the time the steps have taken so far.
+        Mesh pendingMesh;
+        double applyMs;
         JobHandle colliderBake;
         bool colliderBaking;
         // Generation Stats timestamps (see GenerationStats): when the chunk was requested, its collider scheduled, its NavMesh started.
@@ -175,13 +179,18 @@ public partial class EndlessTerrain : MonoBehaviour
             }
             else
             {
-                mapGenerator.RequestChunkData(data => OnTerrainDataReceived(data, null), globalOffset, DistanceToViewer, token);
+                mapGenerator.RequestChunkData(data => OnTerrainDataReceived(data, null), globalOffset, DistanceToViewer, token, owner.PackageShaderMeshes);
             }
         }
 
         /// <summary>
         /// The chunk's generated data arrived (main thread): material, mesh, collider, water - then its objects
         /// are decided (or taken from <paramref name="cachedPlacements"/>).
+        /// <para>Done in three steps, each its own action for the generator's main thread budget (see
+        /// <see cref="TerrainGenerator.RunNextOnMainThread"/>): the material and its textures here, then the mesh
+        /// upload, then everything that shows the chunk. The steps run back to back, ahead of any other chunk's
+        /// work, and nothing of the chunk changes on screen before the last one - so the result is what one call
+        /// gave, but a heavy chunk can spread over frames instead of landing whole in one.</para>
         /// </summary>
         void OnTerrainDataReceived(DataStructure.TerrainData terrainData, PlacementResult cachedPlacements)
         {
@@ -189,13 +198,8 @@ public partial class EndlessTerrain : MonoBehaviour
                 return;
             if (enableDebugging)
                 Debug.Log($"OnTerrainDataReceived for chunk at {globalOffset}");
-            long applyStart = GenerationStats.Start();
-            long stage = applyStart;
-
-            terrainGenerator = terrainData.terrainGenerator;
-            heightmap = terrainData.heightMap;
-            erosionDeltaMap = terrainData.erosionDeltaMap;
-            waterData = terrainData.waterData;
+            long stage = GenerationStats.Start();
+            TerrainGenerator generator = terrainData.terrainGenerator;
 
             // A headless server draws nothing: no material and textures (the mesh, collider and NavMesh are kept).
             bool presentation = !GameNet.NetAuthority.IsHeadless;
@@ -203,18 +207,53 @@ public partial class EndlessTerrain : MonoBehaviour
             // Material: the biome textures every chunk shares, plus this chunk's splat maps and wetness map.
             if (presentation && terrainData.splatPixels != null)
             {
-                terrainMaterial = TextureGenerator.CreateChunkMaterial(terrainData.splatPixels, terrainGenerator.ChunkSize, terrainGenerator, shouldUseHDRPShaders);
+                terrainMaterial = TextureGenerator.CreateChunkMaterial(terrainData.splatPixels, generator.ChunkSize, generator, shouldUseHDRPShaders, terrainData.usedSplatMaps);
                 if (terrainMaterial != null)
-                {
-                    meshRenderer.sharedMaterial = terrainMaterial;
-                    ApplyWetnessMap(terrainData.waterData);
-                }
+                    ApplyWetnessMap(terrainMaterial, terrainData.waterData, terrainData.wetnessTexels);
                 GenerationStats.Record(GenerationStats.ApplyMaterial, stage);
             }
 
-            stage = GenerationStats.Start();
-            Mesh mesh = terrainData.meshData.UpdateMesh();
+            applyMs = MillisecondsSince(stage);
+            mapGenerator.RunNextOnMainThread(() => UploadTerrainMesh(terrainData, cachedPlacements, presentation));
+        }
+
+        /// <summary>Second step of <see cref="OnTerrainDataReceived"/>: the terrain mesh is uploaded (and kept aside, not shown yet).</summary>
+        void UploadTerrainMesh(DataStructure.TerrainData terrainData, PlacementResult cachedPlacements, bool presentation)
+        {
+            if (unloaded)
+                return;
+            long stage = GenerationStats.Start();
+            if (presentation)
+            {
+                AddChannelsIfNeeded(terrainData.meshData, terrainData.terrainGenerator.LevelOfDetail, terrainData.terrainGenerator, terrainData.heightMap,
+                    terrainData.waterData, terrainMaterial != null ? terrainMaterial : meshRenderer.sharedMaterial);
+            }
+            pendingMesh = terrainData.meshData.UpdateMesh();
             GenerationStats.Record(GenerationStats.ApplyMesh, stage);
+
+            applyMs += MillisecondsSince(stage);
+            mapGenerator.RunNextOnMainThread(() => ShowTerrain(terrainData, cachedPlacements, presentation));
+        }
+
+        /// <summary>
+        /// Last step of <see cref="OnTerrainDataReceived"/>: the chunk gets its material and mesh, its collider is
+        /// scheduled, its water is built, it is registered and its objects are requested.
+        /// </summary>
+        void ShowTerrain(DataStructure.TerrainData terrainData, PlacementResult cachedPlacements, bool presentation)
+        {
+            if (unloaded)
+                return;
+            long applyStart = GenerationStats.Start();
+            long stage;
+            Mesh mesh = pendingMesh;
+            pendingMesh = null;
+
+            terrainGenerator = terrainData.terrainGenerator;
+            heightmap = terrainData.heightMap;
+            erosionDeltaMap = terrainData.erosionDeltaMap;
+            waterData = terrainData.waterData;
+            if (terrainMaterial != null)
+                meshRenderer.sharedMaterial = terrainMaterial;
 
             if (enableDebugging)
                 Debug.Log($"Mesh stats - Vertices: {mesh.vertexCount}, Bounds: {mesh.bounds}");
@@ -249,6 +288,7 @@ public partial class EndlessTerrain : MonoBehaviour
             // Kept for the data cache (see EndlessTerrain) - without what is only needed once.
             generatedData = terrainData;
             generatedData.splatBlend = null;
+            generatedData.wetnessTexels = null;
             hasGeneratedData = true;
 
             loaded = new LoadedTerrain.Chunk
@@ -273,7 +313,8 @@ public partial class EndlessTerrain : MonoBehaviour
             // The placement job has what it needs; the environment it reads is dropped with it.
             generatedData.placementFields = null;
 
-            GenerationStats.Record(GenerationStats.ApplyTotal, applyStart);
+            // The three steps' own time, not the frames that may lie between them.
+            GenerationStats.Add(GenerationStats.ApplyTotal, applyMs + MillisecondsSince(applyStart));
             GenerationStats.Record(GenerationStats.ChunkVisible, requestedAt);
             GenerationStats.Count(GenerationStats.ChunksApplied);
             GenerationStats.MarkChunkVisible();
@@ -405,7 +446,7 @@ public partial class EndlessTerrain : MonoBehaviour
             else if (!lodRequested[lod])
             {
                 lodRequested[lod] = true;
-                terrainGenerator.RequestLodMesh(meshData => OnLodMeshReceived(lod, meshData), heightmap, waterData, lod, globalOffset, LodDistance, token);
+                terrainGenerator.RequestLodMesh(meshData => OnLodMeshReceived(lod, meshData), heightmap, waterData, lod, globalOffset, LodDistance, token, owner.PackageShaderMeshes);
             }
         }
 
@@ -413,6 +454,8 @@ public partial class EndlessTerrain : MonoBehaviour
         {
             if (unloaded)
                 return;
+            if (!GameNet.NetAuthority.IsHeadless)
+                AddChannelsIfNeeded(meshData, lod, terrainGenerator, heightmap, waterData, meshRenderer.sharedMaterial);
             Mesh mesh = meshData.UpdateMesh();
             mesh.name = "Terrain Mesh LOD " + lod;
             lodMeshes[lod] = mesh;
@@ -421,18 +464,55 @@ public partial class EndlessTerrain : MonoBehaviour
         }
 
         /// <summary>
+        /// A mesh generated for the package terrain shader has no texture UV and no vertex colors (that shader reads
+        /// neither). If this chunk is drawn by anything else after all - the shader setting changed since the mesh was
+        /// requested or cached, or the chunk has no material of its own - the mesh gets both now, with the values
+        /// it would have been generated with.
+        /// </summary>
+        /// <param name="material">The material the mesh is (or is about to be) drawn with.</param>
+        void AddChannelsIfNeeded(MeshData meshData, int lod, TerrainGenerator generator, float[,] heightMap, WaterMapData water, Material material)
+        {
+            if (meshData == null || meshData.uvs != null || generator == null || heightMap == null || TextureGenerator.IsPackageShader(material))
+                return;
+            MeshGenerator.AddOptionalChannels(meshData, generator, heightMap, lod,
+                generator.EnableTextureVariations ? globalOffset : Vector2.zero, water != null ? water.Wetness : null);
+        }
+
+        /// <summary>Milliseconds since a <see cref="GenerationStats.Start"/> time (0 while timing is off).</summary>
+        static double MillisecondsSince(long start)
+        {
+            return start == 0L ? 0.0 : (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        }
+
+        /// <summary>
         /// Gives the terrain material a "_WetnessMap" texture (one texel per height map cell, laid out like the
         /// splat maps - sample it with the same UV) from the chunk's ground wetness near water, for a terrain shader
-        /// that darkens and adds gloss to wet ground (the package shader does). The same value is also in the
-        /// terrain mesh's vertex color (red). Only created when the material's shader has _WetnessMap.
+        /// that darkens and adds gloss to wet ground (the package shader does). A mesh built for any other shader
+        /// also has the same value in its vertex color (red). Only created when the material's shader has _WetnessMap.
         /// </summary>
-        void ApplyWetnessMap(WaterMapData water)
+        /// <param name="material">The chunk's terrain material.</param>
+        /// <param name="texels">The texture's bytes when a worker thread already worked them out (<see cref="WaterMapData.WetnessTexels"/>), else null.</param>
+        void ApplyWetnessMap(Material material, WaterMapData water, byte[] texels = null)
         {
-            Material material = meshRenderer.sharedMaterial;
             if (material == null || water == null || !material.HasProperty("_WetnessMap"))
                 return;
 
             int size = water.Size;
+            if (texels != null && texels.Length != size * size)
+                texels = null;
+
+            // No wet ground in this chunk: the package shader reads a material without a wetness map as dry everywhere
+            // (the property defaults to black and only its red is read) - what an all-zero texture shows, without
+            // making one. Other shaders may read the map differently, so they still get it.
+            if (texels == null && water.HasSummary && !water.HasWetness
+                && material.shader != null && material.shader.name == TextureGenerator.PackageShaderName)
+            {
+                // A copy of a custom material may carry that material's own texture here: the chunk's map always
+                // replaced it, so it is cleared - and never mistaken for this chunk's texture when the material is freed.
+                material.SetTexture("_WetnessMap", null);
+                return;
+            }
+
             bool r8 = SystemInfo.SupportsTextureFormat(TextureFormat.R8);
             var texture = new Texture2D(size, size, r8 ? TextureFormat.R8 : TextureFormat.RGBA32, false, true)
             {
@@ -440,24 +520,24 @@ public partial class EndlessTerrain : MonoBehaviour
                 wrapMode = TextureWrapMode.Clamp,
                 filterMode = FilterMode.Bilinear,
             };
-            if (r8)
+            if (texels == null)
             {
-                var values = new byte[size * size];
+                texels = new byte[size * size];
                 for (int y = 0; y < size; y++)
                     for (int x = 0; x < size; x++)
-                        values[y * size + x] = (byte)Mathf.RoundToInt(Mathf.Clamp01(water.Wetness[x, y]) * 255f);
-                texture.SetPixelData(values, 0);
+                        texels[y * size + x] = WaterMapData.WetnessTexel(water.Wetness[x, y]);
+            }
+            if (r8)
+            {
+                texture.SetPixelData(texels, 0);
             }
             else
             {
                 var pixels = new Color32[size * size];
-                for (int y = 0; y < size; y++)
+                for (int i = 0; i < pixels.Length; i++)
                 {
-                    for (int x = 0; x < size; x++)
-                    {
-                        byte value = (byte)Mathf.RoundToInt(Mathf.Clamp01(water.Wetness[x, y]) * 255f);
-                        pixels[y * size + x] = new Color32(value, value, value, 255);
-                    }
+                    byte value = texels[i];
+                    pixels[i] = new Color32(value, value, value, 255);
                 }
                 texture.SetPixels32(pixels);
             }
@@ -546,20 +626,30 @@ public partial class EndlessTerrain : MonoBehaviour
             float maxY = float.MinValue;
             bool anyWater = false;
 
-            for (int y = 0; y < depth; y++)
+            if (water.HasSummary)
             {
-                for (int x = 0; x < width; x++)
+                // Worked out with the map on its worker thread: the same lowest bed and highest surface as the scan below.
+                anyWater = water.WetCells > 0;
+                minY = water.LowestBed;
+                maxY = water.HighestSurface;
+            }
+            else
+            {
+                for (int y = 0; y < depth; y++)
                 {
-                    if (!water.IsWet(x, y))
-                        continue;
+                    for (int x = 0; x < width; x++)
+                    {
+                        if (!water.IsWet(x, y))
+                            continue;
 
-                    anyWater = true;
-                    float surface = water.Surface[x, y];
-                    if (surface > maxY) maxY = surface;
+                        anyWater = true;
+                        float surface = water.Surface[x, y];
+                        if (surface > maxY) maxY = surface;
 
-                    // A wet cell's terrain is always below its water surface - it's that cell's floor.
-                    float bed = heightMap[x, y];
-                    if (bed < minY) minY = bed;
+                        // A wet cell's terrain is always below its water surface - it's that cell's floor.
+                        float bed = heightMap[x, y];
+                        if (bed < minY) minY = bed;
+                    }
                 }
             }
 
@@ -864,6 +954,9 @@ public partial class EndlessTerrain : MonoBehaviour
             }
             DestroyAsset(baseMesh);
             baseMesh = null;
+            // Uploaded but never shown: the chunk was unloaded between two steps of applying its data.
+            DestroyAsset(pendingMesh);
+            pendingMesh = null;
             DestroyAsset(waterMesh);
             waterMesh = null;
 

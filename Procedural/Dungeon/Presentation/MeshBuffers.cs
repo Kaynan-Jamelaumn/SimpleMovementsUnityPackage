@@ -121,24 +121,72 @@ namespace ProceduralDungeon
         /// <summary>Adds a quad a-b-c-d (in order around its edge), facing <paramref name="facing"/>.</summary>
         public void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, DungeonSurface surface, bool smooth, Vector3 facing)
         {
+            if (!smooth && FlatQuad(a, b, c, d, surface, facing))
+                return;
             Triangle(a, b, c, surface, smooth, facing);
             Triangle(a, c, d, surface, smooth, facing);
+        }
+
+        /// <summary>
+        /// A crisp (unwelded) quad whose two triangles (a, b, c) and (a, c, d) face exactly the same way - the usual
+        /// built floor, wall or ceiling - as four vertices instead of six: the corners both triangles use get the same
+        /// normal and texture coordinate from either, so one vertex serves both. The same two triangles, in the same
+        /// order and with the same corners, as two <see cref="Triangle"/> calls. Returns false, adding nothing, for
+        /// any other quad (bent, or with a degenerate half), which is then built triangle by triangle.
+        /// </summary>
+        private bool FlatQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, DungeonSurface surface, Vector3 facing)
+        {
+            // Each half's normal exactly as Triangle works it out: flipped to look along facing, then normalized.
+            Vector3 n1 = Vector3.Cross(b - a, c - a);
+            Vector3 n2 = Vector3.Cross(c - a, d - a);
+            if (n1.sqrMagnitude < 1e-10f || n2.sqrMagnitude < 1e-10f)
+                return false;
+            bool faced = facing.sqrMagnitude > 0f;
+            bool flip1 = faced && Vector3.Dot(n1, facing) < 0f;
+            bool flip2 = faced && Vector3.Dot(n2, facing) < 0f;
+            if (flip1)
+                n1 = -n1;
+            if (flip2)
+                n2 = -n2;
+            n1 = n1.normalized;
+            n2 = n2.normalized;
+            // Component by component: Vector3's == is only approximate.
+            if (n1.x != n2.x || n1.y != n2.y || n1.z != n2.z)
+                return false;
+
+            int ia = Vertex(a, n1, surface, false);
+            int ib = Vertex(b, n1, surface, false);
+            int ic = Vertex(c, n1, surface, false);
+            int id = Vertex(d, n1, surface, false);
+            List<int> list = Triangles[(int)surface];
+            list.Add(ia);
+            list.Add(flip1 ? ic : ib);
+            list.Add(flip1 ? ib : ic);
+            list.Add(ia);
+            list.Add(flip2 ? id : ic);
+            list.Add(flip2 ? ic : id);
+            return true;
         }
 
         /// <summary>An axis-aligned box (all six faces, outward).</summary>
         public void Box(Vector3 min, Vector3 max, DungeonSurface surface, bool bottom = false)
         {
-            Vector3 c = (min + max) * 0.5f;
-            var p = new Vector3[8];
-            for (int i = 0; i < 8; i++)
-                p[i] = new Vector3((i & 1) == 0 ? min.x : max.x, (i & 2) == 0 ? min.y : max.y, (i & 4) == 0 ? min.z : max.z);
-            Quad(p[2], p[3], p[7], p[6], surface, false, Vector3.up);
+            // The eight corners: bit 0 of the number picks x (min / max), bit 1 picks y, bit 2 picks z.
+            var p0 = new Vector3(min.x, min.y, min.z);
+            var p1 = new Vector3(max.x, min.y, min.z);
+            var p2 = new Vector3(min.x, max.y, min.z);
+            var p3 = new Vector3(max.x, max.y, min.z);
+            var p4 = new Vector3(min.x, min.y, max.z);
+            var p5 = new Vector3(max.x, min.y, max.z);
+            var p6 = new Vector3(min.x, max.y, max.z);
+            var p7 = new Vector3(max.x, max.y, max.z);
+            Quad(p2, p3, p7, p6, surface, false, Vector3.up);
             if (bottom)
-                Quad(p[0], p[1], p[5], p[4], surface, false, Vector3.down);
-            Quad(p[0], p[1], p[3], p[2], surface, false, Vector3.back);
-            Quad(p[4], p[5], p[7], p[6], surface, false, Vector3.forward);
-            Quad(p[0], p[4], p[6], p[2], surface, false, Vector3.left);
-            Quad(p[1], p[5], p[7], p[3], surface, false, Vector3.right);
+                Quad(p0, p1, p5, p4, surface, false, Vector3.down);
+            Quad(p0, p1, p3, p2, surface, false, Vector3.back);
+            Quad(p4, p5, p7, p6, surface, false, Vector3.forward);
+            Quad(p0, p4, p6, p2, surface, false, Vector3.left);
+            Quad(p1, p5, p7, p3, surface, false, Vector3.right);
         }
 
         /// <summary>Normalizes the accumulated normals of welded vertices.</summary>

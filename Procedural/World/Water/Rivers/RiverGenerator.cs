@@ -87,6 +87,18 @@ public static partial class RiverGenerator
         if (s.LakesEnabled)
             AddCells(cells, rectMin - reachVector, rectMax + reachVector, LakeGenerator.EffectiveSpacing(s, false), true);
 
+        // Asked for by a terrain worker (a chunk whose area has many rivers still to trace): shared with the pool's
+        // other workers (see TerrainWorkerPool.For) instead of a second set of threads. Those run below the main
+        // thread's priority and are as many as the terrain is allowed to use; the thread pool's would run at the
+        // main thread's own priority, on top of the workers, and take frames from the game while an area's rivers
+        // are traced. The rivers are the same either way: each is traced once, from its own cell.
+        TerrainWorkerPool pool = TerrainWorkerPool.Current;
+        if (pool != null && !resolveJunctions)
+        {
+            pool.For(cells.Count, i => GetCached(cells[i].Value ? Outlets : Springs, cells[i].Key, cells[i].Value, s, sampler));
+            return;
+        }
+
         // Base traces first (junctions compare against other rivers' base traces), then junctions.
         var options = new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = maxThreads };
         System.Threading.Tasks.Parallel.ForEach(cells, options, cell => GetCached(cell.Value ? Outlets : Springs, cell.Key, cell.Value, s, sampler));

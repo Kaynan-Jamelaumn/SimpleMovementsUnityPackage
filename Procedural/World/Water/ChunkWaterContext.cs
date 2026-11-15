@@ -122,7 +122,14 @@ public sealed class ChunkWaterContext
 
     public WaterMapData BuildWaterMap(float[,] paddedHeights, int padding, int finalSize)
     {
-        WaterMapData map = new WaterMapData(finalSize);
+        // Most chunks have no water in or near them: every cell is dry, with no level, flow or wetness. The map's
+        // arrays are only made at the first cell that has something to record (the cells before it then hold just
+        // what they would have been given), and a chunk without any such cell gets the one shared dry map.
+        WaterMapData map = null;
+        // What the map's users would otherwise scan every cell for on the main thread (see WaterMapData.HasSummary).
+        int wetCells = 0;
+        float lowestBed = float.MaxValue, highestSurface = float.MinValue;
+        bool hasWetness = false;
 
         for (int y = 0; y < finalSize; y++)
         {
@@ -136,15 +143,36 @@ public sealed class ChunkWaterContext
                 float height = paddedHeights[paddedX, paddedY];
 
                 CellWater cell = Classify(index, worldX, worldY, height);
+                float wetness = cell.Type != WaterBodyType.None ? 1f : Wetness(cell.WetDistance, height - cell.WetLevel);
+                if (map == null)
+                {
+                    if (cell.Type == WaterBodyType.None && float.IsNaN(cell.Surface) && float.IsNaN(cell.Shore)
+                        && cell.FlowX == 0f && cell.FlowY == 0f && wetness == 0f)
+                        continue;
+                    map = WaterMapData.CreateDry(finalSize);
+                }
+
                 map.Type[x, y] = cell.Type;
                 map.Surface[x, y] = cell.Surface;
                 map.ShoreLevel[x, y] = cell.Shore;
                 map.FlowX[x, y] = cell.FlowX;
                 map.FlowY[x, y] = cell.FlowY;
-                map.Wetness[x, y] = cell.Type != WaterBodyType.None ? 1f : Wetness(cell.WetDistance, height - cell.WetLevel);
+                map.Wetness[x, y] = wetness;
+
+                if (cell.Type != WaterBodyType.None)
+                {
+                    wetCells++;
+                    if (cell.Surface > highestSurface) highestSurface = cell.Surface;
+                    if (height < lowestBed) lowestBed = height;
+                }
+                if (!hasWetness && WaterMapData.WetnessTexel(wetness) != 0)
+                    hasWetness = true;
             }
         }
 
+        if (map == null)
+            return WaterMapData.Dry(finalSize);
+        map.SetSummary(wetCells, lowestBed, highestSurface, hasWetness);
         return map;
     }
 

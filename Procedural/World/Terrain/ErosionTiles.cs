@@ -21,8 +21,31 @@ using UnityEngine;
 /// </summary>
 public static class ErosionTiles
 {
-    /// <summary>Most eroded tiles kept in memory (about 0.3 MB each); older ones are recomputed if needed again.</summary>
-    private const int MaxCachedTiles = 160;
+    /// <summary>Eroded tiles kept in memory unless more are asked for (about 0.3 MB each at the Medium terrain size); older ones are recomputed if needed again.</summary>
+    private const int DefaultCachedTiles = 160;
+    /// <summary>Memory the cache may grow to when asked to hold more than <see cref="DefaultCachedTiles"/> (see <see cref="EnsureCapacity"/>).</summary>
+    private const long MaxCacheBytes = 384L * 1024 * 1024;
+
+    private static volatile int maxCachedTiles = DefaultCachedTiles;
+
+    /// <summary>
+    /// Makes room for at least <paramref name="tiles"/> tiles (never fewer than the default, and within a memory
+    /// budget). <see cref="EndlessTerrain"/> asks for the tiles of the area it keeps loaded: with fewer, the tiles of
+    /// chunks that are still around fall out of the cache, and a chunk generated next to them (or again, on walking
+    /// back) has to erode them a second time - by far the most expensive part of a chunk. Only ever grows.
+    /// </summary>
+    public static void EnsureCapacity(TerrainGenerator tg, int tiles)
+    {
+        if (tg == null || tiles <= maxCachedTiles)
+            return;
+        int tileSize = TileSize(tg);
+        int side = tileSize + 2 * FadeWidth(Mathf.Max(0, tg.ErosionPadding), tileSize);
+        long tileBytes = Math.Max(1L, (long)side * side * sizeof(float));
+        int affordable = (int)Math.Min(int.MaxValue, MaxCacheBytes / tileBytes);
+        int capacity = Mathf.Max(DefaultCachedTiles, Mathf.Min(tiles, affordable));
+        if (capacity > maxCachedTiles)
+            maxCachedTiles = capacity;
+    }
 
     private sealed class Tile
     {
@@ -192,7 +215,7 @@ public static class ErosionTiles
     private static void Trim()
     {
         // Dropping a tile is always safe: recomputing it gives exactly the same result.
-        while (Cache.Count > MaxCachedTiles && Order.TryDequeue(out long oldest))
+        while (Cache.Count > maxCachedTiles && Order.TryDequeue(out long oldest))
             Cache.TryRemove(oldest, out _);
     }
 

@@ -136,12 +136,51 @@ namespace ProceduralDungeon
     /// <summary>Player queries shared by the dungeon's mechanics (multiplayer-safe: every player counts, not one tagged object).</summary>
     public static class DungeonPlayers
     {
+        /// <summary>
+        /// Every registered player, for <c>foreach</c>. Same order as <see cref="CombatEntity.Players"/>, but without the
+        /// enumerator object that <c>foreach</c> over that list (an interface) allocates on every loop - dungeon
+        /// mechanics run these loops every frame.
+        /// </summary>
+        public static EntityLoop Each => new EntityLoop(CombatEntity.Players);
+
+        /// <summary>As <see cref="Each"/>, for every registered combatant (<see cref="CombatEntity.All"/>: players and mobs).</summary>
+        public static EntityLoop EachCombatant => new EntityLoop(CombatEntity.All);
+
+        /// <summary>A list of combat entities walked by index (see <see cref="Each"/>).</summary>
+        public readonly struct EntityLoop
+        {
+            private readonly IReadOnlyList<CombatEntity> list;
+
+            public EntityLoop(IReadOnlyList<CombatEntity> list)
+            {
+                this.list = list;
+            }
+
+            public Enumerator GetEnumerator() => new Enumerator(list);
+
+            public struct Enumerator
+            {
+                private readonly IReadOnlyList<CombatEntity> list;
+                private int index;
+
+                public Enumerator(IReadOnlyList<CombatEntity> list)
+                {
+                    this.list = list;
+                    index = -1;
+                }
+
+                public CombatEntity Current => list[index];
+
+                public bool MoveNext() => list != null && ++index < list.Count;
+            }
+        }
+
         /// <summary>The nearest living player within <paramref name="radius"/> (meters, horizontal), or null.</summary>
         public static CombatEntity NearestAlive(Vector3 position, float radius)
         {
             CombatEntity best = null;
             float bestSq = radius * radius;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;
@@ -176,7 +215,7 @@ namespace ProceduralDungeon
             if (dungeon == null || dungeon.Layout == null)
                 return 0;
             int n = 0;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;

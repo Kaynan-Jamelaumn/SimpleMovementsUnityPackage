@@ -10,6 +10,8 @@ public class MeshData
     public int depth;
     public Vector3[] vertices;
     public int[] triangles;
+    // Texture UV (first channel). Null when the mesh was built for the package terrain shader, which doesn't read
+    // it (see MeshGenerator.GenerateTerrainMesh's splatChannelOnly); MeshGenerator.AddOptionalChannels fills it in.
     public Vector2[] uvs;
     // Dedicated splat-map UV: spans exactly [0,1] once across the whole chunk, completely
     // independent of texture density/tiling. `uvs` above is deliberately stretched past [0,1]
@@ -36,14 +38,15 @@ public class MeshData
     /// <param name="width">The width of the mesh (number of vertices along the x-axis).</param>
     /// <param name="depth">The depth of the mesh (number of vertices along the z-axis).</param>
     /// <param name="enableDebugging">Flag to enable or disable debug messages.</param>
-    public MeshData(int width, int depth, bool enableDebugging = false)
+    /// <param name="withUvs">False to leave <see cref="uvs"/> null (a mesh for a shader that doesn't read them).</param>
+    public MeshData(int width, int depth, bool enableDebugging = false, bool withUvs = true)
     {
         this.width = width;
         this.depth = depth;
         this.enableDebugging = enableDebugging;
         vertices = new Vector3[(width + 1) * (depth + 1)];
         triangles = new int[width * depth * 6];
-        uvs = new Vector2[(width + 1) * (depth + 1)];
+        uvs = withUvs ? new Vector2[(width + 1) * (depth + 1)] : null;
         splatUVs = new Vector2[(width + 1) * (depth + 1)];
 
         if (enableDebugging)
@@ -72,11 +75,12 @@ public class MeshData
             Vertex = gridVertices,
             Triangle = triangles.Length,
         };
-        skirt.Uvs = new Vector2[skirt.Vertices.Length];
+        skirt.Uvs = uvs != null ? new Vector2[skirt.Vertices.Length] : null;
         skirt.SplatUvs = new Vector2[skirt.Vertices.Length];
         skirt.Colors = colors != null ? new Color[skirt.Vertices.Length] : null;
         System.Array.Copy(vertices, skirt.Vertices, gridVertices);
-        System.Array.Copy(uvs, skirt.Uvs, gridVertices);
+        if (skirt.Uvs != null)
+            System.Array.Copy(uvs, skirt.Uvs, gridVertices);
         System.Array.Copy(splatUVs, skirt.SplatUvs, gridVertices);
         if (skirt.Colors != null)
             System.Array.Copy(colors, skirt.Colors, gridVertices);
@@ -114,7 +118,8 @@ public class MeshData
                 int top = Vertex++, bottom = Vertex++;
                 Vertices[top] = Vertices[source];
                 Vertices[bottom] = Vertices[source] - new Vector3(0f, Depth, 0f);
-                Uvs[top] = Uvs[bottom] = Uvs[source];
+                if (Uvs != null)
+                    Uvs[top] = Uvs[bottom] = Uvs[source];
                 SplatUvs[top] = SplatUvs[bottom] = SplatUvs[source];
                 if (Colors != null)
                     Colors[top] = Colors[bottom] = Colors[source];
@@ -207,7 +212,8 @@ public class MeshData
         var mesh = new Mesh { name = "Terrain Mesh", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
         mesh.SetVertices(vertices, 0, vertices.Length, flags);
         mesh.SetNormals(preparedNormals, 0, preparedNormals.Length, flags);
-        mesh.SetUVs(0, uvs, 0, uvs.Length, flags);
+        if (uvs != null)
+            mesh.SetUVs(0, uvs, 0, uvs.Length, flags);
         mesh.SetUVs(1, splatUVs, 0, splatUVs.Length, flags);
         if (colors != null && colors.Length == vertices.Length)
             mesh.SetColors(colors, 0, colors.Length, flags);
@@ -272,7 +278,8 @@ public class MeshData
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         mesh.vertices = vertices;
         mesh.triangles = triangles;
-        mesh.uv = uvs;
+        if (uvs != null)
+            mesh.uv = uvs;
         mesh.uv2 = splatUVs;
         if (colors != null && colors.Length == vertices.Length)
             mesh.colors = colors;

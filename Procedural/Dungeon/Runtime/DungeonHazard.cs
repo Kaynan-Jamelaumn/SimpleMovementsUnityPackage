@@ -147,15 +147,40 @@ namespace ProceduralDungeon
                     part.SetActive(active);
             if (spikeRise <= 0f || spikeRest == null)
                 return;
-            spikeTimer = Mathf.Max(0f, spikeTimer - Time.deltaTime);
+            float deltaTime = Time.deltaTime;
+            spikeTimer = Mathf.Max(0f, spikeTimer - deltaTime);
             // Constant traps pop their spikes on each hit; cycling ones raise them for the active time.
             float lift = (timing == Timing.Cycle ? active : spikeTimer > 0f) ? spikeRise : 0f;
-            for (int i = 1; i < transform.childCount && i < spikeRest.Length; i++)
+            int childCount = transform.childCount;
+            if (spikes == null || spikesChildCount != childCount)
+                FindSpikes(childCount);
+            float step = deltaTime * 4f;
+            for (int i = 1; i < spikes.Length; i++)
+            {
+                Transform t = spikes[i];
+                if (t == null)
+                    continue;
+                t.localPosition = Vector3.MoveTowards(t.localPosition, spikeRest[i] + Vector3.up * lift, step);
+            }
+        }
+
+        // The children Update moves, by child index like spikeRest (null = not a spike: an "Active" part or a light).
+        // Found once, and again when children are added or removed, instead of every frame: reading a child's name
+        // allocates a string, so asking each spike for it every frame made garbage for as long as the trap existed.
+        private Transform[] spikes;
+        private int spikesChildCount = -1;
+
+        private void FindSpikes(int childCount)
+        {
+            spikesChildCount = childCount;
+            int count = Mathf.Min(childCount, spikeRest.Length);
+            spikes = new Transform[count];
+            for (int i = 1; i < count; i++)
             {
                 Transform t = transform.GetChild(i);
                 if (t.name == "Active" || t.GetComponent<Light>() != null)
                     continue;
-                t.localPosition = Vector3.MoveTowards(t.localPosition, spikeRest[i] + Vector3.up * lift, Time.deltaTime * 4f);
+                spikes[i] = t;
             }
         }
     }

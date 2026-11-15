@@ -21,6 +21,8 @@ public partial class TerrainGenerator : MonoBehaviour
     private static readonly object poolLock = new object();
     private TerrainWorkerPool workerPool;
     private Queue<Action> mainThreadQueue;
+    // Next steps of work already begun (see RunNextOnMainThread): taken before anything in mainThreadQueue.
+    private Queue<Action> mainThreadNext;
     private PlacementInstantiator objectInstantiator;
     private FarObjectSwitcher farObjectSwitcher;
     private PlacementPlan placementPlan;
@@ -84,7 +86,7 @@ public partial class TerrainGenerator : MonoBehaviour
         get
         {
             lock (mainThreadLock)
-                return mainThreadQueue != null ? mainThreadQueue.Count : 0;
+                return (mainThreadQueue != null ? mainThreadQueue.Count : 0) + (mainThreadNext != null ? mainThreadNext.Count : 0);
         }
     }
 
@@ -149,6 +151,24 @@ public partial class TerrainGenerator : MonoBehaviour
             if (mainThreadQueue == null)
                 mainThreadQueue = new Queue<Action>();
             mainThreadQueue.Enqueue(action);
+        }
+    }
+
+    /// <summary>
+    /// Like <see cref="RunOnMainThread"/>, but ahead of everything already waiting there (such actions among
+    /// themselves in the order queued). For the next step of work an action began: work done in several steps then
+    /// still finishes before other work starts, as if it were one action - while Update can stop between two steps
+    /// once the frame's Main Thread Budget Ms is spent, which it cannot do inside a single long action.
+    /// </summary>
+    public void RunNextOnMainThread(Action action)
+    {
+        if (action == null)
+            return;
+        lock (mainThreadLock)
+        {
+            if (mainThreadNext == null)
+                mainThreadNext = new Queue<Action>();
+            mainThreadNext.Enqueue(action);
         }
     }
 
@@ -230,7 +250,12 @@ public partial class TerrainGenerator : MonoBehaviour
     /// biome map, splat map pixels and the object placement environment - as one job; <paramref name="callback"/> gets it on the
     /// main thread (no textures are created: see <see cref="TextureGenerator.CreateChunkMaterial"/>).
     /// </summary>
-    public void RequestChunkData(Action<DataStructure.TerrainData> callback, Vector2 globalOffset, Func<float> priority, WorkToken token)
+    /// <param name="packageShaderMesh">
+    /// True when the chunk will be drawn by the package terrain shader (see <see cref="TextureGenerator.UsesPackageShader"/>):
+    /// its mesh is then built without the texture UV and vertex colors that shader doesn't read (see
+    /// <see cref="MeshGenerator.GenerateTerrainMesh"/>'s splatChannelOnly; <see cref="MeshGenerator.AddOptionalChannels"/> adds them back).
+    /// </param>
+    public void RequestChunkData(Action<DataStructure.TerrainData> callback, Vector2 globalOffset, Func<float> priority, WorkToken token, bool packageShaderMesh = false)
     {
         PrepareForGeneration();
         bool placementFields = NeedsObjectPlacement;
@@ -242,14 +267,14 @@ public partial class TerrainGenerator : MonoBehaviour
             MapData mapData = GenerateTerrain(globalOffset, placementFields);
             if (token != null && token.IsCancelled)
                 return;
-            DataStructure.TerrainData data = BuildTerrainData(mapData, globalOffset);
+            DataStructure.TerrainData data = BuildTerrainData(mapData, globalOffset, packageShaderMesh);
             GenerationStats.Record(GenerationStats.ChunkWorker, start);
             Deliver(callback, data, token);
         }, priority, token);
     }
 
     /// <summary>The mesh, biome map, splat pixels and water mesh of a chunk from its map data (worker thread).</summary>
-    private DataStructure.TerrainData BuildTerrainData(MapData mapData, Vector2 globalOffset)
+    private DataStructure.TerrainData BuildTerrainData(MapData mapData, Vector2 globalOffset, bool packageShaderMesh = false)
     {
         long stage = GenerationStats.Start();
         MeshData meshData = MeshGenerator.GenerateTerrainMesh(
@@ -259,7 +284,8 @@ public partial class TerrainGenerator : MonoBehaviour
             false,
             enableTextureVariations ? globalOffset : Vector2.zero,
             mapData.waterData != null ? mapData.waterData.Wetness : null,
-            MeshGenerator.SkirtDepth(this, mapData.heightMap)
+            MeshGenerator.SkirtDepth(this, mapData.heightMap),
+            packageShaderMesh
         );
         if (prepareMeshesOnWorkers)
             meshData.Prepare();
@@ -278,12 +304,16 @@ public partial class TerrainGenerator : MonoBehaviour
         {
             stage = GenerationStats.Start();
             terrainData.splatPixels = SplatMapGenerator.GenerateSplatPixels(this, biomeMap, globalOffset, splatBlend);
+            terrainData.usedSplatMaps = SplatMapGenerator.UsedSplatMaps(terrainData.splatPixels);
             GenerationStats.Record(GenerationStats.SplatPixels, stage);
         }
         if (EnableWater && mapData.waterData != null)
         {
             stage = GenerationStats.Start();
             terrainData.waterMeshData = MeshGenerator.GenerateWaterMesh(this, mapData.heightMap, mapData.waterData, levelOfDetail, globalOffset);
+            // The wetness texture's bytes, so the main thread only uploads them (a material is only made with splat maps).
+            if (terrainData.splatPixels != null)
+                terrainData.wetnessTexels = mapData.waterData.WetnessTexels();
             GenerationStats.Record(GenerationStats.WaterMesh, stage);
         }
         return terrainData;
@@ -294,7 +324,9 @@ public partial class TerrainGenerator : MonoBehaviour
     /// <see cref="LodForDistance"/>), calling <paramref name="callback"/> on the main thread when it is ready.
     /// Same heights, wetness and texture coordinates as the chunk's main mesh, only coarser.
     /// </summary>
-    public void RequestLodMesh(Action<MeshData> callback, float[,] heightMap, WaterMapData waterData, int lod, Vector2 globalOffset, Func<float> priority = null, WorkToken token = null)
+    /// <param name="packageShaderMesh">As for <see cref="RequestChunkData"/>: a mesh for the package terrain shader, without texture UV and vertex colors.</param>
+    public void RequestLodMesh(Action<MeshData> callback, float[,] heightMap, WaterMapData waterData, int lod, Vector2 globalOffset, Func<float> priority = null, WorkToken token = null,
+        bool packageShaderMesh = false)
     {
         WorkerPool.Enqueue(() =>
         {
@@ -306,7 +338,8 @@ public partial class TerrainGenerator : MonoBehaviour
                 false,
                 enableTextureVariations ? globalOffset : Vector2.zero,
                 waterData != null ? waterData.Wetness : null,
-                MeshGenerator.SkirtDepth(this, heightMap)
+                MeshGenerator.SkirtDepth(this, heightMap),
+                packageShaderMesh
             );
             if (prepareMeshesOnWorkers)
                 meshData.Prepare();
@@ -392,9 +425,12 @@ public partial class TerrainGenerator : MonoBehaviour
             Action action;
             lock (mainThreadLock)
             {
-                if (mainThreadQueue == null || mainThreadQueue.Count == 0)
+                if (mainThreadNext != null && mainThreadNext.Count > 0)
+                    action = mainThreadNext.Dequeue();
+                else if (mainThreadQueue != null && mainThreadQueue.Count > 0)
+                    action = mainThreadQueue.Dequeue();
+                else
                     break;
-                action = mainThreadQueue.Dequeue();
             }
 
             try
@@ -423,7 +459,10 @@ public partial class TerrainGenerator : MonoBehaviour
             workerPool = null;
         }
         lock (mainThreadLock)
+        {
             mainThreadQueue?.Clear();
+            mainThreadNext?.Clear();
+        }
         objectInstantiator?.Clear();
         objectInstantiator?.ClearPool();
         TextureGenerator.ReleaseSharedTextures();

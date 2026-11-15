@@ -34,7 +34,7 @@ namespace ProceduralDungeon
                 blessings = Defaults();
             Blessing b = blessings[UnityEngine.Random.Range(0, blessings.Count)];
             int blessed = 0;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive || (p.transform.position - transform.position).sqrMagnitude > radius * radius)
                     continue;

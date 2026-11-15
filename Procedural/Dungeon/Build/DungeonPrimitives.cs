@@ -490,15 +490,45 @@ namespace ProceduralDungeon
 
         private GameObject Part(GameObject root, PrimitiveType type, Vector3 position, Vector3 scale, Color color, Vector3 euler = default)
         {
-            GameObject go = GameObject.CreatePrimitive(type);
-            Object.DestroyImmediate(go.GetComponent<Collider>());
-            go.name = type.ToString();
+            // What CreatePrimitive gives once its collider is removed: an object named after the type, with the type's
+            // built-in mesh and a mesh renderer. Made directly, so no collider is created and destroyed for every part.
+            Mesh mesh = PrimitiveMesh(type, out string name);
+            var go = new GameObject(name);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var renderer = go.AddComponent<MeshRenderer>();
             go.transform.SetParent(root.transform, false);
             go.transform.localPosition = position;
             go.transform.localRotation = Quaternion.Euler(euler);
             go.transform.localScale = scale;
-            go.GetComponent<Renderer>().sharedMaterial = materials.Flat(color);
+            renderer.sharedMaterial = materials.Flat(color);
             return go;
+        }
+
+        // The built-in mesh and the name of each primitive type (indexed by PrimitiveType), taken once from a real
+        // primitive. Built-in meshes live as long as the application, so they are safe to keep.
+        private static readonly Mesh[] primitiveMeshes = new Mesh[8];
+        private static readonly string[] primitiveNames = new string[8];
+
+        private static Mesh PrimitiveMesh(PrimitiveType type, out string name)
+        {
+            int index = (int)type;
+            bool cached = index >= 0 && index < primitiveMeshes.Length;
+            if (cached && primitiveMeshes[index] != null)
+            {
+                name = primitiveNames[index];
+                return primitiveMeshes[index];
+            }
+
+            GameObject probe = GameObject.CreatePrimitive(type);
+            Mesh mesh = probe.GetComponent<MeshFilter>().sharedMesh;
+            Object.DestroyImmediate(probe);
+            name = type.ToString();
+            if (cached)
+            {
+                primitiveMeshes[index] = mesh;
+                primitiveNames[index] = name;
+            }
+            return mesh;
         }
 
         private void Glow(GameObject root, PrimitiveType type, Vector3 position, Vector3 scale, Color color, float intensity, Vector3 euler = default)

@@ -60,7 +60,7 @@ namespace ProceduralDungeon
 
         private bool PlayerNear()
         {
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
                 if (p != null && p.IsAlive && (p.transform.position - transform.position).sqrMagnitude <= activationRadius * activationRadius &&
                     Mathf.Abs(p.transform.position.y - transform.position.y) < 4f)
                     return true;

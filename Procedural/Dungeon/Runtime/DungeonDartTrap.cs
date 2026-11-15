@@ -87,7 +87,7 @@ namespace ProceduralDungeon
         private bool PlayerInLane()
         {
             Vector3 origin = transform.position;
-            foreach (CombatEntity p in CombatEntity.Players)
+            foreach (CombatEntity p in DungeonPlayers.Each)
             {
                 if (p == null || !p.IsAlive)
                     continue;

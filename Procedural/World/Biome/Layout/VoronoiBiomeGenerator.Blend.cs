@@ -36,6 +36,25 @@ public static partial class VoronoiBiomeGenerator
         int octaves = 1, float maxBoundarySlopeTangent = 0f, LayoutOptions options = null)
     {
         var result = new List<BiomeWeight>(2);
+        GetBiomeBlend(result, false, out _, worldPosition, scale, numPoints, availableBiomes, seed, useWeightedBiome, useClimatePlacement, climateNoiseScale,
+            warpStrength, warpScale, blendRange, clusterStrength, clusterRadius, repeatPenalty, octaves, maxBoundarySlopeTangent, options);
+        return result;
+    }
+
+    /// <summary>
+    /// <see cref="GetBiomeBlend(Vector2, float, int, List{Biome}, int, bool, bool, float, float, float, float, float, float, float, int, float, LayoutOptions)"/>
+    /// written into <paramref name="result"/> (cleared first) instead of a new list - the terrain asks for a blend at
+    /// every cell, so its loops reuse one list (see <see cref="BlendLists"/>) rather than leave a list per cell behind.
+    /// With <paramref name="findNearest"/>, <paramref name="nearestBiome"/> is also the biome that owns the position,
+    /// exactly what <see cref="GetBiomeAtPosition"/> returns for the same arguments (the same warped position, the
+    /// same points, the same comparison), without a second lookup; otherwise it is null.
+    /// </summary>
+    public static void GetBiomeBlend(List<BiomeWeight> result, bool findNearest, out Biome nearestBiome, Vector2 worldPosition, float scale, int numPoints,
+        List<Biome> availableBiomes, int seed, bool useWeightedBiome, bool useClimatePlacement, float climateNoiseScale, float warpStrength, float warpScale,
+        float blendRange, float clusterStrength, float clusterRadius, float repeatPenalty, int octaves, float maxBoundarySlopeTangent, LayoutOptions options)
+    {
+        result.Clear();
+        nearestBiome = null;
 
         Vector2 warpedPosition = WarpPosition(worldPosition, warpStrength, warpScale, seed);
         var chunkCoord = GetChunkCoord(warpedPosition, scale);
@@ -44,7 +63,7 @@ public static partial class VoronoiBiomeGenerator
         Vector2[] positions = hood.Positions;
         int pointCount = positions.Length;
         if (pointCount == 0)
-            return result;
+            return;
 
         // Distance to the nearest point of each distinct biome nearby. Each point's distance is computed
         // once and reused below (the same expression, so the same value, as recomputing it).
@@ -56,6 +75,8 @@ public static partial class VoronoiBiomeGenerator
         float[] nearest = Scratch(ref scratchNearest, count);
         float closest = float.MaxValue;
         float wx = warpedPosition.x, wy = warpedPosition.y;
+        float nearestSquared = float.MaxValue;
+        Biome[] pointBiomes = hood.PointBiomes;
         for (int p = 0; p < pointCount; p++)
         {
             // (warpedPosition - positions[p]).magnitude, written out (the same float operations, so the same value).
@@ -70,14 +91,40 @@ public static partial class VoronoiBiomeGenerator
 
             if (distance < closest)
                 closest = distance;
+
+            if (findNearest)
+            {
+                // The comparison GetBiomeAtPosition makes: squared distances, the first of equal ones wins.
+                float distanceSquared = (warpedPosition - positions[p]).sqrMagnitude;
+                if (distanceSquared < nearestSquared)
+                {
+                    nearestSquared = distanceSquared;
+                    nearestBiome = pointBiomes[p];
+                }
+            }
         }
 
         // Smoothed per-biome distances (soft minimum over each biome's points, and over all points).
         float softness = 0.08f * scale / Mathf.Sqrt(Mathf.Max(1, numPoints));
         double[] softSums = ScratchDoubles(count);
-        int[] pointCounts = hood.PointCounts;
+        // A point this much farther than a point of its biome that is already in the sum would add less than half
+        // the sum's last bit (e^-39 < 2^-54), which leaves the double exactly as it is - so its exponential, the
+        // costliest step here, is skipped. The sums are bit for bit what adding every point gives.
+        float absorbedGap = AbsorbedSoftnessUnits * softness;
+        float[] summedNearest = Scratch(ref scratchSummedNearest, count);
+        for (int i = 0; i < count; i++)
+            summedNearest[i] = float.MaxValue;
         for (int p = 0; p < pointCount; p++)
-            softSums[biomeIndex[p]] += System.Math.Exp(-(distances[p] - closest) / softness);
+        {
+            int index = biomeIndex[p];
+            float distance = distances[p];
+            if (distance - summedNearest[index] > absorbedGap)
+                continue;
+            softSums[index] += System.Math.Exp(-(distances[p] - closest) / softness);
+            if (distance < summedNearest[index])
+                summedNearest[index] = distance;
+        }
+        float[] slackFactors = hood.SlackFactors;
         double softTotal = 0.0;
         for (int i = 0; i < count; i++)
             softTotal += softSums[i];
@@ -137,7 +184,7 @@ public static partial class VoronoiBiomeGenerator
             if (weights[c] <= 0f)
             {
                 if (smoothGapC < nearbyReach)
-                    result.Add(new BiomeWeight(biomes[c], 0f, nearest[c] - closest, bands[c], smoothGapC, softness * (float)System.Math.Log(Mathf.Max(1, pointCounts[c]))));
+                    result.Add(new BiomeWeight(biomes[c], 0f, nearest[c] - closest, bands[c], smoothGapC, softness * slackFactors[c]));
                 continue;
             }
 
@@ -145,11 +192,52 @@ public static partial class VoronoiBiomeGenerator
             int insertAt = 0;
             while (insertAt < result.Count && result[insertAt].Weight >= weight)
                 insertAt++;
-            float slack = softness * (float)System.Math.Log(Mathf.Max(1, pointCounts[c]));
+            float slack = softness * slackFactors[c];
             result.Insert(insertAt, new BiomeWeight(biomes[c], weight, nearest[c] - closest, bands[c], smoothGapC, slack));
         }
+    }
 
-        return result;
+    // How many softness lengths farther than a point of its biome already in the soft sum a point must be for its term
+    // to vanish in that sum: its term is then under e^-39 = 2^-56.3 of the sum, and anything under 2^-54 of a double
+    // is rounded away when added. (The margin covers the rounding of the distances and of Math.Exp many times over.)
+    private const float AbsorbedSoftnessUnits = 39f;
+
+    /// <summary>
+    /// Reusable blend lists, a few per thread. <see cref="Rent"/> one, fill it (the list-filling
+    /// <see cref="GetBiomeBlend(List{BiomeWeight}, bool, out Biome, Vector2, float, int, List{Biome}, int, bool, bool, float, float, float, float, float, float, float, int, float, LayoutOptions)"/>),
+    /// and <see cref="Return"/> it when done - last rented, first returned (use try/finally). A lookup made while one
+    /// is rented rents its own, so a list in use is never handed out again.
+    /// </summary>
+    public static class BlendLists
+    {
+        [System.ThreadStatic] private static List<BiomeWeight>[] lists;
+        [System.ThreadStatic] private static int rented;
+
+        /// <summary>An empty list for this thread to fill.</summary>
+        public static List<BiomeWeight> Rent()
+        {
+            List<BiomeWeight>[] pool = lists;
+            if (pool == null)
+                lists = pool = new List<BiomeWeight>[4];
+            else if (rented == pool.Length)
+            {
+                System.Array.Resize(ref pool, pool.Length * 2);
+                lists = pool;
+            }
+            List<BiomeWeight> list = pool[rented];
+            if (list == null)
+                pool[rented] = list = new List<BiomeWeight>(8);
+            rented++;
+            list.Clear();
+            return list;
+        }
+
+        /// <summary>Gives back the list rented last on this thread (any other list is left alone).</summary>
+        public static void Return(List<BiomeWeight> list)
+        {
+            if (rented > 0 && ReferenceEquals(lists[rented - 1], list))
+                rented--;
+        }
     }
 
     /// <summary>
@@ -199,6 +287,7 @@ public static partial class VoronoiBiomeGenerator
     [System.ThreadStatic] private static float[] scratchPreliminary;
     [System.ThreadStatic] private static float[] scratchWeights;
     [System.ThreadStatic] private static float[] scratchBands;
+    [System.ThreadStatic] private static float[] scratchSummedNearest;
     [System.ThreadStatic] private static double[] scratchSoftSums;
 
     /// <summary>A zeroed per-thread double buffer (the soft-minimum sums start from 0).</summary>

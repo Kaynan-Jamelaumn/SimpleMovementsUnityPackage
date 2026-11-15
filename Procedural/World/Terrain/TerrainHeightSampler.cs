@@ -87,7 +87,18 @@ public sealed class TerrainHeightSampler
     /// <summary>The land biome blend (the normal Voronoi layout) at a world position.</summary>
     public List<VoronoiBiomeGenerator.BiomeWeight> GetBlend(float x, float y)
     {
-        return Layout(availableBiomes, new Vector2(x, y));
+        var blend = new List<VoronoiBiomeGenerator.BiomeWeight>(2);
+        GetBlend(x, y, blend);
+        return blend;
+    }
+
+    /// <summary>
+    /// <see cref="GetBlend(float, float)"/> written into <paramref name="into"/> (cleared first). For code that looks up
+    /// many positions: it reuses one list (<see cref="VoronoiBiomeGenerator.BlendLists"/>) instead of getting a new one each time.
+    /// </summary>
+    public void GetBlend(float x, float y, List<VoronoiBiomeGenerator.BiomeWeight> into)
+    {
+        Layout(into, false, out _, availableBiomes, new Vector2(x, y), layout);
     }
 
     /// <summary>
@@ -103,20 +114,23 @@ public sealed class TerrainHeightSampler
             tg.BiomeClusterStrength, tg.BiomeClusterRadius, tg.BiomeRepeatPenalty, layout, into);
     }
 
-    private List<VoronoiBiomeGenerator.BiomeWeight> GetOceanBlend(float x, float y)
+    private void GetOceanBlend(float x, float y, List<VoronoiBiomeGenerator.BiomeWeight> into)
     {
-        return Layout(oceanBiomes, new Vector2(x / OceanLayerScale + OceanLayerOffset, y / OceanLayerScale), oceanLayout);
+        Layout(into, false, out _, oceanBiomes, new Vector2(x / OceanLayerScale + OceanLayerOffset, y / OceanLayerScale), oceanLayout);
     }
 
-    private List<VoronoiBiomeGenerator.BiomeWeight> Layout(List<Biome> biomes, Vector2 position)
-    {
-        return Layout(biomes, position, layout);
-    }
-
-    private List<VoronoiBiomeGenerator.BiomeWeight> Layout(List<Biome> biomes, Vector2 position, VoronoiBiomeGenerator.LayoutOptions options)
+    /// <summary>
+    /// The blend of a biome layout at a position, written into <paramref name="into"/>. With <paramref name="findNearest"/>,
+    /// <paramref name="nearest"/> is also the biome owning the position (what GetBiomeAtPosition returns for this layout).
+    /// </summary>
+    private void Layout(List<VoronoiBiomeGenerator.BiomeWeight> into, bool findNearest, out Biome nearest, List<Biome> biomes, Vector2 position,
+        VoronoiBiomeGenerator.LayoutOptions options)
     {
         TerrainGenerator tg = terrainGenerator;
-        return VoronoiBiomeGenerator.GetBiomeBlend(
+        VoronoiBiomeGenerator.GetBiomeBlend(
+            into,
+            findNearest,
+            out nearest,
             position,
             tg.VoronoiScale,
             tg.NumVoronoiPoints,
@@ -170,7 +184,18 @@ public sealed class TerrainHeightSampler
         landSide = OceanGenerator.LandSide(water, x, y);
         float seafloor = float.NaN;
         if (landSide < 0f && oceanBiomes != null)
-            seafloor = LandformGenerator.LandHeight(GetOceanBlend(x, y), x, y, landforms, out _);
+        {
+            List<VoronoiBiomeGenerator.BiomeWeight> ocean = VoronoiBiomeGenerator.BlendLists.Rent();
+            try
+            {
+                GetOceanBlend(x, y, ocean);
+                seafloor = LandformGenerator.LandHeight(ocean, x, y, landforms, out _);
+            }
+            finally
+            {
+                VoronoiBiomeGenerator.BlendLists.Return(ocean);
+            }
+        }
         return OceanGenerator.ShapeHeight(water, x, y, land, relief, landSide, seafloor);
     }
 
@@ -185,15 +210,30 @@ public sealed class TerrainHeightSampler
     /// <summary>Terrain height before erosion and before any lake/river carving.</summary>
     public float SampleBaseHeight(float x, float y)
     {
-        float land = LandHeight(GetBlend(x, y), x, y, out float relief);
+        float land = BlendedLandHeight(x, y, out float relief);
         return ShapeLand(x, y, land, relief, out _);
     }
 
     /// <summary>Base terrain without volcanoes - what a volcano is built on top of.</summary>
     public float SamplePreVolcanoHeight(float x, float y)
     {
-        float land = LandHeight(GetBlend(x, y), x, y, out float relief);
+        float land = BlendedLandHeight(x, y, out float relief);
         return ShapeCoast(x, y, land, relief, out _);
+    }
+
+    /// <summary><see cref="LandHeight"/> of the land blend at a position (looked up into a reused list).</summary>
+    private float BlendedLandHeight(float x, float y, out float relief)
+    {
+        List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+        try
+        {
+            GetBlend(x, y, blend);
+            return LandHeight(blend, x, y, out relief);
+        }
+        finally
+        {
+            VoronoiBiomeGenerator.BlendLists.Return(blend);
+        }
     }
 
     /// <summary>
@@ -204,45 +244,93 @@ public sealed class TerrainHeightSampler
     /// </summary>
     public List<VoronoiBiomeGenerator.BiomeWeight> GetTextureBlend(float x, float y)
     {
-        List<VoronoiBiomeGenerator.BiomeWeight> blend = GetBlend(x, y);
-        if (!HasSpecialBiomes)
-            return blend;
+        var result = new List<VoronoiBiomeGenerator.BiomeWeight>(4);
+        GetTextureBlend(x, y, result);
+        return result;
+    }
 
-        var weights = new List<KeyValuePair<Biome, float>>(blend.Count + 2);
-        float landFactor = 1f;
-        if (oceanBiomes != null)
+    /// <summary>
+    /// <see cref="GetTextureBlend(float, float)"/> written into <paramref name="into"/> (cleared first), for code that
+    /// looks up many positions and reuses one list (<see cref="VoronoiBiomeGenerator.BlendLists"/>).
+    /// </summary>
+    public void GetTextureBlend(float x, float y, List<VoronoiBiomeGenerator.BiomeWeight> into)
+    {
+        if (HasSpecialBiomes)
+            SpecialTextureBlend(x, y, into);
+        else
+            GetBlend(x, y, into);
+    }
+
+    /// <summary>
+    /// Both of a cell's biome lookups at once: fills <paramref name="into"/> as <see cref="GetTextureBlend(float, float, List{VoronoiBiomeGenerator.BiomeWeight})"/>
+    /// does and returns what <see cref="SampleBiome"/> returns. Without ocean or volcanic biomes those are two
+    /// searches of the same Voronoi points from the same (warped) position - done here as one.
+    /// </summary>
+    public Biome GetTextureBlendAndBiome(float x, float y, List<VoronoiBiomeGenerator.BiomeWeight> into)
+    {
+        if (HasSpecialBiomes)
         {
-            float side = OceanGenerator.LandSide(water, x, y);
-            landFactor = WaterGenerator.SmoothStep01((side / water.ContinentGradient + 10f) / 20f);
-        }
-        for (int i = 0; i < blend.Count; i++)
-            AddWeight(weights, blend[i].Biome, blend[i].Weight * landFactor);
-        if (landFactor < 1f)
-        {
-            List<VoronoiBiomeGenerator.BiomeWeight> ocean = GetOceanBlend(x, y);
-            for (int i = 0; i < ocean.Count; i++)
-                AddWeight(weights, ocean[i].Biome, ocean[i].Weight * (1f - landFactor));
+            SpecialTextureBlend(x, y, into);
+            return into.Count > 0 ? into[0].Biome : null;
         }
 
-        if (volcanicBiome != null)
+        Layout(into, true, out Biome nearest, availableBiomes, new Vector2(x, y), layout);
+        return nearest;
+    }
+
+    // The texture blend's working list of (biome, weight), one per thread.
+    [System.ThreadStatic] private static List<KeyValuePair<Biome, float>> scratchWeights;
+
+    /// <summary>The texture blend with ocean and/or volcanic biomes (see <see cref="GetTextureBlend(float, float)"/>).</summary>
+    private void SpecialTextureBlend(float x, float y, List<VoronoiBiomeGenerator.BiomeWeight> into)
+    {
+        List<KeyValuePair<Biome, float>> weights = scratchWeights ?? new List<KeyValuePair<Biome, float>>(8);
+        scratchWeights = null;   // taken while in use: a lookup made from inside this one would get its own
+        List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+        try
         {
-            float volcanic = VolcanoGenerator.SurfaceMask(landforms, this, x, y);
-            if (volcanic > 0f)
+            weights.Clear();
+            GetBlend(x, y, blend);
+            float landFactor = 1f;
+            if (oceanBiomes != null)
             {
-                for (int i = 0; i < weights.Count; i++)
-                    weights[i] = new KeyValuePair<Biome, float>(weights[i].Key, weights[i].Value * (1f - volcanic));
-                AddWeight(weights, volcanicBiome, volcanic);
+                float side = OceanGenerator.LandSide(water, x, y);
+                landFactor = WaterGenerator.SmoothStep01((side / water.ContinentGradient + 10f) / 20f);
+            }
+            for (int i = 0; i < blend.Count; i++)
+                AddWeight(weights, blend[i].Biome, blend[i].Weight * landFactor);
+            if (landFactor < 1f)
+            {
+                // The land blend is in weights by now, so its list takes the ocean layout's blend.
+                GetOceanBlend(x, y, blend);
+                for (int i = 0; i < blend.Count; i++)
+                    AddWeight(weights, blend[i].Biome, blend[i].Weight * (1f - landFactor));
+            }
+
+            if (volcanicBiome != null)
+            {
+                float volcanic = VolcanoGenerator.SurfaceMask(landforms, this, x, y);
+                if (volcanic > 0f)
+                {
+                    for (int i = 0; i < weights.Count; i++)
+                        weights[i] = new KeyValuePair<Biome, float>(weights[i].Key, weights[i].Value * (1f - volcanic));
+                    AddWeight(weights, volcanicBiome, volcanic);
+                }
+            }
+
+            weights.Sort((a, b) => b.Value.CompareTo(a.Value));
+            into.Clear();
+            for (int i = 0; i < weights.Count; i++)
+            {
+                if (weights[i].Value > 0f)
+                    into.Add(new VoronoiBiomeGenerator.BiomeWeight(weights[i].Key, weights[i].Value));
             }
         }
-
-        weights.Sort((a, b) => b.Value.CompareTo(a.Value));
-        var result = new List<VoronoiBiomeGenerator.BiomeWeight>(weights.Count);
-        for (int i = 0; i < weights.Count; i++)
+        finally
         {
-            if (weights[i].Value > 0f)
-                result.Add(new VoronoiBiomeGenerator.BiomeWeight(weights[i].Key, weights[i].Value));
+            VoronoiBiomeGenerator.BlendLists.Return(blend);
+            scratchWeights = weights;
         }
-        return result;
     }
 
     private static void AddWeight(List<KeyValuePair<Biome, float>> weights, Biome biome, float weight)
@@ -263,8 +351,16 @@ public sealed class TerrainHeightSampler
     {
         if (HasSpecialBiomes)
         {
-            List<VoronoiBiomeGenerator.BiomeWeight> blend = GetTextureBlend(x, y);
-            return blend.Count > 0 ? blend[0].Biome : null;
+            List<VoronoiBiomeGenerator.BiomeWeight> blend = VoronoiBiomeGenerator.BlendLists.Rent();
+            try
+            {
+                SpecialTextureBlend(x, y, blend);
+                return blend.Count > 0 ? blend[0].Biome : null;
+            }
+            finally
+            {
+                VoronoiBiomeGenerator.BlendLists.Return(blend);
+            }
         }
 
         TerrainGenerator tg = terrainGenerator;
