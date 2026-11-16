@@ -66,7 +66,8 @@ namespace InjurySystem.Tests
             var warnings = new List<string>();
             s.Validate(errors, warnings);
             Assert.IsEmpty(errors, string.Join("\n", errors));
-            Assert.AreEqual(17, s.bodyParts.Count, "head, neck, upper / lower torso, groin, and per side upper arm, forearm, hand, thigh, shin, foot");
+            Assert.AreEqual(18, s.bodyParts.Count, "head, neck, upper / lower torso, groin, per side upper arm, forearm, hand, thigh, shin, foot - and the whole body");
+            Assert.IsNotNull(s.FindWholeBody(), "illnesses sit on it");
             foreach (string id in new[] { "Head", "Neck", "UpperTorso", "LowerTorso", "Groin", "LeftUpperArm", "RightForearm", "LeftHand",
                                           "RightThigh", "LeftShin", "RightFoot" })
                 Assert.IsNotNull(s.FindPart(id), id);

@@ -16,6 +16,7 @@ public partial class InjuryController
     private readonly List<InjuryBodyPart> attachedBuffer = new List<InjuryBodyPart>();
     private Transform[] boneCache;
     private bool warnedRuntimeLimbInSession;
+    private bool amputating;
 
     // ------------------------------------------------------------------ losing a limb
     private bool TryLoseFromHit(InjuryPartState part, in DamageInfo info, float hitFraction, float conditionBefore)
@@ -74,8 +75,12 @@ public partial class InjuryController
         record.OwnerName = OwnerName();
         record.ConditionAtLoss = Mathf.Clamp(condition01, 0.05f, 1f);
         record.LostAt = Time.time;
-        record.TimeLimit = s.TimeLimitFor(part.Def);
+        // A limb cut off on purpose (dead flesh) is not put back.
+        record.TimeLimit = amputating ? 0f : s.TimeLimitFor(part.Def);
         record.DecayPerSecond = s.reattachment.limbDecayPerSecond;
+        record.Rots = s.reattachment.expiredLimbsRot;
+        if (amputating)
+            expiredNotified.Add(record.Id);
 
         // Where it comes off (before the bones are hidden).
         Vector3 at = LimbPosition(part);
@@ -123,13 +128,101 @@ public partial class InjuryController
         if (logChanges || s.logInjuries)
             Debug.Log($"[Injuries] {name} lost the {part.Name}{(record.IncludedParts.Count > 0 ? " with the " + string.Join(", ", record.IncludedParts) : "")}.", this);
         string with = record.IncludedParts.Count > 0 ? $" (with your {string.Join(", ", record.IncludedParts).ToLowerInvariant()})" : "";
-        Notify($"You lost your {part.Name.ToLowerInvariant()}{with}! Recover it and reattach it within {SeveredLimbRecord.FormatTime(record.TimeLimit)}.");
+        Notify(amputating
+            ? $"Your {part.Name.ToLowerInvariant()}{with} was amputated."
+            : $"You lost your {part.Name.ToLowerInvariant()}{with}! Recover it and reattach it within {SeveredLimbRecord.FormatTime(record.TimeLimit)}.");
+        saveUrgent = true;
         LimbLost?.Invoke(part, record);
         AnyLimbLost?.Invoke(this, part, record);
         SeveredLimbRegistry.NotifyChanged(record);
         MarkChanged();
         RecomputeEffects();
         return record;
+    }
+
+    /// <summary>
+    /// The part is not there and never comes back: a character born without it, or who lost it long ago (a disability
+    /// trait). No wound, no limb on the ground, nothing to reattach; what was worn on it or held by it falls, it is
+    /// hidden on the character, and the body's limits follow (hands, hopping, crawling). Healing everything
+    /// (<see cref="HealAll"/>) puts it back: whoever wants it gone calls this again. Returns false when it is already
+    /// missing, cannot be lost, or the rules do not run here.
+    /// </summary>
+    public bool RemovePartForGood(InjuryPartState part)
+    {
+        if (part == null || part.Lost || part.IsWholeBody || !RulesHere)
+            return false;
+        InjurySettings s = Settings;
+        SeveredLimbRecord record = SeveredLimbRegistry.Create();
+        record.PartId = part.Id;
+        record.PartName = part.Name;
+        record.Owner = this;
+        record.OwnerName = OwnerName();
+        record.ConditionAtLoss = 0.05f;
+        record.LostAt = Time.time;
+        record.TimeLimit = 0f;
+        record.DecayPerSecond = 0f;
+        record.Rots = false;
+        record.Gone = true;
+        expiredNotified.Add(record.Id);
+
+        Vector3 at = LimbPosition(part);
+        var lostParts = new List<InjuryPartState> { part };
+        attachedBuffer.Clear();
+        s.CollectAttached(part.Def, attachedBuffer);
+        foreach (InjuryBodyPart def in attachedBuffer)
+        {
+            InjuryPartState child = GetPart(def);
+            if (child == null || child.Lost)
+                continue;
+            lostParts.Add(child);
+            record.IncludedParts.Add(child.Name);
+        }
+        foreach (InjuryPartState p in lostParts)
+        {
+            for (int i = p.injuries.Count - 1; i >= 0; i--)
+                RemoveRunner(p.injuries[i]);
+            p.injuries.Clear();
+            p.Lost = true;
+            p.Condition = 0f;
+            p.LostWith = p == part ? null : part;
+            p.LostLimb = p == part ? record : null;
+        }
+        DropWornAndHeld(lostParts, record, at);
+        foreach (InjuryPartState p in lostParts)
+            HideVisuals(p);
+
+        effectsDirty = true;
+        if (logChanges || s.logInjuries)
+            Debug.Log($"[Injuries] {name} has no {part.Name}.", this);
+        saveUrgent = true;
+        MarkChanged();
+        RecomputeEffects();
+        return true;
+    }
+
+    /// <summary>
+    /// Puts back a part that was missing for good (<see cref="RemovePartForGood"/>): whole, with everything that was
+    /// missing with it, and no wound. Returns false when it is not missing or the rules do not run here.
+    /// </summary>
+    public bool GiveBackPart(InjuryPartState part)
+    {
+        if (part == null || !part.Lost || !RulesHere)
+            return false;
+        InjuryPartState root = part.LostWith ?? part;
+        RestorePart(root);
+        root.Condition = root.MaxCondition;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            if (parts[i].LostWith != root)
+                continue;
+            RestorePart(parts[i]);
+            parts[i].Condition = parts[i].MaxCondition;
+        }
+        effectsDirty = true;
+        saveUrgent = true;
+        MarkChanged();
+        RecomputeEffects();
+        return true;
     }
 
     private string OwnerName()
@@ -299,8 +392,11 @@ public partial class InjuryController
         CombatEntity e = Entity;
         Vector3 pos = e != null ? e.Position : transform.position;
         float range = s.reattachment.groundRange;
-        foreach (SeveredLimbLink link in FindObjectsByType<SeveredLimbLink>(FindObjectsInactive.Exclude))
+        // Every limb link lying in the world registers itself: no search through the scene.
+        IReadOnlyList<SeveredLimbLink> links = SeveredLimbLink.Active;
+        for (int k = 0; k < links.Count; k++)
         {
+            SeveredLimbLink link = links[k];
             if (link == null || !link.isLimb || (link.transform.position - pos).sqrMagnitude > range * range)
                 continue;
             ItemPickable p = link.GetComponent<ItemPickable>();
@@ -378,6 +474,7 @@ public partial class InjuryController
             }
         }
         effectsDirty = true;
+        saveUrgent = true;
         Notify($"Your {part.Name.ToLowerInvariant()} is back on.");
         LimbReattached?.Invoke(part, limb);
         MarkChanged();
@@ -409,6 +506,9 @@ public partial class InjuryController
                 continue;
             expiredNotified.Add(r.Id);
             Notify($"Your {r.PartName.ToLowerInvariant()} can no longer be reattached normally.");
+            // The limb is "Rotten ..." from now on: its item's name follows, and whoever shows it is told.
+            SeveredLimbItemSO.Retitle(r);
+            SeveredLimbRegistry.NotifyChanged(r);
             MarkChanged();
         }
     }

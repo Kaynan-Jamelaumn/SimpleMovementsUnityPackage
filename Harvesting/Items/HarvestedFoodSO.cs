@@ -20,6 +20,10 @@ public class HarvestedFoodSO : ConsumableSO, IHarvestedItem, IItemInstanceToolti
     [Tooltip("Health lost over Sickness Seconds by eating a spoiled, poisoned, tainted or soiled piece (scaled by how bad it is).")]
     [SerializeField, Min(0f)] private float sicknessDamage = 18f;
     [SerializeField, Min(1f)] private float sicknessSeconds = 20f;
+    [Tooltip("With the project's injury system on, a bad piece also gives illnesses: food poisoning from any of it, parasites from a " +
+             "piece soiled by a torn gut or contaminated, dysentery from a tainted one. Chance (0-1) of each, scaled by how bad the " +
+             "piece is. 0 = never.")]
+    [SerializeField, Range(0f, 1f)] private float illnessChance = 0.5f;
 
     /// <summary>Marks that make a piece unfit to eat.</summary>
     public const HarvestMarks Sickening = HarvestMarks.Spoiled | HarvestMarks.Poisoned | HarvestMarks.Tainted | HarvestMarks.Contaminated | HarvestMarks.GutShot;
@@ -112,6 +116,23 @@ public class HarvestedFoodSO : ConsumableSO, IHarvestedItem, IItemInstanceToolti
         float harm = sicknessDamage * (0.6f + 0.25f * bad) * (1.3f - 0.6f * (float)q);
         statusController.HpManager.AddHpEffect($"Sick from {Name.ToLowerInvariant()}", -harm, sicknessSeconds, 2f, true, false);
         InventoryManager.For(statusController)?.ShowMessage($"The {Name.ToLowerInvariant()} was bad: you feel sick.", InventoryFeedback.Kind.Warning);
+        MakeIll(statusController, marks, bad, (float)q);
+    }
+
+    /// <summary>A bad piece and the injury system: food poisoning, and what the piece carried (parasites, dysentery).</summary>
+    private void MakeIll(PlayerStatusController statusController, HarvestMarks marks, int bad, float quality)
+    {
+        if (illnessChance <= 0f || !InjurySettings.IsEnabled)
+            return;
+        InjuryController injuries = InjuryController.For(statusController);
+        if (injuries == null || !injuries.RulesHere)
+            return;
+        float chance = Mathf.Clamp01(illnessChance * (0.7f + 0.2f * bad) * (1.2f - 0.4f * quality));
+        injuries.Expose(InjuryDefaults.FoodPoisoning, chance);
+        if ((marks & (HarvestMarks.GutShot | HarvestMarks.Contaminated)) != 0)
+            injuries.Expose(InjuryDefaults.Parasites, chance * 0.6f);
+        if ((marks & HarvestMarks.Tainted) != 0)
+            injuries.Expose(InjuryDefaults.Dysentery, chance * 0.5f);
     }
 
     public float InstanceValueFactor(InventoryItem stack, int fromTop = 0) => HarvestedItemInfo.ValueFactor(stack, fromTop);

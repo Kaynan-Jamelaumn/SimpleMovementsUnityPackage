@@ -2,15 +2,21 @@
 
 **Scripts:** `Essentials/Combat/Injuries/*` (`InjurySettings`, `InjuryDefaults`, `InjuryController` and its partial
 files, `InjuryState`, `InjuryTreatment`, `MedicalItemSO`, `SeveredLimbItemSO`, `SeveredLimbLink`,
-`InjuryAbilityEffects`, `CityInjuryTreatment`, `CityHealer`, `InjuryTypes`), `Essentials/UI/CharacterSheet/InjuryHealthPanel.cs`,
-`InjuryUITrigger.cs`, `Essentials/UI/HUD/InjuryHudAlert.cs`, `Networking/Runtime/Status/NetInjuries.cs`,
-`CustomEditor/Combat/InjuryEditors.cs` (inspectors and tools), `CustomEditor/Combat/InjurySystemTests.cs`.
+`InjuryAbilityEffects`, `InjurySaves`, `CityInjuryTreatment`, `CityHealer`, `InjuryTypes`),
+`Essentials/UI/CharacterSheet/InjuryHealthPanel.cs`, `InjuryUITrigger.cs`, `InjuryIcons.cs`,
+`Essentials/UI/HUD/InjuryHudAlert.cs`, `InjuryScreenEffect.cs`, `Networking/Runtime/Status/NetInjuries.cs`,
+`CustomEditor/Combat/InjuryEditors.cs` (inspectors and tools), `CustomEditor/Combat/InjurySystemTests.cs`,
+`InjuryIllnessTests.cs`.
 
 A Project-Zomboid-like body: every body part has its own condition and injuries, wounds bleed until they are
 bandaged, bones break, untreated wounds get infected, and limbs can be cut off — dropping the armour worn on them and
 the item they held — and reattached before a time limit runs out. Players see and treat all of it on the **Health**
 tab of the inventory's character panel. Everything is configured in one asset, and nothing is hard-coded: body parts,
 injury types, severities, thresholds, effects, bleeding, limb loss, reattachment and treatments are data.
+
+Illnesses (sepsis, tetanus, a cold that turns into a flu, dysentery, food poisoning, parasites...), what brings them,
+hard landings, what injuries do to the player's sight, and keeping injuries between sessions have their own page:
+[Player 16 — Illnesses, Falls, Sight & Saves](16-Illnesses-Falls-Sight-and-Saves.md).
 
 The system is **off** until the project has Injury Settings with *Enabled* on.
 
@@ -20,9 +26,15 @@ The system is **off** until the project has Injury Settings with *Enabled* on.
 
 1. *Tools ▸ SimpleMovements ▸ Project Setup ▸ Create Injury Settings (Resources)*. It creates
    `Resources/SimpleMovements/Settings/InjurySettings` filled with the defaults below, **Enabled**.
-2. *Tools ▸ SimpleMovements ▸ Player ▸ Injuries ▸ Create Medical Items (Presets)*: bandage, sterile bandage, suture kit,
-   splint, disinfectant, antibiotics, burn salve and surgical kit in `Items/Medical/` (with icons and a world model).
-   Put some in loot tables, merchants or the player's starting items.
+2. *Tools ▸ SimpleMovements ▸ Player ▸ Injuries ▸ Create Medical Items (Presets)*: bandage, sterile bandage, tourniquet,
+   suture kit, splint, disinfectant, antibiotics, burn salve, surgical kit, and the medicines of the illnesses (cold
+   remedy, stomach remedy, antiparasitic, antitoxin, rabies vaccine, antivenom) in `Items/Medical/` (with icons and a
+   world model). Put some in loot tables, merchants or the player's starting items. Run it again after an update: it
+   brings the preset items you already have up to date and adds the new ones.
+
+   **An Injury Settings asset made before illnesses** shows *Add Illnesses And New Injuries* at the top of its
+   inspector: it adds the Whole Body part and the new injuries and illnesses and links the old ones to them, keeping
+   your own changes (page 16).
 3. *Tools ▸ SimpleMovements ▸ Player ▸ Injuries ▸ Create Severed Limb Items*: one item per body part that can be lost
    (icon, model) in `Items/Limbs/`, assigned to the parts. Optional offline (limbs get an item made at runtime);
    **needed in network sessions** (the limb must be a networked world item with an id in the Item Database).
@@ -56,7 +68,8 @@ flowchart LR
 ## 2. Body parts
 
 *Injury Settings ▸ Body Parts* (the inspector draws the body diagram the Health tab shows). The defaults are
-**17 parts**, every limb split into segments that hang on each other:
+**17 parts**, every limb split into segments that hang on each other - and the **Whole Body** part (kind *Whole Body*)
+illnesses sit on: hits never land on it, it has no condition to wear down and it cannot be lost (page 16).
 
 ```mermaid
 flowchart TB
@@ -134,7 +147,12 @@ attacks, other players (PvP), traps — raises `Damaged`; the controller handles
    (traits, race, class, items, buffs) scale both again: slashes cut and bleed, maces bruise and break bones — see
    [Player 14 — Damage Forms & Injury Resistances](14-Damage-Forms-and-Injury-Resistances.md).
 4. A type with **Merge Into Existing** makes the injury already on the part worse instead of adding a second; a new hit
-   on a bandaged bleeding wound soaks the bandage (it bleeds again).
+   on a treated bleeding wound **tears it open**: the bandage is soaked, the stitches tear, it bleeds again - and it
+   can be treated again (the Health tab says *torn open again*).
+
+**Area hits** (a blast, a slam) that name no part do not land on one spot: their damage is shared between *Area Hit
+Parts* parts (3 by default) picked by their Hit Weight, so an explosion hurts an arm, a leg and the chest rather than
+the chest three times as hard. `InjuryController.ApplyAreaHit` does the same for scripts.
 
 ### The default injury types
 
@@ -147,22 +165,39 @@ Severities (shared by every type, *Severity Levels*): **Minor**, **Moderate**, *
 | **Deep Wound** (wound, bleeding) | physical ≥ 30%, 40% | Severe | 0.9/s, never stops | 10 min once stitched | → Infection after 6 min |
 | **Laceration** (wound, bleeding) | physical ≥ 12%, 50% | Moderate | 0.4/s for 2.5 min | 6 min (half speed untreated) | → Infection after 10 min |
 | **Scratch** (wound, bleeding) | physical ≥ 4%, 55% | Minor (up to 3 per part) | 0.12/s for 40 s | 2.5 min | — |
-| **Infection** (infection) | wounds left open | Infection (Moderate) · Severe Infection | — | needs disinfectant / antibiotics | → Severe after 15 min |
+| **Infection** (infection) | wounds left open | Infection (Moderate) · Severe Infection | — | needs disinfectant / antibiotics | → Severe after 15 min → **Sepsis** after 10 more; untreated it may rot the part (**Gangrene**) |
 | **Amputation Stump** (stump, wound, bleeding) | losing a limb | Critical | 1.4/s, never stops | once stitched | → Infection after 5 min |
 | **Reattached Limb** (reattached) | reattachment | Fresh (80% impaired) → Healing (45%) → Knitting (15%) | — | 4 min per stage | — |
 | **Puncture Wound** (wound, bleeding, puncture) | piercing hits ≥ 10% | Puncture (Moderate) · Deep Puncture (Severe, 30%) | 0.3/s for 2 min · 0.7/s until treated | 7 / 10 min; deep needs stitches | → Infection after 7 / 5 min |
 | **Bite Wound** (wound, bleeding, bite) | bites ≥ 6%, 70% | Bite Wound (Moderate) · Mauled (Severe, 30%) | 0.35/s for 2 min · 0.8/s until treated | 6.7 / 11.7 min | → Infection after 4 / 3.3 min |
 | **Bruise** (bruise) | blunt and crushing hits ≥ 6% | Bruise (Minor) · Deep Bruise (Moderate, 20%) | — | 3 / 5 min, by itself | — |
 | **Concussion** (concussion) | blunt hits to the head ≥ 25% | Severe: dizzy spells (stuns) | — | 5 min, by itself | — |
-| **Frostbite** (burn, cold) | Ice hits ≥ 10% | Frostnip (Minor) · Frostbite (Severe, 35%) | — | 3.3 / 13 min; frostbite needs treatment | frostbite → Infection after 10 min |
+| **Frostbite** (burn, cold) | Ice hits ≥ 10% | Frostnip (Minor) · Frostbite (Severe, 35%) | — | 3.3 / 13 min; frostbite needs treatment | frostbite → **Gangrene** after 10 min |
+| **Sprained Ankle** (sprain) | falls and crushing hits on a foot ≥ 5% | Twisted Ankle (Minor) · Sprained (Moderate, 14%) · Torn Ligament (Severe, 28%) | — | twisted: 3 min; sprained: 12 min by itself, under 5 once bandaged or splinted; a torn ligament needs a splint | — |
+| **Dislocation** (dislocation) | heavy blunt / crushing hits on an arm or a leg ≥ 30%, 10% | Dislocated Joint (Severe: the limb is nearly useless) → Sore Joint | — | *Reset Joint* (splint kit) makes it a sore joint, which passes in 5 min | — |
+| **Eye Injury** (eye, wound) | hits to the head, points and claws above all, 7% | Black Eye · Injured Eye (20%) · Blinded Eye (Critical, 40%); **one per eye** | injured / blinded a little | black eye: 4 min; injured: 25 min by itself, under 7 under a bandage; a blinded eye needs surgery | injured (8 min) / blinded (6 min) → Infection |
+| **Ear Injury** (ear) | area hits to the head, 40% | Ringing Ear · Ruptured Eardrum (25%); one per ear | — | 2.5 / 25 min by itself | — |
+| **Severed Artery** (wound, bleeding, artery) | deep slashes and stabs on the neck, an arm or a leg ≥ 35%, 8% | Critical | **2.2/s**, never stops | once stitched or operated (a tourniquet stops it on a limb) | → Infection after 5 min |
+| **Internal Bleeding** (internal) | heavy blows and stabs to the torso ≥ 35%, 8% | Critical: −0.25 health/s, no bandage reaches it | — | surgery only | — |
+| **Punctured Lung** (internal, puncture) | piercing hits to the torso ≥ 30%, 7% | Critical: half the stamina, no sprinting | — | surgery only | — |
+| **Cut Tendon** (tendon) | slashes and claws on a hand or an arm ≥ 30%, 7% | Severe: the hand will not grip (92% impaired) | — | surgery only | — |
+| **Gangrene** (gangrene) | frostbite or a severe infection left alone | Necrosis (Severe) · Gangrene (Critical) | — | necrosis: surgery (*Cut Out Dead Flesh*); gangrene: **amputation** | → Gangrene after 7 min → **Sepsis** after 7 more |
 
 The odds of each type by damage form, and how characters resist them: [Player 14](14-Damage-Forms-and-Injury-Resistances.md).
+
+**Healing and the infection clock run together**: a wound heals while its *Worsen After Seconds* count down. A
+bandaged laceration closes in 4 minutes, well before the 10 it takes to get infected; left open it heals at half speed
+(12 minutes) and gets infected first. A character who fights an infection off (a resistance) starts the wait again and
+keeps healing meanwhile.
 
 Each **stage** sets: *Bleeding Per Second* and *Clots After Seconds* (0 = never stops by itself), *Impairment*,
 *Condition Loss Per Second* (an infection wears the part down), *Heal Seconds*, *Needs Treatment To Heal*, *Untreated
 Heal Rate*, *Worsen After Seconds* and *Worsens Into* (another type — the wound stays and causes it — or the next
 stage), its own **Consequence** (stats, health / stamina / sanity per second, hunger / thirst drain, fainting chance)
 and **Blocks** (actions it stops by itself). *Heal Stage By Stage* drops a healed injury one stage instead of removing it.
+For illnesses and the senses a stage also has *Hidden* (an incubation the player does not see), *Worsen Chance*,
+*Vision* (what it does to the player's sight) and *Contagion Per Minute*; a type has *Systemic*, *Sided*, *Immunity
+Seconds*, *Complications*, an *Icon Shape* and its *Hud Alert* (page 16).
 
 ### Bleeding
 
@@ -235,30 +270,53 @@ clips onto them.
 Open the inventory: the character panel beside it has **Stats** and **Health** tabs (only while the injury system is
 on and the player has a controller).
 
-* **Body diagram** (front view, the character's right on the left): a figure with each part drawn as its own shape on a
-  faint silhouette — head, neck, upper / lower torso, groin, and every arm and leg segment — coloured by its condition
-  (green → yellow → red; its % on the head and torso), a pulsing **red dot** on bleeding parts, an **orange dot** on
-  other injuries, missing parts dark grey. The figure keeps its proportions whatever the panel's size, and only the
-  inside of a shape takes the click. Parts are placed by their id (`LeftForearm`, `Head`...); a part the figure does not
-  know (a tail) is drawn as a box at its *Diagram Rect*.
-  **Hover** a part: condition, impairment, its injuries, what it does to you. **Click** it: the list shows only its
-  injuries (and what the part does). **Right-click** it: treat its most urgent injury (or reattach it).
 * **Summary**: bleeding per second, number of injuries, missing limbs with the time left to reattach them, what your
-  body cannot do right now, and (placeholder) city treatment.
-* **Injuries**: each with its severity colour, name, severity, and live status — bleeding (or stopped), bandaged /
-  splinted / stitched, *worsens in*, *heals in*, impairment — and a healing progress bar. **Hover** an injury for
-  everything about it (bleeding and when it stops, effects, treatment, healing, what you carry that treats it).
-  **Click** it to open the treatment menu: every medical item you carry that fits — *Bandage ×3 — Bandage (2 s)* —
-  usable ones highlighted, the others greyed with the reason (*Already treated*, *Needs 2*, *You need a usable hand*).
-  Pick one: the treatment is applied over its time (the bar on top shows the progress, **Cancel** stops it; a hit
-  interrupts it with *Damage Interrupts Treatment*), and the item is used up only when it finishes.
-* **Missing limb** rows: *Reattach within 3:42 · limb in your bag / limb not carried*, with the time bar. Click to
-  reattach with a surgical kit (§6).
+  body cannot do right now, what your eyes still see, how rest or hunger changes healing, your resistances and
+  (placeholder) city treatment.
+* **Quick actions**: **Treat most urgent** starts the best treatment you carry for the most urgent injury (bleeding
+  first, then what is about to get worse, then the severity), and **Stop all bleeding** treats every bleeding wound in
+  turn, the worst first, with what stops bleeding best (stitches for a deep wound, bandages for the rest) until nothing
+  bleeds, nothing you carry helps, or a hit interrupts it. Each is lit only while it would do something.
+* **Body figure** (front view, the character's right on the left): each part drawn as its own shape on a faint
+  silhouette - head, neck, upper / lower torso, groin, every arm and leg segment - coloured by its condition (green →
+  yellow → red; its % on the head and torso), with the **icon of its worst injury** (a pulsing **drop** while it
+  bleeds), a **+** once everything on it is treated, a **white flash** when it is hit, missing parts dark with a cross.
+  Parts are placed by their id (`LeftForearm`, `Head`...); a part the figure does not know (a tail) is drawn as a box at
+  its *Diagram Rect*. Beside the figure: the **Whole Body** card (the illnesses you know of) and the **details** of the
+  part under the pointer or the selection.
+* **Injuries**, the most urgent first (or one part's, when a part is selected): icon, name, severity, part, and live
+  status - bleeding (or stopped), *torn open again*, bandaged / splinted / stitched, *worse in*, *heals in*,
+  impairment - with a green **healing bar** and an orange bar that runs down to the moment it **gets worse**.
+* **Missing limb** rows: *Reattach within 3:42 · limb in your bag / limb not carried*, with the time bar.
 
-Everything updates live as you are hit, bleed, heal, are treated, lose or get back a limb. Medical items also work from
-the **hotbar or a quickslot**: using one treats the most urgent injury it can (bleeding first). Outside the inventory,
-the **HUD alert** at the top of the screen warns *Bleeding / HEAVY BLEEDING · Left Hand lost (3:42) · Broken bone ·
-Bandage 60%* (*Injury Settings ▸ Show Hud Alert*).
+**With the mouse**: hover anything for everything about it (bleeding and when it stops, effects, treatment, healing,
+what you carry that treats it); **click a part** to list only its injuries; **click an injury** (or **right-click a
+part**: its most urgent one) to open the treatment menu - every medical item you carry that fits, *Bandage ×3 -
+Bandage (2 s)*, with what it does under it, the best one marked, the ones that cannot be used greyed with the reason
+(*Already treated*, *Needs 2*, *You need a usable hand*); or **drag a medical item** from the bag and drop it on a part
+or on an injury.
+
+**With a keyboard or a gamepad**: the parts, the Whole Body card, the quick actions and the injury rows can be
+selected and moved between; the details of the selected one show beside it and the list scrolls to it; **Submit** on
+a part lists its injuries, on an injury it opens the treatment menu with the best item selected; **Cancel** (Escape, B)
+closes the menu.
+
+A treatment is applied over its time (the bar on top shows the progress, **Cancel** stops it; a hit or a hard landing
+interrupts it with *Damage Interrupts Treatment*), and the item is used up only when it finishes. Everything updates
+live as you are hit, bleed, heal, are treated, lose or get back a limb. Medical items also work from the **hotbar or a
+quickslot**: using one treats the most urgent injury it can (bleeding first).
+
+### On the HUD
+
+Outside the inventory (*Injury Settings ▸ Show Hud Alert*, top of the screen): a small **body figure** (*Show Hud
+Body*) - parts coloured by their state, missing limbs dark, the part that was just hit flashing, shown only while
+something is wrong - and the **warnings**, the most serious first, each with its icon: *HEAVY BLEEDING 1.3/s*, *Left
+Hand lost 3:42*, and every injury whose type has a **Hud Alert** (*None / Notice / Warning / Critical*, set per injury
+type): *Broken Bone · Left Shin*, *Infection, worse in 1:20*, *Flu*, *Sepsis*... plus the treatment being applied with
+its progress. Critical warnings pulse red. Which injuries warn is data, not code.
+
+**On the screen** (*Show Screen Effects*): a hurt eye darkens its half of the picture, blood loss closes the edges in,
+a concussion makes it sway, and a new injury flashes red at the edges (page 16).
 
 ---
 
@@ -319,11 +377,16 @@ Already Treated*), an **apply time**, and **effects** (pick with the dropdown):
 | **Cure** | Removes the injury, or lowers it some stages |
 | **Restore Condition** | Gives the part condition back |
 | **Reattach Limb** | §6 (*Ignore Time Limit*, *Ignore Limb Condition*, *Regrow Without Limb*, *Restored Condition*, *Skip After Injury*) |
+| **Amputate Limb** | Cuts the part off cleanly (gangrene): its injuries go with it, the stump is closed, the limb is not put back. Only parts that can be lost |
 
 Treatments live in:
 
 * **Medical items** (`MedicalItemSO`, *Assets ▸ Create ▸ SimpleMovements ▸ Items ▸ Medical Item*, or the presets): one
-  or more treatments and *Units Per Use*. The item inspector has a *Presets ▸ Medical* menu.
+  or more treatments and *Units Per Use*. The item inspector has a *Presets ▸ Medical* menu. *Preventive* marks a
+  medicine taken to be safe (a vaccine after a bite): used from the hotbar, or dropped on the Health tab's figure,
+  it is used up at once even when it finds nothing to treat, and says the same thing either way, so taking it tells
+  nothing about an illness that does not show yet. Only preventive medicines reach such an illness; the others act
+  on what the player can see.
 * **Abilities**: the **Injury ▸ Treat Injuries** effect (Most Urgent / Most Severe / All, Max Injuries; strength scales
   with the ability's healing) — a healing spell, a racial regeneration, a *Restore Limb* miracle with Ignore Time Limit.
   **Injury ▸ Inflict Injury** does the opposite for mob attacks (a wolf bite on the legs, a crushing slam that breaks
@@ -332,14 +395,21 @@ Treatments live in:
 
 | Preset | Treats | How |
 |---|---|---|
-| Bandage | wounds, bleeding, burns, stumps | stops 85% of the bleeding, heals ×1.5 (2 s) |
+| Bandage | wounds, bleeding, burns, stumps, sprains | stops 85% of the bleeding, heals ×1.5 (2 s) |
 | Sterile Bandage | same | stops 95%, heals ×1.8, no infection |
-| Suture Kit | deep wounds, lacerations, stumps | stitched: stops the bleeding, lets it heal, stops infection (5 s) |
-| Splint | cracked and broken bones of limbs | splinted: lets it heal, 45% less impairment (4 s) |
-| Disinfectant | wounds, burns, stumps / a beginning infection | stops infection / cures it |
-| Antibiotics | any infection | lets it heal ×2 |
-| Burn Salve | burns | heals ×2, 40% less impairment |
-| Surgical Kit | missing limbs; severe fractures, deep wounds, stumps | reattaches a limb in time (8 s); surgery (6 s) |
+| Tourniquet | bleeding wounds and stumps on an arm or a leg | stops all of the bleeding at once, even an artery; the wound still has to be closed (1.5 s) |
+| Suture Kit | deep wounds, lacerations, punctures, bites, severed arteries, stumps | stitched: stops the bleeding, lets it heal, stops infection (5 s) |
+| Splint | cracked and broken bones and sprains of limbs; dislocations | splinted: lets it heal, 45% less impairment (4 s); *Reset Joint* (3 s) |
+| Disinfectant | wounds, burns, stumps / a beginning infection | stops infection (and tetanus) / cures it |
+| Antibiotics | any infection, sepsis included; pneumonia, severe dysentery | lets it heal ×2 |
+| Burn Salve | burns, frostbite | heals ×2, 40% less impairment |
+| Surgical Kit | missing limbs; severe fractures, wounds, arteries, internal bleeding, lungs, tendons, eyes; gangrene | reattaches a limb in time (8 s); surgery (6 s); *Cut Out Dead Flesh* (6 s); *Amputate* (10 s) |
+| Cold Remedy | a cold, a flu | passes twice as fast and does not get worse |
+| Stomach Remedy | food poisoning, dysentery | passes twice as fast and does not get worse |
+| Antiparasitic *(preventive)* | parasites | cures them |
+| Antitoxin *(preventive)* | tetanus | cures it while it incubates; lets it heal once it shows |
+| Rabies Vaccine *(preventive)* | rabies while it incubates | prevents it |
+| Antivenom | venom | ends it at once |
 
 The *Treatments* page of the Injury Settings inspector lists every medical item and healing ability of the project.
 
@@ -355,27 +425,34 @@ City Healer*) that players can interact with — today it only shows the note. I
 
 ## 8. Editor
 
-* **Injury Settings inspector**: the on/off switch and every problem on top, then pages — *General* (rules, treatment,
-  bleeding), *Body Parts* (the diagram, a summary per part, the list), *Injuries* (severities, a readable summary of
-  each type and stage, the list), *Treatments* (medical items and healing abilities of the project, *Create Medical
+* **Injury Settings inspector**: the on/off switch and every problem on top (and *Add Illnesses And New Injuries* for an
+  asset made before them), then pages — *General* (rules, interface, treatment, bleeding), *Body Parts* (the diagram, a
+  summary per part, the list), *Injuries* (severities, a readable summary of each type and stage, the list),
+  *Illnesses* (exposures, contagion, the body's state, a summary of each illness), *Treatments* (medical items and healing abilities of the project, *Create Medical
   Item Presets*), *Limbs* (reattachment rules, cleanup, the parts that can be lost with their limb items, *Create
-  Severed Limb Items*), *Movement* (limping, hopping, crawling, the legless body, hitboxes), *City* (the placeholder). *Reset ... To Defaults* buttons bring the defaults back.
-* **Injury Controller inspector** (Play Mode): every part's condition and injuries live, and test buttons — hit a part,
-  add an injury of any type and stage, lose a limb, heal all.
+  Severed Limb Items*), *Movement* (limping, hopping, crawling, the legless body, hitboxes, falls), *City* (the placeholder). *Reset ... To Defaults* buttons bring the defaults back.
+* **Injury Controller inspector** (Play Mode): every part's condition and injuries live (hidden illnesses marked), and
+  test buttons — hit a part, add an injury or an illness of any type and stage, lose a limb, heal all, **Advance** (let
+  minutes pass at once to see what an injury becomes) and **Land** (a hard landing after a drop of so many metres).
 * **Menus**: *Project Setup ▸ Create Injury Settings*; *Player ▸ Injuries ▸* Open Injury Settings, Create Medical Items,
   Create Severed Limb Items, Add Injury Controller To Selection, Add City Healer.
 * **Validators**: the Player Setup Validator's Survival section (with *Add Injury Controller* / *Create Injury
   Settings*), the Project Validator (settings problems, missing limb items, no medical items).
-* **Tests**: *Window ▸ General ▸ Test Runner ▸ EditMode ▸ InjurySystemTests*.
+* **Tests**: *Window ▸ General ▸ Test Runner ▸ EditMode ▸ InjurySystemTests*, *DamageFormTests*, *InjuryIllnessTests*.
 
 ---
 
 ## 9. Multiplayer
 
-The server runs every rule. `NetInjuries` (on the player prefab) sends the state — part conditions, injuries, missing
-limbs, the treatment being applied — to everyone who sees the character when it changes (at most every *Send
-Interval*); client copies show it (Health tab, missing limbs on the model, the HUD alert) and use it for what they
-predict (movement limits, hands). The owner's treatments are sent to the server and checked there like local ones.
+The server runs every rule. `NetInjuries` (on the player prefab) sends the state when it changes (at most every *Send
+Interval*): the character's **own client** gets everything — part conditions, injuries and illnesses, missing limbs,
+the treatment being applied — and shows it (Health tab, HUD, screen effects) and uses it for what it predicts (movement
+limits, hands). **Everyone else** gets only what they can see of someone else's body: which limbs are missing and how
+impaired each part is (enough to limp, hop and crawl, and to pick up a lost limb) — a few dozen bytes, sent only when
+that changes, not on every step of healing. *Share Injuries With Everyone* on the component sends everyone everything
+(a game where players examine each other). The owner's treatments (and *Stop all bleeding*) are sent to the server and
+checked there like local ones. A new state updates the injuries a client already shows in place, so the Health tab's
+rows keep counting.
 Limbs need **limb item assets** (§1, step 3) so they can be networked world items; armour and held items drop like any
 dropped item. Limping, hopping, crawling and the legless body are worked out from that state on every machine (the same
 collider height and speed on the server and in the owner's prediction); `MovementAnimationHandler` sets the animator
@@ -397,14 +474,21 @@ was pressed. A host sees its own HUD, not the clients'.
   `ForMissingLimbs`): it appears in the dropdown of every treatment.
 * **New limits** — implement `IBodyActionLimits` and assign `CombatEntity.BodyLimits`, or add `BodyAction` values (at the
   end) and check them where the action happens.
-* **Scripting** — `InjuryController.For(player)`: `Parts`, `AddInjury`, `ChangeStage`, `RemoveInjury`, `ApplyHit`,
-  `LoseLimb`, `ReattachLimb`, `FindLimb`, `ApplyTreatment`, `BeginTreatment`, `QuickTreat`, `HealAll`, `RefreshEffects`, `Allows`,
-  `Hands`, `Locomotion`, `BleedingPerSecond`; events `Changed`, `InjuryAdded`, `InjuryRemoved`, `InjuryStageChanged`, `LimbLost`,
-  `LimbReattached`, `Treated`, `Message`, `HandsChanged`, static `AnyLimbLost`.
+* **Scripting** — `InjuryController.For(player)`: `Parts`, `WholeBody`, `AddInjury`, `ChangeStage`, `RemoveInjury`,
+  `ApplyHit`, `ApplyAreaHit`, `Land`, `Expose`, `IsImmuneTo` / `SetImmunity`, `LoseLimb`, `Amputate`, `ReattachLimb`,
+  `FindLimb`, `ApplyTreatment`, `BeginTreatment`, `QuickTreat`, `TreatMostUrgent`, `TreatAllBleeding`,
+  `MostUrgentTreatable`, `HealAll`, `Simulate`, `RefreshEffects`, `CaptureSave` / `RestoreSave`, `Allows`, `Hands`,
+  `Locomotion`, `Vision`, `BleedingPerSecond`, `VisibleInjuryCount`; events `Changed`, `InjuryAdded`, `InjuryRemoved`,
+  `InjuryStageChanged`, `PartHit`, `LimbLost`, `LimbReattached`, `Treated`, `Message`, `HandsChanged`, static
+  `AnyLimbLost`.
 
 ## 11. Notes and limitations
 
-* Severed limbs and their records live in memory: they are not saved with the game (they rot within minutes anyway).
+* Injuries are kept between sessions (page 16), but severed limbs and their records live in memory: a limb that was
+  missing when the player left stays missing and the limb itself is gone (only an ability that regrows limbs brings it
+  back). Past its time limit a limb is called *Rotten ...* (*Limbs ▸ Expired Limbs Rot*).
+* A healthy character costs next to nothing: the rules run only while something is wrong with the body, ten times a
+  second for players and every *Mob Tick Seconds* for mobs.
 * A limb's time limit is in game seconds (`Time.time`), so pausing with time scale 0 stops it.
 * The generated limb and medical models are capsules and boxes — replace the *Severed Prefab* / item prefabs with your
   art.

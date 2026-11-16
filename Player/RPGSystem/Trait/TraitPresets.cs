@@ -5,7 +5,8 @@ using UnityEngine;
 /// <summary>
 /// Ready-made traits: passive bonuses, drawbacks (negative cost), active movement skills (double jump, wall climb,
 /// glide), abilities on a key (barrier, blink), reactions (second wind, vampiric, undying, thorns, on-kill rewards,
-/// out-of-combat regeneration) and situational bonuses (last stand, battle focus, mana surge).
+/// out-of-combat regeneration), situational bonuses (last stand, battle focus, mana surge) and disabilities
+/// (<see cref="DisabilityTraitPresets"/>: drawbacks that take an ability, a sense or a limb away, or come and go).
 /// Used by Assets ▸ Create ▸ SimpleMovements ▸ Character ▸ Trait From Preset... and the Trait / Trait Database inspectors.
 /// </summary>
 public static class TraitPresets
@@ -16,14 +17,19 @@ public static class TraitPresets
         public string category;
         public string description;
         public Func<Trait> create;
+        /// <summary>
+        /// Presets with the same group are degrees or sides of one thing (Limp / Bad Leg / Lame): a character takes
+        /// only one of them. The tool that creates them all makes them mutually exclusive. Null = no group.
+        /// </summary>
+        public string group;
     }
 
     private static readonly Color Good = new Color(0.45f, 0.8f, 0.45f);
-    private static readonly Color Bad = new Color(0.9f, 0.4f, 0.35f);
+    internal static readonly Color Bad = new Color(0.9f, 0.4f, 0.35f);
     private static readonly Color ActiveColor = new Color(0.4f, 0.65f, 1f);
     private static readonly Color Triggered = new Color(0.75f, 0.5f, 0.95f);
 
-    public static readonly Preset[] All =
+    private static readonly Preset[] Core =
     {
         // Passive bonuses
         P("Passive", "Tough", "+20% max health.", () => New("Tough", "Built to take a beating.", 2, TraitType.Physical, Good,
@@ -155,6 +161,12 @@ public static class TraitPresets
             TraitModifier.Percent(TraitStat.BleedingRate, 60f), TraitModifier.Percent(TraitStat.InjuryHealing, -30f))),
         P("Injuries", "Brittle Bones", "+50% fracture chance, +20% limb loss chance. Gives 2 points.", () => New("Brittle Bones", "Breaks like glass.", -2, TraitType.Physical, Bad,
             TraitModifier.Percent(TraitStat.FractureChance, 50f), TraitModifier.Percent(TraitStat.LimbLossChance, 20f))),
+        P("Injuries", "Light Feet", "-50% fall damage, +2 m safe fall height.", () => New("Light Feet", "Lands like a cat.", 2, TraitType.Physical, Good,
+            TraitModifier.Percent(TraitStat.FallDamage, -50f), new TraitModifier(TraitStat.SafeFallHeight, TraitModifierMode.Flat, 2f))),
+        P("Injuries", "Feather Fall", "Never hurt by a fall.", () => New("Feather Fall", "Drifts down from any height.", 3, TraitType.Physical, Good,
+            new InjuryResistanceTrait { resistances = new List<InjuryResistance> { new InjuryResistance("Feather Fall") { fallDamage = -100f } } })),
+        P("Injuries", "Weak Ankles", "+50% fall damage, -1.5 m safe fall height. Gives 1 point.", () => New("Weak Ankles", "Every drop is a risk.", -1, TraitType.Physical, Bad,
+            TraitModifier.Percent(TraitStat.FallDamage, 50f), new TraitModifier(TraitStat.SafeFallHeight, TraitModifierMode.Flat, -1.5f))),
         P("Injuries", "Thin Skin", "+40% wound chance. Gives 1 point.", () => New("Thin Skin", "Bruises and bleeds at the slightest touch.", -1, TraitType.Physical, Bad,
             TraitModifier.Percent(TraitStat.WoundChance, 40f))),
         P("Injuries", "Sickly", "+60% infection chance. Gives 2 points.", () => New("Sickly", "Every dirty wound turns bad.", -2, TraitType.Survival, Bad,
@@ -185,10 +197,21 @@ public static class TraitPresets
             TraitModifier.Percent(TraitStat.MoveSpeed, -10f), new ControlImmunityTrait { immuneTo = ControlImmunity.AllDisplacement })),
     };
 
-    private static Preset P(string category, string name, string description, Func<Trait> create) =>
-        new Preset { category = category, name = name, description = description, create = create };
+    /// <summary>Every preset: the ones above and the disabilities.</summary>
+    public static readonly Preset[] All = Join(Core, DisabilityTraitPresets.Build());
 
-    private static Trait New(string name, string description, int cost, TraitType type, Color color, params object[] parts)
+    private static Preset[] Join(Preset[] a, Preset[] b)
+    {
+        var all = new Preset[a.Length + b.Length];
+        a.CopyTo(all, 0);
+        b.CopyTo(all, a.Length);
+        return all;
+    }
+
+    internal static Preset P(string category, string name, string description, Func<Trait> create, string group = null) =>
+        new Preset { category = category, name = name, description = description, create = create, group = group };
+
+    internal static Trait New(string name, string description, int cost, TraitType type, Color color, params object[] parts)
     {
         Trait t = ScriptableObject.CreateInstance<Trait>();
         t.name = name;
@@ -202,6 +225,7 @@ public static class TraitPresets
         {
             if (p is TraitModifier m) t.modifiers.Add(m);
             else if (p is TraitBehaviour b) t.behaviours.Add(b);
+            else if (p is CombatStatModifier c) t.combatStats.Add(c);
         }
         return t;
     }

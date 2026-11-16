@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -13,6 +14,22 @@ public class SeveredLimbLink : MonoBehaviour
     public bool isLimb;
     [Tooltip("Time (Time.time) this object is removed from the world. 0 = never.")]
     public float despawnAt;
+
+    private static readonly List<SeveredLimbLink> active = new List<SeveredLimbLink>();
+
+    /// <summary>Every enabled limb link in the world (reattachment looks for a limb lying near without searching the scene).</summary>
+    public static IReadOnlyList<SeveredLimbLink> Active => active;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => active.Clear();
+
+    private void OnEnable()
+    {
+        if (!active.Contains(this))
+            active.Add(this);
+    }
+
+    private void OnDisable() => active.Remove(this);
 
     public SeveredLimbRecord Record => InjuryController.FindRecord(recordId);
 

@@ -20,8 +20,8 @@ namespace HubWorld
         {
             TraitModifier.Percent(TraitStat.MoveSpeed, -20f),
             TraitModifier.Percent(TraitStat.DamageTaken, 15f),
-            TraitModifier.Percent(TraitStat.StaminaRegen, -30f),
-            TraitModifier.Percent(TraitStat.ManaRegen, -30f),
+            TraitModifier.Percent(TraitStat.StaminaRegenRate, -30f),
+            TraitModifier.Percent(TraitStat.ManaRegenRate, -30f),
         };
         [Tooltip("Combat stats changed while it lasts.")]
         public List<CombatStatModifier> combatStats = new List<CombatStatModifier>

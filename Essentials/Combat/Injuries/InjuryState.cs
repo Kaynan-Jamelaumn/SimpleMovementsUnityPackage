@@ -53,10 +53,56 @@ public sealed class Injury
     /// </summary>
     public float WorseningFactor { get; internal set; } = 1f;
 
+    /// <summary>
+    /// The side it is on when its type takes one on a centre part (the left or the right eye); Center otherwise (the part
+    /// says where it is).
+    /// </summary>
+    public BodyPartSide Side { get; internal set; } = BodyPartSide.Center;
+    /// <summary>
+    /// The treatment was torn open by a new hit (stitches, a bandage): told to the player once, cleared when it is treated
+    /// again.
+    /// </summary>
+    public bool Reopened { get; internal set; }
+
     public InjuryStage Stage => Type != null ? Type.Stage(StageIndex) : null;
     public int Severity => Stage != null ? Stage.severity : 0;
-    /// <summary>The stage's name ("Broken Bone"), else the type's.</summary>
-    public string Name => Type != null ? Type.StageName(StageIndex) : "Injury";
+    /// <summary>The stage's name ("Broken Bone"), else the type's; with its side when it has one ("Left Eye Injury").</summary>
+    public string Name
+    {
+        get
+        {
+            string n = Type != null ? Type.StageName(StageIndex) : "Injury";
+            return Side == BodyPartSide.Left ? "Left " + n : Side == BodyPartSide.Right ? "Right " + n : n;
+        }
+    }
+
+    /// <summary>Incubating: the player does not see it yet (see <see cref="InjuryStage.hidden"/>).</summary>
+    public bool Hidden
+    {
+        get
+        {
+            InjuryStage s = Stage;
+            return s != null && s.hidden;
+        }
+    }
+
+    /// <summary>An illness of the whole body (its type is Systemic).</summary>
+    public bool IsIllness => Type != null && Type.systemic;
+
+    /// <summary>
+    /// A wound that is open: it bleeds or can still get worse, and nothing covers or treats it. What dirt, cold and
+    /// illnesses get into.
+    /// </summary>
+    public bool IsOpenWound
+    {
+        get
+        {
+            InjuryStage s = Stage;
+            if (s == null || Type == null || Type.systemic || Bandaged || Treated)
+                return false;
+            return s.bleedingPerSecond > 0f && !Clotted;
+        }
+    }
 
     /// <summary>It stopped bleeding by itself.</summary>
     public bool Clotted
@@ -145,6 +191,24 @@ public sealed class Injury
         return (1f - HealProgress) * s.healSeconds / rate;
     }
 
+    /// <summary>
+    /// How urgent it is, for sorting and for "treat the most urgent": bleeding first (the faster the worse), then what is
+    /// about to get worse, then the severity. Hidden injuries count like any other (medicine finds them).
+    /// </summary>
+    public float Urgency
+    {
+        get
+        {
+            float u = BleedingPerSecond * 100f + Severity * 10f;
+            if (CanWorsen)
+                u += 5f + Mathf.Clamp01(1f - WorsensIn / 600f) * 20f;
+            InjuryStage s = Stage;
+            if (s != null && s.needsTreatmentToHeal && !HealingAllowed)
+                u += 3f;
+            return u;
+        }
+    }
+
     /// <summary>Clears the treatment state (a new hit opened it again).</summary>
     internal void ClearTreatment()
     {
@@ -187,6 +251,19 @@ public sealed class InjuryPartState
 
     internal readonly List<Injury> injuries = new List<Injury>(2);
     public IReadOnlyList<Injury> Injuries => injuries;
+
+    /// <summary>Its place in the controller's parts (the network and saves name parts by it).</summary>
+    public int Index { get; internal set; }
+    /// <summary>
+    /// The impairment the server sent for a character whose injuries this machine is not told (someone else's character:
+    /// it only needs to limp). Negative = none: the impairment is worked out from the condition and the injuries.
+    /// </summary>
+    internal float ReplicatedImpairment = -1f;
+    /// <summary>Time.time of the last hit on it (the HUD's body figure flashes it).</summary>
+    public float LastHitTime { get; internal set; } = float.NegativeInfinity;
+
+    /// <summary>The Whole Body part: illnesses sit on it, hits never land on it.</summary>
+    public bool IsWholeBody => Def != null && Def.kind == BodyPartKind.WholeBody;
 
     public string Id => Def != null ? Def.id : "";
     public string Name => Def != null ? Def.Name : "?";
@@ -239,6 +316,27 @@ public sealed class InjuryPartState
             if (injuries[i].Uid == uid) return injuries[i];
         return null;
     }
+
+    /// <summary>How many of its injuries the player sees (not incubating).</summary>
+    public int VisibleInjuries
+    {
+        get
+        {
+            int n = 0;
+            for (int i = 0; i < injuries.Count; i++)
+                if (!injuries[i].Hidden) n++;
+            return n;
+        }
+    }
+
+    /// <summary>Has it an injury of <paramref name="type"/> (on <paramref name="side"/> when the type takes sides)?</summary>
+    public Injury FindOfType(InjuryTypeDefinition type, BodyPartSide side = BodyPartSide.Center)
+    {
+        for (int i = 0; i < injuries.Count; i++)
+            if (injuries[i].Type == type && (side == BodyPartSide.Center || injuries[i].Side == side))
+                return injuries[i];
+        return null;
+    }
 }
 
 /// <summary>
@@ -276,6 +374,10 @@ public sealed class SeveredLimbRecord
     public bool Gone { get; internal set; }
     /// <summary>Time (Time.time) the limb lying in the world is removed (0 = never, or it is not lying in the world).</summary>
     public float DespawnAt { get; internal set; }
+    /// <summary>Past its time limit it is called "Rotten ..." (Injury Settings ▸ Limbs ▸ Expired Limbs Rot).</summary>
+    public bool Rots { get; internal set; }
+    /// <summary>It rotted: past its time limit, not put back, and limbs rot in this game.</summary>
+    public bool Rotten => Rots && !Consumed && (Gone || Expired);
 
     /// <summary>Condition (0-1) now.</summary>
     public float Condition => Mathf.Clamp01(ConditionAtLoss - DecayPerSecond * Mathf.Max(0f, Time.time - LostAt));
@@ -283,8 +385,15 @@ public sealed class SeveredLimbRecord
     public float Remaining => Mathf.Max(0f, LostAt + TimeLimit - Time.time);
     public bool Expired => Time.time >= LostAt + TimeLimit;
 
-    /// <summary>"Left Arm of Kaynan".</summary>
-    public string Title => string.IsNullOrEmpty(OwnerName) ? PartName : $"{PartName} of {OwnerName}";
+    /// <summary>"Left Arm of Kaynan" ("Rotten Left Arm of Kaynan" once it is too late to put it back).</summary>
+    public string Title
+    {
+        get
+        {
+            string part = Rotten ? "Rotten " + PartName : PartName;
+            return string.IsNullOrEmpty(OwnerName) ? part : $"{part} of {OwnerName}";
+        }
+    }
 
     /// <summary>Tooltip lines (inventory hover, health panel).</summary>
     public void Describe(List<string> lines)

@@ -94,7 +94,7 @@ public class HealthManager : StatusManager
         // Regenerate stamina while it is below the maximum
         while (currentValue < maxValue && !RegenerationBlocked)
         {
-            currentValue = Mathf.Min(maxValue, currentValue + AddFactor(incrementValue));
+            currentValue = Mathf.Min(maxValue, currentValue + AddFactor(RegenPerTick));
 
             // Check the flag and exit the coroutine if needed
             if (isConsuming)

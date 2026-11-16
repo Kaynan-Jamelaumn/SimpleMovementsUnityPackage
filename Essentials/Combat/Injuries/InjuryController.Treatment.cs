@@ -42,8 +42,14 @@ public struct InjuryTreatmentRequest
     public int injuryUid;
     /// <summary>The medical item's id in the Item Database.</summary>
     public string itemId;
-    /// <summary>Index of the treatment in the item.</summary>
+    /// <summary>
+    /// Index of the treatment in the item. <see cref="Quick"/> = the most urgent injury the item treats;
+    /// <see cref="AllBleeding"/> = every bleeding wound in turn, with whatever the character carries (no item named).
+    /// </summary>
     public int treatmentIndex;
+
+    public const int Quick = -1;
+    public const int AllBleeding = -2;
 }
 
 // Treatment: applying medical items, abilities and scripted treatments to injuries and missing limbs.
@@ -51,6 +57,18 @@ public partial class InjuryController
 {
     private ActiveTreatment activeTreatment;
     private readonly List<InventoryItem> stackBuffer = new List<InventoryItem>();
+    private readonly List<TreatmentOption> optionScratch = new List<TreatmentOption>();
+    // The medical items carried, looked up once per change of the inventory (the Health tab asks many times a second).
+    private readonly List<MedicalItemSO> carriedItems = new List<MedicalItemSO>();
+    private readonly List<int> carriedCounts = new List<int>();
+    private InventoryManager carriedFrom;
+    private bool carriedDirty = true;
+    private float carriedExpires;
+    private bool chainBleeding;
+    private bool saveUrgent;
+
+    /// <summary>Bleeding wounds are being treated one after the other (<see cref="TreatAllBleeding"/>).</summary>
+    public bool IsTreatingAllBleeding => chainBleeding && activeTreatment != null;
 
     /// <summary>The treatment being applied (null = none).</summary>
     public ActiveTreatment CurrentTreatment => activeTreatment;
@@ -114,24 +132,8 @@ public partial class InjuryController
             reason = "Nothing to treat.";
             return false;
         }
-        if (e != null && (e.IsDead || e.IsUnconscious) && ctx.source == TreatmentSource.Item)
-        {
-            reason = "Not while down.";
+        if (ctx.source == TreatmentSource.Item && !CanUseMedicine(out reason))
             return false;
-        }
-        if (ctx.source == TreatmentSource.Item)
-        {
-            if (!Allows(BodyAction.UseItems))
-            {
-                reason = ReasonFor(BodyAction.UseItems);
-                return false;
-            }
-            if (s.treatmentNeedsAHand && !Hands.AnyHand)
-            {
-                reason = "You need a usable hand.";
-                return false;
-            }
-        }
         if (ctx.part.Lost && ctx.injury == null)
         {
             if (!ctx.treatment.ForMissingLimbs)
@@ -151,6 +153,29 @@ public partial class InjuryController
             return false;
         }
         return ctx.treatment.CanApply(ctx, out reason);
+    }
+
+    /// <summary>Can the character use a medical item at all right now (awake, allowed to use items, a usable hand)?</summary>
+    private bool CanUseMedicine(out string reason)
+    {
+        reason = "";
+        CombatEntity e = Entity;
+        if (e != null && (e.IsDead || e.IsUnconscious))
+        {
+            reason = "Not while down.";
+            return false;
+        }
+        if (!Allows(BodyAction.UseItems))
+        {
+            reason = ReasonFor(BodyAction.UseItems);
+            return false;
+        }
+        if (Settings.treatmentNeedsAHand && !Hands.AnyHand)
+        {
+            reason = "You need a usable hand.";
+            return false;
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ applying
@@ -216,6 +241,7 @@ public partial class InjuryController
     {
         ctx.treatment.ApplyEffects(ref ctx);
         effectsDirty = true;
+        saveUrgent = true;
         if (logChanges || Settings.logInjuries)
             Debug.Log($"[Injuries] {name}: {ctx.treatment.name} on {ctx.part.Name}{(ctx.injury != null ? " (" + ctx.injury.Name + ")" : "")} [{ctx.source}].", this);
         Treated?.Invoke(ctx.treatment, ctx.part, ctx.injury, ctx.source);
@@ -274,15 +300,23 @@ public partial class InjuryController
             }
             PlayItemSound(a.Item);
         }
+        // An illness that does not show yet stays unnamed: the player only knows they took the medicine.
+        bool unseen = injury != null && injury.Hidden;
+        string what = injury != null ? injury.Name : "";
         Apply(ref ctx);
-        if (injury != null) // a reattachment says so itself
-            Notify($"{a.Treatment.name}: {injury.Name} on your {a.Part.Name.ToLowerInvariant()}.");
+        if (unseen)
+            Notify(a.Item != null ? $"You take the {a.Item.Name}." : $"{a.Treatment.name}.");
+        else if (injury != null) // a reattachment says so itself
+            Notify(a.Part.IsWholeBody ? $"{a.Treatment.name}: {what}." : $"{a.Treatment.name}: {what} on your {a.Part.Name.ToLowerInvariant()}.");
+        if (chainBleeding && !StartNextBleeding())
+            chainBleeding = false;
     }
 
     /// <summary>Stops the treatment being applied (nothing is used). <paramref name="reason"/> is told to the player (null = silent).</summary>
     public void CancelTreatment(string reason)
     {
         ActiveTreatment a = activeTreatment;
+        chainBleeding = false;
         if (a == null)
             return;
         activeTreatment = null;
@@ -334,13 +368,13 @@ public partial class InjuryController
     {
         into = into ?? new List<TreatmentOption>();
         into.Clear();
-        InventoryManager inv = InventoryManager.For(this);
-        if (inv == null || part == null)
+        if (part == null)
             return into;
-        var seen = new HashSet<MedicalItemSO>();
-        foreach (MedicalItemSO med in CarriedMedicalItems(inv))
+        RefreshCarried();
+        for (int m = 0; m < carriedItems.Count; m++)
         {
-            if (!seen.Add(med))
+            MedicalItemSO med = carriedItems[m];
+            if (med == null)
                 continue;
             for (int i = 0; i < med.Treatments.Count; i++)
             {
@@ -352,7 +386,7 @@ public partial class InjuryController
                 if (lostTarget ? !t.ForMissingLimbs || !t.target.MatchesPart(part) : !t.target.Matches(injury, part))
                     continue;
                 bool usable = CanTreat(ctx, out string reason);
-                int count = inv.CountItem(med);
+                int count = carriedCounts[m];
                 if (usable && count < med.UnitsPerUse)
                 {
                     usable = false;
@@ -362,6 +396,196 @@ public partial class InjuryController
             }
         }
         return into;
+    }
+
+    /// <summary>The medical items carried and how many of each: read again when the inventory changes (and once a second, to be safe).</summary>
+    private void RefreshCarried()
+    {
+        InventoryManager inv = InventoryManager.For(this);
+        if (inv != carriedFrom)
+        {
+            if (carriedFrom != null)
+                carriedFrom.InventoryChanged -= OnCarriedChanged;
+            carriedFrom = inv;
+            if (inv != null)
+                inv.InventoryChanged += OnCarriedChanged;
+            carriedDirty = true;
+        }
+        if (!carriedDirty && Time.unscaledTime < carriedExpires)
+            return;
+        carriedDirty = false;
+        carriedExpires = Time.unscaledTime + 1f;
+        carriedItems.Clear();
+        carriedCounts.Clear();
+        if (inv == null)
+            return;
+        foreach (MedicalItemSO med in CarriedMedicalItems(inv))
+        {
+            if (carriedItems.Contains(med))
+                continue;
+            carriedItems.Add(med);
+            carriedCounts.Add(inv.CountItem(med));
+        }
+    }
+
+    private void OnCarriedChanged() => carriedDirty = true;
+
+    private void ReleaseCarried()
+    {
+        if (carriedFrom != null)
+            carriedFrom.InventoryChanged -= OnCarriedChanged;
+        carriedFrom = null;
+        carriedDirty = true;
+        carriedItems.Clear();
+        carriedCounts.Clear();
+    }
+
+    /// <summary>
+    /// The best thing the character carries for <paramref name="injury"/> right now (what stops its bleeding best, lets
+    /// it heal, keeps it from getting worse), or for the missing limb of <paramref name="part"/> when
+    /// <paramref name="injury"/> is null. False when nothing usable is carried.
+    /// </summary>
+    public bool BestItemTreatment(InjuryPartState part, Injury injury, out TreatmentOption best)
+    {
+        best = default;
+        FindItemTreatments(part, injury, optionScratch);
+        float bestScore = 0f;
+        bool found = false;
+        for (int i = 0; i < optionScratch.Count; i++)
+        {
+            TreatmentOption o = optionScratch[i];
+            if (!o.usable || o.treatment == null)
+                continue;
+            float score = o.treatment.ScoreFor(injury);
+            if (score <= bestScore)
+                continue;
+            bestScore = score;
+            best = o;
+            found = true;
+        }
+        optionScratch.Clear();
+        return found;
+    }
+
+    /// <summary>
+    /// The most urgent injury the player sees that something carried can treat now, with that item (Health tab ▸ Treat
+    /// Most Urgent). False when there is none.
+    /// </summary>
+    public bool MostUrgentTreatable(out InjuryPartState part, out Injury injury, out TreatmentOption option, bool bleedingOnly = false)
+    {
+        part = null;
+        injury = null;
+        option = default;
+        float bestUrgency = float.NegativeInfinity;
+        for (int p = 0; p < parts.Count; p++)
+        {
+            InjuryPartState candidate = parts[p];
+            for (int i = 0; i < candidate.injuries.Count; i++)
+            {
+                Injury inj = candidate.injuries[i];
+                if (inj.Hidden || (bleedingOnly && !inj.IsBleeding))
+                    continue;
+                float urgency = inj.Urgency;
+                if (urgency <= bestUrgency || !BestItemTreatment(candidate, inj, out TreatmentOption o))
+                    continue;
+                // Only something that stops bleeding counts while looking for bleeding to stop.
+                if (bleedingOnly && o.treatment.BleedingStopped <= 0f)
+                    continue;
+                bestUrgency = urgency;
+                part = candidate;
+                injury = inj;
+                option = o;
+            }
+        }
+        return injury != null;
+    }
+
+    /// <summary>Starts treating the most urgent injury with the best item carried. Returns true when a treatment started.</summary>
+    public bool TreatMostUrgent()
+    {
+        if (!MostUrgentTreatable(out InjuryPartState part, out Injury injury, out TreatmentOption option))
+        {
+            Notify("You carry nothing that treats your injuries.");
+            return false;
+        }
+        return BeginTreatment(option.treatment, part, injury, TreatmentSource.Item, option.item);
+    }
+
+    /// <summary>
+    /// Treats every bleeding wound in turn, the worst first, with what the character carries that stops bleeding; it
+    /// stops when nothing bleeds, nothing carried helps, or a hit interrupts it. Returns true when the first treatment
+    /// started.
+    /// </summary>
+    public bool TreatAllBleeding()
+    {
+        if (!RulesHere)
+        {
+            if (TreatmentRequest == null)
+                return false;
+            TreatmentRequest(new InjuryTreatmentRequest { partId = "", injuryUid = 0, itemId = "", treatmentIndex = InjuryTreatmentRequest.AllBleeding });
+            return true;
+        }
+        if (activeTreatment != null)
+        {
+            Notify("Already treating something.");
+            return false;
+        }
+        if (!StartNextBleeding())
+        {
+            Notify(IsBleeding ? "You carry nothing that stops the bleeding." : "Nothing is bleeding.");
+            return false;
+        }
+        chainBleeding = true;
+        return true;
+    }
+
+    private bool StartNextBleeding()
+    {
+        if (!MostUrgentTreatable(out InjuryPartState part, out Injury injury, out TreatmentOption option, true))
+            return false;
+        bool chaining = chainBleeding;
+        bool started = BeginTreatment(option.treatment, part, injury, TreatmentSource.Item, option.item);
+        chainBleeding = chaining && started; // an instant treatment finished already and went on by itself
+        return started;
+    }
+
+    /// <summary>
+    /// Cuts <paramref name="part"/> off on purpose (a treatment: gangrene that can no longer be saved). Its injuries go
+    /// with it; the stump is closed at once and the limb cannot be put back. Returns false when the part cannot be lost.
+    /// </summary>
+    public bool Amputate(InjuryPartState part, CombatEntity surgeon = null)
+    {
+        if (part == null || part.Lost || part.IsWholeBody || !RulesHere || part.Def.limbLoss == null || !part.Def.limbLoss.canBeLost)
+            return false;
+        amputating = true;
+        SeveredLimbRecord record;
+        try
+        {
+            record = LoseLimb(part, surgeon, Vector3.zero, part.Condition01);
+        }
+        finally
+        {
+            amputating = false;
+        }
+        if (record == null)
+            return false;
+        // A surgeon's cut: the stump is closed (it only has to heal).
+        for (int i = 0; i < part.injuries.Count; i++)
+        {
+            Injury stump = part.injuries[i];
+            if (stump.Type == null || !stump.Type.HasTag(InjuryDefaults.TagStump))
+                continue;
+            stump.Bandaged = true;
+            stump.BandageEffectiveness = 1f;
+            stump.Treated = true;
+            stump.TreatmentLabel = "Amputated";
+            stump.HealingAllowed = true;
+            stump.WorseningStopped = true;
+            stump.TreatedHealMultiplier = Mathf.Max(stump.TreatedHealMultiplier, 1.5f);
+        }
+        effectsDirty = true;
+        MarkChanged();
+        return true;
     }
 
     private static IEnumerable<MedicalItemSO> CarriedMedicalItems(InventoryManager inv)
@@ -381,6 +605,9 @@ public partial class InjuryController
     /// <summary>
     /// Treats the most urgent thing <paramref name="item"/> can treat (hotbar / quickslot use): bleeding first, then the
     /// worst injury, then a missing limb it can reattach. Returns true when a treatment started.
+    /// <para>An illness that does not show yet is reached only by a medicine taken to be safe (Preventive: a vaccine, an
+    /// antitoxin), and taking one looks the same whether it found something or not - at once, used up, the same words -
+    /// so it tells nothing about what is incubating. Other medicines act on what the player can see.</para>
     /// </summary>
     public bool QuickTreat(MedicalItemSO item)
     {
@@ -406,13 +633,46 @@ public partial class InjuryController
         }
         if (bestTreatment == null)
         {
+            // A medicine taken to be safe (a vaccine after a bite): it is used up whether it found something or not, so
+            // taking it tells nothing about an illness that does not show yet. The same checks as a treatment, in the
+            // same order, so that what stops it says nothing either.
+            if (item.Preventive && firstReason == null)
+            {
+                if (activeTreatment != null)
+                {
+                    Notify("Already treating something.");
+                    return false;
+                }
+                if (!CanUseMedicine(out string why))
+                {
+                    Notify(why);
+                    return false;
+                }
+                if (CountCarried(item) < item.UnitsPerUse)
+                {
+                    Notify($"You need {item.UnitsPerUse} {item.Name}.");
+                    return false;
+                }
+                if (UseCarried(item, item.UnitsPerUse) < item.UnitsPerUse)
+                {
+                    Notify($"No {item.Name} left.");
+                    return false;
+                }
+                PlayItemSound(item);
+                Notify($"You take the {item.Name}.");
+                return true;
+            }
             Notify(firstReason ?? $"Nothing to treat with the {item.Name}.");
             return false;
         }
-        return BeginTreatment(bestTreatment, bestPart, bestInjury, TreatmentSource.Item, item);
+        // Against something that does not show yet it works at once, as it does when it finds nothing.
+        return BeginTreatment(bestTreatment, bestPart, bestInjury, TreatmentSource.Item, item, null, 1f, bestInjury != null && bestInjury.Hidden);
 
         void Consider(InjuryPartState part, Injury injury)
         {
+            bool unseen = injury != null && injury.Hidden;
+            if (unseen && !item.Preventive)
+                return;
             for (int t = 0; t < item.Treatments.Count; t++)
             {
                 InjuryTreatment tr = item.Treatments[t];
@@ -421,11 +681,15 @@ public partial class InjuryController
                 TreatmentContext ctx = Context(tr, part, injury, TreatmentSource.Item, item, null, 1f);
                 if (!CanTreat(ctx, out string reason))
                 {
-                    if (firstReason == null && tr.Matches(ctx))
+                    // Why it cannot treat something that does not show yet is not told (it would give it away).
+                    if (firstReason == null && !unseen && tr.Matches(ctx))
                         firstReason = reason;
                     continue;
                 }
-                float score = injury != null ? injury.BleedingPerSecond * 100f + injury.Severity * 10f + (injury.CanWorsen ? 5f : 0f) : 50f;
+                // What shows comes first; something incubating only when nothing else needs the medicine.
+                float score = injury == null ? 50f
+                    : unseen ? -1000f
+                    : injury.BleedingPerSecond * 100f + injury.Severity * 10f + (injury.CanWorsen ? 5f : 0f);
                 if (score > bestScore)
                 {
                     bestScore = score;
@@ -457,7 +721,7 @@ public partial class InjuryController
         string id = ItemDatabase.Id(item);
         if (string.IsNullOrEmpty(id))
             return false;
-        TreatmentRequest(new InjuryTreatmentRequest { partId = "", injuryUid = 0, itemId = id, treatmentIndex = -1 });
+        TreatmentRequest(new InjuryTreatmentRequest { partId = "", injuryUid = 0, itemId = id, treatmentIndex = InjuryTreatmentRequest.Quick });
         return true;
     }
 
@@ -466,6 +730,8 @@ public partial class InjuryController
     {
         if (!RulesHere)
             return false;
+        if (r.treatmentIndex == InjuryTreatmentRequest.AllBleeding)
+            return TreatAllBleeding();
         MedicalItemSO med = ItemDatabase.Item(r.itemId) as MedicalItemSO;
         if (med == null || CountCarried(med) <= 0)
             return false;

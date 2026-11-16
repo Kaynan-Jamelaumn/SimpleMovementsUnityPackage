@@ -174,7 +174,7 @@ public class TimedStatModifiers : MonoBehaviour
         if (stats != null && ((combatStats != null && combatStats.Count > 0) || (resistances != null && resistances.Count > 0)))
             a.statsToken = stats.AddModifiers(a.name, combatStats, resistances, strength);
         if (traits != null && characterStats != null && characterStats.Count > 0)
-            a.traitHandle = traits.ApplyModifiers(characterStats, strength, a.name);
+            a.traitHandle = traits.ApplyModifiers(TraitStats.ReadRegenPercents(characterStats), strength, a.name);
         if (attachedVfx != null)
             a.vfx = Instantiate(attachedVfx, transform);
         active.Add(a);

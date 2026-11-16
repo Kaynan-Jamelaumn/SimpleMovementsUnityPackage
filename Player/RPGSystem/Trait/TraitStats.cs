@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>What a trait modifier changes.</summary>
@@ -49,6 +50,13 @@ public enum TraitStat
     BleedingRate,
     InjuryHealing,
     LimbLossChance,
+    // Hard landings (injury system ▸ Falls)
+    FallDamage,
+    SafeFallHeight,
+    // Regeneration as a percentage (the older Health / Stamina / Mana Regen stats are flat amounts per tick)
+    HealthRegenRate,
+    StaminaRegenRate,
+    ManaRegenRate,
 }
 
 /// <summary>How a modifier's value is read.</summary>
@@ -172,6 +180,11 @@ public static class TraitStats
             case TraitStat.BleedingRate: return new StatInfo("Bleeding", "", Modes.PercentOnly, false, "How fast the character bleeds from wounds. Negative = bleeds less (thick blood).");
             case TraitStat.InjuryHealing: return new StatInfo("Injury Healing", "", Modes.PercentOnly, true, "How fast injuries heal and stop bleeding by themselves.");
             case TraitStat.LimbLossChance: return new StatInfo("Limb Loss Chance", "", Modes.PercentOnly, false, "Chance of losing a limb to a heavy hit. Negative = sturdier limbs.");
+            case TraitStat.FallDamage: return new StatInfo("Fall Damage", "", Modes.PercentOnly, false, "What a hard landing does to the legs and the health (injury system ▸ Falls). Negative = lands softer (-50 = half). For no fall damage at all use an Injury Resistance with Fall Damage -100.");
+            case TraitStat.SafeFallHeight: return new StatInfo("Safe Fall Height", "m", Modes.FlatOnly, true, "Extra metres the character can drop without being hurt (injury system ▸ Falls). Negative = hurt by smaller drops.");
+            case TraitStat.HealthRegenRate: return new StatInfo("Health Regen Rate", "", Modes.PercentOnly, true, "How fast health regenerates by itself, as a percentage (-25 = a quarter slower). Health Regen is the flat amount per tick.");
+            case TraitStat.StaminaRegenRate: return new StatInfo("Stamina Regen Rate", "", Modes.PercentOnly, true, "How fast stamina regenerates, as a percentage (-25 = a quarter slower). Stamina Regen is the flat amount per tick.");
+            case TraitStat.ManaRegenRate: return new StatInfo("Mana Regen Rate", "", Modes.PercentOnly, true, "How fast mana regenerates, as a percentage (-25 = a quarter slower). Mana Regen is the flat amount per tick.");
             default: return new StatInfo(stat.ToString(), "", Modes.Both, true, "");
         }
     }
@@ -218,10 +231,58 @@ public static class TraitStats
             case TraitStat.BleedingRate:
             case TraitStat.InjuryHealing:
             case TraitStat.LimbLossChance:
+            case TraitStat.FallDamage:
+            case TraitStat.SafeFallHeight:
+            case TraitStat.HealthRegenRate:
+            case TraitStat.StaminaRegenRate:
+            case TraitStat.ManaRegenRate:
                 return true;
             default:
                 return false;
         }
+    }
+
+    /// <summary>The percentage stat of a flat regeneration stat (Stamina Regen → Stamina Regen Rate); null for any other.</summary>
+    public static TraitStat? RegenRateOf(TraitStat stat)
+    {
+        switch (stat)
+        {
+            case TraitStat.HealthRegen: return TraitStat.HealthRegenRate;
+            case TraitStat.StaminaRegen: return TraitStat.StaminaRegenRate;
+            case TraitStat.ManaRegen: return TraitStat.ManaRegenRate;
+            default: return null;
+        }
+    }
+
+    /// <summary>
+    /// Older buffs, debuffs and condition stages wrote "-10% stamina regeneration" as a Percent modifier of the flat
+    /// Stamina Regen stat, which is an amount per tick: it removed 10 stamina every tick. Returns the list with those
+    /// read as what they meant - the Regen Rate stat - and everything else untouched (the same list when nothing
+    /// changes). Only values of 5 or more are taken for percentages: a flat regeneration bonus is far smaller.
+    /// </summary>
+    public static IList<TraitModifier> ReadRegenPercents(IList<TraitModifier> mods)
+    {
+        if (mods == null)
+            return null;
+        List<TraitModifier> fixedList = null;
+        for (int i = 0; i < mods.Count; i++)
+        {
+            TraitModifier m = mods[i];
+            TraitStat? rate = m != null && m.mode == TraitModifierMode.Percent && Mathf.Abs(m.value) >= 5f ? RegenRateOf(m.stat) : null;
+            if (rate == null)
+            {
+                fixedList?.Add(m);
+                continue;
+            }
+            if (fixedList == null)
+            {
+                fixedList = new List<TraitModifier>(mods.Count);
+                for (int k = 0; k < i; k++)
+                    fixedList.Add(mods[k]);
+            }
+            fixedList.Add(new TraitModifier(rate.Value, TraitModifierMode.Percent, m.value));
+        }
+        return fixedList ?? mods;
     }
 
     /// <summary>The stat that changes the damage taken from hits of <paramref name="form"/>'s family (null = formless).</summary>

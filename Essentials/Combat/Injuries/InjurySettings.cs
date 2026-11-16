@@ -398,6 +398,137 @@ public class InjuryStage
     public StatusConsequence consequence = new StatusConsequence("");
     [Tooltip("Actions it stops while it lasts (on its part's side for Hand On This Side).")]
     public BodyAction blocks = BodyAction.None;
+
+    [Header("Illness and senses")]
+    [Tooltip("Incubating: the player does not see it (no row in the Health tab, no HUD warning) until it reaches a stage that " +
+             "shows. Medicine still works on it.")]
+    public bool hidden = false;
+    [Tooltip("Chance (0-1) that it gets worse when its Worsen After Seconds are over; otherwise the wait starts again. 1 = always " +
+             "(wounds). Lower for illnesses that usually pass by themselves (a cold that sometimes turns into a flu).")]
+    [Range(0f, 1f)] public float worsenChance = 1f;
+    [Tooltip("What it does to the player's sight (the screen): a dark side for an eye injury, a haze, tunnel vision, dizziness.")]
+    public VisionEffect vision = new VisionEffect();
+    [Tooltip("Catching: chance per minute that each character within the Illness rules' Contagion Radius catches it (its first " +
+             "stage). 0 = not catching.")]
+    [Range(0f, 1f)] public float contagionPerMinute = 0f;
+}
+
+/// <summary>"This injury may cause that one": a dirty puncture gives tetanus, a bite rabies, a severe infection sepsis.</summary>
+[Serializable]
+public class InjuryComplication
+{
+    [Tooltip("Injury type it may cause (its id: Tetanus, Sepsis...).")]
+    public string injuryType = "";
+    [Tooltip("When: once when the injury appears, once each time it gets worse, or a chance per minute while it is left untreated.")]
+    public ComplicationWhen when = ComplicationWhen.Inflicted;
+    [Tooltip("Chance (0-1): of the one roll (Inflicted, Worsened) or per minute (While Untreated). The character's resistances to " +
+             "the caused injury count.")]
+    [Range(0f, 1f)] public float chance = 0.1f;
+    [Tooltip("Only from this stage of the injury on (0 = any stage).")]
+    [Min(0)] public int fromStage = 0;
+    [Tooltip("Stage of the injury it causes (0 = its first, usually an incubation).")]
+    [Min(0)] public int stage = 0;
+
+    public InjuryComplication() { }
+
+    public InjuryComplication(string injuryType, ComplicationWhen when, float chance, int fromStage = 0, int stage = 0)
+    {
+        this.injuryType = injuryType;
+        this.when = when;
+        this.chance = chance;
+        this.fromStage = fromStage;
+        this.stage = stage;
+    }
+}
+
+/// <summary>"Being cold may give a cold": a state of the body that exposes it to an illness.</summary>
+[Serializable]
+public class IllnessExposure
+{
+    [Tooltip("Illness caught (an injury type id, usually one with Systemic on: Cold, Dysentery...).")]
+    public string illness = "";
+    [Tooltip("What exposes the character to it.")]
+    public ExposureSource source = ExposureSource.Cold;
+    [Tooltip("Chance per minute while exposed (0.05 = 5% each minute). The character's resistances to the illness count.")]
+    [Range(0f, 1f)] public float chancePerMinute = 0.05f;
+    [Tooltip("Stage it starts at (0 = its first).")]
+    [Min(0)] public int stage = 0;
+    [Tooltip("For injuries that are not illnesses of the whole body (frostbite from freezing): only on these kinds of parts. " +
+             "Empty = the injury type's own part kinds, else any part.")]
+    public List<BodyPartKind> partKinds = new List<BodyPartKind>();
+
+    public IllnessExposure() { }
+
+    public IllnessExposure(string illness, ExposureSource source, float chancePerMinute, int stage = 0)
+    {
+        this.illness = illness;
+        this.source = source;
+        this.chancePerMinute = chancePerMinute;
+        this.stage = stage;
+    }
+}
+
+/// <summary>
+/// Illnesses: how the body's state exposes a character to them (cold, hunger, open wounds), how they pass between
+/// characters, and how rest and hunger change every injury's healing. The illnesses themselves are injury types with
+/// Systemic on (they sit on the Whole Body part); what they do, how they worsen and heal is in their stages.
+/// </summary>
+[Serializable]
+public class IllnessRules
+{
+    [Tooltip("Exposures, contagion and the body's state run. Off = illnesses only come from injuries (complications), items, " +
+             "abilities and scripts.")]
+    public bool enabled = true;
+    [Tooltip("Seconds between two checks of the exposures, contagion and complications that run per minute.")]
+    [Range(1f, 30f)] public float checkSeconds = 5f;
+    [Tooltip("What the body's state may give the character (being cold: a cold; starving: weakness...).")]
+    public List<IllnessExposure> exposures = new List<IllnessExposure>();
+
+    [Header("Contagion")]
+    [Tooltip("Metres within which a catching illness passes to other characters (see each stage's Contagion Per Minute).")]
+    [Min(0f)] public float contagionRadius = 4f;
+
+    [Header("Body state (every injury and illness)")]
+    [Tooltip("Healing speed while asleep (2 = twice as fast): rest is the cure.")]
+    [Min(0f)] public float sleepingHealMultiplier = 2f;
+    [Tooltip("Healing speed while hunger or thirst is empty (0.5 = half as fast).")]
+    [Range(0f, 1f)] public float starvingHealMultiplier = 0.5f;
+    [Tooltip("How much sooner injuries and illnesses get worse while the body is cold, starving or dehydrated (1.5 = 50% sooner).")]
+    [Min(1f)] public float weakenedWorseningMultiplier = 1.5f;
+}
+
+/// <summary>
+/// Hard landings: a fall hurts the feet and legs (a twisted or sprained ankle, a broken bone) and costs health. Measured
+/// in metres dropped, so it does not depend on the game's gravity; a character's own jump never counts, and traits,
+/// items and abilities soften or remove it (the Fall Damage and Safe Fall Height stats, an Injury Resistance).
+/// </summary>
+[Serializable]
+public class FallRules
+{
+    [Tooltip("Hard landings hurt the feet and legs. Off = falls never cause injuries here.")]
+    public bool enabled = true;
+    [Tooltip("A drop of this many metres or less never hurts. The Safe Fall Height stat (traits, items, buffs) adds to it.")]
+    [Min(0.5f)] public float safeHeight = 4f;
+    [Tooltip("What a character's legs launch, they can land: the height it gained by jumping right before the fall does not count, " +
+             "up to the highest jump it can make right now (its Jump Force with traits, items, buffs and size). So a jump on flat " +
+             "ground never hurts however high it goes, and jumping off a cliff counts the cliff, not the jump. Off = the drop is " +
+             "measured from the top of the jump.")]
+    public bool ownJumpIsSafe = true;
+    [Tooltip("How hard the landing hits the foot or the leg, per metre above the safe height: it wears the part's condition and " +
+             "decides the injury (a little: a twisted ankle; more: a sprain, a cracked then a broken bone).")]
+    [Min(0f)] public float damagePerMetre = 3f;
+    [Tooltip("Health lost per metre above the safe height, in percent of the maximum health (4 = a drop 25 m above the safe height " +
+             "kills anyone). Armour does not help against a fall. 0 = a fall only hurts the legs.")]
+    [Min(0f)] public float healthPercentPerMetre = 4f;
+    [Tooltip("Kinds of parts a landing can hurt.")]
+    public List<BodyPartKind> parts = new List<BodyPartKind> { BodyPartKind.Foot, BodyPartKind.Leg };
+    [Tooltip("Dropping this many metres more than the safe height hurts the other leg too (a little less).")]
+    [Min(0f)] public float bothLegsAbove = 5f;
+    [Tooltip("Moving in a dodge (roll, dash) or while an ability or a knockback moves the character (a leap, a slam, a throw) is not " +
+             "a fall, and neither is the fall that follows it until the character lands. Off = those landings hurt too.")]
+    public bool ignoreForcedMovement = true;
+    [Tooltip("Landing in water at least this deep hurts nothing (metres): a dive from a cliff. 0 = water does not break a fall.")]
+    [Min(0f)] public float safeWaterDepth = 1f;
 }
 
 /// <summary>
@@ -416,7 +547,23 @@ public class InjuryTypeDefinition
     public List<string> tags = new List<string>();
     [Tooltip("Colour of the injury in the health panel.")]
     public Color color = new Color(0.9f, 0.35f, 0.3f);
+    [Tooltip("Icon in the Health tab and on the HUD. Empty = the Icon Shape below is drawn.")]
     public Sprite icon;
+    [Tooltip("The picture drawn when there is no Icon. Auto = chosen from the tags (bleeding: a drop, fracture: a bone...).")]
+    public InjuryIconShape iconShape = InjuryIconShape.Auto;
+    [Tooltip("How loudly the HUD warns about it outside the inventory (None = only the Health tab shows it).")]
+    public InjuryAlertLevel hudAlert = InjuryAlertLevel.None;
+
+    [Header("Whole body and sides")]
+    [Tooltip("An illness of the whole body (a cold, sepsis, food poisoning): it sits on the Whole Body part, whichever part " +
+             "caused it, and hits never land on it.")]
+    public bool systemic = false;
+    [Tooltip("On a centre part it takes a side (the left or the right eye, ear): one per side, named after it.")]
+    public bool sided = false;
+    [Tooltip("Seconds the character cannot catch it again after it healed (0 = no immunity).")]
+    [Min(0f)] public float immunitySeconds = 0f;
+    [Tooltip("Other injuries it may cause (a dirty puncture: tetanus; a severe infection: sepsis).")]
+    public List<InjuryComplication> complications = new List<InjuryComplication>();
 
     [Header("Caused by hits")]
     [Tooltip("Hits can cause it (off for injuries that only come from others: infections, stumps, reattachments).")]
@@ -583,8 +730,20 @@ public class InjurySettings : ScriptableObject
     public bool clearOnRespawn = true;
     [Tooltip("Show the Health page in the inventory's character panel.")]
     public bool showHealthPanel = true;
-    [Tooltip("Show a small warning on the screen while bleeding or missing a limb (outside the inventory).")]
+    [Tooltip("Show warnings on the screen (outside the inventory) while bleeding, missing a limb, or with an injury whose type has a " +
+             "Hud Alert (a broken bone, an infection, an illness).")]
     public bool showHudAlert = true;
+    [Tooltip("Draw a small body figure next to the warnings: hurt parts coloured, the part just hit flashing.")]
+    public bool showHudBody = true;
+    [Tooltip("Injuries change the local player's screen: a dark side for a hurt eye, a haze, tunnel vision from blood loss, dizziness.")]
+    public bool showScreenEffects = true;
+    [Tooltip("Players' injuries, illnesses and missing limbs are kept between sessions (in the world's save, where the rules run). " +
+             "Off = a new session starts healthy.")]
+    public bool keepBetweenSessions = true;
+    [Tooltip("An area hit (an explosion, a slam) is spread over this many body parts instead of landing on one.")]
+    [Range(1, 6)] public int areaHitParts = 3;
+    [Tooltip("Seconds between two updates of a mob's injuries (bleeding, healing, getting worse). Players update ten times a second.")]
+    [Range(0.05f, 1f)] public float mobTickSeconds = 0.25f;
 
     [Header("Treatment")]
     [Tooltip("Multiplies the time treatments take to apply (0.5 = twice as fast).")]
@@ -613,6 +772,12 @@ public class InjurySettings : ScriptableObject
 
     [Header("Movement")]
     public LocomotionRules locomotion = new LocomotionRules();
+
+    [Header("Illnesses")]
+    public IllnessRules illness = new IllnessRules();
+
+    [Header("Falls")]
+    public FallRules falls = new FallRules();
 
     [Header("City treatment (placeholder)")]
     public CityTreatmentSettings cityTreatment = new CityTreatmentSettings();
@@ -671,6 +836,10 @@ public class InjurySettings : ScriptableObject
 
     private void Reset() => InjuryDefaults.Fill(this);
 
+    private void OnEnable() => InvalidateLookups();
+
+    private void OnValidate() => InvalidateLookups();
+
     // ------------------------------------------------------------------ lookups
     public InjuryBodyPart FindPart(string partId)
     {
@@ -684,17 +853,69 @@ public class InjurySettings : ScriptableObject
 
     public int IndexOfPart(InjuryBodyPart part) => bodyParts != null ? bodyParts.IndexOf(part) : -1;
 
+    // Injury types by id and by name (asked for every injury several times a second): their place in the list, built on
+    // the first lookup. A lookup is checked against the list as it is now, so a list changed by a script (types added,
+    // removed, replaced) never gives a stale answer; the inspector and InvalidateLookups throw the lookup away.
+    [NonSerialized] private Dictionary<string, int> typeLookup;
+    [NonSerialized] private List<InjuryTypeDefinition> typeLookupList;
+    [NonSerialized] private int typeLookupCount = -1;
+
+    /// <summary>Forgets the lookups: call after changing the injury types' ids or the list from a script.</summary>
+    public void InvalidateLookups()
+    {
+        typeLookupList = null;
+        typeLookupCount = -1;
+        Version++;
+    }
+
+    /// <summary>Counts every change made through the inspector or <see cref="InvalidateLookups"/> (caches follow it).</summary>
+    public int Version { get; private set; }
+
     public InjuryTypeDefinition FindType(string typeId)
     {
         if (injuryTypes == null || string.IsNullOrWhiteSpace(typeId))
             return null;
-        string t = typeId.Trim();
+        string key = typeId.Trim();
+        if (typeLookup != null && ReferenceEquals(typeLookupList, injuryTypes) && typeLookupCount == injuryTypes.Count &&
+            typeLookup.TryGetValue(key, out int index) && index < injuryTypes.Count)
+        {
+            InjuryTypeDefinition d = injuryTypes[index];
+            if (d != null && (string.Equals(d.id, key, StringComparison.OrdinalIgnoreCase) || string.Equals(d.displayName, key, StringComparison.OrdinalIgnoreCase)))
+                return d;
+        }
+        // Not known, or the list changed under the lookup: read again from the list as it is now.
+        BuildTypeLookup();
+        return typeLookup.TryGetValue(key, out int at) ? injuryTypes[at] : null;
+    }
+
+    private void BuildTypeLookup()
+    {
+        if (typeLookup == null)
+            typeLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        typeLookup.Clear();
+        typeLookupList = injuryTypes;
+        typeLookupCount = injuryTypes.Count;
+        // The first type, in order, with that id or that name (as a search through the list would find it).
         for (int i = 0; i < injuryTypes.Count; i++)
         {
             InjuryTypeDefinition d = injuryTypes[i];
-            if (d != null && (string.Equals(d.id, t, StringComparison.OrdinalIgnoreCase) || string.Equals(d.displayName, t, StringComparison.OrdinalIgnoreCase)))
-                return d;
+            if (d == null)
+                continue;
+            if (!string.IsNullOrEmpty(d.id) && !typeLookup.ContainsKey(d.id))
+                typeLookup[d.id] = i;
+            if (!string.IsNullOrEmpty(d.displayName) && !typeLookup.ContainsKey(d.displayName))
+                typeLookup[d.displayName] = i;
         }
+    }
+
+    /// <summary>The part illnesses sit on (the first Whole Body part), or null when the settings have none.</summary>
+    public InjuryBodyPart FindWholeBody()
+    {
+        if (bodyParts == null)
+            return null;
+        for (int i = 0; i < bodyParts.Count; i++)
+            if (bodyParts[i] != null && bodyParts[i].kind == BodyPartKind.WholeBody)
+                return bodyParts[i];
         return null;
     }
 
@@ -757,8 +978,10 @@ public class InjurySettings : ScriptableObject
                 errors.Add($"{p.Name}: Attached To '{p.attachedTo}' is not a body part.");
             if (!string.IsNullOrWhiteSpace(p.attachedTo) && p.Matches(p.attachedTo))
                 errors.Add($"{p.Name} is attached to itself.");
-            if ((p.hitParts == null || p.hitParts.Count == 0) && p.heightRange.x == p.heightRange.y)
+            if (p.kind != BodyPartKind.WholeBody && (p.hitParts == null || p.hitParts.Count == 0) && p.heightRange.x == p.heightRange.y)
                 warnings.Add($"{p.Name}: no Hit Parts and an empty Height Range: hits never land on it.");
+            if (p.kind == BodyPartKind.WholeBody && p.limbLoss != null && p.limbLoss.canBeLost)
+                warnings.Add($"{p.Name}: the Whole Body part cannot be lost.");
             if (p.limbLoss != null && p.limbLoss.canBeLost)
             {
                 if (!p.limbLoss.atZeroCondition && p.limbLoss.singleHitThreshold <= 0f)
@@ -790,6 +1013,10 @@ public class InjurySettings : ScriptableObject
                         warnings.Add($"{t.Name} stage {s + 1}: severity {st.severity} is not a severity level.");
                     if (!string.IsNullOrWhiteSpace(st.worsensInto) && FindType(st.worsensInto) == null)
                         errors.Add($"{t.Name} stage {s + 1}: Worsens Into '{st.worsensInto}' is not an injury type.");
+                    if (st.worsenAfterSeconds > 0f && st.worsenChance <= 0f)
+                        warnings.Add($"{t.Name} stage {s + 1}: Worsen After Seconds is set but Worsen Chance is 0: it never gets worse (1 = always).");
+                    if (st.hidden && s == t.stages.Count - 1)
+                        warnings.Add($"{t.Name} stage {s + 1}: the last stage is Hidden: the player is never told about it.");
                     if (s > 0 && t.stages[s - 1] != null && st.minHitFraction < t.stages[s - 1].minHitFraction)
                         warnings.Add($"{t.Name}: stage {s + 1} needs a weaker hit than stage {s}: stages should go from mildest to worst.");
                 }
@@ -797,8 +1024,33 @@ public class InjurySettings : ScriptableObject
                     warnings.Add($"{t.Name}: caused by hits with 0% chance (never happens).");
                 if (t.causedByHits && t.trigger != null && t.trigger.formChances != null && t.trigger.formChances.IsZero)
                     warnings.Add($"{t.Name}: every damage form has odds 0 (By Damage Form): hits never cause it.");
+                if (t.systemic && t.causedByHits)
+                    warnings.Add($"{t.Name}: an illness of the whole body (Systemic) that hits cause directly: usually it comes from " +
+                                 "complications, exposures, food or abilities instead.");
+                if (t.complications != null)
+                    for (int c = 0; c < t.complications.Count; c++)
+                    {
+                        InjuryComplication comp = t.complications[c];
+                        if (comp == null) continue;
+                        if (string.IsNullOrWhiteSpace(comp.injuryType))
+                            warnings.Add($"{t.Name}: complication #{c + 1} names no injury type.");
+                        else if (FindType(comp.injuryType) == null)
+                            errors.Add($"{t.Name}: complication '{comp.injuryType}' is not an injury type.");
+                        else if (FindType(comp.injuryType) == t)
+                            errors.Add($"{t.Name}: a complication cannot cause the injury itself.");
+                    }
             }
         }
+        if (illness != null && illness.exposures != null)
+            for (int i = 0; i < illness.exposures.Count; i++)
+            {
+                IllnessExposure ex = illness.exposures[i];
+                if (ex == null) continue;
+                if (string.IsNullOrWhiteSpace(ex.illness))
+                    warnings.Add($"Illness exposure #{i + 1} names no illness.");
+                else if (FindType(ex.illness) == null)
+                    errors.Add($"Illness exposure #{i + 1}: '{ex.illness}' is not an injury type.");
+            }
         if (!string.IsNullOrWhiteSpace(reattachment.afterInjury) && FindType(reattachment.afterInjury) == null)
             warnings.Add($"Reattachment: After Injury '{reattachment.afterInjury}' is not an injury type.");
     }

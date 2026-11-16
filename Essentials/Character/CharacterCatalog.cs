@@ -28,6 +28,10 @@ public class CharacterCatalog : ScriptableObject
     public bool raceRequired = true;
     [Tooltip("Active traits (an ability on its own key) a new character may pick.")]
     [Min(0)] public int maxActiveTraits = 1;
+    [Tooltip("Drawbacks (traits with a negative cost: disabilities, weaknesses) a new character may pick. 0 = no limit.")]
+    [Min(0)] public int maxDrawbacks = 5;
+    [Tooltip("Most trait points drawbacks can give in all. 0 = no limit.")]
+    [Min(0)] public int maxDrawbackPoints = 12;
     [Tooltip("Longest character name.")]
     [Range(3, 32)] public int maxNameLength = 20;
     [Tooltip("Two saved characters of this machine cannot share a name.")]
@@ -239,7 +243,8 @@ public class CharacterBuild
         if (traits.Contains(t)) return "Already chosen.";
         if (playerClass == null) return "Choose a class first.";
         int max = catalog != null ? catalog.maxActiveTraits : 1;
-        string why = TraitRules.WhyNot(t, Archetypes) ?? TraitRules.WhyTooManyActive(t, traits, max);
+        string why = TraitRules.WhyNot(t, Archetypes) ?? TraitRules.WhyTooManyActive(t, traits, max)
+                     ?? TraitRules.WhyTooManyDrawbacks(t, traits, catalog != null ? catalog.maxDrawbacks : 0, catalog != null ? catalog.maxDrawbackPoints : 0);
         if (why != null) return why;
         var chosen = new List<Trait>(traits);
         chosen.AddRange(GrantedTraits());

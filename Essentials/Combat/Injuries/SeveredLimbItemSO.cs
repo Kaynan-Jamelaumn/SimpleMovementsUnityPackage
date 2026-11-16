@@ -17,6 +17,22 @@ public class SeveredLimbItemSO : ItemSO, IItemInstanceTooltip
 
     [System.NonSerialized] private SeveredLimbRecord runtimeRecord;
 
+    // The items made at runtime, by their limb's record (a limb that rots is renamed).
+    private static readonly Dictionary<int, SeveredLimbItemSO> runtimeItems = new Dictionary<int, SeveredLimbItemSO>();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => runtimeItems.Clear();
+
+    /// <summary>
+    /// A limb's title changed (it rotted): the item made at runtime for it takes the new name. Items that are assets keep
+    /// theirs (one asset serves every limb of that part); their tooltip shows the limb's title.
+    /// </summary>
+    internal static void Retitle(SeveredLimbRecord record)
+    {
+        if (record != null && runtimeItems.TryGetValue(record.Id, out SeveredLimbItemSO item) && item != null)
+            item.Rename(record.Title);
+    }
+
     public string PartId => partId;
 
     /// <summary>Its record, for limbs made at runtime (one item per limb). Null for assets (the copy's durability says).</summary>
@@ -106,6 +122,7 @@ public class SeveredLimbItemSO : ItemSO, IItemInstanceTooltip
         s.prefab = model != null ? model : LimbArt.Template(part.kind);
         s.weight = DefaultWeight(part.kind);
         s.runtimeRecord = record;
+        runtimeItems[record.Id] = s;
         return s;
     }
 

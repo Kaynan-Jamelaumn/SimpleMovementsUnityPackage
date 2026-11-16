@@ -438,7 +438,7 @@ namespace GameNet
                 weight.Value = new Resource { current = w.CurrentValue, max = w.MaxValue };
             StaminaManager st = playerStatus.StaminaManager;
             if (st != null)
-                staminaLimits.Value = new StaminaLimits { max = st.MaxValue, increment = st.IncrementValue, gainFactor = st.IncrementFactor, lossFactor = st.DecrementFactor };
+                staminaLimits.Value = new StaminaLimits { max = st.MaxValue, increment = st.RegenPerTick, gainFactor = st.IncrementFactor, lossFactor = st.DecrementFactor };
             if (xpManager != null)
                 level.Value = Mathf.Max(1, xpManager.CurrentLevel);
 

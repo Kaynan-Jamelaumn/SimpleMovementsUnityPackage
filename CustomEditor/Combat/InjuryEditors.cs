@@ -82,7 +82,7 @@ public static class InjuryEditorTools
             }
             Undo.RecordObject(item, "Medical item preset");
             item.SetPresetInfo(p.name, p.description, p.stackMax, p.weight, p.price);
-            item.SetTreatments(p.treatments);
+            item.SetTreatments(p.treatments, 1, p.preventive);
             if (item.Icon == null || item.Prefab == null)
                 item.SetLook(item.Icon != null ? item.Icon : MedicalIcon(folder, p.name), item.Prefab != null ? item.Prefab : model);
             EditorUtility.SetDirty(item);
@@ -90,7 +90,7 @@ public static class InjuryEditorTools
         }
         AssetDatabase.SaveAssets();
         RegisterInItemDatabase(made.Cast<ItemSO>());
-        Debug.Log($"[Injuries] {made.Count} medical items in {folder} (Bandage, Sterile Bandage, Suture Kit, Splint, Disinfectant, Antibiotics, Burn Salve, Surgical Kit).");
+        Debug.Log($"[Injuries] {made.Count} medical items in {folder} ({string.Join(", ", made.Select(m => m.Name))}).");
         if (select && made.Count > 0)
         {
             Selection.objects = made.ToArray();
@@ -104,7 +104,7 @@ public static class InjuryEditorTools
     {
         Undo.RecordObject(item, "Medical item preset");
         item.SetPresetInfo(p.name, p.description, p.stackMax, p.weight, p.price);
-        item.SetTreatments(p.treatments);
+        item.SetTreatments(p.treatments, 1, p.preventive);
         EditorUtility.SetDirty(item);
     }
 
@@ -131,7 +131,10 @@ public static class InjuryEditorTools
         const int size = 64;
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         Color bg = itemName.Contains("Splint") ? new Color(0.75f, 0.6f, 0.4f) : itemName.Contains("Antibiotic") || itemName.Contains("Disinfect") ? new Color(0.55f, 0.8f, 0.95f)
-            : itemName.Contains("Surgical") ? new Color(0.7f, 0.75f, 0.8f) : itemName.Contains("Salve") ? new Color(0.95f, 0.8f, 0.5f) : new Color(0.96f, 0.95f, 0.92f);
+            : itemName.Contains("Surgical") ? new Color(0.7f, 0.75f, 0.8f) : itemName.Contains("Salve") ? new Color(0.95f, 0.8f, 0.5f)
+            : itemName.Contains("Tourniquet") ? new Color(0.45f, 0.45f, 0.5f) : itemName.Contains("Remedy") ? new Color(0.7f, 0.9f, 0.6f)
+            : itemName.Contains("Vaccine") || itemName.Contains("Antitoxin") || itemName.Contains("Antivenom") ? new Color(0.8f, 0.7f, 0.95f)
+            : itemName.Contains("Antiparasitic") ? new Color(0.9f, 0.85f, 0.6f) : new Color(0.96f, 0.95f, 0.92f);
         Color cross = new Color(0.85f, 0.12f, 0.15f);
         for (int y = 0; y < size; y++)
         {
@@ -308,7 +311,7 @@ public static class InjuryEditorTools
 public class InjurySettingsEditor : Editor
 {
     private static int page;
-    private static readonly string[] Pages = { "General", "Body Parts", "Injuries", "Treatments", "Limbs", "Movement", "City" };
+    private static readonly string[] Pages = { "General", "Body Parts", "Injuries", "Illnesses", "Treatments", "Limbs", "Movement", "City" };
     private readonly List<string> errors = new List<string>();
     private readonly List<string> warnings = new List<string>();
     private double nextValidation;
@@ -335,6 +338,16 @@ public class InjurySettingsEditor : Editor
         if (!AssetDatabase.GetAssetPath(s).Contains("/Resources/"))
             EditorGUILayout.HelpBox("This asset is outside every Resources folder: the game does not load it. Tools ▸ SimpleMovements ▸ Project Setup ▸ " +
                                     "Create Injury Settings moves it to Resources/SimpleMovements/Settings.", MessageType.Warning);
+        if (InjuryDefaults.NeedsIllnesses(s))
+        {
+            EditorGUILayout.HelpBox("This asset was made before illnesses. Add them to get the Whole Body part and the new injuries and illnesses: " +
+                                    "sprained ankle, dislocation, eye and ear injuries, severed artery, internal bleeding, punctured lung, cut tendon, " +
+                                    "gangrene, sepsis, tetanus, rabies, cold / flu / pneumonia, dysentery, food poisoning, parasites, heatstroke, venom. " +
+                                    "Your own changes are kept. Then run Player ▸ Injuries ▸ Create Medical Items (Presets) for the new medicines.",
+                MessageType.Info);
+            if (GUILayout.Button("Add Illnesses And New Injuries"))
+                ApplyIllnesses(s);
+        }
 
         EditorGUILayout.Space(4);
         page = GUILayout.Toolbar(page, Pages);
@@ -344,10 +357,11 @@ public class InjurySettingsEditor : Editor
             case 0: DrawGeneral(); break;
             case 1: DrawBody(s); break;
             case 2: DrawInjuries(s); break;
-            case 3: DrawTreatments(s); break;
-            case 4: DrawLimbs(s); break;
-            case 5: DrawMovement(s); break;
-            case 6: DrawCity(); break;
+            case 3: DrawIllnesses(s); break;
+            case 4: DrawTreatments(s); break;
+            case 5: DrawLimbs(s); break;
+            case 6: DrawMovement(s); break;
+            case 7: DrawCity(); break;
         }
         serializedObject.ApplyModifiedProperties();
 
@@ -386,8 +400,11 @@ public class InjurySettingsEditor : Editor
     // ------------------------------------------------------------------ pages
     private void DrawGeneral()
     {
-        Props("players", "mobs", "mainHandSide", "conditionPerDamage", "injuryChanceMultiplier", "maxInjuriesPerHit", "healingSpeedMultiplier",
-            "clearOnRespawn", "showHealthPanel", "showHudAlert");
+        Props("players", "mobs", "mainHandSide", "conditionPerDamage", "injuryChanceMultiplier", "maxInjuriesPerHit", "areaHitParts", "healingSpeedMultiplier",
+            "clearOnRespawn", "keepBetweenSessions", "mobTickSeconds");
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Interface", EditorStyles.boldLabel);
+        Props("showHealthPanel", "showHudAlert", "showHudBody", "showScreenEffects");
         EditorGUILayout.Space(6);
         EditorGUILayout.LabelField("Treatment", EditorStyles.boldLabel);
         Props("treatmentTimeMultiplier", "damageInterruptsTreatment", "treatmentNeedsAHand");
@@ -460,6 +477,14 @@ public class InjurySettingsEditor : Editor
         return false;
     }
 
+    private static void ApplyIllnesses(InjurySettings s)
+    {
+        Undo.RecordObject(s, "Add illnesses and new injuries");
+        List<string> done = InjuryDefaults.ApplyIllnesses(s);
+        EditorUtility.SetDirty(s);
+        EditorUtility.DisplayDialog("Illnesses and new injuries", done.Count == 0 ? "Nothing to change." : "• " + string.Join("\n• ", done), "OK");
+    }
+
     private static void ApplyDamageForms(InjurySettings s)
     {
         Undo.RecordObject(s, "Apply damage form defaults");
@@ -486,6 +511,8 @@ public class InjurySettingsEditor : Editor
         foreach (InjuryTypeDefinition t in s.injuryTypes)
         {
             if (t == null) continue;
+            if (t.systemic)
+                continue; // illnesses have their own page
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField(t.Name + (t.tags.Count > 0 ? $"   [{string.Join(", ", t.tags)}]" : ""), EditorStyles.boldLabel);
             if (t.causedByHits && t.trigger != null)
@@ -504,8 +531,10 @@ public class InjurySettingsEditor : Editor
                 if (st.impairment > 0f) bits.Add($"impairs {st.impairment * 100f:0}%");
                 bits.Add(st.needsTreatmentToHeal ? $"heals {st.healSeconds:0}s once treated" : $"heals {st.healSeconds:0}s");
                 if (st.worsenAfterSeconds > 0f) bits.Add($"worse after {st.worsenAfterSeconds:0}s{(string.IsNullOrEmpty(st.worsensInto) ? "" : " → " + st.worsensInto)}");
+                if (st.vision != null && st.vision.HasAny) bits.Add(st.vision.Describe());
                 EditorGUILayout.LabelField("  • " + string.Join(", ", bits), EditorStyles.wordWrappedMiniLabel);
             }
+            DrawComplications(t);
             EditorGUILayout.EndVertical();
         }
         Props("injuryTypes");
@@ -520,6 +549,77 @@ public class InjurySettingsEditor : Editor
                                                                           "severing odds. Everything else is kept.")))
             ApplyDamageForms(s);
         EditorGUILayout.EndHorizontal();
+    }
+
+    private static void DrawComplications(InjuryTypeDefinition t)
+    {
+        if (t.complications == null || t.complications.Count == 0)
+            return;
+        var bits = new List<string>();
+        foreach (InjuryComplication c in t.complications)
+        {
+            if (c == null || string.IsNullOrWhiteSpace(c.injuryType)) continue;
+            bits.Add(c.when == ComplicationWhen.WhileUntreated
+                ? $"{c.injuryType} ({c.chance * 100f:0.#}% per minute untreated)"
+                : $"{c.injuryType} ({c.chance * 100f:0.#}% when {(c.when == ComplicationWhen.Inflicted ? "it appears" : "it gets worse")})");
+        }
+        if (bits.Count > 0)
+            EditorGUILayout.LabelField("  May lead to: " + string.Join(", ", bits), EditorStyles.wordWrappedMiniLabel);
+    }
+
+    private void DrawIllnesses(InjurySettings s)
+    {
+        EditorGUILayout.HelpBox("Illnesses are injury types with Systemic on: they sit on the Whole Body part, whichever part caused them. They come " +
+                                "from other injuries (each type's Complications: a dirty puncture gives tetanus, a severe infection sepsis), from the " +
+                                "body's state (the exposures below: the cold gives colds), from other characters (a stage's Contagion Per Minute), " +
+                                "from food (Consumable ▸ Illness Risks; harvested meat that turned) and from abilities (Injury ▸ Inflict Injury). A " +
+                                "stage with Hidden on is an incubation the player does not see; Worsen Chance below 1 is an illness that usually " +
+                                "passes; Immunity Seconds keeps it from coming straight back.", MessageType.None);
+        if (s.FindWholeBody() == null)
+            EditorGUILayout.HelpBox("The body parts have no Whole Body part: a built-in one is used while playing. Add Illnesses And New Injuries (above) " +
+                                    "puts one in the list so you can change it.", MessageType.Info);
+        Props("illness");
+        if (GUILayout.Button("Reset Exposures To Defaults"))
+        {
+            Undo.RecordObject(s, "Reset illness exposures");
+            if (s.illness == null) s.illness = new IllnessRules();
+            s.illness.exposures = InjuryDefaults.Exposures();
+            EditorUtility.SetDirty(s);
+        }
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField("Illnesses (edit them in the Injuries page's list)", EditorStyles.boldLabel);
+        bool any = false;
+        foreach (InjuryTypeDefinition t in s.injuryTypes)
+        {
+            if (t == null || !t.systemic) continue;
+            any = true;
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField(t.Name + (t.tags.Count > 0 ? $"   [{string.Join(", ", t.tags)}]" : "") +
+                                       (t.immunitySeconds > 0f ? $"   immune {t.immunitySeconds:0}s after" : ""), EditorStyles.boldLabel);
+            for (int i = 0; i < t.stages.Count; i++)
+            {
+                InjuryStage st = t.stages[i];
+                if (st == null) continue;
+                var bits = new List<string> { $"{t.StageName(i)} ({s.SeverityName(st.severity)})" };
+                if (st.hidden) bits.Add("hidden");
+                bits.Add(st.needsTreatmentToHeal ? "needs medicine" : $"passes in {st.healSeconds / Mathf.Max(0.01f, st.untreatedHealRate):0}s");
+                if (st.worsenAfterSeconds > 0f)
+                    bits.Add($"{(st.worsenChance < 0.999f ? $"{st.worsenChance * 100f:0}% " : "")}worse after {st.worsenAfterSeconds:0}s" +
+                             (string.IsNullOrEmpty(st.worsensInto) ? "" : " → " + st.worsensInto));
+                if (st.contagionPerMinute > 0f) bits.Add($"catching {st.contagionPerMinute * 100f:0.#}%/min");
+                if (st.consequence != null && st.consequence.HasAnyEffect)
+                {
+                    string d = st.consequence.Describe();
+                    if (d != "no effect") bits.Add(d);
+                }
+                if (st.vision != null && st.vision.HasAny) bits.Add(st.vision.Describe());
+                EditorGUILayout.LabelField("  • " + string.Join(", ", bits), EditorStyles.wordWrappedMiniLabel);
+            }
+            DrawComplications(t);
+            EditorGUILayout.EndVertical();
+        }
+        if (!any)
+            EditorGUILayout.LabelField("None: Add Illnesses And New Injuries, or turn Systemic on in an injury type.", EditorStyles.wordWrappedMiniLabel);
     }
 
     private void DrawTreatments(InjurySettings s)
@@ -606,6 +706,11 @@ public class InjurySettingsEditor : Editor
                                 "and MissingArms: Tools ▸ SimpleMovements ▸ Player ▸ Complete Player Animator Controller adds them with empty " +
                                 "Limp, Hop and Crawl states for your clips.", MessageType.None);
         Props("locomotion");
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Falls", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("A player who lands faster than the Safe Speed takes a crushing hit on a foot or a leg: a twisted or sprained " +
+                                   "ankle, from higher a broken bone. Slopes, stairs and teleports never count.", EditorStyles.wordWrappedMiniLabel);
+        Props("falls");
     }
 
     private void DrawCity()
@@ -626,6 +731,8 @@ public class InjuryControllerEditor : Editor
     private int testStage;
     private float testDamage = 20f;
     private DamageForm testForm = DamageForm.Slash;
+    private float testSeconds = 60f;
+    private float testFallHeight = 8f;
 
     public override bool RequiresConstantRepaint() => Application.isPlaying;
 
@@ -653,8 +760,9 @@ public class InjuryControllerEditor : Editor
             string label = p.Lost ? $"{p.Name}: LOST" : $"{p.Name}: {p.Condition:0}/{p.MaxCondition:0}" + (p.Impairment > 0.01f ? $"  (impaired {p.Impairment * 100f:0}%)" : "");
             EditorGUI.ProgressBar(r, p.Condition01, label);
             foreach (Injury i in p.Injuries)
-                EditorGUILayout.LabelField($"   • {i.Name} ({s.SeverityName(i.Severity)})" + (i.IsBleeding ? $" bleeding {i.BleedingPerSecond:0.##}/s" : "") +
-                                           (i.Treated || i.Bandaged ? $" [{i.TreatmentLabel}]" : "") + $" heal {i.HealProgress * 100f:0}%", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField($"   • {i.Name} ({s.SeverityName(i.Severity)})" + (i.Hidden ? " [hidden]" : "") + (i.IsBleeding ? $" bleeding {i.BleedingPerSecond:0.##}/s" : "") +
+                                           (i.Treated || i.Bandaged ? $" [{i.TreatmentLabel}]" : "") + $" heal {i.HealProgress * 100f:0}%" +
+                                           (i.CanWorsen ? $" worse in {i.WorsensIn:0}s" : ""), EditorStyles.miniLabel);
         }
         EditorGUILayout.LabelField($"Bleeding {c.BleedingPerSecond:0.##}/s · stops: {BodyActions.DescribeAll(c.Blocked)}", EditorStyles.wordWrappedMiniLabel);
         string resist = c.Resistances != null ? c.Resistances.Describe() : "";
@@ -690,6 +798,17 @@ public class InjuryControllerEditor : Editor
                 c.LoseLimb(part.Id);
         if (GUILayout.Button("Heal All"))
             c.HealAll(true);
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginHorizontal();
+        testSeconds = EditorGUILayout.FloatField(new GUIContent("Advance (s)", "Lets that much time pass for every injury at once: healing, getting worse."), testSeconds);
+        if (GUILayout.Button("Advance", GUILayout.Width(80f)))
+            c.Simulate(testSeconds);
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginHorizontal();
+        testFallHeight = EditorGUILayout.FloatField(new GUIContent("Drop (m)", $"A hard landing after a drop of this many metres. This character: safe up to {c.SafeFallHeight:0.#} m, " +
+            $"its own jump {c.OwnJumpHeight:0.#} m, fall damage x{c.FallDamageFactor:0.##} (Movement ▸ Falls; the Fall Damage and Safe Fall Height stats)."), testFallHeight);
+        if (GUILayout.Button("Land", GUILayout.Width(80f)))
+            c.Land(testFallHeight);
         EditorGUILayout.EndHorizontal();
     }
 }

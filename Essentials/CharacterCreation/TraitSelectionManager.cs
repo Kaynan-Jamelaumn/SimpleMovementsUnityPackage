@@ -276,6 +276,7 @@ public class TraitSelectionManager
     /// <summary>Why the trait cannot be added to the current choice (required / incompatible / exclusive), or null.</summary>
     private string RuleProblem(Trait trait) => TraitRules.WhyNot(trait, mainUI.Archetypes)
                                                ?? TraitRules.WhyTooManyActive(trait, mainUI.SelectedTraits, mainUI.MaxActiveTraits)
+                                               ?? TraitRules.WhyTooManyDrawbacks(trait, mainUI.SelectedTraits, mainUI.MaxDrawbacks, mainUI.MaxDrawbackPoints)
                                                ?? TraitRules.WhyCannotCombine(trait, ChosenTraits());
 
     /// <summary>Why the trait cannot be removed (another chosen trait requires it), or null.</summary>

@@ -44,6 +44,9 @@ public class InjuryResistance
     [Tooltip("Health damage of hits of the forms above (the injury and part lists are ignored). -25 = 25% less damage from them, " +
              "+50 = a weakness.")]
     [Range(-100f, 300f)] public float damageTaken = 0f;
+    [Tooltip("What a hard landing does to the legs and the health (the injury, form and part lists are ignored). -50 = half, " +
+             "-100 = never hurt by a fall (feather fall), +50 = lands badly.")]
+    [Range(-100f, 300f)] public float fallDamage = 0f;
 
     public InjuryResistance() { }
 
@@ -87,7 +90,7 @@ public class InjuryResistance
     public bool IsEmpty =>
         Mathf.Approximately(injuryChance, 0f) && Mathf.Approximately(severity, 0f) && Mathf.Approximately(worsening, 0f) &&
         Mathf.Approximately(bleeding, 0f) && Mathf.Approximately(healing, 0f) && Mathf.Approximately(limbLoss, 0f) &&
-        Mathf.Approximately(damageTaken, 0f);
+        Mathf.Approximately(damageTaken, 0f) && Mathf.Approximately(fallDamage, 0f);
 
     /// <summary>A percent change as a multiplier (strength scales the change; never below 0).</summary>
     public static float Factor(float percent, float strength) => Mathf.Max(0f, 1f + percent / 100f * strength);
@@ -111,12 +114,15 @@ public class InjuryResistance
         Add(healing, what + " healing");
         Add(limbLoss, "limb loss");
         Add(damageTaken, "damage");
+        int scoped = parts.Count;
+        Add(fallDamage, "fall damage");
         if (parts.Count == 0)
             return string.IsNullOrEmpty(label) ? "(no effect)" : label;
         string s = string.Join(", ", parts);
-        if ((forms & DamageFormMask.All) != DamageFormMask.All)
+        // Forms and parts say nothing about a fall: only named when something else is changed.
+        if (scoped > 0 && (forms & DamageFormMask.All) != DamageFormMask.All)
             s += $" from {DamageForms.Describe(forms)} hits";
-        if (partKinds != null && partKinds.Count > 0)
+        if (scoped > 0 && partKinds != null && partKinds.Count > 0)
             s += $" on the {string.Join("/", partKinds)}";
         return string.IsNullOrEmpty(label) ? s : $"{label}: {s}";
     }
@@ -464,6 +470,30 @@ public class InjuryResistances : MonoBehaviour, IDamageTakenModifier
         return f;
     }
 
+    /// <summary>
+    /// Multiplies what a hard landing does to the legs and the health: the Fall Damage character stat and every
+    /// resistance's Fall Damage (0 = never hurt by a fall).
+    /// </summary>
+    public float FallDamageMultiplier()
+    {
+        float f = Stat(TraitStat.FallDamage);
+        IReadOnlyList<Entry> all = All;
+        for (int i = 0; i < all.Count; i++)
+        {
+            InjuryResistance r = all[i].resistance;
+            if (r != null && r.fallDamage != 0f)
+                f *= InjuryResistance.Factor(r.fallDamage, all[i].strength);
+        }
+        return f;
+    }
+
+    /// <summary>Extra metres the character can drop without being hurt (the Safe Fall Height character stat).</summary>
+    public float SafeFallHeightBonus()
+    {
+        TraitManager t = Traits;
+        return t != null ? t.GetStatSum(TraitStat.SafeFallHeight) : 0f;
+    }
+
     float IDamageTakenModifier.ModifyDamageTaken(in DamageInfo info, float amount)
     {
         if (info.type == DamageType.True || amount <= 0f)
@@ -494,6 +524,9 @@ public class InjuryResistances : MonoBehaviour, IDamageTakenModifier
                 if (!Mathf.Approximately(m, 1f))
                     names.Add($"{(m - 1f) * 100f:+0;-0}% {TraitStats.Get(s).name}");
             }
+            float safe = t.GetStatSum(TraitStat.SafeFallHeight);
+            if (!Mathf.Approximately(safe, 0f))
+                names.Add($"{safe:+0.#;-0.#} m {TraitStats.Get(TraitStat.SafeFallHeight).name}");
         }
         return string.Join(", ", names);
     }
@@ -503,7 +536,7 @@ public class InjuryResistances : MonoBehaviour, IDamageTakenModifier
     {
         TraitStat.SlashDamageTaken, TraitStat.PierceDamageTaken, TraitStat.BluntDamageTaken, TraitStat.InjuryChance, TraitStat.WoundChance,
         TraitStat.FractureChance, TraitStat.BurnChance, TraitStat.InfectionChance, TraitStat.BleedingRate, TraitStat.InjuryHealing,
-        TraitStat.LimbLossChance,
+        TraitStat.LimbLossChance, TraitStat.FallDamage,
     };
 
     /// <summary>One line per resistance in effect (the Health tab, inspectors).</summary>
@@ -537,6 +570,13 @@ public class InjuryResistances : MonoBehaviour, IDamageTakenModifier
             }
             foreach (TraitStat s in InjuryStats)
                 Stat(s);
+            float safe = t.GetStatSum(TraitStat.SafeFallHeight);
+            if (!Mathf.Approximately(safe, 0f))
+            {
+                if (sb.Length > 0)
+                    sb.Append('\n');
+                sb.Append($"{safe:+0.#;-0.#} m {TraitStats.Get(TraitStat.SafeFallHeight).name}");
+            }
         }
         return sb.ToString();
     }

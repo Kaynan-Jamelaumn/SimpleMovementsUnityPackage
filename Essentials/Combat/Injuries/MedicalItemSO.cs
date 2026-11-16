@@ -19,9 +19,14 @@ public class MedicalItemSO : ItemSO
     [Tooltip("Using it from the hotbar or a quickslot treats the most urgent injury it can (a bleeding wound first). Off = only " +
              "from the Health page.")]
     [SerializeField] private bool quickUse = true;
+    [Tooltip("A medicine taken to be safe (a vaccine after a bite, an antitoxin after a dirty wound): used from the hotbar it is " +
+             "used up even when it finds nothing to treat, so taking it tells nothing about an illness that does not show yet.")]
+    [SerializeField] private bool preventive = false;
 
     public IReadOnlyList<InjuryTreatment> Treatments => treatments ?? (treatments = new List<InjuryTreatment>());
     public int UnitsPerUse => Mathf.Max(1, unitsPerUse);
+    /// <summary>Taken to be safe: used up from the hotbar even when it finds nothing to treat.</summary>
+    public bool Preventive => preventive;
 
     public override bool CanUseFromQuickSlot => quickUse;
 
@@ -38,10 +43,11 @@ public class MedicalItemSO : ItemSO
     }
 
     /// <summary>Sets the treatments (editor presets, scripts).</summary>
-    public void SetTreatments(List<InjuryTreatment> list, int units = 1)
+    public void SetTreatments(List<InjuryTreatment> list, int units = 1, bool takenToBeSafe = false)
     {
         treatments = list ?? new List<InjuryTreatment>();
         unitsPerUse = Mathf.Max(1, units);
+        preventive = takenToBeSafe;
     }
 
     /// <summary>Sets the basic item fields of a preset (editor).</summary>
@@ -100,6 +106,8 @@ public class MedicalItemSO : ItemSO
                 if (t != null) lines.Add(t.Describe(settings));
         if (UnitsPerUse > 1)
             lines.Add($"Uses {UnitsPerUse} per treatment");
+        if (preventive)
+            lines.Add("Can be taken to be safe (it also works on an illness that does not show yet).");
         if (!settings.enabled)
             lines.Add("<color=#9aa0a6>(the injury system is off)</color>");
         base.AppendTooltip(lines);

@@ -58,21 +58,13 @@ public class SleepQuality
     }
 }
 
-/// <summary>A stage of tiredness: what happens while rest is below <see cref="belowPercent"/>.</summary>
-[Serializable]
-public class RestStage
-{
-    [Tooltip("The stage starts when rest is below this percent of the max.")]
-    [Range(0f, 100f)] public float belowPercent = 50f;
-    [Tooltip("What it does (status icon, stats, per-second effects, fainting).")]
-    public StatusConsequence effect = new StatusConsequence("Tired");
-}
-
 /// <summary>
 /// <b>Rest</b> (sleep need): 100 = fully rested, 0 = exhausted.
 /// <list type="bullet">
 /// <item>Awake: rest drops by <see cref="awakeLossPerMinute"/> per minute (Decrement Factor, a percent, changes it).</item>
-/// <item>Tiredness <see cref="stages"/> (Tired, Very Tired, Exhausted by default) apply their debuffs as rest drops.</item>
+/// <item>Rest goes through its <see cref="conditions"/> - Refreshed, Rested, Sleepy, Tired, Exhausted, Falling Asleep by
+/// default - each with its own effects: a rested mind is quick, a tired one slow and clumsy, and at the bottom the
+/// character nods off on its feet (and its eyes close on the screen).</item>
 /// <item>At <see cref="collapseAtPercent"/> the character collapses asleep where it stands (a poor sleep).</item>
 /// <item>Asleep: rest comes back at <see cref="sleepRecoveryPerMinute"/> x the spot's quality (Increment Factor and the
 /// Rest Recovery stat raise it). A bed sleeps best, a bench or bedroll less, the ground worst; each quality has its own
@@ -82,7 +74,7 @@ public class RestStage
 /// Sleep with a <see cref="SleepSpot"/> (beds, benches: Interact) or anywhere with the Sleep input (<see cref="SleepController"/>).
 /// While asleep the character cannot move or act; damage wakes it. Network sessions: the server decides.
 /// </summary>
-public class SleepManager : StatusManager
+public class SleepManager : StatusManager, INeedStages
 {
     [Header("Rest")]
     [Tooltip("Start fully rested.")]
@@ -94,9 +86,14 @@ public class SleepManager : StatusManager
     [Tooltip("Rest recovered per minute while sleeping, before the spot's quality, Increment Factor and the Rest Recovery stat. 25 = 4 minutes from empty to full in a bed.")]
     [SerializeField, Min(0f)] private float sleepRecoveryPerMinute = 25f;
 
-    [Header("Tiredness")]
-    [Tooltip("Stages of tiredness, each with its own effects. The lowest stage reached applies (only one at a time).")]
-    [SerializeField] private List<RestStage> stages = DefaultStages();
+    [Header("Conditions")]
+    [Tooltip("The conditions of rest, each with a name, the percent it starts at and what it does. One applies at a time (none " +
+             "while asleep): the one with the highest From Percent that rest has reached. Right-click the component ▸ Reset " +
+             "Conditions And Qualities To Defaults.")]
+    [SerializeField] private List<NeedStage> conditions = NeedStages.Rest();
+    // Before conditions: tiredness stages by "below percent". Kept to bring an older component's own stages over, once.
+    [SerializeField, HideInInspector] private List<RestStage> stages = LegacyDefaultStages();
+    [SerializeField, HideInInspector] private bool conditionsMigrated;
 
     [Header("Collapse")]
     [Tooltip("At this rest percent the character collapses asleep where it stands (0 = when empty). Below 0 = never.")]
@@ -132,7 +129,7 @@ public class SleepManager : StatusManager
 
     private bool started;
     private List<CoroutineInfo> sleepEffectRoutines = new List<CoroutineInfo>();
-    private ConsequenceRunner stageRunner;
+    private NeedStageRunner stageRunner;
     private SleepQuality quality;
     private SleepSpot spot;
     private float sleepStart;
@@ -152,10 +149,14 @@ public class SleepManager : StatusManager
     public SleepSpot CurrentSpot => spot;
     /// <summary>Seconds asleep.</summary>
     public float SleepingFor => isSleeping ? Time.time - sleepStart : 0f;
-    /// <summary>The tiredness stage reached (-1 = rested).</summary>
-    public int StageIndex { get; private set; } = -1;
-    /// <summary>The tiredness stages.</summary>
-    public IReadOnlyList<RestStage> Stages => stages;
+    /// <summary>The place of the current condition in <see cref="Conditions"/> (-1 = none: asleep, down).</summary>
+    public int StageIndex => stageRunner != null ? stageRunner.Index : -1;
+    /// <summary>The condition rest is in (Refreshed, Sleepy, Falling Asleep...); null while asleep or down. Every copy knows it.</summary>
+    public NeedStage CurrentStage => stageRunner != null ? stageRunner.Current : null;
+    /// <summary>Every condition of rest.</summary>
+    public IReadOnlyList<NeedStage> Conditions => conditions;
+    /// <summary>The condition changed: (the one before, the new one); either may be null. Raised on every copy.</summary>
+    public event Action<NeedStage, NeedStage> StageChanged;
 
     /// <summary>Fell asleep (quality, spot or null) / woke up.</summary>
     public event Action<SleepQuality, SleepSpot> FellAsleep;
@@ -173,9 +174,13 @@ public class SleepManager : StatusManager
 
     private void Awake()
     {
-        stageRunner = new ConsequenceRunner(this, "Tiredness");
+        MigrateStages();
+        stageRunner = new NeedStageRunner(this, "Tiredness");
+        stageRunner.Changed += (before, now) => StageChanged?.Invoke(before, now);
         baseIncrement = incrementValue;
     }
+
+    private void OnValidate() => MigrateStages();
 
     private CombatEntity Entity
     {
@@ -208,6 +213,7 @@ public class SleepManager : StatusManager
             currentValue = maxValue;
         _ = Entity;
         UpdateUIVisibility();
+        NeedScreenEffect.Ensure(this);
     }
 
     private void OnDestroy()
@@ -226,7 +232,6 @@ public class SleepManager : StatusManager
     protected override void OnReplicaChanged(bool on)
     {
         stageRunner?.Clear();
-        StageIndex = -1;
     }
 
     /// <summary>Client copies: shows the server's sleeping / collapsed state (and locks the owner's movement while asleep).</summary>
@@ -249,59 +254,37 @@ public class SleepManager : StatusManager
     private void Update()
     {
         UpdateSleepBar();
-        if (IsReplica)
-            return; // rest is simulated by the server
         float dt = Time.deltaTime;
         CombatEntity e = Entity;
         bool down = e != null && (e.IsDead || e.IsUnconscious);
-        if (down)
+        if (!IsReplica) // rest is simulated by the server
         {
-            if (isSleeping) StopSleeping();
-            stageRunner.Clear();
-            StageIndex = -1;
-            return;
-        }
-
-        if (isSleeping)
-        {
-            SleepTick(dt);
-        }
-        else
-        {
-            if (drainWhileAwake && awakeLossPerMinute > 0f)
+            if (down)
             {
-                currentValue = Mathf.Max(0f, currentValue - RemoveFactor(awakeLossPerMinute) * RateMultiplier * dt / 60f);
-                isConsuming = true;
+                if (isSleeping) StopSleeping();
             }
-            if (collapseAtPercent >= 0f && Percent <= collapseAtPercent)
-                Collapse();
+            else if (isSleeping)
+            {
+                SleepTick(dt);
+            }
+            else
+            {
+                if (drainWhileAwake && awakeLossPerMinute > 0f)
+                {
+                    currentValue = Mathf.Max(0f, currentValue - RemoveFactor(awakeLossPerMinute) * RateMultiplier * dt / 60f);
+                    isConsuming = true;
+                }
+                if (collapseAtPercent >= 0f && Percent <= collapseAtPercent)
+                    Collapse();
+            }
         }
 
-        // Tiredness stages (none while asleep: the sleep's own effects apply).
-        int stage = isSleeping ? -1 : FindStage();
-        if (stage != StageIndex)
-        {
-            StageIndex = stage;
-            stageRunner.Set(stage >= 0 ? stages[stage].effect : null);
-        }
-        stageRunner.Tick(dt);
+        // The condition of rest (none while asleep or down: the sleep's own effects apply). Followed on every copy
+        // (HUD, messages, the eyelids on the screen); its effects apply where the rules run.
+        stageRunner.Tick(conditions, Percent, dt, !IsReplica, !down && !isSleeping);
     }
 
     private float Percent => maxValue > 0f ? currentValue / maxValue * 100f : 100f;
-
-    private int FindStage()
-    {
-        int best = -1;
-        float bestBelow = float.MaxValue;
-        float p = Percent;
-        for (int i = 0; i < stages.Count; i++)
-        {
-            RestStage s = stages[i];
-            if (s == null || p >= s.belowPercent) continue;
-            if (s.belowPercent < bestBelow) { bestBelow = s.belowPercent; best = i; }
-        }
-        return best;
-    }
 
     private void SleepTick(float dt)
     {
@@ -351,23 +334,25 @@ public class SleepManager : StatusManager
     private void UpdateUIVisibility()
     {
         if (uiImage == null) return;
-        float first = 0f;
-        foreach (RestStage s in stages) if (s != null) first = Mathf.Max(first, s.belowPercent);
+        float first = NeedStages.TroubleBelow(conditions);
         bool shouldShowUI = showUIWhenRested || isSleeping || Percent < first + 15f;
         if (uiImage.gameObject.activeSelf != shouldShowUI)
             uiImage.gameObject.SetActive(shouldShowUI);
     }
 
-    /// <summary>How tired the character is (from the tiredness stage reached).</summary>
+    /// <summary>How tired the character is (from the condition its rest is in: Low, Bad or Critical).</summary>
     public SleepinessLevel GetSleepinessLevel()
     {
-        int stage = FindStage();
-        if (stage < 0) return SleepinessLevel.Rested;
-        // Rank the stage among the stages (by threshold): 1st = slightly, 2nd = moderately, 3rd+ = extremely.
-        int rank = 0;
-        float below = stages[stage].belowPercent;
-        foreach (RestStage s in stages) if (s != null && s.belowPercent > below) rank++;
-        return rank == 0 ? SleepinessLevel.SlightlySleepy : rank == 1 ? SleepinessLevel.ModeratelySleepy : SleepinessLevel.ExtremelySleepy;
+        int i = NeedStages.Find(conditions, Percent);
+        NeedStage stage = i >= 0 ? conditions[i] : null;
+        if (stage == null) return SleepinessLevel.Rested;
+        switch (stage.mood)
+        {
+            case NeedMood.Low: return SleepinessLevel.SlightlySleepy;
+            case NeedMood.Bad: return SleepinessLevel.ModeratelySleepy;
+            case NeedMood.Critical: return SleepinessLevel.ExtremelySleepy;
+            default: return SleepinessLevel.Rested;
+        }
     }
 
     // ------------------------------------------------------------------ sleeping
@@ -427,8 +412,7 @@ public class SleepManager : StatusManager
         quality = q;
         spot = atSpot;
         sleepStart = Time.time;
-        StageIndex = -1;
-        stageRunner.Clear();
+        stageRunner?.Clear();
         Availability?.SetIncapacitated(sleepKey, true);
         CombatEntity e = Entity;
         if (e != null && e.Caster != null) e.Caster.Interrupt(CastInterruptReason.Stun, true);
@@ -503,7 +487,6 @@ public class SleepManager : StatusManager
         if (isSleeping) StopSleeping();
         base.ResetForRespawn(fraction);
         stageRunner?.Clear();
-        StageIndex = -1;
     }
 
     protected override void UpdateStatus() => UpdateBar();
@@ -540,14 +523,15 @@ public class SleepManager : StatusManager
 
     // ------------------------------------------------------------------ defaults
 
-    private static List<RestStage> DefaultStages() => new List<RestStage>
+    /// <summary>The tiredness stages every Sleep Manager had before conditions (to tell an untouched list from an edited one).</summary>
+    private static List<RestStage> LegacyDefaultStages() => new List<RestStage>
     {
         new RestStage
         {
             belowPercent = 50f,
             effect = new StatusConsequence("Tired")
             {
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -5f), TraitModifier.Percent(TraitStat.StaminaRegen, -10f) },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -5f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -10f) },
             },
         },
         new RestStage
@@ -557,7 +541,7 @@ public class SleepManager : StatusManager
             {
                 characterStats = new List<TraitModifier>
                 {
-                    TraitModifier.Percent(TraitStat.MoveSpeed, -10f), TraitModifier.Percent(TraitStat.StaminaRegen, -25f),
+                    TraitModifier.Percent(TraitStat.MoveSpeed, -10f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -25f),
                     TraitModifier.Percent(TraitStat.AbilityCastTime, 10f),
                 },
                 sanityPerSecond = -0.03f,
@@ -570,7 +554,7 @@ public class SleepManager : StatusManager
             {
                 characterStats = new List<TraitModifier>
                 {
-                    TraitModifier.Percent(TraitStat.MoveSpeed, -20f), TraitModifier.Percent(TraitStat.StaminaRegen, -40f),
+                    TraitModifier.Percent(TraitStat.MoveSpeed, -20f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -40f),
                     TraitModifier.Percent(TraitStat.AbilityCastTime, 20f),
                 },
                 combatStats = new List<CombatStatModifier> { new CombatStatModifier(CombatStatType.WeaponDamage, -10f) },
@@ -591,7 +575,7 @@ public class SleepManager : StatusManager
                     healthPerMinute = 12f, sanityPerMinute = 4f, hungerDrain = 0.5f, thirstDrain = 0.5f,
                     wakeEffect = new StatusConsequence("Well Rested", false)
                     {
-                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, 10f), TraitModifier.Percent(TraitStat.MoveSpeed, 3f) },
+                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, 10f), TraitModifier.Percent(TraitStat.MoveSpeed, 3f) },
                     },
                     wakeEffectSeconds = 300f, wakeEffectNeedsRestAbove = 90f,
                 };
@@ -601,7 +585,7 @@ public class SleepManager : StatusManager
                     sanityPerMinute = 1f, hungerDrain = 0.6f, thirstDrain = 0.6f,
                     wakeEffect = new StatusConsequence("Slept Rough")
                     {
-                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -5f) },
+                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -5f) },
                     },
                     wakeEffectSeconds = 90f,
                 };
@@ -611,7 +595,7 @@ public class SleepManager : StatusManager
                     hungerDrain = 0.6f, thirstDrain = 0.6f,
                     wakeEffect = new StatusConsequence("Sore")
                     {
-                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -8f) },
+                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -8f) },
                     },
                     wakeEffectSeconds = 120f,
                 };
@@ -623,7 +607,7 @@ public class SleepManager : StatusManager
                     {
                         characterStats = new List<TraitModifier>
                         {
-                            TraitModifier.Percent(TraitStat.MoveSpeed, -15f), TraitModifier.Percent(TraitStat.StaminaRegen, -20f),
+                            TraitModifier.Percent(TraitStat.MoveSpeed, -15f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -20f),
                             TraitModifier.Percent(TraitStat.AbilityCastTime, 10f),
                         },
                     },
@@ -635,17 +619,64 @@ public class SleepManager : StatusManager
                     sanityPerMinute = -1f, hungerDrain = 0.6f, thirstDrain = 0.6f,
                     wakeEffect = new StatusConsequence("Stiff Back")
                     {
-                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -10f), TraitModifier.Percent(TraitStat.MoveSpeed, -5f) },
+                        characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -10f), TraitModifier.Percent(TraitStat.MoveSpeed, -5f) },
                     },
                     wakeEffectSeconds = 180f,
                 };
         }
     }
 
-    [ContextMenu("Reset Stages And Qualities To Defaults")]
+    // ------------------------------------------------------------------ older components
+    /// <summary>
+    /// A Sleep Manager saved before conditions kept "tiredness stages" (below a percent). Once: stages that were never
+    /// changed give way to the default conditions; stages the designer edited are brought over as conditions with the
+    /// same thresholds and effects (and a Rested one above them), so nothing tuned is lost.
+    /// </summary>
+    private void MigrateStages()
+    {
+        if (conditionsMigrated)
+            return;
+        conditionsMigrated = true;
+        if (stages != null && SameStages(stages, LegacyDefaultStages()))
+            return;
+        conditions = NeedStages.FromBelowStages(stages);
+    }
+
+    private static bool SameStages(IList<RestStage> a, IList<RestStage> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+        for (int i = 0; i < a.Count; i++)
+            if (Signature(a[i]) != Signature(b[i]))
+                return false;
+        return true;
+    }
+
+    private static string Signature(RestStage s)
+    {
+        if (s == null || s.effect == null)
+            return "-";
+        StatusConsequence e = s.effect;
+        var sb = new System.Text.StringBuilder();
+        sb.Append(s.belowPercent.ToString("0.##")).Append('|').Append(e.label).Append('|').Append(e.debuff);
+        if (e.characterStats != null)
+            foreach (TraitModifier m in e.characterStats)
+                if (m != null) sb.Append("|c").Append(m.value.ToString("0.##"));
+        if (e.combatStats != null)
+            foreach (CombatStatModifier m in e.combatStats)
+                if (m != null) sb.Append("|k").Append((int)m.stat).Append(':').Append(m.value.ToString("0.##"));
+        sb.Append('|').Append(e.healthPerSecond.ToString("0.###")).Append('|').Append(e.staminaPerSecond.ToString("0.###"))
+          .Append('|').Append(e.sanityPerSecond.ToString("0.###")).Append('|').Append(e.hungerDrain.ToString("0.##"))
+          .Append('|').Append(e.thirstDrain.ToString("0.##")).Append('|').Append(e.stunChancePerMinute.ToString("0.###"))
+          .Append('|').Append(e.stunSeconds.ToString("0.##"));
+        return sb.ToString();
+    }
+
+    [ContextMenu("Reset Conditions And Qualities To Defaults")]
     private void ResetDefaults()
     {
-        stages = DefaultStages();
+        conditions = NeedStages.Rest();
+        conditionsMigrated = true;
         groundQuality = DefaultQuality(SleepQualityPreset.Ground);
         bedrollQuality = DefaultQuality(SleepQualityPreset.Bedroll);
         benchQuality = DefaultQuality(SleepQualityPreset.Bench);

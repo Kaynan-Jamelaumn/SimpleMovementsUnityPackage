@@ -123,10 +123,10 @@ tags (wound, bleeding, burn).
 
 ### 3a. Character stats (the simple way)
 
-Eleven new **character stats** (the same `TraitModifier` lists traits use), so they work everywhere stats do: a
+Thirteen **character stats** (the same `TraitModifier` lists traits use), so they work everywhere stats do: a
 **trait's** modifiers, a **race's or class's** *Character Stats* (and per level), an **item's** *Character Stats*
 effect, an **armour set** bonus, a **Stat Buff** ability effect, a status consequence. Percent; negative = better,
-except Injury Healing.
+except Injury Healing and Safe Fall Height (flat, in metres).
 
 | Stat | Changes |
 |---|---|
@@ -139,6 +139,8 @@ except Injury Healing.
 | **Bleeding** | how fast wounds bleed: **Thick Blood** / Hemophiliac |
 | **Injury Healing** | how fast injuries heal and clot: **Fast Healer** |
 | **Limb Loss Chance** | the chance of losing a limb: sturdy limbs / Brittle Bones |
+| **Fall Damage** | what a hard landing does to the legs and the health: **Light Feet** / Weak Ankles ([Player 16](16-Illnesses-Falls-Sight-and-Saves.md#5-hard-landings-injury-settings--movement--falls)) |
+| **Safe Fall Height** (flat, metres) | extra metres the character can drop unhurt |
 
 They are grouped under *Injuries* (and *Health & Defence*) in the trait inspector's stat menu. Like every percent
 character stat they stack by multiplying and stop at -95%: for a true immunity use an Injury Resistance of -100 (below).
@@ -160,6 +162,7 @@ An **Injury Resistance** says exactly what it covers and what it changes:
 | *Healing* | how fast they heal and clot |
 | *Limb Loss* | the chance of losing a limb (to the forms above, on the parts above) |
 | *Damage Taken* | health damage of hits of the forms above (+50 = a weakness: a skeleton against maces) |
+| *Fall Damage* | what a hard landing does (the lists above are ignored): −100 = never hurt by a fall (**Feather Fall**) |
 
 Where to put them:
 

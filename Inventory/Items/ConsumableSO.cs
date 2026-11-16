@@ -142,6 +142,30 @@ public class ConsumableEffect
     }
 }
 
+/// <summary>
+/// "Eating this may make you ill": a chance to catch an illness of the injury system when the item is used (raw meat:
+/// parasites; foul water: dysentery; food that turned: food poisoning). Only while the project's injury system is on.
+/// </summary>
+[System.Serializable]
+public class IllnessRisk
+{
+    [Tooltip("Illness caught: an injury type id of the Injury Settings (FoodPoisoning, Dysentery, Parasites...).")]
+    public string illness = "";
+    [Tooltip("Chance (0-1) each time the item is used. The character's resistances to the illness count.")]
+    [Range(0f, 1f)] public float chance = 0.25f;
+    [Tooltip("Stage it starts at (0 = its first, often an incubation that shows nothing yet).")]
+    [Min(0)] public int stage = 0;
+
+    public IllnessRisk() { }
+
+    public IllnessRisk(string illness, float chance, int stage = 0)
+    {
+        this.illness = illness;
+        this.chance = chance;
+        this.stage = stage;
+    }
+}
+
 [CreateAssetMenu(fileName = "Consumable", menuName = "SimpleMovements/Items/Consumable", order = 4)]
 public class ConsumableSO : ItemSO
 {
@@ -160,7 +184,15 @@ public class ConsumableSO : ItemSO
     [Tooltip("Delay before effects are applied (in seconds)")]
     public float effectDelay = 0f;
 
+    [Header("Illness (injury system)")]
+    [Tooltip("Illnesses using the item may give (raw meat: parasites; foul water: dysentery). Nothing happens while the project's " +
+             "injury system is off.")]
+    [SerializeField] private List<IllnessRisk> illnessRisks = new List<IllnessRisk>();
+
     public List<ConsumableEffect> Effects => effects;
+
+    /// <summary>The illnesses using the item may give.</summary>
+    public List<IllnessRisk> IllnessRisks => illnessRisks ?? (illnessRisks = new List<IllnessRisk>());
 
     /// <summary>Replaces the effects (items generated from code: brewed potions).</summary>
     public void SetEffects(IEnumerable<ConsumableEffect> newEffects)
@@ -251,6 +283,45 @@ public class ConsumableSO : ItemSO
             }
 
             ApplyEffect(effect, statusController, scale);
+        }
+        ApplyIllnessRisks(statusController);
+    }
+
+    /// <summary>Rolls the item's illness risks on whoever used it (where the injury rules run; nothing with the system off).</summary>
+    private void ApplyIllnessRisks(PlayerStatusController statusController)
+    {
+        if (illnessRisks == null || illnessRisks.Count == 0 || statusController == null || !InjurySettings.IsEnabled)
+            return;
+        InjuryController injuries = InjuryController.For(statusController);
+        if (injuries == null || !injuries.RulesHere)
+            return;
+        foreach (IllnessRisk risk in illnessRisks)
+        {
+            if (risk == null || string.IsNullOrWhiteSpace(risk.illness))
+                continue;
+            Injury made = injuries.Expose(risk.illness, risk.chance, risk.stage);
+            if (made != null && !made.Hidden)
+                InventoryManager.For(statusController)?.ShowMessage($"The {Name.ToLowerInvariant()} did not agree with you: {made.Name.ToLowerInvariant()}.", InventoryFeedback.Kind.Warning);
+        }
+    }
+
+    public override void AppendTooltip(List<string> lines)
+    {
+        base.AppendTooltip(lines);
+        AppendIllnessRiskLines(lines);
+    }
+
+    /// <summary>"May cause food poisoning (25%)" for every illness risk (tooltips).</summary>
+    protected void AppendIllnessRiskLines(List<string> lines)
+    {
+        if (illnessRisks == null || illnessRisks.Count == 0 || !InjurySettings.IsEnabled)
+            return;
+        foreach (IllnessRisk risk in illnessRisks)
+        {
+            if (risk == null || string.IsNullOrWhiteSpace(risk.illness) || risk.chance <= 0f)
+                continue;
+            InjuryTypeDefinition type = InjurySettings.Instance.FindType(risk.illness);
+            lines.Add($"<color=#f0a090>May cause {(type != null ? type.Name.ToLowerInvariant() : risk.illness)} ({risk.chance * 100f:0}%)</color>");
         }
     }
 

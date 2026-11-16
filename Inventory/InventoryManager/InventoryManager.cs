@@ -1197,7 +1197,7 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         CombatEntity e = PlayerEntity;
         if (e != null && !(item is WeaponSO) && !e.AllowsAction(BodyAction.UseItems))
         {
-            string why = e.BodyLimits != null ? e.BodyLimits.ReasonFor(BodyAction.UseItems) : "";
+            string why = e.WhyNotAllowed(BodyAction.UseItems);
             ShowMessage(string.IsNullOrEmpty(why) ? "You cannot use items now." : $"You cannot use items: {why}.");
             return false;
         }
@@ -1513,6 +1513,15 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         if (draggedItem == null || draggedItem.itemScriptableObject == null)
         {
             CancelDrag();
+            return;
+        }
+
+        // Dropped on the Health tab (a body part, an injury): a medical item treats what it was dropped on and goes back to
+        // its slot (the treatment uses it up when it finishes).
+        if (draggedItem.itemScriptableObject is MedicalItemSO medical && InjuryHealthPanel.TryDrop(clickedObject, medical))
+        {
+            ReturnDragged(dragged, dragHandler.LastItemSlotObject);
+            RefreshHand(true);
             return;
         }
 
@@ -2919,7 +2928,8 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         CombatEntity body = PlayerEntity;
         if (body != null && !body.AllowsAction(BodyAction.UseItems))
         {
-            reason = "You cannot use items: " + (body.BodyLimits != null ? body.BodyLimits.ReasonFor(BodyAction.UseItems) : "injured") + ".";
+            string why = body.WhyNotAllowed(BodyAction.UseItems);
+            reason = "You cannot use items: " + (string.IsNullOrEmpty(why) ? "injured" : why) + ".";
             return false;
         }
         switch (NetRole)

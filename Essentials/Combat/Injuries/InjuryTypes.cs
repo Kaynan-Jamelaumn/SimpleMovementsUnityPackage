@@ -19,6 +19,145 @@ public enum BodyPartKind
     Other,
     Neck,
     Groin,
+    /// <summary>
+    /// The body as a whole: hits never land on it. Illnesses sit here (a cold, sepsis, food poisoning: injury types with
+    /// Systemic on), whichever part caused them.
+    /// </summary>
+    WholeBody,
+}
+
+/// <summary>How loudly the HUD warns about an injury of a type (see <see cref="InjuryTypeDefinition.hudAlert"/>).</summary>
+public enum InjuryAlertLevel
+{
+    /// <summary>Never on the HUD (a scratch, a bruise): the Health tab shows it.</summary>
+    None,
+    /// <summary>A quiet line (a cold, a sprain).</summary>
+    Notice,
+    /// <summary>A warning (a broken bone, an infection).</summary>
+    Warning,
+    /// <summary>Red and pulsing (sepsis, a wound about to kill).</summary>
+    Critical,
+}
+
+/// <summary>When an injury may cause another one (see <see cref="InjuryComplication"/>).</summary>
+public enum ComplicationWhen
+{
+    /// <summary>Once, when the injury appears (a dirty puncture: tetanus).</summary>
+    Inflicted,
+    /// <summary>Once, each time the injury gets worse.</summary>
+    Worsened,
+    /// <summary>A chance per minute while the injury is neither treated nor kept from getting worse.</summary>
+    WhileUntreated,
+}
+
+/// <summary>What exposes a character to an illness (see <see cref="IllnessExposure"/>).</summary>
+public enum ExposureSource
+{
+    /// <summary>The body is cold (Body Heat: Cold or Extremely Cold).</summary>
+    Cold,
+    /// <summary>The body is freezing (Body Heat: Extremely Cold).</summary>
+    Freezing,
+    /// <summary>The body is overheating (Body Heat: Extremely Hot).</summary>
+    Overheated,
+    /// <summary>Hunger is empty.</summary>
+    Starving,
+    /// <summary>Thirst is empty.</summary>
+    Dehydrated,
+    /// <summary>Rest is nearly empty (Extremely Sleepy).</summary>
+    Exhausted,
+    /// <summary>A wound is open: neither bandaged, treated nor healed.</summary>
+    OpenWound,
+    /// <summary>The character is bleeding.</summary>
+    Bleeding,
+}
+
+/// <summary>The picture of an injury type that has no icon of its own (the Health tab and the HUD draw it).</summary>
+public enum InjuryIconShape
+{
+    /// <summary>Chosen from the type's tags (bleeding: a drop, fracture: a bone...).</summary>
+    Auto,
+    Drop,
+    Cut,
+    Bone,
+    Flame,
+    Frost,
+    Biohazard,
+    Bruise,
+    Eye,
+    Germ,
+    Stomach,
+    Dizzy,
+    Stump,
+    Joint,
+    Skull,
+    Ear,
+    Lungs,
+    Fang,
+    /// <summary>A plain dot.</summary>
+    Dot,
+}
+
+/// <summary>
+/// What an injury stage does to the sight of the character's player (the screen): a dark side, a haze, edges closing in,
+/// a dizzy sway. Each 0-1. Purely for the local player's screen; the stage's consequence does the gameplay part.
+/// </summary>
+[Serializable]
+public class VisionEffect
+{
+    [Tooltip("How dark the hurt eye's half of the screen gets (injuries with a side: left or right; others: the whole screen). " +
+             "1 = that eye sees nothing.")]
+    [Range(0f, 1f)] public float darkness = 0f;
+    [Tooltip("A blurry haze over the whole screen (a swollen eye, a fever).")]
+    [Range(0f, 1f)] public float haze = 0f;
+    [Tooltip("The edges of the screen close in (blood loss, a concussion).")]
+    [Range(0f, 1f)] public float tunnel = 0f;
+    [Tooltip("The picture pulses and sways (dizziness).")]
+    [Range(0f, 1f)] public float sway = 0f;
+
+    public VisionEffect() { }
+
+    public VisionEffect(float darkness, float haze = 0f, float tunnel = 0f, float sway = 0f)
+    {
+        this.darkness = darkness;
+        this.haze = haze;
+        this.tunnel = tunnel;
+        this.sway = sway;
+    }
+
+    public bool HasAny => darkness > 0f || haze > 0f || tunnel > 0f || sway > 0f;
+
+    public string Describe()
+    {
+        var bits = new List<string>();
+        if (darkness > 0f) bits.Add(darkness >= 0.95f ? "blind on that side" : $"sight {darkness * 100f:0}% darker");
+        if (haze > 0f) bits.Add("blurred sight");
+        if (tunnel > 0f) bits.Add("tunnel vision");
+        if (sway > 0f) bits.Add("dizziness");
+        return string.Join(", ", bits);
+    }
+}
+
+/// <summary>
+/// What the character's injuries do to its sight right now, every injury together (see <see cref="VisionEffect"/>):
+/// worked out by the <see cref="InjuryController"/>, drawn by <see cref="InjuryScreenEffect"/> for the local player.
+/// </summary>
+public struct InjuryVision
+{
+    /// <summary>Darkness of the left half of the screen, 0-1 (the left eye).</summary>
+    public float left;
+    /// <summary>Darkness of the right half of the screen, 0-1 (the right eye).</summary>
+    public float right;
+    /// <summary>Haze over everything, 0-1.</summary>
+    public float haze;
+    /// <summary>Edges closing in, 0-1.</summary>
+    public float tunnel;
+    /// <summary>Dizzy sway, 0-1.</summary>
+    public float sway;
+
+    public bool Any => left > 0.001f || right > 0.001f || haze > 0.001f || tunnel > 0.001f || sway > 0.001f;
+
+    /// <summary>Both eyes dark: the character is (nearly) blind.</summary>
+    public bool Blind => left >= 0.95f && right >= 0.95f;
 }
 
 /// <summary>The side of the body a part is on.</summary>

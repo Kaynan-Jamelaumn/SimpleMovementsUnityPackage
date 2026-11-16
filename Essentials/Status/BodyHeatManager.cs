@@ -400,7 +400,7 @@ public class BodyHeatManager : StatusManager
         {
             side = TemperatureSide.Cold, degreesBeyondComfort = 0f,
             effect = new StatusConsequence("Chilly") { element = ElementType.Ice, hungerDrain = 1.3f,
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -5f), TraitModifier.Percent(TraitStat.StaminaRegen, -10f) } },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -5f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -10f) } },
         },
         new TemperatureTier
         {
@@ -408,7 +408,7 @@ public class BodyHeatManager : StatusManager
             effect = new StatusConsequence("Freezing") { element = ElementType.Ice, hungerDrain = 1.6f, healthPerSecond = -0.5f,
                 stunChancePerMinute = 0.15f, stunSeconds = 1f,
                 combatStats = new List<CombatStatModifier> { new CombatStatModifier(CombatStatType.AttackSpeed, -10f) },
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -15f), TraitModifier.Percent(TraitStat.StaminaRegen, -25f) } },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -15f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -25f) } },
         },
         new TemperatureTier
         {
@@ -416,7 +416,7 @@ public class BodyHeatManager : StatusManager
             effect = new StatusConsequence("Hypothermia") { element = ElementType.Ice, hungerDrain = 2f, healthPerSecond = -2f,
                 stunChancePerMinute = 0.3f, stunSeconds = 1.5f,
                 combatStats = new List<CombatStatModifier> { new CombatStatModifier(CombatStatType.AttackSpeed, -20f) },
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -30f), TraitModifier.Percent(TraitStat.StaminaRegen, -40f) } },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -30f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -40f) } },
         },
         new TemperatureTier
         {
@@ -428,14 +428,14 @@ public class BodyHeatManager : StatusManager
         {
             side = TemperatureSide.Hot, degreesBeyondComfort = 8f,
             effect = new StatusConsequence("Overheated") { element = ElementType.Fire, thirstDrain = 1.8f, healthPerSecond = -0.5f,
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -20f), TraitModifier.Percent(TraitStat.StaminaCost, 20f) } },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -20f), TraitModifier.Percent(TraitStat.StaminaCost, 20f) } },
         },
         new TemperatureTier
         {
             side = TemperatureSide.Hot, degreesBeyondComfort = 16f,
             effect = new StatusConsequence("Heat Exhaustion") { element = ElementType.Fire, thirstDrain = 2.5f, healthPerSecond = -2f,
                 stunChancePerMinute = 0.3f, stunSeconds = 2f,
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -20f), TraitModifier.Percent(TraitStat.StaminaRegen, -35f) } },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -20f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -35f) } },
         },
     };
 

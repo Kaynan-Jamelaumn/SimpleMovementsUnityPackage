@@ -58,6 +58,26 @@ public static class TraitRules
         return maxActive <= 1 ? $"Only one active trait per character ({other.Name} is already chosen)." : $"Only {maxActive} active traits per character.";
     }
 
+    /// <summary>
+    /// Why <paramref name="trait"/> - a drawback (negative cost: a disability, a weakness) - would be one too many among
+    /// the traits the player picked (null = fine): at most <paramref name="maxDrawbacks"/> drawbacks, giving at most
+    /// <paramref name="maxPoints"/> points in all. 0 = no limit. Traits that cost points are never stopped by it.
+    /// </summary>
+    public static string WhyTooManyDrawbacks(Trait trait, IEnumerable<Trait> picked, int maxDrawbacks, int maxPoints)
+    {
+        if (trait == null || trait.cost >= 0)
+            return null;
+        int count = 0, points = 0;
+        if (picked != null)
+            foreach (Trait t in picked)
+                if (t != null && t != trait && t.cost < 0) { count++; points -= t.cost; }
+        if (maxDrawbacks > 0 && count >= maxDrawbacks)
+            return maxDrawbacks == 1 ? "Only one drawback per character." : $"Only {maxDrawbacks} drawbacks per character.";
+        if (maxPoints > 0 && points - trait.cost > maxPoints)
+            return $"Drawbacks give at most {maxPoints} points ({points} taken).";
+        return null;
+    }
+
     /// <summary>The chosen trait that needs <paramref name="trait"/> (so it cannot be removed first), or null.</summary>
     public static Trait RequiredBy(Trait trait, IEnumerable<Trait> chosen)
     {

@@ -685,13 +685,13 @@ public class PlayerWeatherEffects : MonoBehaviour
                 label = "Soaked", element = ElementType.Water, measure = WeatherMeasure.Rain, threshold = 0.35f,
                 needsOpenSky = true, lingerSeconds = 20f, bodyHeatShift = -8f,
                 resistances = new List<ElementalResistance> { new ElementalResistance(ElementType.Lightning, -20f), new ElementalResistance(ElementType.Fire, 15f) },
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -10f) },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -10f) },
             },
             new WeatherExposureRule
             {
                 label = "Chilled", element = ElementType.Ice, measure = WeatherMeasure.ColderThan, threshold = 2f,
                 needsOpenSky = false, notUnderwater = false,
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -8f), TraitModifier.Percent(TraitStat.StaminaRegen, -10f) },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.MoveSpeed, -8f), TraitModifier.Percent(TraitStat.StaminaRegenRate, -10f) },
             },
             new WeatherExposureRule
             {
@@ -704,7 +704,7 @@ public class PlayerWeatherEffects : MonoBehaviour
             {
                 label = "Heatstroke", element = ElementType.Fire, measure = WeatherMeasure.HotterThan, threshold = 35f,
                 needsOpenSky = true, lingerSeconds = 10f, bodyHeatShift = 5f,
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -20f), TraitModifier.Percent(TraitStat.StaminaCost, 15f) },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -20f), TraitModifier.Percent(TraitStat.StaminaCost, 15f) },
                 statusRates = new List<WeatherStatusRate> { new WeatherStatusRate { bar = WeatherStatusBar.Thirst, perSecond = -0.4f } },
             },
             new WeatherExposureRule

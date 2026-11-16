@@ -908,7 +908,9 @@ public class CharacterCreatorPanel
         }
         CharacterBuild b = build;
         traitRulesText.text = b.playerClass != null
-            ? $"{b.RemainingPoints} of {b.StartingPoints} points left  ·  up to {catalog.maxActiveTraits} active trait{(catalog.maxActiveTraits == 1 ? "" : "s")}"
+            ? $"{b.RemainingPoints} of {b.StartingPoints} points left  ·  up to {catalog.maxActiveTraits} active trait{(catalog.maxActiveTraits == 1 ? "" : "s")}" +
+              (catalog.maxDrawbacks > 0 ? $"  ·  up to {catalog.maxDrawbacks} drawback{(catalog.maxDrawbacks == 1 ? "" : "s")}" : "") +
+              (catalog.maxDrawbackPoints > 0 ? $" (at most +{catalog.maxDrawbackPoints} pts)" : "")
             : "Choose a class to see its trait points.";
 
         Trait f = focusedTrait;

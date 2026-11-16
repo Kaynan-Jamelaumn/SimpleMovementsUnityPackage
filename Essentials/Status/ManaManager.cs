@@ -103,7 +103,7 @@ public class ManaManager : StatusManager
 
         while (currentValue < maxValue)
         {
-            currentValue += incrementValue;
+            currentValue += RegenPerTick;
             UpdateManaBar();
 
             if (isConsuming)

@@ -75,7 +75,7 @@ public class StaminaManager : StatusManager
     // Adds one regeneration amount; false (and regeneration stops) when something is spending stamina over time.
     private bool RegenAmount()
     {
-        currentValue += incrementValue;
+        currentValue += RegenPerTick;
         UpdateStaminaBar();
         if (!isConsuming)
             return true;
@@ -163,7 +163,7 @@ public class StaminaManager : StatusManager
 
         while (currentValue < maxValue)
         {
-            currentValue += incrementValue;
+            currentValue += RegenPerTick;
             UpdateStaminaBar();
 
             if (isConsuming)

@@ -341,7 +341,7 @@ public class SanityManager : StatusManager
             effect = new StatusConsequence("Paranoid")
             {
                 combatStats = new List<CombatStatModifier> { new CombatStatModifier(CombatStatType.CriticalChance, -5f) },
-                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegen, -15f), TraitModifier.Percent(TraitStat.AbilityCastTime, 10f) },
+                characterStats = new List<TraitModifier> { TraitModifier.Percent(TraitStat.StaminaRegenRate, -15f), TraitModifier.Percent(TraitStat.AbilityCastTime, 10f) },
             },
         },
         new SanityStage

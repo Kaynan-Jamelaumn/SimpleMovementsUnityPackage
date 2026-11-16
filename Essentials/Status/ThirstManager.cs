@@ -6,6 +6,9 @@ using UnityEngine;
 /// Thirst (100 = hydrated, 0 = dehydrated). Drains <b>Decrement Value</b> every <b>Consuming Tick Rate</b> seconds (see
 /// <see cref="NeedStatusManager"/>); drinks, potions and abilities fill it. While empty the character loses
 /// <see cref="dehydratedHpPenalty"/> health every <see cref="dehydratedHpPenaltyTickRate"/> seconds.
+/// <para>On the way down it goes through its <see cref="conditions"/> - Quenched, Hydrated, Dry Throat, Thirsty,
+/// Parched, Dehydrated by default - each with its own effects: thirst slows stamina and mana, then casting and aim,
+/// and at the bottom the head spins. Change, add or remove them in the inspector.</para>
 /// </summary>
 public class ThirstManager : NeedStatusManager
 {
@@ -15,6 +18,17 @@ public class ThirstManager : NeedStatusManager
     [SerializeField] private float dehydratedHpPenalty = 1f;
     [Tooltip("Seconds between two dehydration ticks.")]
     [SerializeField] private float dehydratedHpPenaltyTickRate = 2f;
+
+    [Header("Conditions")]
+    [Tooltip("The conditions of thirst, each with a name, the percent it starts at and what it does. One applies at a time: the " +
+             "one with the highest From Percent that thirst has reached. Right-click the component ▸ Reset Conditions To Defaults.")]
+    [SerializeField] private List<NeedStage> conditions = NeedStages.Thirst();
+
+    protected override List<NeedStage> StageList => conditions;
+    protected override string StageKey => "Thirst";
+
+    [ContextMenu("Reset Conditions To Defaults")]
+    private void ResetConditions() => conditions = NeedStages.Thirst();
 
     private List<CoroutineInfo> drinkEffectRoutines = new List<CoroutineInfo>();
     public List<CoroutineInfo> DrinkEffectRoutines { get => drinkEffectRoutines; set => drinkEffectRoutines = value; }

@@ -11,6 +11,9 @@ using UnityEngine;
 /// <list type="bullet">
 /// <item><b>Over time</b>: wounds bleed (health loss), clot, heal (faster when treated), get worse when untreated (an
 /// open wound gets infected); the part's condition recovers when it has no injury.</item>
+/// <item><b>Illnesses</b>: injury types of the whole body (a cold, sepsis, food poisoning) sit on the Whole Body part;
+/// they come from other injuries (complications), the body's state (cold, hunger), food, other characters (contagion),
+/// abilities and scripts - see <c>InjuryController.Illness.cs</c>.</item>
 /// <item><b>Effects</b>: an impaired part applies its consequence scaled by the impairment (a limp, weaker attacks...),
 /// each injury stage its own (an infection drains health), bleeding its status; parts and stages stop actions
 /// (sprinting, two-handed weapons, a hand) through <see cref="IBodyActionLimits"/>, which movement, weapons, hands,
@@ -23,35 +26,53 @@ using UnityEngine;
 /// </list>
 /// Added automatically to players (and mobs when enabled) while the project's Injury Settings are on. The rules run
 /// where the game rules run (offline, server); a client's copy only shows the state it is sent
-/// (<see cref="ApplySnapshot"/>).
+/// (<see cref="ApplySnapshot"/>). A healthy character costs next to nothing: the rules only run while something is wrong
+/// with the body, ten times a second for players and less often for mobs.
 /// </summary>
 [DisallowMultipleComponent]
 [DefaultExecutionOrder(-25)]
 public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyLocomotion
 {
+    /// <summary>Seconds between two updates of a player's injuries (mobs: Injury Settings ▸ Mob Tick Seconds).</summary>
+    public const float PlayerTickSeconds = 0.1f;
+
     [Tooltip("Settings used by this character. Empty = the project's Injury Settings (Resources).")]
     [SerializeField] private InjurySettings settingsOverride;
     [Tooltip("Log injuries, treatments and limb losses.")]
     [SerializeField] private bool logChanges = false;
 
-    private readonly List<InjuryPartState> parts = new List<InjuryPartState>(10);
+    private readonly List<InjuryPartState> parts = new List<InjuryPartState>(18);
+    private readonly Dictionary<string, InjuryPartState> partLookup = new Dictionary<string, InjuryPartState>(48, StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<BodyPartDefinition, List<InjuryPartState>> hitCandidates = new Dictionary<BodyPartDefinition, List<InjuryPartState>>();
     private readonly Dictionary<object, ConsequenceRunner> runners = new Dictionary<object, ConsequenceRunner>();
     private readonly List<object> staleRunners = new List<object>();
     private readonly List<InjuryPartState> candidates = new List<InjuryPartState>(6);
+    private readonly List<InjuryPartState> areaScratch = new List<InjuryPartState>(18);
     private readonly Dictionary<BodyAction, string> reasons = new Dictionary<BodyAction, string>();
     private readonly object bleedingKey = new object();
     private CombatEntity entity;
     private InjurySettings builtFrom;
+    private int builtVersion = -1;
+    private InjuryPartState wholeBody;
+    private int partsSignature;
     private bool effectsDirty = true;
     private bool changedPending;
+    private bool quiet;
+    private float tickAccum;
     private BodyAction blocked;
     private HandCapability hands = HandCapability.Full;
     private float bleedDebt;
+    private float bleedCache;
+    private int bleedCacheVersion = -1;
     private float nextDrip;
     private float nextExpiryCheck;
     private float nextFactorRefresh;
+    private float hitLateral = float.NaN;
     private InjuryResistances resistances;
     private InjuryHudAlert hudAlert;
+    private InjuryScreenEffect screenEffect;
+    private bool isLocalCached;
+    private float nextLocalCheck;
 
     // ------------------------------------------------------------------ events
     /// <summary>Anything the health panel shows changed (raised at most once per frame).</summary>
@@ -72,6 +93,11 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     public event Action<string> Message;
     /// <summary>What the hands can hold changed (the inventory refreshes the hands).</summary>
     public event Action HandsChanged;
+    /// <summary>
+    /// A hit landed on a part (the part, the condition it lost). Raised where the rules run, and on client copies when
+    /// the state they are sent shows a part's condition dropped (the HUD's body figure flashes the part).
+    /// </summary>
+    public event Action<InjuryPartState, float> PartHit;
     /// <summary>Any character lost a limb (controller, part, record).</summary>
     public static event Action<InjuryController, InjuryPartState, SeveredLimbRecord> AnyLimbLost;
 
@@ -79,6 +105,9 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     public int Version { get; private set; }
 
     private static readonly List<InjuryController> active = new List<InjuryController>();
+
+    /// <summary>Every enabled injury controller (contagion, tools).</summary>
+    public static IReadOnlyList<InjuryController> Active => active;
 
     /// <summary>
     /// A lost limb's record known here: the registry where the rules run, else (a client) one received with a character's
@@ -114,8 +143,11 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
 
     public CombatEntity Entity => entity != null ? entity : (entity = CombatEntity.Resolve(gameObject) ?? GetComponentInParent<CombatEntity>());
 
-    /// <summary>The tracked parts, in the order of the settings.</summary>
+    /// <summary>The tracked parts, in the order of the settings (the Whole Body part last when the settings have none).</summary>
     public IReadOnlyList<InjuryPartState> Parts => parts;
+
+    /// <summary>The part illnesses sit on (the settings' Whole Body part, else a built-in one).</summary>
+    public InjuryPartState WholeBody => wholeBody;
 
     /// <summary>True where the injury rules run (offline, server). False on a client's copy (it shows what it is sent).</summary>
     public bool RulesHere => Entity == null || !Entity.IsReplica;
@@ -176,14 +208,12 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             e.gameObject.AddComponent<InjuryController>();
     }
 
+    /// <summary>The part with that id, name or alias (the first one in the settings' order; null when there is none).</summary>
     public InjuryPartState GetPart(string partId)
     {
         if (string.IsNullOrWhiteSpace(partId))
             return null;
-        for (int i = 0; i < parts.Count; i++)
-            if (parts[i].Def.Matches(partId))
-                return parts[i];
-        return null;
+        return partLookup.TryGetValue(partId.Trim(), out InjuryPartState p) ? p : null;
     }
 
     public InjuryPartState GetPart(InjuryBodyPart def)
@@ -225,12 +255,17 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     {
         get
         {
+            // Asked several times a frame (the rules, the HUD, the Health tab): worked out once per change.
+            if (bleedCacheVersion == Version)
+                return bleedCache;
             float b = 0f;
             for (int i = 0; i < parts.Count; i++)
                 b += parts[i].BleedingPerSecond;
             BleedingRules r = Settings.bleeding;
             b *= r.multiplier;
-            return r.maxPerSecond > 0f ? Mathf.Min(b, r.maxPerSecond) : b;
+            bleedCache = r.maxPerSecond > 0f ? Mathf.Min(b, r.maxPerSecond) : b;
+            bleedCacheVersion = Version;
+            return bleedCache;
         }
     }
 
@@ -244,6 +279,18 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             int n = 0;
             for (int i = 0; i < parts.Count; i++)
                 if (parts[i].Lost) n++;
+            return n;
+        }
+    }
+
+    /// <summary>How many injuries the player sees (incubating illnesses are not counted).</summary>
+    public int VisibleInjuryCount
+    {
+        get
+        {
+            int n = 0;
+            for (int i = 0; i < parts.Count; i++)
+                n += parts[i].VisibleInjuries;
             return n;
         }
     }
@@ -267,10 +314,15 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             e.BodyLimits = this;
         }
         effectsDirty = true;
+        quiet = false;
+        // Not every character on the same frame.
+        tickAccum = UnityEngine.Random.value * PlayerTickSeconds;
+        InjurySaves.Track(this);
     }
 
     private void OnDisable()
     {
+        InjurySaves.Untrack(this);
         active.Remove(this);
         if (entity != null)
         {
@@ -281,12 +333,16 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
                 entity.BodyLimits = null;
         }
         CancelTreatment(null);
+        ReleaseCarried();
         ClearRunners();
         strainRunning = null;
         RestoreBodyShape();
         effectsDirty = true;
+        quiet = false;
         if (hudAlert != null)
             hudAlert.gameObject.SetActive(false);
+        if (screenEffect != null)
+            screenEffect.gameObject.SetActive(false);
     }
 
     private void OnDestroy()
@@ -296,6 +352,8 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         RestoreBodyShape();
         if (hudAlert != null)
             Destroy(hudAlert.gameObject);
+        if (screenEffect != null)
+            Destroy(screenEffect.gameObject);
     }
 
     /// <summary>(Re)creates the part states from the settings (keeps nothing).</summary>
@@ -309,12 +367,63 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         RestoreBodyShape();
         hitboxCache = null;
         parts.Clear();
+        wholeBody = null;
         if (s.bodyParts != null)
             foreach (InjuryBodyPart def in s.bodyParts)
                 if (def != null && !string.IsNullOrWhiteSpace(def.id))
                     parts.Add(new InjuryPartState { Def = def, Condition = Mathf.Max(1f, def.maxCondition) });
+        for (int i = 0; i < parts.Count && wholeBody == null; i++)
+            if (parts[i].IsWholeBody)
+                wholeBody = parts[i];
+        if (wholeBody == null)
+        {
+            // Settings made before illnesses have no Whole Body part: the built-in one stands in, so illnesses work at once.
+            InjuryBodyPart def = InjuryDefaults.SharedWholeBody;
+            wholeBody = new InjuryPartState { Def = def, Condition = Mathf.Max(1f, def.maxCondition) };
+            parts.Add(wholeBody);
+        }
+        for (int i = 0; i < parts.Count; i++)
+            parts[i].Index = i;
+        RebuildLookups();
+        ResetIllnessState();
         effectsDirty = true;
         MarkChanged();
+    }
+
+    /// <summary>
+    /// The parts by id, name and alias, and what the hits of each profile part can land on: built once, again when the
+    /// settings are edited.
+    /// </summary>
+    private void RebuildLookups()
+    {
+        builtVersion = Settings.Version;
+        partLookup.Clear();
+        hitCandidates.Clear();
+        uint signature = 2166136261u;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            InjuryBodyPart d = parts[i].Def;
+            // The first part, in order, with that id, name or alias (as a search through the parts would find it).
+            AddLookup(d.id, parts[i]);
+            AddLookup(d.displayName, parts[i]);
+            if (d.aliases != null)
+                for (int a = 0; a < d.aliases.Count; a++)
+                    AddLookup(d.aliases[a], parts[i]);
+            string id = d.id ?? "";
+            for (int c = 0; c < id.Length; c++)
+                signature = (signature ^ char.ToLowerInvariant(id[c])) * 16777619u;
+            signature = (signature ^ 31u) * 16777619u;
+        }
+        partsSignature = unchecked((int)signature);
+    }
+
+    private void AddLookup(string key, InjuryPartState part)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+        key = key.Trim();
+        if (!partLookup.ContainsKey(key))
+            partLookup[key] = part;
     }
 
     private void Update()
@@ -322,6 +431,12 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         InjurySettings s = Settings;
         if (s != builtFrom)
             BuildParts();
+        else if (s.Version != builtVersion)
+        {
+            RebuildLookups();
+            effectsDirty = true;
+            MarkChanged();
+        }
         if (!s.enabled)
         {
             if (runners.Count > 0 || blocked != BodyAction.None)
@@ -331,7 +446,18 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         float dt = Time.deltaTime;
         if (RulesHere)
         {
-            Tick(dt);
+            TickFalls(dt, s);
+            // The rules run in steps, not every frame, and not at all while nothing is wrong with the body.
+            tickAccum += dt;
+            float interval = TickInterval(s);
+            if (tickAccum >= interval)
+            {
+                float step = tickAccum;
+                tickAccum = 0f;
+                if (!quiet || effectsDirty)
+                    Tick(step);
+                TickIllness(step, s);
+            }
             TickTreatment(dt);
         }
         else
@@ -345,14 +471,22 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
                 RecomputeLimits();
             }
         }
-        UpdateHudAlert();
+        UpdateHud(s);
         FlushChanged();
+    }
+
+    private float TickInterval(InjurySettings s)
+    {
+        CombatEntity e = Entity;
+        return e != null && e.Kind != CombatEntity.EntityKind.Player ? Mathf.Max(0.02f, s.mobTickSeconds) : PlayerTickSeconds;
     }
 
     private void LateUpdate()
     {
-        KeepVisualsHidden();
-        KeepPosture();
+        if (hidden.Count > 0)
+            KeepVisualsHidden();
+        if (shapeDrop > 0f)
+            KeepPosture();
     }
 
     /// <summary>The system was turned off at runtime: everything this controller applied is removed.</summary>
@@ -363,10 +497,30 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         blocked = BodyAction.None;
         reasons.Clear();
         locomotion = BodyLocomotion.Normal;
+        vision = default;
         RestoreBodyShape();
         SetHands(HandCapability.Full);
         effectsDirty = true; // recomputed if the system is turned on again
         MarkChanged();
+    }
+
+    /// <summary>
+    /// Nothing is wrong with the body and nothing runs: the rules have nothing to do until the next change (a hit, an
+    /// injury, a treatment...).
+    /// </summary>
+    private bool NothingToDo()
+    {
+        if (runners.Count > 0 || activeTreatment != null || strainRunning != null || effectsDirty || bleedDebt > 0f)
+            return false;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            InjuryPartState p = parts[i];
+            if (p.Lost || p.injuries.Count > 0)
+                return false;
+            if (p.Condition < p.MaxCondition && p.Def.conditionRegenPerSecond > 0f)
+                return false;
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ damage
@@ -381,9 +535,65 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             return;
         if (activeTreatment != null && Settings.damageInterruptsTreatment)
             CancelTreatment("Interrupted by a hit.");
+        // A blast or a slam with no part of its own does not land on one spot: it is spread over several parts.
+        if (info.delivery == DamageDelivery.Area && info.bodyPart == null && string.IsNullOrWhiteSpace(info.aimedBodyPart) && Settings.areaHitParts > 1)
+        {
+            ApplyAreaHit(info);
+            return;
+        }
         InjuryPartState part = ResolvePart(info);
         if (part != null)
             ApplyHit(part, info);
+        hitLateral = float.NaN;
+    }
+
+    /// <summary>
+    /// An area hit (a blast, a slam): its damage is shared between a few parts picked by their Hit Weight (Injury
+    /// Settings ▸ Area Hit Parts). The damage pipeline calls it for area hits with no part of their own; scripts may too.
+    /// </summary>
+    public void ApplyAreaHit(DamageInfo info)
+    {
+        if (!RulesHere)
+            return;
+        areaScratch.Clear();
+        float total = 0f;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            InjuryPartState p = parts[i];
+            if (p.Lost || p.IsWholeBody || p.Def.hitWeight <= 0f)
+                continue;
+            areaScratch.Add(p);
+            total += p.Def.hitWeight;
+        }
+        int n = Mathf.Min(Settings.areaHitParts, areaScratch.Count);
+        if (n <= 0)
+            return;
+        hitLateral = float.NaN;
+        float share = info.amount / n;
+        for (int k = 0; k < n && areaScratch.Count > 0; k++)
+        {
+            float roll = UnityEngine.Random.value * total;
+            int pick = areaScratch.Count - 1;
+            for (int i = 0; i < areaScratch.Count; i++)
+            {
+                roll -= areaScratch[i].Def.hitWeight;
+                if (roll <= 0f)
+                {
+                    pick = i;
+                    break;
+                }
+            }
+            InjuryPartState part = areaScratch[pick];
+            total -= part.Def.hitWeight;
+            areaScratch.RemoveAt(pick);
+            DamageInfo piece = info;
+            piece.amount = share;
+            ApplyHit(part, piece);
+            CombatEntity e = Entity;
+            if (e != null && e.IsDead)
+                break;
+        }
+        areaScratch.Clear();
     }
 
     /// <summary>
@@ -392,7 +602,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     /// </summary>
     public void ApplyHit(InjuryPartState part, DamageInfo info)
     {
-        if (part == null || part.Lost || !RulesHere)
+        if (part == null || part.Lost || part.IsWholeBody || !RulesHere)
             return;
         InjurySettings s = Settings;
         float conditionDamage = info.amount * s.conditionPerDamage * part.Def.conditionDamageMultiplier;
@@ -401,10 +611,12 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         float before = part.Condition;
         part.Condition = Mathf.Max(0f, before - conditionDamage);
         float hitFraction = conditionDamage / part.MaxCondition;
+        part.LastHitTime = Time.time;
         effectsDirty = true;
         MarkChanged();
         if (logChanges || s.logInjuries)
             Debug.Log($"[Injuries] {name}: hit on {part.Name} -{conditionDamage:0.#} condition ({part.Condition:0}/{part.MaxCondition:0}).", this);
+        PartHit?.Invoke(part, conditionDamage);
 
         if (TryLoseFromHit(part, info, hitFraction, before))
             return;
@@ -416,7 +628,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     /// <summary>
     /// The part a hit lands on: the <see cref="BodyPartController"/>'s part (its matching injury parts), else the parts
     /// whose height band holds the hit; the side of the hit picks left or right; weights and height pick between an arm
-    /// and its hand. A lost part passes the hit on to what it was attached to.
+    /// and its hand. A lost part passes the hit on to what it was attached to. The Whole Body part is never hit.
     /// </summary>
     public InjuryPartState ResolvePart(in DamageInfo info)
     {
@@ -437,37 +649,49 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             if (right.sqrMagnitude > 1e-6f)
                 lateral = Vector3.Dot(offset, right.normalized) / Mathf.Max(0.05f, e.Radius);
         }
+        hitLateral = lateral;
 
         candidates.Clear();
         if (info.bodyPart != null)
-        {
-            // The part named like the profile part (a hit on the Left Forearm hitbox is the left forearm), else the parts
-            // listing it by name in their Hit Parts (a simple profile's "Arms": the side and height pick the segment), else
-            // the parts that take hits of it by one of its aliases.
-            for (int i = 0; i < parts.Count; i++)
-                if (parts[i].Def.IsNamed(info.bodyPart.name))
-                    candidates.Add(parts[i]);
-            if (candidates.Count == 0)
-                for (int i = 0; i < parts.Count; i++)
-                    if (parts[i].Def.ReceivesHitsOfExactly(info.bodyPart))
-                        candidates.Add(parts[i]);
-            if (candidates.Count == 0)
-                for (int i = 0; i < parts.Count; i++)
-                    if (parts[i].Def.ReceivesHitsOf(info.bodyPart))
-                        candidates.Add(parts[i]);
-        }
+            candidates.AddRange(CandidatesOf(info.bodyPart));
         if (candidates.Count == 0 && !string.IsNullOrWhiteSpace(info.aimedBodyPart))
         {
             InjuryPartState aimed = GetPart(info.aimedBodyPart);
-            if (aimed != null)
+            if (aimed != null && !aimed.IsWholeBody)
                 candidates.Add(aimed);
         }
         if (candidates.Count == 0 && !float.IsNaN(h01) && info.delivery != DamageDelivery.Area)
             for (int i = 0; i < parts.Count; i++)
-                if (parts[i].Def.InHeight(h01))
+                if (!parts[i].IsWholeBody && parts[i].Def.InHeight(h01))
                     candidates.Add(parts[i]);
         InjuryPartState picked = candidates.Count > 0 ? PickCandidate(h01, lateral) : DefaultPart();
         return Redirect(picked);
+    }
+
+    /// <summary>
+    /// The parts a hit on <paramref name="profilePart"/> can land on (worked out once per profile part): the part named
+    /// like it (a hit on the Left Forearm hitbox is the left forearm), else the parts listing it by name in their Hit
+    /// Parts (a simple profile's "Arms": the side and height pick the segment), else the parts that take hits of it by
+    /// one of its aliases.
+    /// </summary>
+    private List<InjuryPartState> CandidatesOf(BodyPartDefinition profilePart)
+    {
+        if (hitCandidates.TryGetValue(profilePart, out List<InjuryPartState> list))
+            return list;
+        list = new List<InjuryPartState>(4);
+        for (int i = 0; i < parts.Count; i++)
+            if (!parts[i].IsWholeBody && parts[i].Def.IsNamed(profilePart.name))
+                list.Add(parts[i]);
+        if (list.Count == 0)
+            for (int i = 0; i < parts.Count; i++)
+                if (!parts[i].IsWholeBody && parts[i].Def.ReceivesHitsOfExactly(profilePart))
+                    list.Add(parts[i]);
+        if (list.Count == 0)
+            for (int i = 0; i < parts.Count; i++)
+                if (!parts[i].IsWholeBody && parts[i].Def.ReceivesHitsOf(profilePart))
+                    list.Add(parts[i]);
+        hitCandidates[profilePart] = list;
+        return list;
     }
 
     private InjuryPartState PickCandidate(float h01, float lateral)
@@ -511,7 +735,16 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         return w;
     }
 
-    private InjuryPartState DefaultPart() => GetPart(Settings.defaultPart) ?? (parts.Count > 0 ? parts[0] : null);
+    private InjuryPartState DefaultPart()
+    {
+        InjuryPartState p = GetPart(Settings.defaultPart);
+        if (p != null && !p.IsWholeBody)
+            return p;
+        for (int i = 0; i < parts.Count; i++)
+            if (!parts[i].IsWholeBody)
+                return parts[i];
+        return null;
+    }
 
     /// <summary>A lost part's hits go to what it was attached to (a missing hand: the arm; a missing arm: the torso).</summary>
     private InjuryPartState Redirect(InjuryPartState p)
@@ -605,12 +838,13 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     // ------------------------------------------------------------------ injuries
     /// <summary>
     /// Adds an injury of <paramref name="typeId"/> at <paramref name="stage"/> to the part (or makes an existing one of the
-    /// same type worse, see Merge Into Existing). Returns the injury, or null when nothing changed.
+    /// same type worse, see Merge Into Existing). An illness (a Systemic type) goes to the Whole Body part whatever
+    /// <paramref name="partId"/> says (it may be empty). Returns the injury, or null when nothing changed.
     /// </summary>
     public Injury AddInjury(string partId, string typeId, int stage = 0, CombatEntity cause = null)
     {
         InjuryTypeDefinition type = Settings.FindType(typeId);
-        InjuryPartState part = GetPart(partId);
+        InjuryPartState part = type != null && type.systemic ? wholeBody : GetPart(partId);
         if (type == null || part == null)
         {
             Debug.LogWarning($"[Injuries] {name}: no part '{partId}' or injury type '{typeId}'.", this);
@@ -622,30 +856,49 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     /// <summary>See <see cref="AddInjury(string,string,int,CombatEntity)"/>. <paramref name="fromHit"/>: a new hit on a treated injury reopens it.</summary>
     public Injury AddInjury(InjuryPartState part, InjuryTypeDefinition type, int stage, CombatEntity cause, bool fromHit)
     {
-        if (part == null || type == null || type.stages == null || type.stages.Count == 0 || !RulesHere)
+        if (type == null || type.stages == null || type.stages.Count == 0 || !RulesHere)
+            return null;
+        // An illness of the whole body sits on the Whole Body part, whichever part it came from.
+        if (type.systemic && wholeBody != null)
+            part = wholeBody;
+        // Only illnesses sit on the Whole Body part: a cut or a broken bone has no place there.
+        if (part == null || (part.IsWholeBody && !type.systemic) || IsImmuneTo(type))
             return null;
         stage = Mathf.Clamp(stage, 0, type.stages.Count - 1);
         Injury existing = null;
         int sameType = 0;
-        for (int i = 0; i < part.injuries.Count; i++)
+        BodyPartSide side = BodyPartSide.Center;
+        bool onePerSide = type.sided && part.Def.side == BodyPartSide.Center && !part.IsWholeBody;
+        if (onePerSide)
         {
-            if (part.injuries[i].Type != type)
-                continue;
-            sameType++;
-            if (existing == null || part.injuries[i].StageIndex < existing.StageIndex)
-                existing = part.injuries[i];
+            // The left or the right one (an eye, an ear): the side the hit came from, else the free one, else either.
+            side = PickSide(part, type, fromHit);
+            existing = part.FindOfType(type, side);
         }
-        if (existing != null && (type.mergeIntoExisting || sameType >= Mathf.Max(1, type.maxPerPart)))
+        else
+        {
+            for (int i = 0; i < part.injuries.Count; i++)
+            {
+                if (part.injuries[i].Type != type)
+                    continue;
+                sameType++;
+                if (existing == null || part.injuries[i].StageIndex < existing.StageIndex)
+                    existing = part.injuries[i];
+            }
+        }
+        if (existing != null && (onePerSide || type.mergeIntoExisting || sameType >= Mathf.Max(1, type.maxPerPart)))
         {
             if (stage <= existing.StageIndex)
             {
                 if (fromHit && (existing.Bandaged || existing.Treated) && existing.Stage != null && existing.Stage.bleedingPerSecond > 0f)
                 {
-                    // Hit again where it was bandaged: the bandage is soaked, the wound bleeds again.
-                    existing.Bandaged = false;
-                    existing.BandageEffectiveness = 0f;
+                    // Hit again where it was treated: the bandage is soaked, the stitches tear. It bleeds again, and it can
+                    // be treated again (the same treatment helps once more).
+                    existing.ClearTreatment();
                     existing.BleedTime = 0f;
+                    existing.Reopened = true;
                     effectsDirty = true;
+                    Notify($"The {existing.Name.ToLowerInvariant()} on your {part.Name.ToLowerInvariant()} opened again.");
                     MarkChanged();
                 }
                 return null;
@@ -654,15 +907,29 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             existing.Cause = cause;
             return existing;
         }
-        var injury = new Injury { Type = type, StageIndex = stage, Part = part, Cause = cause };
+        var injury = new Injury { Type = type, StageIndex = stage, Part = part, Cause = cause, Side = side };
         UpdateFactors(injury);
         part.injuries.Add(injury);
         effectsDirty = true;
         if (logChanges || Settings.logInjuries)
             Debug.Log($"[Injuries] {name}: {injury.Name} ({Settings.SeverityName(injury.Severity)}) on {part.Name}.", this);
+        saveUrgent = true;
         InjuryAdded?.Invoke(part, injury);
         MarkChanged();
+        RollComplications(injury, ComplicationWhen.Inflicted);
         return injury;
+    }
+
+    /// <summary>The side an injury of a type that takes sides gets on a centre part.</summary>
+    private BodyPartSide PickSide(InjuryPartState part, InjuryTypeDefinition type, bool fromHit)
+    {
+        if (fromHit && !float.IsNaN(hitLateral) && Mathf.Abs(hitLateral) > 0.05f)
+            return hitLateral > 0f ? BodyPartSide.Right : BodyPartSide.Left;
+        bool left = part.FindOfType(type, BodyPartSide.Left) != null;
+        bool right = part.FindOfType(type, BodyPartSide.Right) != null;
+        if (left != right)
+            return left ? BodyPartSide.Right : BodyPartSide.Left;
+        return UnityEngine.Random.value < 0.5f ? BodyPartSide.Left : BodyPartSide.Right;
     }
 
     /// <summary>Moves an injury to another stage (worse or better). <paramref name="keepTreatment"/>: its bandage / splint stays.</summary>
@@ -681,9 +948,14 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         effectsDirty = true;
         InjuryStageChanged?.Invoke(injury.Part, injury, previous);
         MarkChanged();
+        if (stage > previous)
+            RollComplications(injury, ComplicationWhen.Worsened);
     }
 
-    /// <summary>Removes an injury (healed, cured, or by script).</summary>
+    /// <summary>
+    /// Removes an injury (healed, cured, or by script). The character is then immune to its type for the type's Immunity
+    /// Seconds.
+    /// </summary>
     public void RemoveInjury(Injury injury)
     {
         if (injury == null || injury.Part == null || !RulesHere)
@@ -691,6 +963,8 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         if (!injury.Part.injuries.Remove(injury))
             return;
         RemoveRunner(injury);
+        GrantImmunity(injury.Type);
+        saveUrgent = true;
         effectsDirty = true;
         InjuryRemoved?.Invoke(injury.Part, injury);
         MarkChanged();
@@ -706,7 +980,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         MarkChanged();
     }
 
-    /// <summary>Heals everything: injuries, condition and (optionally) lost limbs. Used on respawn and by scripts.</summary>
+    /// <summary>Heals everything: injuries, illnesses, condition and (optionally) lost limbs. Used on respawn and by scripts.</summary>
     public void HealAll(bool restoreLimbs = true)
     {
         if (!RulesHere)
@@ -754,7 +1028,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             {
                 float before = part.Condition;
                 part.Condition = Mathf.Min(part.MaxCondition, part.Condition + part.Def.conditionRegenPerSecond * dt);
-                if (Mathf.FloorToInt(before * 0.2f) != Mathf.FloorToInt(part.Condition * 0.2f))
+                if (Mathf.FloorToInt(before * 0.2f) != Mathf.FloorToInt(part.Condition * 0.2f) || part.Condition >= part.MaxCondition)
                 {
                     effectsDirty = true; // the impairment from condition changes in 5-point steps
                     MarkChanged();
@@ -768,6 +1042,37 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             RecomputeEffects();
         foreach (KeyValuePair<object, ConsequenceRunner> kv in runners)
             kv.Value.Tick(dt);
+        quiet = NothingToDo();
+    }
+
+    /// <summary>
+    /// Advances every injury by <paramref name="seconds"/> at once, in steps of <paramref name="step"/>: healing,
+    /// clotting, wearing the part down and getting worse - not the bleeding's damage, nor what runs on the slow check
+    /// (exposures, contagion). The inspector's test buttons and the tests use it to see what an injury becomes without
+    /// waiting.
+    /// </summary>
+    public void Simulate(float seconds, float step = 1f)
+    {
+        if (!RulesHere || seconds <= 0f)
+            return;
+        InjurySettings s = Settings;
+        step = Mathf.Clamp(step, 0.02f, 30f);
+        for (float t = 0f; t < seconds; t += step)
+        {
+            float dt = Mathf.Min(step, seconds - t);
+            for (int p = 0; p < parts.Count; p++)
+            {
+                InjuryPartState part = parts[p];
+                for (int i = part.injuries.Count - 1; i >= 0; i--)
+                {
+                    if (i >= part.injuries.Count)
+                        continue;
+                    TickInjury(part, part.injuries[i], dt, s);
+                }
+            }
+        }
+        RecomputeEffects();
+        MarkChanged();
     }
 
     private void TickInjury(InjuryPartState part, Injury injury, float dt, InjurySettings s)
@@ -786,23 +1091,30 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
                 MarkChanged();
             }
         }
-        if (stage.conditionLossPerSecond > 0f && !part.Lost && part.Condition > 0f)
+        if (stage.conditionLossPerSecond > 0f && !part.Lost && !part.IsWholeBody && part.Condition > 0f)
         {
             float before = part.Condition;
             part.Condition = Mathf.Max(0f, part.Condition - stage.conditionLossPerSecond * dt);
             if (part.Condition <= 0f)
                 ApplyZeroCondition(part, default);
             if (Mathf.FloorToInt(before * 0.2f) != Mathf.FloorToInt(part.Condition * 0.2f))
+            {
                 effectsDirty = true;
+                MarkChanged();
+            }
         }
         if (injury.CanWorsen)
         {
             // Prone to it (sickly): the time comes sooner. Resistant: when it comes, a chance to fight it off (Worsen).
             injury.UntreatedTime += dt * Mathf.Max(1f, injury.WorseningFactor);
             if (injury.UntreatedTime >= stage.worsenAfterSeconds)
+            {
                 Worsen(part, injury);
-            return;
+                if (injury.Stage != stage)
+                    return; // another stage: its bleeding, healing and clock start over there
+            }
         }
+        // It heals while the clock runs: a bandaged cut may close before it gets infected, an untreated one usually not.
         float rate = injury.HealRate * s.healingSpeedMultiplier;
         if (rate <= 0f)
             return;
@@ -819,27 +1131,41 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         InjuryStage stage = injury.Stage;
         InjuryTypeDefinition into = string.IsNullOrWhiteSpace(stage.worsensInto) ? null : Settings.FindType(stage.worsensInto);
         InjuryResistances res = Resistances;
-        float odds = res != null ? res.WorseningMultiplier(injury, into) : 1f;
+        float resist = res != null ? res.WorseningMultiplier(injury, into) : 1f;
+        float odds = Mathf.Clamp01(stage.worsenChance) * resist;
         if (odds < 1f && UnityEngine.Random.value >= odds)
         {
-            // Fought off (for now): the clock starts again.
+            // Not this time (fought off, or an illness that did not take a turn for the worse): the clock starts again.
             injury.UntreatedTime = 0f;
-            if (into != null && into.HasTag(InjuryDefaults.TagInfection))
+            if (resist < 1f && stage.worsenChance >= 1f && into != null && into.HasTag(InjuryDefaults.TagInfection))
                 Notify($"Your body fought off an infection in your {part.Name.ToLowerInvariant()}.");
             MarkChanged();
             return;
         }
         if (into != null && into != injury.Type)
         {
-            // It causes another injury (an infection) and stays as it is.
+            // It causes another injury (an infection, sepsis) and stays as it is.
             injury.WorseningStopped = true;
-            AddInjury(part, into, 0, injury.Cause, false);
-            Notify($"Your {part.Name.ToLowerInvariant()} got worse: {into.StageName(0)}.");
+            Injury made = AddInjury(part, into, 0, injury.Cause, false);
+            if (made != null && !made.Hidden)
+                Notify(into.systemic
+                    ? $"The {injury.Name.ToLowerInvariant()} on your {part.Name.ToLowerInvariant()} led to {made.Name.ToLowerInvariant()}."
+                    : $"Your {part.Name.ToLowerInvariant()} got worse: {made.Name}.");
         }
         else if (injury.StageIndex < injury.Type.stages.Count - 1)
         {
+            string was = injury.Name;
+            bool wasHidden = injury.Hidden;
             ChangeStage(injury, injury.StageIndex + 1, keepTreatment: true);
-            Notify($"{injury.Type.StageName(injury.StageIndex - 1)} on your {part.Name.ToLowerInvariant()} got worse: {injury.Name}.");
+            if (!injury.Hidden)
+            {
+                if (injury.IsIllness)
+                    Notify(wasHidden ? $"You have come down with {injury.Name.ToLowerInvariant()}." : $"Your {was.ToLowerInvariant()} got worse: {injury.Name}.");
+                else
+                    Notify(wasHidden
+                        ? $"{injury.Name} on your {part.Name.ToLowerInvariant()}."
+                        : $"{was} on your {part.Name.ToLowerInvariant()} got worse: {injury.Name}.");
+            }
         }
         else
         {
@@ -866,30 +1192,40 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             return;
         InjuryBodyPart def = injury.Part != null ? injury.Part.Def : null;
         float bleed = res.BleedingMultiplier(injury.Type, def);
-        float heal = res.HealingMultiplier(injury.Type, def);
+        // The body's state counts too: sleep heals, hunger and thirst slow it down; a weakened body gets worse sooner.
+        float heal = res.HealingMultiplier(injury.Type, def) * BodyHealFactor;
         InjuryStage st = injury.Stage;
         InjuryTypeDefinition into = st != null && !string.IsNullOrWhiteSpace(st.worsensInto) ? Settings.FindType(st.worsensInto) : null;
-        float worsen = res.WorseningMultiplier(injury, into);
-        if (Mathf.Abs(bleed - injury.BleedingFactor) > 1e-3f || Mathf.Abs(heal - injury.HealingFactor) > 1e-3f)
+        float worsen = res.WorseningMultiplier(injury, into) * BodyWorsenFactor;
+        if (Mathf.Abs(bleed - injury.BleedingFactor) > 1e-3f || Mathf.Abs(heal - injury.HealingFactor) > 1e-3f ||
+            Mathf.Abs(worsen - injury.WorseningFactor) > 1e-3f)
         {
             injury.BleedingFactor = bleed;
             injury.HealingFactor = heal;
+            injury.WorseningFactor = worsen;
             effectsDirty = true; // the bleeding total and its status change
             MarkChanged();
         }
-        injury.WorseningFactor = worsen;
     }
 
     private void Healed(InjuryPartState part, Injury injury)
     {
+        // Stage by stage, down to the mildest stage the player sees (an illness does not go back to incubating).
         if (injury.Type.healStageByStage && injury.StageIndex > 0)
         {
-            ChangeStage(injury, injury.StageIndex - 1, keepTreatment: true);
-            injury.HealProgress = 0f;
-            return;
+            InjuryStage below = injury.Type.Stage(injury.StageIndex - 1);
+            if (below != null && !below.hidden)
+            {
+                ChangeStage(injury, injury.StageIndex - 1, keepTreatment: true);
+                injury.HealProgress = 0f;
+                injury.WorseningStopped = true; // on the mend: it does not take another turn for the worse by itself
+                return;
+            }
         }
         if (logChanges || Settings.logInjuries)
             Debug.Log($"[Injuries] {name}: {injury.Name} on {part.Name} healed.", this);
+        if (injury.IsIllness && !injury.Hidden)
+            Notify($"You have recovered from {injury.Type.Name.ToLowerInvariant()}.");
         RemoveInjury(injury);
     }
 
@@ -997,7 +1333,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
     }
 
     /// <summary>
-    /// Works out the effects and the stopped actions now (they are otherwise updated in the next frame): scripts that
+    /// Works out the effects and the stopped actions now (they are otherwise updated in the next step): scripts that
     /// change injuries and read <see cref="Allows"/> or <see cref="Hands"/> at once.
     /// </summary>
     public void RefreshEffects()
@@ -1015,6 +1351,9 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             return 0f;
         if (part.Lost)
             return 1f;
+        // Someone else's character on a client: the server sent the number (its injuries are not told here).
+        if (part.ReplicatedImpairment >= 0f)
+            return Mathf.Clamp01(part.ReplicatedImpairment);
         float imp = (1f - part.Condition01) * 0.8f;
         for (int i = 0; i < part.injuries.Count; i++)
             imp = Mathf.Max(imp, part.injuries[i].Impairment);
@@ -1026,6 +1365,7 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         InjurySettings s = Settings;
         BodyAction now = BodyAction.None;
         reasons.Clear();
+        InjuryVision sight = default;
         for (int p = 0; p < parts.Count; p++)
         {
             InjuryPartState part = parts[p];
@@ -1037,11 +1377,26 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
                         Block(ref now, BodyActions.ResolveSide(rule.actions, part.Def.side, s.mainHandSide), why);
             for (int i = 0; i < part.injuries.Count; i++)
             {
-                InjuryStage st = part.injuries[i].Stage;
-                if (st != null && st.blocks != BodyAction.None)
-                    Block(ref now, BodyActions.ResolveSide(st.blocks, part.Def.side, s.mainHandSide), $"{part.injuries[i].Name} ({part.Name})");
+                Injury inj = part.injuries[i];
+                InjuryStage st = inj.Stage;
+                if (st == null)
+                    continue;
+                if (st.blocks != BodyAction.None)
+                    Block(ref now, BodyActions.ResolveSide(st.blocks, part.Def.side, s.mainHandSide), part.IsWholeBody ? inj.Name : $"{inj.Name} ({part.Name})");
+                VisionEffect v = st.vision;
+                if (v != null && v.HasAny)
+                {
+                    // The hurt eye's half of the screen (the injury's side, else its part's); no side: both.
+                    BodyPartSide side = inj.Side != BodyPartSide.Center ? inj.Side : part.Def.side;
+                    if (side != BodyPartSide.Right) sight.left = Mathf.Max(sight.left, v.darkness);
+                    if (side != BodyPartSide.Left) sight.right = Mathf.Max(sight.right, v.darkness);
+                    sight.haze = Mathf.Max(sight.haze, v.haze);
+                    sight.tunnel = Mathf.Max(sight.tunnel, v.tunnel);
+                    sight.sway = Mathf.Max(sight.sway, v.sway);
+                }
             }
         }
+        vision = sight;
         // How the legs let it move (limp, hop, crawl), what that stops, and the body's shape (collider, hitboxes).
         locomotion = ComputeLocomotion(s);
         BodyAction moveBlocks = LocomotionBlocks(s, locomotion);
@@ -1113,12 +1468,14 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
             if (parts[i].Lost && restore && parts[i].LostLimb != null)
                 parts[i].LostLimb.Consumed = true;
         HealAll(restore);
+        InjurySaves.Touch(this, true);
     }
 
     // ------------------------------------------------------------------ feedback
     private void MarkChanged()
     {
         changedPending = true;
+        quiet = false;
         Version++;
     }
 
@@ -1127,6 +1484,8 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         if (!changedPending)
             return;
         changedPending = false;
+        InjurySaves.Touch(this, saveUrgent);
+        saveUrgent = false;
         try { Changed?.Invoke(); }
         catch (Exception ex) { Debug.LogException(ex, this); }
     }
@@ -1151,27 +1510,68 @@ public partial class InjuryController : MonoBehaviour, IBodyActionLimits, IBodyL
         return GameNet.NetAuthority.IsLocallyControlled(e.gameObject);
     }
 
-    private void UpdateHudAlert()
+    /// <summary>Is this character this machine's player (asked every frame: looked up once a second)?</summary>
+    public bool IsLocal
     {
-        if (!Settings.showHudAlert || !IsLocalPlayer(Entity))
+        get
+        {
+            if (Time.unscaledTime >= nextLocalCheck)
+            {
+                nextLocalCheck = Time.unscaledTime + 1f;
+                isLocalCached = IsLocalPlayer(Entity);
+            }
+            return isLocalCached;
+        }
+    }
+
+    /// <summary>The local player's warnings on the screen (HUD) and what injuries do to the picture (screen effects).</summary>
+    private void UpdateHud(InjurySettings s)
+    {
+        bool local = (s.showHudAlert || s.showScreenEffects) && IsLocal;
+        bool wantAlert = local && s.showHudAlert;
+        if (!wantAlert)
         {
             if (hudAlert != null && hudAlert.gameObject.activeSelf)
                 hudAlert.gameObject.SetActive(false);
-            return;
         }
-        if (hudAlert == null)
-            hudAlert = InjuryHudAlert.Create(this);
-        if (hudAlert != null)
+        else
         {
-            if (!hudAlert.gameObject.activeSelf)
-                hudAlert.gameObject.SetActive(true);
-            hudAlert.Tick();
+            if (hudAlert == null)
+                hudAlert = InjuryHudAlert.Create(this);
+            if (hudAlert != null)
+            {
+                if (!hudAlert.gameObject.activeSelf)
+                    hudAlert.gameObject.SetActive(true);
+                hudAlert.Tick();
+            }
+        }
+        bool wantScreen = local && s.showScreenEffects;
+        if (!wantScreen)
+        {
+            if (screenEffect != null && screenEffect.gameObject.activeSelf)
+                screenEffect.gameObject.SetActive(false);
+        }
+        else
+        {
+            // Built the first time there is something to show.
+            if (screenEffect == null && (vision.Any || IsBleeding || LostCount > 0))
+                screenEffect = InjuryScreenEffect.Create(this);
+            if (screenEffect != null)
+            {
+                if (!screenEffect.gameObject.activeSelf)
+                    screenEffect.gameObject.SetActive(true);
+                screenEffect.Tick();
+            }
         }
     }
 
     private void OnValidate()
     {
         if (Application.isPlaying && isActiveAndEnabled)
+        {
             effectsDirty = true;
+            quiet = false;
+            hitCandidates.Clear();
+        }
     }
 }

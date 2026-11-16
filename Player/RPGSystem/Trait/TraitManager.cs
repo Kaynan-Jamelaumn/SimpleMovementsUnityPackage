@@ -1134,6 +1134,11 @@ public class TraitManager : MonoBehaviour
             });
         }
 
+        // Regeneration rates ("-20% stamina regeneration"): the managers multiply their regeneration by them.
+        Manager(TraitStat.HealthRegen)?.SetRegenMultiplier(this, GetStatMultiplier(TraitStat.HealthRegenRate));
+        Manager(TraitStat.StaminaRegen)?.SetRegenMultiplier(this, GetStatMultiplier(TraitStat.StaminaRegenRate));
+        Manager(TraitStat.ManaRegen)?.SetRegenMultiplier(this, GetStatMultiplier(TraitStat.ManaRegenRate));
+
         CombatEntity e = Context.Entity;
         aggregateEntity = e;
         if (e != null)

@@ -1276,11 +1276,34 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public IBodyActionLimits BodyLimits { get; set; }
 
-    /// <summary>Does the character's body allow <paramref name="action"/> (true without an injury system)?</summary>
-    public bool AllowsAction(BodyAction action) => BodyLimits == null || BodyLimits.Allows(action);
+    /// <summary>
+    /// Limits that do not come from injuries: disability traits ("cannot sprint"), curses, quest states. They apply
+    /// with the injury system on or off, on top of <see cref="BodyLimits"/>. See <see cref="SetActionBlock"/>.
+    /// </summary>
+    public ActionBlocks ExtraLimits { get; } = new ActionBlocks();
 
-    /// <summary>Which hands can hold things (both without an injury system).</summary>
-    public HandCapability Hands => BodyLimits != null ? BodyLimits.Hands : HandCapability.Full;
+    /// <summary>
+    /// Stops the character from doing <paramref name="actions"/> for as long as <paramref name="key"/> holds it (a
+    /// trait, a curse); the same key replaces what it blocked before. <paramref name="reason"/> is told to the player.
+    /// </summary>
+    public void SetActionBlock(object key, BodyAction actions, string reason) => ExtraLimits.Set(key, actions, reason);
+
+    /// <summary>Lifts what <paramref name="key"/> blocked.</summary>
+    public void ClearActionBlock(object key) => ExtraLimits.Clear(key);
+
+    /// <summary>Can the character do <paramref name="action"/>: neither its injuries nor a trait or curse stop it?</summary>
+    public bool AllowsAction(BodyAction action) => ExtraLimits.Allows(action) && (BodyLimits == null || BodyLimits.Allows(action));
+
+    /// <summary>Why the character cannot do <paramref name="action"/> right now ("" when it can, or nothing says why).</summary>
+    public string WhyNotAllowed(BodyAction action)
+    {
+        if (!ExtraLimits.Allows(action))
+            return ExtraLimits.ReasonFor(action);
+        return BodyLimits != null && !BodyLimits.Allows(action) ? BodyLimits.ReasonFor(action) : "";
+    }
+
+    /// <summary>Which hands can hold things (both without an injury system or a limit).</summary>
+    public HandCapability Hands => ExtraLimits.Apply(BodyLimits != null ? BodyLimits.Hands : HandCapability.Full);
 
     /// <summary>How the character's legs let it move (limp, hop, crawl); normal without an injury system.</summary>
     public BodyLocomotion Locomotion => BodyLimits is IBodyLocomotion l ? l.Locomotion : BodyLocomotion.Normal;

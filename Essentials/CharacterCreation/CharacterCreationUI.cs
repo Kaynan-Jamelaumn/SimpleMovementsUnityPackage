@@ -63,6 +63,10 @@ public class CharacterCreationUI : MonoBehaviour
     [SerializeField] private List<Trait> allTraits = new List<Trait>();
     [Tooltip("Active traits (an ability on its own key) the player may pick. Movement traits (double jump, wall climb, glide) do not count.")]
     [SerializeField, Min(0)] private int maxActiveTraits = 1;
+    [Tooltip("Drawbacks (traits with a negative cost: disabilities, weaknesses) the player may pick. 0 = no limit.")]
+    [SerializeField, Min(0)] private int maxDrawbacks = 5;
+    [Tooltip("Most trait points drawbacks can give in all. 0 = no limit.")]
+    [SerializeField, Min(0)] private int maxDrawbackPoints = 12;
 
     [Header("Audio Settings")]
     [SerializeField] private bool enableAudioFeedback = true;
@@ -121,6 +125,8 @@ public class CharacterCreationUI : MonoBehaviour
     public bool RaceRequired => raceRequired && HasRaces;
     public List<Trait> AllTraits => allTraits;
     public int MaxActiveTraits => maxActiveTraits;
+    public int MaxDrawbacks => maxDrawbacks;
+    public int MaxDrawbackPoints => maxDrawbackPoints;
 
     /// <summary>The archetypes the character will have: the race and the class's archetype.</summary>
     public IList<CharacterArchetype> Archetypes

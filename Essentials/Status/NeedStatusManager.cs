@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -12,10 +13,12 @@ using UnityEngine;
 /// <item>Hunger and thirst do NOT regenerate by themselves: food, drinks, potions and abilities fill them (each gain is
 /// changed by <b>Increment Factor</b>, a percent).</item>
 /// <item>When empty, the character loses the penalty damage every penalty interval until it eats / drinks.</item>
+/// <item>Along the way the need goes through its <b>conditions</b> (<see cref="NeedStage"/>: Full, Satisfied, Peckish,
+/// Hungry, Starving...), each with its own name and effects; exactly one applies at a time.</item>
 /// </list>
 /// One timer drives it (no coroutine is started per frame), so the drain is exactly the configured rate.
 /// </summary>
-public abstract class NeedStatusManager : StatusManager
+public abstract class NeedStatusManager : StatusManager, INeedStages
 {
     [Header("Need")]
     [Tooltip("Start full when the game starts (off: keep the value set in the inspector).")]
@@ -26,6 +29,28 @@ public abstract class NeedStatusManager : StatusManager
     protected HealthManager healthManager;
     private float drainTimer;
     private float penaltyTimer;
+    private NeedStageRunner stageRunner;
+
+    /// <summary>The need's conditions (the subclass keeps the list: each need has its own defaults).</summary>
+    protected abstract List<NeedStage> StageList { get; }
+    /// <summary>Names the need's status and multipliers ("Hunger", "Thirst").</summary>
+    protected abstract string StageKey { get; }
+
+    private NeedStageRunner Runner => stageRunner ?? (stageRunner = NewRunner());
+
+    private NeedStageRunner NewRunner()
+    {
+        var r = new NeedStageRunner(this, StageKey);
+        r.Changed += (before, now) => StageChanged?.Invoke(before, now);
+        return r;
+    }
+
+    /// <summary>The condition the need is in (Peckish, Thirsty...); null while dead or with no conditions. Every copy knows it.</summary>
+    public NeedStage CurrentStage => stageRunner != null ? stageRunner.Current : null;
+    /// <summary>Every condition of the need.</summary>
+    public IReadOnlyList<NeedStage> Conditions => StageList;
+    /// <summary>The condition changed: (the one before, the new one); either may be null. Raised on every copy.</summary>
+    public event System.Action<NeedStage, NeedStage> StageChanged;
 
     /// <summary>Health lost per penalty tick while empty.</summary>
     protected abstract float PenaltyDamage { get; }
@@ -51,14 +76,20 @@ public abstract class NeedStatusManager : StatusManager
         // A client's copy keeps the value the server sent (it may have arrived before Start).
         if (!IsReplica && startFull)
             currentValue = maxValue;
+        NeedScreenEffect.Ensure(this);
     }
 
     protected virtual void Update()
     {
-        if (IsReplica)
-            return; // the drain and the penalty run on the server
-        Simulate(Time.deltaTime);
+        float dt = Time.deltaTime;
+        if (!IsReplica)
+            Simulate(dt); // the drain and the penalty run on the server
+        // The condition is followed on every copy (HUD, messages); its effects apply where the rules run.
+        bool down = pauseWhileDown && StatusDamage.IsDown(this);
+        Runner.Tick(StageList, maxValue > 0f ? currentValue / maxValue * 100f : 100f, dt, !IsReplica, !down);
     }
+
+    protected virtual void OnDisable() => stageRunner?.Clear();
 
     private void Simulate(float dt)
     {
@@ -118,6 +149,7 @@ public abstract class NeedStatusManager : StatusManager
     {
         drainTimer = 0f;
         penaltyTimer = 0f;
+        stageRunner?.Clear();
     }
 
     protected override void UpdateStatus() => UpdateBar();
@@ -129,6 +161,7 @@ public abstract class NeedStatusManager : StatusManager
         base.ResetForRespawn(fraction);
         drainTimer = 0f;
         penaltyTimer = 0f;
+        stageRunner?.Clear();
     }
 
     protected virtual void OnValidate()

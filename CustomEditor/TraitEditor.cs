@@ -156,13 +156,16 @@ public class TraitEditor : Editor
     {
         switch (s)
         {
-            case TraitStat.MaxHealth: case TraitStat.HealthRegen: case TraitStat.HealingReceived: case TraitStat.DamageTaken: return "Health & Defence";
-            case TraitStat.MaxStamina: case TraitStat.StaminaRegen: case TraitStat.StaminaCost: case TraitStat.MaxMana: case TraitStat.ManaRegen: return "Stamina & Mana";
+            case TraitStat.MaxHealth: case TraitStat.HealthRegen: case TraitStat.HealingReceived: case TraitStat.DamageTaken:
+            case TraitStat.HealthRegenRate: return "Health & Defence";
+            case TraitStat.MaxStamina: case TraitStat.StaminaRegen: case TraitStat.StaminaCost: case TraitStat.MaxMana: case TraitStat.ManaRegen:
+            case TraitStat.StaminaRegenRate: case TraitStat.ManaRegenRate: return "Stamina & Mana";
             case TraitStat.MoveSpeed: case TraitStat.SprintSpeed: case TraitStat.CrouchSpeed: case TraitStat.JumpForce: case TraitStat.CarryWeight: return "Movement";
             case TraitStat.WeaponDamage: case TraitStat.ControlDealt: case TraitStat.ControlTaken: return "Combat";
             case TraitStat.SlashDamageTaken: case TraitStat.PierceDamageTaken: case TraitStat.BluntDamageTaken: return "Health & Defence";
             case TraitStat.InjuryChance: case TraitStat.WoundChance: case TraitStat.FractureChance: case TraitStat.BurnChance:
-            case TraitStat.InfectionChance: case TraitStat.BleedingRate: case TraitStat.InjuryHealing: case TraitStat.LimbLossChance: return "Injuries";
+            case TraitStat.InfectionChance: case TraitStat.BleedingRate: case TraitStat.InjuryHealing: case TraitStat.LimbLossChance:
+            case TraitStat.FallDamage: case TraitStat.SafeFallHeight: return "Injuries";
             default: return "Abilities";
         }
     }

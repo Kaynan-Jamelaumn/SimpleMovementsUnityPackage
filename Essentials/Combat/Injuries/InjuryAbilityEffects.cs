@@ -85,10 +85,11 @@ public class TreatInjuriesEffect : AbilityEffect
     }
 }
 
-[Serializable, AbilityMenu("Injury/Inflict Injury", "Causes an injury on the target (a bleeding bite, a bone-crushing slam) and may cut a limb off, on top of the injuries hits cause by themselves.", 1)]
+[Serializable, AbilityMenu("Injury/Inflict Injury", "Causes an injury on the target (a bleeding bite, a bone-crushing slam) or gives it an illness (venom, rabies, a plague), and may cut a limb off, on top of the injuries hits cause by themselves.", 1)]
 public class InflictInjuryEffect : AbilityEffect
 {
-    [Tooltip("Injury type id (Laceration, Fracture...).")]
+    [Tooltip("Injury type id (Laceration, Fracture...) or an illness (Venom, Rabies, CommonCold...: it goes to the whole body, the " +
+             "part settings below are ignored). The target's immunity and resistances to it count for illnesses.")]
     public string injuryType = InjuryDefaults.Laceration;
     [Tooltip("Stage of the injury (0 = mildest).")]
     [Min(0)] public int stage = 0;
@@ -106,6 +107,13 @@ public class InflictInjuryEffect : AbilityEffect
         InjuryController c = ctx.target != null ? InjuryController.For(ctx.target) : null;
         if (c == null || !c.RulesHere || !c.Settings.enabled)
             return;
+        InjuryTypeDefinition illness = c.Settings.FindType(injuryType);
+        if (illness != null && illness.systemic)
+        {
+            // An illness of the whole body: no part to pick (the effect's own Chance already rolled).
+            c.Expose(illness, 1f, stage, ctx.caster);
+            return;
+        }
         InjuryPartState p = PickPart(c);
         if (p == null)
             return;
@@ -128,7 +136,7 @@ public class InflictInjuryEffect : AbilityEffect
         }
         var list = new List<InjuryPartState>();
         foreach (InjuryPartState p in c.Parts)
-            if (!p.Lost && (partKinds == null || partKinds.Count == 0 || partKinds.Contains(p.Def.kind)))
+            if (!p.Lost && !p.IsWholeBody && (partKinds == null || partKinds.Count == 0 || partKinds.Contains(p.Def.kind)))
                 list.Add(p);
         return list.Count > 0 ? list[UnityEngine.Random.Range(0, list.Count)] : null;
     }
@@ -136,6 +144,8 @@ public class InflictInjuryEffect : AbilityEffect
     public override string Describe(in AbilityStats s)
     {
         InjuryTypeDefinition t = InjurySettings.Instance.FindType(injuryType);
+        if (t != null && t.systemic)
+            return $"Gives {t.StageName(stage)}" + Chance(chance);
         string where = !string.IsNullOrWhiteSpace(part) ? part : partKinds != null && partKinds.Count > 0 ? string.Join("/", partKinds) : "a random part";
         string text = $"Causes {(t != null ? t.StageName(stage) : injuryType)} on {where}";
         if (severChance > 0f) text += $", {severChance * 100f:0}% to cut it off";

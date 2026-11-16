@@ -120,6 +120,15 @@ public abstract class TreatmentEffect
     /// <summary>Would it do anything to this injury now? (a bandage on a bandaged wound does nothing).</summary>
     public virtual bool WouldHelp(in TreatmentContext ctx) => true;
 
+    /// <summary>Share of the bleeding it stops, 0-1 (the Health tab picks what stops a bleeding wound best).</summary>
+    public virtual float BleedingStopped => 0f;
+
+    /// <summary>It lets injuries that need treatment heal (a splint, stitches, medicine).</summary>
+    public virtual bool LetsItHeal => false;
+
+    /// <summary>It keeps the injury from getting worse (disinfected, stitched).</summary>
+    public virtual bool KeepsFromWorsening => false;
+
     /// <summary>Can it be applied now? <paramref name="reason"/> says why not.</summary>
     public virtual bool CanApply(in TreatmentContext ctx, out string reason)
     {
@@ -142,6 +151,11 @@ public class StopBleedingTreatment : TreatmentEffect
     [Min(0f)] public float healRateMultiplier = 1.5f;
     [Tooltip("Sterile: the wound stops getting worse (no infection).")]
     public bool sterile = false;
+    [Tooltip("Shown on the injury (\"Tourniquet\"). Empty = Bandaged, or Sterile bandage.")]
+    public string label = "";
+
+    public override float BleedingStopped => effectiveness;
+    public override bool KeepsFromWorsening => sterile;
 
     public override bool WouldHelp(in TreatmentContext ctx) =>
         ctx.injury != null && (!ctx.injury.Bandaged || ctx.injury.BandageEffectiveness < effectiveness - 0.01f || sterile && !ctx.injury.WorseningStopped);
@@ -156,8 +170,9 @@ public class StopBleedingTreatment : TreatmentEffect
         i.TreatedHealMultiplier = Mathf.Max(i.TreatedHealMultiplier, healRateMultiplier);
         if (sterile)
             i.WorseningStopped = true;
+        i.Reopened = false;
         if (string.IsNullOrEmpty(i.TreatmentLabel))
-            i.TreatmentLabel = sterile ? "Sterile bandage" : "Bandaged";
+            i.TreatmentLabel = !string.IsNullOrWhiteSpace(label) ? label : sterile ? "Sterile bandage" : "Bandaged";
     }
 
     public override string Describe() =>
@@ -180,6 +195,10 @@ public class TreatInjuryTreatment : TreatmentEffect
     [Tooltip("Share of the bleeding stopped as well (stitches close a wound: 1).")]
     [Range(0f, 1f)] public float stopsBleeding = 0f;
 
+    public override float BleedingStopped => stopsBleeding;
+    public override bool LetsItHeal => allowsHealing;
+    public override bool KeepsFromWorsening => stopsWorsening;
+
     public override bool WouldHelp(in TreatmentContext ctx) =>
         ctx.injury != null && (!ctx.injury.Treated || !string.Equals(ctx.injury.TreatmentLabel, label, StringComparison.OrdinalIgnoreCase));
 
@@ -189,6 +208,7 @@ public class TreatInjuryTreatment : TreatmentEffect
         if (i == null)
             return;
         i.Treated = true;
+        i.Reopened = false;
         i.TreatmentLabel = string.IsNullOrWhiteSpace(label) ? "Treated" : label;
         if (allowsHealing)
             i.HealingAllowed = true;
@@ -323,6 +343,34 @@ public class ReattachLimbTreatment : TreatmentEffect
     }
 }
 
+[Serializable, AbilityMenu("Injury/Amputate Limb", "Cuts the part off cleanly (gangrene that can no longer be saved): the injuries on it go with it, and the stump is closed. Only parts that can be lost.", 5)]
+public class AmputateLimbTreatment : TreatmentEffect
+{
+    public override bool CanApply(in TreatmentContext ctx, out string reason)
+    {
+        reason = "";
+        if (ctx.part == null || ctx.part.Lost)
+        {
+            reason = "Nothing to amputate.";
+            return false;
+        }
+        if (ctx.part.IsWholeBody || ctx.part.Def.limbLoss == null || !ctx.part.Def.limbLoss.canBeLost)
+        {
+            reason = $"The {ctx.part.Name.ToLowerInvariant()} cannot be amputated.";
+            return false;
+        }
+        return true;
+    }
+
+    public override void Apply(ref TreatmentContext ctx)
+    {
+        if (ctx.patient != null && ctx.part != null)
+            ctx.patient.Amputate(ctx.part, ctx.healer);
+    }
+
+    public override string Describe() => "amputates the limb: its injuries go with it, the stump is closed";
+}
+
 /// <summary>
 /// A way to treat injuries: what it works on (injury types, tags, severities, body parts), how long it takes, and its
 /// effects. Medical items (<see cref="MedicalItemSO"/>) and ability effects (<see cref="TreatInjuriesEffect"/>) hold
@@ -369,6 +417,82 @@ public class InjuryTreatment
             if (effects[i] != null && !effects[i].ForMissingLimbs && effects[i].WouldHelp(ctx))
                 return true;
         return false;
+    }
+
+    /// <summary>The most bleeding one of its effects stops, 0-1.</summary>
+    public float BleedingStopped
+    {
+        get
+        {
+            float best = 0f;
+            if (effects != null)
+                for (int i = 0; i < effects.Count; i++)
+                    if (effects[i] != null) best = Mathf.Max(best, effects[i].BleedingStopped);
+            return best;
+        }
+    }
+
+    /// <summary>One of its effects lets injuries that need treatment heal.</summary>
+    public bool LetsItHeal
+    {
+        get
+        {
+            if (effects != null)
+                for (int i = 0; i < effects.Count; i++)
+                    if (effects[i] != null && effects[i].LetsItHeal) return true;
+            return false;
+        }
+    }
+
+    /// <summary>One of its effects keeps the injury from getting worse.</summary>
+    public bool KeepsFromWorsening
+    {
+        get
+        {
+            if (effects != null)
+                for (int i = 0; i < effects.Count; i++)
+                    if (effects[i] != null && effects[i].KeepsFromWorsening) return true;
+            return false;
+        }
+    }
+
+    /// <summary>One of its effects removes the injury (a cure) or the limb.</summary>
+    public bool Removes
+    {
+        get
+        {
+            if (effects != null)
+                for (int i = 0; i < effects.Count; i++)
+                    if (effects[i] is CureInjuryTreatment || effects[i] is AmputateLimbTreatment) return true;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// How well it answers what <paramref name="injury"/> needs most right now (higher = better; 0 = it does nothing it
+    /// needs): stopping the bleeding first, then letting it heal, then keeping it from getting worse.
+    /// </summary>
+    public float ScoreFor(Injury injury)
+    {
+        if (injury == null)
+            return ForMissingLimbs ? 1f : 0f;
+        float score = 0f;
+        InjuryStage st = injury.Stage;
+        if (injury.IsBleeding)
+            score += BleedingStopped * 10f;
+        if (st != null && st.needsTreatmentToHeal && !injury.HealingAllowed && LetsItHeal)
+            score += 5f;
+        if (injury.CanWorsen && KeepsFromWorsening)
+            score += 3f;
+        if (effects != null)
+            for (int i = 0; i < effects.Count; i++)
+                if (effects[i] is CureInjuryTreatment)
+                    score += 6f;
+        // An amputation is never picked by itself: the player chooses it.
+        for (int i = 0; effects != null && i < effects.Count; i++)
+            if (effects[i] is AmputateLimbTreatment)
+                return 0f;
+        return score + 0.5f;
     }
 
     /// <summary>Can every effect be applied now?</summary>

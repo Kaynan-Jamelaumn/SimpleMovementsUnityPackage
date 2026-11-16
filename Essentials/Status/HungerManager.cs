@@ -6,6 +6,9 @@ using UnityEngine;
 /// Hunger (100 = fed, 0 = starving). Drains <b>Decrement Value</b> every <b>Consuming Tick Rate</b> seconds (see
 /// <see cref="NeedStatusManager"/>); food, potions and abilities fill it. While empty the character loses
 /// <see cref="starvingHpPenalty"/> health every <see cref="starvingHpPenaltyTickRate"/> seconds.
+/// <para>On the way down it goes through its <see cref="conditions"/> - Stuffed, Full, Satisfied, Fed, Peckish, Hungry,
+/// Ravenous, Starving by default - each with its own effects: a full belly mends the body, an empty one saps stamina,
+/// then strength, then the will. Change, add or remove them in the inspector.</para>
 /// </summary>
 public class HungerManager : NeedStatusManager
 {
@@ -14,6 +17,17 @@ public class HungerManager : NeedStatusManager
     [SerializeField] private float starvingHpPenalty = 1f;
     [Tooltip("Seconds between two starvation ticks.")]
     [SerializeField] private float starvingHpPenaltyTickRate = 2f;
+
+    [Header("Conditions")]
+    [Tooltip("The conditions of hunger, each with a name, the percent it starts at and what it does. One applies at a time: the " +
+             "one with the highest From Percent that hunger has reached. Right-click the component ▸ Reset Conditions To Defaults.")]
+    [SerializeField] private List<NeedStage> conditions = NeedStages.Hunger();
+
+    protected override List<NeedStage> StageList => conditions;
+    protected override string StageKey => "Hunger";
+
+    [ContextMenu("Reset Conditions To Defaults")]
+    private void ResetConditions() => conditions = NeedStages.Hunger();
 
     private List<CoroutineInfo> foodEffectRoutines = new List<CoroutineInfo>();
     public List<CoroutineInfo> FoodEffectRoutines { get => foodEffectRoutines; set => foodEffectRoutines = value; }

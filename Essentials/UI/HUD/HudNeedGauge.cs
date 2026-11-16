@@ -5,8 +5,9 @@ using UnityEngine.UI;
 /// <summary>
 /// One needs gauge of the HUD (food, water, rest, mind, warmth, air, load): a ring that fills with the status and its
 /// percentage. Shown only while its status shows its bar (sleep, body heat and oxygen appear when they matter); pulses
-/// when low (Load: when nearly full). Built by Player HUD ▸ Build Status UI; restyle it or replace its parts freely -
-/// <see cref="statusKey"/> says which status it shows.
+/// when low (Load: when nearly full). Under it, the name of the condition the need is in (Peckish, Thirsty, Falling
+/// Asleep: see <see cref="NeedStage"/>), coloured by how bad it is. Built by Player HUD ▸ Build Status UI; restyle it
+/// or replace its parts freely - <see cref="statusKey"/> says which status it shows.
 /// </summary>
 public class HudNeedGauge : MonoBehaviour
 {
@@ -25,10 +26,17 @@ public class HudNeedGauge : MonoBehaviour
     [Range(0f, 1f)] public float warnAt = 0.25f;
     [Tooltip("Show the percentage in the ring.")]
     public bool showPercent = true;
+    [Tooltip("Show the need's condition under the gauge (Peckish, Thirsty, Sleepy...) instead of its plain name, in the colour of its mood.")]
+    public bool showCondition = true;
 
     private StatusManager status;
+    private INeedStages conditions;
     private Image proxy;
     private string last;
+    private string plainLabel;
+    private Color plainColor;
+    private NeedStage shownStage;
+    private bool labelReady;
 
     public StatusManager Status => status;
 
@@ -72,9 +80,39 @@ public class HudNeedGauge : MonoBehaviour
     public void Bind(StatusManager s, Image proxyImage)
     {
         status = s;
+        conditions = s as INeedStages;
         proxy = proxyImage;
         if (s != null && proxyImage != null) s.UIImage = proxyImage;
         last = null;
+        shownStage = null;
+        if (labelReady && label != null)
+        {
+            label.text = plainLabel;
+            label.color = plainColor;
+        }
+    }
+
+    /// <summary>The label under the gauge: the condition's name in its mood's colour, else the need's plain name.</summary>
+    private void UpdateCondition()
+    {
+        if (label == null)
+            return;
+        if (!labelReady)
+        {
+            labelReady = true;
+            plainLabel = label.text;
+            plainColor = label.color;
+            // Condition names are longer than "Food": let them run past the gauge instead of wrapping under it.
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Overflow;
+        }
+        NeedStage stage = showCondition && conditions != null ? conditions.CurrentStage : null;
+        if (ReferenceEquals(stage, shownStage))
+            return;
+        shownStage = stage;
+        bool named = stage != null && !string.IsNullOrEmpty(stage.name);
+        label.text = named ? stage.name : plainLabel;
+        label.color = named ? NeedStages.MoodColor(stage.mood, plainColor) : plainColor;
     }
 
     /// <summary>Called every frame by the status frame (also while hidden, to come back when needed).</summary>
@@ -83,6 +121,7 @@ public class HudNeedGauge : MonoBehaviour
         bool show = status != null && status.isActiveAndEnabled && (proxy == null || proxy.gameObject.activeSelf);
         if (gameObject.activeSelf != show) gameObject.SetActive(show);
         if (!show) return;
+        UpdateCondition();
         float f = status.MaxValue > 0f ? Mathf.Clamp01(status.CurrentValue / status.MaxValue) : 0f;
         float dt = Time.unscaledDeltaTime;
         if (ring != null)

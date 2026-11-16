@@ -134,6 +134,44 @@ public abstract class StatusManager : MonoBehaviour
         rateMultiplier = m;
     }
 
+    // ------------------------------------------------------------------ regeneration multipliers
+    private readonly Dictionary<object, float> regenMultipliers = new Dictionary<object, float>();
+    private float regenMultiplier = 1f;
+
+    /// <summary>
+    /// How fast the status regenerates by itself right now: the product of every multiplier set with
+    /// <see cref="SetRegenMultiplier"/> (the Health / Stamina / Mana Regen Rate character stats: "-20% stamina
+    /// regeneration" while tired or hungry). 1 = normal.
+    /// </summary>
+    public float RegenMultiplier => regenMultiplier;
+
+    /// <summary>What one regeneration tick gives: Increment Value times <see cref="RegenMultiplier"/> (a drain is not scaled).</summary>
+    public float RegenPerTick => incrementValue > 0f ? incrementValue * regenMultiplier : incrementValue;
+
+    /// <summary>
+    /// Sets one named multiplier of the regeneration (1 = no change, 0.8 = 20% slower, 0 = none). The same
+    /// <paramref name="key"/> replaces its previous value. Ignored where the server decides the limits (it sends the
+    /// regeneration it uses).
+    /// </summary>
+    public void SetRegenMultiplier(object key, float multiplier)
+    {
+        if (key == null || LimitsLocked)
+            return;
+        if (float.IsNaN(multiplier) || float.IsInfinity(multiplier))
+            multiplier = 1f;
+        multiplier = Mathf.Max(0f, multiplier);
+        bool changed = Mathf.Approximately(multiplier, 1f) ? regenMultipliers.Remove(key)
+            : !regenMultipliers.TryGetValue(key, out float old) || !Mathf.Approximately(old, multiplier);
+        if (!changed)
+            return;
+        if (!Mathf.Approximately(multiplier, 1f))
+            regenMultipliers[key] = multiplier;
+        float m = 1f;
+        foreach (float v in regenMultipliers.Values)
+            m *= v;
+        regenMultiplier = m;
+    }
+
     /// <summary>
     /// Sets the value to <paramref name="fraction"/> (0-1) of the max, without factors (a respawn, a full rest).
     /// Ignored on a client's copy (the server's value arrives through replication).
