@@ -63,6 +63,9 @@ namespace ProceduralDungeon
             DungeonInstance dungeon = GetComponentInParent<DungeonInstance>();
             if (dungeon != null)
                 dungeon.Stats.Bump(ref dungeon.Stats.secretsFound);
+            // Found by searching (a lever that opens one says so itself).
+            if (searchable && held >= holdTime)
+                DungeonMessages.Show(this, "The wall gives way: a hidden passage!", true);
             Opened?.Invoke(this);
         }
 

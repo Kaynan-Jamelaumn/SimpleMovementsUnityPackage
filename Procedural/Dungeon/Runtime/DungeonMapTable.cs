@@ -9,6 +9,8 @@ namespace ProceduralDungeon
     /// </summary>
     public class DungeonMapTable : DungeonInteractable
     {
+        public override string PromptVerb => "Study";
+
         protected override bool Use(CombatEntity player)
         {
             var tag = GetComponent<DungeonSpawned>();

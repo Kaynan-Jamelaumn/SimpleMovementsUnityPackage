@@ -172,8 +172,9 @@ namespace ProceduralDungeon
         /// <summary>The rewards of blood and cursed altars (after the props: the altars are props).</summary>
         private void PlaceRoomMechanics()
         {
+            // Every room that got such an altar - a full placement budget doesn't leave an altar without its reward.
             foreach (Area area in floor.Areas)
-                if (area.AnchorIndex < 0 && !Full && area.Role == AreaRole.Gambling)
+                if (area.Cells.Count > 0)
                     AltarRewards(area);
         }
 
@@ -212,36 +213,42 @@ namespace ProceduralDungeon
         private void AltarRewards(Area area)
         {
             int count = placements.Count;
-            for (int i = 0; i < count && !Full; i++)
+            for (int i = 0; i < count; i++)
             {
                 Placement altar = placements[i];
-                if (altar.Area != area.Id || altar.Table != PlacementTable.Props)
+                if (altar.Area != area.Id || altar.Table != PlacementTable.Props || altar.Entry < 0 || altar.Entry >= p.Props.Count)
                     continue;
                 DungeonPrimitive kind = p.Props[altar.Entry].Placeholder;
                 if (kind != DungeonPrimitive.BloodAltar && kind != DungeonPrimitive.CursedAltar)
                     continue;
-                altar.Link = UniqueId(i);
-                placements[i] = altar;
                 LootInfo entry = PickLoot(area, kind == DungeonPrimitive.CursedAltar ? 2 : 1);
                 if (entry == null)
                     continue;
-                // Close in front of the altar.
+                // Close in front of the altar: a spot with room around it, else (a crowded room) one that touches
+                // nothing, else any free cell - an altar is never left with nothing to give.
                 int best = -1;
-                float bestDist = float.MaxValue;
                 Vector2 front = altar.Cell + new Vector2(Mathf.Sin(altar.Yaw * Mathf.Deg2Rad), Mathf.Cos(altar.Yaw * Mathf.Deg2Rad)) * 1.6f;
-                foreach (int c in area.Cells)
+                for (int pass = 0; pass < 3 && best < 0; pass++)
                 {
-                    if (Blocked(c) || NearDoor(c))
-                        continue;
-                    float d = (CellPos(c) - front).sqrMagnitude;
-                    if (d < bestDist && !occupied.AnyWithin(CellPos(c), 0.9f))
+                    float clearance = pass == 0 ? 0.9f : 0.2f;
+                    float bestDist = float.MaxValue;
+                    foreach (int c in area.Cells)
                     {
-                        bestDist = d;
-                        best = c;
+                        if (Blocked(c) || NearDoor(c))
+                            continue;
+                        float d = (CellPos(c) - front).sqrMagnitude;
+                        if (d < bestDist && (pass == 2 || !occupied.AnyWithin(CellPos(c), clearance)))
+                        {
+                            bestDist = d;
+                            best = c;
+                        }
                     }
                 }
+                // (No link without a reward: the altar then says it has nothing to offer and takes nothing.)
                 if (best < 0)
                     continue;
+                altar.Link = UniqueId(i);
+                placements[i] = altar;
                 int index = Add(PlacementKind.Loot, PlacementTable.Loot, entry.Index, best, CellPos(best), YawTowards(CellPos(best), altar.Cell), 0f, -1, 1f, entry.Tier, 0.8f);
                 SetDormant(index, 0);
                 Placement reward = placements[index];
@@ -300,14 +307,61 @@ namespace ProceduralDungeon
                 Link = (int)AreaEffectKind.PoisonGas,
             });
             var none = new SpatialHash2D<int>(2f);
-            if (FindSpot(FarEnd(area), PropPlacement.WallAdjacent, none, 0f, 0f, out int cell, out Vector2 pos, out float yaw) ||
-                FindSpot(area.Cells, PropPlacement.WallAdjacent, none, 0f, 0f, out cell, out pos, out yaw))
+            List<int> far = FarEnd(area);
+            // On a wall at the far end with room around it; in a crowded room, any free cell against a wall.
+            bool onWall = FindSpot(far, PropPlacement.WallAdjacent, none, 0f, 0f, out int cell, out Vector2 pos, out float yaw) ||
+                          FindSpot(area.Cells, PropPlacement.WallAdjacent, none, 0f, 0f, out cell, out pos, out yaw) ||
+                          WallSpot(far, out cell, out pos, out yaw) || WallSpot(area.Cells, out cell, out pos, out yaw);
+            // A room without walls (an island over the void): the valve stands on a post (Tier 1 tells the builder).
+            if (onWall || PostSpot(area, far, out cell, out pos, out yaw) || PostSpot(area, area.Cells, out cell, out pos, out yaw))
             {
-                int index = Add(PlacementKind.Lever, PlacementTable.None, 1, cell, pos, yaw, 1.1f, -1, 1f, 0, 0.6f);
+                int index = Add(PlacementKind.Lever, PlacementTable.None, 1, cell, pos, yaw, 1.1f, -1, 1f, onWall ? 0 : 1, 0.6f);
                 Placement pl = placements[index];
                 pl.Link = area.Id;
                 placements[index] = pl;
             }
+        }
+
+        /// <summary>
+        /// A free cell against a wall for something the room can't do without (a valve): unlike <see cref="FindSpot"/> it
+        /// asks for no room around it. The first of <paramref name="cells"/> that fits.
+        /// </summary>
+        private bool WallSpot(List<int> cells, out int cell, out Vector2 pos, out float yaw)
+        {
+            cell = -1;
+            pos = default;
+            yaw = 0f;
+            foreach (int c in cells)
+            {
+                if (Blocked(c) || g.Type[c] == CellType.Door)
+                    continue;
+                int side = WallSide(c);
+                if (side < 0)
+                    continue;
+                cell = c;
+                pos = CellPos(c) + (Vector2)((Dir4)side).Delta() * 0.3f;
+                yaw = ((Dir4)side).Opposite().Yaw();
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>A free cell for something that stands by itself, facing the middle of the room. The first of <paramref name="cells"/> that fits.</summary>
+        private bool PostSpot(Area area, List<int> cells, out int cell, out Vector2 pos, out float yaw)
+        {
+            cell = -1;
+            pos = default;
+            yaw = 0f;
+            foreach (int c in cells)
+            {
+                if (Blocked(c) || NearDoor(c))
+                    continue;
+                cell = c;
+                pos = CellPos(c);
+                yaw = YawTowards(pos, area.Center);
+                return true;
+            }
+            return false;
         }
 
         // ------------------------------------------------------------------ shifting walls
@@ -436,37 +490,45 @@ namespace ProceduralDungeon
                 if (Blocked(wire) || NearDoor(wire) || g.Has(wire, CellFlags.Locked))
                     continue;
                 Dir4 along = Dir4Util.FromDelta(g.X(path[t + 1]) - g.X(path[t - 1]), g.Y(path[t + 1]) - g.Y(path[t - 1]));
-                int group = nextGroup++;
-                int index = Add(PlacementKind.Tripwire, PlacementTable.None, -1, wire, CellPos(wire), along.Yaw(), 0f, group, 1f, 0, 0.4f);
-                Placement pl = placements[index];
-                pl.Link = group;
-                placements[index] = pl;
 
-                int launchers = 0;
-                for (int k = 1; k <= 5 && launchers < 3; k++)
+                // Where its arrows come from: the walls of the next few cells, both ways.
+                var launchers = new List<(int cell, Dir4 side)>();
+                for (int k = 1; k <= 5 && launchers.Count < 3; k++)
                 {
                     foreach (int idx in new[] { t + k, t - k })
                     {
-                        if (idx < 0 || idx >= path.Count || launchers >= 3)
+                        if (idx < 0 || idx >= path.Count || launchers.Count >= 3)
                             continue;
                         int cell = path[idx];
                         if (Blocked(cell) || NearDoor(cell))
                             continue;
                         // Alternate the walls they shoot from.
-                        Dir4[] sides = (launchers & 1) == 0 ? new[] { along.Right(), along.Left() } : new[] { along.Left(), along.Right() };
+                        Dir4[] sides = (launchers.Count & 1) == 0 ? new[] { along.Right(), along.Left() } : new[] { along.Left(), along.Right() };
                         foreach (Dir4 side in sides)
                         {
                             if (!g.IsRock(g.Neighbor(cell, (int)side)))
                                 continue;
-                            Vector2 pos = CellPos(cell) + (Vector2)side.Delta() * 0.45f;
-                            int li = Add(PlacementKind.ArrowLauncher, PlacementTable.None, -1, cell, pos, side.Opposite().Yaw(), 0f, group, 1f, 0, 0.3f);
-                            Placement lp = placements[li];
-                            lp.Link = group;
-                            placements[li] = lp;
-                            launchers++;
+                            launchers.Add((cell, side));
                             break;
                         }
                     }
+                }
+                // No wall to shoot from (a wide passage): a wire that does nothing is not put there.
+                if (launchers.Count == 0)
+                    continue;
+
+                int group = nextGroup++;
+                int index = Add(PlacementKind.Tripwire, PlacementTable.None, -1, wire, CellPos(wire), along.Yaw(), 0f, group, 1f, 0, 0.4f);
+                Placement pl = placements[index];
+                pl.Link = group;
+                placements[index] = pl;
+                foreach ((int cell, Dir4 side) in launchers)
+                {
+                    Vector2 pos = CellPos(cell) + (Vector2)side.Delta() * 0.45f;
+                    int li = Add(PlacementKind.ArrowLauncher, PlacementTable.None, -1, cell, pos, side.Opposite().Yaw(), 0f, group, 1f, 0, 0.3f);
+                    Placement lp = placements[li];
+                    lp.Link = group;
+                    placements[li] = lp;
                 }
             }
         }

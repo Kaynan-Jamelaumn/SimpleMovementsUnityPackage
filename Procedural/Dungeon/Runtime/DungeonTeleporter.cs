@@ -84,7 +84,7 @@ namespace ProceduralDungeon
                 return false;
             readyAt[p] = Time.time + cooldown;
             Quaternion facing = other.style == Style.Painting ? other.transform.rotation : p.transform.rotation;
-            DungeonSession.Teleport(p.gameObject, other.Arrival, facing);
+            DungeonSession.Teleport(PlayerLocator.MovableRoot(p), other.Arrival, facing);
             if (p.PlayerMovement != null)
                 p.PlayerMovement.VerticalVelocity = 0f;
             if (style == Style.Painting)

@@ -46,7 +46,11 @@ namespace ProceduralDungeon
                 float tallest = 0f;
                 foreach (Collider c in colliders)
                     if (!c.isTrigger)
-                        tallest = Mathf.Max(tallest, c.bounds.size.y);
+                        tallest = Mathf.Max(tallest, HeightOf(c));
+                // No collider to measure: what is seen of it.
+                if (tallest <= 0f)
+                    foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+                        tallest = Mathf.Max(tallest, r.bounds.max.y - transform.position.y);
                 travel = tallest > 0f ? tallest + 0.1f : 3f;
             }
             PrepareForNavMesh(gameObject);
@@ -54,6 +58,29 @@ namespace ProceduralDungeon
             IsClosed = closed;
             transform.localPosition = closed ? raised : raised + Vector3.down * travel;
             Apply(closed);
+        }
+
+        /// <summary>
+        /// Height of a collider. A switched-off collider reports empty bounds - and the builder switches off the colliders
+        /// of gates and shifting walls, which start open - so those are measured from their own shape instead.
+        /// </summary>
+        private static float HeightOf(Collider c)
+        {
+            if (c.enabled && c.gameObject.activeInHierarchy)
+            {
+                float y = c.bounds.size.y;
+                if (y > 0f)
+                    return y;
+            }
+            float scale = Mathf.Abs(c.transform.lossyScale.y);
+            switch (c)
+            {
+                case BoxCollider box: return Mathf.Abs(box.size.y) * scale;
+                case CapsuleCollider capsule: return capsule.direction == 1 ? Mathf.Max(capsule.height, capsule.radius * 2f) * scale : capsule.radius * 2f * scale;
+                case SphereCollider sphere: return sphere.radius * 2f * scale;
+                case MeshCollider mesh: return mesh.sharedMesh != null ? mesh.sharedMesh.bounds.size.y * scale : 0f;
+                default: return 0f;
+            }
         }
 
         /// <summary>

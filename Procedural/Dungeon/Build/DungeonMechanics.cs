@@ -58,6 +58,7 @@ namespace ProceduralDungeon
             {
                 d.damage = damage;
                 d.element = element;
+                d.affects = affects;
                 if (period > 0f) d.reload = Mathf.Max(0.2f, period);
             }
         }
@@ -79,7 +80,7 @@ namespace ProceduralDungeon
             GameObject stand = Create(kind, "Mechanics", Color.white, lightRange, variant);
             try
             {
-                Bounds bounds = BoundsOf(target);
+                Bounds bounds = LocalBoundsOf(target);
                 bool copied = false;
                 foreach (MonoBehaviour source in stand.GetComponents<MonoBehaviour>())
                 {
@@ -109,7 +110,10 @@ namespace ProceduralDungeon
             m is DungeonHazard || m is DungeonBladeTrap || m is DungeonDartTrap || m is DungeonInteractable ||
             m is DungeonPressurePlate || m is DungeonKey;
 
-        /// <summary>A trigger like the placeholder's, fitted to the prefab's size (traps need one to hurt).</summary>
+        /// <summary>
+        /// A trigger like the placeholder's, fitted to the prefab's size (traps need one to hurt). <paramref name="bounds"/>
+        /// is the prefab's box in its own space (see <see cref="LocalBoundsOf"/>), so the trigger fits however the trap is turned.
+        /// </summary>
         private static void AddTrigger(GameObject target, GameObject stand, Bounds bounds)
         {
             foreach (Collider c in target.GetComponents<Collider>())
@@ -122,9 +126,8 @@ namespace ProceduralDungeon
             box.isTrigger = true;
             if (bounds.size.sqrMagnitude > 0.0001f)
             {
-                Vector3 center = target.transform.InverseTransformPoint(bounds.center);
-                Vector3 size = target.transform.InverseTransformVector(bounds.size);
-                size = new Vector3(Mathf.Abs(size.x), Mathf.Abs(size.y), Mathf.Abs(size.z));
+                Vector3 center = bounds.center;
+                Vector3 size = bounds.size;
                 // At least as tall as the placeholder's zone (a flat spike plate still hurts the legs).
                 float minHeight = proto != null ? proto.size.y : 1f;
                 if (size.y < minHeight)
@@ -142,15 +145,66 @@ namespace ProceduralDungeon
             }
         }
 
-        private static Bounds BoundsOf(GameObject go)
+        /// <summary>
+        /// The box around an object's meshes in its own space - the space a collider on it is measured in. (The world box
+        /// of an object turned off the grid's axes is bigger than the object, and turning that back gives a wrong size.)
+        /// </summary>
+        private static Bounds LocalBoundsOf(GameObject go)
         {
-            Renderer[] rs = go.GetComponentsInChildren<Renderer>(true);
-            if (rs.Length == 0)
-                return new Bounds(go.transform.position, Vector3.zero);
-            Bounds b = rs[0].bounds;
-            for (int i = 1; i < rs.Length; i++)
-                b.Encapsulate(rs[i].bounds);
-            return b;
+            Matrix4x4 toLocal = go.transform.worldToLocalMatrix;
+            var box = new Bounds(Vector3.zero, Vector3.zero);
+            bool any = false;
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!(r is MeshRenderer) && !(r is SkinnedMeshRenderer))
+                    continue;   // particles and trails have no shape of their own
+                Bounds own = r.localBounds;
+                Matrix4x4 m = toLocal * r.transform.localToWorldMatrix;
+                for (int i = 0; i < 8; i++)
+                {
+                    Vector3 corner = own.center + Vector3.Scale(own.extents,
+                        new Vector3((i & 1) == 0 ? -1f : 1f, (i & 2) == 0 ? -1f : 1f, (i & 4) == 0 ? -1f : 1f));
+                    Vector3 point = m.MultiplyPoint3x4(corner);
+                    if (any)
+                        box.Encapsulate(point);
+                    else
+                        box = new Bounds(point, Vector3.zero);
+                    any = true;
+                }
+            }
+            return box;
+        }
+
+        /// <summary>
+        /// A post (and foot) under a lever stand-in that has no wall to hang on - a valve in a room over the void.
+        /// <paramref name="height"/> is the lever's height above the floor.
+        /// </summary>
+        public void AddPost(GameObject lever, float height)
+        {
+            if (lever == null || height <= 0.1f)
+                return;
+            // Behind the plate, so the handle swings free in front of it: from the floor up to the plate's top.
+            float length = height + 0.25f;
+            Part(lever, PrimitiveType.Cube, new Vector3(0f, 0.25f - length * 0.5f, -0.16f), new Vector3(0.14f, length, 0.12f), Iron);
+            Part(lever, PrimitiveType.Cube, new Vector3(0f, -height + 0.04f, -0.16f), new Vector3(0.42f, 0.08f, 0.42f), DarkStone);
+            Collider(lever, new Vector3(0f, 0.25f - length * 0.5f, -0.16f), new Vector3(0.18f, length, 0.16f));
+        }
+
+        /// <summary>
+        /// Puts a floor trap that is dangerous all the time on a cycle (see <see cref="PlacementLinks.TimedTrap"/>: it
+        /// stands where nobody can walk around it), each with its own rhythm. Traps already on a cycle keep theirs.
+        /// </summary>
+        public static void PutOnCycle(GameObject go, int variant)
+        {
+            if (go == null)
+                return;
+            foreach (DungeonHazard h in go.GetComponentsInChildren<DungeonHazard>(true))
+            {
+                if (h.timing != DungeonHazard.Timing.Constant)
+                    continue;
+                h.timing = DungeonHazard.Timing.Cycle;
+                h.phaseOffset = (variant % 7) * 0.43f;
+            }
         }
     }
 }

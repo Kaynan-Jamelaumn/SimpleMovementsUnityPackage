@@ -19,6 +19,12 @@ namespace ProceduralDungeon
         {
             target = GetComponent<Light>();
             baseIntensity = target.intensity;
+        }
+
+        // In Start, not Awake: the light is created before the builder puts it in place, and every torch read the same
+        // position there - so they all flickered together.
+        private void Start()
+        {
             Vector3 p = transform.position;
             offset = Mathf.Abs(p.x * 12.9898f + p.z * 78.233f) % 100f;
         }

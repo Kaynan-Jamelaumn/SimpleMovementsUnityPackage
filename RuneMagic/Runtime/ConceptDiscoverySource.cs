@@ -52,6 +52,10 @@ namespace RuneMagic
             }
         }
 
+        // The interaction prompt: "Study  Ancient Inscription".
+        public override string PromptName => DisplayName;
+        public override string PromptVerb => "Study";
+
         private void Reset()
         {
             holdToUse = 0f; // used with the Interact input: standing near it must not start a riddle

@@ -34,8 +34,44 @@ namespace ProceduralDungeon
 
         public static event Action<DungeonGamblingAltar, CombatEntity> AnyPaid;
 
+        /// <summary>The price is in the prompt, and the Interact input is held a moment: nobody pays by a slip of the finger.</summary>
+        public override string PromptVerb => price == Price.Blood ? $"Offer blood ({Mathf.RoundToInt(bloodCost * 100f)}% health)" : "Accept a curse";
+        public override float PromptHold => Mathf.Max(interactHold, 0.8f);
+        protected override string UsedUpReason => "The altar is spent";
+
+        private float rewardCheckedAt = -10f;
+        private bool rewardWaiting;
+
+        protected override bool CanUse(CombatEntity player, out string reason)
+        {
+            reason = "";
+            // (Looked up a few times a second, not every frame the prompt asks.)
+            if (Time.time - rewardCheckedAt > 0.5f)
+            {
+                rewardCheckedAt = Time.time;
+                rewardWaiting = HasReward();
+            }
+            if (!rewardWaiting)
+            {
+                reason = "It has nothing to offer";
+                return false;
+            }
+            if (price == Price.Blood && (player.Health == null || player.Health.CurrentValue <= player.MaxHealth * bloodCost + 1f))
+            {
+                reason = "Not enough health";
+                return false;
+            }
+            return true;
+        }
+
         protected override bool Use(CombatEntity player)
         {
+            // An altar with nothing to give takes nothing.
+            if (!HasReward())
+            {
+                DungeonMessages.Show(this, "The altar is silent. It has nothing to offer.");
+                return false;
+            }
             if (price == Price.Blood)
             {
                 float cost = player.MaxHealth * bloodCost;
@@ -60,11 +96,31 @@ namespace ProceduralDungeon
             return true;
         }
 
+        /// <summary>
+        /// Is its hidden reward still waiting beside it (the loot with the altar's link)? An altar that was placed by hand
+        /// (not generated: no <see cref="DungeonSpawned"/>) always counts - whoever placed it listens to
+        /// <see cref="AnyPaid"/> - and so does a client's copy (the server knows).
+        /// </summary>
+        public bool HasReward()
+        {
+            var tag = GetComponent<DungeonSpawned>();
+            if (tag == null || DungeonNet.IsReplica(this))
+                return true;
+            DungeonInstance d = Dungeon;
+            // Link 0 = generation gave it no reward (0 is also the link of a room's ordinary hidden loot: not the altar's).
+            if (d == null || tag.link == 0)
+                return false;
+            foreach (DungeonSpawned s in d.SpawnedIn(tag.floor, tag.area))
+                if (s != tag && s.dormant && s.link == tag.link && s.kind == PlacementKind.Loot)
+                    return true;
+            return false;
+        }
+
         private void RevealReward()
         {
             var tag = GetComponent<DungeonSpawned>();
             DungeonInstance d = Dungeon;
-            if (tag == null || d == null)
+            if (tag == null || d == null || tag.link == 0)
                 return;
             foreach (DungeonSpawned s in d.SpawnedIn(tag.floor, tag.area))
                 if (s != tag && s.dormant && s.link == tag.link && s.kind == PlacementKind.Loot)

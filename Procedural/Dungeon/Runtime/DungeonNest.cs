@@ -95,6 +95,9 @@ namespace ProceduralDungeon
             return true;
         }
 
+        public override string PromptVerb => "Stomp";
+        protected override string UsedUpReason => "Destroyed";
+
         protected override bool Use(CombatEntity player)
         {
             if (Destroyed)
@@ -158,7 +161,20 @@ namespace ProceduralDungeon
                     if (other != null && !other.Destroyed)
                         last = false;
                 }
-            DungeonMessages.Show(this, last ? "The last nest is destroyed!" : "The nest is destroyed.", last);
+            bool reward = false;
+            if (last && d != null && self != null)
+            {
+                // The room's hidden reward (its loot is spawned hidden): nothing else shows it in a nest room.
+                foreach (DungeonSpawned s in d.SpawnedIn(self.floor, self.area))
+                    if (s != self && s.dormant && s.kind != PlacementKind.Mob && s.kind != PlacementKind.Boss)
+                    {
+                        s.Reveal();
+                        reward = true;
+                    }
+                d.Stats.Bump(ref d.Stats.roomsCleared);
+                d.RaiseRoomCompleted(self.floor, self.area);
+            }
+            DungeonMessages.Show(this, !last ? "The nest is destroyed." : reward ? "The last nest is destroyed - something was hidden in it!" : "The last nest is destroyed!", last);
         }
     }
 }

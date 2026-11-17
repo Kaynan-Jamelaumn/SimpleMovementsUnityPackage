@@ -12,9 +12,9 @@ public class Interactable : MonoBehaviour
     [SerializeField] private float maxInteractionTime; // Maximum interaction time when randomized
 
     /// <summary>
-    /// Gets or sets the interaction time.
+    /// Gets or sets the interaction time (seconds the Interact input is held; 0 = a press).
     /// </summary>
-    public float InteractionTime
+    public virtual float InteractionTime
     {
         get => interactionTime;
         set => interactionTime = value;

@@ -76,6 +76,7 @@ namespace ProceduralDungeon
             PlaceProps();
             PlaceMechanics();
             PlaceTraps();
+            TimeUnavoidableTraps();
             return placements;
         }
 
@@ -161,6 +162,40 @@ namespace ProceduralDungeon
         }
 
         private bool Blocked(int cell) => g.Has(cell, CellFlags.Occupied | CellFlags.Landing) || g.Type[cell] != CellType.Floor;
+
+        /// <summary>
+        /// Does the way squeeze through this cell: are the walkable cells around it joined only through it (a one-cell-wide
+        /// corridor, its corner, a doorway)? What stands there can't be walked around.
+        /// </summary>
+        private bool Pinch(int cell)
+        {
+            int parts = 0;
+            for (int d = 0; d < 4; d++)
+            {
+                int a = g.Neighbor(cell, d);
+                if (a < 0 || !g.IsWalkable(a))
+                    continue;
+                parts++;
+                // Joined to the next neighbour round the corner, through the cell diagonally between them?
+                int b = g.Neighbor(cell, (d + 1) & 3);
+                if (b < 0 || !g.IsWalkable(b))
+                    continue;
+                int diagonal = g.Neighbor(a, (d + 1) & 3);
+                if (diagonal >= 0 && g.IsWalkable(diagonal))
+                    parts--;
+            }
+            return parts >= 2;
+        }
+
+        /// <summary>A floor trap that hurts all the time and can't be put on a cycle (lava, poison plants - not spikes).</summary>
+        private static bool AlwaysDangerous(PropInfo e)
+        {
+            if (e.Kind != PlacementKind.Hazard || e.Placeholder == DungeonPrimitive.SpikeTrap)
+                return false;
+            if (e.Trap != null && e.Trap.overrideTrap)
+                return e.Trap.timing == DungeonHazard.Timing.Constant;
+            return e.Placeholder == DungeonPrimitive.LavaPool || e.Placeholder == DungeonPrimitive.PoisonPlant;
+        }
 
         /// <summary>Picks the back-wall cell of an area (farthest from its openings) for a portal.</summary>
         private int BackWallCell(Area area)
@@ -641,6 +676,9 @@ namespace ProceduralDungeon
             {
                 if (!FindSpot(cells, e.Placement, hash, e.Spacing, e.AwayFromMobs, out int cell, out Vector2 pos, out float yaw))
                     return;
+                // Nobody could get past lava or a poison plant where the way squeezes through one cell: not there.
+                if (M.timeUnavoidableTraps && AlwaysDangerous(e) && Pinch(cell))
+                    continue;
                 Add(e.Kind, PlacementTable.Props, e.Index, cell, pos, yaw, e.HeightOffset, -1, e.Scale.Random(rng), 0, 0.7f);
                 hash.Add(pos, e.Index, 0.5f);
             }

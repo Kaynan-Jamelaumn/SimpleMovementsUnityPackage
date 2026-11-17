@@ -24,6 +24,8 @@ namespace ProceduralDungeon
             cooldown = 60f;
         }
 
+        public override string PromptVerb => "Rest";
+
         protected override bool Use(CombatEntity player)
         {
             DungeonRun run = DungeonSession.RunAt(this) ?? DungeonSession.RunOf(player != null ? player.gameObject : null);

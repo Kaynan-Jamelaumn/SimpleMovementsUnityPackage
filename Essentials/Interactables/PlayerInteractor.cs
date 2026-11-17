@@ -254,11 +254,51 @@ public class PlayerInteractor : MonoBehaviour
         if (inputBound)
             return;
         inputBound = true;
-        interactInput = CombatInputBinding.Create(this, interactAction, interactActionNames, interactDefaultControls, "Interact");
+        interactInput = CombatInputBinding.Create(this, interactAction, interactActionNames, interactDefaultControls, "Interact", alsoFind: FindWiredInteractAction);
         if (clickToInteract)
             clickInput = CombatInputBinding.Create(this, clickAction, clickActionNames, clickDefaultControls, "Interact (click)", fallbackMayShare: true);
         if (!interactInput.HasAny)
             Debug.LogWarning("[Interaction] No Interact input could be found or created: only clicks interact. Add an 'Interact' action to the input actions.", this);
+    }
+
+    /// <summary>
+    /// The player's own Interact action when it is not called Interact / Interaction / Talk: the action of the player's
+    /// input actions whose event calls an OnInteract method - the way <c>Player.OnInteract</c> is wired on the Player
+    /// Input component. So the interactor follows the player's input actions (and their rebinding) whatever the action
+    /// is named; the default controls are only for input actions that have no interact action at all.
+    /// </summary>
+    private InputAction FindWiredInteractAction(InputActionAsset asset)
+    {
+        if (asset == null)
+            return null;
+        PlayerInput input = PlayerRoot.GetComponentInChildren<PlayerInput>(true);
+        if (input == null)
+            input = PlayerRoot.GetComponentInParent<PlayerInput>();
+        if (input == null)
+            return null;
+        // An event calling exactly OnInteract first, then any method with Interact in its name.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            foreach (PlayerInput.ActionEvent e in input.actionEvents)
+            {
+                if (e == null || string.IsNullOrEmpty(e.actionId))
+                    continue;
+                int calls = e.GetPersistentEventCount();
+                for (int k = 0; k < calls; k++)
+                {
+                    string method = e.GetPersistentMethodName(k);
+                    if (string.IsNullOrEmpty(method))
+                        continue;
+                    bool match = pass == 0 ? method == "OnInteract" : method.IndexOf("Interact", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!match)
+                        continue;
+                    foreach (InputAction action in asset)
+                        if (string.Equals(action.id.ToString(), e.actionId, StringComparison.OrdinalIgnoreCase))
+                            return action;
+                }
+            }
+        }
+        return null;
     }
 
     private void Update()

@@ -28,6 +28,9 @@ namespace ProceduralDungeon
 
         public static event Action<DungeonShrine, Blessing> AnyBlessing;
 
+        public override string PromptVerb => "Pray";
+        protected override string UsedUpReason => "Its blessing is spent";
+
         protected override bool Use(CombatEntity player)
         {
             if (blessings == null || blessings.Count == 0)

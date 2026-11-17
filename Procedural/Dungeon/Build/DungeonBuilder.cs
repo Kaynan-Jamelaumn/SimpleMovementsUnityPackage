@@ -794,6 +794,10 @@ namespace ProceduralDungeon
                 {
                     prefab = theme != null ? theme.lever : null;
                     go = prefab != null ? pool.Get(prefab, parent, local, rot) : Primitive(DungeonPrimitive.Lever, "Lever", Color.white, 0f, index, parent, local, rot);
+                    // Tier 1: no wall to hang on (a room over the void) - the stand-in gets a post down to the floor,
+                    // 1.1 m below (the height the population puts levers at).
+                    if (prefab == null && p.Tier == 1)
+                        primitives.AddPost(go, 1.1f);
                     var lever = go.GetComponent<DungeonLever>();
                     if (lever == null)
                         lever = go.AddComponent<DungeonLever>();
@@ -855,6 +859,8 @@ namespace ProceduralDungeon
                     if (p.Scale > 0f && Mathf.Abs(p.Scale - 1f) > 0.001f)
                         go.transform.localScale = go.transform.localScale * p.Scale;
                     e.Trap?.ApplyTo(go);
+                    if (p.Link == PlacementLinks.TimedTrap)
+                        DungeonPrimitives.PutOnCycle(go, index);   // it can't be walked around: it leaves a moment to pass
                     GiveDropTable(go, e.DropTable);
                     break;
                 }

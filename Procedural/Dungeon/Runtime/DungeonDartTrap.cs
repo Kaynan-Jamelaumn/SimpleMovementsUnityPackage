@@ -22,6 +22,8 @@ namespace ProceduralDungeon
         [Min(0f)] public float damage = 9f;
         [Tooltip("Element of the darts (Poison for poisoned darts).")]
         public ElementType element = ElementType.Poison;
+        [Tooltip("Kinds of characters the darts hurt. A dart still stops at anyone it hits.")]
+        public EntityKinds affects = EntityKinds.Players;
         [Tooltip("Height of the muzzle above the trap's base (meters).")]
         public float muzzleHeight = 1.2f;
         [Tooltip("Only shoots when triggered (a tripwire), never by watching its lane.")]
@@ -63,7 +65,7 @@ namespace ProceduralDungeon
                 if (ScenePhysics.Raycast(d.position, transform.forward, out RaycastHit hit, step, ~0, QueryTriggerInteraction.Ignore))
                 {
                     CombatEntity e = CombatEntity.Resolve(hit.collider);
-                    if (e != null && e.IsAlive)
+                    if (e != null && e.IsAlive && (affects & KindOf(e)) != 0)
                         e.ApplyDamage(new DamageInfo { amount = damage, target = e, point = hit.point, direction = transform.forward, type = DamageType.Physical, element = element, form = DamageForm.Pierce });
                     done = true;
                 }
@@ -92,11 +94,28 @@ namespace ProceduralDungeon
                 if (p == null || !p.IsAlive)
                     continue;
                 Vector3 local = transform.InverseTransformPoint(p.transform.position);
-                if (local.z > 0.3f && local.z < range && Mathf.Abs(local.x) < laneWidth * 0.5f && Mathf.Abs(p.transform.position.y - origin.y) < 2.5f)
+                if (local.z > 0.3f && local.z < range && Mathf.Abs(local.x) < laneWidth * 0.5f && Mathf.Abs(p.transform.position.y - origin.y) < 2.5f && Sees(p))
                     return true;
             }
             return false;
         }
+
+        /// <summary>Nothing solid between the muzzle and the player (a player on the other side of a wall doesn't set it off).</summary>
+        private bool Sees(CombatEntity p)
+        {
+            Vector3 from = Muzzle;
+            Vector3 to = p.transform.position + Vector3.up * 1f;
+            Vector3 dir = to - from;
+            float dist = dir.magnitude;
+            if (dist < 0.05f)
+                return true;
+            if (!ScenePhysics.Raycast(from, dir / dist, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore))
+                return true;
+            return CombatEntity.Resolve(hit.collider) == p;
+        }
+
+        private static EntityKinds KindOf(CombatEntity e) =>
+            e.Kind == CombatEntity.EntityKind.Player ? EntityKinds.Players : e.Kind == CombatEntity.EntityKind.Mob ? EntityKinds.Mobs : EntityKinds.Others;
 
         /// <summary>Shoots a volley now (ignoring the reload), staggered a little in height.</summary>
         public void Trigger()

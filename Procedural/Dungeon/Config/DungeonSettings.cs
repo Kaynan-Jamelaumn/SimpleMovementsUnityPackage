@@ -821,6 +821,10 @@ namespace ProceduralDungeon
         public FloatRange shiftInterval = new FloatRange(90f, 180f);
         [Tooltip("Chance per long corridor (8+ cells) of a tripwire that fires arrows from the walls.")]
         [Range(0f, 1f)] public float tripwireChance = 0.15f;
+        [Tooltip("Spike traps that can't be walked around (in a one-cell-wide corridor or doorway) rise and sink on a cycle instead of " +
+                 "being dangerous all the time, so they can be passed unhurt by watching the rhythm. Lava and poison plants are never put " +
+                 "in such spots. Off = every trap keeps its own timing wherever it is.")]
+        public bool timeUnavoidableTraps = true;
 
         [Header("Chasms")]
         [Tooltip("What falling into a chasm does. Death (default): a black fog fills the chasm and touching it kills. Floor Below: land on the floor below, hurt (Floor Below Else Death: die on the last floor, where the fog is).")]

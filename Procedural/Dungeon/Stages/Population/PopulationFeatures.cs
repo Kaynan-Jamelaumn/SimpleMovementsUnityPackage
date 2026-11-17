@@ -327,6 +327,101 @@ namespace ProceduralDungeon
             PlaceRoomMechanics();
             PlaceShiftingWalls();
             PlaceRoamer();
+            EnsureRevealers();
+        }
+
+        /// <summary>
+        /// Nothing stays hidden for good. Whatever was placed hidden - a boss room's chest, an ambush's waves, a cellar's
+        /// stash - needs something in its room that shows it: a room event, the nests of a nest room, the altar it belongs
+        /// to, barrels to break. A room that has none (one too open for gates, an entrance or stairs room, a nest room
+        /// with no place for a nest, a puzzle room with no place for its plates) gets a room event without gates: its
+        /// fight still runs and its reward appears when the room is clear - at once when nothing guards it. What is hidden
+        /// outside every room is simply shown.
+        /// </summary>
+        private void EnsureRevealers()
+        {
+            var controlled = new HashSet<int>();
+            var nested = new HashSet<int>();
+            var breakable = new HashSet<int>();
+            var altars = new HashSet<(int area, int link)>();
+            foreach (Placement pl in placements)
+            {
+                if (pl.Area < 0)
+                    continue;
+                if (pl.Kind == PlacementKind.RoomController)
+                    controlled.Add(pl.Area);
+                else if (pl.Kind == PlacementKind.Nest)
+                    nested.Add(pl.Area);
+                DungeonPrimitive kind = PlaceholderOf(pl);
+                if (!pl.Dormant && (kind == DungeonPrimitive.Barrel || kind == DungeonPrimitive.Crate || kind == DungeonPrimitive.WineBarrel))
+                    breakable.Add(pl.Area);
+                else if ((kind == DungeonPrimitive.BloodAltar || kind == DungeonPrimitive.CursedAltar) && pl.Link != 0)
+                    altars.Add((pl.Area, pl.Link));
+            }
+
+            var rooms = new List<int>();
+            for (int i = 0; i < placements.Count; i++)
+            {
+                Placement pl = placements[i];
+                if (!pl.Dormant)
+                    continue;
+                bool mob = pl.Kind == PlacementKind.Mob || pl.Kind == PlacementKind.Boss;
+                bool stash = pl.Kind == PlacementKind.Loot && pl.Link == PlacementLinks.BarrelStash;
+                if (pl.Area < 0 || (stash && !breakable.Contains(pl.Area) && !controlled.Contains(pl.Area)))
+                {
+                    // Nothing could ever show it: it is simply there.
+                    pl.Dormant = false;
+                    pl.Wave = 0;
+                    if (stash)
+                        pl.Link = 0;
+                    placements[i] = pl;
+                    continue;
+                }
+                if (controlled.Contains(pl.Area) || stash)
+                    continue;
+                if (!mob && (nested.Contains(pl.Area) || (pl.Kind == PlacementKind.Loot && pl.Link != 0 && altars.Contains((pl.Area, pl.Link)))))
+                    continue;
+                if (!rooms.Contains(pl.Area))
+                    rooms.Add(pl.Area);
+            }
+            foreach (int id in rooms)
+            {
+                Area area = floor.Areas[id];
+                RoomEventMode mode = area.Role == AreaRole.Colosseum ? RoomEventMode.PitFight
+                    : IsAmbush(area) ? RoomEventMode.Ambush : RoomEventMode.LockUntilCleared;
+                AddController(area, mode, WaveCount(area));
+            }
+        }
+
+        /// <summary>The stand-in kind of a prop or loot placement (what mechanics it has), None for everything else.</summary>
+        private DungeonPrimitive PlaceholderOf(Placement pl)
+        {
+            if (pl.Table == PlacementTable.Props && pl.Entry >= 0 && pl.Entry < p.Props.Count)
+                return p.Props[pl.Entry].Placeholder;
+            if (pl.Table == PlacementTable.Loot && pl.Entry >= 0 && pl.Entry < p.Loot.Count)
+                return p.Loot[pl.Entry].Placeholder;
+            return DungeonPrimitive.None;
+        }
+
+        /// <summary>
+        /// Spike traps standing where the way squeezes through one cell are marked to run on a cycle (the builder gives
+        /// them their rhythm): a trap nobody can walk around must leave a moment to pass.
+        /// </summary>
+        private void TimeUnavoidableTraps()
+        {
+            if (!M.timeUnavoidableTraps)
+                return;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                Placement pl = placements[i];
+                if (pl.Table != PlacementTable.Props || pl.Link != 0 || PlaceholderOf(pl) != DungeonPrimitive.SpikeTrap)
+                    continue;
+                Vector2Int at = Vector2Int.FloorToInt(pl.Cell);
+                if (!g.InBounds(at) || !Pinch(g.Index(at)))
+                    continue;
+                pl.Link = PlacementLinks.TimedTrap;
+                placements[i] = pl;
+            }
         }
 
         private int WaveCount(Area area)
@@ -429,35 +524,88 @@ namespace ProceduralDungeon
             return false;
         }
 
-        /// <summary>Pressure plates (Link = their place in the order) and the room's puzzle controller.</summary>
+        /// <summary>
+        /// Pressure plates (Link = their place in the order) and the room's puzzle controller. A puzzle needs at least two
+        /// plates and something to win: a room with no place for them stays an ordinary room (whatever it hid is shown
+        /// when the players come in, see <see cref="EnsureRevealers"/>).
+        /// </summary>
         private void PlacePuzzle(Area area)
         {
             int wanted = Mathf.Max(2, M.puzzlePlates.Random(Features));
+            // Plates with room around them; a crowded or narrow room takes them nearer its walls and each other.
+            List<int> plates = PlateCells(area, wanted, 1.4f, 2.2f, 1f);
+            if (plates.Count < 2)
+                plates = PlateCells(area, wanted, 1f, 1.6f, 0.2f);
+            if (plates.Count < 2 || !PuzzleReward(area, plates))
+                return;
+            for (int order = 0; order < plates.Count; order++)
+            {
+                int index = Add(PlacementKind.Switch, PlacementTable.None, -1, plates[order], CellPos(plates[order]), 0f, 0f, -1, 1f, 0, 0.7f);
+                Placement pl = placements[index];
+                pl.Link = order;
+                placements[index] = pl;
+            }
+            AddController(area, RoomEventMode.Puzzle, 0);
+        }
+
+        /// <summary>
+        /// Up to <paramref name="wanted"/> free cells for pressure plates: <paramref name="wallDistance"/> from the walls,
+        /// <paramref name="spacing"/> apart, nothing within <paramref name="clearance"/> of them.
+        /// </summary>
+        private List<int> PlateCells(Area area, int wanted, float wallDistance, float spacing, float clearance)
+        {
             var candidates = new List<int>();
             foreach (int c in area.Cells)
-                if (!Blocked(c) && !NearDoor(c) && wall[c] >= 1.4f)
+                if (!Blocked(c) && !NearDoor(c) && wall[c] >= wallDistance)
                     candidates.Add(c);
             Features.Shuffle(candidates);
-            var chosen = new List<Vector2>();
-            int order = 0;
+            var chosen = new List<int>();
             foreach (int c in candidates)
             {
-                if (order >= wanted)
+                if (chosen.Count >= wanted)
                     break;
                 Vector2 pos = CellPos(c);
                 bool clear = true;
-                foreach (Vector2 o in chosen)
-                    if ((o - pos).sqrMagnitude < 2.2f * 2.2f)
+                foreach (int o in chosen)
+                    if ((CellPos(o) - pos).sqrMagnitude < spacing * spacing)
                         clear = false;
-                if (!clear || occupied.AnyWithin(pos, 1f))
-                    continue;
-                int index = Add(PlacementKind.Switch, PlacementTable.None, -1, c, pos, 0f, 0f, -1, 1f, 0, 0.7f);
-                Placement pl = placements[index];
-                pl.Link = order++;
-                placements[index] = pl;
-                chosen.Add(pos);
+                if (clear && !occupied.AnyWithin(pos, clearance))
+                    chosen.Add(c);
             }
-            AddController(area, RoomEventMode.Puzzle, 0);
+            return chosen;
+        }
+
+        /// <summary>
+        /// The puzzle's prize: the room's hidden loot - or, when the room got none, one put there now (away from the
+        /// plates). False when there is none and no place for one.
+        /// </summary>
+        private bool PuzzleReward(Area area, List<int> plates)
+        {
+            foreach (Placement pl in placements)
+                if (pl.Area == area.Id && pl.Dormant && pl.Kind != PlacementKind.Mob && pl.Kind != PlacementKind.Boss)
+                    return true;
+            LootInfo entry = PickLoot(area, 1);
+            if (entry == null)
+                return false;
+            int best = -1;
+            for (int pass = 0; pass < 2 && best < 0; pass++)
+                foreach (int c in area.Cells)
+                {
+                    if (Blocked(c) || NearDoor(c) || (pass == 0 && occupied.AnyWithin(CellPos(c), 0.2f)))
+                        continue;
+                    bool onPlates = false;
+                    foreach (int plate in plates)
+                        onPlates |= (CellPos(plate) - CellPos(c)).sqrMagnitude < 1.5f * 1.5f;
+                    if (!onPlates && (best < 0 || wall[c] < wall[best]))
+                        best = c;   // by a wall, out of the way of the plates
+                }
+            if (best < 0)
+                return false;
+            Vector2 pos = CellPos(best);
+            int index = Add(PlacementKind.Loot, PlacementTable.Loot, entry.Index, best, pos, YawTowards(pos, area.Center), 0f, -1, 1f, entry.Tier, 0.8f);
+            SetDormant(index, 0);
+            loot.Add(pos, entry.Index, 0.8f);
+            return true;
         }
 
         /// <summary>

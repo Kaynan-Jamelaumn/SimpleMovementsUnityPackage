@@ -40,6 +40,9 @@ namespace ProceduralDungeon
         private readonly List<DungeonSpawned> members = new List<DungeonSpawned>();
         private float nextPoll, empty, outside;
         private bool locked;
+        // How many gates the room has (found when they are first closed). A room too open to gate still runs its
+        // fight and gives its reward - it just has no doors to talk about.
+        private int gateCount;
 
         public void Setup(DungeonInstance owner, int floorIndex, int areaId, RoomEventMode eventMode, int waveCount)
         {
@@ -90,7 +93,7 @@ namespace ProceduralDungeon
                 if (locked && (outside += 0.2f) >= 1f)
                 {
                     Lock(false);
-                    if (messages)
+                    if (messages && gateCount > 0)
                         DungeonMessages.Show(this, "The enemies left the room - the doors open.");
                 }
             }
@@ -117,9 +120,11 @@ namespace ProceduralDungeon
             }
             Lock(true);
             Started?.Invoke(this);
-            if (messages)
+            if (messages && gateCount > 0)
                 DungeonMessages.Show(this, mode == RoomEventMode.Ambush ? "Ambush! The doors slam shut!"
                     : mode == RoomEventMode.PitFight ? "The crowd roars! The gates slam shut - fight!" : "The doors slam shut!", true);
+            else if (messages && mode != RoomEventMode.LockUntilCleared)
+                DungeonMessages.Show(this, mode == RoomEventMode.Ambush ? "Ambush!" : "The crowd roars - fight!", true);
         }
 
         /// <summary>Reveals the next wave of hidden mobs. False when there is none left.</summary>
@@ -204,8 +209,10 @@ namespace ProceduralDungeon
             if (fought)
             {
                 dungeon.Stats.Bump(ref dungeon.Stats.roomsCleared);
-                if (messages)
+                if (messages && gateCount > 0)
                     DungeonMessages.Show(this, mode == RoomEventMode.PitFight ? "Victory! The crowd cheers and the gates open." : "The room is clear. The doors open.");
+                else if (messages)
+                    DungeonMessages.Show(this, mode == RoomEventMode.PitFight ? "Victory! The crowd cheers." : "The room is clear.");
             }
             dungeon.RaiseRoomCompleted(floor, area);
             Completed?.Invoke(this);
@@ -215,13 +222,18 @@ namespace ProceduralDungeon
         private void Lock(bool closed)
         {
             locked = closed;
+            int gates = 0;
             foreach (DungeonSpawned s in dungeon.SpawnedIn(floor, area))
                 if (s.kind == PlacementKind.Gate)
                 {
                     var gate = s.GetComponent<DungeonGate>();
                     if (gate != null)
+                    {
                         gate.SetClosed(closed);
+                        gates++;
+                    }
                 }
+            gateCount = gates;
         }
     }
 }

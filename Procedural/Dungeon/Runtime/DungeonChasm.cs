@@ -98,7 +98,7 @@ namespace ProceduralDungeon
                 to = safe.TryGetValue(p, out Vector3 s) ? s : dungeon.PlayerSpawn.position;
                 message = "You climb back out of the chasm, bruised.";
             }
-            DungeonSession.Teleport(p.gameObject, to + Vector3.up * 0.3f, p.transform.rotation);
+            DungeonSession.Teleport(PlayerLocator.MovableRoot(p), to + Vector3.up * 0.3f, p.transform.rotation);
             if (p.PlayerMovement != null)
                 p.PlayerMovement.VerticalVelocity = 0f;
             if (fallDamage > 0f)

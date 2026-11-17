@@ -34,6 +34,9 @@ namespace ProceduralDungeon
                 handle.localRotation = Quaternion.Slerp(handle.localRotation, Quaternion.Euler(-40f, 0f, 0f), Time.deltaTime * 8f);
         }
 
+        public override string PromptVerb => action == LeverAction.CloseGasValve ? "Shut" : "Pull";
+        protected override string UsedUpReason => action == LeverAction.CloseGasValve ? "Already shut" : "Already pulled";
+
         protected override bool Use(CombatEntity player)
         {
             var tag = GetComponent<DungeonSpawned>();

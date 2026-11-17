@@ -109,16 +109,22 @@ namespace ProceduralDungeon
             Current = State.Solved;
             foreach (DungeonPressurePlate p in plates)
                 p.SetLit(true);
+            int revealed = 0;
             if (dungeon != null)
             {
                 foreach (DungeonSpawned s in dungeon.SpawnedIn(floor, area))
                     if (s.dormant)
+                    {
                         s.Reveal();
-                dungeon.Stats.Bump(ref dungeon.Stats.puzzlesSolved);
+                        revealed++;
+                    }
+                // (A room with no plates to step on was not a puzzle anybody solved.)
+                if (plates.Count >= 2)
+                    dungeon.Stats.Bump(ref dungeon.Stats.puzzlesSolved);
                 dungeon.RaiseRoomCompleted(floor, area);
             }
             if (plates.Count >= 2)
-                DungeonMessages.Show(this, "The puzzle is solved - something appears!", true);
+                DungeonMessages.Show(this, revealed > 0 ? "The puzzle is solved - something appears!" : "The puzzle is solved.", true);
             Solved?.Invoke(this);
             AnySolved?.Invoke(this);
         }

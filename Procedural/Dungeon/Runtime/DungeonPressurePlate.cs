@@ -25,13 +25,21 @@ namespace ProceduralDungeon
         private new DungeonSpawned tag;
         private Light[] lights;
         private Vector3 rest;
+        private bool restKnown;
 
         private void Awake()
         {
             tag = GetComponent<DungeonSpawned>();
             lights = GetComponentsInChildren<Light>(true);
-            rest = transform.localPosition;
             SetLit(false);
+        }
+
+        // The plate is created (Awake) before the builder puts it in its room, and a pooled prefab comes back somewhere
+        // else: where it rests is read on its first frame in place, each time it is switched on.
+        private void OnEnable()
+        {
+            restKnown = false;
+            IsPressed = false;
         }
 
         public void SetLit(bool lit)
@@ -45,6 +53,11 @@ namespace ProceduralDungeon
 
         private void Update()
         {
+            if (!restKnown)
+            {
+                rest = transform.localPosition;
+                restKnown = true;
+            }
             CombatEntity player = DungeonPlayers.NearestAlive(transform.position, radius);
             bool pressed = player != null;
             if (pressed && !IsPressed && Puzzle != null)

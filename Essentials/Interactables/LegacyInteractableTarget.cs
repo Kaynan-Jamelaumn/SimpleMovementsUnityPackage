@@ -3,6 +3,31 @@ using System.Reflection;
 using UnityEngine;
 
 /// <summary>
+/// Optional, on an older Interactable (dungeon chests, shrines, altars, levers...): what the player's interaction prompt
+/// says about it and whether it can be used right now. The <see cref="PlayerInteractor"/> reads it through
+/// <see cref="LegacyInteractableTarget"/>, so the object is used with the player's Interact input action (whatever it
+/// is bound to), shows a proper prompt ("Open  Chest", "Pull  Lever") and knows which player used it. The object stays
+/// an older Interactable for everything else (<c>Player.OnInteract</c>, the network relay).
+/// </summary>
+public interface IInteractionPrompt
+{
+    /// <summary>Name shown in the prompt ("Chest"). Empty = the object's name.</summary>
+    string PromptName { get; }
+
+    /// <summary>What using it does ("Open", "Pray", "Pull"). Empty = "Interact".</summary>
+    string PromptVerb { get; }
+
+    /// <summary>Seconds the Interact input must be held (0 = a press).</summary>
+    float PromptHold { get; }
+
+    /// <summary>Can <paramref name="interactor"/>'s player use it now? <paramref name="reason"/> says why not ("Empty").</summary>
+    bool CanInteract(PlayerInteractor interactor, out string reason);
+
+    /// <summary><paramref name="interactor"/>'s player uses it (called instead of the parameterless Interact).</summary>
+    void Interact(PlayerInteractor interactor);
+}
+
+/// <summary>
 /// Lets the <see cref="PlayerInteractor"/> use the older interaction objects - Interactable (doors, dungeon shrines,
 /// chests), ItemPickable (items on the ground) and <see cref="Storage"/> - the way <c>Player.OnInteract</c> does, with a
 /// prompt and its key. Used when the interactor's Prompt Older Interactables (or Handle Legacy Interactables) is on.
@@ -19,6 +44,7 @@ public sealed class LegacyInteractableTarget : IInteractable
 
     private readonly bool pickable;
     private readonly Storage storage;
+    private readonly IInteractionPrompt prompt;
     private readonly float range;
     private readonly MethodInfo interact;
     private readonly PropertyInfo interactionTime;
@@ -30,12 +56,15 @@ public sealed class LegacyInteractableTarget : IInteractable
         Owner = owner;
         this.range = range;
         storage = owner as Storage;
+        prompt = owner as IInteractionPrompt;
         Type t = owner != null ? owner.GetType() : null;
         pickable = Is(t, PickableTypeName);
         if (t != null)
         {
             interact = t.GetMethod("Interact", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
-            interactionTime = t.GetProperty("InteractionTime", BindingFlags.Public | BindingFlags.Instance);
+            // (An object with its own prompt says itself how long the input is held.)
+            if (prompt == null)
+                interactionTime = t.GetProperty("InteractionTime", BindingFlags.Public | BindingFlags.Instance);
             pickableItem = t.GetField("itemScriptableObject", BindingFlags.Public | BindingFlags.Instance);
             pickableQuantity = t.GetField("quantity", BindingFlags.Public | BindingFlags.Instance);
         }
@@ -83,17 +112,22 @@ public sealed class LegacyInteractableTarget : IInteractable
             }
             if (storage != null && !string.IsNullOrWhiteSpace(storage.name))
                 return storage.name;
+            if (prompt != null && Owner != null && !string.IsNullOrWhiteSpace(prompt.PromptName))
+                return prompt.PromptName;
             return Owner != null ? Owner.gameObject.name : "";
         }
     }
 
-    public string InteractionVerb => pickable ? "Pick up" : storage != null ? "Open" : "Interact";
+    public string InteractionVerb => pickable ? "Pick up" : storage != null ? "Open"
+        : prompt != null && Owner != null && !string.IsNullOrWhiteSpace(prompt.PromptVerb) ? prompt.PromptVerb : "Interact";
     public Transform InteractionPoint => Owner != null ? Owner.transform : null;
     public float InteractionRange => range;
     public int InteractionPriority => pickable ? -2 : -1; // NPCs first
 
     public float HoldDuration =>
-        Owner != null && interactionTime != null && interactionTime.GetValue(Owner) is float f ? Mathf.Max(0f, f) : 0f;
+        Owner == null ? 0f
+        : prompt != null ? Mathf.Max(0f, prompt.PromptHold)
+        : interactionTime != null && interactionTime.GetValue(Owner) is float f ? Mathf.Max(0f, f) : 0f;
 
     public bool AllowsClick => true;
 
@@ -114,6 +148,8 @@ public sealed class LegacyInteractableTarget : IInteractable
             reason = denied;
             return false;
         }
+        if (prompt != null)
+            return prompt.CanInteract(interactor, out reason);
         return true;
     }
 
@@ -129,6 +165,10 @@ public sealed class LegacyInteractableTarget : IInteractable
             if (inventory == null) return;
             if (inventory.IsStorageOpened) inventory.CloseStorage(storage);
             else inventory.OpenStorage(storage);
+        }
+        else if (prompt != null)
+        {
+            prompt.Interact(interactor);
         }
         else
         {

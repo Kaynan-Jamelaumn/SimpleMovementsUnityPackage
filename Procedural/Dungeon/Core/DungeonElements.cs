@@ -292,6 +292,11 @@ namespace ProceduralDungeon
     {
         /// <summary>A hidden reward found by breaking the barrels of its room (wine cellars).</summary>
         public const int BarrelStash = -3;
+        /// <summary>
+        /// A floor trap where the way squeezes through one cell (it can't be walked around): the builder puts it on a
+        /// cycle, so there is a moment to pass.
+        /// </summary>
+        public const int TimedTrap = -4;
     }
 
     public enum PlacementTable : byte

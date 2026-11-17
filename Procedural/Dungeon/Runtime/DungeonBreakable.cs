@@ -32,6 +32,8 @@ namespace ProceduralDungeon
             return true;
         }
 
+        public override string PromptVerb => "Smash";
+
         protected override bool Use(CombatEntity player)
         {
             Hit();

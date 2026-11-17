@@ -28,6 +28,7 @@ namespace ProceduralDungeon
         public static event Action<DungeonChest, int> AnyOpened;
 
         private Transform lid;
+        private static bool warnedNoTable;
 
         private void Start()
         {
@@ -42,6 +43,15 @@ namespace ProceduralDungeon
                 lid.localRotation = Quaternion.RotateTowards(lid.localRotation, Quaternion.Euler(-lidAngle, 0f, 0f), 120f * Time.deltaTime);
         }
 
+        public override string PromptVerb => "Open";
+        protected override string UsedUpReason => "Empty";
+
+        protected override bool CanUse(CombatEntity player, out string reason)
+        {
+            reason = IsOpen ? "Empty" : "";
+            return !IsOpen;
+        }
+
         protected override bool Use(CombatEntity player)
         {
             if (IsOpen)
@@ -50,12 +60,14 @@ namespace ProceduralDungeon
             var tag = GetComponent<DungeonSpawned>();
             int tier = tag != null ? tag.tier : 0;
             ItemDropTable table = dropTable != null ? dropTable : ItemDropManager.Instance.chestTable;
+            int given = 0;
             if (table != null)
-                ItemDropManager.Drop(table, tier + tierBonus, transform.position + transform.forward * 1f, gameObject);
+                given += ItemDropManager.Drop(table, tier + tierBonus, transform.position + transform.forward * 1f, gameObject);
             for (int i = 0; drops != null && i < drops.Length; i++)
             {
                 if (drops[i] == null)
                     continue;
+                given++;
                 Vector3 at = transform.position + transform.forward * 1f + Vector3.up * 0.4f + transform.right * (i - (drops.Length - 1) * 0.5f) * 0.4f;
                 // Offline a plain Instantiate; on a server a networked world item in the chest's scene (see WorldItems).
                 GameObject drop = WorldItems.InstantiatePickable(drops[i], at, Quaternion.identity, out bool carrier);
@@ -68,6 +80,18 @@ namespace ProceduralDungeon
             DungeonInstance d = Dungeon;
             if (d != null)
                 d.Stats.Bump(ref d.Stats.chestsOpened);
+            // Nothing came out. Fine when your own code gives the loot (Opened / AnyOpened); otherwise the chest has no
+            // drop table: set one on the chest, on its dungeon loot entry, or as the Item Drop Manager's Chest table.
+            if (given == 0 && Opened == null && AnyOpened == null)
+            {
+                DungeonMessages.Show(this, "The chest is empty.");
+                if (table == null && !warnedNoTable)
+                {
+                    warnedNoTable = true;
+                    Debug.LogWarning("[Dungeon] A chest opened with nothing to drop: it has no Drop Table, its dungeon loot entry has none and the " +
+                                     "Item Drop Manager has no Chest table.", this);
+                }
+            }
             Opened?.Invoke(this, tier);
             AnyOpened?.Invoke(this, tier);
             return true;

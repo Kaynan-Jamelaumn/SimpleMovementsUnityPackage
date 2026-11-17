@@ -444,6 +444,7 @@ namespace ProceduralDungeon
                     var food = root.AddComponent<DungeonHerb>();
                     food.heal = 0.25f;
                     food.message = "You eat some of the stew. It's still warm.";
+                    food.verb = "Eat";
                     break;
                 }
                 case DungeonPrimitive.RareHerb:
@@ -467,6 +468,7 @@ namespace ProceduralDungeon
                     var altar = root.AddComponent<DungeonGamblingAltar>();
                     altar.price = kind == DungeonPrimitive.BloodAltar ? DungeonGamblingAltar.Price.Blood : DungeonGamblingAltar.Price.Curse;
                     altar.holdToUse = 2f;
+                    altar.interactHold = 1f;
                     break;
                 }
                 case DungeonPrimitive.Spectators: root.AddComponent<DungeonSpectators>(); break;
