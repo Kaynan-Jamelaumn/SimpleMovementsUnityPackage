@@ -87,6 +87,11 @@ public static class PlayerAnimatorSetup
         ("IsStunned", AnimatorControllerParameterType.Bool, "cannot move (stun) but alive"),
         ("IsDead", AnimatorControllerParameterType.Bool, "dead"),
         ("DeathTrigger", AnimatorControllerParameterType.Trigger, "died"),
+        ("IsSleeping", AnimatorControllerParameterType.Bool, "asleep"),
+        ("IsUnconscious", AnimatorControllerParameterType.Bool, "knocked out (without it the IsDead pose is shown)"),
+        ("IsTreating", AnimatorControllerParameterType.Bool, "applying a treatment to an injury (bandaging, splinting)"),
+        // Items (ItemSO: used when the item's own Use Animation has no state of its name, or it has none)
+        ("UseItemTrigger", AnimatorControllerParameterType.Trigger, "an item was used (one generic use animation)"),
     };
 
     [MenuItem(SMMenu.Root + "Player/Complete Player Animator Controller", false, SMMenu.Player + 20)]

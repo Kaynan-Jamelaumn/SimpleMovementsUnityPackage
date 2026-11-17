@@ -92,7 +92,7 @@ public class OreDeposit : MonoBehaviour, IInteractable, IWeaponHittable, IReplic
             ItemHandler.SpawnWorldItem(item, left, new List<int> { code }, transform.position + Vector3.up * 0.5f, gameObject);
         GiveGem(inv, lump);
         if (breakSound != null)
-            AudioSource.PlayClipAtPoint(breakSound, transform.position);
+            GameAudio.Play(breakSound, transform.position);
         if (WorkedOut)
             depletedAt = Time.time;
         ShowState();

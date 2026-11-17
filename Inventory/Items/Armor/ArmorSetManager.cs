@@ -466,7 +466,7 @@ public class ArmorSetManager : MonoBehaviour
         if (clip == null)
             return;
         if (audioSource != null)
-            audioSource.PlayOneShot(clip);
+            GameAudio.PlayOn(audioSource, clip);
         else
             equipment?.Context.PlayOneShot(clip);
     }

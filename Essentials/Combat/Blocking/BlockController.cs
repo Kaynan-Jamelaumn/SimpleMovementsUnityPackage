@@ -830,8 +830,10 @@ public class BlockController : MonoBehaviour, IDamageInterceptor, IDisplacementM
             return;
         if (playerAnim != null)
         {
-            if (playerAnim.HasAnimationParameter(trigger) && playerAnim.Anim != null)
-                playerAnim.Anim.SetTrigger(trigger);
+            // Asked of the Animator itself: the player's model only "knows" the parameters it drives, so these triggers
+            // were never found there and a player's block, parry, guard break and bash reactions never played.
+            if (playerAnim.Anim != null)
+                AnimatorParameterCache.SetTrigger(playerAnim.Anim, trigger);
         }
         else if (animator != null)
         {

@@ -14,6 +14,37 @@ public class PlayerAnimationModel : MonoBehaviour
     // Animation parameter hashes - cached for performance
     private readonly Dictionary<string, int> animationHashes = new Dictionary<string, int>();
 
+    // Every parameter of the controller the Animator has now, with its type. Read once per controller: asking the
+    // Animator for its parameters builds a new array each time, which used to happen dozens of times a frame.
+    private readonly Dictionary<string, AnimatorControllerParameterType> parameterTypes =
+        new Dictionary<string, AnimatorControllerParameterType>();
+    private RuntimeAnimatorController scannedController;
+    private int scannedCount;
+    private int countCheckedFrame = -1;
+
+    private static readonly string[] KnownParameterNames =
+    {
+        // Movement parameters
+        "IsWalking", "IsRunning", "IsCrouching", "IsDashing",
+        "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
+        "MovementX", "MovementZ", "MovementSpeed", "AirTime",
+        "IsSwimming", "IsUnderwater", "SwimVertical", "SwimPitch", "SwimSpeed",
+        // Injuries (how the legs let the player move)
+        "LocomotionMode", "IsLimping", "LimpAmount", "LimpSide", "IsHopping", "HopCycle", "IsCrawling", "IsLegless",
+        "MissingLegs", "MissingArms", "IsSitting", "SeatValue",
+
+        // Combat parameters
+        "AttackCombo", "AttackTrigger", "LightAttackTrigger",
+        "HeavyAttackTrigger", "ChargedAttackTrigger", "SpecialAttackTrigger",
+
+        // Action parameters
+        "RollTrigger", "DashTrigger", "JumpTrigger", "LandTrigger",
+        "HitTrigger", "DeathTrigger", "UseItemTrigger",
+
+        // State parameters
+        "IsInputLocked", "IsBlocking", "IsStunned", "IsGrounded", "IsDead", "IsSleeping", "IsUnconscious", "IsTreating"
+    };
+
     // Animation state tracking
     private bool isAttacking = false;
     private bool isDashing = false;
@@ -36,9 +67,16 @@ public class PlayerAnimationModel : MonoBehaviour
         InitializeAnimationHashes();
     }
 
+    /// <summary>
+    /// Reads the Animator's parameters again (call it after giving the Animator another controller; it is also done
+    /// by itself when a parameter is asked for and the controller is not the one last read).
+    /// </summary>
     public void InitializeAnimationHashes()
     {
         animationHashes.Clear();
+        parameterTypes.Clear();
+        scannedController = null;
+        scannedCount = 0;
 
         // Only cache parameters that actually exist in the Animator Controller
         if (anim == null)
@@ -53,59 +91,85 @@ public class PlayerAnimationModel : MonoBehaviour
             return;
         }
 
-        string[] parameterNames = {
-        // Movement parameters
-        "IsWalking", "IsRunning", "IsCrouching", "IsDashing",
-        "IsRolling", "IsJumping", "IsAttacking", "IsFalling",
-        "MovementX", "MovementZ", "MovementSpeed", "AirTime",
-        "IsSwimming", "IsUnderwater", "SwimVertical", "SwimPitch", "SwimSpeed",
-        // Injuries (how the legs let the player move)
-        "LocomotionMode", "IsLimping", "LimpAmount", "LimpSide", "IsHopping", "HopCycle", "IsCrawling", "IsLegless",
-        "MissingLegs", "MissingArms", "IsSitting", "SeatValue",
-        
-        // Combat parameters
-        "AttackCombo", "AttackTrigger", "LightAttackTrigger",
-        "HeavyAttackTrigger", "ChargedAttackTrigger", "SpecialAttackTrigger",
-        
-        // Action parameters
-        "RollTrigger", "DashTrigger", "JumpTrigger", "LandTrigger",
-        "HitTrigger", "DeathTrigger",
-        
-        // State parameters
-        "IsInputLocked", "IsBlocking", "IsStunned", "IsGrounded", "IsDead", "IsSleeping", "IsUnconscious"
-    };
+        ScanParameters();
+        int cachedCount = CacheKnownNames();
 
+        if (debugAnimations)
+            Debug.Log($"Cached {cachedCount} animation parameters out of {KnownParameterNames.Length} total parameters");
+    }
+
+    /// <summary>The parameters this system drives that the controller has: known from the start (their hashes kept).</summary>
+    private int CacheKnownNames()
+    {
         int cachedCount = 0;
-        foreach (string paramName in parameterNames)
+        foreach (string paramName in KnownParameterNames)
         {
-            if (HasParameter(paramName))
+            if (parameterTypes.ContainsKey(paramName))
             {
                 animationHashes[paramName] = Animator.StringToHash(paramName);
                 cachedCount++;
             }
         }
-
-        if (debugAnimations)
-            Debug.Log($"Cached {cachedCount} animation parameters out of {parameterNames.Length} total parameters");
+        return cachedCount;
     }
-    private bool HasParameter(string paramName)
-    {
-        if (anim == null || anim.runtimeAnimatorController == null) return false;
 
+    /// <summary>Lists the controller's parameters with their types (the one place that asks the Animator for them).</summary>
+    private void ScanParameters()
+    {
+        parameterTypes.Clear();
+        scannedController = anim != null ? anim.runtimeAnimatorController : null;
+        scannedCount = 0;
+        if (anim == null || scannedController == null)
+            return;
         try
         {
-            foreach (AnimatorControllerParameter param in anim.parameters)
-            {
-                if (param.name == paramName)
-                    return true;
-            }
+            AnimatorControllerParameter[] all = anim.parameters;
+            scannedCount = all.Length;
+            for (int i = 0; i < all.Length; i++)
+                parameterTypes[all[i].name] = all[i].type;
         }
         catch (System.Exception e)
         {
             if (debugAnimations)
-                Debug.LogWarning($"Error checking parameter '{paramName}': {e.Message}");
+                Debug.LogWarning($"Error reading the Animator's parameters: {e.Message}");
+        }
+    }
+
+    private bool HasParameter(string paramName)
+    {
+        if (anim == null) return false;
+        RuntimeAnimatorController controller = anim.runtimeAnimatorController;
+        if (controller == null)
+        {
+            // No controller (any more): nothing can be set, whatever was read from the last one.
+            if (parameterTypes.Count > 0 || scannedController != null)
+            {
+                parameterTypes.Clear();
+                scannedController = null;
+                scannedCount = 0;
+            }
+            return false;
         }
 
+        // Another controller than the one last read (swapped without InitializeAnimationHashes): start again from it.
+        if (!ReferenceEquals(controller, scannedController))
+            InitializeAnimationHashes();
+
+        if (parameterTypes.ContainsKey(paramName))
+            return true;
+
+        // Not there. The list may have been read before the Animator was ready, or a parameter was added while
+        // playing in the editor: the count tells (one cheap check a frame, no array built).
+        if (countCheckedFrame != Time.frameCount)
+        {
+            countCheckedFrame = Time.frameCount;
+            if (anim.parameterCount != scannedCount)
+            {
+                ScanParameters();
+                CacheKnownNames();
+                return parameterTypes.ContainsKey(paramName);
+            }
+        }
         return false;
     }
 
@@ -113,13 +177,16 @@ public class PlayerAnimationModel : MonoBehaviour
     {
         if (string.IsNullOrEmpty(parameterName)) return -1;
 
+        // (also notices a controller that was swapped, before a hash of the old one is handed out)
+        bool exists = HasParameter(parameterName);
+
         if (animationHashes.TryGetValue(parameterName, out int hash))
         {
             return hash;
         }
 
         // Try to add the parameter if it exists but wasn't cached
-        if (HasParameter(parameterName))
+        if (exists)
         {
             hash = Animator.StringToHash(parameterName);
             animationHashes[parameterName] = hash;
@@ -136,28 +203,82 @@ public class PlayerAnimationModel : MonoBehaviour
         return -1;
     }
 
+    /// <summary>The hash and the type of a parameter the Animator has. False when it has none of that name.</summary>
+    private bool TryGetParameter(string parameterName, out int hash, out AnimatorControllerParameterType type)
+    {
+        type = default;
+        hash = GetAnimationHash(parameterName);
+        return hash != -1 && anim != null && parameterTypes.TryGetValue(parameterName, out type);
+    }
+
+    // The three typed versions do exactly what the object version below does for a bool, a float and an int, without
+    // boxing the value: a call with a plain value (true, 0.5f, 2) picks them by itself.
+
+    /// <summary>Sets a Bool parameter (a Trigger of that name is set, whatever the value). False when it could not.</summary>
+    public bool SetParameterSafe(string parameterName, bool value)
+    {
+        if (!TryGetParameter(parameterName, out int hash, out AnimatorControllerParameterType type)) return false;
+        switch (type)
+        {
+            case AnimatorControllerParameterType.Bool:
+                anim.SetBool(hash, value);
+                return true;
+            case AnimatorControllerParameterType.Trigger:
+                anim.SetTrigger(hash);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Sets a Float parameter (an Int one gets the rounded value, a Trigger is set). False when it could not.</summary>
+    public bool SetParameterSafe(string parameterName, float value)
+    {
+        if (!TryGetParameter(parameterName, out int hash, out AnimatorControllerParameterType type)) return false;
+        switch (type)
+        {
+            case AnimatorControllerParameterType.Float:
+                anim.SetFloat(hash, value);
+                return true;
+            case AnimatorControllerParameterType.Int:
+                anim.SetInteger(hash, Mathf.RoundToInt(value));
+                return true;
+            case AnimatorControllerParameterType.Trigger:
+                anim.SetTrigger(hash);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Sets an Int parameter (a Float one gets the value, a Trigger is set). False when it could not.</summary>
+    public bool SetParameterSafe(string parameterName, int value)
+    {
+        if (!TryGetParameter(parameterName, out int hash, out AnimatorControllerParameterType type)) return false;
+        switch (type)
+        {
+            case AnimatorControllerParameterType.Int:
+                anim.SetInteger(hash, value);
+                return true;
+            case AnimatorControllerParameterType.Float:
+                anim.SetFloat(hash, value);
+                return true;
+            case AnimatorControllerParameterType.Trigger:
+                anim.SetTrigger(hash);
+                return true;
+            default:
+                return false;
+        }
+    }
+
     public bool SetParameterSafe(string parameterName, object value)
     {
-        int hash = GetAnimationHash(parameterName);
-        if (hash == -1) return false;
+        if (!TryGetParameter(parameterName, out int hash, out AnimatorControllerParameterType type)) return false;
 
         try
         {
-            // Get the parameter type
-            AnimatorControllerParameter param = null;
-            foreach (var p in anim.parameters)
-            {
-                if (p.name == parameterName)
-                {
-                    param = p;
-                    break;
-                }
-            }
-
-            if (param == null) return false;
-
             // Set based on parameter type
-            switch (param.type)
+            switch (type)
             {
                 case AnimatorControllerParameterType.Bool:
                     if (value is bool boolVal)

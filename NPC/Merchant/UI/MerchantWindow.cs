@@ -1321,7 +1321,7 @@ public class MerchantWindow : NPCWindow
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 0f;
         }
-        audioSource.PlayOneShot(clip, skin.volume);
+        GameAudio.PlayOn(audioSource, clip, skin.volume, AudioCategory.UI);
     }
 
     /// <summary>Wires a generated window's parts (used by <see cref="MerchantUIBuilder"/>).</summary>

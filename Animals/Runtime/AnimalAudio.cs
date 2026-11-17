@@ -127,6 +127,6 @@ public static class AnimalAudio
             manager.PlaySFX(new SoundEffect { name = "Animals " + what, clip = clip, volume = volume, maxDistance = Mathf.Max(1f, s.distance) }, at);
             return;
         }
-        AudioSource.PlayClipAtPoint(clip, at, volume);
+        GameAudio.Play(clip, at, volume);
     }
 }

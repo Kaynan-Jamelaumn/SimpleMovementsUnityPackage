@@ -14,10 +14,16 @@ public class AudioStateManager
     private MusicManager musicManager;
     private AmbientManager ambientManager;
 
-    public void Initialize(MusicManager music, AmbientManager ambient)
+    // The sources whose levels a state remembers (the SoundManager's, whatever their objects are called)
+    private AudioSource musicSource;
+    private AudioSource ambientSource;
+
+    public void Initialize(MusicManager music, AmbientManager ambient, AudioSource musicAudioSource = null, AudioSource ambientAudioSource = null)
     {
         musicManager = music;
         ambientManager = ambient;
+        musicSource = musicAudioSource;
+        ambientSource = ambientAudioSource;
 
         audioStateStack = new Stack<AudioState>();
         audioSnapshots = new Dictionary<string, AudioSnapshot>();
@@ -89,27 +95,17 @@ public class AudioStateManager
     }
 
     // Helper methods to access audio source volumes
-    private float GetMusicVolume()
-    {
-        var source = GameObject.Find("Music_AudioSource")?.GetComponent<AudioSource>();
-        return source != null ? source.volume : 1f;
-    }
+    private float GetMusicVolume() => musicSource != null ? GameAudio.GetLevel(musicSource) : 1f;
 
-    private float GetAmbientVolume()
-    {
-        var source = GameObject.Find("Ambient_AudioSource")?.GetComponent<AudioSource>();
-        return source != null ? source.volume : 1f;
-    }
+    private float GetAmbientVolume() => ambientSource != null ? GameAudio.GetLevel(ambientSource) : 1f;
 
     private void SetMusicVolume(float volume)
     {
-        var source = GameObject.Find("Music_AudioSource")?.GetComponent<AudioSource>();
-        if (source != null) source.volume = volume;
+        if (musicSource != null) GameAudio.SetLevel(musicSource, volume, AudioCategory.Music);
     }
 
     private void SetAmbientVolume(float volume)
     {
-        var source = GameObject.Find("Ambient_AudioSource")?.GetComponent<AudioSource>();
-        if (source != null) source.volume = volume;
+        if (ambientSource != null) GameAudio.SetLevel(ambientSource, volume, AudioCategory.Ambient);
     }
 }

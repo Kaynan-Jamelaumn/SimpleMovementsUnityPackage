@@ -54,7 +54,7 @@ public class MusicManager
         else
         {
             musicAudioSource.clip = musicClip;
-            musicAudioSource.volume = fadeIn ? 0f : 1f;
+            GameAudio.SetLevel(musicAudioSource, fadeIn ? 0f : 1f, AudioCategory.Music);
             musicAudioSource.Play();
 
             if (fadeIn)
@@ -187,7 +187,7 @@ public class MusicManager
     {
         if (musicAudioSource.isPlaying)
         {
-            monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, musicAudioSource.volume, 0.3f, 0.5f));
+            monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, GameAudio.GetLevel(musicAudioSource), 0.3f, 0.5f));
         }
     }
 
@@ -195,7 +195,7 @@ public class MusicManager
     {
         if (musicAudioSource.isPlaying)
         {
-            monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, musicAudioSource.volume, 1f, 0.5f));
+            monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, GameAudio.GetLevel(musicAudioSource), 1f, 0.5f));
         }
     }
 
@@ -209,7 +209,7 @@ public class MusicManager
     {
         float halfFadeTime = fadeTime * 0.5f;
 
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, musicAudioSource.volume, 0f, halfFadeTime));
+        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(musicAudioSource, GameAudio.GetLevel(musicAudioSource), 0f, halfFadeTime));
 
         musicAudioSource.clip = newClip;
         musicAudioSource.Play();
@@ -220,22 +220,22 @@ public class MusicManager
     private IEnumerator FadeAudioSource(AudioSource source, float startVolume, float endVolume, float duration)
     {
         float elapsed = 0f;
-        source.volume = startVolume;
+        GameAudio.SetLevel(source, startVolume, AudioCategory.Music);
 
         while (elapsed < duration)
         {
             elapsed += Time.unscaledDeltaTime;
             float t = elapsed / duration;
-            source.volume = Mathf.Lerp(startVolume, endVolume, t);
+            GameAudio.SetLevel(source, Mathf.Lerp(startVolume, endVolume, t), AudioCategory.Music);
             yield return null;
         }
 
-        source.volume = endVolume;
+        GameAudio.SetLevel(source, endVolume, AudioCategory.Music);
     }
 
     private IEnumerator FadeOutAndStop(AudioSource source, float fadeTime)
     {
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(source, source.volume, 0f, fadeTime));
+        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(source, GameAudio.GetLevel(source), 0f, fadeTime));
         source.Stop();
     }
 }

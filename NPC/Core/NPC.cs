@@ -702,14 +702,10 @@ public class NPC : MonoBehaviour, IInteractable, IReplicatedInteractable
     private void PlayIntro()
     {
         if (greetingSound != null)
-            AudioSource.PlayClipAtPoint(greetingSound, InteractionPoint.position);
-        if (animator != null && !string.IsNullOrEmpty(interactTrigger) && animator.runtimeAnimatorController != null)
-            foreach (AnimatorControllerParameter p in animator.parameters)
-                if (p.type == AnimatorControllerParameterType.Trigger && p.name == interactTrigger)
-                {
-                    animator.SetTrigger(interactTrigger);
-                    break;
-                }
+            GameAudio.Play(greetingSound, InteractionPoint.position, 1f, 1f, AudioCategory.Voice);
+        // Set only when the controller has that trigger (looked up once per controller, not listed on every greeting).
+        if (animator != null)
+            AnimatorParameterCache.SetTrigger(animator, interactTrigger);
     }
 
     private void OnEnable()

@@ -74,6 +74,18 @@ public partial class InjuryController
     public ActiveTreatment CurrentTreatment => activeTreatment;
     public bool IsTreating => activeTreatment != null;
 
+    /// <summary>
+    /// Is the character seen treating something? Like <see cref="IsTreating"/>, and also true on the copies other
+    /// players have of the character (which are told that much, not what is treated). For animations.
+    /// </summary>
+    public bool ShowsTreating => activeTreatment != null || replicatedTreating;
+
+    /// <summary>
+    /// Raised where the rules run when a medical item's use sound plays. The network layer repeats it on the clients
+    /// (<see cref="PresentItemSound"/>), which would otherwise never hear it.
+    /// </summary>
+    public event Action<ItemSO> ItemSoundPlayed;
+
     /// <summary>A treatment started (UI progress).</summary>
     public event Action<ActiveTreatment> TreatmentStarted;
     /// <summary>A treatment stopped before finishing (reason).</summary>
@@ -327,6 +339,18 @@ public partial class InjuryController
     }
 
     private void PlayItemSound(ItemSO item)
+    {
+        if (item == null || item.UseAudioClip == null)
+            return;
+        PresentItemSound(item);
+        ItemSoundPlayed?.Invoke(item);
+    }
+
+    /// <summary>
+    /// Plays a medical item's use sound at the character. Presentation only: where the rules run it is played by the
+    /// treatment itself; a client copy calls it for the sound the server reports.
+    /// </summary>
+    public void PresentItemSound(ItemSO item)
     {
         if (item == null || item.UseAudioClip == null)
             return;

@@ -92,7 +92,18 @@ public class PlayerAnimationController : MonoBehaviour
 
         eventHandler = new AnimationEventHandler(model);
         utilityHelper = new AnimationUtilityHelper(model);
+
+        // Optional: plays clips that have no state in the controller. Absent (the default), nothing changes.
+        clipOverlay = GetComponentInChildren<AnimationClipOverlay>(true);
+        if (clipOverlay == null) clipOverlay = GetComponentInParent<AnimationClipOverlay>();
+        utilityHelper.Overlay = clipOverlay;
+        attackManager.Overlay = clipOverlay;
     }
+
+    private AnimationClipOverlay clipOverlay;
+
+    /// <summary>The optional component that plays clips without a state (null when the character has none).</summary>
+    public AnimationClipOverlay ClipOverlay => clipOverlay;
 
     // Animation Events Setup
     private void SetupAnimationEvents() => eventHandler.SetupAnimationEvents();
@@ -117,12 +128,22 @@ public class PlayerAnimationController : MonoBehaviour
     public void TriggerAnimation(string triggerName, float? lockDuration = null)
         => utilityHelper.TriggerAnimation(triggerName, lockDuration, this);
 
+    /// <summary>
+    /// Plays a one-off action - using an item, a gesture: the state named after <paramref name="clip"/> when the
+    /// Animator Controller has one, else the clip itself when the character has an <see cref="AnimationClipOverlay"/>,
+    /// else <paramref name="fallbackTrigger"/> when the controller has a trigger of that name (one generic "use"
+    /// animation for every item). Never plays over an attack. False when nothing played.
+    /// </summary>
+    public bool PlayActionClip(AnimationClip clip, string fallbackTrigger = null, float crossfadeTime = 0.1f)
+        => utilityHelper != null && utilityHelper.PlayActionClip(clip, fallbackTrigger, crossfadeTime);
+
     public void TriggerRollAnimation() => actionHandler.TriggerRollAnimation();
     public void TriggerDashAnimation() => actionHandler.TriggerDashAnimation();
 
     public void ResetAnimationState()
     {
         StopAttackAnimation();
+        if (clipOverlay != null) clipOverlay.Stop();
 
         model.IsAttacking = false;
         model.IsInputLocked = false;

@@ -2,6 +2,12 @@
 using UnityEngine.Audio;
 using System;
 
+/// <summary>
+/// The five volume sliders (master, music, SFX, ambient, voice): saved in PlayerPrefs, written to the Audio Mixer's
+/// exposed parameters when the SoundManager has a mixer, and always reported to <see cref="GameAudio"/> - which
+/// applies them to the sounds itself when the mixer does not (no mixer assigned, or a parameter that is not exposed),
+/// so the sliders work either way.
+/// </summary>
 public class VolumeManager
 {
     // Events
@@ -55,7 +61,7 @@ public class VolumeManager
     public void SetMasterVolume(float volume)
     {
         currentMasterVolume = Mathf.Clamp01(volume);
-        ApplyVolumeToMixer(MASTER_VOLUME_PARAM, currentMasterVolume);
+        ApplyVolumeToMixer(AudioBus.Master, MASTER_VOLUME_PARAM, currentMasterVolume);
         PlayerPrefs.SetFloat(MASTER_VOLUME_KEY, currentMasterVolume);
         OnVolumeChanged?.Invoke(currentMasterVolume);
     }
@@ -63,28 +69,28 @@ public class VolumeManager
     public void SetMusicVolume(float volume)
     {
         currentMusicVolume = Mathf.Clamp01(volume);
-        ApplyVolumeToMixer(MUSIC_VOLUME_PARAM, currentMusicVolume);
+        ApplyVolumeToMixer(AudioBus.Music, MUSIC_VOLUME_PARAM, currentMusicVolume);
         PlayerPrefs.SetFloat(MUSIC_VOLUME_KEY, currentMusicVolume);
     }
 
     public void SetSFXVolume(float volume)
     {
         currentSFXVolume = Mathf.Clamp01(volume);
-        ApplyVolumeToMixer(SFX_VOLUME_PARAM, currentSFXVolume);
+        ApplyVolumeToMixer(AudioBus.SFX, SFX_VOLUME_PARAM, currentSFXVolume);
         PlayerPrefs.SetFloat(SFX_VOLUME_KEY, currentSFXVolume);
     }
 
     public void SetAmbientVolume(float volume)
     {
         currentAmbientVolume = Mathf.Clamp01(volume);
-        ApplyVolumeToMixer(AMBIENT_VOLUME_PARAM, currentAmbientVolume);
+        ApplyVolumeToMixer(AudioBus.Ambient, AMBIENT_VOLUME_PARAM, currentAmbientVolume);
         PlayerPrefs.SetFloat(AMBIENT_VOLUME_KEY, currentAmbientVolume);
     }
 
     public void SetVoiceVolume(float volume)
     {
         currentVoiceVolume = Mathf.Clamp01(volume);
-        ApplyVolumeToMixer(VOICE_VOLUME_PARAM, currentVoiceVolume);
+        ApplyVolumeToMixer(AudioBus.Voice, VOICE_VOLUME_PARAM, currentVoiceVolume);
         PlayerPrefs.SetFloat(VOICE_VOLUME_KEY, currentVoiceVolume);
     }
 
@@ -115,20 +121,23 @@ public class VolumeManager
 
     private void ApplyAllVolumeSettings()
     {
-        ApplyVolumeToMixer(MASTER_VOLUME_PARAM, currentMasterVolume);
-        ApplyVolumeToMixer(MUSIC_VOLUME_PARAM, currentMusicVolume);
-        ApplyVolumeToMixer(SFX_VOLUME_PARAM, currentSFXVolume);
-        ApplyVolumeToMixer(AMBIENT_VOLUME_PARAM, currentAmbientVolume);
-        ApplyVolumeToMixer(VOICE_VOLUME_PARAM, currentVoiceVolume);
+        ApplyVolumeToMixer(AudioBus.Master, MASTER_VOLUME_PARAM, currentMasterVolume);
+        ApplyVolumeToMixer(AudioBus.Music, MUSIC_VOLUME_PARAM, currentMusicVolume);
+        ApplyVolumeToMixer(AudioBus.SFX, SFX_VOLUME_PARAM, currentSFXVolume);
+        ApplyVolumeToMixer(AudioBus.Ambient, AMBIENT_VOLUME_PARAM, currentAmbientVolume);
+        ApplyVolumeToMixer(AudioBus.Voice, VOICE_VOLUME_PARAM, currentVoiceVolume);
     }
 
-    private void ApplyVolumeToMixer(string parameter, float volume)
+    private void ApplyVolumeToMixer(AudioBus bus, string parameter, float volume)
     {
+        bool handledByMixer = false;
         // Not "?.": an unassigned serialized field is a Unity fake-null object that "?." does not catch.
         if (masterMixerGroup != null && masterMixerGroup.audioMixer != null)
         {
             float dbValue = volume > 0 ? Mathf.Log10(volume) * 20f : -80f;
-            masterMixerGroup.audioMixer.SetFloat(parameter, dbValue);
+            // False when the mixer has no exposed parameter of this name: the slider is then applied in software.
+            handledByMixer = masterMixerGroup.audioMixer.SetFloat(parameter, dbValue);
         }
+        GameAudio.SetVolume(bus, volume, handledByMixer);
     }
 }

@@ -329,7 +329,7 @@ public sealed class EquipmentContext
         if (clip == null)
             return;
         if (Audio != null)
-            Audio.PlayOneShot(clip, volume);
+            GameAudio.PlayOn(Audio, clip, volume);
         else if (Owner != null)
             AbilityPool.PlaySound(clip, Owner.transform.position, volume);
     }

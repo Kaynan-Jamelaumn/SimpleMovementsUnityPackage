@@ -1277,12 +1277,13 @@ public class WeaponController : MonoBehaviour
     {
         if (clip == null)
             return;
+        // Same sources as before, in the same order; GameAudio only adds the sliders and the mixer group.
         if (audioSource != null)
-            audioSource.PlayOneShot(clip);
+            GameAudio.PlayOn(audioSource, clip, 1f, AudioCategory.Combat);
         else
         {
             AudioSource playerSource = PlayerObject.GetComponent<Player>()?.PlayerAudioSource;
-            if (playerSource != null) playerSource.PlayOneShot(clip);
+            if (playerSource != null) GameAudio.PlayOn(playerSource, clip, 1f, AudioCategory.Combat);
             else AbilityPool.PlaySound(clip, transform.position, 1f);
         }
     }

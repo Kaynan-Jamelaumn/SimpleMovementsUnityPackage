@@ -64,7 +64,9 @@ public class UIAudioFeedback : MonoBehaviour
     private void PlaySound(string soundName, AudioClip fallbackClip)
     {
         // Try SoundManager first
-        if (!string.IsNullOrEmpty(soundName) && SoundManager.Instance != null)
+        // (only for a name its library has: otherwise the fallback clip below is the sound)
+        if (!string.IsNullOrEmpty(soundName) && SoundManager.Instance != null &&
+            (fallbackClip == null || SoundManager.Instance.HasSoundEffect(soundName)))
         {
             try
             {
@@ -80,11 +82,10 @@ public class UIAudioFeedback : MonoBehaviour
             }
         }
 
-        // Fallback to AudioSource.PlayClipAtPoint
+        // Fallback to the clip itself (a UI sound: not placed in the world, under the SFX slider)
         if (fallbackClip != null)
         {
-            var cameraTransform = Camera.main != null ? Camera.main.transform : transform;
-            AudioSource.PlayClipAtPoint(fallbackClip, cameraTransform.position, fallbackVolume);
+            GameAudio.Play2D(fallbackClip, fallbackVolume);
 
             if (enableDebugLogs)
                 Debug.Log($"[UIAudioFeedback] Played fallback clip: {fallbackClip.name}");

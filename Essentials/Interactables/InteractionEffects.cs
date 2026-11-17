@@ -66,7 +66,7 @@ public static class InteractionEffects
         }
 
         // Use PlayOneShot instead of setting clip and playing to avoid conflicts
-        audioSource.PlayOneShot(useAudioClip);
+        GameAudio.PlayOn(audioSource, useAudioClip);
     }
 
     private static void ApplyParticles(GameObject gameObject, ParticleSystem useParticles)

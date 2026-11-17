@@ -78,7 +78,7 @@ public class SanityScreenEffect : MonoBehaviour
             audioSource.spatialBlend = 0f;
         }
         audioSource.panStereo = Random.Range(-0.8f, 0.8f);
-        audioSource.PlayOneShot(clip, whisperVolume * strength);
+        GameAudio.PlayOn(audioSource, clip, whisperVolume * strength);
     }
 
     private void Build()

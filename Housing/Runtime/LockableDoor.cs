@@ -28,6 +28,9 @@ public class LockableDoor : MonoBehaviour, IInteractable, IReplicatedInteractabl
     [SerializeField, Min(0.5f)] private float range = 2.2f;
     [Tooltip("Real seconds after which an open door closes by itself (0 = it stays open).")]
     [SerializeField, Min(0f)] private float autoCloseSeconds = 10f;
+    [Tooltip("Heard when the door opens / closes, on every machine that shows it (empty = nothing).")]
+    [SerializeField] private AudioCue openSound;
+    [SerializeField] private AudioCue closeSound;
 
     private static readonly Dictionary<string, LockableDoor> byId = new Dictionary<string, LockableDoor>();
     private bool isOpen, started;
@@ -113,6 +116,9 @@ public class LockableDoor : MonoBehaviour, IInteractable, IReplicatedInteractabl
     /// <summary>A client shows the server's door (no rules).</summary>
     public void Show(bool open)
     {
+        // Only for a door that really changes: the state a client is told when it first sees the door is not news.
+        if (IsOpen != open)
+            AudioCue.Play(open ? openSound : closeSound, transform.position);
         if (door != null)
         {
             if (open) door.OpenDoor();

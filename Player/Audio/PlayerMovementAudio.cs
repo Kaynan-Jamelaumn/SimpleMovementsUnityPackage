@@ -237,7 +237,7 @@ public class PlayerMovementAudio : MonoBehaviour
             return;
         oneShots.spatialBlend = IsLocal ? 0.5f : 1f; // your own steps are not panned from behind the camera
         oneShots.pitch = 1f + Random.Range(-pitchVariation, pitchVariation);
-        oneShots.PlayOneShot(clip, Mathf.Clamp01(volume * loudness));
+        GameAudio.PlayOn(oneShots, clip, Mathf.Clamp01(volume * loudness), AudioCategory.Footsteps);
     }
 
     private void SetUnderwater(bool on)
@@ -247,7 +247,7 @@ public class PlayerMovementAudio : MonoBehaviour
             if (on && underwaterLoop != null)
             {
                 loop.clip = underwaterLoop;
-                loop.volume = volume * underwaterLoopVolume;
+                GameAudio.SetLevel(loop, volume * underwaterLoopVolume, AudioCategory.Ambient);
                 if (!loop.isPlaying) loop.Play();
             }
             else if (loop.isPlaying)

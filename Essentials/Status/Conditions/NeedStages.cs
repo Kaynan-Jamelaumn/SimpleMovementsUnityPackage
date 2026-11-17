@@ -37,6 +37,8 @@ public class NeedStage
     public StatusConsequence effect = new StatusConsequence("", true);
     [Tooltip("Told to the player when the condition begins (empty = nothing).")]
     public string message = "";
+    [Tooltip("Heard by the player when the condition begins: a rumbling stomach, a yawn, a dry cough (empty = nothing).")]
+    public AudioCue sound;
     [Tooltip("How strongly it shows on the local player's screen (0 = not at all). Rest: the eyelids droop and close; " +
              "hunger and thirst: the edges of the picture darken in slow pulses (light-headed).")]
     [Range(0f, 1f)] public float screenEffect = 0f;
@@ -553,10 +555,16 @@ public sealed class NeedStageRunner
         to.stunSeconds = from.stunSeconds;
     }
 
-    /// <summary>Tells the local player the condition that began (its Message), not more often than every few seconds.</summary>
+    /// <summary>
+    /// Tells the local player the condition that began (its Message and its Sound), not more often than every few
+    /// seconds.
+    /// </summary>
     private void Announce(NeedStage before, NeedStage next)
     {
-        if (next == null || string.IsNullOrEmpty(next.message) || owner == null || Time.unscaledTime < nextMessage)
+        if (next == null || owner == null || Time.unscaledTime < nextMessage)
+            return;
+        bool hasMessage = !string.IsNullOrEmpty(next.message);
+        if (!hasMessage && next.sound == null)
             return;
         if (entity == null)
             entity = owner.GetComponentInParent<CombatEntity>() ?? owner.GetComponentInChildren<CombatEntity>();
@@ -568,6 +576,10 @@ public sealed class NeedStageRunner
         if (!local)
             return;
         nextMessage = Time.unscaledTime + MessageGap;
+        if (next.sound != null)
+            next.sound.Play(entity.gameObject);
+        if (!hasMessage)
+            return;
         InventoryManager inventory = InventoryManager.For(owner);
         if (inventory != null)
             inventory.ShowMessage(next.message, next.mood >= NeedMood.Bad ? InventoryFeedback.Kind.Warning : InventoryFeedback.Kind.Info);

@@ -378,7 +378,7 @@ namespace RuneMagic
 
         private void Cue(AudioClip clip)
         {
-            if (audioSource != null && clip != null) audioSource.PlayOneShot(clip, 0.5f);
+            if (audioSource != null && clip != null) GameAudio.PlayOn(audioSource, clip, 0.5f, AudioCategory.UI);
         }
 
         private static AudioClip Tone(string name, float hz, float seconds)

@@ -38,12 +38,9 @@ public class MovementAnimationHandler
             currentMovement = movement;
         }
 
-        SetAnimationParameters(new Dictionary<string, object>
-        {
-            ["MovementX"] = currentMovement.x,
-            ["MovementZ"] = currentMovement.y,
-            ["MovementSpeed"] = currentMovement.magnitude
-        });
+        model.SetParameterSafe("MovementX", currentMovement.x);
+        model.SetParameterSafe("MovementZ", currentMovement.y);
+        model.SetParameterSafe("MovementSpeed", currentMovement.magnitude);
     }
 
     public void ApplyStateAnimations()
@@ -52,24 +49,23 @@ public class MovementAnimationHandler
 
         var state = movementStateMachine.CurrentState.StateKey;
 
-        SetAnimationParameters(new Dictionary<string, object>
-        {
-            ["IsWalking"] = state == MovementStateMachine.EMovementState.Walking,
-            ["IsRunning"] = state == MovementStateMachine.EMovementState.Running,
-            ["IsCrouching"] = state == MovementStateMachine.EMovementState.Crouching,
-            ["IsJumping"] = state == MovementStateMachine.EMovementState.Jumping,
-            ["IsRolling"] = state == MovementStateMachine.EMovementState.Rolling || model.IsRolling,
-            ["IsDashing"] = state == MovementStateMachine.EMovementState.Dashing || model.IsDashing,
-            // Swimming (optional Animator parameters): in deep water, head under the surface, up/down speed (m/s).
-            ["IsSwimming"] = state == MovementStateMachine.EMovementState.Swimming,
-            ["IsUnderwater"] = state == MovementStateMachine.EMovementState.Swimming && movementModel.HeadUnderwater,
-            ["SwimVertical"] = state == MovementStateMachine.EMovementState.Swimming ? movementModel.VerticalVelocity : 0f,
-            // Angle of the swim (degrees: + = rising, - = diving) and its speed (m/s), for a swim blend tree.
-            ["SwimPitch"] = state == MovementStateMachine.EMovementState.Swimming ? SwimPitch(movementStateMachine.SwimVelocity) : 0f,
-            ["SwimSpeed"] = state == MovementStateMachine.EMovementState.Swimming ? movementStateMachine.SwimVelocity.magnitude : 0f,
-            ["IsAttacking"] = model.IsAttacking,
-            ["IsInputLocked"] = model.IsInputLocked
-        });
+        // Set one by one (same parameters, same order as before): a dictionary built every frame was garbage to collect.
+        bool swimming = state == MovementStateMachine.EMovementState.Swimming;
+        model.SetParameterSafe("IsWalking", state == MovementStateMachine.EMovementState.Walking);
+        model.SetParameterSafe("IsRunning", state == MovementStateMachine.EMovementState.Running);
+        model.SetParameterSafe("IsCrouching", state == MovementStateMachine.EMovementState.Crouching);
+        model.SetParameterSafe("IsJumping", state == MovementStateMachine.EMovementState.Jumping);
+        model.SetParameterSafe("IsRolling", state == MovementStateMachine.EMovementState.Rolling || model.IsRolling);
+        model.SetParameterSafe("IsDashing", state == MovementStateMachine.EMovementState.Dashing || model.IsDashing);
+        // Swimming (optional Animator parameters): in deep water, head under the surface, up/down speed (m/s).
+        model.SetParameterSafe("IsSwimming", swimming);
+        model.SetParameterSafe("IsUnderwater", swimming && movementModel.HeadUnderwater);
+        model.SetParameterSafe("SwimVertical", swimming ? movementModel.VerticalVelocity : 0f);
+        // Angle of the swim (degrees: + = rising, - = diving) and its speed (m/s), for a swim blend tree.
+        model.SetParameterSafe("SwimPitch", swimming ? SwimPitch(movementStateMachine.SwimVelocity) : 0f);
+        model.SetParameterSafe("SwimSpeed", swimming ? movementStateMachine.SwimVelocity.magnitude : 0f);
+        model.SetParameterSafe("IsAttacking", model.IsAttacking);
+        model.SetParameterSafe("IsInputLocked", model.IsInputLocked);
         ApplyBodyAnimations();
     }
 
@@ -86,30 +82,21 @@ public class MovementAnimationHandler
         }
         BodyLocomotion l = body != null ? body.Locomotion : BodyLocomotion.Normal;
         float time = movementStateMachine != null ? movementStateMachine.SimTime : Time.time;
-        SetAnimationParameters(new Dictionary<string, object>
-        {
-            ["LocomotionMode"] = (int)l.mode,
-            ["IsLimping"] = l.mode == LocomotionMode.Limping,
-            ["LimpAmount"] = l.mode == LocomotionMode.Normal ? 0f : l.limp,
-            ["LimpSide"] = l.limpSide,
-            ["IsHopping"] = l.mode == LocomotionMode.Hopping,
-            ["HopCycle"] = l.mode == LocomotionMode.Hopping ? l.HopPhase(time) : 0f,
-            ["IsCrawling"] = l.mode == LocomotionMode.Crawling,
-            ["IsLegless"] = l.missingLegs >= 2,
-            ["MissingLegs"] = l.missingLegs,
-            ["MissingArms"] = l.missingArms,
-        });
+        model.SetParameterSafe("LocomotionMode", (int)l.mode);
+        model.SetParameterSafe("IsLimping", l.mode == LocomotionMode.Limping);
+        model.SetParameterSafe("LimpAmount", l.mode == LocomotionMode.Normal ? 0f : l.limp);
+        model.SetParameterSafe("LimpSide", l.limpSide);
+        model.SetParameterSafe("IsHopping", l.mode == LocomotionMode.Hopping);
+        model.SetParameterSafe("HopCycle", l.mode == LocomotionMode.Hopping ? l.HopPhase(time) : 0f);
+        model.SetParameterSafe("IsCrawling", l.mode == LocomotionMode.Crawling);
+        model.SetParameterSafe("IsLegless", l.missingLegs >= 2);
+        model.SetParameterSafe("MissingLegs", l.missingLegs);
+        model.SetParameterSafe("MissingArms", l.missingArms);
     }
 
     private static float SwimPitch(Vector3 v)
     {
         float flat = new Vector2(v.x, v.z).magnitude;
         return flat < 0.05f && Mathf.Abs(v.y) < 0.05f ? 0f : Mathf.Atan2(v.y, flat) * Mathf.Rad2Deg;
-    }
-
-    private void SetAnimationParameters(Dictionary<string, object> parameters)
-    {
-        foreach (var kvp in parameters)
-            model.SetParameterSafe(kvp.Key, kvp.Value);
     }
 }

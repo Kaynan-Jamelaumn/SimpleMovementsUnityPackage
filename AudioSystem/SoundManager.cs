@@ -5,7 +5,15 @@ using UnityEngine.Audio;
 using System;
 using System.Linq;
 
-// Enhanced sound manager with spatial audio and area-specific playback - ENHANCED
+/// <summary>
+/// The game's audio: the mixer groups, the music and ambience with their fades, the voice lines, the named sound
+/// library, the spatial sounds and the audio areas, and the volume sliders. One per game (it survives scene loads; a
+/// second one in a later scene removes itself).
+/// <para>Code that just needs to play a clip uses <see cref="GameAudio"/>, which goes out of this manager's mixer
+/// groups when it is in the scene and works without it too. The Audio Mixer is optional: without one (or without its
+/// exposed parameters MasterVolume, MusicVolume, SFXVolume, AmbientVolume, VoiceVolume) the sliders are applied to the
+/// sounds directly.</para>
+/// </summary>
 public class SoundManager : MonoBehaviour
 {
     [Header("Audio Mixer Setup")]
@@ -42,7 +50,8 @@ public class SoundManager : MonoBehaviour
     [Header("Performance Settings")]
     [Range(1, 100)]
     public int maxCachedClips = 50;
-    [Range(0.1f, 2f)]
+    [Tooltip("Seconds between two clean-ups of sounds that finished and of assets nothing uses any more.")]
+    [Range(10f, 600f)]
     public float audioMemoryCleanupInterval = 30f;
     public bool enableAudioPooling = true;
     public bool enableAudioCompression = true;
@@ -84,6 +93,10 @@ public class SoundManager : MonoBehaviour
     private SpatialAudioManager spatialAudioManager;
     private AudioAreaManager audioAreaManager;
 
+    // A second SoundManager (one placed in every scene) removes itself: it must not set anything up or save anything.
+    private bool isDuplicate;
+    private Coroutine spatialUpdate;
+
     // Events
     public static event System.Action<string> OnSoundPlayed;
     public static event System.Action<string> OnMusicChanged;
@@ -96,37 +109,47 @@ public class SoundManager : MonoBehaviour
     void Awake()
     {
         InitializeSingleton();
+        if (isDuplicate)
+            return;
         InitializeManagers();
         InitializeAudioSources();
     }
 
     void Start()
     {
+        if (isDuplicate)
+            return;
         volumeManager.Initialize(masterMixerGroup, defaultMasterVolume, defaultMusicVolume,
                                defaultSFXVolume, defaultAmbientVolume, defaultVoiceVolume);
         StartCoroutine(AudioMemoryCleanup());
 
-        if (enableSpatialAudio)
+        if (enableSpatialAudio && spatialUpdate == null)
         {
-            StartCoroutine(SpatialAudioUpdate());
+            spatialUpdate = StartCoroutine(SpatialAudioUpdate());
         }
     }
 
     void OnDestroy()
     {
+        // The duplicate never loaded the volumes: saving its zeros would mute the next session.
+        if (isDuplicate)
+            return;
         volumeManager?.SaveVolumeSettings();
         CleanupSingleton();
     }
 
     private void InitializeSingleton()
     {
-        if (Instance == null)
+        if (Instance == null || Instance == this)
         {
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+            // DontDestroyOnLoad only takes root objects.
+            if (transform.parent == null)
+                DontDestroyOnLoad(gameObject);
         }
         else
         {
+            isDuplicate = true;
             Destroy(gameObject);
         }
     }
@@ -142,13 +165,24 @@ public class SoundManager : MonoBehaviour
         spatialAudioManager = new SpatialAudioManager();
         audioAreaManager = new AudioAreaManager();
 
-        // Subscribe to events
-        VolumeManager.OnVolumeChanged += (volume) => OnVolumeChanged?.Invoke(volume);
-        SFXManager.OnSoundPlayed += (soundName) => OnSoundPlayed?.Invoke(soundName);
-        MusicManager.OnMusicChanged += (musicName) => OnMusicChanged?.Invoke(musicName);
-        AudioAreaManager.OnAudioAreaEntered += (areaName) => OnAudioAreaEntered?.Invoke(areaName);
-        AudioAreaManager.OnAudioAreaExited += (areaName) => OnAudioAreaExited?.Invoke(areaName);
+        // Subscribe to events (once: the managers' events are static, so a new manager must not add a second relay)
+        VolumeManager.OnVolumeChanged -= RelayVolumeChanged;
+        VolumeManager.OnVolumeChanged += RelayVolumeChanged;
+        SFXManager.OnSoundPlayed -= RelaySoundPlayed;
+        SFXManager.OnSoundPlayed += RelaySoundPlayed;
+        MusicManager.OnMusicChanged -= RelayMusicChanged;
+        MusicManager.OnMusicChanged += RelayMusicChanged;
+        AudioAreaManager.OnAudioAreaEntered -= RelayAreaEntered;
+        AudioAreaManager.OnAudioAreaEntered += RelayAreaEntered;
+        AudioAreaManager.OnAudioAreaExited -= RelayAreaExited;
+        AudioAreaManager.OnAudioAreaExited += RelayAreaExited;
     }
+
+    private static void RelayVolumeChanged(float volume) => OnVolumeChanged?.Invoke(volume);
+    private static void RelaySoundPlayed(string soundName) => OnSoundPlayed?.Invoke(soundName);
+    private static void RelayMusicChanged(string musicName) => OnMusicChanged?.Invoke(musicName);
+    private static void RelayAreaEntered(string areaName) => OnAudioAreaEntered?.Invoke(areaName);
+    private static void RelayAreaExited(string areaName) => OnAudioAreaExited?.Invoke(areaName);
 
     private void InitializeAudioSources()
     {
@@ -179,8 +213,8 @@ public class SoundManager : MonoBehaviour
         musicManager.Initialize(this, musicAudioSource, musicFadeSpeed);
         ambientManager.Initialize(this, ambientAudioSource, ambientFadeSpeed);
         voiceManager.Initialize(this, transform, voiceMixerGroup, musicManager, ambientManager);
-        audioStateManager.Initialize(musicManager, ambientManager);
-        spatialAudioManager.Initialize(this, globalMaxAudioDistance, defaultRolloffMode);
+        audioStateManager.Initialize(musicManager, ambientManager, musicAudioSource, ambientAudioSource);
+        spatialAudioManager.Initialize(this, globalMaxAudioDistance, defaultRolloffMode, sfxMixerGroup);
         audioAreaManager.Initialize(this, areaTransitionSpeed);
     }
 
@@ -189,6 +223,11 @@ public class SoundManager : MonoBehaviour
         if (Instance == this)
         {
             Instance = null;
+            VolumeManager.OnVolumeChanged -= RelayVolumeChanged;
+            SFXManager.OnSoundPlayed -= RelaySoundPlayed;
+            MusicManager.OnMusicChanged -= RelayMusicChanged;
+            AudioAreaManager.OnAudioAreaEntered -= RelayAreaEntered;
+            AudioAreaManager.OnAudioAreaExited -= RelayAreaExited;
         }
     }
 
@@ -197,7 +236,8 @@ public class SoundManager : MonoBehaviour
     {
         while (true)
         {
-            yield return new WaitForSeconds(audioMemoryCleanupInterval);
+            // Never faster than every 10 s: unloading unused assets is a heavy pass (the old slider stopped at 2 s).
+            yield return new WaitForSeconds(Mathf.Max(10f, audioMemoryCleanupInterval));
             sfxManager?.CleanupAudioCache();
             spatialAudioManager?.CleanupSpatialSources();
             Resources.UnloadUnusedAssets();
@@ -397,9 +437,10 @@ public class SoundManager : MonoBehaviour
     public void EnableSpatialAudio(bool enable)
     {
         enableSpatialAudio = enable;
-        if (enable && !IsInvoking(nameof(SpatialAudioUpdate)))
+        // One update loop, however many times this is called.
+        if (enable && spatialUpdate == null && isActiveAndEnabled)
         {
-            StartCoroutine(SpatialAudioUpdate());
+            spatialUpdate = StartCoroutine(SpatialAudioUpdate());
         }
     }
 
@@ -494,4 +535,20 @@ public class SoundManager : MonoBehaviour
     {
         PlaySFX(soundName);
     }
+
+    /// <summary>The entry of the Sound Effects Library with this name (null when there is none).</summary>
+    public SoundEffect FindSoundEffect(string soundName)
+    {
+        if (soundEffects == null || string.IsNullOrEmpty(soundName))
+            return null;
+        for (int i = 0; i < soundEffects.Length; i++)
+        {
+            if (soundEffects[i] != null && soundEffects[i].name == soundName)
+                return soundEffects[i];
+        }
+        return null;
+    }
+
+    /// <summary>Does the Sound Effects Library have a sound of this name?</summary>
+    public bool HasSoundEffect(string soundName) => FindSoundEffect(soundName) != null;
 }

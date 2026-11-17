@@ -45,7 +45,6 @@ public class DisabilityEffects : MonoBehaviour
 
     private static Sprite sideSprite, vignetteSprite;
     private static DisabilityEffects volumeOwner;
-    private static float baseVolume = 1f;
 
     private static readonly Color Dark = new Color(0.01f, 0.01f, 0.015f, 1f);
     private static readonly Color HazeColor = new Color(0.78f, 0.8f, 0.82f, 1f);
@@ -56,7 +55,6 @@ public class DisabilityEffects : MonoBehaviour
         sideSprite = null;
         vignetteSprite = null;
         volumeOwner = null;
-        baseVolume = 1f;
     }
 
     /// <summary>The character's (added when <paramref name="create"/> and it has none).</summary>
@@ -229,13 +227,13 @@ public class DisabilityEffects : MonoBehaviour
         if (volumeOwner == null)
         {
             volumeOwner = this;
-            baseVolume = AudioListener.volume;
             volumeShown = 1f;
         }
         if (volumeOwner != this)
             return;
         volumeShown = Mathf.MoveTowards(volumeShown, target, dt * 1.5f);
-        AudioListener.volume = baseVolume * volumeShown;
+        // One factor among those of the listener: it multiplies with the master slider instead of replacing it.
+        GameAudio.SetListenerFactor(typeof(DisabilityEffects), volumeShown);
         if (target >= 0.999f && volumeShown >= 0.999f)
             ReleaseVolume();
     }
@@ -244,7 +242,7 @@ public class DisabilityEffects : MonoBehaviour
     {
         if (volumeOwner != this)
             return;
-        AudioListener.volume = baseVolume;
+        GameAudio.ClearListenerFactor(typeof(DisabilityEffects));
         volumeOwner = null;
         volumeShown = 1f;
     }

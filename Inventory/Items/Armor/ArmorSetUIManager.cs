@@ -559,7 +559,7 @@ public class ArmorSetUIManager : MonoBehaviour
     {
         if (uiAudioSource != null && clip != null)
         {
-            uiAudioSource.PlayOneShot(clip);
+            GameAudio.PlayOn(uiAudioSource, clip, 1f, AudioCategory.UI);
         }
     }
 

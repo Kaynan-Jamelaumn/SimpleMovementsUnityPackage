@@ -9,6 +9,8 @@ using UnityEngine;
 /// every hit that did damage.</item>
 /// <item><c>IsSleeping</c> while asleep, <c>IsUnconscious</c> while knocked out (an Animator without IsUnconscious shows
 /// the IsDead pose instead, without the DeathTrigger).</item>
+/// <item><c>IsTreating</c> while the character applies a treatment to an injury (bandaging, splinting): a kneeling or
+/// bandaging pose.</item>
 /// </list>
 /// Works on every machine that shows the character: the movement states run on every copy in a network session, and the
 /// hits and deaths come from the presentation events (<see cref="CombatEntity.DamageFeedback"/>,
@@ -22,6 +24,8 @@ public class CharacterStateAnimationHandler
     private readonly PlayerMovementController controller;
     private readonly AvailabilityStateMachine availability;
     private readonly CombatEntity entity;
+    private InjuryController injuries;
+    private bool injuriesSearched;
 
     private float airTime;
     private bool wasAirborne;
@@ -120,6 +124,7 @@ public class CharacterStateAnimationHandler
         bool stunned = !dead && !unconscious && !sleeping && availability != null && !availability.CanMove();
         model.SetParameterSafe("IsStunned", stunned);
         model.SetParameterSafe("IsSleeping", sleeping);
+        model.SetParameterSafe("IsTreating", !dead && !unconscious && Treating());
         // Unconscious: its own parameter when the Animator has one, else the death pose (lying down) without the death trigger.
         bool ownDownedPose = model.HasAnimationParameter("IsUnconscious");
         model.SetParameterSafe("IsUnconscious", unconscious);
@@ -128,6 +133,17 @@ public class CharacterStateAnimationHandler
             ShowDeath();
         else if (!dead)
             deadShown = false;
+    }
+
+    /// <summary>Is the character seen treating an injury (also on the copies other players have of it)?</summary>
+    private bool Treating()
+    {
+        if (!injuriesSearched)
+        {
+            injuriesSearched = true;
+            injuries = entity != null ? InjuryController.For(entity) : null;
+        }
+        return injuries != null && injuries.ShowsTreating;
     }
 
     private void OnStateChanged(MovementStateMachine.EMovementState from, MovementStateMachine.EMovementState to)

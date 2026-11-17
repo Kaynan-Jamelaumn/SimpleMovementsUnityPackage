@@ -57,6 +57,13 @@ public sealed class MobAnimationDriver
     /// </summary>
     public event Action<MobAnimationEvent> Played;
 
+    /// <summary>
+    /// Raised whenever an alert or a dodge is shown on this machine, whichever way it came (the local AI, or the server's
+    /// report on a client copy), with or without an Animator: for the sounds and effects that go with it. Hits are not
+    /// raised here - <see cref="CombatEntity.DamageFeedback"/> tells them on every machine.
+    /// </summary>
+    public event Action<MobAnimationEvent> Shown;
+
     /// <summary>True while the driver shows a state received from the server instead of the local AI.</summary>
     public bool IsReplica => replica;
 
@@ -226,12 +233,14 @@ public sealed class MobAnimationDriver
 
     private void PlayAlert()
     {
+        Shown?.Invoke(MobAnimationEvent.Alert);
         if (animator != null)
             AnimatorParameterCache.SetTrigger(animator, ctx.Profile.alertTrigger);
     }
 
     private void PlayDodge()
     {
+        Shown?.Invoke(MobAnimationEvent.Dodge);
         if (animator != null)
             AnimatorParameterCache.SetTrigger(animator, ctx.Profile.dodgeTrigger);
     }

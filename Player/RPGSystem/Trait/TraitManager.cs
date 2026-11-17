@@ -1280,7 +1280,7 @@ public class TraitManager : MonoBehaviour
     private void PlayTraitSound(Trait trait)
     {
         if (audioSource != null && trait.acquisitionSound != null)
-            audioSource.PlayOneShot(trait.acquisitionSound);
+            GameAudio.PlayOn(audioSource, trait.acquisitionSound);
     }
 
     public int GetTotalTraitCost()

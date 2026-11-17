@@ -118,10 +118,7 @@ public partial class InjuryController
             InjuryTypeDefinition stump = string.IsNullOrWhiteSpace(rules.stumpInjury) ? null : s.FindType(rules.stumpInjury);
             if (stump != null)
                 AddInjury(part, stump, stump.StageForSeverity(rules.stumpSeverity), cause, false);
-            if (rules.vfx != null)
-                AbilityPool.PlayVfx(rules.vfx, at, Quaternion.identity, 0f);
-            if (rules.sound != null)
-                AbilityPool.PlaySound(rules.sound, at, 1f);
+            PresentLimbLoss(rules, at);
         }
 
         effectsDirty = true;
@@ -234,6 +231,20 @@ public partial class InjuryController
             return n.PlayerName;
         CombatEntity e = Entity;
         return e != null ? e.name : name;
+    }
+
+    /// <summary>
+    /// The effect and the sound of a limb coming off. Presentation only: played where the rules run when the limb is
+    /// lost, and on a client copy when the server's state shows the loss.
+    /// </summary>
+    private static void PresentLimbLoss(LimbLossRules rules, Vector3 at)
+    {
+        if (rules == null)
+            return;
+        if (rules.vfx != null)
+            AbilityPool.PlayVfx(rules.vfx, at, Quaternion.identity, 0f);
+        if (rules.sound != null)
+            AbilityPool.PlaySound(rules.sound, at, 1f);
     }
 
     /// <summary>Where a part is on the body (its bone, else from the character's size and the part's side and height).</summary>

@@ -24,6 +24,12 @@ public class VoiceManager
     private MusicManager musicManager;
     private AmbientManager ambientManager;
 
+    // Ducking state: how many voice lines are playing, and what the music and ambience were at before the first one.
+    private int activeDucks;
+    private bool duckCaptured;
+    private float musicBeforeDuck = 1f;
+    private float ambientBeforeDuck = 1f;
+
     public void Initialize(MonoBehaviour monoBehaviour, Transform parent, AudioMixerGroup voiceGroup,
                           MusicManager music, AmbientManager ambient)
     {
@@ -53,19 +59,20 @@ public class VoiceManager
         AudioSource voiceSource = voiceObject.AddComponent<AudioSource>();
         voiceSource.outputAudioMixerGroup = voiceMixerGroup;
         voiceSource.clip = voiceClip;
-        voiceSource.volume = volume;
+        GameAudio.SetLevel(voiceSource, volume, AudioCategory.Voice);
         voiceSource.Play();
 
         voiceSourcesForDucking.Add(voiceSource);
 
-        // Duck other audio
-        if (isDuckingEnabled)
+        // Duck other audio (it calls onComplete once the music is back up)
+        bool ducks = isDuckingEnabled;
+        if (ducks)
         {
             monoBehaviourRef.StartCoroutine(DuckAudioForVoice(voiceSource, onComplete));
         }
 
-        // Cleanup when finished
-        monoBehaviourRef.StartCoroutine(CleanupVoiceSource(voiceSource, onComplete));
+        // Cleanup when finished (and onComplete, when nothing was ducked)
+        monoBehaviourRef.StartCoroutine(CleanupVoiceSource(voiceSource, ducks ? null : onComplete));
     }
 
     public void StopAllVoice()
@@ -79,71 +86,96 @@ public class VoiceManager
 
     private IEnumerator DuckAudioForVoice(AudioSource voiceSource, System.Action onComplete)
     {
-        // Get current volumes
-        float originalMusicVolume = GetMusicVolume();
-        float originalAmbientVolume = GetAmbientVolume();
+        AudioSource music = GetMusicAudioSource();
+        AudioSource ambient = GetAmbientAudioSource();
+
+        // What to come back to is taken once, before the first line: a second line starting while the music is
+        // already down (or coming back up) must not take that lowered level for the normal one.
+        if (!duckCaptured)
+        {
+            duckCaptured = true;
+            musicBeforeDuck = GetMusicVolume();
+            ambientBeforeDuck = GetAmbientVolume();
+        }
+        activeDucks++;
 
         // Fade down
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(GetMusicAudioSource(), originalMusicVolume, originalMusicVolume * duckingAmount, 0.5f));
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(GetAmbientAudioSource(), originalAmbientVolume, originalAmbientVolume * duckingAmount, 0.5f));
+        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(music, GetMusicVolume(), musicBeforeDuck * duckingAmount, 0.5f, AudioCategory.Music, false));
+        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(ambient, GetAmbientVolume(), ambientBeforeDuck * duckingAmount, 0.5f, AudioCategory.Ambient, false));
 
         // Wait for voice to finish
-        yield return new WaitWhile(() => voiceSource.isPlaying);
+        yield return new WaitWhile(() => voiceSource != null && voiceSource.isPlaying);
 
-        // Fade back up
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(GetMusicAudioSource(), GetMusicAudioSource().volume, originalMusicVolume, 0.5f));
-        yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(GetAmbientAudioSource(), GetAmbientAudioSource().volume, originalAmbientVolume, 0.5f));
+        // Fade back up, once the last line has ended (and unless another one starts meanwhile)
+        activeDucks = Mathf.Max(0, activeDucks - 1);
+        if (activeDucks == 0)
+        {
+            yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(music, GetMusicVolume(), musicBeforeDuck, 0.5f, AudioCategory.Music, true));
+            yield return monoBehaviourRef.StartCoroutine(FadeAudioSource(ambient, GetAmbientVolume(), ambientBeforeDuck, 0.5f, AudioCategory.Ambient, true));
+            if (activeDucks == 0)
+                duckCaptured = false;
+        }
 
         onComplete?.Invoke();
     }
 
     private IEnumerator CleanupVoiceSource(AudioSource voiceSource, System.Action onComplete)
     {
-        yield return new WaitWhile(() => voiceSource.isPlaying);
+        yield return new WaitWhile(() => voiceSource != null && voiceSource.isPlaying);
 
         voiceSourcesForDucking.Remove(voiceSource);
         if (voiceSource != null)
-            UnityEngine.Object.DestroyImmediate(voiceSource.gameObject);
+        {
+            GameAudio.Forget(voiceSource);
+            UnityEngine.Object.Destroy(voiceSource.gameObject);
+        }
+        onComplete?.Invoke();
     }
 
-    private IEnumerator FadeAudioSource(AudioSource source, float startVolume, float endVolume, float duration)
+    private IEnumerator FadeAudioSource(AudioSource source, float startVolume, float endVolume, float duration, AudioCategory category, bool restoring)
     {
+        if (source == null)
+            yield break;
         float elapsed = 0f;
-        source.volume = startVolume;
+        GameAudio.SetLevel(source, startVolume, category);
 
         while (elapsed < duration)
         {
+            // Coming back up while a new voice line started: that line's own fade takes over.
+            if (source == null || (restoring && activeDucks > 0))
+                yield break;
             elapsed += Time.unscaledDeltaTime;
             float t = elapsed / duration;
-            source.volume = Mathf.Lerp(startVolume, endVolume, t);
+            GameAudio.SetLevel(source, Mathf.Lerp(startVolume, endVolume, t), category);
             yield return null;
         }
 
-        source.volume = endVolume;
+        if (source != null)
+            GameAudio.SetLevel(source, endVolume, category);
     }
 
-    // Helper methods to access other managers' audio sources
+    // The music and ambience sources of the SoundManager this belongs to (whatever their objects are called).
     private AudioSource GetMusicAudioSource()
     {
-        // This will be set through the main SoundManager
-        return GameObject.Find("Music_AudioSource")?.GetComponent<AudioSource>();
+        SoundManager manager = monoBehaviourRef as SoundManager;
+        return manager != null ? manager.musicAudioSource : null;
     }
 
     private AudioSource GetAmbientAudioSource()
     {
-        // This will be set through the main SoundManager
-        return GameObject.Find("Ambient_AudioSource")?.GetComponent<AudioSource>();
+        SoundManager manager = monoBehaviourRef as SoundManager;
+        return manager != null ? manager.ambientAudioSource : null;
     }
 
     private float GetMusicVolume()
     {
         var source = GetMusicAudioSource();
-        return source != null ? source.volume : 1f;
+        return source != null ? GameAudio.GetLevel(source) : 1f;
     }
 
     private float GetAmbientVolume()
     {
         var source = GetAmbientAudioSource();
-        return source != null ? source.volume : 1f;
+        return source != null ? GameAudio.GetLevel(source) : 1f;
     }
 }

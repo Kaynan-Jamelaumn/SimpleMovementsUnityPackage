@@ -562,7 +562,7 @@ public class PauseMenuManager : MonoBehaviour
     {
         if (pauseSFX != null && clip != null)
         {
-            pauseSFX.PlayOneShot(clip); // Play sound without interrupting other sounds
+            GameAudio.PlayOn(pauseSFX, clip, 1f, AudioCategory.UI); // Play sound without interrupting other sounds
         }
     }
 

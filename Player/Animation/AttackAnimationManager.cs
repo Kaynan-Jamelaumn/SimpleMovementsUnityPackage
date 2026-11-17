@@ -11,6 +11,36 @@ public class AttackAnimationManager : MonoBehaviour
 
     public AttackAnimationState AttackState => attackAnimState;
 
+    // ---------------------------------------------------------------------------------------------------------------
+    // Optional clip overlay. Null unless the character has an AnimationClipOverlay, and used for attacks only when its
+    // "Play Attack Clips" is on. With neither, every line below that mentions it does nothing and attacks play exactly
+    // as they always did: the state named after the clip, else the fallback triggers.
+    // ---------------------------------------------------------------------------------------------------------------
+    public AnimationClipOverlay Overlay { get; set; }
+    private AnimationClip overlayClip;
+
+    /// <summary>The attack's own clip, laid over the controller, when the controller has no state for it (opt-in).</summary>
+    private bool TryPlayOverlay(AnimationClip clip)
+    {
+        if (Overlay == null || !Overlay.PlayAttackClips)
+            return false;
+        // The speed the attack was just fitted with, for the attack's whole duration.
+        if (!Overlay.Play(clip, model.Anim.speed, attackAnimState.Duration))
+            return false;
+        overlayClip = clip;
+        if (model.DebugAnimations) Debug.Log($"✓ Playing attack clip through the overlay: {clip.name}");
+        return true;
+    }
+
+    private void StopOverlay()
+    {
+        if (overlayClip == null)
+            return;
+        if (Overlay != null)
+            Overlay.Stop(overlayClip);
+        overlayClip = null;
+    }
+
     public void Initialize(PlayerAnimationModel animModel)
     {
         model = animModel;
@@ -70,6 +100,7 @@ public class AttackAnimationManager : MonoBehaviour
         if (model.DebugAnimations) Debug.Log("Force ending attack animation");
 
         StopAttackAnimation();
+        StopOverlay();
         model.Anim.speed = 1.0f;
         attackAnimState.Reset();
 
@@ -106,6 +137,7 @@ public class AttackAnimationManager : MonoBehaviour
             StopCoroutine(attackAnimationCoroutine);
             attackAnimationCoroutine = null;
         }
+        StopOverlay();
         attackAnimState.Reset();
     }
 
@@ -177,6 +209,10 @@ public class AttackAnimationManager : MonoBehaviour
                 }
             }
 
+            // No state of that name. Opt-in: the clip itself (see Overlay above); otherwise, as always, the triggers.
+            if (TryPlayOverlay(clip))
+                return true;
+
             return TryTriggerFallback();
         }
         catch (Exception e)
@@ -221,6 +257,7 @@ public class AttackAnimationManager : MonoBehaviour
     {
         if (model.DebugAnimations) Debug.Log("Completing attack animation");
 
+        StopOverlay();
         model.Anim.speed = 1.0f;
         attackAnimState.Reset();
 
@@ -244,6 +281,10 @@ public class AttackAnimationManager : MonoBehaviour
             StopCoroutine(attackAnimationCoroutine);
             attackAnimationCoroutine = null;
         }
+        // An attack starts or stops: whatever the overlay was showing (the last attack's clip, a charge) ends.
+        StopOverlay();
+        if (Overlay != null)
+            Overlay.Stop();
     }
 
     private bool ValidateAnimationClip(AnimationClip clip)
@@ -275,6 +316,10 @@ public class AttackAnimationManager : MonoBehaviour
 
     private void CheckAndMaintainAttackAnimation(float elapsedTime, float duration)
     {
+        // The overlay is showing the attack's clip: no trigger is needed underneath it.
+        if (overlayClip != null)
+            return;
+
         bool isPlaying = IsAnyAttackAnimationPlaying();
 
         if (!isPlaying && elapsedTime < duration - 0.2f)

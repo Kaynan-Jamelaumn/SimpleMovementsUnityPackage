@@ -168,7 +168,8 @@ public class ElementalSystem : ScriptableObject
             {
                 audioSource = source.GetComponent<Player>()?.PlayerAudioSource;
             }
-            audioSource?.PlayOneShot(reaction.reactionSound);
+            if (audioSource != null)
+                GameAudio.PlayOn(audioSource, reaction.reactionSound, 1f, AudioCategory.Combat);
         }
 
         // Apply reaction effect

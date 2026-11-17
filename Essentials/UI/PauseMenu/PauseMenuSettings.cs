@@ -567,12 +567,18 @@ public class PauseMenuSettings : MonoBehaviour
     // Convert linear volume (0-1) to logarithmic decibel scale for AudioMixer
     private void SetAudioMixerVolume(string parameter, float volume)
     {
-        if (masterMixer?.audioMixer != null)
+        bool handledByMixer = false;
+        // Not "?.": an unassigned serialized field is a Unity fake-null object that "?." does not catch.
+        if (masterMixer != null && masterMixer.audioMixer != null)
         {
             // Handle zero volume case (mute) by setting to -80dB instead of -infinity
             float dbValue = volume > 0 ? Mathf.Log10(volume) * VOLUME_MULTIPLIER : -80f;
-            masterMixer.audioMixer.SetFloat(parameter, dbValue);
+            // False when the mixer has no exposed parameter of this name.
+            handledByMixer = masterMixer.audioMixer.SetFloat(parameter, dbValue);
         }
+        // The sounds follow the slider either way: GameAudio scales them itself when no mixer does.
+        AudioBus bus = parameter == MUSIC_VOLUME_PARAM ? AudioBus.Music : parameter == SFX_VOLUME_PARAM ? AudioBus.SFX : AudioBus.Master;
+        GameAudio.SetVolume(bus, volume, handledByMixer);
     }
 
     // Update volume percentage display text

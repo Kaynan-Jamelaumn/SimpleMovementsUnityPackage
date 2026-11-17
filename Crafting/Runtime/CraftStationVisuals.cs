@@ -209,8 +209,9 @@ public class CraftStationVisuals : MonoBehaviour
         SetRate(quenchSteam, Mathf.Min(80f, (float)heat * 0.08f + steamBurst));
         if (fireLoop != null)
         {
-            fireLoop.volume = Mathf.Lerp(fireLoop.volume, Mathf.Clamp01((float)(w.Forge.level * (0.5 + w.Forge.air))), Time.deltaTime * 3f);
-            if (fireLoop.volume > 0.02f && !fireLoop.isPlaying) fireLoop.Play();
+            float level = Mathf.Lerp(GameAudio.GetLevel(fireLoop), Mathf.Clamp01((float)(w.Forge.level * (0.5 + w.Forge.air))), Time.deltaTime * 3f);
+            GameAudio.SetLevel(fireLoop, level);
+            if (level > 0.02f && !fireLoop.isPlaying) fireLoop.Play();
         }
     }
 
@@ -416,7 +417,7 @@ public class CraftStationVisuals : MonoBehaviour
     private void Play(AudioClip clip)
     {
         if (clip != null && oneShotSource != null)
-            oneShotSource.PlayOneShot(clip);
+            GameAudio.PlayOn(oneShotSource, clip);
     }
 
     private static void Burst(ParticleSystem ps, int count)

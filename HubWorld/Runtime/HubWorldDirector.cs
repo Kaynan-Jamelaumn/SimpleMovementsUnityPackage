@@ -1534,7 +1534,7 @@ namespace HubWorld
         private void PlaySound(AudioClip clip)
         {
             if (clip != null && audioSource != null)
-                audioSource.PlayOneShot(clip, settings.soundVolume);
+                GameAudio.PlayOn(audioSource, clip, settings.soundVolume);
         }
 
         private void Log(string message)

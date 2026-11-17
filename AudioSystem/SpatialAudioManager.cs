@@ -25,9 +25,10 @@ public class SpatialAudioManager
     // Performance tracking
     private Dictionary<SpatialAudioSource, float> sourceLastUsed;
 
-    public void Initialize(MonoBehaviour monoBehaviour, float maxDistance, AudioRolloffMode rolloffMode)
+    public void Initialize(MonoBehaviour monoBehaviour, float maxDistance, AudioRolloffMode rolloffMode, AudioMixerGroup sfxGroup = null)
     {
         monoBehaviourRef = monoBehaviour;
+        sfxMixerGroup = sfxGroup;
         globalMaxDistance = maxDistance;
         defaultRolloffMode = rolloffMode;
 
@@ -135,7 +136,10 @@ public class SpatialAudioManager
 
         // Configure for ambient playback
         spatialSource.audioSource.clip = clip;
-        spatialSource.audioSource.volume = fadeIn ? 0f : 1f;
+        // An ambience: out of the ambient group when there is one, and under the ambient slider.
+        AudioMixerGroup ambientGroup = GameAudio.GroupFor(AudioCategory.Ambient);
+        spatialSource.audioSource.outputAudioMixerGroup = ambientGroup != null ? ambientGroup : sfxMixerGroup;
+        GameAudio.SetLevel(spatialSource.audioSource, fadeIn ? 0f : 1f, AudioCategory.Ambient);
         spatialSource.audioSource.loop = true;
         spatialSource.audioSource.spatialBlend = 1f;
         spatialSource.audioSource.maxDistance = maxDistance;
@@ -160,7 +164,8 @@ public class SpatialAudioManager
 
         // Basic configuration
         source.clip = soundEffect.clip;
-        source.volume = soundEffect.volume;
+        source.outputAudioMixerGroup = sfxMixerGroup;
+        GameAudio.SetLevel(source, soundEffect.volume, AudioCategory.SFX);
         source.pitch = soundEffect.pitch;
         source.loop = soundEffect.loop;
         source.priority = (int)soundEffect.priority;
@@ -328,11 +333,11 @@ public class SpatialAudioManager
         return spatialAudioSources.Count(s => s.isPlaying);
     }
 
+    // The Sound Effects Library of the SoundManager this belongs to.
     private SoundEffect GetSoundEffect(string soundName)
     {
-        // This should access the sound effects array from SoundManager
-        // For now, return null - this would be implemented by accessing the main sound library
-        return null;
+        SoundManager manager = monoBehaviourRef as SoundManager;
+        return manager != null ? manager.FindSoundEffect(soundName) : null;
     }
 
     private IEnumerator ReturnSpatialSourceWhenFinished(SpatialAudioSource spatialSource)
@@ -350,10 +355,10 @@ public class SpatialAudioManager
         {
             elapsed += Time.unscaledDeltaTime;
             float t = elapsed / fadeTime;
-            source.volume = Mathf.Lerp(0f, 1f, t);
+            GameAudio.SetLevel(source, Mathf.Lerp(0f, 1f, t), AudioCategory.Ambient);
             yield return null;
         }
 
-        source.volume = 1f;
+        GameAudio.SetLevel(source, 1f, AudioCategory.Ambient);
     }
 }

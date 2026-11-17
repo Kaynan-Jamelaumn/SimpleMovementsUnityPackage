@@ -41,7 +41,8 @@ public class SFXManager
         monoBehaviourRef = monoBehaviour;
         parentTransform = parent;
         sfxMixerGroup = sfxGroup;
-        soundEffects = effects;
+        // A manager added from code has no library array at all.
+        soundEffects = effects ?? new SoundEffect[0];
         maxCachedClips = maxCached;
         enableAudioOcclusion = occlusion;
         occlusionLayers = occlusionMask;
@@ -78,7 +79,8 @@ public class SFXManager
 
         foreach (var soundEffect in soundEffects)
         {
-            if (soundEffect.clip != null && !audioClipCache.ContainsKey(soundEffect.name))
+            if (soundEffect != null && soundEffect.clip != null && !string.IsNullOrEmpty(soundEffect.name) &&
+                !audioClipCache.ContainsKey(soundEffect.name))
             {
                 audioClipCache[soundEffect.name] = soundEffect.clip;
             }
@@ -114,7 +116,8 @@ public class SFXManager
         if (source != null)
         {
             source.clip = clip;
-            source.volume = volume;
+            // Through GameAudio: the SFX slider applies even when no mixer does it.
+            GameAudio.SetLevel(source, volume, AudioCategory.SFX);
             source.pitch = pitch;
             source.loop = false;
             source.spatialBlend = 0f; // 2D by default
@@ -147,7 +150,8 @@ public class SFXManager
     private void ConfigureAudioSource(AudioSource source, SoundEffect soundEffect, Vector3? position, float volumeMultiplier)
     {
         source.clip = soundEffect.clip;
-        source.volume = soundEffect.volume * volumeMultiplier;
+        // Always the SFX slider, like the SFX mixer group these sources go out of (an entry's category defaults to Music).
+        GameAudio.SetLevel(source, soundEffect.volume * volumeMultiplier, AudioCategory.SFX);
         source.loop = soundEffect.loop;
         source.priority = (int)soundEffect.priority;
         source.maxDistance = soundEffect.maxDistance;
@@ -198,7 +202,7 @@ public class SFXManager
         if (ScenePhysics.Raycast(listenerPosition, direction.normalized, out RaycastHit hit, distance, occlusionLayers))
         {
             // Apply occlusion damping
-            source.volume *= (1f - occlusionDamping);
+            GameAudio.SetLevel(source, GameAudio.GetLevel(source) * (1f - occlusionDamping), AudioCategory.SFX);
 
             // Apply low-pass filter effect
             AudioLowPassFilter lowPass = source.GetComponent<AudioLowPassFilter>();
@@ -299,7 +303,7 @@ public class SFXManager
     {
         foreach (var soundEffect in soundEffects)
         {
-            if (soundEffect.name == soundName)
+            if (soundEffect != null && soundEffect.name == soundName)
             {
                 return soundEffect;
             }

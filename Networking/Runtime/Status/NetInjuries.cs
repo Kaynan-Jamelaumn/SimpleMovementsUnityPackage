@@ -39,6 +39,7 @@ namespace GameNet
         private float lastRequest = float.NegativeInfinity;
         private float lastStateRequest = float.NegativeInfinity;
         private bool requestHooked;
+        private bool soundsHooked;
         private byte[] lastPublic;
 
         private InjuryController Injuries
@@ -57,6 +58,43 @@ namespace GameNet
             base.OnStartServer();
             sentVersion = int.MinValue;
             lastPublic = null;
+            HookSounds(true);
+        }
+
+        public override void OnStopServer()
+        {
+            base.OnStopServer();
+            HookSounds(false);
+        }
+
+        /// <summary>The server repeats the sounds of treatments to the clients (it plays them only for itself).</summary>
+        private void HookSounds(bool on)
+        {
+            InjuryController c = Injuries;
+            if (c == null || soundsHooked == on)
+                return;
+            soundsHooked = on;
+            if (on) c.ItemSoundPlayed += OnItemSound;
+            else c.ItemSoundPlayed -= OnItemSound;
+        }
+
+        private void OnItemSound(ItemSO item)
+        {
+            if (!IsServerInitialized || item == null)
+                return;
+            string id = ItemDatabase.Id(item);
+            if (!string.IsNullOrEmpty(id))
+                ObserversItemSound(id);
+        }
+
+        /// <summary>A medical item was used on the character: its sound, on every client that sees it.</summary>
+        [ObserversRpc(ExcludeServer = true)]
+        private void ObserversItemSound(string itemId)
+        {
+            InjuryController c = Injuries;
+            if (c == null || string.IsNullOrEmpty(itemId) || itemId.Length > 128)
+                return;
+            c.PresentItemSound(ItemDatabase.Item(itemId));
         }
 
         private void Update()
@@ -67,6 +105,8 @@ namespace GameNet
                 return;
             }
             InjuryController c = Injuries;
+            if (c != null && !soundsHooked)
+                HookSounds(true); // the controller can appear after the spawn
             if (c == null || c.Version == sentVersion || Time.unscaledTime < nextSend)
                 return;
             sentVersion = c.Version;

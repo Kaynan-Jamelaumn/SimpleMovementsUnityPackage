@@ -410,11 +410,14 @@ public static class AbilityPool
         return go;
     }
 
-    /// <summary>Plays a one-shot sound at a position (no pooling needed; nothing when <see cref="PresentationEnabled"/> is off).</summary>
-    public static void PlaySound(AudioClip clip, Vector3 position, float volume = 1f)
+    /// <summary>
+    /// Plays a one-shot sound at a position (nothing when <see cref="PresentationEnabled"/> is off). Through
+    /// <see cref="GameAudio"/>: a pooled source, the mixer group of its kind of sound, and the volume sliders.
+    /// </summary>
+    public static void PlaySound(AudioClip clip, Vector3 position, float volume = 1f, AudioCategory category = AudioCategory.SFX)
     {
         if (clip != null && PresentationEnabled)
-            AudioSource.PlayClipAtPoint(clip, position, volume);
+            GameAudio.Play(clip, position, volume, 1f, category);
     }
 }
 

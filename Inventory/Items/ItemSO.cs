@@ -283,7 +283,7 @@ public abstract class ItemSO : ScriptableObject
 
             if (audioSource != null)
             {
-                audioSource.PlayOneShot(useAudioClip);
+                GameAudio.PlayOn(audioSource, useAudioClip);
             }
         }
 
@@ -299,21 +299,24 @@ public abstract class ItemSO : ScriptableObject
         ApplyItemAnimation(player);
     }
 
+    /// <summary>The Animator trigger set when an item is used and its own Use Animation cannot play (or it has none).</summary>
+    public const string UseItemTrigger = "UseItemTrigger";
+
     // Virtual method for animation handling - can be overridden by subclasses
+    /// <summary>
+    /// Plays the item's Use Animation on the player: the state of the Animator Controller named after the clip, else
+    /// the clip itself when the player has an Animation Clip Overlay, else the controller's <c>UseItemTrigger</c> (one
+    /// generic "use" animation for every item). A controller with none of these plays nothing. Never over an attack.
+    /// </summary>
     protected virtual void ApplyItemAnimation(GameObject player)
     {
-        if (useAnimation != null)
-        {
-            // For non-weapon items, you might want to use a different animation system
-            // or trigger specific animations through the PlayerAnimationController
-            var animController = player.GetComponent<PlayerAnimationController>();
-            if (animController != null)
-            {
-                // You can create a method in PlayerAnimationController to handle item use animations
-                // animController.PlayItemUseAnimation(useAnimation);
-                Debug.Log($"Playing item use animation: {useAnimation.name}");
-            }
-        }
+        if (player == null)
+            return;
+        var animController = player.GetComponent<PlayerAnimationController>();
+        if (animController == null)
+            animController = player.GetComponentInChildren<PlayerAnimationController>();
+        if (animController != null)
+            animController.PlayActionClip(useAnimation, UseItemTrigger);
     }
 
 

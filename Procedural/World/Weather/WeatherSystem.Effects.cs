@@ -301,10 +301,12 @@ public partial class WeatherSystem
         if (source == null)
             return;
         float target = Mathf.Clamp01(amount) * volume;
-        source.volume = Mathf.MoveTowards(source.volume, target, Time.deltaTime * 0.5f);
-        if (source.volume > 0.001f && !source.isPlaying)
+        // The level the weather wants; GameAudio puts the ambient slider on top of it.
+        float level = Mathf.MoveTowards(GameAudio.GetLevel(source), target, Time.deltaTime * 0.5f);
+        GameAudio.SetLevel(source, level, AudioCategory.Ambient);
+        if (level > 0.001f && !source.isPlaying)
             source.Play();
-        else if (source.volume <= 0.001f && source.isPlaying)
+        else if (level <= 0.001f && source.isPlaying)
             source.Stop();
     }
 
@@ -393,6 +395,8 @@ public partial class WeatherSystem
         {
             thunderAudio = MakeLoop("Thunder Sound", null);
             thunderAudio.loop = false;
+            // A loop starts silent and fades in; the thunder is one-shots, which a silent source would mute.
+            GameAudio.SetLevel(thunderAudio, 1f, AudioCategory.Ambient);
         }
     }
 
@@ -480,7 +484,7 @@ public partial class WeatherSystem
         source.loop = true;
         source.playOnAwake = false;
         source.spatialBlend = 0f;
-        source.volume = 0f;
+        GameAudio.SetLevel(source, 0f, AudioCategory.Ambient);
         return source;
     }
 

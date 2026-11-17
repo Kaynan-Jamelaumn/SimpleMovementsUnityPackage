@@ -191,9 +191,12 @@ public class StatusEffectManager : MonoBehaviour
     {
         if (effect.effectSound != null)
         {
-            var audioSource = GetComponent<AudioSource>() ?? playerController.GetComponent<AudioSource>();
+            // Not "??": a missing component is a Unity fake-null object in the editor, which "??" does not catch.
+            AudioSource audioSource = GetComponent<AudioSource>();
+            if (audioSource == null && playerController != null)
+                audioSource = playerController.GetComponent<AudioSource>();
             if (audioSource != null)
-                audioSource.PlayOneShot(effect.effectSound);
+                GameAudio.PlayOn(audioSource, effect.effectSound);
         }
     }
 

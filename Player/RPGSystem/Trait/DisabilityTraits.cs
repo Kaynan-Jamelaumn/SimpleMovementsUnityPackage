@@ -486,6 +486,8 @@ public class EpisodicDisabilityTrait : TraitBehaviour
     [Tooltip("Told to the player when an episode starts / ends (empty = nothing).")]
     public string startMessage = "";
     public string endMessage = "";
+    [Tooltip("Heard when an episode starts, by everyone near the character: a cough, a sneeze, a groan (empty = nothing).")]
+    public AudioCue startSound;
 
     [NonSerialized] private EpisodeSchedule schedule;
     [NonSerialized] private ConsequenceRunner runner;
@@ -708,7 +710,11 @@ public class EpisodicDisabilityTrait : TraitBehaviour
         bool was = shown > 0.01f, now = severity > 0.01f;
         shown = severity;
         if (now != was)
+        {
             DisabilityUtil.Tell(ctx, now ? startMessage : endMessage, now);
+            if (now && startSound != null && ctx.Root != null)
+                startSound.Play(ctx.Root.gameObject);
+        }
         bool perceived = (sight != null && sight.HasAny) || hearing < 0.999f;
         if (!perceived)
             return;

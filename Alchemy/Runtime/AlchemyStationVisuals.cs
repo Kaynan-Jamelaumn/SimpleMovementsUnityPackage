@@ -256,7 +256,7 @@ public class AlchemyStationVisuals : MonoBehaviour
         {
             loopSource.clip = bubblingLoop;
             loopSource.loop = true;
-            loopSource.volume = 0f;
+            GameAudio.SetLevel(loopSource, 0f);
             loopSource.Play();
         }
     }
@@ -330,7 +330,7 @@ public class AlchemyStationVisuals : MonoBehaviour
             main.startColor = Color.Lerp(floatColor, sedimentColor, 0.5f);
         }
         if (loopSource != null && loopSource.clip != null)
-            loopSource.volume = Mathf.MoveTowards(loopSource.volume, bubbling, dt);
+            GameAudio.SetLevel(loopSource, Mathf.MoveTowards(GameAudio.GetLevel(loopSource), bubbling, dt));
 
         // Fire and glow.
         float flames01 = m != null ? Mathf.Max(0f, (float)m.EffectiveHeat) : 0f;
@@ -1100,6 +1100,6 @@ public class AlchemyStationVisuals : MonoBehaviour
     private void Play(AudioClip clip)
     {
         if (clip != null && oneShotSource != null)
-            oneShotSource.PlayOneShot(clip);
+            GameAudio.PlayOn(oneShotSource, clip);
     }
 }

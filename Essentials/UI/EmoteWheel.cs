@@ -266,7 +266,8 @@ public class EmoteWheel : MonoBehaviour
         if (index < 0 || index >= emotes.Count) return;
 
         // Trigger the emote animation and invoke its associated event
-        characterAnimator.SetTrigger(emotes[index].triggerName);
+        // (a trigger the Animator does not have, or no Animator at all, is skipped instead of raising an error)
+        AnimatorParameterCache.SetTrigger(characterAnimator, emotes[index].triggerName);
         emotes[index].onSelected?.Invoke();
     }
 

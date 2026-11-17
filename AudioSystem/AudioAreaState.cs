@@ -103,7 +103,7 @@ public class AudioAreaManager
             AudioSource areaSource = areaAudioObject.AddComponent<AudioSource>();
             areaSource.outputAudioMixerGroup = soundManagerRef.sfxMixerGroup;
             areaSource.playOnAwake = false;
-            areaSource.volume = 0f; // Start muted
+            GameAudio.SetLevel(areaSource, 0f, AudioCategory.SFX); // Start muted
 
             areaAudioSources[audioArea.areaName].Add(areaSource);
         }
@@ -219,7 +219,7 @@ public class AudioAreaManager
         if (soundEffect?.clip == null) return;
 
         availableSource.clip = soundEffect.clip;
-        availableSource.volume = soundEffect.volume * volumeMultiplier * areaState.transitionProgress;
+        GameAudio.SetLevel(availableSource, soundEffect.volume * volumeMultiplier * areaState.transitionProgress, AudioCategory.SFX);
         availableSource.pitch = soundEffect.pitch;
         availableSource.loop = soundEffect.loop;
         availableSource.Play();
@@ -262,7 +262,7 @@ public class AudioAreaManager
                 {
                     // Fade volume based on transition progress
                     float targetVolume = source.clip != null ? 1f : 0f;
-                    source.volume = Mathf.Lerp(0f, targetVolume, t);
+                    GameAudio.SetLevel(source, Mathf.Lerp(0f, targetVolume, t), AudioCategory.SFX);
                 }
             }
 
@@ -294,7 +294,7 @@ public class AudioAreaManager
             {
                 if (source.isPlaying)
                 {
-                    source.volume = Mathf.Lerp(source.volume, 0f, t);
+                    GameAudio.SetLevel(source, Mathf.Lerp(GameAudio.GetLevel(source), 0f, t), AudioCategory.SFX);
                 }
             }
 
@@ -314,7 +314,7 @@ public class AudioAreaManager
             if (!source.isPlaying)
             {
                 source.clip = clip;
-                source.volume = volume;
+                GameAudio.SetLevel(source, volume, AudioCategory.SFX);
                 source.loop = false;
                 source.Play();
                 break;
@@ -332,7 +332,7 @@ public class AudioAreaManager
             if (!source.isPlaying)
             {
                 source.clip = clip;
-                source.volume = volume;
+                GameAudio.SetLevel(source, volume, AudioCategory.SFX);
                 source.loop = true;
                 source.Play();
                 break;
@@ -387,11 +387,10 @@ public class AudioAreaManager
         return areaStates.ContainsKey(areaName) && areaStates[areaName].isActive;
     }
 
+    // The Sound Effects Library of the SoundManager this belongs to.
     private SoundEffect GetSoundEffect(string soundName)
     {
-        // This should access the sound effects array from SoundManager
-        // Implementation depends on how SoundManager exposes its sound library
-        return null;
+        return soundManagerRef != null ? soundManagerRef.FindSoundEffect(soundName) : null;
     }
 
     private IEnumerator RemoveSoundFromAreaWhenFinished(AudioSource source, string areaName, string soundName)

@@ -114,7 +114,7 @@ public partial class WeatherSystem
     {
         yield return new WaitForSeconds(delay);
         if (thunderAudio != null)
-            thunderAudio.PlayOneShot(clip, loudness);
+            GameAudio.PlayOn(thunderAudio, clip, loudness, AudioCategory.Ambient);
     }
 
     private void ShowBolt(Vector3 ground)

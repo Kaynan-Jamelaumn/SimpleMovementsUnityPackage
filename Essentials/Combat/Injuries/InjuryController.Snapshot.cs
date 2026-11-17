@@ -22,6 +22,11 @@ public partial class InjuryController
     private BinaryWriter snapshotWriter;
     private readonly Dictionary<int, Injury> snapshotReuse = new Dictionary<int, Injury>();
     private bool warnedSnapshotMismatch;
+    // Client copies: a state was shown before (the first one lists limbs lost long ago, which is not news).
+    private bool snapshotSeen;
+    // Client copies of someone else's character: the server says a treatment is being applied (not which).
+    private bool replicatedTreating;
+    private const byte PublicTreating = 1;
 
     /// <summary>True on a client copy that was only sent the public state (someone else's character): no injuries are known here.</summary>
     public bool PublicOnly { get; private set; }
@@ -97,6 +102,8 @@ public partial class InjuryController
     {
         BinaryWriter w = BeginWrite();
         WriteParts(w, false);
+        // What anyone can see the character doing, after the parts.
+        w.Write((byte)(activeTreatment != null ? PublicTreating : 0));
         return EndWrite();
     }
 
@@ -218,7 +225,14 @@ public partial class InjuryController
                         record.Gone = gone;
                         record.DespawnAt = despawnIn > 0f ? Time.time + despawnIn : 0f;
                     }
-                    if (lost && !p.Lost) HideVisuals(p);
+                    if (lost && !p.Lost)
+                    {
+                        // The limb comes off before this player's eyes: the effect and sound the server played for itself.
+                        // (Not for the parts that went with it, nor for limbs already missing when this copy appeared.)
+                        if (snapshotSeen && p.LostWith == null)
+                            PresentLimbLoss(p.Def.limbLoss, LimbPosition(p));
+                        HideVisuals(p);
+                    }
                     else if (!lost && p.Lost) RestoreVisuals(p);
                     p.Lost = lost;
                     p.LostLimb = record;
@@ -236,10 +250,12 @@ public partial class InjuryController
                     for (int k = 0; k < parts.Count; k++)
                         parts[k].injuries.Clear();
                     activeTreatment = null;
+                    replicatedTreating = ms.Position < ms.Length && (r.ReadByte() & PublicTreating) != 0;
                 }
                 else
                 {
                     ReadInjuries(r, s);
+                    replicatedTreating = false;
                 }
             }
         }
@@ -251,6 +267,7 @@ public partial class InjuryController
         {
             return false;
         }
+        snapshotSeen = true;
         effectsDirty = true;
         MarkChanged();
         return true;
