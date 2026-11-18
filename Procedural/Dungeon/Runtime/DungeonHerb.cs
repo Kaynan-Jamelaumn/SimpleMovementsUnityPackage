@@ -14,6 +14,7 @@ namespace ProceduralDungeon
 
         public override string PromptVerb => string.IsNullOrWhiteSpace(verb) ? "Gather" : verb;
         protected override string UsedUpReason => "Nothing left";
+        protected override float UseNoiseRadius => 2f;   // picking leaves
 
         protected override bool CanUse(CombatEntity player, out string reason)
         {

@@ -448,13 +448,15 @@ public sealed class AbilityCastInstance
         return count;
     }
 
-    /// <summary>Makes a noise AI can hear, scaled by the ability's noise radius.</summary>
+    /// <summary>Makes a noise mobs and players can hear, as far as the ability's noise radius.</summary>
     public void EmitNoise(Vector3 position, float intensity = 0.8f)
     {
-        if (Cosmetic)
-            return; // AI hearing belongs to the machine that runs the cast for real
+        // AI hearing belongs to the machine that runs the cast for real. A client's mirror of a cast is still heard
+        // there, by that machine's own player (no AI runs on a client).
+        if (Cosmetic && !GameNet.NetAuthority.IsClientOnly)
+            return;
         if (Definition != null && Definition.presentation.noiseRadius > 0f)
-            CombatEvents.EmitNoise(position, Definition.presentation.noiseRadius, CasterEntity, intensity);
+            CombatEvents.EmitNoise(position, Definition.presentation.noiseRadius, CasterEntity, intensity, NoiseKind.Ability);
     }
 
     /// <summary>Registers a danger area for AI dodging; removed automatically when the cast ends or is cancelled.</summary>

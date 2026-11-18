@@ -72,7 +72,7 @@ One asset per mob type (*Assets ▸ Create ▸ SimpleMovements ▸ Mobs ▸ Mob 
 | Section | Fields |
 |---|---|
 | **Temperament** | **Aggression**: Passive (never starts fights), Defensive (only when attacked or an ally calls), Territorial (attacks enemies near home within *Territory Radius*), Aggressive (attacks every enemy it notices). **When Attacked**: Fight, Flee, Fight If Healthy. **Courage**, **Flee Health Threshold**, *Flee From Players Within* (skittish animals), **Fears** (types it runs from) |
-| **Perception** | **Sight Range**, **Field Of View**, *Close Sense Radius* (notices all around), eye height, **Hearing** multiplier, *Awareness Gain Rate* (how hard it is to sneak past), *Sneak Detection Multiplier* (vs crouching players), **Memory Duration**, **Reaction Time**, **Call For Help Radius** / *Respond To Help Radius* |
+| **Perception** | **Vision Shape** (Cone, Sphere, Box, None = blind), **Sight Range**, **Field Of View**, *Vision Width*, *Close Sense Radius* (notices all around, even blind), eye height, **Hearing Multiplier** (0 = deaf), **Hearing Alertness**, *Search Radius*, *Movement Noise*, *Awareness Gain Rate* (how hard it is to sneak past), *Sneak Detection Multiplier* (vs crouching players), **Memory Duration**, **Reaction Time**, **Call For Help Radius** / *Respond To Help Radius*. [07 — Senses & Noise](07-Senses-and-Noise.md) |
 | **Movement** | Walk / run / combat speed (× Speed Manager), turn speed, acceleration, *Wander Radius*, *Idle Time Range*, patrol mode and wait, **Leash Distance**, *Max Chase Time*, return home (evade, heal on return), avoid hazards, flee distance |
 | **Locomotion** | **Habitat** (Ground, Flying, Aquatic, Amphibious), speed on land / in water / in the air, the **gait** in each (walk, hop, slime bounce, leap, zigzag, crawl, slither; swim, undulate, dart, paddle; flap, hover, glide, flutter), altitude, swim depth, wade depth. *Locomotion Preset ▾* at the top of the profile. [06 — Locomotion](06-Locomotion.md) |
 | **Combat** | **Combat Style** (Auto, Melee, Ranged, Skirmisher, Kiter, Brute), preferred min / max range, **Aggressiveness**, share melee slots, circle distance, strafing, *Min Time Between Attacks* |
@@ -95,6 +95,9 @@ One asset per mob type (*Assets ▸ Create ▸ SimpleMovements ▸ Mobs ▸ Mob 
 | Prey Animal | Passive: flees when attacked and from players within 6 m, sees almost all around, warns nearby animals |
 | Guard | Territorial (18 m) melee, leash 30 m, returns to its post, patrols ping-pong, calls for help |
 | Boss | Aggressive, fearless, thinks fast at full rate, sees 360° / 30 m, no leash, ignores attack slots |
+| Blind Hunter | *Example.* Cannot see: hears 2.5× as far, attacks whoever it hears, prowls where the noise stopped, attacks what it touches (2.5 m). Stand still or sneak |
+| Deaf Watcher | *Example.* Hears nothing; sees 28 m in a narrow 100° cone that sneaking barely fools; turns slowly. Stay out of the cone |
+| Sentry | *Example.* Box vision: watches a corridor 30 m long and 5 m wide, holds its post and its facing; noise makes it look |
 
 ---
 

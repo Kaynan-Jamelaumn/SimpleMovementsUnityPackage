@@ -130,21 +130,12 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
             DebugLog = debugLog,
         };
         context.Animation.Played += OnAnimationPlayed;
-        context.Animation.Shown += OnReactionShown;
         if (context.Entity != null)
             context.Entity.ReplicatedDamage += OnReplicatedDamage;
         InitializeStates();
     }
 
     private void OnAnimationPlayed(MobAnimationEvent e) => AnimationEventPlayed?.Invoke(e);
-
-    /// <summary>
-    /// Raised when the mob shows an alert or a dodge on this machine - where the AI runs and on client copies alike
-    /// (unlike <see cref="AnimationEventPlayed"/>, which is for the network layer). For sounds and effects.
-    /// </summary>
-    public event Action<MobAnimationEvent> ReactionShown;
-
-    private void OnReactionShown(MobAnimationEvent e) => ReactionShown?.Invoke(e);
 
     /// <summary>Client copies: flinch at the hits the server reports (like the brain does where the AI runs).</summary>
     private void OnReplicatedDamage(DamageInfo info)
@@ -222,7 +213,6 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         MobCombatCoordinator.Disengage(context);
         context.Motor.Dispose();
         context.Animation.Played -= OnAnimationPlayed;
-        context.Animation.Shown -= OnReactionShown;
         if (context.Entity != null)
             context.Entity.ReplicatedDamage -= OnReplicatedDamage;
         if (abilities != null)
@@ -299,6 +289,8 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         c.Motor.Tick(dt);
         if (c.Scheduler.ShouldAnimate())
             c.Animation.Tick(dt);
+        if (c.Scheduler.Awake && CurrentStateKey != EMobMovementState.Dead)
+            EmitMovementNoise(now);
 
         // A finished state that the brain wants again restarts (e.g. another idle pause, the next patrol point).
         if (CurrentState is MobMovementState s && s.IsFinished && c.Brain.ResolveNext(s) == s.StateKey && s.StateKey != EMobMovementState.Dead)
@@ -316,7 +308,12 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         {
             // After the network has placed the copy for this frame, so the measured speed matches what is seen.
             if (context != null)
+            {
                 context.Animation.Tick(Time.deltaTime);
+                // Heard by this machine's own player (no AI runs on a client).
+                if (replicaState.State != EMobMovementState.Dead)
+                    EmitMovementNoise(Time.time);
+            }
             debugState = replicaState.State;
             return;
         }
@@ -525,6 +522,33 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         context.Brain.RequestDecision();
     }
 
+    // ------------------------------------------------------------------ noise
+    private float nextStepNoise = -1f;
+
+    /// <summary>
+    /// The noise of the mob's own movement (profile Movement Noise; farther when it runs): the mobs that hunt or fear it
+    /// hear it coming, and so do players.
+    /// </summary>
+    private void EmitMovementNoise(float now)
+    {
+        if (nextStepNoise < 0f)
+            nextStepNoise = now + UnityEngine.Random.value * 0.45f;   // mobs created together don't all step on the same frame
+        if (now < nextStepNoise)
+            return;
+        nextStepNoise = now + 0.45f;
+        float loud = context.Profile.movementNoise;
+        CombatEntity self = context.Entity;
+        if (loud <= 0f || self == null)
+            return;
+        Vector3 v = self.Velocity;
+        float speed = new Vector2(v.x, v.z).magnitude;
+        if (speed < 0.5f)
+            return;
+        CombatNoiseSettings ns = CombatSettings.Instance.noise;
+        float pace = Mathf.Clamp01(speed / Mathf.Max(0.5f, context.Motor.RunSpeed));
+        self.MakeNoise(NoiseKind.Footstep, Mathf.Lerp(ns.walkRadius * 0.6f, ns.runRadius * 0.8f, pace) * loud, 0.25f);
+    }
+
     // ------------------------------------------------------------------ gizmos
     private void OnDrawGizmosSelected()
     {
@@ -536,11 +560,26 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
 
         if (p != null)
         {
-            // Sight and field of view.
+            // What it sees (yellow): a cone, everything around, a corridor ahead - or nothing (blind).
             Gizmos.color = new Color(1f, 0.9f, 0.2f, 0.6f);
-            DrawArc(pos, transform.forward, p.sightRange, p.fieldOfView);
+            switch (p.visionShape)
+            {
+                case MobVisionShape.Cone: DrawArc(pos, transform.forward, p.sightRange, p.fieldOfView); break;
+                case MobVisionShape.Sphere: DrawArc(pos, transform.forward, p.sightRange, 360f); break;
+                case MobVisionShape.Box: DrawBox(pos, transform.forward, p.sightRange, p.visionWidth); break;
+            }
+            // What it feels (orange): anyone this close, even behind, even when blind.
             Gizmos.color = new Color(1f, 0.55f, 0.1f, 0.6f);
             DrawArc(pos, transform.forward, p.closeSenseRadius, 360f);
+            // What it hears (blue): how far a walking and a running player is heard in the open. Nothing = deaf.
+            if (p.hearingMultiplier > 0f)
+            {
+                CombatNoiseSettings ns = CombatSettings.Instance.noise;
+                Gizmos.color = new Color(0.3f, 0.7f, 1f, 0.45f);
+                DrawArc(pos, transform.forward, ns.walkRadius * ns.loudness * p.hearingMultiplier, 360f);
+                Gizmos.color = new Color(0.3f, 0.7f, 1f, 0.25f);
+                DrawArc(pos, transform.forward, ns.runRadius * ns.loudness * p.hearingMultiplier, 360f);
+            }
 
             Vector3 home = Application.isPlaying && m != null ? m.HomePosition : pos;
             if (p.leashDistance > 0f)
@@ -598,6 +637,25 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
             Gizmos.color = new Color(1f, 1f, 1f, 0.8f);
             Gizmos.DrawWireCube(context.Memory.InvestigatePoint, Vector3.one * 0.5f);
         }
+    }
+
+    /// <summary>A rectangle on the ground ahead of <paramref name="center"/>: <paramref name="length"/> long, <paramref name="width"/> wide.</summary>
+    private static void DrawBox(Vector3 center, Vector3 forward, float length, float width)
+    {
+        if (length <= 0f || width <= 0f)
+            return;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 1e-4f)
+            forward = Vector3.forward;
+        forward.Normalize();
+        Vector3 side = Vector3.Cross(Vector3.up, forward) * (width * 0.5f);
+        Vector3 up = Vector3.up * 0.1f;
+        Vector3 a = center - side + up, b = center + side + up;
+        Vector3 c = b + forward * length, d = a + forward * length;
+        Gizmos.DrawLine(a, b);
+        Gizmos.DrawLine(b, c);
+        Gizmos.DrawLine(c, d);
+        Gizmos.DrawLine(d, a);
     }
 
     private static void DrawArc(Vector3 center, Vector3 forward, float radius, float angle)

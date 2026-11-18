@@ -52,9 +52,13 @@ public class MobProfileEditor : Editor
             EditorGUILayout.HelpBox(
                 "TEMPERAMENT - whether it starts fights (Aggression), what it does when hit (When Attacked), and when it runs away " +
                 "(Courage + Flee Health Threshold, Fears, Flee From Players Within for skittish animals).\n\n" +
-                "PERCEPTION - Sight Range + Field Of View (cone in front), Close Sense Radius (notices anyone this close, even behind), " +
-                "hearing, how fast suspicion turns into detection (Awareness Gain Rate; sneaking players are slower), Memory Duration " +
-                "(how long it hunts someone it lost), Reaction Time, and calling allies for help.\n\n" +
+                "PERCEPTION - Vision Shape (Cone: Sight Range + Field Of View in front; Sphere: all around; Box: a corridor ahead; " +
+                "None: blind), Close Sense Radius (notices anyone this close, even behind, even blind), HEARING (Hearing Multiplier: how " +
+                "far it hears footsteps, jumps, fights, spells - 0 = deaf; Hearing Alertness: whether a noise only makes it look or makes it " +
+                "attack; a mob that hears an enemy comes for it even outside what it sees), Search Radius (prowls where it lost someone), " +
+                "how fast suspicion turns into detection (Awareness Gain Rate; sneaking players are slower), Memory Duration (how long " +
+                "it hunts someone it lost), Reaction Time, and calling allies for help. Presets Blind Hunter, Deaf Watcher and Sentry are " +
+                "examples; how loud things are is in Combat Settings ▸ Noise.\n\n" +
                 "MOVEMENT - speeds (multipliers of the Speed Manager's speed), wandering and patrol, Leash Distance (how far from home " +
                 "it follows before giving up), returning home, avoiding hazards, flee distance.\n\n" +
                 "COMBAT - Combat Style (Auto reads its abilities: ranged ones make it keep distance), preferred distance band, " +

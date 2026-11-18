@@ -46,6 +46,16 @@ public class MobQuickSetup : MonoBehaviour
         MobSetupUtility.SetupMob(selected, false);
     }
 
+    // ------------------------------------------------------------------ example mobs (senses)
+    [MenuItem(SMMenu.Root + "Mobs/Create Example Mob/Blind Hunter (hears, cannot see)", false, SMMenu.Mobs + 5)]
+    private static void CreateBlindHunter() => MobSetupUtility.CreateExampleMob("Blind Hunter", MobProfile.Preset.BlindHunter);
+
+    [MenuItem(SMMenu.Root + "Mobs/Create Example Mob/Deaf Watcher (sees, cannot hear)", false, SMMenu.Mobs + 6)]
+    private static void CreateDeafWatcher() => MobSetupUtility.CreateExampleMob("Deaf Watcher", MobProfile.Preset.DeafWatcher);
+
+    [MenuItem(SMMenu.Root + "Mobs/Create Example Mob/Sentry (watches a corridor)", false, SMMenu.Mobs + 7)]
+    private static void CreateSentry() => MobSetupUtility.CreateExampleMob("Sentry", MobProfile.Preset.Sentry);
+
     [MenuItem(SMMenu.Root + "Mobs/Help", false, SMMenu.Mobs + 40)]
     private static void ShowHelp()
     {
@@ -246,6 +256,46 @@ public static class MobSetupUtility
         Debug.Log(added > 0
             ? $"<color=green>Mob setup: added {added} component(s) to {mobObject.name}.</color>{created}{fixedText}{leftText}"
             : $"Mob setup: {mobObject.name} already has every component (references re-wired).{created}{fixedText}{leftText}", mobObject);
+    }
+
+    /// <summary>
+    /// Creates a ready mob in the scene (in front of the Scene view) that shows one of the example behaviours: a
+    /// placeholder body, every component wired, the mob type set to <paramref name="type"/>, hunting players, and a
+    /// Mob Profile made from <paramref name="preset"/> (an existing '&lt;Type&gt; Profile' asset is used again). Select it
+    /// to see what it sees, feels and hears drawn in the Scene view; swap the placeholder for your model.
+    /// </summary>
+    public static GameObject CreateExampleMob(string type, MobProfile.Preset preset)
+    {
+        var go = new GameObject(type);
+        Undo.RegisterCreatedObjectUndo(go, "Create Example Mob");
+        SceneView view = SceneView.lastActiveSceneView;
+        if (view != null)
+            go.transform.position = view.pivot;
+
+        SetupMob(go, true, false);
+        Mob mob = go.GetComponent<Mob>();
+        if (mob == null)
+            return go;
+        var so = new SerializedObject(mob);
+        SerializedProperty typeProperty = so.FindProperty("type");
+        if (typeProperty != null)
+            typeProperty.stringValue = type;
+        so.ApplyModifiedProperties();
+
+        MobProfile profile = FindAssetNamed<MobProfile>(type + " Profile");
+        if (profile != null)
+            AssignProfile(mob, profile);
+        else
+            profile = CreateProfileFor(mob, preset);
+        MobAbilityController abilities = go.GetComponent<MobAbilityController>();
+        if (abilities != null)
+            EnsureBasicAttack(abilities, mob);
+
+        EditorUtility.SetDirty(go);
+        Selection.activeGameObject = go;
+        Debug.Log($"Example mob '{type}': {(profile != null ? profile.DescribeSenses() : "no profile")}. Select it to see its senses in the " +
+                  "Scene view (yellow = sight, orange = touch, blue = how far it hears a walking / running player). It needs a baked NavMesh.", go);
+        return go;
     }
 
     /// <summary>

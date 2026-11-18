@@ -45,6 +45,7 @@ namespace ProceduralDungeon
 
         public override string PromptVerb => "Open";
         protected override string UsedUpReason => "Empty";
+        protected override float UseNoiseRadius => 7f;   // a creaking lid
 
         protected override bool CanUse(CombatEntity player, out string reason)
         {

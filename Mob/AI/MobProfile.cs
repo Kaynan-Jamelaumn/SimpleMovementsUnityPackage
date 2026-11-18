@@ -85,20 +85,46 @@ public class MobProfile : ScriptableObject
 
     // ------------------------------------------------------------------ perception
     [Header("Perception")]
-    [Tooltip("How far it can see (metres).")]
+    [Tooltip("The shape of what it sees.\nCone: in front of it - Sight Range far, Field Of View wide (the usual).\n" +
+             "Sphere: all around it, whichever way it faces.\nBox: a corridor straight ahead - Sight Range long, Vision Width wide " +
+             "(a guard watching a passage, tunnel vision).\nNone: BLIND - it sees nothing; only touch (Close Sense Radius), hearing " +
+             "and pain tell it where anyone is.\nWalls block every shape. Whatever the shape, a mob that HEARS an enemy grows " +
+             "suspicious and comes for it (Hearing below).")]
+    public MobVisionShape visionShape = MobVisionShape.Cone;
+
+    [Tooltip("How far it can see (metres). Cone and Sphere: the radius. Box: the length of the corridor.")]
     [Min(1f)] public float sightRange = 18f;
 
-    [Tooltip("Field of view in degrees (360 = sees all around).")]
+    [Tooltip("Cone: field of view in degrees (360 = sees all around).")]
     [Range(10f, 360f)] public float fieldOfView = 140f;
 
-    [Tooltip("Within this distance it notices characters all around it, even behind (metres).")]
+    [Tooltip("Box: how wide the corridor it watches is (metres).")]
+    [Min(0.5f)] public float visionWidth = 4f;
+
+    [Tooltip("Within this distance it notices characters all around it, even behind and even when blind: touch, breath, " +
+             "the ground shaking (metres).")]
     [Min(0f)] public float closeSenseRadius = 4f;
 
     [Tooltip("Eye height above the feet (metres). 0 = 90% of the body height.")]
     [Min(0f)] public float eyeHeight = 0f;
 
-    [Tooltip("Multiplies how far it hears noises (footsteps, fights, spells). 0 = deaf.")]
+    [Tooltip("Multiplies how far it hears noises (footsteps, jumps, fights, spells, things being used). 0 = DEAF: it never hears " +
+             "anything (and should not answer calls for help: set Respond To Help Radius to 0). 2-3 = very sharp ears. How loud " +
+             "things are: Combat Settings ▸ Noise.")]
     [Range(0f, 4f)] public float hearingMultiplier = 1f;
+
+    [Tooltip("How much a noise it hears raises its suspicion of whoever made it.\n0 = it only goes to look where the noise was, " +
+             "never attacks by ear.\n1 = a few noises (footsteps for a second or two, one swing nearby) and it knows.\n3+ = one " +
+             "loud noise is enough: it attacks whoever it hears, in its sight or not.")]
+    [Range(0f, 5f)] public float hearingAlertness = 1f;
+
+    [Tooltip("While searching (a noise, a target it lost) it walks to a few spots within this distance of the place instead of " +
+             "only turning on the spot (metres). 0 = turns only. Blind hunters prowl like this.")]
+    [Min(0f)] public float searchRadius = 0f;
+
+    [Tooltip("How loud its own movement is: other mobs that hunt or fear it hear it coming, and so do players (the hearing arcs). " +
+             "0 = silent, 1 = normal, 2 = heavy.")]
+    [Range(0f, 3f)] public float movementNoise = 1f;
 
     [Tooltip("How fast it notices someone in view (awareness per second at close range). Higher = harder to sneak past.")]
     [Min(0.1f)] public float awarenessGainRate = 2.5f;
@@ -143,6 +169,10 @@ public class MobProfile : ScriptableObject
 
     [Tooltip("Longest a single calm walk may take before it gives up and idles (seconds).")]
     [Min(1f)] public float maxWalkTime = 10f;
+
+    [Tooltip("Stands guard: while idle at home it faces the way it was placed instead of looking around (a sentry watching a " +
+             "passage - see Vision Shape: Box). It still turns to noises and fights normally. Set Wander Radius to 0 with it.")]
+    public bool holdFacing = false;
 
     [Tooltip("Order in which patrol points are visited.")]
     public MobPatrolMode patrolMode = MobPatrolMode.Loop;
@@ -308,11 +338,30 @@ public class MobProfile : ScriptableObject
         string react = whenAttacked == MobReaction.Flee ? "flees when hit" : (whenAttacked == MobReaction.FightIfHealthy ? "fights back while healthy" : "fights back");
         string flee = fleeHealthThreshold > 0f ? $", {(1f - courage) * 100f:0}% chance to flee below {fleeHealthThreshold * 100f:0}% health" : "";
         return $"{temper}; {react}{flee}.\n" +
-               $"Sees {sightRange:0}m in a {fieldOfView:0}° cone (feels {closeSenseRadius:0}m around), remembers {memoryDuration:0}s, reacts in {reactionTime:0.##}s.\n" +
+               $"{DescribeSenses()}, remembers {memoryDuration:0}s, reacts in {reactionTime:0.##}s.\n" +
                $"Style {combatStyle}, aggressiveness {aggressiveness * 100f:0}%, dodges {dodgeChance * 100f:0}% of telegraphs (every {dodgeCooldown:0.#}s).\n" +
                $"Leash {(leashDistance > 0f ? leashDistance.ToString("0") + "m" : "none")}, wanders {wanderRadius:0}m, calls for help within {callForHelpRadius:0}m.\n" +
                (locomotion ?? new MobLocomotion()).Describe();
     }
+
+    /// <summary>Its sight and hearing in a few words ("Blind (feels 2m around); hears 2.5x as far, attacks by ear").</summary>
+    public string DescribeSenses()
+    {
+        string sight;
+        switch (visionShape)
+        {
+            case MobVisionShape.None: sight = "Blind"; break;
+            case MobVisionShape.Sphere: sight = $"Sees {sightRange:0}m all around"; break;
+            case MobVisionShape.Box: sight = $"Sees a corridor {sightRange:0}m long and {visionWidth:0.#}m wide ahead"; break;
+            default: sight = fieldOfView >= 359f ? $"Sees {sightRange:0}m all around" : $"Sees {sightRange:0}m in a {fieldOfView:0}° cone"; break;
+        }
+        string hearing = hearingMultiplier <= 0f ? "deaf"
+            : $"hears {hearingMultiplier:0.#}x as far" + (hearingAlertness <= 0f ? ", only goes to look" : hearingAlertness >= 3f ? ", attacks by ear" : "");
+        return $"{sight} (feels {closeSenseRadius:0.#}m around); {hearing}";
+    }
+
+    /// <summary>How far its sight reaches (0 when blind).</summary>
+    public float SightExtent => MobVision.Extent(visionShape, sightRange, visionWidth);
 
     public float RandomIdleTime()
     {
@@ -339,14 +388,22 @@ public class MobProfile : ScriptableObject
             errors.Add($"{name}: Preferred Max Range is smaller than Preferred Min Range.");
         if (runSpeedMultiplier < walkSpeedMultiplier)
             warnings.Add($"{name}: runs slower than it walks.");
-        if (leashDistance > 0f && leashDistance < sightRange)
+        if (leashDistance > 0f && leashDistance < sightRange && visionShape != MobVisionShape.None)
             warnings.Add($"{name}: Leash Distance ({leashDistance}m) is shorter than Sight Range ({sightRange}m); it may give up as soon as it starts chasing.");
         if (aggression == MobAggression.Passive && whenAttacked == MobReaction.Fight && fleeFromPlayersWithin > 0f)
             warnings.Add($"{name}: flees from players but fights back when attacked - intended?");
-        if (closeSenseRadius > sightRange)
+        if (closeSenseRadius > sightRange && visionShape != MobVisionShape.None)
             warnings.Add($"{name}: Close Sense Radius is larger than Sight Range.");
-        if (fieldOfView < 60f)
+        if (fieldOfView < 60f && visionShape == MobVisionShape.Cone)
             warnings.Add($"{name}: a {fieldOfView}° field of view is very narrow.");
+        if (visionShape == MobVisionShape.None && hearingMultiplier <= 0f)
+            warnings.Add($"{name}: blind AND deaf - it only notices who touches it (Close Sense Radius {closeSenseRadius}m) or hurts it.");
+        if (visionShape == MobVisionShape.None && closeSenseRadius < 1f)
+            warnings.Add($"{name}: blind with a Close Sense Radius under 1m - it can stand next to its prey without finding it, and never attacks (it attacks what it feels).");
+        if (hearingMultiplier <= 0f && respondToHelpRadius > 0f)
+            warnings.Add($"{name}: deaf, but it answers calls for help (Respond To Help Radius). Set it to 0 if it should not hear its allies.");
+        if (hearingMultiplier > 0f && hearingAlertness <= 0f && visionShape == MobVisionShape.None)
+            warnings.Add($"{name}: blind with Hearing Alertness 0 - it goes to look at noises but never knows who made them.");
         (locomotion ?? new MobLocomotion()).Validate(name, errors, warnings);
     }
 
@@ -388,11 +445,24 @@ public class MobProfile : ScriptableObject
         PreyAnimal,
         Guard,
         Boss,
+        /// <summary>Example: blind, hunts by ear. Stand still or sneak and it loses you; run and it comes.</summary>
+        BlindHunter,
+        /// <summary>Example: deaf, sharp-eyed. Noise means nothing to it; stay out of its cone.</summary>
+        DeafWatcher,
+        /// <summary>Example: watches a corridor straight ahead (Box vision) and never leaves its post.</summary>
+        Sentry,
     }
 
     /// <summary>Fills this profile with a ready-made behaviour.</summary>
     public void ApplyPreset(Preset preset)
     {
+        // The senses of the example presets (blind, deaf, corridor) don't stay behind when another preset is applied.
+        visionShape = MobVisionShape.Cone;
+        hearingAlertness = 1f;
+        searchRadius = 0f;
+        holdFacing = false;
+        if (hearingMultiplier <= 0f)
+            hearingMultiplier = 1f;
         switch (preset)
         {
             case Preset.Brute:
@@ -439,7 +509,39 @@ public class MobProfile : ScriptableObject
                 aggression = MobAggression.Aggressive; whenAttacked = MobReaction.Fight; courage = 1f; fleeHealthThreshold = 0f;
                 combatStyle = MobCombatStyle.Auto; aggressiveness = 0.8f; useAttackTokens = false; dodgeChance = 0.2f; meleeDodgeChance = 0.1f;
                 reactionTime = 0.2f; abilityRandomness = 0.1f; decisionInterval = 0.12f; leashDistance = 0f; alwaysFullRate = true;
-                sightRange = 30f; fieldOfView = 360f; evadeWhileReturning = false; destroyDelay = 6f;
+                sightRange = 30f; fieldOfView = 360f; visionShape = MobVisionShape.Sphere; evadeWhileReturning = false; destroyDelay = 6f;
+                break;
+            case Preset.BlindHunter:
+                // It cannot see: it hears, comes to the noise, and attacks what it touches. Its prey survives by standing
+                // still or sneaking (Combat Settings ▸ Noise: a crouched step carries 2.5m, a run 14m - times its hearing).
+                aggression = MobAggression.Aggressive; whenAttacked = MobReaction.Fight; courage = 1f; fleeHealthThreshold = 0f;
+                visionShape = MobVisionShape.None; closeSenseRadius = 2.5f;
+                hearingMultiplier = 2.5f; hearingAlertness = 3f; searchRadius = 6f; movementNoise = 0.6f;
+                awarenessGainRate = 6f; memoryDuration = 5f; reactionTime = 0.15f;
+                combatStyle = MobCombatStyle.Brute; aggressiveness = 0.9f; strafeAmount = 0.1f;
+                dodgeChance = 0f; meleeDodgeChance = 0f; avoidHazards = false;   // it sees neither telegraphs nor swings
+                runSpeedMultiplier = 1.3f; walkSpeedMultiplier = 0.4f; turnSpeed = 720f;
+                leashDistance = 60f; callForHelpRadius = 0f; respondToHelpRadius = 30f;
+                break;
+            case Preset.DeafWatcher:
+                // It hears nothing - run, fight and smash barrels behind its back - but its eyes are sharp and far, and
+                // sneaking fools them less. It turns slowly: stay out of the cone.
+                aggression = MobAggression.Aggressive; whenAttacked = MobReaction.Fight; courage = 0.9f; fleeHealthThreshold = 0.1f;
+                visionShape = MobVisionShape.Cone; sightRange = 28f; fieldOfView = 100f; closeSenseRadius = 1.5f;
+                hearingMultiplier = 0f; hearingAlertness = 0f; movementNoise = 1.5f;
+                awarenessGainRate = 4f; sneakDetectionMultiplier = 0.85f; memoryDuration = 10f; reactionTime = 0.25f;
+                combatStyle = MobCombatStyle.Brute; aggressiveness = 0.8f; dodgeChance = 0.25f; meleeDodgeChance = 0.1f;
+                runSpeedMultiplier = 1.2f; turnSpeed = 240f;
+                callForHelpRadius = 15f; respondToHelpRadius = 0f;   // it can roar for help; it cannot hear a call
+                break;
+            case Preset.Sentry:
+                // It watches the passage in front of it and nothing else: walk round it, or make a noise to turn it.
+                aggression = MobAggression.Aggressive; whenAttacked = MobReaction.Fight; courage = 1f; fleeHealthThreshold = 0f;
+                visionShape = MobVisionShape.Box; sightRange = 30f; visionWidth = 5f; closeSenseRadius = 2f;
+                hearingMultiplier = 1f; hearingAlertness = 0.5f;
+                awarenessGainRate = 4f; memoryDuration = 6f;
+                combatStyle = MobCombatStyle.Auto; wanderRadius = 0f; holdFacing = true; leashDistance = 25f; returnHomeAfterCombat = true;
+                callForHelpRadius = 30f; respondToHelpRadius = 30f;
                 break;
         }
     }

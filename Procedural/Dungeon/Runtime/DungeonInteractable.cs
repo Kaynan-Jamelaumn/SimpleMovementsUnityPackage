@@ -105,6 +105,9 @@ namespace ProceduralDungeon
             set => base.InteractionTime = value;
         }
 
+        /// <summary>How far using it is heard (metres; 0 = silent). Default: Combat Settings ▸ Noise ▸ Interact Radius.</summary>
+        protected virtual float UseNoiseRadius => CombatSettings.Instance.noise.interactRadius;
+
         /// <summary>Why it can't be used any more, in the prompt of a player who aims at it.</summary>
         protected virtual string UsedUpReason => "Already used";
 
@@ -202,6 +205,10 @@ namespace ProceduralDungeon
                 return false;
             if (!Use(player))
                 return false;
+            // Using it is heard (mobs in earshot come for whoever did it).
+            float noise = UseNoiseRadius;
+            if (noise > 0f)
+                CombatEvents.EmitNoise(transform.position, noise, player, 0.5f, NoiseKind.Interaction);
             TimesUsed++;
             readyAt = Time.time + cooldown;
             if (UsedUp && !usedUpShown)

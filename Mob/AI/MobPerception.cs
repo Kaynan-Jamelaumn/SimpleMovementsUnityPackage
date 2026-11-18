@@ -191,9 +191,11 @@ public sealed class MobMemory
 }
 
 /// <summary>
-/// A mob's senses: sight (range, field of view, line of sight, sneaking), close-range awareness, hearing (noises
-/// from footsteps, fights and abilities), pain (who hurt it) and allies' calls for help. Builds up awareness
-/// gradually so players can sneak past, and feeds the <see cref="MobBrain"/>.
+/// A mob's senses: sight (a vision shape - cone, sphere, box or none for a blind mob - line of sight, sneaking),
+/// close-range awareness (touch), hearing (noises from footsteps, jumps, fights, abilities and things being used - how
+/// far by the profile's Hearing Multiplier, 0 for a deaf mob; walls muffle), pain (who hurt it) and allies' calls for
+/// help. Builds up awareness gradually so players can sneak past, and feeds the <see cref="MobBrain"/>: a character it
+/// noticed by ear is hunted like one it saw, at the place it last heard it.
 /// </summary>
 public sealed class MobPerception
 {
@@ -242,7 +244,11 @@ public sealed class MobPerception
         }
     }
 
-    /// <summary>Can the mob see <paramref name="target"/> right now (range, field of view, walls, sneaking)?</summary>
+    /// <summary>
+    /// Does the mob perceive <paramref name="target"/> directly right now: inside its vision shape (cone, sphere, box;
+    /// shorter against sneaking) with nothing in the way, or close enough to be felt (Close Sense Radius - all a blind
+    /// mob has)?
+    /// </summary>
     public bool CanSee(CombatEntity target, out float distance, out bool inCloseRange)
     {
         MobProfile p = ctx.Profile;
@@ -252,19 +258,11 @@ public sealed class MobPerception
         inCloseRange = distance <= p.closeSenseRadius + target.Radius;
         if (target.IsInvisible)
             return false; // invisible: searched for where it was last seen
-        float range = p.sightRange * (target.IsSneaking ? p.sneakDetectionMultiplier : 1f);
         if (!inCloseRange)
         {
-            if (distance > range + target.Radius)
+            float range = p.sightRange * (target.IsSneaking ? p.sneakDetectionMultiplier : 1f);
+            if (!MobVision.Contains(p.visionShape, ctx.Transform.forward, to, range, p.fieldOfView, p.visionWidth, target.Radius))
                 return false;
-            if (p.fieldOfView < 359f)
-            {
-                Vector3 fwd = ctx.Transform.forward;
-                fwd.y = 0f;
-                Vector3 flat = new Vector3(to.x, 0f, to.z);
-                if (flat.sqrMagnitude > 1e-4f && Vector3.Angle(fwd, flat) > p.fieldOfView * 0.5f)
-                    return false;
-            }
         }
         // Up close characters are felt even behind thin obstacles.
         if (inCloseRange && distance < 1.5f)
@@ -286,7 +284,7 @@ public sealed class MobPerception
         MobMemory memory = ctx.Memory;
         CombatEntity self = ctx.Entity;
         Vector3 pos = self.Position;
-        float scanRange = Mathf.Max(p.sightRange, p.fleeFromPlayersWithin, p.closeSenseRadius) + 2f;
+        float scanRange = Mathf.Max(p.SightExtent, p.fleeFromPlayersWithin, p.closeSenseRadius) + 2f;
         float scanSqr = scanRange * scanRange;
 
         // Mark everyone as not visible; entries seen this tick are set below.
@@ -413,43 +411,70 @@ public sealed class MobPerception
         ctx.Brain.OnDamaged(info);
     }
 
+    /// <summary>Where the mob's ears are (its eyes' height).</summary>
+    public Vector3 EarPosition => EyePosition;
+
+    /// <summary>How far this mob hears, as a multiplier of a noise's radius: the profile's hearing and its Hearing stat (0 = deaf).</summary>
+    public float Hearing => ctx.Profile.hearingMultiplier * CombatNoise.HearingStat(ctx.Entity);
+
+    /// <summary>
+    /// A noise was made somewhere. If it reaches this mob - its radius times the mob's hearing, less far through a wall -
+    /// and an enemy made it, the mob learns where the enemy is and grows suspicious (profile Hearing Alertness): enough
+    /// noise and it knows, and hunts the enemy at the place it last heard it, whether or not that is inside what it sees.
+    /// Until then it goes to look. A deaf mob (Hearing Multiplier 0) hears nothing.
+    /// </summary>
     private void OnNoise(NoiseEvent n)
     {
-        if (ctx.Entity == null || ctx.Entity.IsDead || n.source == ctx.Entity)
+        CombatEntity self = ctx.Entity;
+        if (self == null || self.IsDead || n.source == self)
             return;
-        if (n.source != null && CombatRules.AreSeparated(ctx.Entity, n.source))
-            return; // made in another realm (City and World overlap in space)
-        float hearing = ctx.Profile.hearingMultiplier;
+        float hearing = Hearing;
         if (hearing <= 0f || !ctx.Scheduler.Awake)
             return;
-        float range = n.radius * hearing;
-        Vector3 d = n.position - ctx.Entity.Position;
-        if (d.sqrMagnitude > range * range)
+        // Out of earshot even in the open: nothing more to work out (most noises, for most mobs).
+        float open = n.radius * hearing;
+        Vector3 d = n.position - self.Position;
+        if (d.sqrMagnitude > open * open)
             return;
+        if (n.source != null && CombatRules.AreSeparated(self, n.source))
+            return; // made in another realm (City and World overlap in space)
 
+        MobRelationKind rel = MobRelationKind.Neutral;
         if (n.source != null)
         {
-            MobRelationKind rel = ctx.Brain.Classify(n.source, d.magnitude);
-            if (rel == MobRelationKind.Ally || rel == MobRelationKind.Neutral)
-            {
-                // Fights of allies are worth a look.
-                if (rel == MobRelationKind.Ally && n.intensity >= 0.7f)
-                    ctx.Memory.SetInvestigate(n.position, 0.6f);
+            rel = ctx.Brain.Classify(n.source, d.magnitude);
+            // The noises of those it neither fights nor fears mean nothing - except an ally's fight or death.
+            if (rel == MobRelationKind.Neutral || (rel == MobRelationKind.Ally && n.intensity < 0.7f))
                 return;
-            }
-            MobMemoryEntry e = ctx.Memory.GetOrAdd(n.source);
-            e.relation = rel;
-            e.lastKnownPosition = n.position;
-            e.lastSensedTime = Time.time;
-            float closeness = 1f - Mathf.Clamp01(d.magnitude / range);
-            e.awareness = Mathf.Min(1f, e.awareness + n.intensity * (0.35f + closeness * 0.5f));
-            if (e.awareness >= 1f)
-                Detect(e, Time.time);
-            else
-                ctx.Memory.SetInvestigate(n.position, n.intensity);
+        }
+        else if (n.intensity < 0.25f)
+        {
             return;
         }
-        if (n.intensity >= 0.25f)
+
+        // Walls muffle it.
+        if (!CombatNoise.Reaches(n, EarPosition, hearing, out _, out float loudness))
+            return;
+
+        if (n.source == null)
+        {
+            ctx.Memory.SetInvestigate(n.position, n.intensity);
+            return;
+        }
+        if (rel == MobRelationKind.Ally)
+        {
+            // Fights of allies are worth a look.
+            ctx.Memory.SetInvestigate(n.position, 0.6f);
+            return;
+        }
+        MobMemoryEntry e = ctx.Memory.GetOrAdd(n.source);
+        e.relation = rel;
+        e.lastKnownPosition = n.position;
+        e.lastSensedTime = Time.time;
+        e.awareness = Mathf.Min(1f, e.awareness + n.intensity * (0.35f + loudness * 0.5f) * ctx.Profile.hearingAlertness);
+        if (e.awareness >= 1f)
+            Detect(e, Time.time);
+        else
             ctx.Memory.SetInvestigate(n.position, n.intensity);
     }
 

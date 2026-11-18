@@ -29,6 +29,11 @@ public class MobIdleState : MobMovementState
         {
             Motor.FaceTowards(Context.Memory.InvestigatePoint);
         }
+        else if (Profile.holdFacing && CombatQuery.FlatDistance(Position, Context.Home) <= 2.5f)
+        {
+            // Standing guard: it watches the way it was placed (what its vision shape covers), not around.
+            Motor.FaceDirection(Context.MobReference.HomeForward);
+        }
         else
         {
             if (now >= nextLook)

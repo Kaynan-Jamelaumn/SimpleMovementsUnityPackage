@@ -102,6 +102,8 @@ public struct NoiseEvent
     public CombatEntity source;
     /// <summary>0-1: how alarming it is (combat 1, footsteps 0.3).</summary>
     public float intensity;
+    /// <summary>What made it (footsteps, a jump, an ability, a thing...).</summary>
+    public NoiseKind kind;
 }
 
 /// <summary>
@@ -132,18 +134,37 @@ public static class CombatEvents
     public static void RaiseCastStarted(AbilityCastInstance cast) => CastStarted?.Invoke(cast);
     public static void RaiseCastReleased(AbilityCastInstance cast) => CastReleased?.Invoke(cast);
     public static void RaiseCastInterrupted(AbilityCastInstance cast, CastInterruptReason reason) => CastInterrupted?.Invoke(cast, reason);
-    public static void RaiseDamaged(in DamageInfo info) => Damaged?.Invoke(info);
-    public static void RaiseKilled(CombatEntity victim, CombatEntity killer) => Killed?.Invoke(victim, killer);
+    public static void RaiseDamaged(in DamageInfo info)
+    {
+        Damaged?.Invoke(info);
+        CombatNoise.OnDamaged(info);   // the blow is heard
+    }
+
+    public static void RaiseKilled(CombatEntity victim, CombatEntity killer)
+    {
+        Killed?.Invoke(victim, killer);
+        CombatNoise.OnKilled(victim);   // the death cry
+    }
     public static void RaiseMeleeSwing(CombatEntity attacker) => MeleeSwingStarted?.Invoke(attacker);
     public static void RaiseHelpRequested(CombatEntity caller, CombatEntity target) => HelpRequested?.Invoke(caller, target);
     public static void RaiseBlocked(in DamageInfo info) => Blocked?.Invoke(info);
 
-    /// <summary>Makes a noise AI within <paramref name="radius"/> can hear.</summary>
-    public static void EmitNoise(Vector3 position, float radius, CombatEntity source, float intensity = 0.5f)
+    /// <summary>
+    /// Makes a noise that mob AI and players within <paramref name="radius"/> can hear (farther for sharp ears, less
+    /// far through walls - see <see cref="CombatNoise.Reaches"/>). <paramref name="source"/> is who made it (who the
+    /// listeners become aware of; null = nobody: they come and look). The radius is scaled by Combat Settings ▸ Noise ▸
+    /// Loudness and, for the noises of a body (steps, jumps, swings), by the source's Noise Reduction stat.
+    /// </summary>
+    public static void EmitNoise(Vector3 position, float radius, CombatEntity source, float intensity = 0.5f, NoiseKind kind = NoiseKind.Other)
     {
+        if (radius <= 0f || Noise == null)
+            return;
+        radius *= CombatSettings.Instance.noise.loudness;
+        if (source != null && CombatNoise.MadeByBody(kind))
+            radius *= CombatNoise.LoudnessOf(source);
         if (radius <= 0f)
             return;
-        Noise?.Invoke(new NoiseEvent { position = position, radius = radius, source = source, intensity = Mathf.Clamp01(intensity) });
+        Noise.Invoke(new NoiseEvent { position = position, radius = radius, source = source, intensity = Mathf.Clamp01(intensity), kind = kind });
     }
 
     /// <summary>Clears every subscriber (domain reload off / tests).</summary>

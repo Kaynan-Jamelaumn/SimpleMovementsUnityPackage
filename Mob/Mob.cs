@@ -189,6 +189,9 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
     /// <summary>Where the mob lives (its spawn point). The AI wanders, patrols and returns around it.</summary>
     public Vector3 HomePosition { get; set; }
 
+    /// <summary>The way it faced where it was placed: a mob that stands guard (profile Hold Facing) looks that way at home.</summary>
+    public Vector3 HomeForward { get; set; } = Vector3.forward;
+
     /// <summary>The combat identity of this mob.</summary>
     public CombatEntity Entity
     {
@@ -282,6 +285,7 @@ public class Mob : MonoBehaviour, ICombatHostility, ISummonable
             statusController = GetComponent<MobStatusController>();
         navMeshAgent = GetComponent<NavMeshAgent>();
         HomePosition = transform.position;
+        HomeForward = transform.forward;
         entity = CombatEntity.GetOrAdd(gameObject);
         entity.Hostility = this;
         entity.ReplicatedLifeChanged += ApplyReplicatedDeath;

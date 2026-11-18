@@ -88,6 +88,10 @@ public enum CombatStatType
     SanityResistance,
     /// <summary>Percent faster recovery of rest while sleeping (negative = slower).</summary>
     RestRecovery,
+    /// <summary>Percent less noise the character's body makes: steps, jumps, landings, dodges, swings (100 = silent, negative = louder).</summary>
+    NoiseReduction,
+    /// <summary>Percent farther the character hears noises (mob AI and the players' hearing; negative = hard of hearing).</summary>
+    Hearing,
 }
 
 /// <summary>Which abilities a cost / cooldown modifier counts for.</summary>
@@ -270,6 +274,8 @@ public readonly struct CombatStatInfo
             case CombatStatType.ColdResistance: return new CombatStatInfo("Cold Resistance", true, "Percent less effect of cold on the body temperature. 100 = immune to cold.");
             case CombatStatType.SanityResistance: return new CombatStatInfo("Sanity Resistance", true, "Percent less sanity lost from every source. 100 = immune.");
             case CombatStatType.RestRecovery: return new CombatStatInfo("Rest Recovery", true, "Percent faster recovery of rest while sleeping (negative = slower).");
+            case CombatStatType.NoiseReduction: return new CombatStatInfo("Noise Reduction", true, "Percent less noise made by moving, jumping, dodging and swinging weapons (mobs and players hear it from less far). 100 = silent; negative = louder (heavy armour).");
+            case CombatStatType.Hearing: return new CombatStatInfo("Hearing", true, "Percent farther noises are heard. Negative = hard of hearing.");
             default: return new CombatStatInfo(stat.ToString(), false, "");
         }
     }

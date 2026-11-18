@@ -314,7 +314,7 @@ public class WeaponProjectile : MonoBehaviour
         }
         blastBuffer.Clear();
         if (data.shooter != null)
-            CombatEvents.EmitNoise(point, ps.explosionRadius * 4f, data.shooter, 0.9f);
+            CombatEvents.EmitNoise(point, ps.explosionRadius * 4f, data.shooter, 0.9f, NoiseKind.Explosion);
     }
 
     /// <summary>Ends the flight: sticks into what it hit (and may become a pickup), or vanishes.</summary>

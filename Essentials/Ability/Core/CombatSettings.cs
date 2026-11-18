@@ -106,6 +106,11 @@ public class CombatSettings : ScriptableObject
     [Tooltip("Beyond this distance from every player, mobs sleep (no perception or decisions) until a player comes closer.")]
     [Min(1f)] public float aiSleepDistance = 160f;
 
+    [Header("Noise (what mobs and players hear)")]
+    [Tooltip("How loud moving, jumping, fighting and using things are, how walls muffle sound, and what players hear. " +
+             "Abilities set their own Noise Radius; mobs their own hearing (Mob Profile ▸ Perception).")]
+    public CombatNoiseSettings noise = new CombatNoiseSettings();
+
     [Header("Telegraphs (attack warnings)")]
     [Tooltip("Show the area of hostile abilities on the ground while they are being cast so players can dodge.")]
     public bool showEnemyTelegraphs = true;

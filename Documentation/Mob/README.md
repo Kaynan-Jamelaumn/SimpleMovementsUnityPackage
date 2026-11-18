@@ -11,6 +11,7 @@ Mobs use the same combat core and abilities as the player.
 | [04 — Animation, Death & Spawning](04-Animation-Death-Spawning.md) | Animator parameters, death and corpse removal, spawning on the terrain and in dungeons, summons |
 | [05 — Troubleshooting](05-Troubleshooting.md) | Symptoms → causes → fixes |
 | [06 — Locomotion](06-Locomotion.md) | Flying, swimming and amphibious mobs, speeds in each medium, gaits (hop, slime bounce, leap, zigzag, crawl, slither, swim, dart, glide, flutter...), where each habitat may go |
+| [07 — Senses & Noise](07-Senses-and-Noise.md) | What makes noise and how far it carries, vision shapes (cone, sphere, box, blind), hearing (deaf to sharp-eared), the blind hunter and deaf watcher examples, what players hear |
 
 ## A mob at a glance
 

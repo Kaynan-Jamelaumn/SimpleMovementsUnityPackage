@@ -35,6 +35,7 @@ namespace ProceduralDungeon
         }
 
         public override string PromptVerb => action == LeverAction.CloseGasValve ? "Shut" : "Pull";
+        protected override float UseNoiseRadius => 9f;   // old iron grinding
         protected override string UsedUpReason => action == LeverAction.CloseGasValve ? "Already shut" : "Already pulled";
 
         protected override bool Use(CombatEntity player)

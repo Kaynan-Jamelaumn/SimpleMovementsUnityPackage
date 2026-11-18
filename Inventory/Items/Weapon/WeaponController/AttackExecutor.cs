@@ -910,7 +910,7 @@ public class AttackExecutor
             AbilityPool.PlayVfx(m.muzzleVfx, from, Quaternion.LookRotation(baseDir), 0f);
         controller.PlaySound(m.fireSound);
         if (shooter != null)
-            CombatEvents.EmitNoise(from, 18f, shooter, 0.7f);
+            CombatEvents.EmitNoise(from, CombatSettings.Instance.noise.rangedShotRadius, shooter, 0.7f, NoiseKind.Attack);
         controller.RaiseRangedFired(h.Side, count);
         sink?.ShotShown(controller, new WeaponShotShown
         {

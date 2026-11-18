@@ -5,8 +5,9 @@ namespace ProceduralDungeon
 {
     /// <summary>
     /// A mob asleep (barracks): its AI is switched off until a player comes too close - much closer when sneaking
-    /// (crouched) - it is hurt, or a sleeper near it wakes up (one waking soldier rouses the ones around him). Sneak past
-    /// to leave the barracks sleeping.
+    /// (crouched) - it is hurt, a noise is loud enough where it lies (a run, a fight, a smashed barrel: a sleeper hears
+    /// only a share of what it would awake), or a sleeper near it wakes up (one waking soldier rouses the ones around
+    /// him). Sneak past to leave the barracks sleeping.
     /// </summary>
     public class DungeonSleeper : MonoBehaviour
     {
@@ -16,6 +17,10 @@ namespace ProceduralDungeon
         [Min(0.3f)] public float sneakRadius = 1.6f;
         [Tooltip("Sleepers within this distance of one that wakes wake too (meters).")]
         [Min(0f)] public float alarmRadius = 6f;
+        [Tooltip("How well it hears in its sleep: the share of a noise's distance that still wakes it (0.5 = a run heard 14 m away " +
+                 "wakes it within 7 m; a sneaking step never does). Multiplied by the mob's own hearing: a deaf mob sleeps through " +
+                 "anything. 0 = noise never wakes it.")]
+        [Range(0f, 1f)] public float sleepHearing = 0.5f;
 
         public bool Asleep { get; private set; }
 
@@ -32,7 +37,35 @@ namespace ProceduralDungeon
             entity = GetComponentInChildren<CombatEntity>();
             if (entity != null)
                 entity.Damaged += OnDamaged;
+            CombatEvents.Noise += OnNoise;
             Sleep();
+        }
+
+        /// <summary>A noise loud enough where it lies wakes it (walls muffle it as for any listener).</summary>
+        private void OnNoise(NoiseEvent n)
+        {
+            if (!Asleep || sleepHearing <= 0f || n.source == entity || DungeonNet.IsReplica(this))
+                return;
+            float hearing = sleepHearing * (ai != null && ai.Context != null ? ai.Context.Perception.Hearing : 1f);
+            float open = n.radius * hearing;
+            if (open <= 0f || (n.position - transform.position).sqrMagnitude > open * open)
+                return;
+            // Only what it would fight or flee wakes it (and noises nobody made: a bell, an explosion) - not its own
+            // side moving about, nor a creature it has no quarrel with passing by.
+            if (n.source != null)
+            {
+                MobRelationKind relation = ai != null && ai.Context != null
+                    ? ai.Context.Brain.Classify(n.source, Vector3.Distance(n.position, transform.position))
+                    : n.source.Kind == CombatEntity.EntityKind.Player ? MobRelationKind.Enemy : MobRelationKind.Neutral;
+                if (relation != MobRelationKind.Enemy && relation != MobRelationKind.Threat)
+                    return;
+            }
+            else if (n.intensity < 0.5f)
+            {
+                return;
+            }
+            if (CombatNoise.Reaches(n, transform.position + Vector3.up, hearing, out _, out _))
+                Wake(n.source, true);
         }
 
         private void Sleep()
@@ -107,6 +140,7 @@ namespace ProceduralDungeon
 
         private void OnDestroy()
         {
+            CombatEvents.Noise -= OnNoise;
             if (entity != null)
                 entity.Damaged -= OnDamaged;
         }

@@ -97,6 +97,7 @@ namespace ProceduralDungeon
 
         public override string PromptVerb => "Stomp";
         protected override string UsedUpReason => "Destroyed";
+        protected override float UseNoiseRadius => 9f;
 
         protected override bool Use(CombatEntity player)
         {

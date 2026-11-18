@@ -22,20 +22,28 @@ namespace ProceduralDungeon
         [Tooltip("Seconds the pieces lie around.")]
         [Min(0f)] public float debrisTime = 6f;
 
+        [Tooltip("How far it is heard breaking (metres): mobs in earshot come and look for whoever smashed it. 0 = silent.")]
+        [Min(0f)] public float breakNoise = 14f;
+
         public bool Broken { get; private set; }
 
         private int taken;
+        private CombatEntity breaker;
 
         public bool OnWeaponHit(in WeaponHitInfo hit)
         {
+            breaker = hit.attacker;
             Hit();
             return true;
         }
 
         public override string PromptVerb => "Smash";
+        // (The noise is the smash itself, made in Break - also when a weapon breaks it.)
+        protected override float UseNoiseRadius => 0f;
 
         protected override bool Use(CombatEntity player)
         {
+            breaker = player;
             Hit();
             return true;
         }
@@ -51,6 +59,8 @@ namespace ProceduralDungeon
         {
             ShowBroken();
             DungeonNet.Publish(this, 1);
+            if (breakNoise > 0f)
+                CombatEvents.EmitNoise(transform.position, breakNoise, breaker, 0.7f, NoiseKind.Interaction);
             DropItems();
             RevealStash();
         }

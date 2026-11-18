@@ -154,6 +154,13 @@ public class CombatEntity : MonoBehaviour
     private Vector3 lastPosition;
     private Vector3 velocity;
     private float nextNoiseTime;
+    // Movement noise: the last movement state heard (a jump, dash or roll is one noise, on entering it) and the fall in progress.
+    private PlayerMovementModel.PlayerState lastNoiseState;
+    private bool noiseStateKnown;
+    private bool falling;
+    private float fallSpeed;
+    /// <summary>Earliest time the next blow on this character is heard (see <see cref="CombatNoise.OnDamaged"/>).</summary>
+    internal float nextImpactNoise;
     private float playerSpeedDelta;
     private float radius = 0.5f, height = 2f;
     private string team;
@@ -285,6 +292,7 @@ public class CombatEntity : MonoBehaviour
         BodyPartController.EnsureFor(this);
         InjuryController.EnsureFor(this);
         HarvestableCreature.EnsureFor(this);
+        PlayerHearing.EnsureFor(this);
     }
 
     private void OnEnable()
@@ -1276,34 +1284,11 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public IBodyActionLimits BodyLimits { get; set; }
 
-    /// <summary>
-    /// Limits that do not come from injuries: disability traits ("cannot sprint"), curses, quest states. They apply
-    /// with the injury system on or off, on top of <see cref="BodyLimits"/>. See <see cref="SetActionBlock"/>.
-    /// </summary>
-    public ActionBlocks ExtraLimits { get; } = new ActionBlocks();
+    /// <summary>Does the character's body allow <paramref name="action"/> (true without an injury system)?</summary>
+    public bool AllowsAction(BodyAction action) => BodyLimits == null || BodyLimits.Allows(action);
 
-    /// <summary>
-    /// Stops the character from doing <paramref name="actions"/> for as long as <paramref name="key"/> holds it (a
-    /// trait, a curse); the same key replaces what it blocked before. <paramref name="reason"/> is told to the player.
-    /// </summary>
-    public void SetActionBlock(object key, BodyAction actions, string reason) => ExtraLimits.Set(key, actions, reason);
-
-    /// <summary>Lifts what <paramref name="key"/> blocked.</summary>
-    public void ClearActionBlock(object key) => ExtraLimits.Clear(key);
-
-    /// <summary>Can the character do <paramref name="action"/>: neither its injuries nor a trait or curse stop it?</summary>
-    public bool AllowsAction(BodyAction action) => ExtraLimits.Allows(action) && (BodyLimits == null || BodyLimits.Allows(action));
-
-    /// <summary>Why the character cannot do <paramref name="action"/> right now ("" when it can, or nothing says why).</summary>
-    public string WhyNotAllowed(BodyAction action)
-    {
-        if (!ExtraLimits.Allows(action))
-            return ExtraLimits.ReasonFor(action);
-        return BodyLimits != null && !BodyLimits.Allows(action) ? BodyLimits.ReasonFor(action) : "";
-    }
-
-    /// <summary>Which hands can hold things (both without an injury system or a limit).</summary>
-    public HandCapability Hands => ExtraLimits.Apply(BodyLimits != null ? BodyLimits.Hands : HandCapability.Full);
+    /// <summary>Which hands can hold things (both without an injury system).</summary>
+    public HandCapability Hands => BodyLimits != null ? BodyLimits.Hands : HandCapability.Full;
 
     /// <summary>How the character's legs let it move (limp, hop, crawl); normal without an injury system.</summary>
     public BodyLocomotion Locomotion => BodyLimits is IBodyLocomotion l ? l.Locomotion : BodyLocomotion.Normal;
@@ -1507,17 +1492,19 @@ public class CombatEntity : MonoBehaviour
             velocity = Vector3.Lerp(velocity, (pos - lastPosition) / dt, 0.5f);
         lastPosition = pos;
 
-        // A client's copy shows the server's health, speed and noise: none of the rules below run here.
+        // The noise of a player's movement. Also on a client's copy: no AI runs there, but that machine's own player
+        // hears the others (Player Hearing).
+        if (Kind == EntityKind.Player)
+            EmitPlayerNoise();
+
+        // A client's copy shows the server's health and speed: none of the rules below run here.
         if (IsReplica)
             return;
 
         TrackHealthChanges();
 
         if (Kind == EntityKind.Player)
-        {
             UpdatePlayerSpeedDebuff();
-            EmitPlayerNoise();
-        }
     }
 
     /// <summary>Detects health lost outside the ability system (weapons, legacy effects) and attributes it.</summary>
@@ -1629,24 +1616,89 @@ public class CombatEntity : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Makes a noise at this character's position, made by it: mobs within <paramref name="radius"/> (times their
+    /// hearing) that are its enemies grow suspicious and come for it, and players hear where it came from. For anything
+    /// the built-in noises don't cover: a shout or a whistle (<see cref="NoiseKind.Voice"/>), a tool, a spell of your own.
+    /// </summary>
+    public void MakeNoise(NoiseKind kind, float radius, float intensity = 0.5f) =>
+        CombatEvents.EmitNoise(Position, radius, this, intensity, kind);
+
+    /// <summary>
+    /// The noise of a player's movement (Combat Settings ▸ Noise): footsteps by how it moves - sneaking, walking,
+    /// running, swimming - the push-off of a jump, a dash, a roll, and the landing of a jump or a fall (louder the faster
+    /// it fell). Standing still is silent.
+    /// </summary>
     private void EmitPlayerNoise()
     {
-        if (Time.time < nextNoiseTime || IsDead)
+        if (IsDead)
             return;
-        nextNoiseTime = Time.time + 0.3f;
-        float speed = new Vector3(Velocity.x, 0f, Velocity.z).magnitude;
+        CombatNoiseSettings ns = CombatSettings.Instance.noise;
+        Vector3 v = Velocity;
+        bool known = PlayerMovement != null;
+        PlayerMovementModel.PlayerState state = known ? PlayerMovement.CurrentPlayerState : PlayerMovementModel.PlayerState.Idle;
+
+        // One noise on starting a jump, a dash or a roll.
+        if (known && (!noiseStateKnown || state != lastNoiseState))
+        {
+            noiseStateKnown = true;
+            lastNoiseState = state;
+            switch (state)
+            {
+                case PlayerMovementModel.PlayerState.Jumping: MakeNoise(NoiseKind.Jump, ns.jumpRadius, 0.4f); break;
+                case PlayerMovementModel.PlayerState.Dashing: MakeNoise(NoiseKind.Dodge, ns.dashRadius, 0.5f); break;
+                case PlayerMovementModel.PlayerState.Rolling: MakeNoise(NoiseKind.Dodge, ns.rollRadius, 0.4f); break;
+            }
+        }
+
+        // Landing: the fastest it fell, when the fall ends (not into water).
+        if (v.y < -Mathf.Max(1f, ns.landingFallSpeed.x * 0.5f))
+        {
+            falling = true;
+            fallSpeed = Mathf.Max(fallSpeed, -v.y);
+        }
+        else if (falling && v.y > -0.5f)
+        {
+            falling = false;
+            float alarm = 0f;
+            float radius = state == PlayerMovementModel.PlayerState.Swimming ? 0f : ns.LandingRadius(fallSpeed, out alarm);
+            fallSpeed = 0f;
+            if (radius > 0f)
+                MakeNoise(NoiseKind.Landing, radius, alarm);
+        }
+
+        // Footsteps (none while it falls).
+        if (falling || Time.time < nextNoiseTime)
+            return;
+        float speed = new Vector2(v.x, v.z).magnitude;
         if (speed < 0.5f)
             return;
-        float noiseRadius = Mathf.Lerp(3f, 14f, Mathf.Clamp01(speed / 9f));
-        if (PlayerMovement != null && PlayerMovement.CurrentPlayerState == PlayerMovementModel.PlayerState.Crouching)
-            noiseRadius *= 0.3f;
-        CombatEvents.EmitNoise(Position, noiseRadius, this, 0.3f);
+        float step;
+        float intensity = 0.3f;
+        NoiseKind kind = NoiseKind.Footstep;
+        switch (state)
+        {
+            case PlayerMovementModel.PlayerState.Crouching: step = ns.crouchRadius; intensity = 0.2f; break;
+            case PlayerMovementModel.PlayerState.Walking: step = ns.walkRadius; break;
+            case PlayerMovementModel.PlayerState.Running: step = ns.runRadius; intensity = 0.4f; break;
+            case PlayerMovementModel.PlayerState.Swimming: step = ns.swimRadius; kind = NoiseKind.Swim; break;
+            case PlayerMovementModel.PlayerState.Jumping:
+            case PlayerMovementModel.PlayerState.Dashing:
+            case PlayerMovementModel.PlayerState.Rolling:
+                return;   // in the air, or it made its noise on starting
+            default:
+                // No movement state to go by (a copy whose state is not sent, a character pushed around): by its speed.
+                step = Mathf.Lerp(ns.walkRadius * 0.4f, ns.runRadius, Mathf.Clamp01(speed / 9f));
+                break;
+        }
+        nextNoiseTime = Time.time + Mathf.Max(0.1f, ns.footstepInterval);
+        MakeNoise(kind, step, intensity);
     }
 
     private void OnPlayerAttackStart()
     {
         CombatEvents.RaiseMeleeSwing(this);
-        CombatEvents.EmitNoise(Position, 10f, this, 0.8f);
+        MakeNoise(NoiseKind.Attack, CombatSettings.Instance.noise.meleeSwingRadius, 0.8f);
     }
 
     /// <summary>Is this character crouching/sneaking (harder to notice)?</summary>
