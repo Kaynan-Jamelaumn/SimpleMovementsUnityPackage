@@ -288,7 +288,7 @@ public class PlayerMovementAudio : MonoBehaviour
 #if UNITY_6000_4_OR_NEWER
         AudioListener[] all = FindObjectsByType<AudioListener>();
 #else
-        AudioListener[] all = FindObjectsByType<AudioListener>(FindObjectsInactive.Exclude);
+        AudioListener[] all = FindObjectsByType<AudioListener>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #endif
         foreach (AudioListener a in all)
             if (a != null && a.isActiveAndEnabled)

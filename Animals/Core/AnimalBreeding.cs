@@ -181,8 +181,8 @@ public static class AnimalBreeding
     {
         why = null;
         AnimalBreedingSpec s = SpecOf(sp);
-        string name = AnimalSim.NameOf(a, sp);
         if (a == null || !a.Alive) { why = "It is dead."; return false; }
+        string name = AnimalSim.NameOf(a, sp);
         if (rules?.breeding != null && !rules.breeding.enabled) { why = "Breeding is off."; return false; }
         if (!s.enabled) { why = $"{(sp != null ? sp.plural : "These animals")} are not bred here."; return false; }
         if (string.IsNullOrEmpty(a.pen)) { why = $"{name} is at the boarding stable."; return false; }
@@ -245,7 +245,9 @@ public static class AnimalBreeding
         int shared = 0;
         if (a.grandparents != null && b.grandparents != null)
             foreach (string g in a.grandparents)
-                if (!string.IsNullOrEmpty(g) && b.grandparents.Contains(g)) shared++;
+                if (!string.IsNullOrEmpty(g))
+                    foreach (string h in b.grandparents)
+                        if (h == g) shared++;
         k = Mathf.Max(k, shared * 0.03125f);
         return k;
     }

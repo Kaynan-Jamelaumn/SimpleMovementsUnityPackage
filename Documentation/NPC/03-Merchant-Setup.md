@@ -65,7 +65,7 @@ what the player sold. In Play Mode the inspector has *Restock Now* and *Reset St
 | Sell Multiplier | 0.4 | Player gets: item Price × this. |
 | Minimum Buy Price | 1 | Nothing costs less. |
 | Sell Price Follows Durability | on | A worn item sells for less (the unit in use); *Broken Item Value* is what a broken one still fetches. |
-| Sell Never Above Buy | on | The merchant never pays more than it charges for the same item — no buy-sell money loops. |
+| Sell Never Above Buy | on | The merchant never pays more than it charges for the same item — no buy-sell money loops. A copy that can rightly be worth more than a new one (an `IItemInstanceSellCap` item: a raised animal in its crate) is capped at the buy price × its `SellCapFactor` instead. |
 | Rounding | Nearest | Prices are whole amounts. |
 | Modifiers | | Rules applied in order (pick the type): **Category** (a smith pays well for ores), **Item**, **Item Kind** (all materials), **Scarcity** (dearer as stock runs out), or your own (§6). |
 

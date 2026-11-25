@@ -192,6 +192,14 @@ namespace GameNet
         private readonly Dictionary<int, Built> builtByClient = new Dictionary<int, Built>();
         private readonly Dictionary<int, float> lastInteract = new Dictionary<int, float>();
         private readonly List<Hold> holds = new List<Hold>();
+        // What each client says its player holds Interact on (an element of this generation), and since when (server time).
+        private struct UseHold
+        {
+            public int element;
+            public float since;
+        }
+        private readonly Dictionary<int, UseHold> useHolds = new Dictionary<int, UseHold>();
+        private readonly Dictionary<int, float> lastHoldReport = new Dictionary<int, float>();
         private bool[] floorHasFall;
         private float nextReveal;
         private bool warnedUnkeyedSeeds;
@@ -215,6 +223,7 @@ namespace GameNet
                 RevealReached();
             }
             UpdateHolds();
+            RunDeferredUses();
         }
 
         /// <summary>The run's dungeon is new: the header and the arrival floor go to every client of the run.</summary>
@@ -224,6 +233,8 @@ namespace GameNet
             serverFloors.Clear();
             serverStates.Clear();
             builtByClient.Clear();
+            useHolds.Clear();
+            deferredUses.Clear();
             DungeonManager manager = run.Manager;
             var header = new DungeonNetHeader
             {
@@ -241,6 +252,8 @@ namespace GameNet
                 Slot = run.SceneLease != null ? run.SceneLease.Slot : -1,
                 SlotSize = run.SceneLease != null ? run.SceneLease.Bounds.size.x : 0f,
                 OwnPhysics = run.SceneLease != null && run.SceneLease.OwnPhysics,
+                Depth = run.Request != null ? Mathf.Max(0, run.Request.depth) : 0,
+                Difficulty = run.Request != null && run.Request.difficulty > 0f ? run.Request.difficulty : 1f,
             };
             serverHeader = DungeonLayoutCodec.EncodeHeader(header);
 
@@ -415,6 +428,9 @@ namespace GameNet
                 return;
             builtByClient.Remove(connection.ClientId);
             lastInteract.Remove(connection.ClientId);
+            useHolds.Remove(connection.ClientId);
+            lastHoldReport.Remove(connection.ClientId);
+            deferredUses.Remove(connection.ClientId);
         }
 
         /// <summary>Server: may <paramref name="player"/>'s controls wait for their client (installed as <see cref="DungeonSession.ArrivalHold"/>)?</summary>
@@ -478,23 +494,55 @@ namespace GameNet
             if (lastInteract.TryGetValue(conn.ClientId, out float last) && now - last < InteractInterval)
                 return;   // spam
             lastInteract[conn.ClientId] = now;
-
-            CombatEntity player = NetObjects.PlayerOf(conn);
-            if (player == null || !player.IsAlive)
+            if (!ServerUsable(conn, elementId, out CombatEntity player, out DungeonElement element, out IDungeonNetInteract target))
                 return;
+            // Used by holding Interact: only after the hold this client reported on this very element lasted long enough.
+            float hold = HoldOf(target);
+            if (hold > 0f)
+            {
+                bool reported = useHolds.TryGetValue(conn.ClientId, out UseHold h) && h.element == elementId;
+                bool heldLongEnough = reported && now - h.since >= hold - NetInteractor.HoldTolerance;
+                useHolds.Remove(conn.ClientId);
+                deferredUses.Remove(conn.ClientId);
+                if (!heldLongEnough)
+                {
+                    // No hold reported at all (a client without the interaction relay): the server times the hold from now.
+                    if (!reported)
+                        deferredUses[conn.ClientId] = new DeferredUse { element = elementId, generation = serverGeneration, at = now + hold };
+                    return;
+                }
+            }
+            Use(target, player, element);
+        }
+
+        /// <summary>
+        /// Server: may the player of <paramref name="conn"/> use element <paramref name="elementId"/> now - alive, a participant
+        /// of this run and in its scene, the element known, sent to the clients and shown, and within its range of the
+        /// server's positions?
+        /// </summary>
+        private bool ServerUsable(NetworkConnection conn, int elementId, out CombatEntity player, out DungeonElement element, out IDungeonNetInteract target)
+        {
+            element = null;
+            target = null;
+            player = conn != null ? NetObjects.PlayerOf(conn) : null;
+            if (player == null || !player.IsAlive || serverInstance == null || serverRun == null || !serverRun.IsInside)
+                return false;
             GameObject mover = PlayerLocator.MovableRoot(player);
             if (mover == null || !serverRun.IsParticipant(mover) || player.gameObject.scene != gameObject.scene)
-                return;   // only the players of this run, inside it
-            DungeonElement element = serverInstance.Element(elementId);
+                return false;   // only the players of this run, inside it
+            element = serverInstance.Element(elementId);
             if (element == null || element.Floor >= serverFloors.Count || !element.gameObject.activeInHierarchy)
-                return;   // unknown, on a floor the client was never sent, or hidden
-            IDungeonNetInteract target = element.GetComponentInChildren<IDungeonNetInteract>(true);
+                return false;   // unknown, on a floor the client was never sent, or hidden
+            target = element.GetComponentInChildren<IDungeonNetInteract>(true);
             if (target == null)
-                return;
+                return false;
             Vector3 d = player.transform.position - element.transform.position;
             float range = Mathf.Max(0f, target.NetInteractRange) + RangeTolerance;
-            if (Mathf.Abs(d.y) > 3f || new Vector2(d.x, d.z).sqrMagnitude > range * range)
-                return;   // too far from the server's positions
+            return Mathf.Abs(d.y) <= 3f && new Vector2(d.x, d.z).sqrMagnitude <= range * range;   // near the server's positions
+        }
+
+        private static void Use(IDungeonNetInteract target, CombatEntity player, DungeonElement element)
+        {
             try
             {
                 target.NetInteract(player);
@@ -503,6 +551,71 @@ namespace GameNet
             {
                 Debug.LogException(e, element);
             }
+        }
+
+        // A use whose hold the server times itself (no hold was reported), per client.
+        private struct DeferredUse
+        {
+            public int element, generation;
+            public float at;
+        }
+        private readonly Dictionary<int, DeferredUse> deferredUses = new Dictionary<int, DeferredUse>();
+        private readonly List<int> dueUses = new List<int>();
+
+        /// <summary>Server: the deferred uses whose time came, checked again (alive, in the run, in range) now.</summary>
+        private void RunDeferredUses()
+        {
+            if (deferredUses.Count == 0)
+                return;
+            float now = Time.unscaledTime;
+            dueUses.Clear();
+            foreach (KeyValuePair<int, DeferredUse> kv in deferredUses)
+                if (now >= kv.Value.at)
+                    dueUses.Add(kv.Key);
+            foreach (int clientId in dueUses)
+            {
+                DeferredUse use = deferredUses[clientId];
+                deferredUses.Remove(clientId);
+                if (use.generation != serverGeneration || !ServerManager.Clients.TryGetValue(clientId, out NetworkConnection conn))
+                    continue;
+                if (ServerUsable(conn, use.element, out CombatEntity player, out DungeonElement element, out IDungeonNetInteract target))
+                    Use(target, player, element);
+            }
+        }
+
+        private static float HoldOf(IDungeonNetInteract target)
+        {
+            if (!(target is IDungeonNetHold h))
+                return 0f;
+            try
+            {
+                return Mathf.Max(0f, h.NetHoldDuration);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                return 0f;
+            }
+        }
+
+        /// <summary>A client's player started or stopped holding Interact on an element: the server times the hold itself.</summary>
+        [ServerRpc(RequireOwnership = false)]
+        private void ServerHold(int generation, int elementId, bool holding, NetworkConnection conn = null)
+        {
+            if (conn == null || generation != serverGeneration || serverInstance == null)
+                return;
+            if (!holding)
+            {
+                if (useHolds.TryGetValue(conn.ClientId, out UseHold h) && h.element == elementId)
+                    useHolds.Remove(conn.ClientId);
+                return;
+            }
+            float now = Time.unscaledTime;
+            if (lastHoldReport.TryGetValue(conn.ClientId, out float last) && now - last < InteractInterval * 0.5f)
+                return;   // spam
+            lastHoldReport[conn.ClientId] = now;
+            useHolds[conn.ClientId] = new UseHold { element = elementId, since = now };
+            deferredUses.Remove(conn.ClientId);
         }
 
         // ================================================================== client
@@ -784,6 +897,15 @@ namespace GameNet
             return true;
         }
 
+        /// <summary>Client: tells the server this machine's player started or stopped holding Interact on <paramref name="element"/>.</summary>
+        private bool ClientRequestHold(DungeonElement element, bool holding)
+        {
+            if (IsServerInitialized || !IsClientInitialized || element == null || element.Dungeon != Replica || clientGeneration == 0)
+                return false;
+            ServerHold(clientGeneration, element.Id, holding);
+            return true;
+        }
+
         /// <summary>
         /// Puts the dungeon in front of the player's interaction relay (<see cref="global::Player.NetInteractHandler"/>):
         /// a dungeon element goes to its run's relay, anything else to the handler that was there before.
@@ -835,6 +957,14 @@ namespace GameNet
                     return false;
                 NetDungeonRun r = ForScene(element.Dungeon.gameObject.scene);
                 return r != null && r.ClientRequestInteract(element);
+            }
+
+            public bool RequestHold(DungeonElement element, GameObject player, bool holding)
+            {
+                if (element == null || element.Dungeon == null)
+                    return false;
+                NetDungeonRun r = ForScene(element.Dungeon.gameObject.scene);
+                return r != null && r.ClientRequestHold(element, holding);
             }
 
             public bool IsFloorRevealed(DungeonInstance dungeon, int floor)

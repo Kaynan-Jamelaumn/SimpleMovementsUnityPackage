@@ -373,9 +373,10 @@ namespace ProceduralDungeon
         {
             if (!GameNet.NetAuthority.IsNetworked || IsReplica)
                 return;
+            // Only what is still this dungeon's (an object given back to a pool has left it: see DungeonSpawned.Detach).
             foreach (List<DungeonSpawned> list in spawned.Values)
                 foreach (DungeonSpawned s in list)
-                    if (s != null && !s.transform.IsChildOf(transform))
+                    if (s != null && s.Dungeon == this && !s.transform.IsChildOf(transform))
                         GameNet.NetSpawn.Destroy(s.gameObject);
         }
 

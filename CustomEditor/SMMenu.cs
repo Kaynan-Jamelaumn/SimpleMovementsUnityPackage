@@ -14,7 +14,7 @@
 /// ─────────────
 /// Player ▸ Inventory ▸ Mobs ▸ NPC ▸ Social ▸ Alchemy ▸ Crafting ▸ Harvesting ▸ Agriculture ▸ Animals ▸ characters and items
 /// ─────────────
-/// Hub World ▸ Weather ▸ Dungeon ▸ Scene ▸ Minigames ▸ Housing ▸   the world and scenes
+/// Hub World ▸ Weather ▸ Dungeon ▸ Scene ▸ Minigames ▸ Housing ▸ Caves ▸   the world and scenes
 /// ─────────────
 /// Network ▸
 /// ─────────────
@@ -59,6 +59,7 @@ public static class SMMenu
     public const int Scene = 303;
     public const int Minigames = 304;
     public const int Housing = 305;
+    public const int Caves = 306;
 
     // ---------------------------------------------------------------- multiplayer
     public const int Network = 400;

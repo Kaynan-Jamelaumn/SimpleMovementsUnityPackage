@@ -81,7 +81,7 @@ public static class NPCSetupMenu
     /// <summary>Asks to add a Player Interactor when no player in the scene has one.</summary>
     private static void OfferInteractor()
     {
-        PlayerStatusController[] players = Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
+        PlayerStatusController[] players = UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         if (players.Length == 0)
             return;
         foreach (PlayerStatusController p in players)
@@ -104,7 +104,7 @@ public static class NPCSetupMenu
     public static int AddInteractorToPlayers()
     {
         int added = 0;
-        foreach (PlayerStatusController p in Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
+        foreach (PlayerStatusController p in UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
         {
             if (p == null || p.GetComponentInChildren<PlayerInteractor>(true) != null)
                 continue;
@@ -139,7 +139,7 @@ public static class NPCSetupMenu
     [MenuItem(SMMenu.Root + "Validate/NPCs In Scene", false, SMMenu.Validate + 23)]
     private static void ValidateScene()
     {
-        NPC[] npcs = Object.FindObjectsByType<NPC>(FindObjectsInactive.Exclude);
+        NPC[] npcs = UnityVersionCompat.FindObjectsByType<NPC>(FindObjectsInactive.Exclude);
         int problems = 0;
         var errors = new List<string>();
         var warnings = new List<string>();
@@ -153,7 +153,7 @@ public static class NPCSetupMenu
             foreach (string w in warnings) { Debug.LogWarning($"[NPC] {npc.name}: {w}", npc); problems++; }
         }
         bool interactor = false;
-        foreach (PlayerStatusController p in Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
+        foreach (PlayerStatusController p in UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
             interactor |= p.GetComponentInChildren<PlayerInteractor>(true) != null;
         if (npcs.Length > 0 && !interactor)
         {
@@ -170,7 +170,7 @@ public static class NPCSetupMenu
         Collider col = npc.GetComponentInChildren<Collider>(true);
         if (col == null)
             return;
-        foreach (PlayerInteractor interactor in Object.FindObjectsByType<PlayerInteractor>(FindObjectsInactive.Exclude))
+        foreach (PlayerInteractor interactor in UnityVersionCompat.FindObjectsByType<PlayerInteractor>(FindObjectsInactive.Exclude))
         {
             var so = new SerializedObject(interactor);
             SerializedProperty layers = so.FindProperty("interactableLayers");

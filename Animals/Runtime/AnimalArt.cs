@@ -4,7 +4,7 @@ using UnityEngine;
 /// <summary>
 /// The simple art of animal husbandry, made at runtime: item icons (feed sacks and bales, crates, care tools), dropped-item
 /// models, and the placeholder body of an animal whose species has no model (a body, a head and legs from its look and
-/// coat, built once per species and shape and copied).
+/// coat, built from primitives for each body).
 /// </summary>
 public static class AnimalArt
 {

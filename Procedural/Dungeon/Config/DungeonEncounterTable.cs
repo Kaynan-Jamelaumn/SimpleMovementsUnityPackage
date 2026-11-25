@@ -44,6 +44,9 @@ namespace ProceduralDungeon
     [CreateAssetMenu(menuName = "SimpleMovements/Dungeon/Encounter Table", fileName = "DungeonEncounters")]
     public class DungeonEncounterTable : ScriptableObject
     {
+        // Edited: generations kept for its profiles (Build > Keep Generated) are not reused.
+        private void OnValidate() => DungeonProfile.MarkEdited();
+
         [Tooltip("The mob groups. The inspector's Import button copies EndlessTerrain's world mob list (prefab, weight, rarity, packs).")]
         public List<EncounterEntry> entries = new List<EncounterEntry>();
     }

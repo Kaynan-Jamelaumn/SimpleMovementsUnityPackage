@@ -271,15 +271,17 @@ public class PlayerInteractor : MonoBehaviour
     {
         if (asset == null)
             return null;
-        PlayerInput input = PlayerRoot.GetComponentInChildren<PlayerInput>(true);
+        // Unity's Player Input component, written in full: the bare name PlayerInput is the C# class generated from the
+        // Input Actions asset (global namespace, it wins over the using UnityEngine.InputSystem), which has no events.
+        UnityEngine.InputSystem.PlayerInput input = PlayerRoot.GetComponentInChildren<UnityEngine.InputSystem.PlayerInput>(true);
         if (input == null)
-            input = PlayerRoot.GetComponentInParent<PlayerInput>();
+            input = PlayerRoot.GetComponentInParent<UnityEngine.InputSystem.PlayerInput>();
         if (input == null)
             return null;
         // An event calling exactly OnInteract first, then any method with Interact in its name.
         for (int pass = 0; pass < 2; pass++)
         {
-            foreach (PlayerInput.ActionEvent e in input.actionEvents)
+            foreach (UnityEngine.InputSystem.PlayerInput.ActionEvent e in input.actionEvents)
             {
                 if (e == null || string.IsNullOrEmpty(e.actionId))
                     continue;

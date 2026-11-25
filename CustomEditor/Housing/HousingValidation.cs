@@ -1100,7 +1100,9 @@ public static class HousingValidation
     {
         Mesh mesh = c.sharedMesh;
         Matrix4x4 m = c.transform.localToWorldMatrix;
-        long key = ((long)c.GetInstanceID() << 32) ^ (uint)mesh.GetInstanceID();
+        // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+        // which is obsolete from 6.4 and an error from 6.5.
+        long key = ((long)c.GetHashCode() << 32) ^ (uint)mesh.GetHashCode();
         if (hulls.TryGetValue(key, out KeyValuePair<Matrix4x4, List<Vector2>> kept) && kept.Key == m) return kept.Value;
         var points = new List<Vector2>();
         if (mesh.isReadable && mesh.vertexCount <= MaxHullVertices)

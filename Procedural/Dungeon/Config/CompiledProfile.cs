@@ -327,7 +327,18 @@ namespace ProceduralDungeon
             if (profile.customStages != null)
                 foreach (DungeonStageAsset stage in profile.customStages)
                     if (stage != null)
+                    {
+                        // Its assets are read here, on the main thread; Run only gets plain data on the worker.
+                        try
+                        {
+                            stage.Prepare();
+                        }
+                        catch (Exception e)
+                        {
+                            c.Warnings.Add($"Custom stage '{stage.name}' could not prepare: {e.Message}");
+                        }
                         c.CustomStages.Add(stage);
+                    }
 
             if (c.Rooms.sizes == null || c.Rooms.sizes.Length == 0)
                 c.Rooms.sizes = new RoomSettings().sizes;

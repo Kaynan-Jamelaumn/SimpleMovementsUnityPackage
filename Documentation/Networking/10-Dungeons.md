@@ -43,10 +43,12 @@ the realm observer condition already requires the same scene. On the server it:
 1. finds its run (`DungeonSession.RunAt`) and notices when the run's dungeon changes. That happens for a new dungeon,
    and also for *Next Dungeon*, which counts up the **generation**;
 2. sends the **run header** (`DungeonNetHeader`): the profile's asset name, the label, the origin, the grid and cell
-   size, the floor count, the exit portal action and the slot. The header never contains the seed;
+   size, the floor count, the exit portal action, the slot, and how deep the run is (*Next Dungeon*) and its difficulty.
+   The header never contains the seed;
 3. sends **floors** as the party reaches them (see *Progressive reveal*), then the states of the elements on them;
 4. forwards element states and messages to the run's clients;
-5. validates clients' requests to use elements;
+5. validates clients' requests to use elements (an element used by holding Interact, `IDungeonNetHold`, only once the
+   hold the client reported on it lasted long enough, timed by the server);
 6. gives arriving players their controls back once their client has built the floor they stand on.
 
 A client that starts observing the relay later receives the header, every floor sent so far and every element state of
@@ -171,7 +173,11 @@ ends in `DungeonInteractable.Interact()`. It is reached through `PlayerInteracto
 - the element exists, is active and lies on a floor that was sent;
 - the element has an `IDungeonNetInteract`;
 - the player is within its `NetInteractRange` plus 0.75 m, horizontally, and within 3 m vertically, using the server's
-  positions.
+  positions;
+- for an element that also has an `IDungeonNetHold` (a cave's seam gathered by hand), the client reported holding
+  Interact on this very element (`ServerHold(generation, id, holding)`, sent by `NetInteractor` through
+  `DungeonNet.TryRelayHold`) at least `NetHoldDuration` minus `NetInteractor.HoldTolerance` seconds ago. A client that
+  reported no hold at all (no interaction relay) is used `NetHoldDuration` seconds later instead, checked again then.
 
 Only then does it call `NetInteract(player)`, which runs the object's normal server code.
 
@@ -198,7 +204,7 @@ Only then does it call `NetInteract(player)`, which runs the object's normal ser
    damage, give items or move players there.
 3. Guard the object's own decisions (timers, proximity checks, triggers) with `if (DungeonNet.IsReplica(this)) return;`.
    If the component only decides and shows nothing, add its type to `DungeonNet.ServerOnlyOnReplicas` instead.
-4. If players use it, implement `IDungeonNetInteract` (a `DungeonInteractable` already does).
+4. If players use it, implement `IDungeonNetInteract` (a `DungeonInteractable` already does); used by holding Interact, add `IDungeonNetHold` so the server checks the hold.
 5. A floor's own mechanics (the `DungeonChasm`, `DungeonGravityShift` and `DungeonShiftingFloor` on the floor root) need
    a child object of their own carrying `DungeonNetIds.ForFloor(floor)`. Children of the floor root must not inherit an
    element.

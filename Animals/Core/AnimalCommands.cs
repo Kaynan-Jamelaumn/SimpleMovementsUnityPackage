@@ -303,13 +303,15 @@ public static partial class AnimalCommands
                 if (a.lastFedAt >= 0.0 && now - a.lastFedAt < rules.handFeedCooldownHours)
                     return Refuse(plan, $"{AnimalSim.NameOf(a, sp)} has just eaten from a hand.");
                 FoodAffinity aff = sp.DietAt(a.stage).AffinityOf(food);
-                string why = HandRefusal(a, sp, food, aff, rules);
+                // Illness spoils its appetite from a hand as at the feeder (AnimalSim.FullAt).
+                float full = AnimalSim.FullAt(rules, AnimalHealth.Effects(a, cat).appetite);
+                string why = HandRefusal(a, sp, food, aff, rules, full);
                 if (why != null) return Refuse(plan, why);
                 // As many items as it will eat (the rest of the last one goes into the feeder): to full, or - harmful or
                 // toxic food - only as far as the hunger that makes it take it.
                 float appetite = AnimalSim.Appetite(sp, sp.BreedOrDefault(a.breed), a);
                 float perPortion = food.satiety / appetite;
-                float limit = HandLimit(aff, rules);
+                float limit = HandLimit(aff, rules, full);
                 float portionsWanted = perPortion > 0f ? (limit - a.satiety) / perPortion : 1f;
                 portionsWanted = Mathf.Clamp(portionsWanted, 0.25f, MaxHandPortions(rules, appetite));
                 int items = Math.Max(1, Mathf.CeilToInt(portionsWanted / Mathf.Max(1, food.portionsPerItem) - 0.001f));
@@ -326,6 +328,15 @@ public static partial class AnimalCommands
                 if (food == null) return Refuse(plan, "That is not food for animals.");
                 int have = actor.Count(r.item);
                 if (have <= 0) return Refuse(plan, $"You have no {food.DisplayName.ToLowerInvariant()}.");
+                // Nothing takes food out of a feeder but the animals eating it: food none of them eats, now or at a stage they
+                // grow into, would fill it for good.
+                if (!AnimalHabitat.AnyEats(herd, food, cat)) return Refuse(plan, $"None of the animals here eat {food.DisplayName.ToLowerInvariant()}.");
+                // Nor may a stranger on public land put in what none of them takes as better than poor food (it would feed them
+                // badly, harm or poison them), as with the trough's water.
+                // An empty public pen too: what a stranger put in before anyone's animals move in would be just as bad for them.
+                if (!MayChangeWater(herd, actor) && BestFor(herd, food, cat, out int living) >= FoodAffinity.Poor)
+                    return Refuse(plan, living > 0 ? "Only a keeper of an animal here may put that in its feeder."
+                                                   : "Nothing lives here yet: let your animals in before you stock its feeder.");
                 AnimalPenSpec spec = herd.spec ?? new AnimalPenSpec();
                 // The text "hopper" fills the pen's feed hopper instead (Phase 5).
                 bool hopper = ToHopper(r);
@@ -494,14 +505,14 @@ public static partial class AnimalCommands
     }
 
     /// <summary>The satiety up to which an animal takes a food of this regard from a hand.</summary>
-    public static float HandLimit(FoodAffinity aff, AnimalRules rules) =>
-        aff == FoodAffinity.Toxic ? rules.toxicFromHandBelow : aff == FoodAffinity.Harmful ? rules.harmfulFromHandBelow : rules.fullAt;
+    public static float HandLimit(FoodAffinity aff, AnimalRules rules, float full = 100f) =>
+        Mathf.Min(full, aff == FoodAffinity.Toxic ? rules.toxicFromHandBelow : aff == FoodAffinity.Harmful ? rules.harmfulFromHandBelow : rules.fullAt);
 
     /// <summary>Most portions an animal takes from a hand at once (the rules' number is for an average animal: a cow takes more, a hen less).</summary>
     public static float MaxHandPortions(AnimalRules rules, float appetite) => Mathf.Max(0.25f, rules.maxHandPortions * Mathf.Max(0.01f, appetite));
 
     /// <summary>Why an animal will not take a food from a hand now (null: it will).</summary>
-    public static string HandRefusal(AnimalRecord a, AnimalSpeciesData sp, AnimalFoodData food, FoodAffinity aff, AnimalRules rules)
+    public static string HandRefusal(AnimalRecord a, AnimalSpeciesData sp, AnimalFoodData food, FoodAffinity aff, AnimalRules rules, float full = 100f)
     {
         string who = AnimalSim.NameOf(a, sp);
         string what = food.DisplayName.ToLowerInvariant();
@@ -515,7 +526,7 @@ public static partial class AnimalCommands
                 if (a.satiety >= rules.harmfulFromHandBelow) return $"{who} noses the {what} and leaves it.";
                 break;
         }
-        if (a.satiety >= rules.fullAt - 1f) return $"{who} is not hungry.";
+        if (a.satiety >= Mathf.Min(rules.fullAt, full) - 1f) return $"{who} is not hungry.";
         return null;
     }
 
@@ -930,7 +941,11 @@ public static partial class AnimalCommands
             int needed = AnimalHabitat.StrawNeeded(pen, spec, rules);
             straw = Math.Min(Math.Min(needed, have), r.count > 0 ? r.count : needed);
         }
-        if (pen.dirt < MuckFrom)
+        // Feeder food mucking out forks out (none of the animals eats it, or all take it only as harmful) is work to do even
+        // on a clean floor.
+        bool forkable = pen.feeder != null && pen.feeder.Exists(l => l != null && l.portions > 0f && cat.Food(l.food) is AnimalFoodData f
+                                                                     && AnimalHabitat.ForkedOut(herd, f, cat));
+        if (pen.dirt < MuckFrom && !forkable)
         {
             // Nothing to fork out: only fresh straw is left to lay (a bedded pen whose bedding is not fresh), not again so
             // soon, and only with straw brought (the window's straw switch beside Muck Out, shown while straw is carried).
@@ -1030,7 +1045,8 @@ public static partial class AnimalCommands
         a = HereOrBoarded(a, r, actor);
         if (a == null) return Refuse(plan, "That animal is not here.");
         BringBoarded(book, a, now, ctx);
-        if (!a.Alive) return Refuse(plan, "It is dead.");
+        // The dead make nothing more, but what they made before still waits to be taken.
+        if (!a.Alive && !AnyWaiting(a)) return Refuse(plan, "It is dead.");
         if (!MayCollect(a, actor, cat.Rules)) return Refuse(plan, "Not your animal.");
         AnimalSpeciesData sp = cat.Species(a.species);
         if (sp?.products == null || sp.products.Count == 0) return Refuse(plan, $"{Called(a, sp, true)} gives nothing to collect.");
@@ -1044,7 +1060,7 @@ public static partial class AnimalCommands
             int n = st != null ? st.Waiting : 0;
             if (n <= 0)
             {
-                why ??= NothingYet(a, sp, p, st, cat.Rules);
+                why ??= NothingYet(a, sp, p, st, cat, ctx, now);
                 continue;
             }
             if (p.NeedsTool)
@@ -1082,8 +1098,8 @@ public static partial class AnimalCommands
         }
         foreach (AnimalRecord m in herd.animals)
         {
-            if (m == null || !m.Alive) continue;
-            living++;
+            if (m == null || (!m.Alive && !AnyWaiting(m))) continue;
+            if (m.Alive) living++;
             if (!MayCollect(m, actor, cat.Rules)) continue;
             mine++;
             AnimalSpeciesData sp = cat.Species(m.species);
@@ -1124,18 +1140,32 @@ public static partial class AnimalCommands
     private static bool MayCollect(AnimalRecord a, AnimalActor actor, AnimalRules rules) =>
         a != null && actor != null && (a.owner == actor.key || ((rules?.production == null || rules.production.othersCollect) && (actor.rights & AnimalRights.CareForOthers) != 0));
 
+    /// <summary>Does anything it made wait to be collected (the dead's too: what they made before they died)?</summary>
+    private static bool AnyWaiting(AnimalRecord a)
+    {
+        if (a?.products == null) return false;
+        foreach (AnimalProductState s in a.products)
+            if (s != null && s.Waiting > 0) return true;
+        return false;
+    }
+
     /// <summary>The products a Collect request asks for (its text names one; empty: all).</summary>
     private static bool Asked(AnimalProductSpec p, AnimalRequest r) =>
         p != null && (string.IsNullOrEmpty(r.text) || string.Equals(p.id, r.text, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Why nothing of a product waits, in words ("Dolly's fleece is still growing (about 9 days).").</summary>
-    private static string NothingYet(AnimalRecord a, AnimalSpeciesData sp, AnimalProductSpec p, AnimalProductState st, AnimalRules rules)
+    private static string NothingYet(AnimalRecord a, AnimalSpeciesData sp, AnimalProductSpec p, AnimalProductState st, IAnimalCatalog cat, AnimalSimContext ctx, double now)
     {
+        AnimalRules rules = cat.Rules;
         string name = Called(a, sp, true);
         if (st == null || !AnimalProduction.Makes(a, sp, p)) return $"{name} gives no {p.DisplayName.ToLowerInvariant()}.";
         string status = AnimalProduction.StatusText(st.status, p);
         if (st.status != AnimalProductStatus.Producing && st.status != AnimalProductStatus.Full && !string.IsNullOrEmpty(status)) return $"{name}: {status}.";
-        double left = (1.0 - AnimalMath.Clamp01(st.progress)) * Math.Max(0.5f, p.cycleHours);
+        // At the pace it makes it now: how it lives, its breed's yield, and its owner away or not (a pen's level, which only
+        // speeds it, is left out).
+        float pace = AnimalProduction.Rate(a, sp, rules.production, AnimalWelfare.EffectsOf(a, rules), AnimalHealth.Effects(a, cat))
+                     * AnimalProduction.BreedYield(sp.BreedOrDefault(a.breed), p) * (ctx == null || ctx.Present(a.owner, now) ? 1f : rules.awayNeedsRate);
+        double left = (1.0 - AnimalMath.Clamp01(st.progress)) * Math.Max(0.5f, p.cycleHours) / Math.Max(0.05f, pace);
         return $"{name} has no {p.DisplayName.ToLowerInvariant()} ready yet (about {AnimalObservation.Wait(left)} more).";
     }
 
@@ -1232,6 +1262,23 @@ public static partial class AnimalCommands
     /// </summary>
     private static bool MayChangeWater(AnimalHerd herd, AnimalActor actor) =>
         actor != null && ((actor.rights & AnimalRights.CareForOthers) != 0 || KeepsAnimalIn(herd, actor.key));
+
+    /// <summary>The best a food is to any living animal of a pen (Inedible when none lives there: <paramref name="living"/> 0).</summary>
+    private static FoodAffinity BestFor(AnimalHerd herd, AnimalFoodData food, IAnimalCatalog cat, out int living)
+    {
+        FoodAffinity best = FoodAffinity.Inedible;
+        living = 0;
+        if (herd == null) return best;
+        foreach (AnimalRecord m in herd.animals)
+        {
+            if (m == null || !m.Alive) continue;
+            living++;
+            AnimalSpeciesData sp = cat.Species(m.species);
+            FoodAffinity aff = sp != null ? sp.DietAt(m.stage).AffinityOf(food) : FoodAffinity.Inedible;
+            if (aff < best) best = aff;
+        }
+        return best;
+    }
 
     private static bool IsTrough(string text) => !string.IsNullOrWhiteSpace(text) && string.Equals(text.Trim(), TroughText, StringComparison.OrdinalIgnoreCase);
 
@@ -1410,7 +1457,7 @@ public static partial class AnimalCommands
         if (one != null) targets.Add(one);
         else
             foreach (AnimalRecord m in herd.animals)
-                if (m != null && m.Alive && MayCollect(m, plan.actor, rules)) targets.Add(m);
+                if (m != null && (m.Alive || AnyWaiting(m)) && MayCollect(m, plan.actor, rules)) targets.Add(m);
         plan.give.Clear();
         plan.moreWear.Clear();
         var wear = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -1424,7 +1471,7 @@ public static partial class AnimalCommands
         AnimalProductTier lastTier = AnimalProductTier.None;
         foreach (AnimalRecord a in targets)
         {
-            if (!a.Alive) continue;
+            if (!a.Alive && !AnyWaiting(a)) continue;
             AnimalSpeciesData sp = cat.Species(a.species);
             if (sp?.products == null) continue;
             int fromThis = 0;
@@ -1461,7 +1508,7 @@ public static partial class AnimalCommands
                 lastVerb = p.Verb;
                 lastTier = AnimalProduction.Tier(q, AnimalProduction.Rare(a), rules.production);
                 float temperament = a.genes != null ? a.genes.temperament : 0.5f;
-                if (p.handlingStress > 0f)
+                if (p.handlingStress > 0f && a.Alive)
                 {
                     // A bond with its owner eases the owner's handling (none at all once it is calm with them).
                     float bond = AnimalSocial.HandlingFactor(a, sp, a.owner == plan.actor.key, rules);
@@ -1559,11 +1606,14 @@ public static partial class AnimalCommands
         bool took = AnimalBreeding.Mate(mother, father, sp, rules, now, book.World, plan.actor.key, book);
         book.Urgent = true;
         AnimalBreedingSpec s = AnimalBreeding.SpecOf(sp);
-        string dam = AnimalSim.NameOf(mother, sp), sire = AnimalSim.NameIn(father, sp);
+        string dam = AnimalSim.NameOf(mother, sp);
+        // An unnamed sire is "the male" (never "the cow"); the mother, named a second time, is "she" when she has no name.
+        string sire = !string.IsNullOrWhiteSpace(father.name) || sp == null || !sp.sexed ? AnimalSim.NameIn(father, sp) : "the " + Sex(father.sex);
+        string she = !string.IsNullOrWhiteSpace(mother.name) ? mother.name : sp != null && sp.sexed ? "she" : "it";
         if (!took)
             return AnimalResult.Ok($"{dam} and {sire} were put together, but it did not take. They may try again in {AnimalObservation.Wait(rules.breeding?.retryHours ?? 24f)}.", a.id);
         string young = string.IsNullOrWhiteSpace(sp.youngName) ? "young" : sp.youngName.ToLowerInvariant();
-        var res = AnimalResult.Ok($"{dam} and {sire} are a pair: {dam} is {s.expectingWord}. If all goes well, {(s.LitterMax > 1 ? "young" : "a " + young)} in about {AnimalObservation.Wait(s.gestationHours)}.", a.id);
+        var res = AnimalResult.Ok($"{dam} and {sire} are a pair: {she} is {s.expectingWord}. If all goes well, {(s.LitterMax > 1 ? "young" : "a " + young)} in about {AnimalObservation.Wait(s.gestationHours)}.", a.id);
         res.lines.Add("Keep her well fed and well: a mother in poor health can lose her young.");
         return res;
     }
@@ -1587,7 +1637,7 @@ public static partial class AnimalCommands
         AnimalSim.Prime(a, sp, rules); // a memory of meals to add this one to (never an empty one that reads as perfect)
         float appetite = AnimalSim.Appetite(sp, sp.BreedOrDefault(a.breed), a);
         float perPortion = food.satiety / appetite;
-        float limit = HandLimit(aff, rules), most = MaxHandPortions(rules, appetite);
+        float limit = HandLimit(aff, rules, AnimalSim.FullAt(rules, AnimalHealth.Effects(a, cat).appetite)), most = MaxHandPortions(rules, appetite);
         float eaten = 0f, qualitySum = 0f, left = 0f;
         for (int i = 0; i < taken.count; i++)
         {

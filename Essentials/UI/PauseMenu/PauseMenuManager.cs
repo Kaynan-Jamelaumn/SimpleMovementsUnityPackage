@@ -150,7 +150,7 @@ public class PauseMenuManager : MonoBehaviour
     private static bool CloseOpenInventory()
     {
         bool closed = false;
-        foreach (InventoryManager inv in FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude))
+        foreach (InventoryManager inv in UnityVersionCompat.FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude))
         {
             if (inv != null && inv.CloseTopPanel())
             {

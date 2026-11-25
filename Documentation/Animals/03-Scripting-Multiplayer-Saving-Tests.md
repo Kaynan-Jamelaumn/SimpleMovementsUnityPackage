@@ -30,7 +30,9 @@ AnimalResult result = pen.Perform(r, player);           // null on a client: wai
 * A request with the same **token** is done once: a retry is answered from memory, and the memory is kept with the save.
 * `AnimalPen.AccessCheck` is a hook asked before every piece of work: return a refusal, or null. Chain onto the
   previous delegate and call it first, as Housing's hooks do.
-* `AnimalDirector.AnyChanged` reports a pen's id when something in it changed.
+* `AnimalDirector.AnyChanged` reports a pen's id after a request was done there (and the pen an animal was brought
+  from), when animals are boarded from it, and when its owners are told of something there. The hours the animals live
+  change a pen too: `AnimalDirector.RevisionOf(penId)` moves with every change.
 
 ### The Phase 2 requests
 
@@ -400,11 +402,11 @@ perks from the built-in species of their id until updated.
 |---|---|
 | Property inspector | **+ Pasture**, **+ Coop**, **+ Sty**: a pen on a free spot of the land, like **+ Garden**; pens drawn in the Scene view; the checks of pens against the land, the house, the zones, the gardens and each other |
 | Animal Pen inspector | **Edit Outline** (Scene view), *Snap*, **New Id**, the checks (a foreign property's land is an error; shelter and shade out of range warn). In Play mode: the feeder, the water and its fouling, the grass, the floor (dirt, bedding, worms, when last mucked out), the veterinarian, and every animal's numbers: its needs; coat, comfort and stress with what causes them; welfare and band, hooves and bond; each illness (severity, stage, cause, hidden or named, treatment, seen by the vet, needs the vet, recovering) and the build-up of the next ones against their onset. Buttons: **+6 h**, **+1 day**, **+1 week**, **Save now**, **Starter kit**, **Care kit**, and the debug tools **Dirty pen**, **Heal all** (`AnimalPenEditor.HealNow(animal, catalog, rules, now)` for each animal here, testable in Edit Mode: a living animal loses its illnesses and their build-up, its toxins and upset, and is at full health; each illness its keepers knew of, shown or named, is logged as over, as when one clears by itself, and no other is), and per animal **Infect…** (an illness at a chosen stage) and **Kill (illness)** |
-| Tools ▸ SimpleMovements ▸ Animals | Create Pasture / Coop / Sty On Selected Property, Create Standalone Pen, Create Veterinarian In City, Add Animal Goods To Selected Merchant, Create Animal Database, Create Species Assets, Create Food Assets, Update Species Assets To Phase 2, Create Animal Carcass Prefab (Network), Give Me A Keeper's Starter Kit (Play Mode), Give Me A Care Kit (Play Mode), Validate Animals, Help |
+| Tools ▸ SimpleMovements ▸ Animals | Create Pasture / Coop / Sty On Selected Property, Create Standalone Pen, Create Veterinarian In City, Add Animal Goods To Selected Merchant, Create Animal Database, Create Species Assets, Create Food Assets, Update Species Assets To Phase 5, Create Animal Carcass Prefab (Network), Give Me A Keeper's Starter Kit (Play Mode), Give Me A Care Kit (Play Mode), Validate Animals, Help |
 | Tools ▸ SimpleMovements ▸ Network | Create Animal Carcass Prefab; Add Missing Relays To Network World |
 | Assets ▸ Create ▸ SimpleMovements ▸ Animals | Animal Database, Animal Species, Animal Food, Animal Feed (Item), Livestock (Item), Care Tool (Item) |
 | Add Component ▸ SimpleMovements ▸ Animals | Animal Pen, Veterinarian, Animal Goods (Merchant), Animal Carcass Look |
-| Project Validator | The database (rules, species, foods, diets naming unknown foods, item bindings; illnesses, medicines, tools, species' care and susceptibility, anatomies, welfare; species assets made before Phase 2, with an **Update** fix), every pen (outline, kind, stations, scale, prefabs, duplicated ids with a **New Id** fix, lying on another property's land, shelter values), the veterinarian and the merchant of care tools where animals are kept (with fixes), Alchemy stations there whose own *Database* lacks the veterinary medicines, and with Fish-Net the carcass prefab (with a fix). The veterinary outcomes are added to Alchemy first, so the medicines that name them check out |
+| Project Validator | The database (rules, species, foods, diets naming unknown foods, item bindings; illnesses, medicines, tools, species' care and susceptibility, anatomies, welfare; species assets made before Phase 5, with an **Update** fix), every pen (outline, kind, stations, scale, prefabs, duplicated ids with a **New Id** fix, lying on another property's land, shelter values), the veterinarian and the merchant of care tools where animals are kept (with fixes), Alchemy stations there whose own *Database* lacks the veterinary medicines, and with Fish-Net the carcass prefab (with a fix). The veterinary outcomes are added to Alchemy first, so the medicines that name them check out |
 
 ## Tests
 

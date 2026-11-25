@@ -265,6 +265,8 @@ public static class AnimalSim
     public static bool AdvanceHerd(AnimalHerd herd, double to, AnimalSimContext ctx, Func<bool> outOfTime = null)
     {
         if (herd?.pen == null || ctx?.catalog == null) return true;
+        // A clock that is not a time (a corrupt one) lives nothing; an endless one would never finish its steps.
+        if (double.IsNaN(to) || double.IsInfinity(to)) return true;
         AnimalRules rules = ctx.Rules;
         AnimalPenRecord pen = herd.pen;
         AnimalPenSpec spec = herd.spec ?? new AnimalPenSpec();
@@ -311,6 +313,9 @@ public static class AnimalSim
                 double from = Math.Max(start, a.livedTo);
                 if (!a.Alive)
                 {
+                    // What it made before it died waits to be collected (until its remains go), going stale as it would.
+                    if (a.products != null && a.products.Count > 0 && end > from)
+                        AnimalProduction.AgeWaiting(a, ctx.catalog.Species(a.species), rules, (float)(end - from), end);
                     a.livedTo = end;
                     continue;
                 }
@@ -365,6 +370,8 @@ public static class AnimalSim
     public static bool AdvanceAlone(AnimalRecord a, double to, AnimalSimContext ctx, Func<bool> outOfTime = null)
     {
         if (a == null || ctx?.catalog == null) return true;
+        // A clock that is not a time (a corrupt one) lives nothing; an endless one would never finish its steps.
+        if (double.IsNaN(to) || double.IsInfinity(to)) return true;
         if (!a.Alive || a.livedTo <= 0.0)
         {
             if (a.livedTo <= 0.0 || !a.Alive) a.livedTo = Math.Max(a.livedTo, to);

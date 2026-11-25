@@ -4,10 +4,12 @@ Everything needed to build a working player: the project-wide settings assets, t
 ones you add, which ones are added for you), body parts, the armor sets window, input, the scene (character creation
 screen, pause and settings menu), and a final checklist.
 
-> **Fastest check:** add **Player Setup Validator** to the player (*Tools ▸ SimpleMovements ▸ Player ▸ Add Player Setup Validator To
+> **Fastest check:** add **Player Setup Validator** to the player (*Tools ▸ SimpleMovements ▸ Player ▸ Add Setup Validator To
 > Selection*). Its inspector lists every script below as present or missing with an **Add** button (and **Add All
 > Required / Recommended**), checks the hands, animator, layer and body-part hitboxes, and the project and scene setup
 > (Combat Settings, Trait Database, EventSystem, pause menu, character creation) with a button to fix each.
+> Everything it checks, its API and how another system adds its own scripts to it:
+> [Player Setup Validator reference](Player-Setup-Validator.md).
 
 ---
 
@@ -62,8 +64,9 @@ absorption, skip this asset (or create it and untick *Enabled*).
 
 ### Input Actions
 
-An Input Actions asset with a **Player** map, *Generate C# Class* on and the class named `PlayerInput`
-([02 §2](02-Movement-and-Input.md)). Required packages: Input System, TextMeshPro, Cinemachine.
+An Input Actions asset with a **Player** map and a **UI** map that has a **Point** action, *Generate C# Class* on and
+the class named `PlayerInput` in the global namespace ([02 §2](02-Movement-and-Input.md)). Required packages: Input
+System, TextMeshPro, Cinemachine 3 (the full list is under *Requirements* in the [README](../../README.md#requirements)).
 
 ---
 

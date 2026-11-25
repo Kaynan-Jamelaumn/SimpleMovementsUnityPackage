@@ -81,7 +81,11 @@ public class AnimalDirector : MonoBehaviour
         unknownGifts.Clear();
     }
 
-    /// <summary>Where the rules run, something changed in a pen (by id): the network relay and open windows follow.</summary>
+    /// <summary>
+    /// Where the rules run, by pen id: a request was done there (and the pen an animal was brought from), animals were
+    /// boarded from it, or its owners were told of something there. The hours lived change pens too: <see cref="RevisionOf"/>
+    /// moves with every change.
+    /// </summary>
     public static event Action<string> AnyChanged;
 
     public static void Ensure()
@@ -124,6 +128,7 @@ public class AnimalDirector : MonoBehaviour
     {
         existing.Remove(p);
         Unregister(p);
+        if (instance != null) instance.shownLocally.Remove(p); // a destroyed pen's last picture is not kept for the session
     }
 
     /// <summary>Does a pen with this id still exist in its scene (perhaps switched off)?</summary>
@@ -432,6 +437,7 @@ public class AnimalDirector : MonoBehaviour
                 }
             }
             else missingSince.Remove(h.pen.id);
+            bool boarded = false;
             for (int i = h.animals.Count - 1; i >= 0; i--)
             {
                 AnimalRecord a = h.animals[i];
@@ -439,8 +445,12 @@ public class AnimalDirector : MonoBehaviour
                 string why = reason;
                 if (why == null && AnimalHousing.TryRightsOfKey(h.pen.property, a.owner, out AnimalRights r) && (r & AnimalRights.Keep) == 0)
                     why = "its owner no longer keeps that pen";
-                if (why != null) AnimalCommands.Board(book, a, now, ctx, why);
+                if (why == null) continue;
+                AnimalCommands.Board(book, a, now, ctx, why);
+                boarded |= a.status == AnimalStatus.Boarded;
             }
+            // Their Boarded notices name no pen (they have left it): the pen they left is reported here.
+            if (boarded) AnyChanged?.Invoke(h.pen.id);
         }
     }
 
@@ -620,6 +630,8 @@ public class AnimalDirector : MonoBehaviour
                         || ((request.kind == AnimalActionKind.Care || request.kind == AnimalActionKind.Treat || request.kind == AnimalActionKind.Collect)
                             && string.IsNullOrEmpty(request.animal));
         AnimalRecord animal = b.Find(request.animal);
+        // The pen it lives in now (another one when it is brought here).
+        string fromPen = animal != null ? animal.pen : null;
         AnimalPenRecord penRecord = b.Pen(pen.PenId);
         var kept = new List<(AnimalRecord rec, string json)>();
         if (animal != null) kept.Add((animal, JsonUtility.ToJson(animal)));
@@ -770,6 +782,7 @@ public class AnimalDirector : MonoBehaviour
         b.RememberDone(key, request.token, request.seq, RealHours, true, result.message, result.animal);
         if (instance != null) instance.Deliver();
         AnyChanged?.Invoke(pen.PenId);
+        if (!string.IsNullOrEmpty(fromPen) && fromPen != pen.PenId && animal.pen != fromPen) AnyChanged?.Invoke(fromPen);
         return result;
     }
 
@@ -983,8 +996,16 @@ public class AnimalDirector : MonoBehaviour
         }
     }
 
-    /// <summary>Saves now (where the rules run: only into the world the animals were read from).</summary>
-    public static void SaveNow() => instance?.Save(false);
+    /// <summary>
+    /// Saves now (where the rules run: only into the world the animals were read from); while the last save is still
+    /// being written, as soon as it is done.
+    /// </summary>
+    public static void SaveNow()
+    {
+        if (instance == null || instance.Save(false)) return;
+        // A write in flight: this one is due at once (within the 2 s floor), not at the next autosave.
+        if (book != null && instance.writing != null && !instance.writing.IsCompleted) book.Urgent = true;
+    }
 
     private System.Threading.Tasks.Task writing;
 #if UNITY_WEBGL && !UNITY_EDITOR

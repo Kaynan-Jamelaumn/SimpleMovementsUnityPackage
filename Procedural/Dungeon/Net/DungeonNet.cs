@@ -29,6 +29,17 @@ namespace ProceduralDungeon
     }
 
     /// <summary>
+    /// OPTIONAL, with <see cref="IDungeonNetInteract"/>: an object used by holding Interact (a cave's seam gathered by hand).
+    /// The server uses it for a client only after the hold the client reported on it lasted this long (as it does for the
+    /// world's interactables), so no client can skip the wait.
+    /// </summary>
+    public interface IDungeonNetHold
+    {
+        /// <summary>Seconds Interact must be held (0 = a press).</summary>
+        float NetHoldDuration { get; }
+    }
+
+    /// <summary>
     /// The dungeon side of the networking (always compiled). Offline - Fish-Net missing or no session - every member is
     /// a no-op and the dungeon behaves exactly as in single player. In a session the server's dungeon is the truth: its
     /// objects publish their state changes here and the network layer (<see cref="Relay"/>, installed by
@@ -68,6 +79,9 @@ namespace ProceduralDungeon
 
             /// <summary>Owning client: asks the server to use an element for this machine's player. True when sent.</summary>
             bool RequestInteract(DungeonElement element, GameObject player);
+
+            /// <summary>Owning client: tells the server this machine's player started (or stopped) holding Interact on an element. True when sent.</summary>
+            bool RequestHold(DungeonElement element, GameObject player, bool holding);
 
             /// <summary>
             /// Server: was floor <paramref name="floor"/> of <paramref name="dungeon"/> already sent to its run's clients?
@@ -167,6 +181,19 @@ namespace ProceduralDungeon
                 return false;
             DungeonElement e = DungeonNetIds.ElementOf(target);
             return e != null && e.Id >= 0 && Relay.RequestInteract(e, player);
+        }
+
+        /// <summary>
+        /// A client's player started (<paramref name="holding"/>) or stopped holding Interact on <paramref name="target"/>:
+        /// when it belongs to a dungeon copy, the server is told by element id (it times the hold, see
+        /// <see cref="IDungeonNetHold"/>). True when told; false for anything else.
+        /// </summary>
+        public static bool TryRelayHold(Component target, GameObject player, bool holding)
+        {
+            if (target == null || Relay == null || !IsReplica(target))
+                return false;
+            DungeonElement e = DungeonNetIds.ElementOf(target);
+            return e != null && e.Id >= 0 && Relay.RequestHold(e, player, holding);
         }
 
         /// <summary>The dungeon <paramref name="c"/> belongs to (through its element, its placement tag or its parents), or null.</summary>

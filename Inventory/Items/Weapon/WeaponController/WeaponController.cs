@@ -821,10 +821,17 @@ public class WeaponController : MonoBehaviour
     // ------------------------------------------------------------------ ranged
     /// <summary>
     /// Throws one <paramref name="weapon"/> from <paramref name="item"/>'s stack right away (a throwable in a quickslot),
-    /// without changing the weapon in hand. Returns false when it cannot be thrown now.
+    /// without changing the weapon in hand. Returns false when it cannot be thrown now, also when a disability trait
+    /// or a curse stops weapon attacks (<see cref="CombatEntity.SetActionBlock"/>).
     /// </summary>
     public bool QuickThrow(WeaponSO weapon, InventoryItem item)
     {
+        // What a disability trait or a curse blocks (the Pacifist trait) stops a quick throw as it stops every other
+        // weapon attack: here, before a client sends the request, and on the server (ServerQuickThrow). What the
+        // injuries allow here stays as it was.
+        CombatEntity me = Entity;
+        if (me != null && !me.ExtraLimits.Allows(BodyAction.WeaponAttacks))
+            return false;
         if (!RunsRules)
             return weapon != null && NetBridge != null && NetBridge.SendQuickThrow(this, weapon);
         BlockController b = Block;
@@ -1060,7 +1067,9 @@ public class WeaponController : MonoBehaviour
         h.reloadMoveApplied = false;
     }
 
-    /// <summary>Automatic weapons keep firing while their input is held.</summary>
+    /// <summary>
+    /// Automatic weapons keep firing while their input is held (and the body allows the attack, as on the press).
+    /// </summary>
     private void AutomaticFire()
     {
         if (InputBlocked)
@@ -1078,6 +1087,10 @@ public class WeaponController : MonoBehaviour
             return;
         if (m is MagazineMechanic && h.Loaded <= 0)
             return; // released and pressed again to reload / hear the click
+        // The press of a held input may have been refused by the body (BeginAttackInput: injuries, a disability trait
+        // or a curse, a disabled body part): holding it does not fire either.
+        if ((bodyParts != null && bodyParts.WeaponAttacksDisabled) || BodyBlocksAttack(input))
+            return;
         attackExecutor.BeginInput(PlayerObject, input, true, false);
     }
 

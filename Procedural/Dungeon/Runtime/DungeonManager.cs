@@ -167,44 +167,62 @@ namespace ProceduralDungeon
 
             CompiledProfile compiled = CompiledProfile.Compile(profile);
             token = new WorkToken();
-            var job = new Job
+            bool networkSeeds = GameNet.NetAuthority.IsNetworked && GameNet.NetAuthority.IsServer;
+            // A dungeon built here recently (a cave entered again): its kept layout and meshes are built again as they are.
+            int keep = compiled.Build != null ? compiled.Build.keepGenerated : 0;
+            string cacheKey = keep > 0 && Application.isPlaying ? DungeonGenerationCache.KeyFor(profile, req, networkSeeds) : null;
+            DungeonLayout generated;
+            List<FloorMeshData> generatedMeshes;
+            if (cacheKey != null && DungeonGenerationCache.TryGet(cacheKey, out generated, out generatedMeshes))
             {
-                Request = req,
-                Profile = compiled,
-                Pipeline = DungeonPipeline.CreateDefault(compiled.CustomStages),
-                Token = token,
-                NetworkSeeds = GameNet.NetAuthority.IsNetworked && GameNet.NetAuthority.IsServer,
-            };
-            if (useWorkerThread && Application.isPlaying)
-                DungeonWorkers.Pool.Enqueue(job.Run, null, token);
+                Status = "Reusing the kept layout";
+                Progress = 0.3f;
+            }
             else
-                job.Run();
-
-            float started = Time.realtimeSinceStartup;
-            while (!job.Done)
             {
-                Progress = Mathf.Min(0.3f, (Time.realtimeSinceStartup - started) * 0.3f);
-                yield return null;
-            }
-            if (token.IsCancelled)
-                yield break;
-            if (job.Error != null)
-            {
-                IsGenerating = false;
-                Status = "Failed";
-                string message = job.Error is DungeonGenerationException ? job.Error.Message : job.Error.ToString();
-                Debug.LogError($"{name}: dungeon generation failed: {message}", this);
-                routine = null;
-                Failed?.Invoke(message);
-                yield break;
+                var job = new Job
+                {
+                    Request = req,
+                    Profile = compiled,
+                    Pipeline = DungeonPipeline.CreateDefault(compiled.CustomStages),
+                    Token = token,
+                    NetworkSeeds = networkSeeds,
+                };
+                if (useWorkerThread && Application.isPlaying)
+                    DungeonWorkers.Pool.Enqueue(job.Run, null, token);
+                else
+                    job.Run();
+
+                float started = Time.realtimeSinceStartup;
+                while (!job.Done)
+                {
+                    Progress = Mathf.Min(0.3f, (Time.realtimeSinceStartup - started) * 0.3f);
+                    yield return null;
+                }
+                if (token.IsCancelled)
+                    yield break;
+                if (job.Error != null)
+                {
+                    IsGenerating = false;
+                    Status = "Failed";
+                    string message = job.Error is DungeonGenerationException ? job.Error.Message : job.Error.ToString();
+                    Debug.LogError($"{name}: dungeon generation failed: {message}", this);
+                    routine = null;
+                    Failed?.Invoke(message);
+                    yield break;
+                }
+                generated = job.Layout;
+                generatedMeshes = job.Meshes;
+                if (cacheKey != null)
+                    DungeonGenerationCache.Put(cacheKey, profile, generated, generatedMeshes, keep);
             }
 
-            LastReport = job.Layout.Report;
+            LastReport = generated.Report;
             if (compiled.Validation.logReport)
-                Debug.Log(job.Layout.Describe() + job.Layout.Report, this);
+                Debug.Log(generated.Describe() + generated.Report, this);
 
             Status = "Building";
-            builder = new DungeonBuilder(compiled, job.Layout, job.Meshes, pool);
+            builder = new DungeonBuilder(compiled, generated, generatedMeshes, pool);
             bool readyRaised = false;
             var settings = new DungeonBuilder.Settings
             {

@@ -61,7 +61,7 @@ namespace GameNet.Tests
             {
                 Generation = 5, Profile = "Deep Caves", Label = "Dungeon (Portal 3)", Origin = new Vector3(1f, -4096f, 2048f),
                 Rotation = Quaternion.Euler(0f, 30f, 0f), CellSize = 1.5f, FloorSpacing = 12f, Width = 96, Height = 80,
-                FloorCount = 4, ExitAction = 2, Slot = 3, SlotSize = 2048f, OwnPhysics = true,
+                FloorCount = 4, ExitAction = 2, Slot = 3, SlotSize = 2048f, OwnPhysics = true, Depth = 2, Difficulty = 2.5f,
             };
             DungeonNetHeader r = DungeonLayoutCodec.DecodeHeader(DungeonLayoutCodec.EncodeHeader(h));
             Assert.IsNotNull(r);
@@ -79,6 +79,11 @@ namespace GameNet.Tests
             Assert.AreEqual(h.Slot, r.Slot);
             Assert.AreEqual(h.SlotSize, r.SlotSize);
             Assert.AreEqual(h.OwnPhysics, r.OwnPhysics);
+            Assert.AreEqual(h.Depth, r.Depth);
+            Assert.AreEqual(h.Difficulty, r.Difficulty);
+            DungeonLayout replica = DungeonLayoutCodec.CreateReplicaLayout(r);
+            Assert.AreEqual(2, replica.Request.depth, "a client's copy knows how deep the run is");
+            Assert.AreEqual(2.5f, replica.Request.difficulty);
         }
 
         [Test]

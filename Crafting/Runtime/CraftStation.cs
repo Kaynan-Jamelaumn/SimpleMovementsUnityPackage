@@ -787,7 +787,9 @@ public class CraftStation : MonoBehaviour, IInteractable
             if (k == null) (gone ??= new List<CombatEntity>()).Add(k); // players that are gone
         if (gone != null)
             foreach (CombatEntity k in gone) ForgetPlayer(k);
-        g = new CraftRequestGuard(unchecked(player.GetInstanceID() * 7919 + 17), 0);
+        // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+        // which is obsolete from 6.4 and an error from 6.5.
+        g = new CraftRequestGuard(unchecked(player.GetHashCode() * 7919 + 17), 0);
         guards[player] = g;
         return g;
     }

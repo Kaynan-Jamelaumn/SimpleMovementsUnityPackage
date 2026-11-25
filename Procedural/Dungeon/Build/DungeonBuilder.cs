@@ -48,7 +48,12 @@ namespace ProceduralDungeon
         private readonly List<GameObject> pooledInstances = new List<GameObject>();
         // The current floor's collider meshes, cooked on job threads while the rest of the floor is built.
         private readonly MeshColliderBaker.Batch colliderBakes = new MeshColliderBaker.Batch();
+        // True while a floor is being built: colliders added then are cooked with the floor's and assigned before its bake.
+        private bool collectingColliders;
         private readonly Stopwatch watch = new Stopwatch();
+        // Custom stages that build what they placed (see IDungeonBuildExtension), and this build's sessions of them.
+        private readonly List<IDungeonBuildExtension> extensions = new List<IDungeonBuildExtension>();
+        private readonly List<IDungeonBuildSession> sessions = new List<IDungeonBuildSession>();
         private Settings settings;
         private GameObject root;
         private Transform[] floorRoots;
@@ -66,6 +71,9 @@ namespace ProceduralDungeon
             this.pool = pool ?? new DungeonObjectPool();
             materials = new DungeonMaterials(profile.Theme);
             primitives = new DungeonPrimitives(materials, profile.Theme);
+            foreach (DungeonStageAsset stage in profile.CustomStages)
+                if (stage is IDungeonBuildExtension extension)
+                    extensions.Add(extension);
         }
 
         private BuildSettings B => profile.Build;
@@ -113,6 +121,7 @@ namespace ProceduralDungeon
             Instance.Initialize(layout, profile, floorRoots);
             if (profile.Population.placeholderMobs)
                 Instance.PlaceholderMob = (e, variant) => primitives.Create(e.Placeholder, e.Name, Color.white, 0f, variant);
+            BeginSessions();
 
             int playable = Mathf.Clamp(settings.PlayableFloors, 1, floors);
             bool reported = false;
@@ -147,6 +156,8 @@ namespace ProceduralDungeon
             }
             Report("Done");
             Instance.MarkFullyBuilt();
+            foreach (IDungeonBuildSession session in sessions)
+                Guard(() => session.OnFullyBuilt());
         }
 
         // ------------------------------------------------------------------ client copies (network sessions)
@@ -170,6 +181,7 @@ namespace ProceduralDungeon
             bakes = new AsyncOperation[floorCount];
             Instance = root.AddComponent<DungeonInstance>();
             Instance.InitializeReplica(layout, profile, floorRoots);
+            BeginSessions();
             AddStreamer();
             return Instance;
         }
@@ -244,6 +256,7 @@ namespace ProceduralDungeon
 
         private IEnumerator BuildFloor(int f)
         {
+            collectingColliders = true;
             FloorLayout floor = layout.Floors[f];
             Transform fr = floorRoots[f];
             Transform geometry = Child(fr, "Geometry");
@@ -309,11 +322,27 @@ namespace ProceduralDungeon
             for (int i = 0; i < layout.Placements.Count; i++)
             {
                 Placement p = layout.Placements[i];
-                if (p.Floor != f || p.Kind == PlacementKind.Mob || p.Kind == PlacementKind.Boss)
+                if (p.Floor != f || p.Kind == PlacementKind.Mob || p.Kind == PlacementKind.Boss || !ShouldBuild(p, i))
                     continue;
                 SpawnPlacement(p, i, props);
                 if (Tick())
                     yield return null;
+            }
+
+            // What the profile's custom stages add to the floor (rock formations...), before its colliders are assigned
+            // and its NavMesh is baked, so those count.
+            foreach (IDungeonBuildSession session in sessions)
+            {
+                IEnumerator extra = null;
+                Guard(() => extra = session.BuildFloor(f));
+                while (extra != null)
+                {
+                    bool more = false;
+                    Guard(() => more = extra.MoveNext());
+                    if (!more)
+                        break;
+                    yield return extra.Current;
+                }
             }
 
             // The floor's colliders (their NavMesh is baked from them next): the cooking has been running on job
@@ -321,6 +350,7 @@ namespace ProceduralDungeon
             while (!settings.Immediate && !colliderBakes.IsCompleted)
                 yield return null;
             colliderBakes.Finish();
+            collectingColliders = false;
             Report($"Floor {f} objects");
         }
 
@@ -846,6 +876,8 @@ namespace ProceduralDungeon
                 }
                 default:
                 {
+                    if (TryBuildFromExtension(p, index, parent, local, rot, out go, out prefab, out entryName))
+                        break;
                     if (p.Table != PlacementTable.Props)
                         return null;
                     PropInfo e = profile.Props[p.Entry];
@@ -1049,6 +1081,84 @@ namespace ProceduralDungeon
             return go;
         }
 
+        // ------------------------------------------------------------------ build extensions (custom stages)
+
+        /// <summary>A session per custom stage that builds what it placed (see <see cref="IDungeonBuildExtension"/>).</summary>
+        /// <summary>A build session's collider: with its floor's while a floor is built, else assigned at once.</summary>
+        private void AddSessionCollider(MeshCollider collider, Mesh mesh)
+        {
+            if (collider == null || mesh == null)
+                return;
+            if (collectingColliders)
+                colliderBakes.Add(collider, mesh);
+            else
+                collider.sharedMesh = mesh;
+        }
+
+        private void BeginSessions()
+        {
+            sessions.Clear();
+            if (extensions.Count == 0)
+                return;
+            var context = new DungeonBuildContext(Instance, layout, profile, materials, primitives, pool, Replica, settings.Immediate, Tick,
+                AddSessionCollider, f => f >= 0 && floorRoots != null && f < floorRoots.Length ? floorRoots[f] : null,
+                createdMeshes, pooledInstances);
+            foreach (IDungeonBuildExtension extension in extensions)
+            {
+                IDungeonBuildSession session = null;
+                Guard(() => session = extension.BeginBuild(context));
+                if (session != null)
+                    sessions.Add(session);
+            }
+        }
+
+        /// <summary>False when a custom stage leaves placement <paramref name="index"/> out of this build.</summary>
+        private bool ShouldBuild(Placement p, int index)
+        {
+            foreach (IDungeonBuildSession session in sessions)
+            {
+                bool build = true;
+                Guard(() => build = session.ShouldBuild(p, index));
+                if (!build)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool TryBuildFromExtension(Placement p, int index, Transform parent, Vector3 local, Quaternion rot, out GameObject go, out GameObject prefab, out string entryName)
+        {
+            go = null;
+            prefab = null;
+            entryName = p.Kind.ToString();
+            foreach (IDungeonBuildSession session in sessions)
+            {
+                bool done = false;
+                GameObject built = null, from = null;
+                string label = entryName;
+                Guard(() => done = session.TryBuildPlacement(p, index, parent, local, rot, out built, out from, out label));
+                if (!done)
+                    continue;
+                go = built;
+                prefab = from;
+                entryName = string.IsNullOrEmpty(label) ? entryName : label;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>A custom stage's mistake is logged, never allowed to break the dungeon's build.</summary>
+        private static void Guard(Action call)
+        {
+            try
+            {
+                call();
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogException(e);
+            }
+        }
+
         private GameObject Primitive(DungeonPrimitive kind, string name, Color light, float range, int variant, Transform parent, Vector3 local, Quaternion rot)
         {
             GameObject go = primitives.Create(kind, name, light, range, variant);
@@ -1080,6 +1190,8 @@ namespace ProceduralDungeon
             // Interactive objects get a network id (mobs and pickups are network objects of their own).
             if (p.Kind != PlacementKind.Mob && p.Kind != PlacementKind.Boss && go.transform.IsChildOf(root.transform))
                 DungeonNetIds.Assign(Instance, go, DungeonNetIds.ForPlacement(tag.placementIndex), p.Floor);
+            foreach (IDungeonBuildSession session in sessions)
+                Guard(() => session.OnBuilt(go, p, index));
         }
 
         private IEnumerator SpawnMobs(int f)
@@ -1089,7 +1201,7 @@ namespace ProceduralDungeon
             for (int i = 0; i < layout.Placements.Count; i++)
             {
                 Placement p = layout.Placements[i];
-                if (p.Floor != f || (p.Kind != PlacementKind.Mob && p.Kind != PlacementKind.Boss) || p.Table != PlacementTable.Encounters)
+                if (p.Floor != f || (p.Kind != PlacementKind.Mob && p.Kind != PlacementKind.Boss) || p.Table != PlacementTable.Encounters || !ShouldBuild(p, i))
                     continue;
                 EncounterInfo e = profile.Encounters[p.Entry];
                 if (!e.HasPrefab && !profile.Population.placeholderMobs)
@@ -1185,6 +1297,10 @@ namespace ProceduralDungeon
         /// <summary>Removes everything this builder created (pooled prefab instances go back to the pool).</summary>
         public void Teardown()
         {
+            // The custom stages' parts first: their pooled objects leave the dungeon before it is destroyed.
+            foreach (IDungeonBuildSession session in sessions)
+                Guard(() => session.Teardown());
+            sessions.Clear();
             // A cancelled build may still be cooking meshes that are destroyed below.
             colliderBakes.Cancel();
             // Network-spawned mobs and item pickups live outside the dungeon's hierarchy (server only).

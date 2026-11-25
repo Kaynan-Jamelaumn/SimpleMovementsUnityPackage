@@ -60,6 +60,12 @@ namespace ProceduralDungeon
         Outdoor = 1 << 16,
         /// <summary>A climbing shaft between floors (vines down a giant root): like a drop's pit, but climbable both ways.</summary>
         Climb = 1 << 17,
+        /// <summary>
+        /// A natural rock formation stands on this cell (a stalagmite, a column, a boulder, a crystal cluster): it blocks the
+        /// way, so nothing else is placed here. Decided by a custom stage (caves); its shape is built from the floor's build
+        /// seed, the same on the server and every client.
+        /// </summary>
+        Formation = 1 << 18,
     }
 
     public enum AreaKind : byte
@@ -273,6 +279,11 @@ namespace ProceduralDungeon
         Nest,
         /// <summary>A room-wide effect run by the builder (Link = <see cref="AreaEffectKind"/>), e.g. poison gas.</summary>
         AreaEffect,
+        /// <summary>
+        /// Something to mine or gather (an ore seam, coal, stone, a crystal cluster), placed by a custom stage and built by
+        /// that stage's build extension (see <see cref="IDungeonBuildExtension"/>). Entry, Link, Tier and Wave are the stage's own.
+        /// </summary>
+        Resource,
     }
 
     /// <summary>What an <see cref="PlacementKind.AreaEffect"/> placement does.</summary>

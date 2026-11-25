@@ -43,6 +43,9 @@ namespace ProceduralDungeon
     [CreateAssetMenu(menuName = "SimpleMovements/Dungeon/Loot Table", fileName = "DungeonLoot")]
     public class DungeonLootTable : ScriptableObject
     {
+        // Edited: generations kept for its profiles (Build > Keep Generated) are not reused.
+        private void OnValidate() => DungeonProfile.MarkEdited();
+
         [Tooltip("The loot kinds. How many are placed is set on the profile (Population > Loot).")]
         public List<LootEntry> entries = new List<LootEntry>();
     }

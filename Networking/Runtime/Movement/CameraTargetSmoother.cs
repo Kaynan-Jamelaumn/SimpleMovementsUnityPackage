@@ -61,7 +61,7 @@ namespace GameNet
             if (root == null)
                 return;
             var cameras = new List<CinemachineCamera>(root.GetComponentsInChildren<CinemachineCamera>(true));
-            foreach (CinemachineCamera cam in Object.FindObjectsByType<CinemachineCamera>(FindObjectsInactive.Include))
+            foreach (CinemachineCamera cam in UnityVersionCompat.FindObjectsByType<CinemachineCamera>(FindObjectsInactive.Include))
                 if (!cameras.Contains(cam))
                     cameras.Add(cam);
             foreach (CinemachineCamera cam in cameras)

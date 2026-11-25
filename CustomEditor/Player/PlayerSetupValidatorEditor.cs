@@ -305,7 +305,7 @@ public class PlayerSetupValidatorEditor : Editor
         Row(sleepInput != null, "Sleep input", sleepInput != null ? "Press Sleep (Z by default) to sleep on the ground; beds and benches: a Sleep Spot + Interact."
                 : "Missing: the player can only sleep at Sleep Spots.",
             sleepInput != null ? null : "Add Sleep Controller", () => Undo.AddComponent<SleepController>(go));
-        int spots = UnityEngine.Object.FindObjectsByType<SleepSpot>(FindObjectsInactive.Include).Length;
+        int spots = UnityVersionCompat.FindObjectsByType<SleepSpot>(FindObjectsInactive.Include).Length;
         Row(spots > 0, "Sleep spots in the scene", spots > 0 ? $"{spots} (beds, benches, bedrolls)." : "None: add a Sleep Spot to a bed (Add Component ▸ SimpleMovements ▸ Sleep Spot).", null, null);
         BodyHeatManager heat = go.GetComponentInChildren<BodyHeatManager>(true);
         if (heat != null)

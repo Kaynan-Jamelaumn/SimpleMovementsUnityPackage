@@ -170,9 +170,10 @@ public static class LoadedTerrain
 
     /// <summary>
     /// Calls <paramref name="visit"/> with every placed object (created or still waiting to be) whose footprint
-    /// centre is within <paramref name="radius"/> of (x, z): its world position and radius. Removed objects are skipped.
+    /// centre is within <paramref name="radius"/> of (x, z): its world position and radius. Removed objects are skipped
+    /// unless <paramref name="includeRemoved"/> (what the world's seed placed, whatever the game removed since).
     /// </summary>
-    public static void ForEachObjectNear(float x, float z, float radius, Action<Vector3, float> visit)
+    public static void ForEachObjectNear(float x, float z, float radius, Action<Vector3, float> visit, bool includeRemoved = false)
     {
         if (ChunkSpan <= 0)
             return;
@@ -187,7 +188,7 @@ public static class LoadedTerrain
                 List<ObjectPlacement> objects = chunk.Placements.Objects;
                 for (int i = 0; i < objects.Count; i++)
                 {
-                    if (chunk.IsRemoved != null && chunk.IsRemoved(i))
+                    if (!includeRemoved && chunk.IsRemoved != null && chunk.IsRemoved(i))
                         continue;
                     Vector3 p = objects[i].Position;
                     float reach = radius + objects[i].Radius;

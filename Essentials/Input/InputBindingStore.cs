@@ -122,7 +122,7 @@ public static class InputBindingStore
         assets.RemoveAll(a => a == null);
         foreach (InputActionAsset a in assets)
             AddCreatedActions(a);
-        foreach (UnityEngine.InputSystem.PlayerInput pi in UnityEngine.Object.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
+        foreach (UnityEngine.InputSystem.PlayerInput pi in UnityVersionCompat.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
             if (pi != null && pi.actions != null) AddCreatedActions(pi.actions);
         Changed?.Invoke();
     }
@@ -197,7 +197,7 @@ public static class InputBindingStore
     /// <summary>The Player Input components (camera look, interact events) get the same bindings.</summary>
     private static void ApplyToPlayerInputComponents()
     {
-        foreach (UnityEngine.InputSystem.PlayerInput pi in UnityEngine.Object.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
+        foreach (UnityEngine.InputSystem.PlayerInput pi in UnityVersionCompat.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
             if (pi != null && pi.actions != null)
                 Apply(pi.actions);
     }
@@ -238,7 +238,7 @@ public static class InputBindingStore
             assets.RemoveAll(a => a == null);
             foreach (InputActionAsset a in assets)
                 PauseMap(a);
-            foreach (UnityEngine.InputSystem.PlayerInput pi in UnityEngine.Object.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
+            foreach (UnityEngine.InputSystem.PlayerInput pi in UnityVersionCompat.FindObjectsByType<UnityEngine.InputSystem.PlayerInput>(FindObjectsInactive.Exclude))
                 if (pi != null && pi.actions != null)
                     PauseMap(pi.actions);
         }

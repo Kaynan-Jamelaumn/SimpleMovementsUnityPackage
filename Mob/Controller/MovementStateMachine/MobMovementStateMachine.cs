@@ -130,12 +130,21 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
             DebugLog = debugLog,
         };
         context.Animation.Played += OnAnimationPlayed;
+        context.Animation.Shown += OnReactionShown;
         if (context.Entity != null)
             context.Entity.ReplicatedDamage += OnReplicatedDamage;
         InitializeStates();
     }
 
     private void OnAnimationPlayed(MobAnimationEvent e) => AnimationEventPlayed?.Invoke(e);
+
+    /// <summary>
+    /// Raised when the mob shows an alert or a dodge on this machine - where the AI runs and on client copies alike
+    /// (unlike <see cref="AnimationEventPlayed"/>, which is for the network layer). For sounds and effects.
+    /// </summary>
+    public event Action<MobAnimationEvent> ReactionShown;
+
+    private void OnReactionShown(MobAnimationEvent e) => ReactionShown?.Invoke(e);
 
     /// <summary>Client copies: flinch at the hits the server reports (like the brain does where the AI runs).</summary>
     private void OnReplicatedDamage(DamageInfo info)
@@ -213,6 +222,7 @@ public class MobMovementStateMachine : StateManager<MobMovementStateMachine.EMob
         MobCombatCoordinator.Disengage(context);
         context.Motor.Dispose();
         context.Animation.Played -= OnAnimationPlayed;
+        context.Animation.Shown -= OnReactionShown;
         if (context.Entity != null)
             context.Entity.ReplicatedDamage -= OnReplicatedDamage;
         if (abilities != null)

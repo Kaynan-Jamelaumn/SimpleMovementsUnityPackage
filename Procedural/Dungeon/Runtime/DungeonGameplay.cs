@@ -55,7 +55,7 @@ namespace ProceduralDungeon
         /// <summary>This machine's player's inventory (its feedback line shows the message), or any inventory.</summary>
         private static InventoryManager LocalInventory()
         {
-            InventoryManager[] all = UnityEngine.Object.FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude);
+            InventoryManager[] all = UnityVersionCompat.FindObjectsByType<InventoryManager>(FindObjectsInactive.Exclude);
             if (all.Length == 0)
                 return null;
             CombatEntity local = PlayerLocator.Local;

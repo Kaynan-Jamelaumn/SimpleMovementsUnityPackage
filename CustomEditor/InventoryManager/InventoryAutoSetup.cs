@@ -137,7 +137,7 @@ public static class InventoryAutoSetup
         if (manager == null && stageRoot == null)
         {
             // The inventory may live elsewhere in the scene (on its own canvas) and point to this player.
-            foreach (InventoryManager m in Object.FindObjectsByType<InventoryManager>(FindObjectsInactive.Include))
+            foreach (InventoryManager m in UnityVersionCompat.FindObjectsByType<InventoryManager>(FindObjectsInactive.Include))
             {
                 if (m.gameObject.scene == root.scene && new SerializedObject(m).FindProperty("player").objectReferenceValue == player)
                 {

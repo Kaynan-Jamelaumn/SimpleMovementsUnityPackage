@@ -936,14 +936,17 @@ public static class AnimalHealth
     }
 
     /// <summary>
-    /// Adds a dose of a cause at once (washing in the cold: Chill): amount x the cause's weight x its susceptibility to the
-    /// exposure of every illness listing that cause that it does not have and is not immune to.
+    /// Adds a dose of a cause at once (washing in the cold: Chill): amount x the cause's weight x its susceptibility (x the
+    /// rules' Exposure Scale x its welfare band's susceptibility / its hardiness, as every build-up) to the exposure of every
+    /// illness listing that cause that it does not have and is not immune to.
     /// </summary>
     public static void Expose(AnimalRecord a, IAnimalCatalog cat, AnimalSpeciesData sp, AnimalCause cause, float amount, double now)
     {
         if (a == null || cat?.AllConditions == null || amount <= 0f) return;
         if (cat.Rules != null && !cat.Rules.healthEnabled) return;
         a.exposures ??= new List<AnimalExposure>();
+        AnimalRules rules = cat.Rules ?? AnimalRules.Defaults();
+        float scale = Mathf.Max(0f, rules.exposureScale) * Mathf.Max(0f, AnimalWelfare.EffectsOf(a, rules).susceptibility) / AnimalSim.Hardiness(a, sp);
         foreach (AnimalConditionData c in cat.AllConditions)
         {
             if (c == null || string.IsNullOrEmpty(c.id)) continue;
@@ -958,7 +961,7 @@ public static class AnimalHealth
                 a.exposures.Add(e);
             }
             if (now < e.immuneUntil) continue;
-            e.value += amount * wgt * s;
+            e.value += amount * wgt * s * scale;
         }
     }
 

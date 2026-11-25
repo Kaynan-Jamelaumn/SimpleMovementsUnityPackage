@@ -22,6 +22,15 @@ namespace ProceduralDungeon
             cachedName = name;
         }
 
+        /// <summary>
+        /// Called on the main thread when a profile that lists this stage is compiled, before any generation starts: read
+        /// whatever needs Unity (other assets, names, prefabs) here and keep it as plain data for <see cref="Run"/>, which
+        /// runs on a worker thread. Generations already running keep what they started with.
+        /// </summary>
+        public virtual void Prepare()
+        {
+        }
+
         public abstract void Run(DungeonContext context);
     }
 }

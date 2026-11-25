@@ -11,6 +11,9 @@ namespace ProceduralDungeon
     [CreateAssetMenu(menuName = "SimpleMovements/Dungeon/Dungeon Theme", fileName = "DungeonTheme")]
     public class DungeonTheme : ScriptableObject
     {
+        // Edited: generations kept for its profiles (Build > Keep Generated) are not reused.
+        private void OnValidate() => DungeonProfile.MarkEdited();
+
         [Header("Materials (empty = generated flat colours)")]
         [Tooltip("Material of generated floors in built areas (rooms, corridors). Tiling uses Texture Scale. Empty = Built Floor Color.")]
         public Material builtFloor;

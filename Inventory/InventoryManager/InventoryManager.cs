@@ -833,7 +833,7 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             case "reloading": ShowMessage("Reloading...", InventoryFeedback.Kind.Info); break;
             case "broken": ShowMessage(w != null ? $"{w.Name} is broken." : "The weapon is broken."); break;
             case "stamina": ShowMessage("Not enough stamina."); break;
-            case "injured": ShowMessage("Too injured to attack."); break;
+            case "injured": ShowMessage(AttackRefusedMessage(input)); break;
             case "mana": ShowMessage("Not enough mana."); break;
             case "health": ShowMessage("Not enough health to fire."); break;
             default:
@@ -841,6 +841,38 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
                     ShowMessage($"No {reason.Substring(5)} left.");
                 break;
         }
+    }
+
+    /// <summary>
+    /// What the player is told when the body refused an attack (reason "injured"): the reason of a disability trait or a
+    /// curse that stops it (<see cref="CombatEntity.SetActionBlock"/>), else "Too injured to attack." as before. Blocks
+    /// are set on every machine, so a client's copy explains the server's refusal the same way.
+    /// </summary>
+    private string AttackRefusedMessage(AttackType input)
+    {
+        CombatEntity e = PlayerEntity;
+        // The same actions WeaponController.BodyBlocksAttack checks.
+        BodyAction needed = input == AttackType.OffHand ? BodyAction.WeaponAttacks | BodyAction.OffHand : BodyAction.WeaponAttacks;
+        if (e == null || e.ExtraLimits.Allows(needed))
+            return "Too injured to attack.";
+        string why = e.ExtraLimits.ReasonFor(needed).Trim();
+        if (why.Length == 0)
+            return e.BodyLimits != null && !e.BodyLimits.Allows(needed) ? "Too injured to attack." : "You cannot attack.";
+        char last = why[why.Length - 1];
+        return last == '.' || last == '!' || last == '?' ? why : why + ".";
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> as the end of a sentence: a final "." unless it already ends with ".", "!" or "?" (a trait's
+    /// reason may or may not end with one).
+    /// </summary>
+    private static string EndSentence(string text)
+    {
+        text = text.TrimEnd();
+        if (text.Length == 0)
+            return text;
+        char last = text[text.Length - 1];
+        return last == '.' || last == '!' || last == '?' ? text : text + ".";
     }
 
     private void UnsubscribeFromEvents()
@@ -1198,7 +1230,7 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         if (e != null && !(item is WeaponSO) && !e.AllowsAction(BodyAction.UseItems))
         {
             string why = e.WhyNotAllowed(BodyAction.UseItems);
-            ShowMessage(string.IsNullOrEmpty(why) ? "You cannot use items now." : $"You cannot use items: {why}.");
+            ShowMessage(string.IsNullOrWhiteSpace(why) ? "You cannot use items now." : $"You cannot use items: {EndSentence(why)}");
             return false;
         }
         return true;
@@ -2912,7 +2944,11 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
             }
             if (!weaponController.QuickThrow(w, stack))
             {
-                reason = $"Cannot throw {item.Name} now.";
+                // A trait or a curse that stops weapon attacks says why (WeaponController.QuickThrow refused for it).
+                CombatEntity thrower = weaponController.Entity;
+                string why = thrower != null && !thrower.ExtraLimits.Allows(BodyAction.WeaponAttacks)
+                    ? thrower.ExtraLimits.ReasonFor(BodyAction.WeaponAttacks) : "";
+                reason = string.IsNullOrWhiteSpace(why) ? $"Cannot throw {item.Name} now." : $"Cannot throw {item.Name}: {EndSentence(why)}";
                 return false;
             }
             if (w.Cooldown > 0f)
@@ -2929,7 +2965,10 @@ public partial class InventoryManager : MonoBehaviour, IPointerDownHandler, IPoi
         if (body != null && !body.AllowsAction(BodyAction.UseItems))
         {
             string why = body.WhyNotAllowed(BodyAction.UseItems);
-            reason = "You cannot use items: " + (string.IsNullOrEmpty(why) ? "injured" : why) + ".";
+            // No reason given: "injured" only when the injuries stop it (a trait or a curse may block without a reason).
+            if (string.IsNullOrWhiteSpace(why) && body.BodyLimits != null && !body.BodyLimits.Allows(BodyAction.UseItems))
+                why = "injured";
+            reason = string.IsNullOrWhiteSpace(why) ? "You cannot use items now." : "You cannot use items: " + EndSentence(why);
             return false;
         }
         switch (NetRole)

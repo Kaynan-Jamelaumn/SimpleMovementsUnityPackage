@@ -68,8 +68,9 @@ Stamina costs only apply when the model's **Should Consume Stamina** is on.
 
 ## 2. Input actions
 
-Create an Input Actions asset, tick **Generate C# Class** and name the class **`PlayerInput`**. The movement
-states read these actions of the **Player** map (names must match):
+Create an Input Actions asset, tick **Generate C# Class** and name the class **`PlayerInput`** (leave *C# Class
+Namespace* empty: the scripts use the class from the global namespace). The movement states read these actions of
+the **Player** map (names must match):
 
 | Action | Type | Used by |
 |---|---|---|
@@ -80,6 +81,13 @@ states read these actions of the **Player** map (names must match):
 | `Dash` | Button | Dashing |
 | `Roll` | Button | Rolling |
 | `OpenEmoteWheel` | Button | Emote wheel |
+
+The emote wheel also follows the pointer through the **`UI`** map: the asset needs a `UI` map with a **`Point`**
+action (Pass Through or Value, Vector2, `<Pointer>/position`); the UI map Unity creates by default has it.
+
+These actions (the table above and `UI/Point`) and the two map names, `Player` and `UI`, are compiled into the scripts
+through the generated class: when one is missing or renamed, no script compiles any more (for example
+`'PlayerInput.UIActions' does not contain a definition for 'Point'`); it is not just one key that stops working.
 
 Other systems find their actions **by name**, so missing ones are simply unused:
 

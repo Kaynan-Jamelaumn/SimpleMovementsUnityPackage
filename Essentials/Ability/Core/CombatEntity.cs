@@ -1284,11 +1284,48 @@ public class CombatEntity : MonoBehaviour
     /// </summary>
     public IBodyActionLimits BodyLimits { get; set; }
 
-    /// <summary>Does the character's body allow <paramref name="action"/> (true without an injury system)?</summary>
-    public bool AllowsAction(BodyAction action) => BodyLimits == null || BodyLimits.Allows(action);
+    /// <summary>
+    /// Limits that do not come from injuries: disability traits ("cannot sprint"), curses, quest states. They apply
+    /// with the injury system on or off, on top of <see cref="BodyLimits"/>. See <see cref="SetActionBlock"/>.
+    /// </summary>
+    public ActionBlocks ExtraLimits { get; } = new ActionBlocks();
 
-    /// <summary>Which hands can hold things (both without an injury system).</summary>
-    public HandCapability Hands => BodyLimits != null ? BodyLimits.Hands : HandCapability.Full;
+    /// <summary>
+    /// Stops the character from doing <paramref name="actions"/> for as long as <paramref name="key"/> holds it (a
+    /// trait, a curse); the same key replaces what it blocked before, and <see cref="BodyAction.None"/> lifts it.
+    /// <paramref name="reason"/> is what <see cref="WhyNotAllowed"/> answers. The inventory shows it when it refuses to
+    /// hold an item or to use one that is not a weapon; movement, blocking and casting do not show it.
+    /// </summary>
+    /// <remarks>
+    /// Not sent over the network: every machine sets the same blocks itself (the disability traits run on every copy of
+    /// the character, the trait list being sent to every client), so a client predicts movement exactly as the server
+    /// decides it. A script that blocks something must do it on every machine too. Blocks stay through death, revive and
+    /// a switch to replica; only their key lifts them. Blocking a hand takes effect when the inventory next applies its
+    /// hand rules: call <see cref="InventoryManager.RefreshHands"/> afterwards, as the disability traits do.
+    /// </remarks>
+    public void SetActionBlock(object key, BodyAction actions, string reason) => ExtraLimits.Set(key, actions, reason);
+
+    /// <summary>Lifts what <paramref name="key"/> blocked (<see cref="SetActionBlock"/>).</summary>
+    public void ClearActionBlock(object key) => ExtraLimits.Clear(key);
+
+    /// <summary>
+    /// Can the character do <paramref name="action"/>: neither its injuries nor a trait or curse stop it? (true without
+    /// an injury system or a block; several flags = all of them)
+    /// </summary>
+    public bool AllowsAction(BodyAction action) => ExtraLimits.Allows(action) && (BodyLimits == null || BodyLimits.Allows(action));
+
+    /// <summary>Why the character cannot do <paramref name="action"/> right now ("" when it can, or nothing says why).</summary>
+    public string WhyNotAllowed(BodyAction action)
+    {
+        string why = ExtraLimits.Allows(action) ? "" : ExtraLimits.ReasonFor(action);
+        // A block that gives no reason: the injuries may say why.
+        if (string.IsNullOrEmpty(why) && BodyLimits != null && !BodyLimits.Allows(action))
+            why = BodyLimits.ReasonFor(action);
+        return why ?? "";
+    }
+
+    /// <summary>Which hands can hold things (both without an injury system or a block).</summary>
+    public HandCapability Hands => ExtraLimits.Apply(BodyLimits != null ? BodyLimits.Hands : HandCapability.Full);
 
     /// <summary>How the character's legs let it move (limp, hop, crawl); normal without an injury system.</summary>
     public BodyLocomotion Locomotion => BodyLimits is IBodyLocomotion l ? l.Locomotion : BodyLocomotion.Normal;

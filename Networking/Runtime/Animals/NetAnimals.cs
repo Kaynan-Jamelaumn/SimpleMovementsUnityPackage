@@ -341,6 +341,13 @@ namespace GameNet
             }
             pen.PerformHere(r, player); // answers through SendResult
             SendViewTo(conn, pen, player);
+            // That picture is the one this watcher holds now: the next goes with the next change, not the same one again.
+            if (watchers.TryGetValue(pen.PenId, out Dictionary<int, Watcher> list) && list.TryGetValue(conn.ClientId, out Watcher w))
+            {
+                w.revision = AnimalDirector.RevisionOf(pen.PenId);
+                w.sentAt = Time.unscaledTime;
+                list[conn.ClientId] = w;
+            }
         }
 
         /// <summary>
@@ -431,7 +438,15 @@ namespace GameNet
             NetworkConnection conn = RemoteOf(player);
             AnimalPen pen = AnimalDirector.FindPen(penId);
             if (conn == null || pen == null) return;
+            // No picture can be made while the animals office is closed: the player is told why (as the host is), nothing opens.
+            if (AnimalDirector.Book == null)
+            {
+                TargetMessage(conn, Cut(string.IsNullOrEmpty(AnimalDirector.Closed) ? "The animals are not kept here." : AnimalDirector.Closed, MaxMessageLength));
+                return;
+            }
             AddWatcher(conn, pen, player);
+            // At the watch cap no picture went with the watch: the window opens with one all the same.
+            if (!watchers.TryGetValue(penId, out Dictionary<int, Watcher> list) || !list.ContainsKey(conn.ClientId)) SendViewTo(conn, pen, player);
             TargetOpen(conn, penId);
         }
 

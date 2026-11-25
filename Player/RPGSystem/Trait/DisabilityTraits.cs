@@ -89,7 +89,8 @@ public class BlockActionsTrait : TraitBehaviour
 {
     [Tooltip("What the character cannot do while it has the trait.")]
     public BodyAction actions = BodyAction.Sprint;
-    [Tooltip("Why, told to the player when it tries (\"A bad leg\"). Empty = nothing is said.")]
+    [Tooltip("Why (\"A bad leg\"): shown when an item, a held item or an attack is refused (movement, blocking and " +
+             "casting are refused without a message). Empty = nothing is said.")]
     public string reason = "";
 
     [NonSerialized] private CombatEntity applied;
@@ -319,7 +320,8 @@ public class MissingLimbTrait : TraitBehaviour
     public bool onTheOffHandSide = false;
     [Tooltip("Without the injury system (or when it does not know the part): what the character cannot do instead.")]
     public BodyAction withoutInjurySystem = BodyAction.TwoHandedWeapons | BodyAction.OffHand;
-    [Tooltip("Why, told to the player (\"You have one arm\").")]
+    [Tooltip("Why (\"You have one arm\"), used only without the injury system: shown when an item, a held item or " +
+             "an attack is refused (movement and blocking are refused without a message).")]
     public string reason = "";
 
     [NonSerialized] private CombatEntity blocked;

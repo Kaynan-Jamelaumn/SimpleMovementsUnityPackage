@@ -210,7 +210,7 @@ namespace GameNet
         /// </summary>
         private void HideSceneCreationScreens()
         {
-            foreach (CharacterCreationUI old in FindObjectsByType<CharacterCreationUI>(FindObjectsInactive.Exclude))
+            foreach (CharacterCreationUI old in UnityVersionCompat.FindObjectsByType<CharacterCreationUI>(FindObjectsInactive.Exclude))
             {
                 if (old == null)
                     continue;

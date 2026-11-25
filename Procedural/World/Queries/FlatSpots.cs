@@ -47,6 +47,10 @@ public static class FlatSpots
         public bool avoidObjects = true;
         [Tooltip("Extra free space around the footprint (world units).")]
         public float objectClearance = 1f;
+        [Tooltip("Keep clear of objects the game removed since they were placed (a chopped tree) as well: the spot then " +
+                 "depends only on the world's seed - the same on every machine and every time the chunk loads (scenery " +
+                 "every machine builds by itself, such as cave mouths).")]
+        public bool includeRemovedObjects = false;
         [Tooltip("How many spots to return at most (the best first).")]
         public int maxResults = 1;
         [Tooltip("Smallest distance between two returned spots (world units, 0 = two footprints).")]
@@ -172,7 +176,7 @@ public static class FlatSpots
             {
                 float objectReach = query.searchRadius + query.footprintRadius + query.objectClearance;
                 LoadedTerrain.ForEachObjectNear(query.center.x, query.center.y, objectReach,
-                    (position, radius) => area.Objects.Add(new Vector4(position.x, position.y, position.z, radius)));
+                    (position, radius) => area.Objects.Add(new Vector4(position.x, position.y, position.z, radius)), query.includeRemovedObjects);
             }
             return area;
         }

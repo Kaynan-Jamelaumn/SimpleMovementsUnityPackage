@@ -1000,7 +1000,7 @@ public static class AnimalObservation
         bool carer = (rights & AnimalRights.CareForOthers) != 0 && (pr == null || pr.othersCollect);
         foreach (AnimalRecord a in h.animals)
         {
-            if (a == null || !a.Alive || (!carer && (string.IsNullOrEmpty(viewer) || a.owner != viewer))) continue;
+            if (a == null || (!carer && (string.IsNullOrEmpty(viewer) || a.owner != viewer))) continue;
             AnimalSpeciesData sp = cat.Species(a.species);
             if (sp?.products == null) continue;
             foreach (AnimalProductSpec p in sp.products)

@@ -38,7 +38,7 @@ public static class NPCEditorGUI
     {
         GameObject best = null;
         float bestSq = float.MaxValue;
-        foreach (PlayerStatusController p in UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
+        foreach (PlayerStatusController p in UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude))
         {
             float d = (p.transform.position - at).sqrMagnitude;
             if (d < bestSq) { bestSq = d; best = p.gameObject; }

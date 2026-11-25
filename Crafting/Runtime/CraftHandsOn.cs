@@ -2930,7 +2930,9 @@ public class CraftHandsOn : MonoBehaviour
                 area.Expand(0.04f);
                 visuals.HideOverlapping(area, hiddenModels);
             }
-            if (visuals.HandsOnPoint(mode, out _) && station != null && unmodelled.Add($"{station.GetInstanceID()}:{mode}"))
+            // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+            // which is obsolete from 6.4 and an error from 6.5.
+            if (visuals.HandsOnPoint(mode, out _) && station != null && unmodelled.Add($"{station.GetHashCode()}:{mode}"))
                 Debug.LogWarning($"{station.name}: its {mode} work place point is set in Craft Station Visuals, but no 'Worked by hand' model for it: " +
                                  "what of the station's own stands there was hidden by where it stands. Set the model to hide exactly that.", visuals);
         }

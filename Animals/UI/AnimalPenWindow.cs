@@ -1362,7 +1362,7 @@ public class AnimalPenWindow : MonoBehaviour, IExclusivePanel
         return c;
     }
 
-    /// <summary>The best care tool the player carries with any of these tags, chosen as the rules choose it (quality x (0.5 + 0.5 x what is left of it)); none: has is false.</summary>
+    /// <summary>The best care tool the player carries with any of these tags, chosen as the rules choose it (as it will work: AnimalCare.ToolFactor, a worn-out one last); none: has is false.</summary>
     private AnimalToolUse BestTool(IReadOnlyList<string> tags)
     {
         AnimalToolUse best = default(AnimalToolUse);
@@ -1372,7 +1372,7 @@ public class AnimalPenWindow : MonoBehaviour, IExclusivePanel
         {
             if (t.tool == null || !t.tool.HasAny(tags)) continue;
             float quality = Mathf.Clamp01(t.tool.quality);
-            float score = quality * (0.5f + 0.5f * t.edge);
+            float score = AnimalCare.ToolFactor(new AnimalToolUse(t.key, t.tool.id, quality, t.edge), AnimalDatabase.Instance.Rules);
             if (score <= bestScore) continue;
             bestScore = score;
             best = new AnimalToolUse(t.key, t.tool.id, quality, t.edge);

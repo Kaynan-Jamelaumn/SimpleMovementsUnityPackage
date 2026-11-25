@@ -33,7 +33,7 @@ and, where the rules run, which animal it came from, which cycle and how that an
 Pigs, horses and rabbits give nothing while they live (their remains are butchered, chapter 04).
 
 An animal gives only in a stage of its life with *Production Enabled*: the built-in species give as adults and seniors,
-never as young. Milk does not wait for a calf or a kid yet: lactation tied to birth comes with breeding (Phase 4).
+never as young. Milk does not wait for a calf or a kid: Phase 4 added nursing (a mother's young suckle from her) and left milking as it was.
 
 **The tools.** Two of animal husbandry's own tools are added to the built-in tools and supplies:
 
@@ -142,6 +142,8 @@ told once, when the lot that fills it is made (*Henrietta: 6 eggs to collect.*).
 * What waits stays with the animal wherever it goes: moved to another pen, or to the boarding stable when a lease ends.
   A boarded animal makes nothing, but its owner can collect what it made before from **any** of their pens' windows, as
   they can see to its health from there.
+* What an animal made before it died waits on it until its remains are butchered or cleared: **Collect all**, or a
+  collection naming it, still takes it. The dead make nothing more.
 * Nothing is made twice: a lot is made once in the simulation, and taken once by a collection (§[Collecting](#collecting)).
 
 ## Collecting

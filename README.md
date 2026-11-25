@@ -36,10 +36,14 @@ Start at the **[documentation index](Documentation/README.md)**.
 
 ## Requirements
 
-* Unity 6 (6000.x)
+* Unity 6: the 6000.0 to 6000.5 releases (later 6000.x versions are untested; the early 6000.4 betas, before 0b6,
+  cannot compile it).
 * Packages: **Input System**, **TextMeshPro** (UI), **AI Navigation** (NavMesh for mobs and dungeons),
-  **Cinemachine** (player camera). The test files compile only when the **Unity Test Framework** is installed.
-* A generated C# class named `PlayerInput` from your Input Actions asset, with a **Player** action map
+  **Cinemachine 3** (`Unity.Cinemachine`, player camera), **Mathematics** (`Unity.Mathematics`, used by the terrain
+  object spawner; Cinemachine 3 installs it through Splines). The test files compile only when the **Unity Test
+  Framework** is installed.
+* A generated C# class named `PlayerInput` (in the global namespace: leave *C# Class Namespace* empty) from your
+  Input Actions asset, with a **Player** action map and a **UI** action map that has a **Point** action
   (see [Player 02 — Movement & Input](Documentation/Player/02-Movement-and-Input.md)).
 
 ## Installation

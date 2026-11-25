@@ -88,7 +88,12 @@ attempt's failure reason is kept in the report.
 
 **Custom stages:** a profile may list `DungeonStageAsset`s (ScriptableObjects implementing `IDungeonStage`). Each has
 a `slot` (`AfterMacroPlan` … `AfterPopulation`), and the pipeline inserts it right after that built-in stage. Custom
-stages follow the same contract: plain data only, no Unity objects.
+stages follow the same contract: plain data only, no Unity objects. `Prepare()` runs on the main thread when the
+profile is compiled (copy settings and asset data there). A stage that also implements `IDungeonBuildExtension` builds
+what it placed: it gets an `IDungeonBuildSession` for every build (and every network client's copy) that builds its own
+placement kinds, adds per-floor geometry before the NavMesh bake, and can leave placements out
+(`Build/DungeonBuildExtensions.cs`). The cave system is built this way; see
+[Caves 06 §4](../Caves/06-Performance-Networking-Extending.md).
 
 ## 4. Data model
 

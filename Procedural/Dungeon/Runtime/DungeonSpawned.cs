@@ -78,6 +78,17 @@ namespace ProceduralDungeon
             }
         }
 
+        /// <summary>
+        /// It leaves its dungeon for good, kept for another one (a pooled object given back): no dungeon, nobody listening.
+        /// The next dungeon's builder tags it anew.
+        /// </summary>
+        internal void Detach()
+        {
+            Dungeon = null;
+            Destroyed = null;
+            Revealed = null;
+        }
+
         private void OnDestroy()
         {
             Destroyed?.Invoke(this);

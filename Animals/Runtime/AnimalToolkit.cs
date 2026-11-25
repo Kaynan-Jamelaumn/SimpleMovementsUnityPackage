@@ -136,7 +136,8 @@ public static class AnimalToolkit
     /// <summary>
     /// The best care tool the player carries with any of these tags (a brush, a hoof pick, a fork or shovel; not a supply,
     /// which is used up): its quality is its data's, its edge what is left of the copy (1 for an item that does not wear),
-    /// the best by quality x (0.5 + 0.5 x edge). None carried (or no tags asked for): <see cref="AnimalToolUse.has"/> is false.
+    /// the best as it will work (<see cref="AnimalCare.ToolFactor"/>: a worn-out one only when no other is carried). None
+    /// carried (or no tags asked for): <see cref="AnimalToolUse.has"/> is false.
     /// </summary>
     public static AnimalToolUse ToolOf(InventoryManager inv, IAnimalCatalog cat, IReadOnlyList<string> tags)
     {
@@ -153,7 +154,8 @@ public static class AnimalToolkit
             if (t == null || t.consumed || !t.HasAny(tags)) continue;
             float edge = EdgeOf(it);
             float quality = Mathf.Clamp01(t.quality);
-            float score = quality * (0.5f + 0.5f * edge);
+            // Judged as the work is (AnimalCare.ToolFactor): a worn-out tool comes after any that still has uses.
+            float score = AnimalCare.ToolFactor(new AnimalToolUse(key, t.id, quality, edge), cat.Rules);
             if (score > bestScore)
             {
                 bestScore = score;

@@ -73,6 +73,9 @@ namespace ProceduralDungeon
     [CreateAssetMenu(menuName = "SimpleMovements/Dungeon/Prop Table", fileName = "DungeonProps")]
     public class DungeonPropTable : ScriptableObject
     {
+        // Edited: generations kept for its profiles (Build > Keep Generated) are not reused.
+        private void OnValidate() => DungeonProfile.MarkEdited();
+
         [Tooltip("The props. Create Default Setup fills a table with the built-in set to start from.")]
         public List<PropEntry> entries = new List<PropEntry>();
     }

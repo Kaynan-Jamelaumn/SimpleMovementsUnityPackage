@@ -10,7 +10,7 @@ public static class InventoryEventSystems
 {
     public static void EnsureSingle()
     {
-        EventSystem[] all = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Exclude);
+        EventSystem[] all = UnityVersionCompat.FindObjectsByType<EventSystem>(FindObjectsInactive.Exclude);
         if (all.Length == 0)
         {
             var go = new GameObject("EventSystem", typeof(EventSystem));

@@ -96,7 +96,9 @@ public sealed class MobMotor
         transform = context.Transform;
         lastPosition = transform.position;
         loco = context.Profile.locomotion ?? new MobLocomotion();
-        gait = MobGaitState.For(transform.GetInstanceID());
+        // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+        // which is obsolete from 6.4 and an error from 6.5.
+        gait = MobGaitState.For(transform.GetHashCode());
         if (agent != null)
         {
             baseAngularSpeed = agent.angularSpeed;

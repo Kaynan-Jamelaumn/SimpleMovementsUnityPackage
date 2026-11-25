@@ -76,7 +76,7 @@ namespace AnimalHusbandrySystem.Tests
                 {
                     AnimalToolData t = cat.Tool(id);
                     if (t == null || t.consumed || !t.HasAny(tags)) continue;
-                    float s = t.quality * (0.5f + 0.5f * edge);
+                    float s = AnimalCare.ToolFactor(new AnimalToolUse("", t.id, t.quality, edge), cat.Rules);
                     if (s <= score) continue;
                     score = s;
                     best = new AnimalToolUse(t.items.Count > 0 ? t.items[0] : AnimalIds.Tool(id), t.id, t.quality, edge);

@@ -153,7 +153,8 @@ public class MerchantPricing
     public bool sellPriceFollowsDurability = true;
     [Tooltip("What a completely worn item still fetches (fraction of its full selling price).")]
     [Range(0f, 1f)] public float brokenItemValue = 0.1f;
-    [Tooltip("The merchant never pays more for an item than it would sell it for (stops buy-low-sell-high loops).")]
+    [Tooltip("The merchant never pays more for an item than it would sell it for (stops buy-low-sell-high loops). A copy " +
+             "that can rightly be worth more than a new one (a raised animal in its crate) is capped at that price x its sell cap.")]
     public bool sellNeverAboveBuy = true;
     [Tooltip("How fractional prices are rounded.")]
     public PriceRounding rounding = PriceRounding.Nearest;
@@ -192,7 +193,9 @@ public class MerchantPricing
         if (sellNeverAboveBuy)
         {
             var buyContext = new MerchantPriceContext(c.Merchant, c.Item, true, null, null, c.Player, c.Category);
-            sell = Mathf.Min(sell, BuyPrice(buyContext));
+            // A copy worth more than a new one (a raised animal in its crate) is capped at what such a copy is worth.
+            float cap = c.Stack != null && c.Item is IItemInstanceSellCap capped ? Mathf.Max(1f, capped.SellCapFactor(c.Stack, c.Copy)) : 1f;
+            sell = Mathf.Min(sell, cap > 1f ? Round(BuyPrice(buyContext) * cap) : BuyPrice(buyContext));
         }
         return sell;
     }

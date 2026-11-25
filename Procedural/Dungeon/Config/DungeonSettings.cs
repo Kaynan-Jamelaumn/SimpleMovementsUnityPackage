@@ -886,5 +886,9 @@ namespace ProceduralDungeon
         public bool doorFrames = true;
         [Tooltip("Mark generated geometry static (for batching) when built in the editor (Preview). Ignored in Play mode.")]
         public bool markStatic = true;
+        [Tooltip("Keep the generated layouts and meshes of this many recently built dungeons of this profile in memory: going " +
+                 "back into one of them (the same portal or cave entrance) skips generation and meshing and only builds the " +
+                 "objects again. 0 = off. Each kept dungeon costs memory (roughly 1-4 MB for a Medium one).")]
+        [Range(0, 16)] public int keepGenerated;
     }
 }

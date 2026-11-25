@@ -624,7 +624,7 @@ public static class InventoryUIBuilder
     public static void EnsureEventSystem()
     {
         // Inactive ones count too: enabling them later would give two.
-        if (Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length > 0)
+        if (UnityVersionCompat.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length > 0)
             return;
         var go = new GameObject("EventSystem", typeof(EventSystem));
 #if ENABLE_INPUT_SYSTEM
@@ -657,7 +657,7 @@ public static class InventoryUIBuilder
         }
         else if (stageRoot == null)
         {
-            foreach (Canvas c in Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include))
+            foreach (Canvas c in UnityVersionCompat.FindObjectsByType<Canvas>(FindObjectsInactive.Include))
                 if (c.isRootCanvas && c.renderMode == RenderMode.ScreenSpaceOverlay && c.name.Contains("Inventory"))
                     return c;
         }

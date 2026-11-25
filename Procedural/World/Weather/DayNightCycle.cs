@@ -124,7 +124,7 @@ public class DayNightCycle : MonoBehaviour
 #if UNITY_6000_4_OR_NEWER
         DayNightCycle[] all = FindObjectsByType<DayNightCycle>();
 #else
-        DayNightCycle[] all = FindObjectsByType<DayNightCycle>(FindObjectsInactive.Exclude);
+        DayNightCycle[] all = FindObjectsByType<DayNightCycle>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #endif
         foreach (DayNightCycle other in all)
         {
@@ -256,7 +256,7 @@ public class DayNightCycle : MonoBehaviour
 #if UNITY_6000_4_OR_NEWER
             Light[] lights = FindObjectsByType<Light>();
 #else
-            Light[] lights = FindObjectsByType<Light>(FindObjectsInactive.Exclude);
+            Light[] lights = FindObjectsByType<Light>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 #endif
             float best = -1f;
             foreach (Light l in lights)

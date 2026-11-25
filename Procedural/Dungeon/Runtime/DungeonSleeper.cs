@@ -133,7 +133,7 @@ namespace ProceduralDungeon
             }
             if (!alarm || alarmRadius <= 0f)
                 return;
-            foreach (DungeonSleeper other in FindObjectsByType<DungeonSleeper>(FindObjectsInactive.Exclude))
+            foreach (DungeonSleeper other in UnityVersionCompat.FindObjectsByType<DungeonSleeper>(FindObjectsInactive.Exclude))
                 if (other != this && other.Asleep && (other.transform.position - transform.position).sqrMagnitude <= alarmRadius * alarmRadius)
                     other.Wake(by, false);
         }

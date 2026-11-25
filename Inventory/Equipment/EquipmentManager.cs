@@ -181,7 +181,7 @@ public class EquipmentManager : MonoBehaviour
             if (inventory == null)
             {
                 // The inventory often lives on the UI canvas: pick the one that belongs to this player.
-                foreach (InventoryManager m in FindObjectsByType<InventoryManager>(FindObjectsInactive.Include))
+                foreach (InventoryManager m in UnityVersionCompat.FindObjectsByType<InventoryManager>(FindObjectsInactive.Include))
                 {
                     if (m.Player == gameObject || (status != null && m.Player == status.gameObject) || m.GetComponentInParent<PlayerStatusController>() == status)
                     {

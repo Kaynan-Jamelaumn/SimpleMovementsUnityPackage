@@ -259,7 +259,7 @@ namespace SimpleMovements.Guides
     public static class GuideUtil
     {
         public static List<T> InOpenScenes<T>() where T : Component =>
-            new List<T>(Object.FindObjectsByType<T>(FindObjectsInactive.Include));
+            new List<T>(UnityVersionCompat.FindObjectsByType<T>(FindObjectsInactive.Include));
 
         /// <summary>A short "Scene ▸ Object" path.</summary>
         public static string Where(Component c) => c == null ? "" : $"{c.gameObject.scene.name} ▸ {c.name}";
@@ -286,7 +286,7 @@ namespace SimpleMovements.Guides
                 return;
             string shortName = Setup.SetupUtil.ShortName(typeName);
             GameObject world = null;
-            foreach (FishNet.Object.NetworkObject nob in Object.FindObjectsByType<FishNet.Object.NetworkObject>(FindObjectsInactive.Include))
+            foreach (FishNet.Object.NetworkObject nob in UnityVersionCompat.FindObjectsByType<FishNet.Object.NetworkObject>(FindObjectsInactive.Include))
                 if (nob.name == "Network World")
                     world = nob.gameObject;
             if (world == null)

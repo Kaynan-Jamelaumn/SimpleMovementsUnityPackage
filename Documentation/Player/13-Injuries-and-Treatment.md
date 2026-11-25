@@ -219,8 +219,13 @@ keeps counting toward the death threshold while bleeding). *Can Kill* off stops 
 | Head / torso | Their consequences (casting, crits, sanity, fainting / stamina) |
 
 Everything goes through `CombatEntity.BodyLimits` (`IBodyActionLimits`) — the injury controller registers itself
-there. Your own systems can ask `entity.AllowsAction(BodyAction.Sprint)`, `entity.Hands` or `entity.Locomotion`, or
-implement `IBodyActionLimits` (and `IBodyLocomotion`) for other limits (a curse that stops jumping).
+there — together with the blocks that disability traits and scripts set (`CombatEntity.SetActionBlock`). Your own
+systems can ask `entity.AllowsAction(BodyAction.Sprint)`, `entity.WhyNotAllowed(action)`, `entity.Hands` or
+`entity.Locomotion`. For other limits (a curse that stops jumping) call
+`entity.SetActionBlock(key, BodyAction.Jump, "Cursed")` and later `entity.ClearActionBlock(key)`
+([Player 03](03-Status-Classes-Traits-XP.md)): they add to the injuries, with the injury system on or off. Assigning
+your own `IBodyActionLimits` (and `IBodyLocomotion`) to `BodyLimits` replaces the injury system instead — the injury
+controller sets `BodyLimits` to itself when it is enabled — so do that only for a character without one.
 
 ### 4a. Limping, hopping and crawling
 
@@ -472,8 +477,10 @@ was pressed. A host sees its own HUD, not the clients'.
   Profile, rules and a diagram rect.
 * **New treatment effect** — derive from `TreatmentEffect` (`Apply`, `Describe`, optionally `CanApply`, `WouldHelp`,
   `ForMissingLimbs`): it appears in the dropdown of every treatment.
-* **New limits** — implement `IBodyActionLimits` and assign `CombatEntity.BodyLimits`, or add `BodyAction` values (at the
-  end) and check them where the action happens.
+* **New limits** — `CombatEntity.SetActionBlock(key, actions, reason)` / `ClearActionBlock(key)` (they add to the
+  injuries); implement `IBodyActionLimits` and assign `CombatEntity.BodyLimits` only for a character without the injury
+  system (the injury controller sets itself there when enabled); or add `BodyAction` values (at the end) and check them
+  where the action happens.
 * **Scripting** — `InjuryController.For(player)`: `Parts`, `WholeBody`, `AddInjury`, `ChangeStage`, `RemoveInjury`,
   `ApplyHit`, `ApplyAreaHit`, `Land`, `Expose`, `IsImmuneTo` / `SetImmunity`, `LoseLimb`, `Amputate`, `ReattachLimb`,
   `FindLimb`, `ApplyTreatment`, `BeginTreatment`, `QuickTreat`, `TreatMostUrgent`, `TreatAllBleeding`,

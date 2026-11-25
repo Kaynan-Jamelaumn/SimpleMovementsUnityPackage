@@ -95,7 +95,7 @@ public class CharacterArchetypeEditor : Editor
         {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("In Play Mode", EditorStyles.boldLabel);
-            foreach (CharacterIdentity id in UnityEngine.Object.FindObjectsByType<CharacterIdentity>(FindObjectsInactive.Exclude))
+            foreach (CharacterIdentity id in UnityVersionCompat.FindObjectsByType<CharacterIdentity>(FindObjectsInactive.Exclude))
             {
                 if (!id.Archetypes.Contains(a))
                     continue;

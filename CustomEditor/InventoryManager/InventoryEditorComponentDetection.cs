@@ -193,7 +193,7 @@ public class InventoryEditorComponentDetection
     private void DetectCameras()
     {
         detectedCameras.Clear();
-        detectedCameras.AddRange(Object.FindObjectsByType<Camera>(FindObjectsInactive.Exclude)
+        detectedCameras.AddRange(UnityVersionCompat.FindObjectsByType<Camera>(FindObjectsInactive.Exclude)
             .Where(cam => cam.gameObject.activeInHierarchy)
             .OrderByDescending(cam => cam.tag == "MainCamera" ? 1 : 0));
     }
@@ -203,7 +203,7 @@ public class InventoryEditorComponentDetection
         detectedPlayers.Clear();
 
         // Look for objects with Player component
-        var playersWithComponent = Object.FindObjectsByType<Player>(FindObjectsInactive.Exclude)
+        var playersWithComponent = UnityVersionCompat.FindObjectsByType<Player>(FindObjectsInactive.Exclude)
             .Select(p => p.gameObject)
             .Where(go => go.activeInHierarchy);
         detectedPlayers.AddRange(playersWithComponent);
@@ -214,7 +214,7 @@ public class InventoryEditorComponentDetection
         detectedPlayers.AddRange(taggedPlayers);
 
         // Look for GameObjects with "Player" in name
-        var namedPlayers = Object.FindObjectsByType<GameObject>(FindObjectsInactive.Exclude)
+        var namedPlayers = UnityVersionCompat.FindObjectsByType<GameObject>(FindObjectsInactive.Exclude)
             .Where(go => go.name.ToLower().Contains("player") &&
                         go.activeInHierarchy &&
                         !detectedPlayers.Contains(go));
@@ -224,14 +224,14 @@ public class InventoryEditorComponentDetection
     private void DetectPlayerControllers()
     {
         detectedPlayerControllers.Clear();
-        detectedPlayerControllers.AddRange(Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude)
+        detectedPlayerControllers.AddRange(UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude)
             .Where(psc => psc.gameObject.activeInHierarchy));
     }
 
     private void DetectWeaponControllers()
     {
         detectedWeaponControllers.Clear();
-        detectedWeaponControllers.AddRange(Object.FindObjectsByType<WeaponController>(FindObjectsInactive.Exclude)
+        detectedWeaponControllers.AddRange(UnityVersionCompat.FindObjectsByType<WeaponController>(FindObjectsInactive.Exclude)
             .Where(wc => wc.gameObject.activeInHierarchy));
     }
 
@@ -240,7 +240,7 @@ public class InventoryEditorComponentDetection
         detectedHandParents.Clear();
 
         // Look for transforms with "hand" in name
-        var handTransforms = Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude)
+        var handTransforms = UnityVersionCompat.FindObjectsByType<Transform>(FindObjectsInactive.Exclude)
             .Where(t => t.name.ToLower().Contains("hand") && t.gameObject.activeInHierarchy);
         detectedHandParents.AddRange(handTransforms);
 

@@ -182,7 +182,17 @@ public partial class InjuryController
             reason = ReasonFor(BodyAction.UseItems);
             return false;
         }
-        if (Settings.treatmentNeedsAHand && !Hands.AnyHand)
+        // A medical item is an item: what a disability trait or a curse blocks (CombatEntity.SetActionBlock) stops it
+        // here too, as it does in the inventory and the quick slots.
+        if (e != null && !e.ExtraLimits.Allows(BodyAction.UseItems))
+        {
+            reason = e.ExtraLimits.ReasonFor(BodyAction.UseItems);
+            if (string.IsNullOrEmpty(reason))
+                reason = "You cannot use items.";
+            return false;
+        }
+        HandCapability usableHands = e != null ? e.ExtraLimits.Apply(Hands) : Hands;
+        if (Settings.treatmentNeedsAHand && !usableHands.AnyHand)
         {
             reason = "You need a usable hand.";
             return false;

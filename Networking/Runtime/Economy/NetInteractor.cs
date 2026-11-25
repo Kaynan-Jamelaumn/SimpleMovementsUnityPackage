@@ -250,6 +250,10 @@ namespace GameNet
         {
             if (!CanSend || target == null)
                 return false;
+            // What a dungeon built (a cave's ore seams, its shrines and chests) every client builds on its own: such an
+            // object is named to the server by its dungeon element id, not by a scene path (see ProceduralDungeon.DungeonNet).
+            if (ProceduralDungeon.DungeonNet.TryRelayInteract(InteractTargets.AnchorOf(target), from != null ? from.PlayerObject : null))
+                return true;
             // Items on the ground and storages go through the inventory, which asks the server itself.
             if (target is LegacyInteractableTarget legacy && (legacy.IsPickup || legacy.IsStorage))
                 return false;
@@ -275,6 +279,9 @@ namespace GameNet
         void IInteractionRelay.HoldChanged(PlayerInteractor from, IInteractable target, bool holding)
         {
             if (!CanSend || target == null)
+                return;
+            // A dungeon's object (a cave's seam gathered by hand): its run's server times the hold, by element id.
+            if (ProceduralDungeon.DungeonNet.TryRelayHold(InteractTargets.AnchorOf(target), from != null ? from.PlayerObject : null, holding))
                 return;
             if (target is LegacyInteractableTarget legacy && (legacy.IsPickup || legacy.IsStorage))
                 return;

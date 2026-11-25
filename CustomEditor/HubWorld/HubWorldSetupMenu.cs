@@ -119,7 +119,7 @@ namespace HubWorld.EditorTools
             if (Object.FindAnyObjectByType<HubWorldDirector>() != null &&
                 !EditorUtility.DisplayDialog("Hub World - World scene", "This scene has a Hub World Director, which belongs in the City scene. Continue anyway?", "Continue", "Cancel"))
                 return;
-            RealmScene existing = Object.FindObjectsByType<RealmScene>(FindObjectsInactive.Include).FirstOrDefault(r => r.realm == RealmKind.World);
+            RealmScene existing = UnityVersionCompat.FindObjectsByType<RealmScene>(FindObjectsInactive.Include).FirstOrDefault(r => r.realm == RealmKind.World);
             ZoneSettings z = settings.zones;
             Vector3 center = new Vector3(z.cityCenter.x, z.cityGroundHeight, z.cityCenter.y);
             float radius = Mathf.Max(20f, z.cityWallRadius);
@@ -155,7 +155,7 @@ namespace HubWorld.EditorTools
                 report.AppendLine("The scene already has a Realm: World - nothing added.");
             }
 
-            foreach (EndlessTerrain t in Object.FindObjectsByType<EndlessTerrain>(FindObjectsInactive.Include))
+            foreach (EndlessTerrain t in UnityVersionCompat.FindObjectsByType<EndlessTerrain>(FindObjectsInactive.Include))
             {
                 if (t.viewer != null)
                 {
@@ -170,9 +170,9 @@ namespace HubWorld.EditorTools
                     new Vector3(z.keepClearRadius * 2.5f, 1f, z.keepClearRadius * 2.5f), Quaternion.identity, Mat("Placeholder Ground", new Color(0.3f, 0.45f, 0.25f)));
                 report.AppendLine("No Terrain Generator here: added a placeholder ground. Add your TerrainGenerator, EndlessTerrain (Viewer empty) and WeatherSystem to this scene.");
             }
-            foreach (Camera c in Object.FindObjectsByType<Camera>(FindObjectsInactive.Include))
+            foreach (Camera c in UnityVersionCompat.FindObjectsByType<Camera>(FindObjectsInactive.Include))
                 report.AppendLine($"Note: '{c.name}' is a camera in the World scene - the player's camera usually lives with the player in the City scene; remove this one if it is not needed.");
-            foreach (PlayerStatusController p in Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Include))
+            foreach (PlayerStatusController p in UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Include))
                 report.AppendLine($"Note: '{p.name}' is a player in the World scene - players start in the City scene (move it there).");
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -284,27 +284,27 @@ namespace HubWorld.EditorTools
                     errors.Add($"Modifier '{m.displayName}' uses the scene '{m.worldSceneOverride}', which is not in Build Settings.");
 
             // The open scenes.
-            RealmScene[] realms = Object.FindObjectsByType<RealmScene>(FindObjectsInactive.Include);
+            RealmScene[] realms = UnityVersionCompat.FindObjectsByType<RealmScene>(FindObjectsInactive.Include);
             foreach (RealmScene r in realms)
             {
                 if (r.realm == RealmKind.City)
                 {
-                    if (Object.FindObjectsByType<RealmGate>(FindObjectsInactive.Include).All(g => g.kind != RealmGate.GateKind.CityGate || g.gameObject.scene != r.gameObject.scene))
+                    if (UnityVersionCompat.FindObjectsByType<RealmGate>(FindObjectsInactive.Include).All(g => g.kind != RealmGate.GateKind.CityGate || g.gameObject.scene != r.gameObject.scene))
                         warnings.Add($"City scene '{r.gameObject.scene.name}': no City Gate - players cannot go out.");
-                    if (Object.FindObjectsByType<HubWorldDirector>(FindObjectsInactive.Include).All(d => d.gameObject.scene != r.gameObject.scene))
+                    if (UnityVersionCompat.FindObjectsByType<HubWorldDirector>(FindObjectsInactive.Include).All(d => d.gameObject.scene != r.gameObject.scene))
                         warnings.Add($"City scene '{r.gameObject.scene.name}': no Hub World Director (put it in the city, or in a bootstrap scene).");
-                    if (Object.FindObjectsByType<Mob>(FindObjectsInactive.Include).Any(m => m.gameObject.scene == r.gameObject.scene))
+                    if (UnityVersionCompat.FindObjectsByType<Mob>(FindObjectsInactive.Include).Any(m => m.gameObject.scene == r.gameObject.scene))
                         warnings.Add($"City scene '{r.gameObject.scene.name}': has mobs - the city should only have NPCs.");
                     ok.Add($"City scene '{r.gameObject.scene.name}' is marked (Realm: City).");
                 }
                 else if (r.realm == RealmKind.World)
                 {
-                    if (Object.FindObjectsByType<RealmGate>(FindObjectsInactive.Include).All(g => g.kind != RealmGate.GateKind.ReturnGate || g.gameObject.scene != r.gameObject.scene))
+                    if (UnityVersionCompat.FindObjectsByType<RealmGate>(FindObjectsInactive.Include).All(g => g.kind != RealmGate.GateKind.ReturnGate || g.gameObject.scene != r.gameObject.scene))
                         warnings.Add($"World scene '{r.gameObject.scene.name}': no Return Gate - players can only come back when the city jumps.");
-                    foreach (TerrainGenerator tg in Object.FindObjectsByType<TerrainGenerator>(FindObjectsInactive.Include))
+                    foreach (TerrainGenerator tg in UnityVersionCompat.FindObjectsByType<TerrainGenerator>(FindObjectsInactive.Include))
                         if (tg.gameObject.scene == r.gameObject.scene && settings.zones.flattenCityGround && tg.SeaLevel >= settings.zones.cityGroundHeight - 0.5f)
                             warnings.Add($"World scene '{r.gameObject.scene.name}': the terrain's water level ({tg.SeaLevel:0.#}) is not below City Ground Height ({settings.zones.cityGroundHeight:0.#}) - the city's levelled ground would be under the sea. Raise City Ground Height (Hub World Settings ▸ Zones) above the water level, then rebuild the city exterior.");
-                    foreach (EndlessTerrain t in Object.FindObjectsByType<EndlessTerrain>(FindObjectsInactive.Include))
+                    foreach (EndlessTerrain t in UnityVersionCompat.FindObjectsByType<EndlessTerrain>(FindObjectsInactive.Include))
                         if (t.gameObject.scene == r.gameObject.scene && t.viewer != null)
                             warnings.Add($"World scene: '{t.name}' has a Viewer - leave it empty (the director sets it).");
                     ok.Add($"World scene '{r.gameObject.scene.name}' is marked (Realm: World).");
@@ -312,7 +312,7 @@ namespace HubWorld.EditorTools
             }
             if (realms.Length == 0)
                 warnings.Add("No Realm Scene in the open scene(s): open the City or World scene to check it too.");
-            foreach (Portal p in Object.FindObjectsByType<Portal>(FindObjectsInactive.Include))
+            foreach (Portal p in UnityVersionCompat.FindObjectsByType<Portal>(FindObjectsInactive.Include))
                 if (p.LeadsToDungeon && p.Manager == null && p.Profile == null)
                     errors.Add($"Portal '{p.name}': no Dungeon Manager or Dungeon Profile.");
             if (settings.dungeonsInOwnScenes && settings.dungeonScenes != null && settings.dungeonScenes.slotOrigin.y > -1500f && settings.unloadWorldWhenEmpty == false)

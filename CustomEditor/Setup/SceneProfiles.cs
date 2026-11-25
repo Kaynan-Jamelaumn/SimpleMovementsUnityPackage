@@ -286,7 +286,7 @@ namespace SimpleMovements.Setup
                     NetworkSetupMenu.CreateWorldItemPrefab();
                     return true;
                 }));
-            p.Add(SetupRequirement.Make("Project", "Networked animal carcass (Resources/AnimalCarcass)", SetupLevel.Recommended)
+            p.Add(SetupRequirement.Make("Project", "Networked animal carcass (Resources/SimpleMovements/Networking/AnimalCarcass)", SetupLevel.Recommended)
                 .Explain("A farm animal butchered in a network session is laid out as this network prefab, so every player sees its carcass and its owner works it " +
                          "through the server. Without it the butcher's table answers that it is not set up (offline nothing is needed).",
                          "Tools ▸ SimpleMovements ▸ Network ▸ Create Animal Carcass Prefab.")
@@ -495,7 +495,7 @@ namespace SimpleMovements.Setup
                         return SetupResult.Wrong($"{here.Count} directors: keep one.", here[1]);
                     if (here.Count == 1)
                         return SetupResult.Ok("In this scene.", here[0]);
-                    HubWorldDirector other = Object.FindObjectsByType<HubWorldDirector>(FindObjectsInactive.Include).FirstOrDefault();
+                    HubWorldDirector other = UnityVersionCompat.FindObjectsByType<HubWorldDirector>(FindObjectsInactive.Include).FirstOrDefault();
                     if (other != null)
                         return SetupResult.Ok($"In the open scene '{other.gameObject.scene.name}'.", other);
                     return SetupResult.Missing("None in this scene (open the Bootstrap scene too if you keep it there).");
@@ -1060,7 +1060,7 @@ namespace SimpleMovements.Setup
                     var here = ctx.First<DayNightCycle>();
                     if (here != null)
                         return SetupResult.Ok("In this scene.", here);
-                    DayNightCycle other = Object.FindObjectsByType<DayNightCycle>(FindObjectsInactive.Include).FirstOrDefault();
+                    DayNightCycle other = UnityVersionCompat.FindObjectsByType<DayNightCycle>(FindObjectsInactive.Include).FirstOrDefault();
                     if (other != null)
                         return SetupResult.Ok($"In the open scene '{other.gameObject.scene.name}'.", other);
                     return SetupResult.Missing("None in the open scenes: no night (unless another scene has one).");

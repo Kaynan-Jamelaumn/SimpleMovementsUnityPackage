@@ -350,13 +350,25 @@ public class Portal : MonoBehaviour
         if (!GameNet.NetAuthority.IsServer)
             return;
         GameObject player = FindPlayer(other);
-        if (player == null)
-            return;
+        if (player != null)
+            TryEnter(player);
+    }
+
+    /// <summary>
+    /// Sends <paramref name="player"/> (the object that moves a player - see <see cref="PlayerFrom"/>) through the portal,
+    /// as walking into its trigger does: into its dungeon (with the party members travelling with them), into the shared
+    /// dungeon that is going, or - scene mode - to its scene. For entrances that start the trip themselves (a cave mouth
+    /// that fades the screen first). Server only (offline: this machine). True when the player was sent.
+    /// </summary>
+    public bool TryEnter(GameObject player)
+    {
+        if (!GameNet.NetAuthority.IsServer || player == null)
+            return false;
 
         if (shouldInstantiateDungeon)
         {
             if (closed)
-                return;
+                return false;
             // A shared or linked portal whose dungeon is going: join it.
             string key = ShareKey;
             DungeonRun shared = DungeonSession.FindShared(key);
@@ -366,30 +378,34 @@ public class Portal : MonoBehaviour
                 {
                     if (shared.IsFull && DungeonSession.RunOf(player) == null)
                         Refuse(player, $"this dungeon is full ({shared.MaxPlayers} players)");
-                    return;
+                    return false;
                 }
                 if (DungeonSession.Join(shared, Group(player), ReturnPose(player.transform), ArrivalPoint) > 0)
+                {
                     OnEntered(shared);
-                return;
+                    return true;
+                }
+                return false;
             }
 
             // This player only: other groups may be in dungeons of their own (see DungeonScenes).
             if (!DungeonSession.CanEnterFor(player))
-                return;
+                return false;
             DungeonManager manager = ResolveManager();
             DungeonRequest request = BuildRequest();
             Vector3 typeAt = hasSeedPosition ? seedPosition : transform.position;
-            DungeonProfile profile = WorldSpawnHooks.ApplyDungeonType(typeAt, request.seed, PickProfile(request.seed));
+            DungeonProfile profile = OwnDungeonTypeOnly ? PickProfile(request.seed) : WorldSpawnHooks.ApplyDungeonType(typeAt, request.seed, PickProfile(request.seed));
             if (profile == null && (manager == null || manager.profile == null))
             {
                 Debug.LogError($"Portal '{name}': no dungeon to build - assign a Dungeon Manager prefab (with a profile) or a Dungeon Profile on the Portal component.", this);
-                return;
+                return false;
             }
             var options = new DungeonEntryOptions { ShareKey = key, MaxPlayers = MaxPlayers, Entrance = ArrivalPoint };
             DungeonRun run = DungeonSession.Enter(Group(player), request, manager, profile, dungeonOrigin, ReturnPose(player.transform), options);
-            if (run != null && run.State != DungeonRunState.Ended)
-                OnEntered(run);
-            return;
+            if (run == null || run.State == DungeonRunState.Ended)
+                return false;
+            OnEntered(run);
+            return true;
         }
 
         // Scene loading (single player only: a network session moves players between scenes through the network).
@@ -400,20 +416,80 @@ public class Portal : MonoBehaviour
                 warnedSceneLoad = true;
                 Debug.LogWarning($"Portal '{name}': 'Scene To Load' portals only work in single player (a network session cannot replace every player's scene). Use a dungeon portal or a realm gate.", this);
             }
-            return;
+            return false;
         }
         if (string.IsNullOrEmpty(sceneToLoad))
         {
             Debug.LogWarning($"Portal '{name}': Scene To Load is empty - putting the player at Position.", this);
             Teleport(player, position, player.transform.rotation);
-            return;
+            return true;
         }
         SetControls(player, false);
         DontDestroyOnLoad(player);
         sceneTraveller = player;
         SceneManager.sceneLoaded += OnSceneLoaded;
         SceneManager.LoadScene(sceneToLoad);
+        return true;
     }
+
+    /// <summary>The player object behind a collider that touched the portal (or an entrance built around it), or null.</summary>
+    public GameObject PlayerFrom(Collider other) => FindPlayer(other);
+
+    /// <summary>
+    /// Sets where the portal leads, for portals made from code (cave entrances): the kind of dungeon, the Dungeon Manager
+    /// prefab (null = one is made from the profile), the size class and the difficulty (replaced by a spawner's when
+    /// <paramref name="useSpawnerDifficulty"/>). Call it before anyone enters.
+    /// </summary>
+    public void Configure(DungeonProfile profile, DungeonManager manager, SizeClass size, float difficulty, bool useSpawnerDifficulty = true)
+    {
+        shouldInstantiateDungeon = true;
+        dungeonProfile = profile;
+        if (manager != null)
+            dungeonManager = manager;
+        dungeonSize = size;
+        dungeonDifficulty = Mathf.Max(0.1f, difficulty);
+        this.useSpawnerDifficulty = useSpawnerDifficulty;
+    }
+
+    /// <summary>Several kinds of dungeon this portal may lead to, picked from its seed (see <see cref="PickProfile"/>).</summary>
+    public void SetRandomProfiles(DungeonProfile[] profiles) => randomProfiles = profiles ?? new DungeonProfile[0];
+
+    /// <summary>The portal's own rule after use (and its reopen delay, seconds; 0 = never).</summary>
+    public void SetAfterUse(PortalAfterUse rule, float reopenSeconds = 0f)
+    {
+        afterUse = rule;
+        reopenAfter = Mathf.Max(0f, reopenSeconds);
+    }
+
+    /// <summary>Who shares the portal's dungeon, how many players it takes (0 = no limit) and how close party members come along.</summary>
+    public void SetPlayers(PortalSharing playerSharing, int playerLimit, float partyWithin)
+    {
+        sharing = playerSharing;
+        maxPlayers = Mathf.Max(0, playerLimit);
+        bringPartyWithin = Mathf.Max(0f, partyWithin);
+    }
+
+    /// <summary>Where the dungeon is built in the classic mode (keep it far below the world).</summary>
+    public void SetDungeonOrigin(Vector3 origin) => dungeonOrigin = origin;
+
+    /// <summary>The name the dungeon gets in logs and the hierarchy (empty = "Dungeon (portal name)").</summary>
+    public string RequestLabel { get; set; } = "";
+
+    /// <summary>
+    /// Always leads to its own kind of dungeon (<see cref="PickProfile"/>): the world's dungeon type rule
+    /// (<see cref="WorldSpawnHooks.DungeonType"/>, e.g. a Hub World modifier) does not change it. Cave entrances lead into caves.
+    /// </summary>
+    public bool OwnDungeonTypeOnly { get; set; }
+
+    /// <summary>The size class of the dungeon this portal leads to.</summary>
+    public SizeClass Size => dungeonSize;
+
+    /// <summary>
+    /// OPTIONAL. Where players come back (its position, facing its forward) instead of a step in front of where they stood:
+    /// for entrances players walk deep into before being sent (a cave mouth's tunnel), whose return must be clear of their
+    /// rock and trigger. Null = Return Distance from the player, as before.
+    /// </summary>
+    public Transform ReturnPoint { get; set; }
 
     // ------------------------------------------------------------------ closing after use
 
@@ -727,6 +803,17 @@ public class Portal : MonoBehaviour
     /// <summary>Where the player comes back: a step in front of the portal (not inside its trigger), facing away from it.</summary>
     private Pose ReturnPose(Transform player)
     {
+        if (ReturnPoint != null)
+        {
+            Vector3 at = ReturnPoint.position;
+            if (LoadedTerrain.TryGetHeight(at.x, at.z, out float g))
+                at.y = Mathf.Max(at.y, g + 0.1f);
+            Vector3 facing = ReturnPoint.forward;
+            facing.y = 0f;
+            if (facing.sqrMagnitude < 0.0001f)
+                facing = Vector3.forward;
+            return new Pose(at, Quaternion.LookRotation(facing.normalized, Vector3.up));
+        }
         Vector3 away = player.position - transform.position;
         away.y = 0f;
         if (away.sqrMagnitude < 0.01f)
@@ -791,7 +878,7 @@ public class Portal : MonoBehaviour
         request.difficulty = useSpawnerDifficulty && !hasSite
             ? WorldSpawnHooks.ApplyPortalDifficulty(from, dungeonDifficulty)
             : dungeonDifficulty;
-        request.label = $"Dungeon ({name})";
+        request.label = string.IsNullOrEmpty(RequestLabel) ? $"Dungeon ({name})" : RequestLabel;
         return request;
     }
 

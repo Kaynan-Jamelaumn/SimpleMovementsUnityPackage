@@ -593,7 +593,7 @@ public static class AnimalUpgrades
         foreach (AnimalRecord a in herd.animals)
         {
             if (room <= 0) break;
-            if (a == null || !a.Alive || a.products == null) continue;
+            if (a == null || a.products == null) continue;
             AnimalSpeciesData sp = cat.Species(a.species);
             if (sp?.products == null) continue;
             foreach (AnimalProductSpec p in sp.products)

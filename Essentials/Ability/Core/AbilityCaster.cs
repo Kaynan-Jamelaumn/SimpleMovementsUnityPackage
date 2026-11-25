@@ -521,8 +521,9 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
 
     /// <summary>
     /// The part of <see cref="CanCast"/> that does not depend on where the ability is aimed: the slot, the caster's
-    /// state (dead, stunned, silenced), phase, cooldown, global cooldown, other abilities blocking it and resources.
-    /// None = it could start now if the aim allows. Used to queue inputs pressed slightly too early.
+    /// state (dead, stunned, silenced, what a disability trait or a curse blocks), phase, cooldown, global cooldown,
+    /// other abilities blocking it and resources. None = it could start now if the aim allows. Used to queue inputs
+    /// pressed slightly too early.
     /// </summary>
     public CastFailReason CheckSlotReady(int index)
     {
@@ -539,6 +540,10 @@ public class AbilityCaster : MonoBehaviour, IAbilityReceiver
             return CastFailReason.Stunned;
         if (Entity.IsSilenced)
             return CastFailReason.Silenced;
+        // What a disability trait or a curse blocks (the Magic-Dead trait, CombatEntity.SetActionBlock). Injuries that
+        // stop casting are still only read by CombatEntity.CanCast (the aiming preview, the mob AI), as before.
+        if (!Entity.ExtraLimits.Allows(BodyAction.CastAbilities))
+            return CastFailReason.Disabled;
         if (s.Phase != AbilityPhase.Ready && s.Phase != AbilityPhase.InCooldown)
             return CastFailReason.Busy;
         if (!s.IsReady)

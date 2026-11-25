@@ -132,7 +132,9 @@ namespace RuneMagic
         private string GrimoireAuthorKey()
         {
             string key = PlayerKeys.Of(Entity);
-            return string.IsNullOrEmpty(key) ? "session:" + GetInstanceID().ToString(System.Globalization.CultureInfo.InvariantCulture) : key;
+            // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+            // which is obsolete from 6.4 and an error from 6.5.
+            return string.IsNullOrEmpty(key) ? "session:" + GetHashCode().ToString(System.Globalization.CultureInfo.InvariantCulture) : key;
         }
 
         private string GrimoireAuthorName()

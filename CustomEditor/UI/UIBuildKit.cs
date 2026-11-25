@@ -59,7 +59,7 @@ public static class UIBuildKit
     }
 
     /// <summary>The open scenes have an EventSystem (active or not).</summary>
-    public static bool HasEventSystem() => Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length > 0;
+    public static bool HasEventSystem() => UnityVersionCompat.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length > 0;
 
     /// <summary>Adds an EventSystem with the Input System UI module when the scene has none.</summary>
     public static void EnsureEventSystem()

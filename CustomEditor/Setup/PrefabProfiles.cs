@@ -738,7 +738,7 @@ namespace SimpleMovements.Setup
                     return true;
                 }, fixesAsset: true));
             p.Add(SetupRequirement.Make("Multiplayer", "Animal carcass prefab exists", SetupLevel.Optional)
-                .Explain("Not needed by this item: a farm animal butchered in a network session is laid out as the networked prefab Resources/AnimalCarcass, " +
+                .Explain("Not needed by this item: a farm animal butchered in a network session is laid out as the networked prefab Resources/SimpleMovements/Networking/AnimalCarcass, " +
                          "so every player sees its carcass (without it the butcher's table answers that it is not set up).",
                          "Tools ▸ SimpleMovements ▸ Network ▸ Create Animal Carcass Prefab.")
                 .Checks(_ =>

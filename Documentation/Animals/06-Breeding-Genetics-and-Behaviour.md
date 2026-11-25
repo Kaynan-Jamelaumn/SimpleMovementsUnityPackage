@@ -119,7 +119,7 @@ A young's traits come from its parents:
   Chance*, 2 %) a young carries one neither parent had;
 * **its breed** is its mother's or, for a cross, its sire's, half the time each;
 * **inbreeding** weakens it: its hardiness, fertility and longevity are lessened by *Inbreeding Penalty* (0.1) × its
-  parents' kinship × 4 (0.1 for half siblings, 0.2 for full ones).
+  parents' kinship × 4 (0.05 for half siblings, 0.1 for full ones).
 
 So a keeper who breeds their most fertile, hardy, docile animals with the finest produce, generation after generation,
 breeds a better herd. Its owner sees an animal's traits in words on its Family page (*Fertility: good*, *Temper: docile*,

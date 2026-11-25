@@ -11,7 +11,7 @@ using UnityEngine;
 /// very animal.
 /// </summary>
 [CreateAssetMenu(fileName = "Livestock", menuName = "SimpleMovements/Animals/Livestock (Item)", order = 11)]
-public class LivestockItemSO : ItemSO, IAnimalItem, IRuntimeItem, IItemInstanceTooltip, IItemInstanceValue
+public class LivestockItemSO : ItemSO, IAnimalItem, IRuntimeItem, IItemInstanceTooltip, IItemInstanceValue, IItemInstanceSellCap
 {
     [Header("Animals")]
     [Tooltip("The species (an id of the Animal Database's species).")]
@@ -82,6 +82,20 @@ public class LivestockItemSO : ItemSO, IAnimalItem, IRuntimeItem, IItemInstanceT
         int code = AnimalToolkit.CodeOf(stack, fromTop);
         if (!AnimalItemCode.TryCrated(code, out _, out GrowthStage stage, out int grade, out _)) return 1f;
         return AnimalTrade.ValueFactor(stage, grade, AnimalDatabase.Instance.Rules);
+    }
+
+    /// <summary>
+    /// The most a crated copy may fetch against a young one's price where a merchant never pays above what it sells for: its
+    /// stage's worth against the stage a crate's young is let out at (an animal raised is worth more; one let out and
+    /// crated again at once is not).
+    /// </summary>
+    public float SellCapFactor(InventoryItem stack, int fromTop = 0)
+    {
+        if (!AnimalItemCode.TryCrated(AnimalToolkit.CodeOf(stack, fromTop), out _, out GrowthStage stage, out _, out _)) return 1f;
+        AnimalTradeRules t = AnimalTrade.RulesOf(AnimalDatabase.Instance.Rules);
+        AnimalSpeciesData s = AnimalDatabase.Instance.Species(speciesId);
+        GrowthStage start = s != null ? AnimalCommands.DefaultStartStage(s) : GrowthStage.Baby;
+        return Mathf.Max(1f, t.StageWorth(stage) / Mathf.Max(0.01f, t.StageWorth(start)));
     }
 
     private static string Capital(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);

@@ -67,7 +67,9 @@ namespace RuneMagic
         {
             if (!open || !Allowed)
                 return;
-            window = GUILayout.Window(GetInstanceID(), window, Draw, "Rune Magic — Soul", GUILayout.Width(400f));
+            // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+            // which is obsolete from 6.4 and an error from 6.5.
+            window = GUILayout.Window(GetHashCode(), window, Draw, "Rune Magic — Soul", GUILayout.Width(400f));
         }
 
         private void Draw(int id)

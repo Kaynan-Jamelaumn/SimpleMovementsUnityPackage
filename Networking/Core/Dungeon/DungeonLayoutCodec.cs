@@ -41,6 +41,9 @@ namespace GameNet
         public float SlotSize;
         /// <summary>The dungeon scene simulates its own physics.</summary>
         public bool OwnPhysics;
+        /// <summary>How many dungeons deep the run is (Next Dungeon), and its difficulty: what the dungeon shows depends on them (a cave's depth and name).</summary>
+        public int Depth;
+        public float Difficulty = 1f;
     }
 
     /// <summary>One floor as a client receives it (see <see cref="DungeonLayoutCodec.DecodeFloor"/>).</summary>
@@ -66,7 +69,7 @@ namespace GameNet
     public static class DungeonLayoutCodec
     {
         /// <summary>Format version written first in every packet (packets of another version are refused).</summary>
-        public const byte Version = 1;
+        public const byte Version = 2;
         /// <summary>Largest grid accepted when decoding (cells).</summary>
         public const int MaxCells = 1 << 22;
         /// <summary>Largest number of entries accepted for any list when decoding.</summary>
@@ -107,6 +110,8 @@ namespace GameNet
                 w.Write(h.Slot);
                 w.Write(h.SlotSize);
                 w.Write(h.OwnPhysics);
+                w.Write(h.Depth);
+                w.Write(h.Difficulty);
             });
         }
 
@@ -131,8 +136,12 @@ namespace GameNet
                     Slot = r.ReadInt32(),
                     SlotSize = r.ReadSingle(),
                     OwnPhysics = r.ReadBoolean(),
+                    Depth = r.ReadInt32(),
+                    Difficulty = r.ReadSingle(),
                 };
                 if (h.Width <= 0 || h.Height <= 0 || (long)h.Width * h.Height > MaxCells)
+                    return null;
+                if (h.Depth < 0 || h.Depth > 100000 || !IsFinite(h.Difficulty) || h.Difficulty <= 0f)
                     return null;
                 if (h.FloorCount <= 0 || h.FloorCount > MaxFloors)
                     return null;
@@ -295,7 +304,7 @@ namespace GameNet
             {
                 Seed = 0,
                 AttemptSeed = 0,
-                Request = new DungeonRequest { label = h.Label ?? "" },
+                Request = new DungeonRequest { label = h.Label ?? "", depth = Mathf.Max(0, h.Depth), difficulty = h.Difficulty > 0f ? h.Difficulty : 1f },
                 CellSize = h.CellSize,
                 FloorSpacing = h.FloorSpacing,
                 Width = h.Width,

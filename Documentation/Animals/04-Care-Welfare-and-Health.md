@@ -110,7 +110,8 @@ else), and its family gives it its default label, words and icon ([chapter 02](0
 | Straw | bedding (used up) | — | — | — | the farm's straw mulch (`agri:amend/straw_mulch`) |
 
 The four tools of animal husbandry are items of its own (*Care tool · brush*). Their uses are their durability. The best
-tool you carry for a job is the one used: by quality × (0.5 + 0.5 × what is left of it).
+tool you carry for a job is the one used: by quality × (0.5 + 0.5 × what is left of it), and a worn-out one only when
+no other is carried (it works at a flat ×0.4, below any tool with uses left).
 
 ## Hygiene: the coat
 
@@ -283,6 +284,9 @@ The fence look shows dung patches and straw by those levels.
     straw and tick it beside Muck out to lay fresh bedding.* The straw switch beside **Muck out** shows only while straw
     is carried, as *with straw mulch (3)*.
 * The tool wears by one use for every 20 m² of pen.
+* It also forks out what lies in the feeder that none of the pen's animals eats, now or at a stage it grows into (a
+  weaned calf's milk replacer), or that every one of them takes only as harmful or worse (spoiled feed, poison). It
+  may be done for that alone, on a clean floor.
 * A fully stocked pen wants mucking out about every 2-3 days. A herd that is never brushed nor has its hooves cleaned
   needs it every 2 days.
 

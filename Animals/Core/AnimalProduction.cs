@@ -597,6 +597,22 @@ public static class AnimalProduction
     }
 
     /// <summary>
+    /// What waits on a dead animal (made before it died, collectable until its remains go) loses its freshness over a step
+    /// of <paramref name="dt"/> hours to <paramref name="to"/>, as it would on a living one.
+    /// </summary>
+    public static void AgeWaiting(AnimalRecord a, AnimalSpeciesData sp, AnimalRules rules, float dt, double to)
+    {
+        if (a?.products == null || sp?.products == null || dt <= 0f) return;
+        AnimalProductionRules r = rules?.production ?? new AnimalProductionRules();
+        foreach (AnimalProductSpec p in sp.products)
+        {
+            if (p == null || string.IsNullOrEmpty(p.id)) continue;
+            AnimalProductState st = State(a, p.id, false);
+            if (st != null) Age(st, p, r, dt, to);
+        }
+    }
+
+    /// <summary>
     /// A lot waiting over a step of <paramref name="dt"/> hours to <paramref name="now"/>: past its Fresh Hours it loses
     /// Stale Loss Per Day of its quality (pro rata), never below the rules' Quality Min (in a nest or a pen's egg trays alike).
     /// </summary>

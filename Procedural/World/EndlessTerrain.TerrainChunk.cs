@@ -99,6 +99,7 @@ public partial class EndlessTerrain : MonoBehaviour
         bool spawnersStarted;
         PortalSpawner portalSpawner;
         MobSpawner mobSpawner;
+        ProceduralCaves.CaveEntranceSpawner caveSpawner;
         LoadedTerrain.Chunk loaded;
 
         public Vector2 Position { get { return position; } }
@@ -161,6 +162,9 @@ public partial class EndlessTerrain : MonoBehaviour
             portalSpawner.SetSettings(portalSettings);
             mobSpawner = meshObject.AddComponent<MobSpawner>();
             mobSpawner.SetSettings(mobSettings);
+            // Its cave entrances (scenery every machine builds the same way; going in is the server's decision).
+            caveSpawner = meshObject.AddComponent<ProceduralCaves.CaveEntranceSpawner>();
+            caveSpawner.SetSettings(owner.Caves);
 
             meshObject.transform.position = positionV3;
             meshObject.transform.parent = parent;
@@ -862,6 +866,8 @@ public partial class EndlessTerrain : MonoBehaviour
                 portalSpawner.Begin(owner, terrainGenerator, chunkCoord, globalOffset, span);
             if (mobSpawner != null)
                 mobSpawner.Begin(owner, terrainGenerator, chunkCoord, globalOffset, span);
+            if (caveSpawner != null)
+                caveSpawner.Begin(owner, terrainGenerator, chunkCoord, globalOffset, span);
         }
 
         /// <summary>
@@ -925,6 +931,8 @@ public partial class EndlessTerrain : MonoBehaviour
                 portalSpawner.End();
             if (mobSpawner != null)
                 mobSpawner.End();
+            if (caveSpawner != null)
+                caveSpawner.End();
             LoadedTerrain.Unregister(new Vector2Int((int)coord.x, (int)coord.y));
 
             if (colliderBaking)

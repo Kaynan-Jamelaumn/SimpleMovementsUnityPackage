@@ -241,8 +241,18 @@ namespace ProceduralDungeon
             roles = DefaultRoles();
         }
 
+        /// <summary>
+        /// Counts edits of dungeon settings (profiles, custom stages, their tables) in the editor: kept generations
+        /// (<see cref="BuildSettings.keepGenerated"/>) made before an edit are not reused.
+        /// </summary>
+        public static int Revision { get; private set; }
+
+        /// <summary>A profile, a custom stage or one of their tables was edited: kept generations are out of date.</summary>
+        public static void MarkEdited() => Revision++;
+
         private void OnValidate()
         {
+            MarkEdited();
             floorCount.x = Mathf.Max(1, floorCount.x);
             floorCount.y = Mathf.Max(floorCount.x, floorCount.y);
             if (ceilings == null)

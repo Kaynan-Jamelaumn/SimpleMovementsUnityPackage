@@ -19,6 +19,9 @@ namespace ProceduralDungeon
     [CreateAssetMenu(menuName = "SimpleMovements/Dungeon/Room Template", fileName = "RoomTemplate")]
     public class RoomTemplate : ScriptableObject
     {
+        // Edited: generations kept for its profiles (Build > Keep Generated) are not reused.
+        private void OnValidate() => DungeonProfile.MarkEdited();
+
         public enum TemplateMode
         {
             ShapeMask,

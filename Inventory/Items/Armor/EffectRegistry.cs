@@ -71,7 +71,7 @@ public class EffectRegistry : MonoBehaviour
 
     private void FindAndRegisterExistingHandlers()
     {
-        var handlers = FindObjectsByType<SpecialMechanicHandlerBase>(FindObjectsInactive.Exclude);
+        var handlers = UnityVersionCompat.FindObjectsByType<SpecialMechanicHandlerBase>(FindObjectsInactive.Exclude);
         foreach (var handler in handlers)
             foreach (var mechanicId in handler.GetSupportedMechanics())
                 RegisterMechanicHandler(mechanicId, handler);

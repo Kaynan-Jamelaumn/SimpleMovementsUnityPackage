@@ -85,13 +85,36 @@ namespace ProceduralDungeon
                 r.enabled = false;
         }
 
-        /// <summary>The published state: 1 once broken.</summary>
-        protected override int NetState => Broken ? 1 : 0;
+        /// <summary>
+        /// Shows it broken at once and quietly - no pieces, drops, noise or stash (a place that remembers it was broken on an
+        /// earlier visit, like a cave). Where the rules run its clients are told too.
+        /// </summary>
+        public void RestoreBroken()
+        {
+            if (Broken)
+                return;
+            quietlyBroken = true;
+            Broken = true;
+            foreach (Collider c in GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+            foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+                r.enabled = false;
+            DungeonNet.Publish(this, NetState);
+        }
+
+        private bool quietlyBroken;
+
+        /// <summary>The published state: 1 once broken, 2 when it was already broken (no pieces).</summary>
+        protected override int NetState => Broken ? (quietlyBroken ? 2 : 1) : 0;
 
         /// <summary>A client's copy: the server broke it (it shatters here too; the stash is the server's business).</summary>
         public override void ApplyNetState(int state, byte[] payload)
         {
-            if (state > 0 && !Broken)
+            if (state <= 0 || Broken)
+                return;
+            if (state == 2)
+                RestoreBroken();
+            else
                 ShowBroken();
         }
 

@@ -108,7 +108,7 @@ Everything is under one **SimpleMovements** entry in each menu.
 | *… ▸ Crafting* | Crafting Database, Stock Material |
 | *… ▸ Legacy* | Old ability assets (AbilityEffectSO, PlayerAbilitySO) and the old Player Class template, kept for existing assets — use the entries above for new ones |
 | *Tools ▸ SimpleMovements ▸ Project Setup* | Create Combat Settings / Absorption Settings / Ability Database / Trait Database / Item Category Database / Default Currency / Alchemy Database / Crafting Database (Resources) |
-| *… ▸ Player* | Add Player Setup Validator To Selection, Auto-Setup All Players In Scene |
+| *… ▸ Player* | Add Setup Validator To Selection, Auto-Setup All Players In Scene |
 | *… ▸ Social* | Create Player Targeting And Party System, Add Player Social (selected player prefab) |
 | *… ▸ Scene UI* | Build Character Creation Screen, Build Pause & Settings Menu |
 | *… ▸ Inventory* | UI Builder, Auto-Build UI When Missing, Armor Set Wizard, Attack Preview, Grid Inventory |

@@ -51,6 +51,12 @@ namespace ProceduralDungeon
                 DungeonSession.UsePortal(this, player);
         }
 
+        /// <summary>
+        /// The player object behind a collider that touched the portal (or a passage built round it: a cave's way out),
+        /// recognised as the portal's own trigger does: its Combat Entity, the tag only as a fallback. Null if none.
+        /// </summary>
+        public GameObject PlayerFrom(Collider other) => other != null ? FindPlayer(other) : null;
+
         /// <summary>The player behind the collider (its Combat Entity; the tag only as a fallback), or null.</summary>
         private GameObject FindPlayer(Collider other)
         {

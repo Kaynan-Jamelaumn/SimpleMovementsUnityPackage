@@ -246,6 +246,9 @@ public sealed class AnimalBook
         crated.Remove(serial);
         a.status = AnimalStatus.Alive;
         a.pen = penId;
+        // It waited out of the world: its life stopped at its livedTo and goes on from there, so it comes out as old as it
+        // went in, its windows and waits where they were (not run out by the wait).
+        ShiftLife(a, livedTo - a.livedTo);
         a.livedTo = livedTo;
         a.revision++;
         byId[a.id] = a;
@@ -253,6 +256,62 @@ public sealed class AnimalBook
         Revision++;
         return true;
     }
+
+    /// <summary>
+    /// Moves on by <paramref name="away"/> game hours every time of its own life that is still running when it is let out
+    /// of a crate: its birth (its age), its breeding waits, what waits on it to be collected, its illnesses' treatment,
+    /// recovery and dose windows and its immunities, its owner's last care and visit, and its care and feeding waits. What
+    /// it lived through (its histories) and its bonds with pen-mates (it really was apart) keep their hours. A time of -1
+    /// ("never") stays as it is.
+    /// </summary>
+    private static void ShiftLife(AnimalRecord a, double away)
+    {
+        if (a == null || !(away > 0.0) || double.IsInfinity(away)) return;
+        a.bornAt += away;
+        a.breedReadyAt = Later(a.breedReadyAt, away);
+        a.lastBredAt = Later(a.lastBredAt, away);
+        a.lastFedAt = Later(a.lastFedAt, away);
+        a.lastWateredAt = Later(a.lastWateredAt, away);
+        a.lastExaminedAt = Later(a.lastExaminedAt, away);
+        a.lastVetAt = Later(a.lastVetAt, away);
+        a.lastOwnerCareAt = Later(a.lastOwnerCareAt, away);
+        a.lastNeedsHelpAt = Later(a.lastNeedsHelpAt, away);
+        a.lastOwnerNearAt = Later(a.lastOwnerNearAt, away);
+        if (a.care != null)
+            foreach (AnimalCareMark m in a.care)
+                if (m != null) m.at = Later(m.at, away);
+        if (a.products != null)
+            foreach (AnimalProductState s in a.products)
+            {
+                if (s == null) continue;
+                s.cycleStart = Later(s.cycleStart, away);
+                s.lastMadeAt = Later(s.lastMadeAt, away);
+                s.lastCollectedAt = Later(s.lastCollectedAt, away);
+                if (s.waiting == null) continue;
+                foreach (AnimalProductLot lot in s.waiting)
+                    if (lot != null) { lot.cycleStart = Later(lot.cycleStart, away); lot.madeAt = Later(lot.madeAt, away); }
+            }
+        if (a.conditions != null)
+            foreach (AnimalCondition c in a.conditions)
+            {
+                if (c == null) continue;
+                c.since = Later(c.since, away);
+                c.treatedUntil = Later(c.treatedUntil, away);
+                c.thenUntil = Later(c.thenUntil, away);
+                c.recoveringUntil = Later(c.recoveringUntil, away);
+                if (c.laterSteps == null) continue;
+                foreach (AnimalDoseStep step in c.laterSteps)
+                    if (step != null) step.until = Later(step.until, away);
+            }
+        if (a.exposures != null)
+            foreach (AnimalExposure e in a.exposures)
+                if (e != null) e.immuneUntil = Later(e.immuneUntil, away);
+        if (a.doses != null)
+            foreach (AnimalDose d in a.doses)
+                if (d != null) d.at = Later(d.at, away);
+    }
+
+    private static double Later(double at, double away) => at >= 0.0 ? at + away : at;
 
     /// <summary>
     /// Undoes a crating that could not be finished (the caller could not give its crate, or the commit failed after it):
@@ -280,6 +339,8 @@ public sealed class AnimalBook
     {
         AnimalRecord a = c?.animal;
         if (a == null || c.serial <= 0 || crated.ContainsKey(c.serial) || !byId.TryGetValue(a.id ?? "", out AnimalRecord known) || known != a) return false;
+        // Out of whichever pen holds it: its record may already have been put back as it was crated (pen "").
+        foreach (AnimalHerd h in herdList) h.animals.Remove(a);
         Unplace(a);
         byId.Remove(a.id);
         a.status = AnimalStatus.Crated;

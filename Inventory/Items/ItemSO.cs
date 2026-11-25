@@ -54,6 +54,16 @@ public interface IItemInstanceValue
 }
 
 /// <summary>
+/// An item a copy of which can rightly be worth more than a new one the merchant sells (a crated adult animal against a
+/// young one in a crate): a merchant's Sell Never Above Buy caps such a copy at the item's buy price x this, not x 1.
+/// </summary>
+public interface IItemInstanceSellCap
+{
+    /// <summary>The most a copy may fetch against the item's buy price (1: no more than a new one).</summary>
+    float SellCapFactor(InventoryItem stack, int fromTop = 0);
+}
+
+/// <summary>
 /// Base of every item asset: name, icon, stack size, weight, durability, cooldown, how it sits in the hand and how it
 /// looks and sounds when used. Consumables, equippables (armor, trinkets) and weapons derive from it.
 /// </summary>

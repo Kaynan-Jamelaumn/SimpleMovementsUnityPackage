@@ -254,7 +254,7 @@ own traits, on top of ordinary modifiers and combat stats):
 
 | Behaviour | What it does |
 |---|---|
-| **Cannot Do** | Blocks actions for good: sprint, jump, dash, roll, crouch, weapon attacks, two-handed weapons, main or off hand, block, cast abilities, use items - with the reason told to the player. Works with the injury system on or off |
+| **Cannot Do** | Blocks actions for good: sprint, jump, dash, roll, crouch, weapon attacks, two-handed weapons, main or off hand, block, cast abilities, use items. The reason is shown when an item, a held item or an attack is refused (movement, blocking and casting are refused without a message). Works with the injury system on or off |
 | **Impaired Sight** | What the player sees: an eye's half of the screen dark (*Eye* Left / Right; Center = both), *Haze*, *Tunnel*, *Sway*; *Always*, *In The Dark* (the darker the night the more) or *In Daylight* |
 | **Impaired Hearing** | The game's volume for that player: 0.35 = hard of hearing, 0 = deaf |
 | **Needs Drain Faster** | Hunger, thirst and tiredness multipliers (1.4 = 40% faster) |
@@ -293,7 +293,10 @@ scale the screen effects or to leave the volume alone).
 
 **Scripts**: `entity.SetActionBlock(key, BodyAction.Sprint, "Cursed")` / `ClearActionBlock(key)` block actions from
 anything (a curse, a quest); `entity.AllowsAction(action)` and `entity.WhyNotAllowed(action)` answer for injuries and
-blocks together. `injuries.RemovePartForGood(part)` / `GiveBackPart(part)` take a limb away without a wound.
+blocks together. Blocks are not sent over the network: in multiplayer set them on every machine (the server and each
+client), as the traits do, so movement prediction agrees with the server; after blocking a hand call
+`InventoryManager.For(player)?.RefreshHands()`. `injuries.RemovePartForGood(part)` / `GiveBackPart(part)` take a limb
+away without a wound.
 `DisabilityEffects.For(player).SetSight(key, eye, visionEffect, strength)` / `SetHearing(key, volume)`.
 
 ### Your own scripts on a trait (Attach Script)

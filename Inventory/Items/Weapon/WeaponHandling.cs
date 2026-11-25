@@ -204,13 +204,13 @@ public static class HandRules
         if (mainHand != null)
         {
             if (mainHand is WeaponSO w && w.IsTwoHanded && !hands.twoHanded)
-                blockedBecause = $"{w.Name} needs both hands ({hands.twoHandedReason}).";
+                blockedBecause = $"{w.Name} needs both hands{Because(hands.twoHandedReason)}.";
             else if (!hands.mainHand)
             {
                 if (hands.offHand)
                     carriedByOffHand = true;
                 else
-                    blockedBecause = $"You cannot hold {mainHand.Name} ({hands.mainReason}).";
+                    blockedBecause = $"You cannot hold {mainHand.Name}{Because(hands.mainReason)}.";
             }
         }
         HandState s = Evaluate(blockedBecause != null ? null : mainHand, offHand);
@@ -224,9 +224,15 @@ public static class HandRules
             s.offHandSuppressed = true;
             s.reason = carriedByOffHand
                 ? $"{mainHand.Name} is held in your other hand: {s.activeOffHand.Name} is stowed."
-                : $"{s.activeOffHand.Name} is stowed ({hands.offReason}).";
+                : $"{s.activeOffHand.Name} is stowed{Because(hands.offReason)}.";
             s.activeOffHand = null;
         }
         return s;
     }
+
+    /// <summary>
+    /// " (why)" for a hand message, or nothing when no reason is given: a disability trait or a script can block a hand
+    /// without one (<see cref="CombatEntity.SetActionBlock"/>; "Empty = nothing is said"). The injuries always give one.
+    /// </summary>
+    private static string Because(string why) => string.IsNullOrEmpty(why) ? "" : $" ({why})";
 }

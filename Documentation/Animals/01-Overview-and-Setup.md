@@ -37,7 +37,7 @@ For multiplayer:
   and done by **Create Bootstrap Scene**). Without it, no animal can be butchered in a network session. Offline nothing
   is needed.
 
-A project that made **species assets** before Phase 2: run **Animals ▸ Update Species Assets To Phase 2** (below).
+A project that made **species assets** before Phase 5: run **Animals ▸ Update Species Assets To Phase 5** (below).
 
 ## Pens
 
@@ -73,7 +73,8 @@ How shelter, bedding, dirt and water change how the animals live is in [chapter 
   * An animal's **owner** alone may name it, move it, slaughter it and butcher it.
   * Anyone may **look** over the fence.
   * A pen on no property is public: anyone may stock its feeder and trough, muck it out and keep their own animals
-    there. Only an animal's owner may feed it by hand, care for it, treat it or clear its remains, and only a keeper of
+    there. A stranger may stock the feeder only with food some animal there takes as better than poor food, and
+    nothing while no animal lives there. Only an animal's owner may feed it by hand, care for it, treat it or clear its remains, and only a keeper of
     an animal there may scrub out its trough, or pour in water dirtier than the trough's once that would leave it murky
     (a stranger may not, however little at a time; cleaner water, and a dry trough, are anyone's to fill).
 * **When the lease ends**, an owner who can no longer keep animals in the pen has them taken to the **boarding
@@ -207,7 +208,9 @@ with sound hooves. Crates the game makes later (Phase 5: trading an animal) carr
 ## Feeding
 
 Animals eat by themselves from the **feeder** whenever they are hungry. Each takes the food it likes best of what is
-there, the best kept first; a hungry animal goes first.
+there, the best kept first; a hungry animal goes first. While animals live in a pen, food that none of them eats, now
+or as it grows, is not taken into its feeder (*None of the animals here eat dried mealworms.*). Only eating, and
+mucking out (which forks out what none of them eats, or all take only as harmful), take food out of a feeder.
 
 * **Harmful food** (spoiled feed, raw potato for most) is eaten from a feeder only when nothing better is left and the
   animal is quite hungry. Even then it eats only until that hunger is eased.

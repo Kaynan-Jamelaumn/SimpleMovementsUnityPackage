@@ -279,7 +279,9 @@ public struct HandCapability
 /// <summary>
 /// What a character's body allows right now. The injury system implements it (<see cref="InjuryController"/>) and
 /// registers it on the character's <see cref="CombatEntity.BodyLimits"/>; movement, weapons, hands, items and
-/// abilities ask it. Write your own (a curse that stops jumping) and assign it the same way.
+/// abilities ask it through <see cref="CombatEntity.AllowsAction"/>. For a limit from elsewhere (a curse that stops
+/// jumping) use <see cref="CombatEntity.SetActionBlock"/>, which adds to the injuries. Assign your own implementation
+/// only to a character without the injury system: the injury controller sets itself there when it is enabled.
 /// </summary>
 public interface IBodyActionLimits
 {

@@ -23,7 +23,9 @@ public static class HousingIds
     public static void Remember(UnityEngine.Object o, string kind, string id)
     {
 #if UNITY_EDITOR
-        if (o != null && !string.IsNullOrEmpty(id)) remembered[kind + ":" + o.GetInstanceID()] = id;
+        // GetHashCode(): on the Unity 6000.0 to 6000.5 releases the same number as GetInstanceID(),
+        // which is obsolete from 6.4 and an error from 6.5.
+        if (o != null && !string.IsNullOrEmpty(id)) remembered[kind + ":" + o.GetHashCode()] = id;
 #endif
     }
 
@@ -31,7 +33,7 @@ public static class HousingIds
     public static string Recall(UnityEngine.Object o, string kind)
     {
 #if UNITY_EDITOR
-        if (o != null && remembered.TryGetValue(kind + ":" + o.GetInstanceID(), out string id)) return id;
+        if (o != null && remembered.TryGetValue(kind + ":" + o.GetHashCode(), out string id)) return id;
 #endif
         return null;
     }

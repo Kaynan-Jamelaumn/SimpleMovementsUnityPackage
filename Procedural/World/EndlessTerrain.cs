@@ -113,6 +113,11 @@ public partial class EndlessTerrain : MonoBehaviour
     [SerializeField]
     MobSettings mobSettings = new MobSettings();
 
+    [Header("Cave Entrances")]
+    [Tooltip("Where natural cave entrances appear and which caves lie behind them (Dungeon Profiles with a Cave Mining Stage - Tools > SimpleMovements > Caves > Create Cave Setup makes one and adds it here). Each chunk's CaveEntranceSpawner reads these. Needs at least one entry in Cave Profiles.")]
+    [SerializeField]
+    ProceduralCaves.CaveEntranceSettings caveSettings = new ProceduralCaves.CaveEntranceSettings();
+
     [Header("Debugging")]
     [Tooltip("Log chunk creation, data arrival and spawner starts to the Console (noisy).")]
     public bool enableDebugging = false;
@@ -214,6 +219,19 @@ public partial class EndlessTerrain : MonoBehaviour
     /// <summary>The mob settings every chunk's MobSpawner uses.</summary>
     public MobSettings Mobs => mobSettings;
 
+    /// <summary>The cave entrance settings every chunk's CaveEntranceSpawner uses.</summary>
+    public ProceduralCaves.CaveEntranceSettings Caves => caveSettings;
+
+    /// <summary>
+    /// The cave entrances planned in an area (world x, z; map markers, quests) - known before their chunks exist. Planned
+    /// points: once the chunk is ready an entrance stands within Search Radius of its point, or (no suitable ground) none.
+    /// </summary>
+    public void FindCaveSites(Vector2 min, Vector2 max, List<ProceduralCaves.CaveSitePlanner.Site> into)
+    {
+        TerrainGenerator generator = mapGenerator != null ? mapGenerator : Object.FindAnyObjectByType<TerrainGenerator>();
+        ProceduralCaves.CaveSitePlanner.SitesInArea(caveSettings, generator != null ? generator.VoronoiSeed : 0, min, max, into);
+    }
+
     /// <summary>
     /// The portals planned in an area (world x, z; e.g. for map markers or quests) - known before their chunks exist.
     /// Planned points: once the chunk is ready a portal stands within Search Radius of its point, or (rarely, when
@@ -229,6 +247,7 @@ public partial class EndlessTerrain : MonoBehaviour
     {
         portalSettings?.ValidateSettings();
         mobSettings?.ValidateSettings();
+        caveSettings?.ValidateSettings();
     }
 
     void Start()

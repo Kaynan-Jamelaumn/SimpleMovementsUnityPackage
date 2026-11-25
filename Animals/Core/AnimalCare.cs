@@ -235,6 +235,7 @@ public class AnimalToolData
         if (!AnimalIds.ValidKey(id)) errors?.Add($"{who}: the id may not be empty or hold spaces, '/', ':' or '|'.");
         if (tags == null || tags.Count == 0) warnings?.Add($"{who}: no tags (no care action can use it).");
         if (items == null || items.Count == 0) warnings?.Add($"{who}: no item is this tool (it can never be used).");
+        if (!consumed && uses == 1) warnings?.Add($"{who}: a tool of 1 use never wears (an item of durability 1 keeps no wear): give it 2 or more uses, or make it a supply (Consumed).");
     }
 }
 
@@ -1071,6 +1072,53 @@ public static class AnimalHabitat
         pen.revision++;
     }
 
+    /// <summary>
+    /// Will a living animal of the herd eat this food from its feeder, now or at a stage it grows into (a calf's hay)? An
+    /// empty pen, or an animal whose species is not in the content now: yes (food may be stocked ahead).
+    /// </summary>
+    public static bool AnyEats(AnimalHerd herd, AnimalFoodData food, IAnimalCatalog cat)
+    {
+        FoodAffinity? best = BestEver(herd, food, cat);
+        return best == null || best.Value != FoodAffinity.Inedible;
+    }
+
+    /// <summary>
+    /// Feeder food that mucking out forks out: what none of the pen's living animals eats, now or at a stage it grows into
+    /// (a weaned calf's milk replacer), and what every one of them takes only as harmful or worse (spoiled feed, poison).
+    /// A pen with no living animal keeps it all.
+    /// </summary>
+    public static bool ForkedOut(AnimalHerd herd, AnimalFoodData food, IAnimalCatalog cat)
+    {
+        FoodAffinity? best = BestEver(herd, food, cat);
+        return best != null && best.Value >= FoodAffinity.Harmful;
+    }
+
+    /// <summary>
+    /// The best regard a living animal of the herd has for a food, now or at a stage it grows into (Inedible: none eats it,
+    /// or it is no food). Null when there is nothing to judge by: no living animal, or one whose species is not in the
+    /// content now.
+    /// </summary>
+    private static FoodAffinity? BestEver(AnimalHerd herd, AnimalFoodData food, IAnimalCatalog cat)
+    {
+        if (herd == null) return null;
+        bool any = false;
+        FoodAffinity best = FoodAffinity.Inedible;
+        foreach (AnimalRecord m in herd.animals)
+        {
+            if (m == null || !m.Alive) continue;
+            any = true;
+            AnimalSpeciesData sp = cat?.Species(m.species);
+            if (sp == null) return null;
+            if (food == null || food.satiety <= 0f) continue;
+            for (GrowthStage s = m.stage; s <= GrowthStage.Senior; s++)
+            {
+                FoodAffinity aff = sp.DietAt(s).AffinityOf(food);
+                if (aff < best) best = aff;
+            }
+        }
+        return any ? best : (FoodAffinity?)null;
+    }
+
     /// <summary>Straw items that make a bedded pen's bedding fresh (at least 1).</summary>
     public static int StrawNeeded(AnimalPenRecord pen, AnimalPenSpec spec, AnimalRules rules)
     {
@@ -1129,6 +1177,9 @@ public static class AnimalHabitat
         pen.manureOwed = Mathf.Max(0f, pen.manureOwed - o.manure);
         pen.lastCleanedAt = now;
         pen.cleanedBy = by ?? "";
+        // Food none of its animals eats (a weaned calf's milk replacer, another kind's feed), or that every one of them takes
+        // only as harmful or worse (spoiled feed, poison), goes out with the muck.
+        pen.feeder?.RemoveAll(l => l != null && cat?.Food(l.food) is AnimalFoodData f && ForkedOut(herd, f, cat));
         string who = string.IsNullOrWhiteSpace(byName) ? "" : $" by {byName.Trim()}";
         // Only straw laid on a clean floor (nothing forked out) is said as that (as the command's answer is).
         string note = o.removed <= 0.01f && o.strawLaid ? $"Fresh straw was laid{who}." : $"The pen was mucked out{who}.";

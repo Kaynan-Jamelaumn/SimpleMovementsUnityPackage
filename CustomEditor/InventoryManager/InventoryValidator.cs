@@ -162,7 +162,7 @@ public static class InventoryValidator
         }
         // In Prefab Mode the EventSystem belongs to the scene (never put one in the player prefab).
         if (UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(manager.gameObject) == null &&
-            UnityEngine.Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length == 0)
+            UnityVersionCompat.FindObjectsByType<EventSystem>(FindObjectsInactive.Include).Length == 0)
             issues.Add(new InventoryIssue(MessageType.Error, "The scene has no EventSystem: UI cannot be clicked.", "Create", () => InventoryUIBuilder.EnsureEventSystem()));
 
         if (so.FindProperty("itemInfo").objectReferenceValue == null)

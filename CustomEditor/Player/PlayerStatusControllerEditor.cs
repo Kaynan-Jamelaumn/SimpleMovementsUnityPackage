@@ -500,7 +500,7 @@ public class PlayerStatusControllerEditor : Editor
 
     private void FindAllStatusControllersInScene()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
+        var controllers = UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         Debug.Log($"[PlayerStatusEditor] Found {controllers.Length} PlayerStatusController(s) in scene:");
 
         foreach (var controller in controllers)
@@ -516,7 +516,7 @@ public class PlayerStatusEditorMenu
     [MenuItem(SMMenu.Root + "Validate/Players", false, SMMenu.Validate + 20)]
     static void ValidateAllControllers()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
+        var controllers = UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         foreach (var controller in controllers)
         {
             var helper = new PlayerStatusSetupHelper(controller);
@@ -528,7 +528,7 @@ public class PlayerStatusEditorMenu
     [MenuItem(SMMenu.Root + "Player/Auto-Setup All Players In Scene", false, SMMenu.Player + 1)]
     static void AutoSetupAllControllers()
     {
-        var controllers = UnityEngine.Object.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
+        var controllers = UnityVersionCompat.FindObjectsByType<PlayerStatusController>(FindObjectsInactive.Exclude);
         int setupCount = 0;
 
         foreach (var controller in controllers)

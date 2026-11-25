@@ -146,6 +146,7 @@ public static class AnimalSocial
 {
     // Scratch (never state).
     private static readonly List<AnimalRecord> living = new List<AnimalRecord>();
+    private static readonly HashSet<string> present = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>Its bond with another (null: none).</summary>
     public static AnimalBond BondWith(AnimalRecord a, string other)
@@ -187,6 +188,8 @@ public static class AnimalSocial
         foreach (AnimalRecord a in herd.animals)
             if (a != null && a.Alive) living.Add(a);
         living.Sort((x, y) => string.CompareOrdinal(x.id, y.id));
+        present.Clear();
+        foreach (AnimalRecord a in living) present.Add(a.id);
         for (int i = 0; i < living.Count; i++)
             for (int j = i + 1; j < living.Count; j++)
             {
@@ -266,7 +269,7 @@ public static class AnimalSocial
         for (int i = 0; i < a.bonds.Count; i++)
         {
             AnimalBond b = a.bonds[i];
-            if (b == null || b.kind != AnimalBondKind.Companion || b.lastTogether >= end - 1e-6) continue;
+            if (b == null || b.kind != AnimalBondKind.Companion || b.lastTogether >= end - 1e-6 || present.Contains(b.other)) continue;
             if (weakest < 0 || b.level < a.bonds[weakest].level) weakest = i;
         }
         if (weakest < 0) return false;
@@ -295,12 +298,14 @@ public static class AnimalSocial
         while (Companions(a) > keep)
         {
             int weakest = -1;
-            for (int i = 0; i < a.bonds.Count; i++)
-            {
-                AnimalBond b = a.bonds[i];
-                if (b == null || (b.kind != AnimalBondKind.Companion && b.kind != AnimalBondKind.Mate)) continue;
-                if (weakest < 0 || b.level < a.bonds[weakest].level || (b.level == a.bonds[weakest].level && string.CompareOrdinal(b.other, a.bonds[weakest].other) > 0)) weakest = i;
-            }
+            // Companions first: a mate goes only when no companion is left to go.
+            for (int pass = 0; pass < 2 && weakest < 0; pass++)
+                for (int i = 0; i < a.bonds.Count; i++)
+                {
+                    AnimalBond b = a.bonds[i];
+                    if (b == null || (b.kind != AnimalBondKind.Companion && (pass == 0 || b.kind != AnimalBondKind.Mate))) continue;
+                    if (weakest < 0 || b.level < a.bonds[weakest].level || (b.level == a.bonds[weakest].level && string.CompareOrdinal(b.other, a.bonds[weakest].other) > 0)) weakest = i;
+                }
             if (weakest < 0) break;
             a.bonds.RemoveAt(weakest);
         }

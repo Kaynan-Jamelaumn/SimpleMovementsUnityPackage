@@ -289,7 +289,8 @@ Locks are only placed where every required area (exit, stairs, keys) stays reach
 | Max Attempts | int 1–20 | whole-dungeon retries | 6 | more resilient | fails sooner | worst case × attempts | Impl. |
 | Repair Unreachable / Max Repairs Per Floor | bool / int 0–64 | carve passages to unreachable areas | on / 16 | fewer retries | more retries | low | Impl. |
 | Log Report | bool | print the report | off | — | — | — | Impl. |
-| Custom Stages | DungeonStageAsset list | extra stages in slots | empty | — | — | depends | Impl. |
+| Keep Generated | int 0–16 | generations kept per profile (layout and meshes): the same request again skips generation and meshing | 0 (caves 4) | faster re-entry, more memory | less memory | **high** on re-entry | Impl. |
+| Custom Stages | DungeonStageAsset list | extra stages in slots (stages implementing `IDungeonBuildExtension` also build what they placed — e.g. the Cave Mining Stage) | empty | — | — | depends | Impl. |
 
 ## 11. Components
 

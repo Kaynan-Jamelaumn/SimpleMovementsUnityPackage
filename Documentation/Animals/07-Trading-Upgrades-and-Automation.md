@@ -41,7 +41,9 @@ owner a crate: a livestock item of its breed (*"Leghorn Chick (crate)"*) whose p
 | The owner's bag has no room for the crate | A crate is never dropped on the ground, where anyone could take the animal |
 
 While crated, an animal is **out of the world**. It is not in a pen, is not simulated, and does not count against
-anyone's animals. It waits as it was crated: no hunger, no growth, no production, its pregnancy and bonds as they were.
+anyone's animals. It waits as it was crated: no hunger, no growth, no ageing, no production, its pregnancy and bonds as
+they were. Let out, it is as old as it went in, and its waits and windows (breeding, a treatment, what waits on it to
+be collected, its owner's last care) go on from where they were.
 Its history records the crating. Its pen-mates miss it as they would any animal moved away.
 
 A crate can be:
@@ -109,7 +111,10 @@ A crated animal is worth its breed's price for a young one (the crate's price) �
 Grade 0 is worth × (1 − **Grade Spread**) and grade 15 × (1 + Grade Spread), with Grade Spread 0.5. The grade and the stage travel in the crate's
 code, so a merchant (and a client showing the merchant's prices) prices the copy the same on every machine, without
 the animal's record. A plain crate from a merchant is worth its price. Merchants pay their own share of what an item is
-worth, as for every item.
+worth, as for every item. A merchant that never pays more for an item than it asks (*Sell Never Above Buy*) caps a
+crated animal at its young price × its stage's worth against the stage a crate's young is let out at, whatever its
+grade: a raised adult may fetch up to ×2.4 its crate's price (an adult's worth against a baby's), while one let out and
+crated again at once fetches no more than its crate cost.
 
 Raising a well kept, well bred animal to adulthood is therefore worth several times what its young cost. That is the
 profession's trade: buy or breed young, raise them well, sell the surplus, and keep the best for breeding.
